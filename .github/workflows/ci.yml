@@ -42,5 +42,6 @@ jobs:
         with:
           version: "latest"
       - run: uv build
-      - run: uv pip install dist/*.whl --python $(which python3)
-      - run: python3 -c "from tapps_brain import MemoryStore, __version__; print(f'tapps-brain v{__version__}')"
+      - run: uv venv .venv-build
+      - run: uv pip install dist/*.whl --python .venv-build
+      - run: .venv-build/bin/python -c "from tapps_brain import MemoryStore, __version__; print(f'tapps-brain v{__version__}')"
