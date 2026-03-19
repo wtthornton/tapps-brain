@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 from tapps_brain.injection import (
@@ -12,8 +13,10 @@ from tapps_brain.injection import (
     estimate_tokens,
     inject_memories,
 )
-from tapps_brain.models import MemoryEntry
 from tests.factories import make_entry
+
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
 
 _RECENT = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
 

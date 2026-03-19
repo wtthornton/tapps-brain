@@ -62,18 +62,14 @@ class TestContradictionModel:
 class TestTechStackCheck:
     def test_no_contradiction_when_lib_in_stack(self, tmp_path: Path):
         profile = _FakeProfile(tech_stack=_TechStack(libraries=["sqlalchemy"]))
-        entry = _make_entry(
-            value="We use sqlalchemy for the ORM layer", tags=["library"]
-        )
+        entry = _make_entry(value="We use sqlalchemy for the ORM layer", tags=["library"])
         detector = ContradictionDetector(tmp_path)
         result = detector.detect_contradictions([entry], profile)
         assert result == []
 
     def test_contradiction_when_lib_not_in_stack(self, tmp_path: Path):
         profile = _FakeProfile(tech_stack=_TechStack(libraries=["sqlalchemy"]))
-        entry = _make_entry(
-            value="We use django-rest for our API", tags=["framework"]
-        )
+        entry = _make_entry(value="We use django-rest for our API", tags=["framework"])
         detector = ContradictionDetector(tmp_path)
         result = detector.detect_contradictions([entry], profile)
         assert len(result) == 1

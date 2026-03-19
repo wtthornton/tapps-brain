@@ -155,9 +155,7 @@ class TestExtractFromEntries:
         e2 = _make_entry(key="m2", value="The API uses Redis")
         rels = extract_relations_from_entries([e1, e2])
         # Should be deduplicated to one relation with merged keys
-        api_redis = [
-            r for r in rels if "redis" in r.object_entity.lower()
-        ]
+        api_redis = [r for r in rels if "redis" in r.object_entity.lower()]
         assert len(api_redis) == 1
         assert "m1" in api_redis[0].source_entry_keys
         assert "m2" in api_redis[0].source_entry_keys
@@ -251,7 +249,6 @@ class TestExpandViaRelations:
             _rel("Service", "uses", "auth"),
         ]
         result = expand_via_relations("who handles auth", rels)
-        lower = [r.lower() for r in result]
         # "auth" is the target, should not appear in expanded results from hop2
         # (hop1 may include it if subject matches target, but that's by design)
         assert "Service" in result

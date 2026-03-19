@@ -7,7 +7,7 @@ helper functions, and confidence adjustment logic.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,8 +28,10 @@ from tapps_brain.doc_validation import (
     _manage_doc_tags,
     _source_ceiling,
 )
-from tapps_brain.models import MemoryEntry
 from tests.factories import make_entry
+
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
 
 # ---------------------------------------------------------------------------
 # Helpers
