@@ -1,0 +1,247 @@
+"""Contradiction detection for memory entries.
+
+Compares memories against observable project state (tech stack, file
+existence, test frameworks, package managers, branches) to detect
+stale or incorrect information. All detection is deterministic -
+no LLM calls.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import structlog
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tapps_brain._protocols import ProjectProfileLike
+    from tapps_brain.models import MemoryEntry
+
+logger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+class Contradiction(BaseModel):
+    """A detected contradiction between a memory and project state."""
+
+    memory_key: str = Field(description="Key of the contradicted memory.")
+    reason: str = Field(description="Human-readable explanation.")
+    evidence: str = Field(description="What project state was compared.")
+    detected_at: str = Field(
+        default_factory=lambda: datetime.now(tz=UTC).isoformat(),
+        description="ISO-8601 UTC detection timestamp.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tag sets that trigger specific checks
+# ---------------------------------------------------------------------------
+
+_TECH_TAGS = frozenset({"library", "framework", "database", "orm", "dependency"})
+_FILE_TAGS = frozenset({"file", "path", "module"})
+_TEST_TAGS = frozenset({"test", "testing", "test-framework"})
+_PKG_TAGS = frozenset({"package-manager", "build-tool", "tooling"})
+_BRANCH_TAGS = frozenset({"branch", "feature-branch"})
+
+# Minimum claimed library name length to avoid false positives on short words.
+_MIN_CLAIMED_NAME_LENGTH = 3
+
+# Patterns for extracting tech claims from memory values.
+_CLAIM_PATTERNS = [
+    r"(?:we\s+)?use[sd]?\s+(\w[\w.-]*)",
+    r"using\s+(\w[\w.-]*)",
+    r"built\s+(?:with|on)\s+(\w[\w.-]*)",
+    r"migrated?\s+to\s+(\w[\w.-]*)",
+    r"switched?\s+to\s+(\w[\w.-]*)",
+]
+
+# Known test framework names for contradiction checking.
+_TEST_FW_NAMES = ["pytest", "jest", "mocha", "go-test", "cargo-test", "unittest"]
+
+# Known package manager names for contradiction checking.
+_PM_NAMES = ["pip", "uv", "poetry", "npm", "yarn", "pnpm", "cargo", "go-mod"]
+
+
+# ---------------------------------------------------------------------------
+# Detector
+# ---------------------------------------------------------------------------
+
+
+class ContradictionDetector:
+    """Detects memories that contradict observable project state."""
+
+    def __init__(self, project_root: Path) -> None:
+        self._project_root = project_root
+
+    def detect_contradictions(
+        self,
+        memories: list[MemoryEntry],
+        profile: ProjectProfileLike,
+    ) -> list[Contradiction]:
+        """Run all contradiction checks against the given memories.
+
+        Returns a list of contradictions found. Each memory is checked
+        at most once per rule type.
+        """
+        contradictions: list[Contradiction] = []
+        for entry in memories:
+            contradictions.extend(self._check_entry(entry, profile))
+        return contradictions
+
+    def _check_entry(
+        self,
+        entry: MemoryEntry,
+        profile: ProjectProfileLike,
+    ) -> list[Contradiction]:
+        """Run all applicable checks on a single memory entry."""
+        tags_lower = frozenset(t.lower() for t in entry.tags)
+        candidates = [
+            self._check_tech_stack(entry, profile) if tags_lower & _TECH_TAGS else None,
+            self._check_file_existence(entry) if tags_lower & _FILE_TAGS else None,
+            self._check_test_frameworks(entry, profile) if tags_lower & _TEST_TAGS else None,
+            self._check_package_managers(entry, profile) if tags_lower & _PKG_TAGS else None,
+            self._check_branch_existence(entry) if tags_lower & _BRANCH_TAGS else None,
+        ]
+        return [c for c in candidates if c is not None]
+
+    # ------------------------------------------------------------------
+    # Individual checks
+    # ------------------------------------------------------------------
+
+    def _check_tech_stack(
+        self, entry: MemoryEntry, profile: ProjectProfile
+    ) -> Contradiction | None:
+        """Check if a memory references a library/framework not in the project."""
+        known = set(profile.tech_stack.libraries) | set(profile.tech_stack.frameworks)
+        known_lower = {k.lower() for k in known}
+
+        value_lower = entry.value.lower()
+        for lib in known_lower:
+            if re.search(rf"\b{re.escape(lib)}\b", value_lower):
+                return None  # found in both memory and project
+
+        return self._check_tech_claims(entry.key, value_lower, known_lower)
+
+    def _check_tech_claims(
+        self, key: str, value_lower: str, known_lower: set[str]
+    ) -> Contradiction | None:
+        """Extract tech claims from text and check against known stack."""
+        for pattern in _CLAIM_PATTERNS:
+            match = re.search(pattern, value_lower)
+            if match:
+                claimed = match.group(1)
+                if claimed not in known_lower and len(claimed) > _MIN_CLAIMED_NAME_LENGTH:
+                    return Contradiction(
+                        memory_key=key,
+                        reason=(
+                            f"Memory claims use of '{claimed}' but it was not "
+                            f"found in the project tech stack."
+                        ),
+                        evidence=f"tech_stack.libraries={sorted(known_lower)}",
+                    )
+        return None
+
+    def _check_file_existence(self, entry: MemoryEntry) -> Contradiction | None:
+        """Check if a memory references a file path that no longer exists."""
+        file_patterns = re.findall(
+            r"(?:^|[\s\"'`(])([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)", entry.value
+        )
+
+        for fpath in file_patterns:
+            if fpath.startswith(("/", "\\")) or ".." in fpath:
+                continue
+            full = self._project_root / fpath
+            try:
+                full.resolve().relative_to(self._project_root.resolve())
+            except ValueError:
+                continue
+            if not full.exists():
+                return Contradiction(
+                    memory_key=entry.key,
+                    reason=f"Memory references file '{fpath}' which no longer exists.",
+                    evidence=f"Path checked: {full}",
+                )
+
+        return None
+
+    def _check_test_frameworks(
+        self, entry: MemoryEntry, profile: ProjectProfile
+    ) -> Contradiction | None:
+        """Check if a memory mentions a test framework not detected in the project."""
+        known = {f.lower() for f in profile.test_frameworks}
+        if not known:
+            return None
+
+        value_lower = entry.value.lower()
+        for fw in _TEST_FW_NAMES:
+            if re.search(rf"\b{re.escape(fw)}\b", value_lower) and fw not in known:
+                return Contradiction(
+                    memory_key=entry.key,
+                    reason=(
+                        f"Memory mentions test framework '{fw}' but project "
+                        f"uses {sorted(known)}."
+                    ),
+                    evidence=f"test_frameworks={sorted(known)}",
+                )
+
+        return None
+
+    def _check_package_managers(
+        self, entry: MemoryEntry, profile: ProjectProfile
+    ) -> Contradiction | None:
+        """Check if a memory mentions a package manager not detected in the project."""
+        known = {p.lower() for p in profile.package_managers}
+        if not known:
+            return None
+
+        value_lower = entry.value.lower()
+        for pm in _PM_NAMES:
+            if re.search(rf"\b{re.escape(pm)}\b", value_lower) and pm not in known:
+                return Contradiction(
+                    memory_key=entry.key,
+                    reason=(
+                        f"Memory mentions package manager '{pm}' but project "
+                        f"uses {sorted(known)}."
+                    ),
+                    evidence=f"package_managers={sorted(known)}",
+                )
+
+        return None
+
+    def _check_branch_existence(self, entry: MemoryEntry) -> Contradiction | None:
+        """Check if a branch-scoped memory references a branch that no longer exists."""
+        if not entry.branch:
+            return None
+
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--list", entry.branch],
+                capture_output=True,
+                text=True,
+                cwd=str(self._project_root),
+                timeout=5,
+                check=False,
+            )
+            branches = [b.strip().removeprefix("* ").strip() for b in result.stdout.strip().splitlines()]
+            if entry.branch not in branches:
+                return Contradiction(
+                    memory_key=entry.key,
+                    reason=(
+                        f"Memory is scoped to branch '{entry.branch}' "
+                        f"which no longer exists."
+                    ),
+                    evidence="git branch --list",
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.debug("branch_check_failed", branch=entry.branch, error=str(exc))
+
+        return None
