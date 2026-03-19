@@ -203,12 +203,8 @@ class TestCalculateWeightedConfidence:
 
     def test_newer_entries_weighted_higher(self) -> None:
         """Newer entries have higher weight."""
-        old = _make_entry(
-            "old", "value", confidence=0.5, updated_at="2024-01-01T00:00:00+00:00"
-        )
-        new = _make_entry(
-            "new", "value", confidence=0.9, updated_at="2024-01-02T00:00:00+00:00"
-        )
+        old = _make_entry("old", "value", confidence=0.5, updated_at="2024-01-01T00:00:00+00:00")
+        new = _make_entry("new", "value", confidence=0.9, updated_at="2024-01-02T00:00:00+00:00")
         result = calculate_weighted_confidence([old, new])
         # Result should be closer to 0.9 than 0.5
         assert result > 0.7
@@ -443,9 +439,7 @@ class TestDetectConsolidationReason:
     def test_defaults_to_similarity(self) -> None:
         """Defaults to similarity when no specific pattern."""
         entry = _make_entry("new-entry", "Some content", tier=MemoryTier.pattern)
-        match = _make_entry(
-            "other-entry", "Other content", tier=MemoryTier.architectural
-        )
+        match = _make_entry("other-entry", "Other content", tier=MemoryTier.architectural)
         reason = detect_consolidation_reason(entry, [match])
         assert reason == ConsolidationReason.similarity
 

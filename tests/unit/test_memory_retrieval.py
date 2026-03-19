@@ -192,9 +192,7 @@ class TestMemoryRetriever:
         assert results[0].entry.key == "bad-key"
 
     def test_result_limit_respected(self) -> None:
-        entries = [
-            _make_entry(f"key-{i}", f"matching value {i}") for i in range(20)
-        ]
+        entries = [_make_entry(f"key-{i}", f"matching value {i}") for i in range(20)]
         retriever = MemoryRetriever()
         store = _make_store(entries)
 
@@ -202,9 +200,7 @@ class TestMemoryRetriever:
         assert len(results) <= 5
 
     def test_max_limit_capped(self) -> None:
-        entries = [
-            _make_entry(f"key-{i}", f"value {i}") for i in range(60)
-        ]
+        entries = [_make_entry(f"key-{i}", f"value {i}") for i in range(60)]
         retriever = MemoryRetriever()
         store = _make_store(entries)
 
@@ -383,9 +379,7 @@ class TestBM25Integration:
         store = _make_store(entries)
 
         # Force BM25 to fail by corrupting internal state
-        with patch.object(
-            retriever._bm25, "score", side_effect=RuntimeError("BM25 broken")
-        ):
+        with patch.object(retriever._bm25, "score", side_effect=RuntimeError("BM25 broken")):
             results = retriever.search("python framework", store)
             # Should still get results via word overlap fallback
             assert len(results) >= 1
@@ -439,9 +433,7 @@ class TestBM25Integration:
 
     def test_entry_to_document_includes_tags(self) -> None:
         """Document text should include key, value, and tags."""
-        entry = _make_entry(
-            "my-key", "my value", tags=["tag1", "tag2"]
-        )
+        entry = _make_entry("my-key", "my value", tags=["tag1", "tag2"])
         doc = MemoryRetriever._entry_to_document(entry)
         assert "my-key" in doc
         assert "my value" in doc
@@ -490,9 +482,7 @@ class TestBM25Integration:
         ) -> list[tuple[str, float]]:
             return [("b", 0.9), ("a", 0.7), ("c", 0.5)][:limit]
 
-        with patch.object(
-            retriever, "_vector_search", side_effect=mock_vector_search
-        ):
+        with patch.object(retriever, "_vector_search", side_effect=mock_vector_search):
             results = retriever.search("python", store, limit=5)
         assert len(results) >= 1
         keys = [r.entry.key for r in results]
@@ -529,6 +519,7 @@ class TestRerankerIntegration:
             _make_entry("key-b", "testing library"),
             _make_entry("key-c", "database config"),
         ]
+
         # NoopReranker preserves order, so use a custom reranker that reverses
         class ReverseReranker:
             def rerank(

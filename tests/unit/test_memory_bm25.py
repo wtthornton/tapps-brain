@@ -212,11 +212,13 @@ class TestBM25Scorer:
 
     def test_multi_term_query(self) -> None:
         scorer = BM25Scorer()
-        scorer.build_index([
-            "python testing framework",
-            "java testing library",
-            "python web development",
-        ])
+        scorer.build_index(
+            [
+                "python testing framework",
+                "java testing library",
+                "python web development",
+            ]
+        )
         scores = scorer.score("python testing")
         # Doc 0 matches both terms, should score highest
         assert scores[0] > scores[1]

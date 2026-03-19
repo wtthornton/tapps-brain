@@ -271,16 +271,12 @@ class TestFindSimilar:
 
     def test_excludes_self(self, security_entry: MemoryEntry) -> None:
         """Excludes the entry itself from results."""
-        results = find_similar(
-            security_entry, [security_entry], threshold=0.0, exclude_self=True
-        )
+        results = find_similar(security_entry, [security_entry], threshold=0.0, exclude_self=True)
         assert len(results) == 0
 
     def test_includes_self_when_disabled(self, security_entry: MemoryEntry) -> None:
         """Includes self when exclude_self=False."""
-        results = find_similar(
-            security_entry, [security_entry], threshold=0.0, exclude_self=False
-        )
+        results = find_similar(security_entry, [security_entry], threshold=0.0, exclude_self=False)
         assert len(results) == 1
 
     def test_empty_candidates(self, security_entry: MemoryEntry) -> None:
@@ -315,9 +311,7 @@ class TestFindSimilar:
             value="Some security note",
             tags=["security"],
         )
-        results = find_similar(
-            security_entry, [entry_low, entry_high], threshold=0.1
-        )
+        results = find_similar(security_entry, [entry_low, entry_high], threshold=0.1)
         if len(results) >= 2:
             assert results[0].combined_score >= results[1].combined_score
 

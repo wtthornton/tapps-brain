@@ -88,9 +88,7 @@ class TestMemoryEntry:
         assert system.confidence == 0.9
 
     def test_explicit_confidence_overrides_default(self) -> None:
-        entry = MemoryEntry(
-            key="test-key", value="v", source=MemorySource.human, confidence=0.5
-        )
+        entry = MemoryEntry(key="test-key", value="v", source=MemorySource.human, confidence=0.5)
         assert entry.confidence == 0.5
 
     def test_key_valid_slug(self) -> None:
@@ -147,9 +145,7 @@ class TestMemoryEntry:
             MemoryEntry(key="k", value="v", scope=MemoryScope.branch)
 
     def test_branch_scope_with_branch_succeeds(self) -> None:
-        entry = MemoryEntry(
-            key="k", value="v", scope=MemoryScope.branch, branch="main"
-        )
+        entry = MemoryEntry(key="k", value="v", scope=MemoryScope.branch, branch="main")
         assert entry.branch == "main"
 
     def test_reserved_fields_default_to_none_or_zero(self) -> None:

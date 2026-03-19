@@ -228,15 +228,11 @@ class TestCheckConsolidationOnSave:
             "New JWT configuration",
             tags=["security", "jwt"],
         )
-        result = check_consolidation_on_save(
-            new_entry, mock_store, threshold=0.3, min_entries=5
-        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=5)
         assert result.triggered is False
         assert result.reason == "not_enough_candidates"
 
-    def test_no_similar_entries(
-        self, mock_store: MemoryStore
-    ) -> None:
+    def test_no_similar_entries(self, mock_store: MemoryStore) -> None:
         """Returns not triggered when no similar entries found."""
         mock_store.save(
             key="unrelated-entry",
@@ -255,9 +251,7 @@ class TestCheckConsolidationOnSave:
             "JWT authentication configuration",
             tags=["security", "jwt"],
         )
-        result = check_consolidation_on_save(
-            new_entry, mock_store, threshold=0.9, min_entries=2
-        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.9, min_entries=2)
         assert result.triggered is False
         assert result.reason == "no_similar_entries"
 
@@ -279,16 +273,12 @@ class TestCheckConsolidationOnSave:
             tier=MemoryTier.architectural,
             tags=["security", "jwt"],
         )
-        result = check_consolidation_on_save(
-            new_entry, mock_store, threshold=0.3, min_entries=2
-        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
         assert result.triggered is True
         assert result.consolidated_entry is not None
         assert len(result.source_keys) >= 2
 
-    def test_min_entries_enforcement(
-        self, mock_store: MemoryStore
-    ) -> None:
+    def test_min_entries_enforcement(self, mock_store: MemoryStore) -> None:
         """min_entries is enforced (at least 2)."""
         mock_store.save(
             key="entry-1",
@@ -303,15 +293,11 @@ class TestCheckConsolidationOnSave:
             tier=MemoryTier.context,
             tags=["testing"],
         )
-        result = check_consolidation_on_save(
-            new_entry, mock_store, threshold=0.1, min_entries=5
-        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.1, min_entries=5)
         assert result.triggered is False
         assert result.reason == "not_enough_candidates"
 
-    def test_threshold_behavior(
-        self, mock_store: MemoryStore
-    ) -> None:
+    def test_threshold_behavior(self, mock_store: MemoryStore) -> None:
         """High threshold prevents consolidation when entries are not similar enough."""
         mock_store.save(
             key="entry-database",
@@ -340,9 +326,7 @@ class TestCheckConsolidationOnSave:
             tier=MemoryTier.architectural,
             tags=["api", "fastapi"],
         )
-        result = check_consolidation_on_save(
-            new_entry, mock_store, threshold=0.99, min_entries=2
-        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.99, min_entries=2)
         assert result.triggered is False
         assert result.reason == "no_similar_entries"
 
@@ -368,9 +352,7 @@ class TestRunPeriodicConsolidationScan:
         assert result.scanned is False
         assert "last_scan" in result.skipped_reason
 
-    def test_scans_when_due(
-        self, mock_store: MemoryStore, temp_project_root: Path
-    ) -> None:
+    def test_scans_when_due(self, mock_store: MemoryStore, temp_project_root: Path) -> None:
         """Scans when enough time has passed."""
         state_file = temp_project_root / CONSOLIDATION_STATE_FILE
         state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -396,9 +378,7 @@ class TestRunPeriodicConsolidationScan:
         )
         assert result.scanned is True
 
-    def test_no_groups_found(
-        self, mock_store: MemoryStore, temp_project_root: Path
-    ) -> None:
+    def test_no_groups_found(self, mock_store: MemoryStore, temp_project_root: Path) -> None:
         """Returns zero groups when none found."""
         mock_store.save(
             key="entry-1",
@@ -510,9 +490,7 @@ class TestStateFileHelpers:
         data = json.loads(state_file.read_text())
         assert "last_scan" in data
 
-    def test_update_last_scan_time_preserves_other_data(
-        self, temp_project_root: Path
-    ) -> None:
+    def test_update_last_scan_time_preserves_other_data(self, temp_project_root: Path) -> None:
         """Preserves other data in state file."""
         state_file = temp_project_root / CONSOLIDATION_STATE_FILE
         state_file.parent.mkdir(parents=True, exist_ok=True)

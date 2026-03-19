@@ -62,16 +62,12 @@ class TestIdentifyCandidates:
         assert len(candidates) == 1
         assert candidates[0].key == "test-key"
 
-    def test_contradicted_low_confidence_archived(
-        self, gc: MemoryGarbageCollector
-    ) -> None:
+    def test_contradicted_low_confidence_archived(self, gc: MemoryGarbageCollector) -> None:
         """Contradicted memory with low effective confidence gets archived."""
         now = datetime.now(tz=UTC)
         # Make it old enough that effective confidence < 0.2
         old_update = (now - timedelta(days=180)).isoformat()
-        entry = _make_entry(
-            confidence=0.5, updated_at=old_update, contradicted=True
-        )
+        entry = _make_entry(confidence=0.5, updated_at=old_update, contradicted=True)
 
         candidates = gc.identify_candidates([entry], now=now)
         assert len(candidates) == 1

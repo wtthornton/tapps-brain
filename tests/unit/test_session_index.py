@@ -38,9 +38,7 @@ def test_index_session_truncates_to_max_chunks(tmp_path: pytest.TempPathFactory)
 def test_index_session_truncates_chunk_length(tmp_path: pytest.TempPathFactory) -> None:
     """index_session truncates long chunks to max_chars_per_chunk."""
     long_content = "deploy workflow " * 100
-    count = index_session(
-        tmp_path, "sess-3", [long_content], max_chars_per_chunk=100
-    )
+    count = index_session(tmp_path, "sess-3", [long_content], max_chars_per_chunk=100)
     assert count == 1
     results = search_session_index(tmp_path, "deploy")
     assert len(results) >= 1

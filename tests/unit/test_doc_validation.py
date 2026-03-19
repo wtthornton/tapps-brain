@@ -196,9 +196,7 @@ class TestClaimExtractor:
             seeded_from="manual",
         )
         claims = self.extractor.extract_claims(entry)
-        seeded_claims = [
-            c for c in claims if c.claim_text.startswith("Seeded from")
-        ]
+        seeded_claims = [c for c in claims if c.claim_text.startswith("Seeded from")]
         assert seeded_claims == []
 
 
@@ -215,7 +213,9 @@ class TestDocSimilarityScorer:
 
     def test_empty_doc_returns_no_docs(self) -> None:
         claim = LibraryClaim(
-            library="fastapi", topic="api", claim_text="from fastapi import FastAPI",
+            library="fastapi",
+            topic="api",
+            claim_text="from fastapi import FastAPI",
             claim_type=ClaimType.api_usage,
         )
         result = self.scorer.score_claim(claim, "")
@@ -282,7 +282,8 @@ class TestDocSimilarityScorer:
 
     def test_snippet_length_capped(self) -> None:
         claim = LibraryClaim(
-            library="test", topic="api",
+            library="test",
+            topic="api",
             claim_text="test library usage",
             claim_type=ClaimType.api_usage,
         )
@@ -306,17 +307,19 @@ class TestMemoryDocValidator:
 
     @pytest.fixture()
     def lookup_engine(self) -> MagicMock:
-        return _make_lookup_engine(docs={
-            "fastapi": (
-                "## FastAPI\nFastAPI is a modern web framework for building "
-                "APIs with Python 3.8+ based on standard type hints. "
-                "It uses async def handlers and dependency injection."
-            ),
-            "sqlalchemy": (
-                "## SQLAlchemy\nSQLAlchemy is the Python SQL toolkit and ORM. "
-                "Use Column, Integer, String for model definitions."
-            ),
-        })
+        return _make_lookup_engine(
+            docs={
+                "fastapi": (
+                    "## FastAPI\nFastAPI is a modern web framework for building "
+                    "APIs with Python 3.8+ based on standard type hints. "
+                    "It uses async def handlers and dependency injection."
+                ),
+                "sqlalchemy": (
+                    "## SQLAlchemy\nSQLAlchemy is the Python SQL toolkit and ORM. "
+                    "Use Column, Integer, String for model definitions."
+                ),
+            }
+        )
 
     @pytest.fixture()
     def validator(self, lookup_engine: MagicMock) -> MemoryDocValidator:
@@ -324,7 +327,8 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_validate_entry_with_claims(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         entry = _make_entry(value="from fastapi import FastAPI for our web API")
         result = await validator.validate_entry(entry)
@@ -334,7 +338,8 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_validate_entry_no_claims(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         entry = _make_entry(value="The project uses a monorepo structure.")
         result = await validator.validate_entry(entry)
@@ -343,7 +348,8 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_validate_entry_recently_validated(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         entry = _make_entry(
@@ -356,7 +362,8 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_validate_entry_old_validation_not_skipped(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         old_date = (datetime.now(tz=UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
         entry = _make_entry(
@@ -375,12 +382,14 @@ class TestMemoryDocValidator:
         result = await validator.validate_entry(entry)
         # Should be inconclusive since no docs available
         assert result.overall_status in (
-            ValidationStatus.inconclusive, ValidationStatus.skipped,
+            ValidationStatus.inconclusive,
+            ValidationStatus.skipped,
         )
 
     @pytest.mark.asyncio()
     async def test_validate_batch_counts(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         entries = [
             _make_entry(key="e1", value="from fastapi import FastAPI"),
@@ -395,22 +404,21 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_validate_batch_budget_exhaustion(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         entries = [
-            _make_entry(key=f"e{i}", value=f"from lib{i} import something")
-            for i in range(25)
+            _make_entry(key=f"e{i}", value=f"from lib{i} import something") for i in range(25)
         ]
         report = await validator.validate_batch(entries, max_lookups=5)
         # Some entries should be skipped due to budget
-        skipped_budget = [
-            e for e in report.entries if e.reason == "Lookup budget exhausted"
-        ]
+        skipped_budget = [e for e in report.entries if e.reason == "Lookup budget exhausted"]
         assert len(skipped_budget) > 0
 
     @pytest.mark.asyncio()
     async def test_validate_stale(
-        self, validator: MemoryDocValidator,
+        self,
+        validator: MemoryDocValidator,
     ) -> None:
         # Low confidence = stale
         entries = [
@@ -418,7 +426,9 @@ class TestMemoryDocValidator:
             _make_entry(key="fresh1", value="from fastapi import FastAPI", confidence=0.9),
         ]
         report = await validator.validate_stale(
-            entries, confidence_threshold=0.5, max_entries=10,
+            entries,
+            confidence_threshold=0.5,
+            max_entries=10,
         )
         # Only low-confidence entries should be validated
         validated_keys = {e.entry_key for e in report.entries}
@@ -426,7 +436,8 @@ class TestMemoryDocValidator:
 
     @pytest.mark.asyncio()
     async def test_doc_cache_avoids_duplicate_lookups(
-        self, lookup_engine: MagicMock,
+        self,
+        lookup_engine: MagicMock,
     ) -> None:
         validator = MemoryDocValidator(lookup_engine)
         entries = [
@@ -436,7 +447,8 @@ class TestMemoryDocValidator:
         await validator.validate_batch(entries)
         # fastapi should only be looked up once (cached)
         fastapi_calls = [
-            c for c in lookup_engine.lookup.call_args_list
+            c
+            for c in lookup_engine.lookup.call_args_list
             if c.args[0] == "fastapi" or (c.kwargs and c.kwargs.get("library") == "fastapi")
         ]
         # May be 1 or 2 depending on topics, but caching should reduce calls
@@ -455,7 +467,9 @@ class TestApplyResults:
     def store(self) -> MagicMock:
         mock = MagicMock()
         mock.get.return_value = _make_entry(
-            confidence=0.6, source="agent", tags=["existing-tag"],
+            confidence=0.6,
+            source="agent",
+            tags=["existing-tag"],
         )
         return mock
 
@@ -469,7 +483,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_apply_boosts_validated(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         report = ValidationReport(
             validated=1,
@@ -490,7 +506,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_apply_penalises_flagged(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         report = ValidationReport(
             flagged=1,
@@ -518,7 +536,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_apply_dry_run(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         report = ValidationReport(
             validated=1,
@@ -537,7 +557,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_apply_skipped_entry_unchanged(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         report = ValidationReport(
             skipped=1,
@@ -554,7 +576,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_apply_clears_doc_contradiction(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         store.get.return_value = _make_entry(
             confidence=0.4,
@@ -578,7 +602,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_confidence_capped_by_source(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         store.get.return_value = _make_entry(confidence=0.84, source="agent")
         report = ValidationReport(
@@ -598,7 +624,9 @@ class TestApplyResults:
 
     @pytest.mark.asyncio()
     async def test_confidence_floor_enforced(
-        self, validator: MemoryDocValidator, store: MagicMock,
+        self,
+        validator: MemoryDocValidator,
+        store: MagicMock,
     ) -> None:
         store.get.return_value = _make_entry(confidence=0.15, source="agent")
         report = ValidationReport(
@@ -743,5 +771,3 @@ class TestModels:
         )
         assert claim.library == "fastapi"
         assert claim.claim_type == ClaimType.api_usage
-
-

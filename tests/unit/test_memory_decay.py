@@ -89,12 +89,8 @@ class TestCalculateDecayedConfidence:
         now = datetime.now(tz=UTC)
         updated = (now - timedelta(days=60)).isoformat()
 
-        arch = _make_entry(
-            tier=MemoryTier.architectural, confidence=0.8, updated_at=updated
-        )
-        pat = _make_entry(
-            tier=MemoryTier.pattern, confidence=0.8, updated_at=updated
-        )
+        arch = _make_entry(tier=MemoryTier.architectural, confidence=0.8, updated_at=updated)
+        pat = _make_entry(tier=MemoryTier.pattern, confidence=0.8, updated_at=updated)
 
         arch_conf = calculate_decayed_confidence(arch, config, now=now)
         pat_conf = calculate_decayed_confidence(pat, config, now=now)
@@ -112,9 +108,7 @@ class TestCalculateDecayedConfidence:
         pat_conf = calculate_decayed_confidence(pat, config, now=now)
         assert ctx_conf < pat_conf
 
-    def test_procedural_decays_between_pattern_and_context(
-        self, config: DecayConfig
-    ) -> None:
+    def test_procedural_decays_between_pattern_and_context(self, config: DecayConfig) -> None:
         """Procedural (30d half-life) decays slower than context (14d).
 
         Faster than pattern (60d). Epic 65.11.
@@ -122,9 +116,7 @@ class TestCalculateDecayedConfidence:
         now = datetime.now(tz=UTC)
         updated = (now - timedelta(days=30)).isoformat()
 
-        proc = _make_entry(
-            tier=MemoryTier.procedural, confidence=0.8, updated_at=updated
-        )
+        proc = _make_entry(tier=MemoryTier.procedural, confidence=0.8, updated_at=updated)
         ctx = _make_entry(tier=MemoryTier.context, confidence=0.8, updated_at=updated)
         pat = _make_entry(tier=MemoryTier.pattern, confidence=0.8, updated_at=updated)
 

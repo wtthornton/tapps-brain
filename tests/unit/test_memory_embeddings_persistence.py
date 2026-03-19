@@ -26,9 +26,7 @@ def persistence(tmp_path: Path) -> MemoryPersistence:
 class TestEmbeddingPersistence:
     """Tests for embedding column storage and retrieval."""
 
-    def test_save_and_load_entry_with_embedding(
-        self, persistence: MemoryPersistence
-    ) -> None:
+    def test_save_and_load_entry_with_embedding(self, persistence: MemoryPersistence) -> None:
         embedding = [0.1, 0.2, 0.3] * 128  # 384 dims
         entry = MemoryEntry(
             key="embed-test",
@@ -43,9 +41,7 @@ class TestEmbeddingPersistence:
         assert loaded.embedding is not None
         assert loaded.embedding == embedding
 
-    def test_save_and_load_entry_without_embedding(
-        self, persistence: MemoryPersistence
-    ) -> None:
+    def test_save_and_load_entry_without_embedding(self, persistence: MemoryPersistence) -> None:
         entry = MemoryEntry(
             key="no-embed",
             value="No embedding",
@@ -60,9 +56,7 @@ class TestEmbeddingPersistence:
     def test_schema_version_2_after_init(self, persistence: MemoryPersistence) -> None:
         assert persistence.get_schema_version() >= 2  # v3 adds session_index (Epic 65.10)
 
-    def test_existing_entries_null_embedding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_existing_entries_null_embedding(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
         entry = MemoryEntry(key="legacy", value="Before embedding")
         p.save(entry)

@@ -56,10 +56,7 @@ class TestExtractDurableFacts:
 
     def test_max_facts_limit(self) -> None:
         """max_facts limits output."""
-        ctx = "\n\n".join(
-            f"We decided to use option {i} for component {i}."
-            for i in range(15)
-        )
+        ctx = "\n\n".join(f"We decided to use option {i} for component {i}." for i in range(15))
         facts = extract_durable_facts(ctx, max_facts=5)
         assert len(facts) <= 5
 

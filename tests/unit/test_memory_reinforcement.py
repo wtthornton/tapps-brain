@@ -98,9 +98,7 @@ class TestReinforce:
         updates2 = reinforce(entry2, config, now=now)
         assert updates2["reinforce_count"] == 2
 
-    def test_reinforced_memory_decays_from_reinforcement_time(
-        self, config: DecayConfig
-    ) -> None:
+    def test_reinforced_memory_decays_from_reinforcement_time(self, config: DecayConfig) -> None:
         """After reinforcement, decay measures from the reinforcement timestamp."""
         now = datetime.now(tz=UTC)
         old_update = (now - timedelta(days=120)).isoformat()
