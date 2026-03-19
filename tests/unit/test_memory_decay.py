@@ -14,6 +14,7 @@ from tapps_brain.decay import (
     is_stale,
 )
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+from tests.factories import make_entry
 
 
 def _make_entry(
@@ -25,16 +26,11 @@ def _make_entry(
     last_reinforced: str | None = None,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry with controlled timestamps."""
-    now = datetime.now(tz=UTC).isoformat()
-    return MemoryEntry(
-        key="test-key",
-        value="test value",
+    return make_entry(
         tier=tier,
         source=source,
         confidence=confidence,
-        updated_at=updated_at or now,
-        created_at=now,
-        last_accessed=now,
+        updated_at=updated_at,
         last_reinforced=last_reinforced,
     )
 

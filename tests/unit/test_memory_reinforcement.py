@@ -7,8 +7,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence
-from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+from tapps_brain.models import MemoryEntry, MemorySource
 from tapps_brain.reinforcement import reinforce
+from tests.factories import make_entry
 
 
 def _make_entry(
@@ -20,20 +21,13 @@ def _make_entry(
     reinforce_count: int = 0,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry for reinforcement testing."""
-    now = datetime.now(tz=UTC).isoformat()
-    entry = MemoryEntry(
-        key="test-key",
-        value="test value",
-        tier=MemoryTier.pattern,
-        source=source,
+    return make_entry(
         confidence=confidence,
-        updated_at=updated_at or now,
-        created_at=now,
-        last_accessed=now,
+        source=source,
+        updated_at=updated_at,
         last_reinforced=last_reinforced,
         reinforce_count=reinforce_count,
     )
-    return entry
 
 
 @pytest.fixture

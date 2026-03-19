@@ -9,7 +9,8 @@ import pytest
 
 from tapps_brain.decay import DecayConfig
 from tapps_brain.gc import GCResult, MemoryGarbageCollector
-from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTier
+from tapps_brain.models import MemoryEntry, MemoryScope, MemoryTier
+from tests.factories import make_entry
 
 
 def _make_entry(
@@ -22,22 +23,15 @@ def _make_entry(
     contradicted: bool = False,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry with controlled state."""
-    now_iso = datetime.now(tz=UTC).isoformat()
-    entry = MemoryEntry(
+    return make_entry(
         key=key,
-        value="test value",
         tier=tier,
-        source=MemorySource.agent,
         confidence=confidence,
-        updated_at=updated_at or now_iso,
-        created_at=now_iso,
-        last_accessed=now_iso,
+        updated_at=updated_at,
         scope=scope,
+        contradicted=contradicted,
+        contradiction_reason="test" if contradicted else None,
     )
-    if contradicted:
-        object.__setattr__(entry, "contradicted", True)
-        object.__setattr__(entry, "contradiction_reason", "test")
-    return entry
 
 
 @pytest.fixture

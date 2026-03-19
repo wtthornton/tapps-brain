@@ -23,6 +23,7 @@ from tapps_brain.federation import (
     unregister_project,
 )
 from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTier
+from tests.factories import make_entry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,14 +57,14 @@ def _make_entry(
     tags: list[str] | None = None,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry with sensible defaults."""
-    return MemoryEntry(
+    return make_entry(
         key=key,
         value=value,
         tier=tier,
         confidence=confidence,
         source=source,
         scope=scope,
-        tags=tags or [],
+        tags=tags,
     )
 
 

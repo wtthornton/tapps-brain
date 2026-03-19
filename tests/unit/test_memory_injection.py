@@ -12,12 +12,8 @@ from tapps_brain.injection import (
     estimate_tokens,
     inject_memories,
 )
-from tapps_brain.models import (
-    MemoryEntry,
-    MemoryScope,
-    MemorySource,
-    MemoryTier,
-)
+from tapps_brain.models import MemoryEntry
+from tests.factories import make_entry
 
 _RECENT = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
 
@@ -33,19 +29,14 @@ def _make_entry(
     confidence: float = 0.8,
     contradicted: bool = False,
 ) -> MemoryEntry:
-    return MemoryEntry(
+    return make_entry(
         key=key,
         value=value,
-        tier=MemoryTier.pattern,
         confidence=confidence,
-        source=MemorySource.agent,
-        source_agent="test",
-        scope=MemoryScope.project,
-        tags=[],
+        access_count=5,
         updated_at=_RECENT,
         created_at=_RECENT,
         last_accessed=_RECENT,
-        access_count=5,
         contradicted=contradicted,
     )
 

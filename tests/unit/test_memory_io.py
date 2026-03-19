@@ -15,11 +15,10 @@ from tapps_brain.io import (
 )
 from tapps_brain.models import (
     MemoryEntry,
-    MemoryScope,
     MemorySnapshot,
-    MemorySource,
     MemoryTier,
 )
+from tests.factories import make_entry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -27,13 +26,10 @@ from tapps_brain.models import (
 
 
 def _make_entry(key: str = "test-key", value: str = "test value") -> MemoryEntry:
-    return MemoryEntry(
+    return make_entry(
         key=key,
         value=value,
-        tier=MemoryTier.pattern,
-        source=MemorySource.agent,
         source_agent="test-agent",
-        scope=MemoryScope.project,
         tags=["test"],
     )
 

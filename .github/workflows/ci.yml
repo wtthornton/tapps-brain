@@ -31,7 +31,7 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --extra dev --python ${{ matrix.python-version }}
-      - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=78
+      - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
   build:
     runs-on: ubuntu-latest

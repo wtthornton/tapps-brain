@@ -1,7 +1,12 @@
-"""Integration and edge case tests for Epic 23 memory foundation.
+"""Integration and edge case tests for the memory foundation.
 
-Tests full round-trips from store -> persistence -> reload, model edge
-cases, concurrency, and decay/contradiction integration with the store.
+Tests full round-trips from store -> persistence -> reload, store-level
+edge cases, concurrency, persistence edge cases, and decay/contradiction
+integration with the store.
+
+Note: Pure model validation tests (key format, value length, tags, etc.)
+live in ``test_memory_models.py`` — this file focuses on *store-level*
+behaviour and persistence round-trips.
 """
 
 from __future__ import annotations
@@ -14,13 +19,11 @@ import pytest
 from tapps_brain.decay import DecayConfig, get_effective_confidence
 from tapps_brain.models import (
     MAX_KEY_LENGTH,
-    MAX_TAGS,
     MAX_VALUE_LENGTH,
     MemoryEntry,
-    MemoryScope,
-    MemorySource,
     MemoryTier,
 )
+from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -63,6 +66,33 @@ class TestRoundTrip:
         assert entry.value == "persisted value"
         assert entry.tier == MemoryTier.architectural
 
+    def test_save_close_reload_full_fields(self, tmp_path: Path) -> None:
+        """Save with all fields, close, reopen — verify every field survives."""
+        store1 = MemoryStore(tmp_path)
+        result = store1.save(
+            key="arch-decision",
+            value="Use SQLite for persistence",
+            tier="architectural",
+            source="human",
+            source_agent="claude-code",
+            scope="project",
+            tags=["architecture", "database"],
+            confidence=0.95,
+        )
+        assert isinstance(result, MemoryEntry)
+        store1.close()
+
+        store2 = MemoryStore(tmp_path)
+        loaded = store2.get("arch-decision")
+        store2.close()
+
+        assert loaded is not None
+        assert loaded.value == "Use SQLite for persistence"
+        assert loaded.tier == MemoryTier.architectural
+        assert loaded.source_agent == "claude-code"
+        assert loaded.tags == ["architecture", "database"]
+        assert loaded.confidence == 0.95
+
     def test_update_preserves_created_at(self, store: MemoryStore) -> None:
         """Updating a key preserves original created_at."""
         store.save(key="update-key", value="v1")
@@ -86,6 +116,7 @@ class TestRoundTrip:
 
         store2 = MemoryStore(tmp_path)
         assert store2.get("delete-me") is None
+        assert store2.count() == 0
         store2.close()
 
     def test_search_via_fts5(self, store: MemoryStore) -> None:
@@ -96,6 +127,33 @@ class TestRoundTrip:
         results = store.search("SQLAlchemy")
         assert len(results) >= 1
         assert any(r.key == "python-orm" for r in results)
+
+    def test_search_after_reload(self, tmp_path: Path) -> None:
+        """FTS5 search works after store close and reopen."""
+        store1 = MemoryStore(tmp_path)
+        store1.save(key="pattern-1", value="Always use type annotations in Python")
+        store1.close()
+
+        store2 = MemoryStore(tmp_path)
+        results = store2.search("annotations")
+        assert len(results) >= 1
+        assert results[0].key == "pattern-1"
+        store2.close()
+
+    def test_multiple_entries_survive_reload(self, tmp_path: Path) -> None:
+        """Batch of entries survives close and reopen."""
+        store1 = MemoryStore(tmp_path)
+        for i in range(10):
+            store1.save(key=f"entry-{i}", value=f"value-{i}")
+        store1.close()
+
+        store2 = MemoryStore(tmp_path)
+        assert store2.count() == 10
+        for i in range(10):
+            loaded = store2.get(f"entry-{i}")
+            assert loaded is not None
+            assert loaded.value == f"value-{i}"
+        store2.close()
 
     def test_list_with_tier_filter(self, store: MemoryStore) -> None:
         """list_all respects tier filter."""
@@ -177,16 +235,24 @@ class TestDecayStoreIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Edge cases: model validation
+# Store-level edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestModelEdgeCases:
-    def test_empty_store_list(self, store: MemoryStore) -> None:
-        assert store.list_all() == []
-
-    def test_empty_store_count(self, store: MemoryStore) -> None:
-        assert store.count() == 0
+class TestStoreEdgeCases:
+    def test_empty_store_operations(self, tmp_path: Path) -> None:
+        """All operations on an empty store behave gracefully."""
+        store = MemoryStore(tmp_path)
+        try:
+            assert store.count() == 0
+            assert store.get("nonexistent") is None
+            assert store.list_all() == []
+            assert store.search("anything") == []
+            assert store.delete("nonexistent") is False
+            snap = store.snapshot()
+            assert snap.total_count == 0
+        finally:
+            store.close()
 
     def test_get_nonexistent_key(self, store: MemoryStore) -> None:
         assert store.get("no-such-key") is None
@@ -197,64 +263,97 @@ class TestModelEdgeCases:
     def test_update_fields_nonexistent(self, store: MemoryStore) -> None:
         assert store.update_fields("no-such-key", confidence=0.5) is None
 
-    def test_max_key_length(self) -> None:
-        key = "a" * MAX_KEY_LENGTH
-        entry = MemoryEntry(key=key, value="test")
-        assert entry.key == key
+    def test_max_key_length_roundtrip(self, tmp_path: Path) -> None:
+        """Max-length key survives save and reload."""
+        store = MemoryStore(tmp_path)
+        try:
+            long_key = "a" * MAX_KEY_LENGTH
+            result = store.save(key=long_key, value="value")
+            assert isinstance(result, MemoryEntry)
+            loaded = store.get(long_key)
+            assert loaded is not None
+        finally:
+            store.close()
 
-    def test_key_too_long_rejected(self) -> None:
-        key = "a" * (MAX_KEY_LENGTH + 1)
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key=key, value="test")
+    def test_max_value_length_roundtrip(self, tmp_path: Path) -> None:
+        """Max-length value survives save and reload."""
+        store = MemoryStore(tmp_path)
+        try:
+            long_value = "x" * MAX_VALUE_LENGTH
+            result = store.save(key="long-val", value=long_value)
+            assert isinstance(result, MemoryEntry)
+            loaded = store.get("long-val")
+            assert loaded is not None
+            assert len(loaded.value) == MAX_VALUE_LENGTH
+        finally:
+            store.close()
 
-    def test_max_value_length(self) -> None:
-        value = "x" * MAX_VALUE_LENGTH
-        entry = MemoryEntry(key="big-value", value=value)
-        assert len(entry.value) == MAX_VALUE_LENGTH
+    def test_max_tags_roundtrip(self, tmp_path: Path) -> None:
+        """Max-count tags survive save and reload."""
+        store = MemoryStore(tmp_path)
+        try:
+            tags = [f"tag{i}" for i in range(10)]
+            result = store.save(key="many-tags", value="v", tags=tags)
+            assert isinstance(result, MemoryEntry)
+            assert len(result.tags) == 10
+        finally:
+            store.close()
 
-    def test_value_too_long_rejected(self) -> None:
-        value = "x" * (MAX_VALUE_LENGTH + 1)
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key="too-big", value=value)
+    def test_invalid_tier_rejected(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path)
+        try:
+            with pytest.raises(ValueError):
+                store.save(key="bad-tier", value="v", tier="nonexistent")
+        finally:
+            store.close()
 
-    def test_empty_value_rejected(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key="empty-val", value="   ")
+    def test_invalid_scope_rejected(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path)
+        try:
+            with pytest.raises(ValueError):
+                store.save(key="bad-scope", value="v", scope="nonexistent")
+        finally:
+            store.close()
 
-    def test_max_tags(self) -> None:
-        tags = [f"tag-{i}" for i in range(MAX_TAGS)]
-        entry = MemoryEntry(key="many-tags", value="test", tags=tags)
-        assert len(entry.tags) == MAX_TAGS
+    def test_branch_scope_requires_branch(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path)
+        try:
+            with pytest.raises(ValueError):
+                store.save(key="no-branch", value="v", scope="branch")
+        finally:
+            store.close()
 
-    def test_too_many_tags_rejected(self) -> None:
-        tags = [f"tag-{i}" for i in range(MAX_TAGS + 1)]
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key="too-many-tags", value="test", tags=tags)
 
-    def test_invalid_key_format(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key="UPPERCASE", value="test")
+# ---------------------------------------------------------------------------
+# Persistence edge cases
+# ---------------------------------------------------------------------------
 
-    def test_branch_required_for_branch_scope(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
-            MemoryEntry(key="branch-test", value="test", scope=MemoryScope.branch)
 
-    def test_branch_scope_with_branch(self) -> None:
-        entry = MemoryEntry(
-            key="branch-test", value="test", scope=MemoryScope.branch, branch="main"
-        )
-        assert entry.branch == "main"
+class TestPersistenceEdgeCases:
+    """Edge cases for the SQLite persistence layer."""
 
-    def test_source_confidence_defaults(self) -> None:
-        human = MemoryEntry(key="h1", value="test", source=MemorySource.human)
-        agent = MemoryEntry(key="a1", value="test", source=MemorySource.agent)
-        inferred = MemoryEntry(key="i1", value="test", source=MemorySource.inferred)
-        system = MemoryEntry(key="s1", value="test", source=MemorySource.system)
+    def test_schema_version_persists(self, tmp_path: Path) -> None:
+        p1 = MemoryPersistence(tmp_path)
+        v1 = p1.get_schema_version()
+        assert v1 >= 1  # Migrations run on init
+        p1.close()
 
-        assert human.confidence == 0.95
-        assert agent.confidence == 0.6
-        assert inferred.confidence == 0.4
-        assert system.confidence == 0.9
+        p2 = MemoryPersistence(tmp_path)
+        assert p2.get_schema_version() == v1
+        p2.close()
+
+    def test_fts_special_chars_no_crash(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save(MemoryEntry(key="special", value="Use C++ and C# languages"))
+        results = p.search("C++")
+        assert isinstance(results, list)
+        p.close()
+
+    def test_empty_fts_search(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.search("") == []
+        assert p.search("   ") == []
+        p.close()
 
 
 # ---------------------------------------------------------------------------

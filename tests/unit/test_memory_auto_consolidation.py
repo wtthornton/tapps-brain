@@ -25,32 +25,7 @@ from tapps_brain.models import (
     MemoryTier,
 )
 from tapps_brain.store import ConsolidationConfig, MemoryStore
-
-# ---------------------------------------------------------------------------
-# Test fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_entry(
-    key: str,
-    value: str,
-    *,
-    tier: MemoryTier = MemoryTier.pattern,
-    confidence: float = 0.7,
-    tags: list[str] | None = None,
-    updated_at: str | None = None,
-) -> MemoryEntry:
-    """Helper to create test entries."""
-    if updated_at is None:
-        updated_at = datetime.now(tz=UTC).isoformat()
-    return MemoryEntry(
-        key=key,
-        value=value,
-        tier=tier,
-        confidence=confidence,
-        tags=tags or [],
-        updated_at=updated_at,
-    )
+from tests.factories import make_entry as _make_entry
 
 
 @pytest.fixture

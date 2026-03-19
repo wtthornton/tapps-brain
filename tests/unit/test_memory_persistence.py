@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -204,3 +207,552 @@ class TestMemoryPersistence:
         assert loaded is not None
         assert loaded.scope == MemoryScope.branch
         assert loaded.branch == "feature-x"
+
+    def test_close_is_safe(self, tmp_path: Path) -> None:
+        """Closing persistence should not raise."""
+        p = MemoryPersistence(tmp_path)
+        p.close()
+
+    def test_save_entry_with_embedding(self, persistence: MemoryPersistence) -> None:
+        """Entries with embeddings roundtrip through save/get."""
+        entry = MemoryEntry(
+            key="emb-test",
+            value="embedding roundtrip",
+            embedding=[0.1, 0.2, 0.3],
+        )
+        persistence.save(entry)
+        loaded = persistence.get("emb-test")
+        assert loaded is not None
+        assert loaded.embedding == [0.1, 0.2, 0.3]
+
+    def test_save_entry_without_embedding(self, persistence: MemoryPersistence) -> None:
+        """Entries without embeddings get None on load."""
+        entry = MemoryEntry(key="no-emb", value="no embedding")
+        persistence.save(entry)
+        loaded = persistence.get("no-emb")
+        assert loaded is not None
+        assert loaded.embedding is None
+
+
+class TestSchemaMigrations:
+    """Tests for schema migration paths."""
+
+    def _create_v1_db(self, db_path: str) -> None:
+        """Manually create a v1 schema database."""
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version "
+            "(version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS memories (
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                tier TEXT NOT NULL DEFAULT 'pattern',
+                confidence REAL NOT NULL DEFAULT 0.6,
+                source TEXT NOT NULL DEFAULT 'agent',
+                source_agent TEXT NOT NULL DEFAULT 'unknown',
+                scope TEXT NOT NULL DEFAULT 'project',
+                tags TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_accessed TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                branch TEXT,
+                last_reinforced TEXT,
+                reinforce_count INTEGER NOT NULL DEFAULT 0,
+                contradicted INTEGER NOT NULL DEFAULT 0,
+                contradiction_reason TEXT,
+                seeded_from TEXT,
+                PRIMARY KEY (key)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence)")
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
+            USING fts5(key, value, tags, content=memories, content_rowid=rowid)
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+                INSERT INTO memories_fts(rowid, key, value, tags)
+                VALUES (new.rowid, new.key, new.value, new.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
+                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
+                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+                INSERT INTO memories_fts(rowid, key, value, tags)
+                VALUES (new.rowid, new.key, new.value, new.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS archived_memories (
+                key TEXT NOT NULL, value TEXT NOT NULL, tier TEXT NOT NULL,
+                confidence REAL NOT NULL, source TEXT NOT NULL,
+                source_agent TEXT NOT NULL, scope TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, last_accessed TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0, branch TEXT,
+                last_reinforced TEXT, reinforce_count INTEGER NOT NULL DEFAULT 0,
+                contradicted INTEGER NOT NULL DEFAULT 0, contradiction_reason TEXT,
+                seeded_from TEXT, archived_at TEXT NOT NULL
+            )
+        """)
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (1, now),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_migrate_v1_to_v4(self, tmp_path: Path) -> None:
+        """Opening a v1 DB should migrate it all the way to v4."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+        self._create_v1_db(db_path)
+
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 4
+
+        # Verify v2 migration: embedding column exists
+        row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
+        columns = [r[1] for r in row]
+        assert "embedding" in columns
+
+        # Verify v3 migration: session_index table exists
+        tables = [
+            r[0]
+            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        ]
+        assert "session_index" in tables
+
+        # Verify v4 migration: relations table exists
+        assert "relations" in tables
+        p.close()
+
+    def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
+        """A v2 DB (with embedding column) should migrate to v4."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        # Create v1, then manually add v2 migration
+        self._create_v1_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (2, now),
+        )
+        conn.commit()
+        conn.close()
+
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 4
+
+        tables = [
+            r[0]
+            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        ]
+        assert "session_index" in tables
+        assert "relations" in tables
+        p.close()
+
+    def test_migrate_v3_to_v4(self, tmp_path: Path) -> None:
+        """A v3 DB should migrate to v4 (adds relations table)."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        self._create_v1_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (2, now),
+        )
+        # Create session_index for v3
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS session_index (
+                session_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, chunk_index)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (3, now),
+        )
+        conn.commit()
+        conn.close()
+
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 4
+        tables = [
+            r[0]
+            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        ]
+        assert "relations" in tables
+        p.close()
+
+    def test_v1_to_v2_duplicate_column_is_idempotent(self, tmp_path: Path) -> None:
+        """Re-running v1->v2 migration when embedding column already exists."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        self._create_v1_db(db_path)
+        # Pre-add embedding column to simulate partial migration
+        conn = sqlite3.connect(db_path)
+        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+        conn.commit()
+        conn.close()
+
+        # Opening should not raise even though column already exists
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 4
+        p.close()
+
+    def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
+        """Data inserted at v1 is still readable after migration to v4."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        self._create_v1_db(db_path)
+
+        # Insert a row into the v1 schema
+        conn = sqlite3.connect(db_path)
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            "INSERT INTO memories "
+            "(key, value, tier, confidence, source, source_agent, scope, tags, "
+            "created_at, updated_at, last_accessed, access_count) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "old-key",
+                "old value",
+                "pattern",
+                0.6,
+                "agent",
+                "unknown",
+                "project",
+                "[]",
+                now,
+                now,
+                now,
+                0,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        p = MemoryPersistence(tmp_path)
+        loaded = p.get("old-key")
+        assert loaded is not None
+        assert loaded.value == "old value"
+        assert loaded.embedding is None
+        p.close()
+
+
+class TestSessionIndex:
+    """Tests for session_index operations."""
+
+    def test_save_and_search_session_chunks(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        stored = p.save_session_chunks("sess-1", ["hello world", "foo bar"])
+        assert stored == 2
+        assert p.count_session_chunks() == 2
+
+        results = p.search_session_index("hello")
+        assert len(results) >= 1
+        assert results[0]["session_id"] == "sess-1"
+        p.close()
+
+    def test_save_session_chunks_empty(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.save_session_chunks("sess-1", []) == 0
+        assert p.save_session_chunks("", ["content"]) == 0
+        assert p.save_session_chunks("  ", ["content"]) == 0
+        p.close()
+
+    def test_save_session_chunks_respects_max(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        chunks = [f"chunk {i}" for i in range(100)]
+        stored = p.save_session_chunks("sess-1", chunks, max_chunks=5)
+        assert stored == 5
+        p.close()
+
+    def test_save_session_chunks_truncates_content(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        long_content = "hello world repeated " * 50  # >1000 chars
+        stored = p.save_session_chunks("sess-1", [long_content], max_chars_per_chunk=50)
+        assert stored == 1
+        # Verify stored content is truncated by reading from DB directly
+        row = p._conn.execute(
+            "SELECT content FROM session_index WHERE session_id = ?",
+            ("sess-1",),
+        ).fetchone()
+        assert row is not None
+        assert len(row[0]) <= 50
+        p.close()
+
+    def test_save_session_chunks_skips_empty_content(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        stored = p.save_session_chunks("sess-1", ["", "  ", "valid"])
+        assert stored == 1
+        p.close()
+
+    def test_search_session_index_empty_query(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.search_session_index("") == []
+        assert p.search_session_index("   ") == []
+        p.close()
+
+    def test_delete_expired_session_chunks(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_session_chunks("sess-1", ["old content"])
+        # Delete with ttl_days=0 should delete everything
+        deleted = p.delete_expired_session_chunks(ttl_days=0)
+        assert deleted >= 1
+        assert p.count_session_chunks() == 0
+        p.close()
+
+    def test_count_session_chunks_empty(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.count_session_chunks() == 0
+        p.close()
+
+
+class TestRelations:
+    """Tests for relations table operations."""
+
+    def test_save_and_list_relations(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_relation("moduleA", "depends_on", "moduleB", ["key1"], 0.9)
+        relations = p.list_relations()
+        assert len(relations) == 1
+        assert relations[0]["subject"] == "moduleA"
+        assert relations[0]["predicate"] == "depends_on"
+        assert relations[0]["object_entity"] == "moduleB"
+        assert relations[0]["source_entry_keys"] == ["key1"]
+        assert relations[0]["confidence"] == 0.9
+        assert "created_at" in relations[0]
+        p.close()
+
+    def test_save_relation_replaces(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_relation("A", "uses", "B", ["k1"], 0.5)
+        p.save_relation("A", "uses", "B", ["k1", "k2"], 0.9)
+        assert p.count_relations() == 1
+        rel = p.list_relations()[0]
+        assert rel["source_entry_keys"] == ["k1", "k2"]
+        assert rel["confidence"] == 0.9
+        p.close()
+
+    def test_count_relations(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.count_relations() == 0
+        p.save_relation("A", "uses", "B", [], 0.8)
+        assert p.count_relations() == 1
+        p.save_relation("C", "uses", "D", [], 0.8)
+        assert p.count_relations() == 2
+        p.close()
+
+    def test_list_relations_empty(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        assert p.list_relations() == []
+        p.close()
+
+
+class TestAuditLogTruncation:
+    """Tests for audit log truncation behavior."""
+
+    def test_audit_log_truncation(self, tmp_path: Path) -> None:
+        """Audit log truncates when exceeding max lines."""
+        p = MemoryPersistence(tmp_path)
+        # Write many entries to trigger audit log growth
+        # We can write directly to the audit log to simulate large logs
+        audit_path = p._audit_path
+        # Write 10001 lines
+        lines = []
+        for i in range(10_001):
+            record = {"action": "save", "key": f"k-{i}", "timestamp": "2024-01-01"}
+            lines.append(json.dumps(record))
+        audit_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        # Trigger a save which calls _maybe_truncate_audit
+        entry = MemoryEntry(key="trunc-test", value="trigger truncation")
+        p.save(entry)
+
+        result_lines = audit_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(result_lines) <= 10_001  # save adds one then truncates
+        p.close()
+
+    def test_audit_log_write_failure(self, tmp_path: Path) -> None:
+        """Audit log failure should not crash save."""
+        p = MemoryPersistence(tmp_path)
+        # Make audit path a directory to cause OSError
+        p._audit_path.mkdir(parents=True, exist_ok=True)
+        # This should not raise
+        entry = MemoryEntry(key="fail-audit", value="should not crash")
+        p.save(entry)
+        loaded = p.get("fail-audit")
+        assert loaded is not None
+        p.close()
+
+
+class TestRowToEntryEdgeCases:
+    """Tests for _row_to_entry edge cases."""
+
+    def test_invalid_tags_json(self, tmp_path: Path) -> None:
+        """Invalid tags JSON should default to empty list."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+        # Insert with invalid tags JSON directly
+        p._conn.execute(
+            "INSERT INTO memories "
+            "(key, value, tier, confidence, source, source_agent, scope, tags, "
+            "created_at, updated_at, last_accessed, access_count, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "bad-tags",
+                "v",
+                "pattern",
+                0.6,
+                "agent",
+                "unknown",
+                "project",
+                "NOT-JSON",
+                now,
+                now,
+                now,
+                0,
+                None,
+            ),
+        )
+        p._conn.commit()
+        loaded = p.get("bad-tags")
+        assert loaded is not None
+        assert loaded.tags == []
+        p.close()
+
+    def test_invalid_embedding_json(self, tmp_path: Path) -> None:
+        """Invalid embedding JSON should result in None."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+        p._conn.execute(
+            "INSERT INTO memories "
+            "(key, value, tier, confidence, source, source_agent, scope, tags, "
+            "created_at, updated_at, last_accessed, access_count, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "bad-emb",
+                "v",
+                "pattern",
+                0.6,
+                "agent",
+                "unknown",
+                "project",
+                "[]",
+                now,
+                now,
+                now,
+                0,
+                "NOT-JSON",
+            ),
+        )
+        p._conn.commit()
+        loaded = p.get("bad-emb")
+        assert loaded is not None
+        assert loaded.embedding is None
+        p.close()
+
+    def test_non_numeric_embedding_json(self, tmp_path: Path) -> None:
+        """Embedding JSON that is not a list of numbers should result in None."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+        p._conn.execute(
+            "INSERT INTO memories "
+            "(key, value, tier, confidence, source, source_agent, scope, tags, "
+            "created_at, updated_at, last_accessed, access_count, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "str-emb",
+                "v",
+                "pattern",
+                0.6,
+                "agent",
+                "unknown",
+                "project",
+                "[]",
+                now,
+                now,
+                now,
+                0,
+                '["a", "b"]',
+            ),
+        )
+        p._conn.commit()
+        loaded = p.get("str-emb")
+        assert loaded is not None
+        assert loaded.embedding is None
+        p.close()
+
+    def test_empty_tags_string(self, tmp_path: Path) -> None:
+        """Empty tags string should default to empty list."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+        p._conn.execute(
+            "INSERT INTO memories "
+            "(key, value, tier, confidence, source, source_agent, scope, tags, "
+            "created_at, updated_at, last_accessed, access_count, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "empty-tags",
+                "v",
+                "pattern",
+                0.6,
+                "agent",
+                "unknown",
+                "project",
+                "",
+                now,
+                now,
+                now,
+                0,
+                None,
+            ),
+        )
+        p._conn.commit()
+        loaded = p.get("empty-tags")
+        assert loaded is not None
+        assert loaded.tags == []
+        p.close()
+
+
+class TestEscapeFtsQuery:
+    """Tests for FTS query escaping."""
+
+    def test_escape_tokens(self) -> None:
+        result = MemoryPersistence._escape_fts_query("hello world")
+        assert result == '"hello" "world"'
+
+    def test_escape_empty(self) -> None:
+        assert MemoryPersistence._escape_fts_query("") == ""
+        assert MemoryPersistence._escape_fts_query("   ") == ""

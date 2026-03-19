@@ -29,6 +29,7 @@ from tapps_brain.doc_validation import (
     _source_ceiling,
 )
 from tapps_brain.models import MemoryEntry
+from tests.factories import make_entry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,10 +47,10 @@ def _make_entry(
     contradiction_reason: str | None = None,
 ) -> MemoryEntry:
     """Create a MemoryEntry for testing."""
-    return MemoryEntry(
+    return make_entry(
         key=key,
         value=value,
-        tags=tags or [],
+        tags=tags,
         confidence=confidence,
         source=source,
         seeded_from=seeded_from,

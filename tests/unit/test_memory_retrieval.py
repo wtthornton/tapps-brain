@@ -10,12 +10,12 @@ import pytest
 from tapps_brain.decay import DecayConfig
 from tapps_brain.models import (
     MemoryEntry,
-    MemoryScope,
     MemorySource,
     MemoryTier,
 )
 from tapps_brain.reranker import NoopReranker
 from tapps_brain.retrieval import MemoryRetriever, ScoredMemory
+from tests.factories import make_entry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,20 +39,18 @@ def _make_entry(
     contradicted: bool = False,
     tags: list[str] | None = None,
 ) -> MemoryEntry:
-    return MemoryEntry(
+    return make_entry(
         key=key,
         value=value,
         tier=tier,
         confidence=confidence,
         source=source,
-        source_agent="test",
-        scope=MemoryScope.project,
-        tags=tags or [],
         updated_at=updated_at or _RECENT,
         created_at=updated_at or _RECENT,
         last_accessed=updated_at or _RECENT,
         access_count=access_count,
         contradicted=contradicted,
+        tags=tags,
     )
 
 
