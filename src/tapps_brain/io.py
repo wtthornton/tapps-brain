@@ -193,9 +193,9 @@ def export_memories(
     fmt = (export_format or "json").lower() if isinstance(export_format, str) else "json"
     if fmt not in ("json", "markdown"):
         fmt = "json"
-    grp = (group_by or "tier").lower() if isinstance(group_by, str) else "tier"
-    if grp not in ("tier", "tag", "none"):
-        grp = "tier"
+    grp: Literal["tier", "tag", "none"] = "tier"
+    if isinstance(group_by, str) and group_by.lower() in ("tier", "tag", "none"):
+        grp = group_by.lower()  # type: ignore[assignment]
 
     if fmt == "markdown":
         content = export_to_markdown(

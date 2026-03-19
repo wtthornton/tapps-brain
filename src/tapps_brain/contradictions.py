@@ -118,7 +118,7 @@ class ContradictionDetector:
     # ------------------------------------------------------------------
 
     def _check_tech_stack(
-        self, entry: MemoryEntry, profile: ProjectProfile
+        self, entry: MemoryEntry, profile: ProjectProfileLike
     ) -> Contradiction | None:
         """Check if a memory references a library/framework not in the project."""
         known = set(profile.tech_stack.libraries) | set(profile.tech_stack.frameworks)
@@ -152,9 +152,7 @@ class ContradictionDetector:
 
     def _check_file_existence(self, entry: MemoryEntry) -> Contradiction | None:
         """Check if a memory references a file path that no longer exists."""
-        file_patterns = re.findall(
-            r"(?:^|[\s\"'`(])([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)", entry.value
-        )
+        file_patterns = re.findall(r"(?:^|[\s\"'`(])([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)", entry.value)
 
         for fpath in file_patterns:
             if fpath.startswith(("/", "\\")) or ".." in fpath:
@@ -174,7 +172,7 @@ class ContradictionDetector:
         return None
 
     def _check_test_frameworks(
-        self, entry: MemoryEntry, profile: ProjectProfile
+        self, entry: MemoryEntry, profile: ProjectProfileLike
     ) -> Contradiction | None:
         """Check if a memory mentions a test framework not detected in the project."""
         known = {f.lower() for f in profile.test_frameworks}
@@ -187,8 +185,7 @@ class ContradictionDetector:
                 return Contradiction(
                     memory_key=entry.key,
                     reason=(
-                        f"Memory mentions test framework '{fw}' but project "
-                        f"uses {sorted(known)}."
+                        f"Memory mentions test framework '{fw}' but project uses {sorted(known)}."
                     ),
                     evidence=f"test_frameworks={sorted(known)}",
                 )
@@ -196,7 +193,7 @@ class ContradictionDetector:
         return None
 
     def _check_package_managers(
-        self, entry: MemoryEntry, profile: ProjectProfile
+        self, entry: MemoryEntry, profile: ProjectProfileLike
     ) -> Contradiction | None:
         """Check if a memory mentions a package manager not detected in the project."""
         known = {p.lower() for p in profile.package_managers}
@@ -209,8 +206,7 @@ class ContradictionDetector:
                 return Contradiction(
                     memory_key=entry.key,
                     reason=(
-                        f"Memory mentions package manager '{pm}' but project "
-                        f"uses {sorted(known)}."
+                        f"Memory mentions package manager '{pm}' but project uses {sorted(known)}."
                     ),
                     evidence=f"package_managers={sorted(known)}",
                 )
@@ -231,14 +227,13 @@ class ContradictionDetector:
                 timeout=5,
                 check=False,
             )
-            branches = [b.strip().removeprefix("* ").strip() for b in result.stdout.strip().splitlines()]
+            branches = [
+                b.strip().removeprefix("* ").strip() for b in result.stdout.strip().splitlines()
+            ]
             if entry.branch not in branches:
                 return Contradiction(
                     memory_key=entry.key,
-                    reason=(
-                        f"Memory is scoped to branch '{entry.branch}' "
-                        f"which no longer exists."
-                    ),
+                    reason=(f"Memory is scoped to branch '{entry.branch}' which no longer exists."),
                     evidence="git branch --list",
                 )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:

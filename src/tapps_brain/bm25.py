@@ -14,22 +14,83 @@ from dataclasses import dataclass, field
 # Stop words (~50 common English words)
 # ---------------------------------------------------------------------------
 
-_STOP_WORDS: frozenset[str] = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "but", "by",
-    "do", "for", "from", "had", "has", "have", "he", "her",
-    "him", "his", "how", "i", "if", "in", "into", "is", "it",
-    "its", "me", "my", "no", "not", "of", "on", "or", "our",
-    "she", "so", "that", "the", "their", "them", "then", "there",
-    "they", "this", "to", "up", "us", "was", "we", "what",
-    "when", "which", "who", "will", "with", "you", "your",
-})
+_STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "do",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "me",
+        "my",
+        "no",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "she",
+        "so",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "they",
+        "this",
+        "to",
+        "up",
+        "us",
+        "was",
+        "we",
+        "what",
+        "when",
+        "which",
+        "who",
+        "will",
+        "with",
+        "you",
+        "your",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Stemming (basic suffix stripping)
 # ---------------------------------------------------------------------------
 
 _SUFFIX_ORDER: tuple[str, ...] = (
-    "tion", "ment", "ness", "ing", "est", "er", "ed", "ly", "s",
+    "tion",
+    "ment",
+    "ness",
+    "ing",
+    "est",
+    "er",
+    "ed",
+    "ly",
+    "s",
 )
 
 _MIN_STEM_LENGTH = 3

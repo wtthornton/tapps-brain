@@ -33,7 +33,7 @@ class TestReciprocalRankFusion:
         result = reciprocal_rank_fusion(bm25, vector, k=60)
         # a: 1/61 + 1/62, b: 1/62 + 1/61, c: 1/63, d: 1/63
         assert len(result) == 4
-        scores = {k: s for k, s in result}
+        scores = dict(result)
         assert scores["a"] == pytest.approx(1 / 61 + 1 / 62)
         assert scores["b"] == pytest.approx(1 / 61 + 1 / 62)
         assert scores["c"] == pytest.approx(1 / 63)
@@ -41,7 +41,7 @@ class TestReciprocalRankFusion:
         # a and b tied, b may come first (1/61 from vector)
         assert result[0][0] in ("a", "b")
         assert result[1][0] in ("a", "b")
-        assert set(r[0] for r in result[:2]) == {"a", "b"}
+        assert {r[0] for r in result[:2]} == {"a", "b"}
 
     def test_configurable_k(self) -> None:
         result = reciprocal_rank_fusion(["a"], ["a"], k=10)
@@ -67,7 +67,7 @@ class TestReciprocalRankFusion:
         result = reciprocal_rank_fusion(bm25, vector, k=60)
         # x and z tie: 1/61 + 1/63 (tie-break by key)
         # y: 1/62 + 1/62
-        scores = {k: s for k, s in result}
+        scores = dict(result)
         assert scores["x"] == scores["z"]
         assert scores["y"] == pytest.approx(2 / 62)
         assert len(result) == 3

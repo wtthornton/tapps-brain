@@ -32,7 +32,9 @@ class DecayConfig(BaseModel):
     architectural_half_life_days: int = Field(default=180, ge=1)
     pattern_half_life_days: int = Field(default=60, ge=1)
     procedural_half_life_days: int = Field(
-        default=30, ge=1, description="Epic 65.11: how-to workflows, steps (between pattern=60, context=14)"
+        default=30,
+        ge=1,
+        description="Epic 65.11: how-to workflows, steps (between pattern=60, context=14)",
     )
     context_half_life_days: int = Field(default=14, ge=1)
 

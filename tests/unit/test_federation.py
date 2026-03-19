@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -16,16 +14,18 @@ from tapps_brain.federation import (
     FederationProject,
     FederationSubscription,
     add_subscription,
+    federated_search,
     load_federation_config,
     register_project,
     save_federation_config,
     sync_from_hub,
     sync_to_hub,
     unregister_project,
-    federated_search,
 )
 from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTier
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -426,8 +426,12 @@ class TestSyncToHub:
     """Tests for sync_to_hub — publishing shared-scope entries."""
 
     def test_publishes_shared_scope_entries(self, hub_store: FederatedStore) -> None:
-        shared_entry = _make_entry(key="shared-pattern", value="shared val", scope=MemoryScope.shared)
-        project_entry = _make_entry(key="project-only", value="project val", scope=MemoryScope.project)
+        shared_entry = _make_entry(
+            key="shared-pattern", value="shared val", scope=MemoryScope.shared,
+        )
+        project_entry = _make_entry(
+            key="project-only", value="project val", scope=MemoryScope.project,
+        )
         mock_store = MockMemoryStore([shared_entry, project_entry])
 
         result = sync_to_hub(mock_store, hub_store, "proj-a", project_root="/tmp/a")
@@ -461,7 +465,10 @@ class TestSyncFromHub:
             [
                 _make_entry(key="pattern-from-b", value="B pattern", confidence=0.8, tags=["api"]),
                 _make_entry(key="low-conf-b", value="Low confidence", confidence=0.3, tags=["api"]),
-                _make_entry(key="untagged-b", value="No matching tags", confidence=0.8, tags=["other"]),
+                _make_entry(
+                    key="untagged-b", value="No matching tags",
+                    confidence=0.8, tags=["other"],
+                ),
             ],
         )
 

@@ -74,6 +74,7 @@ def _validate_write_rules(
 
     return None
 
+
 # RAG safety match count threshold for blocking content.
 _RAG_BLOCK_THRESHOLD = 3
 

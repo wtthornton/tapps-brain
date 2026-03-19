@@ -215,10 +215,7 @@ class MemoryRetriever:
         if self._retrieval_policy is not None:
             blocked_tags = set(getattr(self._retrieval_policy, "block_sensitive_tags", []))
             if blocked_tags:
-                scored = [
-                    s for s in scored
-                    if not blocked_tags.intersection(s.entry.tags)
-                ]
+                scored = [s for s in scored if not blocked_tags.intersection(s.entry.tags)]
 
         # Sort by score descending
         scored.sort(key=lambda s: s.score, reverse=True)
@@ -236,6 +233,7 @@ class MemoryRetriever:
         limit: int,
     ) -> list[ScoredMemory]:
         """Apply reranker to top candidates; fallback to original order on failure."""
+        assert self._reranker is not None  # caller checks before calling
         top_candidates = scored[:RERANKER_TOP_CANDIDATES]
         candidates = [(sm.entry.key, sm.entry.value) for sm in top_candidates]
         effective_top_k = min(limit, len(candidates))

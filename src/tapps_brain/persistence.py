@@ -25,6 +25,10 @@ logger = structlog.get_logger(__name__)
 # Current schema version - bump when adding migrations.
 _SCHEMA_VERSION = 4
 
+# Previous schema versions for migration checks.
+_SCHEMA_V2 = 2
+_SCHEMA_V3 = 3
+
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
 
@@ -86,9 +90,9 @@ class MemoryPersistence:
             if current_version < 1:
                 self._create_v1_schema(cur)
 
-            if current_version < 2:
+            if current_version < _SCHEMA_V2:
                 self._migrate_v1_to_v2(cur)
-            if current_version < 3:
+            if current_version < _SCHEMA_V3:
                 self._migrate_v2_to_v3(cur)
             if current_version < _SCHEMA_VERSION:
                 self._migrate_v3_to_v4(cur)
@@ -260,12 +264,8 @@ class MemoryPersistence:
                 PRIMARY KEY (subject, predicate, object_entity)
             )
         """)
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_entity)"
-        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_entity)")
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
             (4, datetime.now(tz=UTC).isoformat()),
@@ -334,7 +334,7 @@ class MemoryPersistence:
         cols = ", ".join(columns)
         with self._lock:
             self._conn.execute(
-                f"INSERT OR REPLACE INTO memories ({cols}) VALUES ({placeholders})",  # noqa: S608
+                f"INSERT OR REPLACE INTO memories ({cols}) VALUES ({placeholders})",
                 values,
             )
             self._conn.commit()
@@ -474,7 +474,10 @@ class MemoryPersistence:
         return stored
 
     def search_session_index(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Full-text search session index. Returns list of {session_id, chunk_index, content, created_at}."""
+        """Full-text search session index.
+
+        Returns list of {session_id, chunk_index, content, created_at}.
+        """
         if not query or not query.strip():
             return []
         safe = self._escape_fts_query(query)
@@ -512,18 +515,14 @@ class MemoryPersistence:
 
         cutoff = (datetime.now(tz=UTC) - timedelta(days=ttl_days)).isoformat()
         with self._lock:
-            cur = self._conn.execute(
-                "DELETE FROM session_index WHERE created_at < ?", (cutoff,)
-            )
+            cur = self._conn.execute("DELETE FROM session_index WHERE created_at < ?", (cutoff,))
             self._conn.commit()
             return cur.rowcount
 
     def count_session_chunks(self) -> int:
         """Return total session index chunk count."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM session_index"
-            ).fetchone()
+            row = self._conn.execute("SELECT COUNT(*) FROM session_index").fetchone()
         return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
@@ -560,14 +559,16 @@ class MemoryPersistence:
                 keys = json.loads(r["source_entry_keys"])
             except (json.JSONDecodeError, TypeError):
                 keys = []
-            results.append({
-                "subject": r["subject"],
-                "predicate": r["predicate"],
-                "object_entity": r["object_entity"],
-                "source_entry_keys": keys,
-                "confidence": r["confidence"],
-                "created_at": r["created_at"],
-            })
+            results.append(
+                {
+                    "subject": r["subject"],
+                    "predicate": r["predicate"],
+                    "object_entity": r["object_entity"],
+                    "source_entry_keys": keys,
+                    "confidence": r["confidence"],
+                    "created_at": r["created_at"],
+                }
+            )
         return results
 
     def count_relations(self) -> int:
@@ -597,9 +598,7 @@ class MemoryPersistence:
         if emb_raw:
             try:
                 parsed = json.loads(str(emb_raw))
-                if isinstance(parsed, list) and all(
-                    isinstance(x, (int, float)) for x in parsed
-                ):
+                if isinstance(parsed, list) and all(isinstance(x, (int, float)) for x in parsed):
                     embedding = [float(x) for x in parsed]
             except (json.JSONDecodeError, TypeError):
                 pass

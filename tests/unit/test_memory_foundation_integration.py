@@ -7,7 +7,7 @@ cases, concurrency, and decay/contradiction integration with the store.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -22,6 +22,9 @@ from tapps_brain.models import (
     MemoryTier,
 )
 from tapps_brain.store import MemoryStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

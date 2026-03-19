@@ -7,7 +7,7 @@ edge cases, and concurrency.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,6 +19,9 @@ from tapps_brain.models import (
 )
 from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.store import MemoryStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestFullRoundTrip:
@@ -126,17 +129,17 @@ class TestEdgeCases:
 
     def test_invalid_tier_rejected(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             store.save(key="bad-tier", value="v", tier="nonexistent")
 
     def test_invalid_scope_rejected(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             store.save(key="bad-scope", value="v", scope="nonexistent")
 
     def test_branch_scope_requires_branch(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             store.save(key="no-branch", value="v", scope="branch")
 
 

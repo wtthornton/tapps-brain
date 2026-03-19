@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from tapps_brain.reranker import (
-    NoopReranker,
     RERANKER_TOP_CANDIDATES,
+    NoopReranker,
     get_reranker,
 )
-
 
 # ---------------------------------------------------------------------------
 # NoopReranker

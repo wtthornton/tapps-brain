@@ -6,7 +6,6 @@ import json
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,12 +22,9 @@ from tapps_brain.auto_consolidation import (
 from tapps_brain.models import (
     ConsolidatedEntry,
     MemoryEntry,
-    MemoryScope,
-    MemorySource,
     MemoryTier,
 )
 from tapps_brain.store import ConsolidationConfig, MemoryStore
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures

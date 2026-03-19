@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
-from tapps_brain.models import MemoryEntry, MemoryScope, MemoryTier
-from tapps_brain.store import MemoryStore, _MAX_ENTRIES
+from tapps_brain.models import MemoryEntry
+from tapps_brain.store import _MAX_ENTRIES, MemoryStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()

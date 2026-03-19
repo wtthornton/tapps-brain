@@ -46,12 +46,8 @@ class RelationEntry(BaseModel):
         default_factory=list,
         description="Memory entry keys this relation was extracted from.",
     )
-    confidence: float = Field(
-        default=0.8, ge=0.0, le=1.0, description="Extraction confidence."
-    )
-    created_at: str = Field(
-        default_factory=_utc_now_iso, description="ISO-8601 UTC creation time."
-    )
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Extraction confidence.")
+    created_at: str = Field(default_factory=_utc_now_iso, description="ISO-8601 UTC creation time.")
 
     # -- Constants ----------------------------------------------------------
     MAX_RELATIONS_PER_ENTRY: ClassVar[int] = 5
@@ -208,13 +204,9 @@ def extract_relations_from_entries(
                 existing = seen[triple_key]
                 # Merge source keys (deduplicated)
                 merged_keys = list(
-                    dict.fromkeys(
-                        existing.source_entry_keys + rel.source_entry_keys
-                    )
+                    dict.fromkeys(existing.source_entry_keys + rel.source_entry_keys)
                 )
-                seen[triple_key] = existing.model_copy(
-                    update={"source_entry_keys": merged_keys}
-                )
+                seen[triple_key] = existing.model_copy(update={"source_entry_keys": merged_keys})
             else:
                 seen[triple_key] = rel
 

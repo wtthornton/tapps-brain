@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import structlog
 
@@ -17,7 +16,6 @@ from tapps_brain.models import (
     ConsolidatedEntry,
     ConsolidationReason,
     MemoryEntry,
-    MemoryScope,
     MemorySource,
     MemoryTier,
 )
@@ -26,9 +24,6 @@ from tapps_brain.similarity import (
     find_similar,
     is_same_topic,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = structlog.get_logger(__name__)
 
@@ -39,6 +34,8 @@ logger = structlog.get_logger(__name__)
 
 DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE = 2
 MAX_CONSOLIDATED_VALUE_LENGTH = 4096
+_MIN_PREFIX_LENGTH = 3
+_MIN_ENTRIES_FOR_CONSOLIDATION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +63,7 @@ def generate_consolidated_key(entries: list[MemoryEntry]) -> str:
     common_prefix = _find_common_prefix(keys)
 
     # If no common prefix, use common tags
-    if not common_prefix or len(common_prefix) < 3:
+    if not common_prefix or len(common_prefix) < _MIN_PREFIX_LENGTH:
         all_tags = [tag.lower() for e in entries for tag in e.tags]
         if all_tags:
             # Use most common tag
@@ -80,7 +77,7 @@ def generate_consolidated_key(entries: list[MemoryEntry]) -> str:
     # Create deterministic hash from sorted source keys
     sorted_keys = sorted(keys)
     hash_input = "-".join(sorted_keys)
-    hash_suffix = hashlib.md5(hash_input.encode()).hexdigest()[:8]  # noqa: S324
+    hash_suffix = hashlib.md5(hash_input.encode()).hexdigest()[:8]
 
     # Clean prefix to match key format
     clean_prefix = re.sub(r"[^a-z0-9]", "-", common_prefix.lower())
@@ -208,9 +205,7 @@ def calculate_weighted_confidence(entries: list[MemoryEntry]) -> float:
     total_weight = sum(weights)
 
     # Weighted average
-    weighted_sum = sum(
-        e.confidence * w for e, w in zip(sorted_entries, weights, strict=True)
-    )
+    weighted_sum = sum(e.confidence * w for e, w in zip(sorted_entries, weights, strict=True))
 
     return min(1.0, max(0.0, weighted_sum / total_weight))
 
@@ -303,7 +298,7 @@ def consolidate(
     Raises:
         ValueError: If fewer than 2 entries provided.
     """
-    if len(entries) < 2:
+    if len(entries) < _MIN_ENTRIES_FOR_CONSOLIDATION:
         msg = f"Need at least 2 entries to consolidate, got {len(entries)}"
         raise ValueError(msg)
 
@@ -398,8 +393,7 @@ def should_consolidate(
     """
     # Filter out already-consolidated entries from candidates
     active_candidates = [
-        c for c in candidates
-        if not getattr(c, "is_consolidated", False) and c.key != entry.key
+        c for c in candidates if not getattr(c, "is_consolidated", False) and c.key != entry.key
     ]
 
     if not active_candidates:

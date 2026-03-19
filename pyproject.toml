@@ -54,6 +54,7 @@ packages = ["src/tapps_brain"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"
@@ -71,6 +72,7 @@ module = [
     "sentence_transformers.*",
     "cohere",
     "cohere.*",
+    "yaml",
 ]
 ignore_missing_imports = true
 

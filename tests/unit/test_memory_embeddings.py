@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from tapps_brain.embeddings import (
     NoopProvider,
     get_embedding_provider,
 )
-from tapps_brain.models import MemoryEntry, MemoryTier
+from tapps_brain.models import MemoryEntry
 from tapps_brain.store import MemoryStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestNoopProvider:

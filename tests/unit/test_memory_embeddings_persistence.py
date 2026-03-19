@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tapps_brain.models import (
     MemoryEntry,
-    MemoryScope,
     MemorySource,
     MemoryTier,
 )
 from tapps_brain.persistence import MemoryPersistence
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()

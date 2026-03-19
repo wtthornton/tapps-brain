@@ -115,7 +115,10 @@ class TestCalculateDecayedConfidence:
     def test_procedural_decays_between_pattern_and_context(
         self, config: DecayConfig
     ) -> None:
-        """Procedural (30d half-life) decays slower than context (14d), faster than pattern (60d). Epic 65.11."""
+        """Procedural (30d half-life) decays slower than context (14d).
+
+        Faster than pattern (60d). Epic 65.11.
+        """
         now = datetime.now(tz=UTC)
         updated = (now - timedelta(days=30)).isoformat()
 

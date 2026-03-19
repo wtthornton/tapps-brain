@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
 
-from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.session_index import (
     delete_expired_sessions,
     index_session,
     search_session_index,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_index_session_stores_chunks(tmp_path: pytest.TempPathFactory) -> None:

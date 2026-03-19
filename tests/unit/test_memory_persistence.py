@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,6 +13,9 @@ from tapps_brain.models import (
     MemoryTier,
 )
 from tapps_brain.persistence import MemoryPersistence
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
@@ -203,7 +206,7 @@ class TestMemoryPersistence:
         lines = persistence._audit_path.read_text(
             encoding="utf-8"
         ).strip().splitlines()
-        actions = [json.loads(l)["action"] for l in lines]
+        actions = [json.loads(line)["action"] for line in lines]
         assert "save" in actions
         assert "delete" in actions
 

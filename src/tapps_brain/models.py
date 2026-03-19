@@ -79,30 +79,20 @@ class MemoryEntry(BaseModel):
 
     key: str = Field(description="Unique slug identifier (max 128 chars).")
     value: str = Field(description="Memory content (max 4096 chars).")
-    tier: MemoryTier = Field(
-        default=MemoryTier.pattern, description="Decay classification."
-    )
+    tier: MemoryTier = Field(default=MemoryTier.pattern, description="Decay classification.")
     confidence: float = Field(
         default=-1.0,
         ge=-1.0,
         le=1.0,
         description="Confidence score 0.0-1.0. -1.0 means use source default.",
     )
-    source: MemorySource = Field(
-        default=MemorySource.agent, description="Who created this memory."
-    )
+    source: MemorySource = Field(default=MemorySource.agent, description="Who created this memory.")
     source_agent: str = Field(
         default="unknown", description="Agent identifier (e.g. 'claude-code')."
     )
-    scope: MemoryScope = Field(
-        default=MemoryScope.project, description="Visibility scope."
-    )
-    tags: list[str] = Field(
-        default_factory=list, description="Free-form tags for search (max 10)."
-    )
-    created_at: str = Field(
-        default_factory=_utc_now_iso, description="ISO-8601 UTC creation time."
-    )
+    scope: MemoryScope = Field(default=MemoryScope.project, description="Visibility scope.")
+    tags: list[str] = Field(default_factory=list, description="Free-form tags for search (max 10).")
+    created_at: str = Field(default_factory=_utc_now_iso, description="ISO-8601 UTC creation time.")
     updated_at: str = Field(
         default_factory=_utc_now_iso, description="ISO-8601 UTC last update time."
     )
@@ -110,26 +100,18 @@ class MemoryEntry(BaseModel):
         default_factory=_utc_now_iso, description="ISO-8601 UTC last access time."
     )
     access_count: int = Field(default=0, ge=0, description="Read access count.")
-    branch: str | None = Field(
-        default=None, description="Git branch (required when scope=branch)."
-    )
+    branch: str | None = Field(default=None, description="Git branch (required when scope=branch).")
 
     # Reserved for Epic 24 (Memory Intelligence)
     last_reinforced: str | None = Field(
         default=None, description="ISO-8601 UTC, set by reinforce action."
     )
     reinforce_count: int = Field(default=0, ge=0, description="Total reinforcements.")
-    contradicted: bool = Field(
-        default=False, description="Set by contradiction detection."
-    )
-    contradiction_reason: str | None = Field(
-        default=None, description="Reason for contradiction."
-    )
+    contradicted: bool = Field(default=False, description="Set by contradiction detection.")
+    contradiction_reason: str | None = Field(default=None, description="Reason for contradiction.")
 
     # Reserved for Epic 25 (Memory Retrieval & Integration)
-    seeded_from: str | None = Field(
-        default=None, description="Populated by profile seeding."
-    )
+    seeded_from: str | None = Field(default=None, description="Populated by profile seeding.")
 
     # Optional embedding for semantic search (Epic 65.7)
     embedding: list[float] | None = Field(
@@ -193,16 +175,10 @@ class MemorySnapshot(BaseModel):
     """Full-state snapshot of the memory store for export/serialization."""
 
     project_root: str = Field(description="Project root path.")
-    entries: list[MemoryEntry] = Field(
-        default_factory=list, description="All memory entries."
-    )
+    entries: list[MemoryEntry] = Field(default_factory=list, description="All memory entries.")
     total_count: int = Field(default=0, ge=0, description="Total entry count.")
-    tier_counts: dict[str, int] = Field(
-        default_factory=dict, description="Count per tier."
-    )
-    exported_at: str = Field(
-        default_factory=_utc_now_iso, description="ISO-8601 UTC export time."
-    )
+    tier_counts: dict[str, int] = Field(default_factory=dict, description="Count per tier.")
+    exported_at: str = Field(default_factory=_utc_now_iso, description="ISO-8601 UTC export time.")
 
 
 # ---------------------------------------------------------------------------

@@ -25,6 +25,9 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.7
 DEFAULT_TAG_WEIGHT = 0.4
 DEFAULT_TEXT_WEIGHT = 0.6
 
+# Minimum fraction of tags that must overlap for a match.
+_MIN_TAG_OVERLAP_RATIO = 0.5
+
 
 # ---------------------------------------------------------------------------
 # Jaccard similarity for tags
@@ -45,8 +48,8 @@ def jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
 
 def tag_similarity(entry_a: MemoryEntry, entry_b: MemoryEntry) -> float:
     """Compute Jaccard similarity between two entries' tags."""
-    tags_a = set(tag.lower() for tag in entry_a.tags)
-    tags_b = set(tag.lower() for tag in entry_b.tags)
+    tags_a = {tag.lower() for tag in entry_a.tags}
+    tags_b = {tag.lower() for tag in entry_b.tags}
     return jaccard_similarity(tags_a, tags_b)
 
 
@@ -253,7 +256,7 @@ def find_consolidation_groups(
         return []
 
     # Build lookup by key
-    entry_by_key = {e.key: e for e in entries}
+    {e.key: e for e in entries}
     assigned: set[str] = set()
     groups: list[list[str]] = []
 
@@ -294,8 +297,8 @@ def same_topic_score(entry_a: MemoryEntry, entry_b: MemoryEntry) -> float:
     if entry_a.tier != entry_b.tier:
         return 0.0
 
-    tags_a = set(tag.lower() for tag in entry_a.tags)
-    tags_b = set(tag.lower() for tag in entry_b.tags)
+    tags_a = {tag.lower() for tag in entry_a.tags}
+    tags_b = {tag.lower() for tag in entry_b.tags}
 
     if not tags_a or not tags_b:
         return 0.0
@@ -304,7 +307,7 @@ def same_topic_score(entry_a: MemoryEntry, entry_b: MemoryEntry) -> float:
     smaller = min(len(tags_a), len(tags_b))
     overlap = len(tags_a & tags_b)
 
-    if smaller > 0 and overlap / smaller >= 0.5:
+    if smaller > 0 and overlap / smaller >= _MIN_TAG_OVERLAP_RATIO:
         return 1.0
 
     return 0.0

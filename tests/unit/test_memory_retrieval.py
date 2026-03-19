@@ -17,7 +17,6 @@ from tapps_brain.models import (
 from tapps_brain.reranker import NoopReranker
 from tapps_brain.retrieval import MemoryRetriever, ScoredMemory
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

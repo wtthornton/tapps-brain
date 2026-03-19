@@ -64,22 +64,22 @@ _MAX_DOC_TAGS = 3
 
 # Patterns for extracting library claims from memory values
 _IMPORT_PATTERNS = [
-    r"(?:from|import)\s+(\w[\w.]*)",           # Python imports
-    r"require\(['\"](\w[\w./-]*?)['\"]\)",       # JS require
-    r"import\s+['\"](\w[\w./-]*?)['\"]",         # JS/TS import
+    r"(?:from|import)\s+(\w[\w.]*)",  # Python imports
+    r"require\(['\"](\w[\w./-]*?)['\"]\)",  # JS require
+    r"import\s+['\"](\w[\w./-]*?)['\"]",  # JS/TS import
 ]
 
 _USAGE_PATTERNS = [
     r"(?:we\s+)?use[sd]?\s+(\w[\w.-]*)",
     r"using\s+(\w[\w.-]*)",
     r"built\s+(?:with|on)\s+(\w[\w.-]*)",
-    r"(\w[\w.-]*)\.\w+\(",                      # X.method() calls
+    r"(\w[\w.-]*)\.\w+\(",  # X.method() calls
 ]
 
 _VERSION_PATTERNS = [
-    r"(\w[\w.-]*)\s*[><=!~]+\s*[\d.]+",         # X>=1.0
-    r"(\w[\w.-]*)\s+v\d+",                       # X v2
-    r"(\w[\w.-]*)\s+version\s+[\d.]+",           # X version 3.x
+    r"(\w[\w.-]*)\s*[><=!~]+\s*[\d.]+",  # X>=1.0
+    r"(\w[\w.-]*)\s+v\d+",  # X v2
+    r"(\w[\w.-]*)\s+version\s+[\d.]+",  # X version 3.x
 ]
 
 # Deprecation markers that indicate a doc contradiction
@@ -282,25 +282,44 @@ class ClaimExtractor:
         if lib in {"the", "that", "this", "with", "from", "into", "have", "been"}:
             return
         seen.add(lib)
-        out.append(LibraryClaim(
-            library=lib,
-            topic=topic,
-            claim_text=claim_text[:200],
-            claim_type=claim_type,
-        ))
+        out.append(
+            LibraryClaim(
+                library=lib,
+                topic=topic,
+                claim_text=claim_text[:200],
+                claim_type=claim_type,
+            )
+        )
 
-    def _from_tags(
-        self, entry: MemoryEntry, seen: set[str]
-    ) -> list[LibraryClaim]:
+    def _from_tags(self, entry: MemoryEntry, seen: set[str]) -> list[LibraryClaim]:
         """Strategy 1: Extract library names from tags."""
         claims: list[LibraryClaim] = []
         # Tags that are themselves library names (not meta-tags)
         meta_tags = {
-            "library", "framework", "database", "orm", "dependency",
-            "auto-seeded", "language", "test", "testing", "test-framework",
-            "package-manager", "build-tool", "tooling", "file", "path",
-            "module", "branch", "feature-branch", "architecture",
-            "pattern", "context", "security", "config", "api",
+            "library",
+            "framework",
+            "database",
+            "orm",
+            "dependency",
+            "auto-seeded",
+            "language",
+            "test",
+            "testing",
+            "test-framework",
+            "package-manager",
+            "build-tool",
+            "tooling",
+            "file",
+            "path",
+            "module",
+            "branch",
+            "feature-branch",
+            "architecture",
+            "pattern",
+            "context",
+            "security",
+            "config",
+            "api",
         }
         for tag in entry.tags:
             tag_lower = tag.lower()
@@ -315,9 +334,7 @@ class ClaimExtractor:
                 )
         return claims
 
-    def _from_imports(
-        self, value: str, seen: set[str]
-    ) -> list[LibraryClaim]:
+    def _from_imports(self, value: str, seen: set[str]) -> list[LibraryClaim]:
         """Strategy 2: Extract library names from import statements."""
         claims: list[LibraryClaim] = []
         for pattern in _IMPORT_PATTERNS:
@@ -335,9 +352,7 @@ class ClaimExtractor:
                 )
         return claims
 
-    def _from_usage(
-        self, value: str, seen: set[str]
-    ) -> list[LibraryClaim]:
+    def _from_usage(self, value: str, seen: set[str]) -> list[LibraryClaim]:
         """Strategy 3: Extract library names from usage patterns."""
         claims: list[LibraryClaim] = []
         for pattern in _USAGE_PATTERNS:
@@ -345,13 +360,16 @@ class ClaimExtractor:
                 raw = match.group(1)
                 topic = _infer_topic(value)
                 self._add_if_valid(
-                    raw, match.group(0)[:200], ClaimType.pattern, topic, seen, claims,
+                    raw,
+                    match.group(0)[:200],
+                    ClaimType.pattern,
+                    topic,
+                    seen,
+                    claims,
                 )
         return claims
 
-    def _from_seeded_key(
-        self, entry: MemoryEntry, seen: set[str]
-    ) -> list[LibraryClaim]:
+    def _from_seeded_key(self, entry: MemoryEntry, seen: set[str]) -> list[LibraryClaim]:
         """Strategy 4: Extract library name from seeded memory keys."""
         claims: list[LibraryClaim] = []
         if entry.seeded_from != "project_profile":
@@ -360,7 +378,12 @@ class ClaimExtractor:
         # Keys like "framework-fastapi", "library-sqlalchemy"
         _expected_parts = 2
         key_parts = entry.key.split("-", 1)
-        if len(key_parts) == _expected_parts and key_parts[0] in ("framework", "library", "database", "orm"):
+        if len(key_parts) == _expected_parts and key_parts[0] in (
+            "framework",
+            "library",
+            "database",
+            "orm",
+        ):
             self._add_if_valid(
                 key_parts[1],
                 f"Seeded from project profile: {entry.key}",
@@ -371,16 +394,19 @@ class ClaimExtractor:
             )
         return claims
 
-    def _from_versions(
-        self, value: str, seen: set[str]
-    ) -> list[LibraryClaim]:
+    def _from_versions(self, value: str, seen: set[str]) -> list[LibraryClaim]:
         """Strategy 5: Extract library names from version claims."""
         claims: list[LibraryClaim] = []
         for pattern in _VERSION_PATTERNS:
             for match in re.finditer(pattern, value, re.IGNORECASE):
                 raw = match.group(1)
                 self._add_if_valid(
-                    raw, match.group(0)[:200], ClaimType.version, "overview", seen, claims,
+                    raw,
+                    match.group(0)[:200],
+                    ClaimType.version,
+                    "overview",
+                    seen,
+                    claims,
                 )
         return claims
 
@@ -443,7 +469,9 @@ class DocSimilarityScorer:
 
         # Determine alignment and confidence delta
         alignment, delta = self._classify(
-            best_score, deprecation_hit, security_hit,
+            best_score,
+            deprecation_hit,
+            security_hit,
         )
 
         snippet = best_chunk[:_MAX_SNIPPET_LENGTH] if best_chunk else ""
@@ -481,7 +509,7 @@ class DocSimilarityScorer:
             if marker in doc_lower:
                 # Check if deprecation is near any claim terms
                 marker_pos = doc_lower.find(marker)
-                nearby = doc_lower[max(0, marker_pos - 200): marker_pos + 200]
+                nearby = doc_lower[max(0, marker_pos - 200) : marker_pos + 200]
                 nearby_terms = set(preprocess(nearby))
                 if claim_terms & nearby_terms:
                     return True
@@ -642,11 +670,7 @@ class MemoryDocValidator:
         for entry in entries:
             # Check lookup budget
             claims = self._extractor.extract_claims(entry)
-            new_lookups = sum(
-                1
-                for c in claims
-                if f"{c.library}:{c.topic}" not in self._doc_cache
-            )
+            new_lookups = sum(1 for c in claims if f"{c.library}:{c.topic}" not in self._doc_cache)
             if lookup_count + new_lookups > max_lookups:
                 ev = EntryValidation(
                     entry_key=entry.key,
@@ -689,9 +713,9 @@ class MemoryDocValidator:
 
         config = DecayConfig()
         stale = [
-            e for e in entries
-            if calculate_decayed_confidence(e, config) < confidence_threshold
-            and not e.contradicted
+            e
+            for e in entries
+            if calculate_decayed_confidence(e, config) < confidence_threshold and not e.contradicted
         ]
         stale.sort(key=lambda e: calculate_decayed_confidence(e, config))
         return await self.validate_batch(stale[:max_entries])
@@ -769,9 +793,7 @@ class MemoryDocValidator:
                     if a.alignment == AlignmentLevel.contradicted and a.matched_snippet
                 ]
                 snippet_text = snippets[0] if snippets else "content mismatch"
-                updates["contradiction_reason"] = (
-                    f"Conflicts with docs: {snippet_text}"
-                )
+                updates["contradiction_reason"] = f"Conflicts with docs: {snippet_text}"
 
                 _manage_doc_tags(new_tags, f"{_CONTRADICTION_TAG_PREFIX}{now_tag}")
                 result.penalised += 1
@@ -818,7 +840,7 @@ class MemoryDocValidator:
         for tag in entry.tags:
             for prefix in (_VALIDATION_TAG_PREFIX, _CONTRADICTION_TAG_PREFIX, _CHECKED_TAG_PREFIX):
                 if tag.startswith(prefix):
-                    date_str = tag[len(prefix):]
+                    date_str = tag[len(prefix) :]
                     try:
                         validated_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
                         days_since = (datetime.now(tz=UTC) - validated_date).days
@@ -866,8 +888,10 @@ def _manage_doc_tags(tags: list[str], new_tag: str) -> None:
 
     # Remove duplicate if already present
     doc_prefixes = (
-        _VALIDATION_TAG_PREFIX, _CONTRADICTION_TAG_PREFIX,
-        _CHECKED_TAG_PREFIX, _DOC_REF_TAG_PREFIX,
+        _VALIDATION_TAG_PREFIX,
+        _CONTRADICTION_TAG_PREFIX,
+        _CHECKED_TAG_PREFIX,
+        _DOC_REF_TAG_PREFIX,
     )
     # Count current doc tags
     doc_tags = [t for t in tags if any(t.startswith(p) for p in doc_prefixes)]

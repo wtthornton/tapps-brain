@@ -8,8 +8,10 @@ satisfy these protocols.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @runtime_checkable

@@ -22,11 +22,9 @@ from tapps_brain.models import (
     ConsolidatedEntry,
     ConsolidationReason,
     MemoryEntry,
-    MemoryScope,
     MemorySource,
     MemoryTier,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures
@@ -402,7 +400,7 @@ class TestShouldConsolidate:
             is_consolidated=True,
         )
         new_entry = _make_entry("new", "content")
-        candidates = jwt_entries + [consolidated]  # type: ignore[operator]
+        candidates = [*jwt_entries, consolidated]  # type: ignore[operator]
         matches = should_consolidate(new_entry, candidates, threshold=0.1)
         assert consolidated not in matches
 

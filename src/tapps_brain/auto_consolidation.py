@@ -55,9 +55,7 @@ class ConsolidationResult:
         """Convert to dictionary for serialization."""
         return {
             "triggered": self.triggered,
-            "consolidated_key": (
-                self.consolidated_entry.key if self.consolidated_entry else None
-            ),
+            "consolidated_key": (self.consolidated_entry.key if self.consolidated_entry else None),
             "source_keys": self.source_keys,
             "reason": self.reason,
         }
@@ -241,9 +239,7 @@ def run_periodic_consolidation_scan(
     all_entries = store.list_all()
 
     active_entries = [
-        e for e in all_entries
-        if not getattr(e, "is_consolidated", False)
-        and not e.contradicted
+        e for e in all_entries if not getattr(e, "is_consolidated", False) and not e.contradicted
     ]
 
     if len(active_entries) < min_group_size:

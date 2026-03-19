@@ -10,21 +10,24 @@ Epic 64 — all operations are explicit (no automatic sharing).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from tapps_brain.models import MemoryEntry, MemoryScope
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
+    from tapps_brain.store import MemoryStore
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # type: ignore[assignment]
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 _DEFAULT_HUB_DIR = Path.home() / ".tapps-brain" / "memory"
 _MAX_PROJECTS = 50
@@ -161,9 +164,7 @@ def unregister_project(project_id: str) -> FederationConfig:
     """Remove a project from the federation hub."""
     config = load_federation_config()
     config.projects = [p for p in config.projects if p.project_id != project_id]
-    config.subscriptions = [
-        s for s in config.subscriptions if s.subscriber != project_id
-    ]
+    config.subscriptions = [s for s in config.subscriptions if s.subscriber != project_id]
     save_federation_config(config)
     logger.info("federation.project_unregistered", project_id=project_id)
     return config
@@ -192,9 +193,7 @@ def add_subscription(
             raise ValueError(msg)
 
     # Remove existing subscription for this subscriber (replace)
-    config.subscriptions = [
-        s for s in config.subscriptions if s.subscriber != subscriber
-    ]
+    config.subscriptions = [s for s in config.subscriptions if s.subscriber != subscriber]
 
     if len(config.subscriptions) >= _MAX_SUBSCRIPTIONS:
         msg = f"Federation hub has reached max subscriptions ({_MAX_SUBSCRIPTIONS})"
@@ -280,15 +279,12 @@ class FederatedStore:
                 );
             """)
 
-            # FTS5 table — created separately (can't be in executescript with IF NOT EXISTS reliably)
-            try:
+            # FTS5 table -- created separately (can't use executescript reliably)
+            with contextlib.suppress(sqlite3.OperationalError):
                 self._conn.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS federated_fts
                     USING fts5(key, value, tags, content=federated_memories, content_rowid=rowid)
                 """)
-            except sqlite3.OperationalError:
-                # FTS5 already exists or not available
-                pass
 
             self._conn.commit()
 
@@ -349,10 +345,8 @@ class FederatedStore:
                 published += 1
 
             # Update FTS index
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):
                 self._conn.execute("INSERT INTO federated_fts(federated_fts) VALUES('rebuild')")
-            except sqlite3.OperationalError:
-                pass  # FTS5 not available
 
             # Update meta
             self._conn.execute(
@@ -386,7 +380,8 @@ class FederatedStore:
             if keys:
                 placeholders = ",".join("?" for _ in keys)
                 cursor = self._conn.execute(
-                    f"DELETE FROM federated_memories WHERE project_id = ? AND key IN ({placeholders})",
+                    "DELETE FROM federated_memories"
+                    f" WHERE project_id = ? AND key IN ({placeholders})",
                     [project_id, *keys],
                 )
             else:
@@ -501,9 +496,7 @@ class FederatedStore:
     def get_stats(self) -> dict[str, Any]:
         """Return federation hub statistics."""
         with self._lock:
-            total = self._conn.execute(
-                "SELECT COUNT(*) FROM federated_memories"
-            ).fetchone()[0]
+            total = self._conn.execute("SELECT COUNT(*) FROM federated_memories").fetchone()[0]
 
             project_counts = self._conn.execute(
                 """
@@ -513,9 +506,7 @@ class FederatedStore:
                 """,
             ).fetchall()
 
-            meta_rows = self._conn.execute(
-                "SELECT * FROM federation_meta"
-            ).fetchall()
+            meta_rows = self._conn.execute("SELECT * FROM federation_meta").fetchall()
 
         return {
             "total_entries": total,
@@ -530,7 +521,7 @@ class FederatedStore:
 
 
 def sync_to_hub(
-    store: Any,  # MemoryStore (avoid circular import)
+    store: MemoryStore,
     federated_store: FederatedStore,
     project_id: str,
     project_root: str = "",
@@ -550,10 +541,7 @@ def sync_to_hub(
     """
     all_entries = store.list_all(scope="shared")
 
-    if keys:
-        entries = [e for e in all_entries if e.key in set(keys)]
-    else:
-        entries = all_entries
+    entries = [e for e in all_entries if e.key in set(keys)] if keys else all_entries
 
     if not entries:
         return {"published": 0, "skipped": 0}
@@ -571,7 +559,7 @@ def sync_to_hub(
 
 
 def sync_from_hub(
-    store: Any,  # MemoryStore
+    store: MemoryStore,
     federated_store: FederatedStore,
     project_id: str,
     config: FederationConfig | None = None,
@@ -620,10 +608,9 @@ def sync_from_hub(
 
             # Apply tag filter
             entry_tags = entry_dict.get("tags", [])
-            if subscription.tag_filter:
-                if not set(subscription.tag_filter) & set(entry_tags):
-                    skipped += 1
-                    continue
+            if subscription.tag_filter and not set(subscription.tag_filter) & set(entry_tags):
+                skipped += 1
+                continue
 
             key = entry_dict["key"]
 
@@ -642,7 +629,7 @@ def sync_from_hub(
                 source="system",
                 source_agent=f"federated:{source_id}",
                 scope="project",
-                tags=entry_tags + ["federated", f"from:{source_id}"],
+                tags=[*entry_tags, "federated", f"from:{source_id}"],
             )
             imported += 1
 
@@ -682,7 +669,7 @@ class FederatedSearchResult:
 
 def federated_search(
     query: str,
-    local_store: Any,  # MemoryStore
+    local_store: MemoryStore,
     federated_store: FederatedStore,
     project_id: str,
     include_local: bool = True,
