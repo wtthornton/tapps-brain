@@ -104,6 +104,7 @@ class MemoryStore:
         consolidation_config: ConsolidationConfig | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         write_rules: Any = None,  # noqa: ANN401
+        lookup_engine: Any = None,  # noqa: ANN401
     ) -> None:
         self._project_root = project_root
         self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
@@ -111,6 +112,7 @@ class MemoryStore:
         self._consolidation_config = consolidation_config or ConsolidationConfig()
         self._embedding_provider = embedding_provider
         self._write_rules = write_rules
+        self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
 
         # Cold-start: load all entries into memory
@@ -408,6 +410,180 @@ class MemoryStore:
             total_count=len(entries),
             tier_counts=tier_counts,
         )
+
+    # ------------------------------------------------------------------
+    # Reinforcement (Story 002.2)
+    # ------------------------------------------------------------------
+
+    def reinforce(self, key: str, *, confidence_boost: float = 0.0) -> MemoryEntry:
+        """Reinforce a memory entry, resetting its decay clock atomically.
+
+        Args:
+            key: The memory entry key to reinforce.
+            confidence_boost: Optional confidence increase (0.0-0.2).
+
+        Returns:
+            The updated ``MemoryEntry``.
+
+        Raises:
+            KeyError: If the entry does not exist.
+        """
+        from tapps_brain.decay import DecayConfig
+        from tapps_brain.reinforcement import reinforce as _reinforce
+
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                raise KeyError(key)
+
+            updates = _reinforce(entry, DecayConfig(), confidence_boost=confidence_boost)
+            updated = entry.model_copy(update=updates)
+            self._entries[key] = updated
+
+        self._persistence.save(updated)
+        return updated
+
+    # ------------------------------------------------------------------
+    # Extraction ingestion (Story 002.3)
+    # ------------------------------------------------------------------
+
+    def ingest_context(
+        self,
+        context: str,
+        *,
+        source: str = "agent",
+        capture_prompt: str = "",
+    ) -> list[str]:
+        """Extract durable facts from context and save new entries.
+
+        Uses rule-based pattern matching to find decision-like statements
+        and saves them as memory entries. Existing keys are skipped.
+
+        Args:
+            context: Raw session/transcript text to scan.
+            source: Source attribution for created entries.
+            capture_prompt: Optional guidance for extraction.
+
+        Returns:
+            List of keys for newly created entries.
+        """
+        from tapps_brain.extraction import extract_durable_facts
+
+        facts = extract_durable_facts(context, capture_prompt)
+        created_keys: list[str] = []
+
+        for fact in facts:
+            key = fact["key"]
+            # Skip if already exists
+            with self._lock:
+                if key in self._entries:
+                    continue
+
+            result = self.save(
+                key=key,
+                value=fact["value"],
+                tier=fact["tier"],
+                source=source,
+            )
+            if isinstance(result, MemoryEntry):
+                created_keys.append(key)
+
+        return created_keys
+
+    # ------------------------------------------------------------------
+    # Session indexing (Story 002.4)
+    # ------------------------------------------------------------------
+
+    def index_session(self, session_id: str, chunks: list[str]) -> int:
+        """Index session chunks for later search.
+
+        Args:
+            session_id: Session identifier.
+            chunks: List of text chunks to index.
+
+        Returns:
+            Number of chunks stored.
+        """
+        from tapps_brain.session_index import index_session as _index_session
+
+        try:
+            return _index_session(self._project_root, session_id, chunks)
+        except Exception:
+            logger.debug("session_index_failed", session_id=session_id, exc_info=True)
+            return 0
+
+    def search_sessions(self, query: str, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Search session index by query.
+
+        Returns list of dicts with keys: session_id, chunk_index, content, created_at.
+        """
+        from tapps_brain.session_index import search_session_index
+
+        try:
+            return search_session_index(self._project_root, query, limit=limit)
+        except Exception:
+            logger.debug("session_search_failed", query=query, exc_info=True)
+            return []
+
+    def cleanup_sessions(self, *, ttl_days: int = 90) -> int:
+        """Delete session chunks older than ttl_days.
+
+        Returns:
+            Count of deleted chunks.
+        """
+        from tapps_brain.session_index import delete_expired_sessions
+
+        try:
+            return delete_expired_sessions(self._project_root, ttl_days)
+        except Exception:
+            logger.debug("session_cleanup_failed", exc_info=True)
+            return 0
+
+    # ------------------------------------------------------------------
+    # Doc validation (Story 002.1)
+    # ------------------------------------------------------------------
+
+    def validate_entries(
+        self,
+        *,
+        keys: list[str] | None = None,
+    ) -> Any:  # noqa: ANN401
+        """Validate memory entries against authoritative documentation.
+
+        Requires a lookup engine to be configured at construction time.
+        When no lookup engine is set, returns an empty ``ValidationReport``.
+
+        Args:
+            keys: Optional list of entry keys to validate. If None,
+                validates all entries.
+
+        Returns:
+            A ``ValidationReport`` with per-entry results. Changes are
+            applied back to the store automatically.
+        """
+        import asyncio
+
+        from tapps_brain.doc_validation import MemoryDocValidator, ValidationReport
+
+        if self._lookup_engine is None:
+            return ValidationReport()
+
+        validator = MemoryDocValidator(self._lookup_engine)
+
+        # Collect entries to validate
+        with self._lock:
+            if keys is not None:
+                entries = [self._entries[k] for k in keys if k in self._entries]
+            else:
+                entries = list(self._entries.values())
+
+        # Run async validation synchronously (store is sync by design)
+        report = asyncio.run(validator.validate_batch(entries))
+
+        # Apply results back to the store
+        asyncio.run(validator.apply_results(report, self))
+
+        return report
 
     def close(self) -> None:
         """Close the underlying persistence layer."""
