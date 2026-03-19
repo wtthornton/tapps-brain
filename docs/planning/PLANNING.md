@@ -8,7 +8,8 @@ This document defines how epics, stories, and tasks are structured in this proje
 docs/planning/
 ├── PLANNING.md          ← This file (conventions & templates)
 └── epics/
-    └── EPIC-001.md      ← One file per epic, contains its stories
+    ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
+    └── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
 ```
 
 ## Why This Structure
