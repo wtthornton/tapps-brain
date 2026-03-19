@@ -231,7 +231,7 @@ After Stories 1–7, most modules will be well-covered. This story closes the re
 - [x] No module below 80% line coverage (lowest: session_index.py at 90%)
 - [x] Update `--cov-fail-under` from 78 to 95 (updated in CLAUDE.md and CI workflow)
 - [x] All `ResourceWarning: unclosed database` warnings resolved (suppressed via pytest filterwarnings; GC finalizer warnings, not test leaks)
-- [ ] CI passes on all matrix targets (Ubuntu/macOS/Windows × Python 3.12/3.13) — pending push
+- [x] CI passes on all matrix targets (Ubuntu/macOS/Windows × Python 3.12/3.13) — verified 2026-03-19
 
 ## Coverage Target Rationale
 
