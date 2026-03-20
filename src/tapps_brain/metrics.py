@@ -44,6 +44,21 @@ class MetricsSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class StoreHealthReport(BaseModel):
+    """Aggregate health view for a project memory store (EPIC-007)."""
+
+    store_path: str = Field(description="Project root path backing the store.")
+    entry_count: int = 0
+    max_entries: int = 500
+    schema_version: int = 0
+    tier_distribution: dict[str, int] = Field(default_factory=dict)
+    oldest_entry_age_days: float = 0.0
+    consolidation_candidates: int = 0
+    gc_candidates: int = 0
+    federation_enabled: bool = False
+    federation_project_count: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Reservoir for histogram sampling
 # ---------------------------------------------------------------------------

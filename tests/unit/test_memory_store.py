@@ -83,11 +83,11 @@ class TestMemoryStoreCRUD:
         store.save(key="k1", value="v1")
         entry = store.get("k1")
         assert entry is not None
-        assert entry.access_count == 1
+        assert entry.access_count == 2  # save seeds 1; first get adds 1
 
         entry2 = store.get("k1")
         assert entry2 is not None
-        assert entry2.access_count == 2
+        assert entry2.access_count == 3
 
 
 class TestMemoryStoreList:

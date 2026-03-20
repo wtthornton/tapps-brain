@@ -48,7 +48,7 @@ uv build
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), and doc validation (`validate_entries()` with pluggable `LookupEngineLike`). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1→v4). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), and MCP exposure via `mcp_server.py`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v6**; v5 = bi-temporal columns, v6 = version bump for tooling). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting. `ConsolidatedEntry` extends it for merged memories.
 

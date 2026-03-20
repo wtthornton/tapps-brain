@@ -5,8 +5,8 @@ Persistent cross-session memory system for AI coding assistants.
 A fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
-![Coverage 97%](https://img.shields.io/badge/coverage-97%25-brightgreen)
-![Tests 918](https://img.shields.io/badge/tests-918%20passing-brightgreen)
+![Coverage 95%](https://img.shields.io/badge/coverage-95%25-brightgreen)
+![Tests 1039](https://img.shields.io/badge/tests-1039%20passing-brightgreen)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
 ## Installation
@@ -15,11 +15,15 @@ A fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ra
 pip install tapps-brain
 ```
 
-With optional vector search:
+The package includes **Typer** for the CLI (`python -m tapps_brain.cli`). Optional extras:
 
 ```bash
-pip install tapps-brain[vector]
+pip install tapps-brain[mcp]      # Model Context Protocol server (FastMCP)
+pip install tapps-brain[vector]   # FAISS + sentence-transformers + hybrid search
+pip install tapps-brain[reranker] # Cohere reranking
 ```
+
+> **Contributors:** use `uv sync --extra dev` — dev dependencies include `mcp` so MCP unit tests run locally. See [`docs/planning/STATUS.md`](docs/planning/STATUS.md) for a current snapshot.
 
 ## Quick Start
 
@@ -139,6 +143,7 @@ store.close()
 | **Relations** | `relations`, `contradictions` | Entity extraction and contradiction detection |
 | **Extensions** | `embeddings`, `reranker`, `injection`, `similarity` | Optional vector search, reranking, prompt injection |
 | **I/O** | `io`, `seeding` | Import/export, project profile seeding |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI; optional FastMCP server (`mcp` extra) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy feature detection |
 
 ### Key Design Decisions
@@ -164,7 +169,7 @@ uv sync --extra dev --extra vector
 ### Commands
 
 ```bash
-# Run all tests (918 tests, ~35s)
+# Run all tests (~1039 tests)
 pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Run benchmarks
@@ -201,18 +206,22 @@ tests/
 
 - Python 3.12+, strict mypy, ruff with extensive rule set
 - Line length: 100 chars
-- Coverage minimum: 95% (current: 97.12%)
+- Coverage minimum: 95% (see latest `pytest --cov` output)
 - LF line endings enforced via `.gitattributes`
 
 ## Documentation
 
+- [Project status snapshot](docs/planning/STATUS.md) — Schema version, deps, interfaces, quality gates
 - [Federation Guide](docs/guides/federation.md) — Cross-project memory sharing setup and usage
 - [Planning Conventions](docs/planning/PLANNING.md) — Epic/story format for AI-assisted development
 - [Auto-Recall Guide](docs/guides/auto-recall.md) — Recall orchestrator usage, configuration, and integration examples
-- [EPIC-001](docs/planning/epics/EPIC-001.md) — Test suite quality (done: 792 tests, 96.59% coverage)
-- [EPIC-002](docs/planning/epics/EPIC-002.md) — Integration wiring (done: 839 tests, 97.17% coverage)
-- [EPIC-003](docs/planning/epics/EPIC-003.md) — Auto-recall orchestrator + capture pipeline (done: 881 tests, 97.12% coverage)
-- [EPIC-004](docs/planning/epics/EPIC-004.md) — Bi-temporal fact versioning (done: 918 tests, 97.12% coverage)
+- [EPIC-001](docs/planning/epics/EPIC-001.md) — Test suite quality (done)
+- [EPIC-002](docs/planning/epics/EPIC-002.md) — Integration wiring (done)
+- [EPIC-003](docs/planning/epics/EPIC-003.md) — Auto-recall orchestrator + capture pipeline (done)
+- [EPIC-004](docs/planning/epics/EPIC-004.md) — Bi-temporal fact versioning (done)
+- [EPIC-007](docs/planning/epics/EPIC-007.md) — Observability (in progress; see STATUS)
+- [EPIC-008](docs/planning/epics/EPIC-008.md) — MCP server (in progress; see STATUS)
+- [EPIC-009](docs/planning/epics/EPIC-009.md) — Multi-interface distribution (planned)
 
 ## License
 

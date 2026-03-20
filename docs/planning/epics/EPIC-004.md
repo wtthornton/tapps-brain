@@ -47,6 +47,10 @@ This enables:
 - [x] All existing tests pass without modification (backward compatibility)
 - [x] Overall coverage stays at 95%+
 
+### Persistence follow-on (2026-03-20)
+
+New databases migrate through **schema v6**. **v5** remains the migration that adds bi-temporal columns; **v6** adds only a schema-version record (no new columns) for tooling and observability alignment. EPIC-004 behavior is unchanged. See [`docs/planning/STATUS.md`](../STATUS.md).
+
 ## Stories
 
 ### STORY-004.1: Add valid_at / invalid_at fields to MemoryEntry

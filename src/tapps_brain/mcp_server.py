@@ -26,11 +26,11 @@ structlog.configure(
 def _lazy_import_mcp() -> Any:  # noqa: ANN401
     """Import ``mcp`` lazily so the module can be imported without the extra."""
     try:
-        from mcp.server.fastmcp import FastMCP  # type: ignore[import-untyped]
+        from mcp.server.fastmcp import FastMCP
     except ImportError:
         sys.stderr.write(
             "ERROR: The 'mcp' package is required for the MCP server.\n"
-            "Install it with: uv sync --extra mcp\n"
+            "Install it with: uv sync --extra mcp (or --extra dev for tests)\n"
         )
         sys.exit(1)
     return FastMCP
@@ -48,7 +48,7 @@ def _get_store(project_dir: Path) -> Any:  # noqa: ANN401
     return MemoryStore(project_dir)
 
 
-def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
+def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0915
     """Create and configure a FastMCP server instance.
 
     Args:
@@ -57,12 +57,12 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
     Returns:
         A configured FastMCP server instance.
     """
-    FastMCP = _lazy_import_mcp()
+    fastmcp_cls = _lazy_import_mcp()
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     store = _get_store(resolved_dir)
 
-    mcp = FastMCP(
+    mcp = fastmcp_cls(
         "tapps-brain",
         instructions=(
             "tapps-brain is a persistent cross-session memory system. "
@@ -75,7 +75,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
     # Tools — model-controlled operations
     # ------------------------------------------------------------------
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_save(
         key: str,
         value: str,
@@ -108,14 +108,16 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
         if isinstance(result, dict):
             # Error from safety check or write rules
             return json.dumps(result)
-        return json.dumps({
-            "status": "saved",
-            "key": result.key,
-            "tier": result.tier.value,
-            "confidence": result.confidence,
-        })
+        return json.dumps(
+            {
+                "status": "saved",
+                "key": result.key,
+                "tier": result.tier.value,
+                "confidence": result.confidence,
+            }
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_get(key: str) -> str:
         """Retrieve a single memory entry by key.
 
@@ -127,7 +129,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             return json.dumps({"error": "not_found", "key": key})
         return json.dumps(entry.model_dump(mode="json"))
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_delete(key: str) -> str:
         """Delete a memory entry by key.
 
@@ -137,7 +139,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
         deleted = store.delete(key)
         return json.dumps({"deleted": deleted, "key": key})
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_search(
         query: str,
         tier: str | None = None,
@@ -153,18 +155,20 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             as_of: Optional ISO-8601 timestamp for point-in-time query.
         """
         results = store.search(query, tier=tier, scope=scope, as_of=as_of)
-        return json.dumps([
-            {
-                "key": e.key,
-                "value": e.value,
-                "tier": e.tier.value,
-                "confidence": e.confidence,
-                "tags": e.tags,
-            }
-            for e in results
-        ])
+        return json.dumps(
+            [
+                {
+                    "key": e.key,
+                    "value": e.value,
+                    "tier": e.tier.value,
+                    "confidence": e.confidence,
+                    "tags": e.tags,
+                }
+                for e in results
+            ]
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_list(
         tier: str | None = None,
         scope: str | None = None,
@@ -182,23 +186,25 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             scope=scope,
             include_superseded=include_superseded,
         )
-        return json.dumps([
-            {
-                "key": e.key,
-                "value": e.value[:200],
-                "tier": e.tier.value,
-                "confidence": e.confidence,
-                "tags": e.tags,
-                "scope": e.scope.value,
-            }
-            for e in entries
-        ])
+        return json.dumps(
+            [
+                {
+                    "key": e.key,
+                    "value": e.value[:200],
+                    "tier": e.tier.value,
+                    "confidence": e.confidence,
+                    "tags": e.tags,
+                    "scope": e.scope.value,
+                }
+                for e in entries
+            ]
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle tools — recall, reinforce, ingest, supersede, history
     # ------------------------------------------------------------------
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_recall(message: str) -> str:
         """Run auto-recall for a message and return ranked memories.
 
@@ -209,16 +215,18 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             message: The user/agent message to match against stored memories.
         """
         result = store.recall(message)
-        return json.dumps({
-            "memory_section": result.memory_section,
-            "memory_count": result.memory_count,
-            "token_count": result.token_count,
-            "recall_time_ms": result.recall_time_ms,
-            "truncated": result.truncated,
-            "memories": result.memories,
-        })
+        return json.dumps(
+            {
+                "memory_section": result.memory_section,
+                "memory_count": result.memory_count,
+                "token_count": result.token_count,
+                "recall_time_ms": result.recall_time_ms,
+                "truncated": result.truncated,
+                "memories": result.memories,
+            }
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_reinforce(key: str, confidence_boost: float = 0.0) -> str:
         """Reinforce a memory entry, boosting its confidence and resetting decay.
 
@@ -233,14 +241,16 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             entry = store.reinforce(key, confidence_boost=confidence_boost)
         except KeyError:
             return json.dumps({"error": "not_found", "key": key})
-        return json.dumps({
-            "status": "reinforced",
-            "key": entry.key,
-            "confidence": entry.confidence,
-            "access_count": entry.access_count,
-        })
+        return json.dumps(
+            {
+                "status": "reinforced",
+                "key": entry.key,
+                "confidence": entry.confidence,
+                "access_count": entry.access_count,
+            }
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_ingest(context: str, source: str = "agent") -> str:
         """Extract and store durable facts from conversation context.
 
@@ -252,13 +262,15 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             source: Source attribution — one of: human, agent, inferred, system.
         """
         created_keys = store.ingest_context(context, source=source)
-        return json.dumps({
-            "status": "ingested",
-            "created_keys": created_keys,
-            "count": len(created_keys),
-        })
+        return json.dumps(
+            {
+                "status": "ingested",
+                "created_keys": created_keys,
+                "count": len(created_keys),
+            }
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_supersede(
         old_key: str,
         new_value: str,
@@ -291,15 +303,17 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             return json.dumps({"error": "not_found", "key": old_key})
         except ValueError as exc:
             return json.dumps({"error": "already_superseded", "message": str(exc)})
-        return json.dumps({
-            "status": "superseded",
-            "old_key": old_key,
-            "new_key": entry.key,
-            "tier": entry.tier.value,
-            "confidence": entry.confidence,
-        })
+        return json.dumps(
+            {
+                "status": "superseded",
+                "old_key": old_key,
+                "new_key": entry.key,
+                "tier": entry.tier.value,
+                "confidence": entry.confidence,
+            }
+        )
 
-    @mcp.tool()  # type: ignore[misc]
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_history(key: str) -> str:
         """Show the full version chain for a memory key.
 
@@ -309,46 +323,53 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
         Args:
             key: Any key in the version chain.
         """
-        chain = store.history(key)
+        try:
+            chain = store.history(key)
+        except KeyError:
+            return json.dumps({"error": "not_found", "key": key})
         if not chain:
             return json.dumps({"error": "not_found", "key": key})
-        return json.dumps([
-            {
-                "key": e.key,
-                "value": e.value[:200],
-                "tier": e.tier.value,
-                "confidence": e.confidence,
-                "valid_at": e.valid_at,
-                "invalid_at": e.invalid_at,
-                "superseded_by": e.superseded_by,
-            }
-            for e in chain
-        ])
+        return json.dumps(
+            [
+                {
+                    "key": e.key,
+                    "value": e.value[:200],
+                    "tier": e.tier.value,
+                    "confidence": e.confidence,
+                    "valid_at": e.valid_at,
+                    "invalid_at": e.invalid_at,
+                    "superseded_by": e.superseded_by,
+                }
+                for e in chain
+            ]
+        )
 
     # ------------------------------------------------------------------
     # Resources — read-only store views
     # ------------------------------------------------------------------
 
-    @mcp.resource("memory://stats")  # type: ignore[misc]
+    @mcp.resource("memory://stats")  # type: ignore[untyped-decorator]
     def stats_resource() -> str:
         """Store statistics: entry count, tier distribution, schema version."""
         snap = store.snapshot()
         schema_ver = store._persistence.get_schema_version()
-        return json.dumps({
-            "project_root": str(snap.project_root),
-            "total_entries": snap.total_count,
-            "max_entries": 500,
-            "schema_version": schema_ver,
-            "tier_distribution": snap.tier_counts,
-        })
+        return json.dumps(
+            {
+                "project_root": str(snap.project_root),
+                "total_entries": snap.total_count,
+                "max_entries": 500,
+                "schema_version": schema_ver,
+                "tier_distribution": snap.tier_counts,
+            }
+        )
 
-    @mcp.resource("memory://health")  # type: ignore[misc]
+    @mcp.resource("memory://health")  # type: ignore[untyped-decorator]
     def health_resource() -> str:
         """Store health report."""
         report = store.health()
         return json.dumps(report.model_dump(mode="json"))
 
-    @mcp.resource("memory://entries/{key}")  # type: ignore[misc]
+    @mcp.resource("memory://entries/{key}")  # type: ignore[untyped-decorator]
     def entry_resource(key: str) -> str:
         """Full detail view of a single memory entry."""
         entry = store.get(key)
@@ -356,7 +377,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
             return json.dumps({"error": "not_found", "key": key})
         return json.dumps(entry.model_dump(mode="json"))
 
-    @mcp.resource("memory://metrics")  # type: ignore[misc]
+    @mcp.resource("memory://metrics")  # type: ignore[untyped-decorator]
     def metrics_resource() -> str:
         """Operation metrics: counters and latency histograms."""
         snapshot = store.get_metrics()
@@ -365,7 +386,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401
     # ------------------------------------------------------------------
     # Attach store to server for testing access
     # ------------------------------------------------------------------
-    mcp._tapps_store = store  # type: ignore[attr-defined]
+    mcp._tapps_store = store
 
     return mcp
 

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from tapps_brain.embeddings import EmbeddingProvider
 
+from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, StoreHealthReport
 from tapps_brain.safety import check_content_safety
 
 logger = structlog.get_logger(__name__)
@@ -114,6 +115,7 @@ class MemoryStore:
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
+        self._metrics = MetricsCollector()
 
         # Cold-start: load all entries into memory
         self._entries: dict[str, MemoryEntry] = {}
@@ -214,7 +216,7 @@ class MemoryStore:
                 created_at=existing.created_at if existing else now,
                 updated_at=now,
                 last_accessed=now,
-                access_count=existing.access_count if existing else 0,
+                access_count=existing.access_count if existing else 1,
                 branch=branch,
                 # Preserve reserved fields on update
                 last_reinforced=existing.last_reinforced if existing else None,
@@ -773,6 +775,66 @@ class MemoryStore:
                 self._recall_orchestrator = RecallOrchestrator(self)
 
         return self._recall_orchestrator.recall(message, **kwargs)
+
+    def health(self) -> StoreHealthReport:
+        """Return a structured health report for this store."""
+        from datetime import UTC, datetime
+
+        from tapps_brain.federation import load_federation_config
+        from tapps_brain.gc import MemoryGarbageCollector
+        from tapps_brain.similarity import find_consolidation_groups
+
+        with self._lock:
+            entries = list(self._entries.values())
+
+        tier_counts: dict[str, int] = {}
+        for entry in entries:
+            tier_val = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+            tier_counts[tier_val] = tier_counts.get(tier_val, 0) + 1
+
+        schema_ver = self._persistence.get_schema_version()
+
+        oldest_age = 0.0
+        now = datetime.now(tz=UTC)
+        for entry in entries:
+            try:
+                raw = entry.created_at.replace("Z", "+00:00")
+                created = datetime.fromisoformat(raw)
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                days = (now - created).total_seconds() / 86400.0
+                oldest_age = max(oldest_age, days)
+            except (ValueError, TypeError, AttributeError):
+                continue
+
+        gc = MemoryGarbageCollector()
+        gc_candidates = gc.identify_candidates(entries)
+
+        groups = find_consolidation_groups(
+            entries,
+            threshold=self._consolidation_config.threshold,
+        )
+        consolidation_candidates = sum(len(g) for g in groups)
+
+        fed = load_federation_config()
+        federation_project_count = len(fed.projects)
+
+        return StoreHealthReport(
+            store_path=str(self._project_root),
+            entry_count=len(entries),
+            max_entries=_MAX_ENTRIES,
+            schema_version=schema_ver,
+            tier_distribution=tier_counts,
+            oldest_entry_age_days=oldest_age,
+            consolidation_candidates=consolidation_candidates,
+            gc_candidates=len(gc_candidates),
+            federation_enabled=federation_project_count > 0,
+            federation_project_count=federation_project_count,
+        )
+
+    def get_metrics(self) -> MetricsSnapshot:
+        """Return a snapshot of in-process operation metrics."""
+        return self._metrics.snapshot()
 
     def close(self) -> None:
         """Close the underlying persistence layer."""

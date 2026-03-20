@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
+
+
+def _tool_fn(mcp_server, name: str):
+    for tool in mcp_server._tool_manager.list_tools():
+        if tool.name == name:
+            return tool.fn
+    msg = f"tool not found: {name}"
+    raise KeyError(msg)
 
 
 @pytest.fixture
@@ -77,9 +86,16 @@ class TestCoreTools:
     def test_all_expected_tools_present(self, mcp_server):
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         expected = {
-            "memory_save", "memory_get", "memory_delete", "memory_search", "memory_list",
-            "memory_recall", "memory_reinforce", "memory_ingest",
-            "memory_supersede", "memory_history",
+            "memory_save",
+            "memory_get",
+            "memory_delete",
+            "memory_search",
+            "memory_list",
+            "memory_recall",
+            "memory_reinforce",
+            "memory_ingest",
+            "memory_supersede",
+            "memory_history",
         }
         assert expected.issubset(tool_names)
 
@@ -90,8 +106,11 @@ class TestLifecycleTools:
     def test_lifecycle_tools_registered(self, mcp_server):
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         expected = {
-            "memory_recall", "memory_reinforce", "memory_ingest",
-            "memory_supersede", "memory_history",
+            "memory_recall",
+            "memory_reinforce",
+            "memory_ingest",
+            "memory_supersede",
+            "memory_history",
         }
         assert expected.issubset(tool_names)
 
@@ -120,8 +139,7 @@ class TestLifecycleTools:
     def test_ingest_extracts_facts(self, mcp_server):
         store = mcp_server._tapps_store
         context = (
-            "We decided to use SQLite for the storage layer. "
-            "The team agreed on ruff as the linter."
+            "We decided to use SQLite for the storage layer. The team agreed on ruff as the linter."
         )
         keys = store.ingest_context(context, source="agent")
         # Extraction is rule-based, may or may not find facts
@@ -162,10 +180,10 @@ class TestLifecycleTools:
         assert len(chain) >= 2
         assert chain[0].key == "chain-start"
 
-    def test_history_empty_for_unknown_key(self, mcp_server):
+    def test_history_unknown_key_raises(self, mcp_server):
         store = mcp_server._tapps_store
-        chain = store.history("no-such-key")
-        assert chain == []
+        with pytest.raises(KeyError):
+            store.history("no-such-key")
 
 
 class TestResources:
@@ -187,7 +205,7 @@ class TestResources:
         assert "memory://metrics" in uris
 
     def test_entry_resource_template_registered(self, mcp_server):
-        templates = mcp_server._resource_manager.list_resource_templates()
+        templates = mcp_server._resource_manager.list_templates()
         uris = [str(t.uri_template) for t in templates]
         assert any("memory://entries/" in u for u in uris)
 
@@ -273,6 +291,112 @@ class TestToolExecution:
         report = store.health()
         assert report.max_entries == 500
         assert report.schema_version >= 1
+
+
+class TestMcpToolHandlerExecution:
+    """Exercise MCP tool and resource callables for coverage."""
+
+    def test_memory_crud_and_search_tools(self, mcp_server):
+        save = _tool_fn(mcp_server, "memory_save")
+        saved = json.loads(save(key="mcp-t1", value="hello mcp world", tier="pattern"))
+        assert saved["status"] == "saved"
+
+        get = _tool_fn(mcp_server, "memory_get")
+        row = json.loads(get(key="mcp-t1"))
+        assert row["key"] == "mcp-t1"
+        missing = json.loads(get(key="missing-key"))
+        assert missing["error"] == "not_found"
+
+        search = _tool_fn(mcp_server, "memory_search")
+        hits = json.loads(search(query="mcp"))
+        assert any(h["key"] == "mcp-t1" for h in hits)
+
+        lst = _tool_fn(mcp_server, "memory_list")
+        listed = json.loads(lst(include_superseded=True))
+        assert any(e["key"] == "mcp-t1" for e in listed)
+
+        delete = _tool_fn(mcp_server, "memory_delete")
+        gone = json.loads(delete(key="mcp-t1"))
+        assert gone["deleted"] is True
+
+    def test_memory_recall_reinforce_ingest_tools(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="mcp-rc", value="unique recall phrase xyz", tier="pattern")
+
+        recall = _tool_fn(mcp_server, "memory_recall")
+        payload = json.loads(recall(message="recall phrase xyz"))
+        assert "memory_count" in payload
+        assert "token_count" in payload
+
+        reinforce = _tool_fn(mcp_server, "memory_reinforce")
+        assert json.loads(reinforce(key="no-such", confidence_boost=0.0))["error"] == "not_found"
+        ok = json.loads(reinforce(key="mcp-rc", confidence_boost=0.05))
+        assert ok["status"] == "reinforced"
+
+        ingest = _tool_fn(mcp_server, "memory_ingest")
+        ing = json.loads(
+            ingest(context="We chose SQLite for storage.", source="agent"),
+        )
+        assert ing["status"] == "ingested"
+        assert "created_keys" in ing
+
+    def test_memory_supersede_and_history_tools(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="mcp-h1", value="first", tier="pattern")
+        store.supersede("mcp-h1", "second", key="mcp-h2")
+
+        supersede = _tool_fn(mcp_server, "memory_supersede")
+        assert json.loads(supersede(old_key="ghost", new_value="x"))["error"] == "not_found"
+        bad = json.loads(supersede(old_key="mcp-h1", new_value="third"))
+        assert bad.get("error") == "already_superseded"
+
+        ok = json.loads(
+            supersede(old_key="mcp-h2", new_value="third", key="mcp-h3"),
+        )
+        assert ok["status"] == "superseded"
+
+        hist = _tool_fn(mcp_server, "memory_history")
+        assert json.loads(hist(key="no-history-key"))["error"] == "not_found"
+        chain = json.loads(hist(key="mcp-h1"))
+        assert isinstance(chain, list)
+        assert len(chain) >= 2
+
+    def test_resource_callables_return_json(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="res-1", value="resource test", tier="pattern")
+        rm = mcp_server._resource_manager
+        for res in rm.list_resources():
+            body = json.loads(res.fn())
+            assert isinstance(body, dict)
+
+        for tpl in rm.list_templates():
+            raw = tpl.fn("res-1")
+            body = json.loads(raw)
+            assert body.get("key") == "res-1"
+
+
+class TestMcpMain:
+    def test_main_invokes_stdio_run(self, tmp_path, monkeypatch):
+        from tapps_brain import mcp_server as ms
+
+        captured: list[object] = []
+        real_create = ms.create_server
+
+        def wrap(project_dir=None):
+            srv = real_create(project_dir)
+
+            def run(*args, **kwargs):
+                captured.append((args, kwargs))
+                srv._tapps_store.close()
+
+            srv.run = run  # type: ignore[method-assign]
+            return srv
+
+        monkeypatch.setattr(ms, "create_server", wrap)
+        monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--project-dir", str(tmp_path)])
+        ms.main()
+        assert captured
+        assert captured[0][1].get("transport") == "stdio"
 
 
 class TestProjectDirResolution:

@@ -23,12 +23,14 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
 _SCHEMA_V3 = 3
 _SCHEMA_V4 = 4
+_SCHEMA_V5 = 5
+_SCHEMA_V6 = 6
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -97,8 +99,10 @@ class MemoryPersistence:
                 self._migrate_v2_to_v3(cur)
             if current_version < _SCHEMA_V4:
                 self._migrate_v3_to_v4(cur)
-            if current_version < _SCHEMA_VERSION:
+            if current_version < _SCHEMA_V5:
                 self._migrate_v4_to_v5(cur)
+            if current_version < _SCHEMA_V6:
+                self._migrate_v5_to_v6(cur)
 
             self._conn.commit()
 
@@ -296,6 +300,16 @@ class MemoryPersistence:
             (5, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v5_to_v6(self, cur: sqlite3.Cursor) -> None:
+        """Schema v6 — observability hooks / version bump (EPIC-007).
+
+        No SQLite shape changes; bumps version so tooling can detect v6 stores.
+        """
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (6, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -397,7 +411,7 @@ class MemoryPersistence:
             values = (*values, embedding_json)
 
         # Include temporal fields if schema supports it (v5+)
-        if schema_ver >= _SCHEMA_VERSION:
+        if schema_ver >= _SCHEMA_V5:
             columns.extend(["valid_at", "invalid_at", "superseded_by"])
             values = (*values, entry.valid_at, entry.invalid_at, entry.superseded_by)
 

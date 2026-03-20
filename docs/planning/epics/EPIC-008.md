@@ -10,6 +10,14 @@ tags: [mcp, integration, server]
 
 # EPIC-008: MCP Server — Expose tapps-brain via Model Context Protocol
 
+## Progress in tree (2026-03-20)
+
+- `src/tapps_brain/mcp_server.py` — FastMCP server, tools (CRUD, search, list, recall, reinforce, ingest, supersede, history), resources (stats, health, metrics, entry template)
+- `mcp` optional extra + included in `dev` for tests; `python -m tapps_brain.mcp_server`
+- `tests/unit/test_mcp_server.py` — registration + handler execution coverage
+
+Still open vs this epic: declared **`tapps-brain-mcp`** console script / packaging, MCP **prompts**, registry manifest, and any client-specific docs.
+
 ## Context
 
 tapps-brain is a library and CLI today. The Model Context Protocol (MCP) has become the universal integration standard for AI coding assistants — Claude Code, Cursor, VS Code Copilot, ChatGPT, Gemini CLI, and others all support MCP servers. Adding an MCP server makes tapps-brain's persistent memory available to every major AI tool without custom integration code.

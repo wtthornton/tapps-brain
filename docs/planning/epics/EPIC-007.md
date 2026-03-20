@@ -10,6 +10,17 @@ tags: [observability, metrics, audit, monitoring]
 
 # EPIC-007: Observability — Metrics, Audit Trail Queries, and Health Checks
 
+## Progress in tree (2026-03-20)
+
+Partial implementation exists and is covered by tests:
+
+- `src/tapps_brain/metrics.py` — `MetricsCollector`, `MetricsSnapshot`, `StoreHealthReport`
+- `MemoryStore.get_metrics()` — snapshot of in-process collector (instrumentation of every operation is **not** complete; see STORY-007.2)
+- `MemoryStore.health()` — structured report (counts, schema version, tiers, consolidation/GC hints, federation summary)
+- CLI: `tapps-brain maintenance health`, `tapps-brain store metrics` (Typer)
+
+Remaining per this epic: audit query API on JSONL, broad instrumentation, optional OpenTelemetry, and closing acceptance criteria below.
+
 ## Context
 
 tapps-brain has a JSONL audit log (`memory_log.jsonl`) and uses `structlog` for event logging, but there is no structured observability:

@@ -7,6 +7,7 @@ This document defines how epics, stories, and tasks are structured in this proje
 ```
 docs/planning/
 ├── PLANNING.md          ← This file (conventions & templates)
+├── STATUS.md            ← Snapshot: schema version, deps, tests, epic vs code (update with releases)
 └── epics/
     ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
     ├── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
@@ -14,7 +15,9 @@ docs/planning/
     ├── EPIC-004.md      ← Bi-temporal fact versioning with validity windows (done)
     ├── EPIC-005.md      ← CLI tool for memory management and operations (planned)
     ├── EPIC-006.md      ← Persistent knowledge graph and semantic queries (planned)
-    └── EPIC-007.md      ← Observability — metrics, audit trail, health checks (planned)
+    ├── EPIC-007.md      ← Observability — metrics, audit trail, health checks (planned)
+    ├── EPIC-008.md      ← MCP server — expose tapps-brain via MCP (planned)
+    └── EPIC-009.md      ← Multi-interface distribution (planned)
 ```
 
 ## Why This Structure
@@ -133,6 +136,7 @@ The AI will load the epic context, find the story, read its context refs, implem
 - Update story status in the epic file as work progresses.
 - When all stories in an epic are `done`, set the epic status to `done`.
 - Commit status changes alongside the code they relate to.
+- Optionally refresh [`STATUS.md`](./STATUS.md) when schema version, default test counts, or major interface changes land (human-oriented snapshot; Ralph task order stays in `.ralph/fix_plan.md`).
 
 ### Commit Messages
 

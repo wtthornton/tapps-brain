@@ -41,7 +41,7 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1-v4).
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v6). See `docs/planning/STATUS.md` for a current snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 

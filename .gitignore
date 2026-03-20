@@ -10,4 +10,19 @@ build/
 
 # Ralph logs (keep config, ignore runtime artifacts)
 .ralph/logs/
+
+# Local project memory store (developer machine)
+.tapps-brain/
+
+# Ralph loop ephemeral state (do not commit)
+.ralph/.call_count
+.ralph/.circuit_breaker_history
+.ralph/.circuit_breaker_state
+.ralph/.claude_session_id
+.ralph/.exit_signals
+.ralph/.last_reset
+.ralph/.loop_start_sha
+.ralph/.ralph_session
+.ralph/.response_analysis
+.ralph/status.json
 .coverage

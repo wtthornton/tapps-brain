@@ -57,4 +57,5 @@ def reinforce(
         "reinforce_count": entry.reinforce_count + 1,
         "confidence": new_confidence,
         "updated_at": now_iso,
+        "access_count": entry.access_count + 1,
     }
