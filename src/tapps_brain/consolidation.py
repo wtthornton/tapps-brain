@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 
@@ -19,6 +20,7 @@ from tapps_brain.models import (
     MemorySource,
     MemoryTier,
 )
+from tapps_brain.relations import RelationEntry
 from tapps_brain.similarity import (
     DEFAULT_SIMILARITY_THRESHOLD,
     find_similar,
@@ -407,6 +409,52 @@ def should_consolidate(
     # Fall back to similarity-based detection
     similar = find_similar(entry, active_candidates, threshold=threshold)
     return [c for c in active_candidates if any(r.entry_key == c.key for r in similar)]
+
+
+def merge_entry_relations(
+    relation_lists: list[list[dict[str, Any]]],
+    target_key: str,
+) -> list[RelationEntry]:
+    """Merge relations from multiple source entries, deduplicating triples.
+
+    Relations are deduplicated by ``(subject, predicate, object_entity)``
+    (case-insensitive).  When duplicates are found the highest confidence
+    is kept and ``source_entry_keys`` are merged.
+
+    Args:
+        relation_lists: One list of relation dicts per source entry.
+        target_key: The consolidated entry key to assign as source.
+
+    Returns:
+        Deduplicated list of :class:`RelationEntry` instances.
+    """
+    seen: dict[tuple[str, str, str], RelationEntry] = {}
+    for rels in relation_lists:
+        for r in rels:
+            triple = (
+                r["subject"].lower(),
+                r["predicate"].lower(),
+                r["object_entity"].lower(),
+            )
+            if triple in seen:
+                existing = seen[triple]
+                # Merge source keys and keep highest confidence
+                merged_keys = list(dict.fromkeys([*existing.source_entry_keys, target_key]))
+                seen[triple] = existing.model_copy(
+                    update={
+                        "source_entry_keys": merged_keys,
+                        "confidence": max(existing.confidence, float(r.get("confidence", 0.8))),
+                    }
+                )
+            else:
+                seen[triple] = RelationEntry(
+                    subject=r["subject"],
+                    predicate=r["predicate"],
+                    object_entity=r["object_entity"],
+                    source_entry_keys=[target_key],
+                    confidence=float(r.get("confidence", 0.8)),
+                )
+    return list(seen.values())
 
 
 def detect_consolidation_reason(

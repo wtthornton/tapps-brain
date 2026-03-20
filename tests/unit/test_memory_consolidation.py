@@ -13,6 +13,7 @@ from tapps_brain.consolidation import (
     consolidate,
     detect_consolidation_reason,
     generate_consolidated_key,
+    merge_entry_relations,
     merge_tags,
     merge_values,
     select_tier,
@@ -440,3 +441,59 @@ class TestConstants:
     def test_max_value_length(self) -> None:
         """Max consolidated value length is reasonable."""
         assert MAX_CONSOLIDATED_VALUE_LENGTH == 4096
+
+
+# ---------------------------------------------------------------------------
+# STORY-006.5: merge_entry_relations tests
+# ---------------------------------------------------------------------------
+
+
+class TestMergeEntryRelations:
+    """Tests for merge_entry_relations()."""
+
+    def test_empty_input(self) -> None:
+        result = merge_entry_relations([], "consolidated-key")
+        assert result == []
+
+    def test_single_source(self) -> None:
+        rels = [
+            {
+                "subject": "ServiceA",
+                "predicate": "uses",
+                "object_entity": "ServiceB",
+                "confidence": 0.9,
+            },
+        ]
+        result = merge_entry_relations([rels], "c-key")
+        assert len(result) == 1
+        assert result[0].subject == "ServiceA"
+        assert result[0].source_entry_keys == ["c-key"]
+
+    def test_deduplicates_same_triple(self) -> None:
+        """Same triple from two sources produces one relation."""
+        rels1 = [{"subject": "A", "predicate": "uses", "object_entity": "B", "confidence": 0.7}]
+        rels2 = [{"subject": "A", "predicate": "uses", "object_entity": "B", "confidence": 0.9}]
+        result = merge_entry_relations([rels1, rels2], "c-key")
+        assert len(result) == 1
+        # Should keep highest confidence
+        assert result[0].confidence == 0.9
+
+    def test_case_insensitive_dedup(self) -> None:
+        """Deduplication is case-insensitive."""
+        rels1 = [{"subject": "ServiceA", "predicate": "Uses", "object_entity": "ServiceB"}]
+        rels2 = [{"subject": "servicea", "predicate": "uses", "object_entity": "serviceb"}]
+        result = merge_entry_relations([rels1, rels2], "c-key")
+        assert len(result) == 1
+
+    def test_different_triples_preserved(self) -> None:
+        """Different triples are all kept."""
+        rels1 = [{"subject": "A", "predicate": "uses", "object_entity": "B"}]
+        rels2 = [{"subject": "C", "predicate": "manages", "object_entity": "D"}]
+        result = merge_entry_relations([rels1, rels2], "c-key")
+        assert len(result) == 2
+
+    def test_target_key_in_source_keys(self) -> None:
+        """All merged relations have the target_key in source_entry_keys."""
+        rels = [{"subject": "X", "predicate": "uses", "object_entity": "Y"}]
+        result = merge_entry_relations([rels], "my-target")
+        assert "my-target" in result[0].source_entry_keys

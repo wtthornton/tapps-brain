@@ -18,6 +18,7 @@ import structlog
 from tapps_brain.consolidation import (
     consolidate,
     detect_consolidation_reason,
+    merge_entry_relations,
     should_consolidate,
 )
 from tapps_brain.models import (
@@ -192,6 +193,14 @@ def _persist_consolidated_entry(
         tags=consolidated.tags,
         confidence=consolidated.confidence,
     )
+
+    # Merge relations from all source entries onto the consolidated entry
+    relation_lists = [store.get_relations(k) for k in source_keys]
+    merged_relations = merge_entry_relations(relation_lists, consolidated.key)
+    if merged_relations:
+        store._persistence.save_relations(consolidated.key, merged_relations)
+        with store._lock:
+            store._relations[consolidated.key] = store._persistence.load_relations(consolidated.key)
 
     now = _utc_now_iso()
     for key in source_keys:

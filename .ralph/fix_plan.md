@@ -41,7 +41,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] In `store.supersede()`, copy relations from old key to new key via `get_relations()` + `save_relations()`. Add unit tests. Commit: `feat(story-006.5): transfer relations on supersede`
 
 #### 006-H: Relation transfer on consolidation
-- [ ] In `consolidation.py`, merge relations from all source entries, deduplicate same subject-predicate-object triples, persist on consolidated entry. Add unit tests. Commit: `feat(story-006.5): merge relations on consolidation`
+- [x] In `consolidation.py`, merge relations from all source entries, deduplicate same subject-predicate-object triples, persist on consolidated entry. Add unit tests. Commit: `feat(story-006.5): merge relations on consolidation`
 
 #### 006-I: Graph lifecycle integration tests
 - [ ] Create `tests/integration/test_graph_integration.py` — save entries with relations, close/reopen store, verify find_related traversal, supersede transfer, recall boost ranking. All on real SQLite. Commit: `test(story-006.6): graph lifecycle integration tests`
