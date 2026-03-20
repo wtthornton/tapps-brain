@@ -23,7 +23,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Verify/add `save_relations(key, relations)`, `load_relations(key)`, `delete_relations(key)` in `persistence.py`. Add unit tests in `test_memory_persistence.py`. Commit: `feat(story-006.1): relation persistence methods`
 
 #### 006-B: Wire relations into MemoryStore save/ingest
-- [ ] In `store.py`, call `extract_relations()` from `save()` and `ingest_context()`, persist via `self._persistence.save_relations()`. Add `get_relations(key)` convenience method. Add unit tests. Commit: `feat(story-006.2): auto-extract relations on save/ingest`
+- [x] In `store.py`, call `extract_relations()` from `save()` and `ingest_context()`, persist via `self._persistence.save_relations()`. Add `get_relations(key)` convenience method. Add unit tests. Commit: `feat(story-006.2): auto-extract relations on save/ingest`
 
 #### 006-C: Load relations on store init (cold start)
 - [ ] On `MemoryStore.__init__`, load all persisted relations into memory. Add test for close/reopen round-trip. Commit: `feat(story-006.2): load relations on cold start`

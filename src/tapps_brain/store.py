@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from tapps_brain.embeddings import EmbeddingProvider
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, StoreHealthReport
+from tapps_brain.relations import extract_relations
 from tapps_brain.safety import check_content_safety
 
 logger = structlog.get_logger(__name__)
@@ -247,6 +248,11 @@ class MemoryStore:
                 logger.debug("embedding_compute_failed", key=key, exc_info=True)
 
         self._persistence.save(entry)
+
+        # Extract and persist relations (EPIC-006)
+        relations = extract_relations(key, value)
+        if relations:
+            self._persistence.save_relations(key, relations)
 
         # Auto-consolidation check (Epic 58)
         if (
@@ -835,6 +841,22 @@ class MemoryStore:
     def get_metrics(self) -> MetricsSnapshot:
         """Return a snapshot of in-process operation metrics."""
         return self._metrics.snapshot()
+
+    # ------------------------------------------------------------------
+    # Relations (EPIC-006)
+    # ------------------------------------------------------------------
+
+    def get_relations(self, key: str) -> list[dict[str, Any]]:
+        """Return all relations associated with a memory entry key.
+
+        Args:
+            key: The memory entry key.
+
+        Returns:
+            List of relation dicts with subject, predicate, object_entity,
+            source_entry_keys, confidence, and created_at.
+        """
+        return self._persistence.load_relations(key)
 
     def close(self) -> None:
         """Close the underlying persistence layer."""

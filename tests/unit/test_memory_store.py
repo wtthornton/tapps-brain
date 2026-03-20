@@ -681,3 +681,49 @@ class TestTemporalFiltering:
         keys = [e.key for e in active_only]
         assert "item-a" not in keys
         assert "item-b" in keys
+
+
+class TestRelationsWiring:
+    """Tests for auto-extraction and persistence of relations (EPIC-006)."""
+
+    def test_save_extracts_and_persists_relations(self, store: MemoryStore) -> None:
+        """save() auto-extracts relations and persists them."""
+        store.save(key="arch-note", value="MemoryStore manages persistence layer")
+        relations = store.get_relations("arch-note")
+        assert len(relations) >= 1
+        # Should find "manages" predicate
+        predicates = [r["predicate"] for r in relations]
+        assert "manages" in predicates
+
+    def test_save_no_relations_for_plain_text(self, store: MemoryStore) -> None:
+        """save() with text that has no relation patterns stores no relations."""
+        store.save(key="plain", value="Just a simple note")
+        relations = store.get_relations("plain")
+        assert relations == []
+
+    def test_get_relations_nonexistent_key(self, store: MemoryStore) -> None:
+        """get_relations for unknown key returns empty list."""
+        assert store.get_relations("nope") == []
+
+    def test_ingest_context_extracts_relations(self, store: MemoryStore) -> None:
+        """ingest_context() delegates to save(), which extracts relations."""
+        context = "Decision: AuthService handles token validation for the API"
+        keys = store.ingest_context(context, source="agent")
+        # At least one key should be created with relations
+        all_relations: list[dict[str, object]] = []
+        for key in keys:
+            all_relations.extend(store.get_relations(key))
+        assert len(all_relations) >= 1
+
+    def test_relations_persist_across_restart(self, tmp_path: Path) -> None:
+        """Relations survive close/reopen cycle."""
+        s1 = MemoryStore(tmp_path)
+        s1.save(key="dep-note", value="PaymentService uses Stripe SDK")
+        rels_before = s1.get_relations("dep-note")
+        assert len(rels_before) >= 1
+        s1.close()
+
+        s2 = MemoryStore(tmp_path)
+        rels_after = s2.get_relations("dep-note")
+        assert rels_after == rels_before
+        s2.close()
