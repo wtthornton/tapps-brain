@@ -76,6 +76,11 @@ RECOMMENDATION: <one line summary of what to do next>
 ---END_RALPH_STATUS---
 ```
 
+### EXIT_SIGNAL rules
+- Set `EXIT_SIGNAL: true` ONLY when **every item** in `fix_plan.md` is checked `[x]`. Re-read the file to verify before signaling exit.
+- Set `STATUS: COMPLETE` when the **current loop's task** is done. This does NOT mean all work is done.
+- If unchecked items remain in `fix_plan.md`, always use `EXIT_SIGNAL: false` — even if your current task succeeded.
+
 ## Specs
 Detailed epic specs are available in `.ralph/specs/` for reference when implementing a task:
 - `EPIC-006.md` — Knowledge graph

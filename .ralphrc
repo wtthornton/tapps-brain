@@ -23,7 +23,7 @@ CLAUDE_OUTPUT_FORMAT="json"
 ALLOWED_TOOLS="Write,Read,Edit,Bash,Glob,Grep,TodoWrite"
 
 # Session management
-SESSION_CONTINUITY=false
+SESSION_CONTINUITY=true
 SESSION_EXPIRY_HOURS=24
 
 # Task sources (for ralph enable --sync)
@@ -33,9 +33,10 @@ GITHUB_TASK_LABEL="ralph-task"
 BEADS_FILTER="status:open"
 
 # Circuit breaker thresholds
-CB_NO_PROGRESS_THRESHOLD=5
+CB_NO_PROGRESS_THRESHOLD=10
 CB_SAME_ERROR_THRESHOLD=5
 CB_OUTPUT_DECLINE_THRESHOLD=70
+CB_AUTO_RESET=true
 
 # Auto-update Claude CLI at startup
 CLAUDE_AUTO_UPDATE=true
