@@ -125,6 +125,7 @@ Ralph’s global install is bash-based (`~/.ralph/ralph_loop.sh`). Run it from *
    `bash scripts/wsl-fix-ralph-crlf.sh`
 2. **Dependencies in WSL**: `tmux` (for `--monitor`), `jq`, and `claude` on `PATH`. If `sudo apt install jq` is not an option, install a user-local binary (see `scripts/wsl-verify-ralph.sh`).
 3. From the repo: `cd /mnt/c/cursor/tapps-brain` (or your path), ensure `export PATH="$HOME/.local/bin:$PATH"`, then `ralph --live` or `ralph --monitor`.
+4. **Background from Windows**: `pwsh -File scripts/Start-RalphWsl.ps1` (starts `nohup ralph`; log path is printed — under `.ralph/logs/nohup-ralph-*.out`).
 
 ### How It Works
 
