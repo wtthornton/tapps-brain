@@ -2,47 +2,12 @@
 
 from __future__ import annotations
 
-__version__ = "1.0.0"
+import importlib.metadata
 
-__all__ = [
-    "BM25Scorer",
-    "ConsolidatedEntry",
-    "ConsolidationConfig",
-    "ConsolidationReason",
-    "DecayConfig",
-    "FederatedStore",
-    "FederationConfig",
-    "GCResult",
-    "InjectionConfig",
-    "MemoryEntry",
-    "MemoryGarbageCollector",
-    "MemoryRetriever",
-    "MemoryScope",
-    "MemorySnapshot",
-    "MemorySource",
-    "MemoryStore",
-    "MemoryTier",
-    "RecallConfig",
-    "RecallOrchestrator",
-    "RecallResult",
-    "RelationEntry",
-    "SafetyCheckResult",
-    "ScoredMemory",
-    "SimilarityResult",
-    "__version__",
-    "calculate_decayed_confidence",
-    "check_content_safety",
-    "compute_similarity",
-    "consolidate",
-    "export_memories",
-    "export_to_markdown",
-    "extract_relations",
-    "find_similar",
-    "get_effective_confidence",
-    "import_memories",
-    "inject_memories",
-    "is_stale",
-]
+try:
+    __version__: str = importlib.metadata.version("tapps-brain")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0-dev"
 
 # Core types
 # BM25
@@ -120,3 +85,43 @@ from tapps_brain.similarity import find_similar as find_similar
 # Store
 from tapps_brain.store import ConsolidationConfig as ConsolidationConfig
 from tapps_brain.store import MemoryStore as MemoryStore
+
+__all__ = [
+    "BM25Scorer",
+    "ConsolidatedEntry",
+    "ConsolidationConfig",
+    "ConsolidationReason",
+    "DecayConfig",
+    "FederatedStore",
+    "FederationConfig",
+    "GCResult",
+    "InjectionConfig",
+    "MemoryEntry",
+    "MemoryGarbageCollector",
+    "MemoryRetriever",
+    "MemoryScope",
+    "MemorySnapshot",
+    "MemorySource",
+    "MemoryStore",
+    "MemoryTier",
+    "RecallConfig",
+    "RecallOrchestrator",
+    "RecallResult",
+    "RelationEntry",
+    "SafetyCheckResult",
+    "ScoredMemory",
+    "SimilarityResult",
+    "__version__",
+    "calculate_decayed_confidence",
+    "check_content_safety",
+    "compute_similarity",
+    "consolidate",
+    "export_memories",
+    "export_to_markdown",
+    "extract_relations",
+    "find_similar",
+    "get_effective_confidence",
+    "import_memories",
+    "inject_memories",
+    "is_stale",
+]

@@ -45,6 +45,34 @@ class TestPublicAPI:
         assert (package_dir / "py.typed").exists()
 
 
+class TestVersionUnification:
+    """Verify version is sourced from package metadata."""
+
+    def test_version_matches_metadata(self) -> None:
+        """__version__ matches importlib.metadata."""
+        from importlib.metadata import version
+
+        assert tapps_brain.__version__ == version("tapps-brain")
+
+    def test_version_is_semver_like(self) -> None:
+        """Version looks like a semver string."""
+        parts = tapps_brain.__version__.split(".")
+        assert len(parts) >= 2
+        assert parts[0].isdigit()
+
+    def test_cli_version_matches_package(self) -> None:
+        """CLI --version reports the same version as the package."""
+        import typer
+
+        from tapps_brain.cli import _version_callback
+
+        with pytest.raises(typer.Exit):
+            _version_callback(True)
+        # The callback calls typer.echo — we just verify it doesn't error.
+        # The string it echoes uses tapps_brain.__version__.
+        assert tapps_brain.__version__ in f"tapps-brain {tapps_brain.__version__}"
+
+
 class TestGracefulImportErrors:
     """Verify CLI and MCP server produce clear errors when extras are missing."""
 

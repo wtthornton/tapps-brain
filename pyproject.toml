@@ -29,6 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
+tapps-brain = "tapps_brain.cli:app"
 tapps-brain-mcp = "tapps_brain.mcp_server:main"
 
 [project.optional-dependencies]

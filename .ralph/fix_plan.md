@@ -57,7 +57,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] In `pyproject.toml`, move `typer` to `[cli]` extra, create `[all]` extra combining cli+mcp+vector+reranker. Add graceful `ImportError` messages in `cli.py` and `mcp_server.py` when extras missing. Add unit tests for graceful errors. Commit: `feat(story-009.1): optional extras for cli and mcp`
 
 #### 009-C: Entry points and version unification
-- [ ] Declare `tapps-brain` CLI entry point in `pyproject.toml`. Replace hardcoded `__version__` with `importlib.metadata.version()`. Verify CLI `--version` and MCP server version match. Add unit tests. Commit: `feat(story-009.3): entry points and unified version`
+- [x] Declare `tapps-brain` CLI entry point in `pyproject.toml`. Replace hardcoded `__version__` with `importlib.metadata.version()`. Verify CLI `--version` and MCP server version match. Add unit tests. Commit: `feat(story-009.3): entry points and unified version`
 
 #### 009-D: MCP Registry manifest
 - [ ] Create `server.json` following MCP Registry schema. Commit: `feat(story-009.4): MCP registry server.json`
