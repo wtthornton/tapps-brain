@@ -31,7 +31,13 @@ class TestRecallResult:
 
     def test_populated_result(self) -> None:
         memories = [
-            {"key": "tech-stack", "confidence": 0.9, "tier": "architectural", "score": 0.8, "stale": False}
+            {
+                "key": "tech-stack",
+                "confidence": 0.9,
+                "tier": "architectural",
+                "score": 0.8,
+                "stale": False,
+            }
         ]
         result = RecallResult(
             memory_section="### Project Memory\n- **tech-stack**: We use Python",
@@ -117,11 +123,36 @@ class TestCaptureHookProtocol:
 def store(tmp_path):
     """Create a MemoryStore with sample entries."""
     s = MemoryStore(tmp_path)
-    s.save(key="tech-stack", value="We use Python 3.12 with FastAPI", tier="architectural", source="human")
-    s.save(key="test-framework", value="We use pytest for all testing", tier="pattern", source="human")
-    s.save(key="deploy-target", value="We deploy to AWS ECS Fargate", tier="architectural", source="agent")
-    s.save(key="session-note", value="Discussed refactoring the auth module", tier="context", source="agent", scope="session")
-    s.save(key="branch-feature", value="Working on feature-x branch auth rewrite", tier="context", source="agent", scope="branch", branch="feature-x")
+    s.save(
+        key="tech-stack",
+        value="We use Python 3.12 with FastAPI",
+        tier="architectural",
+        source="human",
+    )
+    s.save(
+        key="test-framework", value="We use pytest for all testing", tier="pattern", source="human"
+    )
+    s.save(
+        key="deploy-target",
+        value="We deploy to AWS ECS Fargate",
+        tier="architectural",
+        source="agent",
+    )
+    s.save(
+        key="session-note",
+        value="Discussed refactoring the auth module",
+        tier="context",
+        source="agent",
+        scope="session",
+    )
+    s.save(
+        key="branch-feature",
+        value="Working on feature-x branch auth rewrite",
+        tier="context",
+        source="agent",
+        scope="branch",
+        branch="feature-x",
+    )
     return s
 
 
@@ -217,10 +248,7 @@ class TestRecallOrchestrator:
             except Exception as e:
                 errors.append(e)
 
-        threads = [
-            threading.Thread(target=do_recall, args=(f"query {i}",))
-            for i in range(5)
-        ]
+        threads = [threading.Thread(target=do_recall, args=(f"query {i}",)) for i in range(5)]
         for t in threads:
             t.start()
         for t in threads:
@@ -246,7 +274,10 @@ class TestCapturePipeline:
 
     def test_capture_extracts_facts(self, store):
         orch = RecallOrchestrator(store)
-        response = "We decided to use PostgreSQL for the database layer. Key decision: all APIs must be versioned."
+        response = (
+            "We decided to use PostgreSQL for the database layer."
+            " Key decision: all APIs must be versioned."
+        )
         keys = orch.capture(response)
         assert len(keys) > 0
         # Verify entries exist in store
@@ -267,7 +298,7 @@ class TestCapturePipeline:
     def test_capture_no_duplicates(self, store):
         orch = RecallOrchestrator(store)
         response = "We decided to use Redis for caching."
-        keys1 = orch.capture(response)
+        orch.capture(response)
         keys2 = orch.capture(response)
         # Second capture should not create duplicates
         assert keys2 == []

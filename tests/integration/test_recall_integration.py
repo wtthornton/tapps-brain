@@ -18,36 +18,139 @@ def populated_store(tmp_path):
     store = MemoryStore(tmp_path)
 
     # Architectural (project scope)
-    store.save(key="lang-python", value="We use Python 3.12 as the primary language", tier="architectural", source="human")
-    store.save(key="db-postgres", value="PostgreSQL 17 is the primary database", tier="architectural", source="human")
-    store.save(key="api-framework", value="FastAPI powers all HTTP endpoints", tier="architectural", source="human")
-    store.save(key="deploy-aws", value="We deploy to AWS ECS Fargate containers", tier="architectural", source="agent")
-    store.save(key="ci-github", value="GitHub Actions handles CI/CD pipelines", tier="architectural", source="agent")
+    store.save(
+        key="lang-python",
+        value="We use Python 3.12 as the primary language",
+        tier="architectural",
+        source="human",
+    )
+    store.save(
+        key="db-postgres",
+        value="PostgreSQL 17 is the primary database",
+        tier="architectural",
+        source="human",
+    )
+    store.save(
+        key="api-framework",
+        value="FastAPI powers all HTTP endpoints",
+        tier="architectural",
+        source="human",
+    )
+    store.save(
+        key="deploy-aws",
+        value="We deploy to AWS ECS Fargate containers",
+        tier="architectural",
+        source="agent",
+    )
+    store.save(
+        key="ci-github",
+        value="GitHub Actions handles CI/CD pipelines",
+        tier="architectural",
+        source="agent",
+    )
 
     # Pattern (project scope)
-    store.save(key="test-pytest", value="All tests use pytest with strict coverage", tier="pattern", source="human")
-    store.save(key="lint-ruff", value="Ruff is used for linting and formatting", tier="pattern", source="human")
-    store.save(key="type-mypy", value="Mypy strict mode for type checking", tier="pattern", source="agent")
-    store.save(key="err-structured", value="Use structured logging via structlog", tier="pattern", source="agent")
-    store.save(key="pr-review", value="All PRs require at least one review", tier="pattern", source="human")
+    store.save(
+        key="test-pytest",
+        value="All tests use pytest with strict coverage",
+        tier="pattern",
+        source="human",
+    )
+    store.save(
+        key="lint-ruff",
+        value="Ruff is used for linting and formatting",
+        tier="pattern",
+        source="human",
+    )
+    store.save(
+        key="type-mypy", value="Mypy strict mode for type checking", tier="pattern", source="agent"
+    )
+    store.save(
+        key="err-structured",
+        value="Use structured logging via structlog",
+        tier="pattern",
+        source="agent",
+    )
+    store.save(
+        key="pr-review", value="All PRs require at least one review", tier="pattern", source="human"
+    )
 
     # Procedural (project scope)
-    store.save(key="release-process", value="Cut release branches on Thursdays", tier="procedural", source="human")
-    store.save(key="hotfix-process", value="Hotfixes go directly to main via cherry-pick", tier="procedural", source="human")
-    store.save(key="onboard-steps", value="New devs follow the onboarding checklist in docs", tier="procedural", source="agent")
+    store.save(
+        key="release-process",
+        value="Cut release branches on Thursdays",
+        tier="procedural",
+        source="human",
+    )
+    store.save(
+        key="hotfix-process",
+        value="Hotfixes go directly to main via cherry-pick",
+        tier="procedural",
+        source="human",
+    )
+    store.save(
+        key="onboard-steps",
+        value="New devs follow the onboarding checklist in docs",
+        tier="procedural",
+        source="agent",
+    )
 
     # Context (session scope)
-    store.save(key="session-auth", value="Discussing auth module refactoring today", tier="context", source="agent", scope="session")
-    store.save(key="session-perf", value="Investigating slow query performance", tier="context", source="agent", scope="session")
+    store.save(
+        key="session-auth",
+        value="Discussing auth module refactoring today",
+        tier="context",
+        source="agent",
+        scope="session",
+    )
+    store.save(
+        key="session-perf",
+        value="Investigating slow query performance",
+        tier="context",
+        source="agent",
+        scope="session",
+    )
 
     # Context (branch scope)
-    store.save(key="branch-auth-v2", value="Rewriting auth with OAuth2 on feature-auth", tier="context", source="agent", scope="branch", branch="feature-auth")
-    store.save(key="branch-api-v3", value="API v3 migration on feature-api", tier="context", source="agent", scope="branch", branch="feature-api")
+    store.save(
+        key="branch-auth-v2",
+        value="Rewriting auth with OAuth2 on feature-auth",
+        tier="context",
+        source="agent",
+        scope="branch",
+        branch="feature-auth",
+    )
+    store.save(
+        key="branch-api-v3",
+        value="API v3 migration on feature-api",
+        tier="context",
+        source="agent",
+        scope="branch",
+        branch="feature-api",
+    )
 
     # Shared scope
-    store.save(key="shared-convention", value="All repos use conventional commits", tier="pattern", source="human", scope="shared")
-    store.save(key="shared-docker", value="All services use multi-stage Docker builds", tier="pattern", source="human", scope="shared")
-    store.save(key="shared-monitoring", value="Grafana dashboards for all services", tier="pattern", source="human", scope="shared")
+    store.save(
+        key="shared-convention",
+        value="All repos use conventional commits",
+        tier="pattern",
+        source="human",
+        scope="shared",
+    )
+    store.save(
+        key="shared-docker",
+        value="All services use multi-stage Docker builds",
+        tier="pattern",
+        source="human",
+        scope="shared",
+    )
+    store.save(
+        key="shared-monitoring",
+        value="Grafana dashboards for all services",
+        tier="pattern",
+        source="human",
+        scope="shared",
+    )
 
     return store
 

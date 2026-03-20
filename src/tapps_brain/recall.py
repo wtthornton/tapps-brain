@@ -115,9 +115,7 @@ class RecallOrchestrator:
         memory_section: str = result.get("memory_section", "")
 
         if memories and self._needs_post_filter(cfg):
-            memories, memory_section = self._apply_post_filters(
-                memories, cfg, message
-            )
+            memories, memory_section = self._apply_post_filters(memories, cfg, message)
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
@@ -178,12 +176,7 @@ class RecallOrchestrator:
 
     def _needs_post_filter(self, cfg: RecallConfig) -> bool:
         """Check whether any post-filter is active."""
-        return bool(
-            cfg.scope_filter
-            or cfg.tier_filter
-            or cfg.branch
-            or cfg.dedupe_window
-        )
+        return bool(cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.dedupe_window)
 
     def _apply_post_filters(
         self,
@@ -236,8 +229,6 @@ class RecallOrchestrator:
             # Look up value from store for the section
             entry = self._store.get(str(key)) if key else None
             value = entry.value if entry else str(key)
-            lines.append(
-                f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}"
-            )
+            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}")
 
         return filtered, "\n".join(lines)
