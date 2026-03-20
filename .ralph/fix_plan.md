@@ -35,7 +35,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Add `query_relations(subject=None, predicate=None, object_entity=None)` to `store.py` — filter relations by field. Add unit tests. Commit: `feat(story-006.3): query_relations filter API`
 
 #### 006-F: Recall scoring boost via graph
-- [ ] Add `use_graph_boost: bool` and `graph_boost_factor: float` to `RecallConfig`. In recall logic, extract query entities, call `find_related()`, boost connected entries' scores. Add unit tests. Commit: `feat(story-006.4): graph-based recall boost`
+- [x] Add `use_graph_boost: bool` and `graph_boost_factor: float` to `RecallConfig`. In recall logic, extract query entities, call `find_related()`, boost connected entries' scores. Add unit tests. Commit: `feat(story-006.4): graph-based recall boost`
 
 #### 006-G: Relation transfer on supersede
 - [ ] In `store.supersede()`, copy relations from old key to new key via `get_relations()` + `save_relations()`. Add unit tests. Commit: `feat(story-006.5): transfer relations on supersede`

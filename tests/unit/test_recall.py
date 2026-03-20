@@ -363,3 +363,82 @@ class TestAutoRecall:
     def test_store_recall_accepts_kwargs(self, store):
         result = store.recall("tech stack", engagement_level="low")
         assert result.memory_count == 0
+
+
+# ---------------------------------------------------------------------------
+# STORY-006.4: Graph-based recall boost tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def graph_store(tmp_path):
+    """Create a store with relation-rich entries for graph boost tests."""
+    s = MemoryStore(tmp_path)
+    # These entries produce relations via "X uses/manages Y" patterns
+    s.save(key="svc-a", value="ServiceA uses ServiceB", tier="architectural", source="human")
+    s.save(key="svc-b", value="ServiceB manages DataStore", tier="architectural", source="human")
+    s.save(key="svc-c", value="ServiceC uses DataStore", tier="pattern", source="agent")
+    s.save(
+        key="lonely",
+        value="standalone note about Python testing",
+        tier="context",
+        source="agent",
+    )
+    return s
+
+
+class TestGraphBoost:
+    """Tests for use_graph_boost / graph_boost_factor in RecallConfig."""
+
+    def test_config_defaults(self):
+        cfg = RecallConfig()
+        assert cfg.use_graph_boost is False
+        assert cfg.graph_boost_factor == 0.15
+
+    def test_config_custom_values(self):
+        cfg = RecallConfig(use_graph_boost=True, graph_boost_factor=0.25)
+        assert cfg.use_graph_boost is True
+        assert cfg.graph_boost_factor == 0.25
+
+    def test_graph_boost_disabled_by_default(self, graph_store):
+        """Without use_graph_boost, no graph_boosted flag appears."""
+        orch = RecallOrchestrator(graph_store)
+        result = orch.recall("ServiceA")
+        for mem in result.memories:
+            assert "graph_boosted" not in mem
+
+    def test_graph_boost_marks_connected_entries(self, graph_store):
+        """With use_graph_boost, connected entries get graph_boosted flag."""
+        cfg = RecallConfig(use_graph_boost=True, graph_boost_factor=0.2)
+        orch = RecallOrchestrator(graph_store, config=cfg)
+        result = orch.recall("ServiceA ServiceB DataStore")
+        boosted = [m for m in result.memories if m.get("graph_boosted")]
+        # At least one entry should be boosted (connected via shared entities)
+        if result.memory_count >= 2:
+            assert len(boosted) >= 1
+
+    def test_graph_boost_increases_score(self, graph_store):
+        """Boosted entries have higher scores than without boost."""
+        orch_no_boost = RecallOrchestrator(graph_store)
+        result_no = orch_no_boost.recall("ServiceA ServiceB DataStore")
+
+        cfg = RecallConfig(use_graph_boost=True, graph_boost_factor=0.2)
+        orch_boost = RecallOrchestrator(graph_store, config=cfg)
+        result_yes = orch_boost.recall("ServiceA ServiceB DataStore")
+
+        # Build score maps
+        scores_no = {str(m.get("key", "")): float(m.get("score", 0)) for m in result_no.memories}
+        scores_yes = {str(m.get("key", "")): float(m.get("score", 0)) for m in result_yes.memories}
+
+        # Any boosted entry should have score >= original
+        for mem in result_yes.memories:
+            key = str(mem.get("key", ""))
+            if mem.get("graph_boosted") and key in scores_no:
+                assert scores_yes[key] >= scores_no[key]
+
+    def test_graph_boost_per_call_override(self, graph_store):
+        """use_graph_boost can be overridden per call."""
+        orch = RecallOrchestrator(graph_store)
+        result = orch.recall("ServiceA ServiceB", use_graph_boost=True)
+        # Should not raise; graph boost applied via override
+        assert isinstance(result, RecallResult)

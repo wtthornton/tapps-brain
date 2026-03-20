@@ -50,6 +50,8 @@ class RecallConfig:
     tier_filter: MemoryTier | None = None
     branch: str | None = None
     dedupe_window: list[str] = field(default_factory=list)
+    use_graph_boost: bool = False
+    graph_boost_factor: float = 0.15
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +112,14 @@ class RecallOrchestrator:
             config=injection_config,
         )
 
-        # Post-filter: scope, tier, branch, dedupe
+        # Graph boost: boost scores of entries connected via relation graph
         memories = result.get("memories", [])
         memory_section: str = result.get("memory_section", "")
+
+        if cfg.use_graph_boost and memories:
+            memories = self._apply_graph_boost(memories, cfg.graph_boost_factor)
+
+        # Post-filter: scope, tier, branch, dedupe
 
         if memories and self._needs_post_filter(cfg):
             memories, memory_section = self._apply_post_filters(memories, cfg, message)
@@ -154,6 +161,60 @@ class RecallOrchestrator:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _apply_graph_boost(
+        self,
+        memories: list[dict[str, object]],
+        boost_factor: float,
+    ) -> list[dict[str, object]]:
+        """Boost scores of memories connected via the relation graph.
+
+        For each memory in the result set, find graph-connected entries.
+        If a connected entry is also in the result set, boost its score
+        by *boost_factor* (additive, capped at 1.0).  The boosted list
+        is re-sorted by descending score.
+        """
+        result_keys = {str(m.get("key", "")) for m in memories}
+        # Collect all graph-connected keys and their hop distances
+        connected: dict[str, int] = {}
+        for mem in memories:
+            key = str(mem.get("key", ""))
+            if not key:
+                continue
+            try:
+                related = self._store.find_related(key, max_hops=2)
+            except KeyError:
+                continue
+            for rel_key, hop in related:
+                if rel_key in result_keys and (
+                    rel_key not in connected or hop < connected[rel_key]
+                ):
+                    connected[rel_key] = hop
+
+        if not connected:
+            return memories
+
+        # Apply boost: closer hops get more boost
+        boosted: list[dict[str, object]] = []
+        for mem in memories:
+            key = str(mem.get("key", ""))
+            if key in connected:
+                hop = connected[key]
+                # Boost inversely proportional to hop distance
+                hop_boost = boost_factor / hop
+                raw_score = mem.get("score", 0.0)
+                score = float(raw_score) if isinstance(raw_score, (int, float)) else 0.0
+                new_score = min(score + hop_boost, 1.0)
+                mem = {**mem, "score": new_score, "graph_boosted": True}
+            boosted.append(mem)
+
+        # Re-sort by score descending
+        def _score(m: dict[str, object]) -> float:
+            raw = m.get("score", 0.0)
+            return float(raw) if isinstance(raw, (int, float)) else 0.0
+
+        boosted.sort(key=_score, reverse=True)
+        return boosted
+
     def _effective_config(self, overrides: dict[str, object]) -> RecallConfig:
         """Build effective config by merging base config with per-call overrides."""
         if not overrides:
@@ -168,6 +229,8 @@ class RecallOrchestrator:
             "tier_filter": self._config.tier_filter,
             "branch": self._config.branch,
             "dedupe_window": list(self._config.dedupe_window),
+            "use_graph_boost": self._config.use_graph_boost,
+            "graph_boost_factor": self._config.graph_boost_factor,
         }
         for k, v in overrides.items():
             if k in vals:
