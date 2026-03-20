@@ -77,11 +77,40 @@ RECOMMENDATION: <one line summary of what to do next>
 ```
 
 ### STATUS and EXIT_SIGNAL rules
+
+`STATUS: COMPLETE` now explicitly requires **ALL items** in `fix_plan.md` checked `[x]`. Any remaining `- [ ]` items = `STATUS: IN_PROGRESS`.
+
 - **STATUS: IN_PROGRESS** — Use this when unchecked items remain in `fix_plan.md`, even if the current task succeeded. This tells Ralph to continue looping.
 - **STATUS: COMPLETE** — Use this ONLY when **every item** in `fix_plan.md` is checked `[x]`. Re-read the file to verify before using COMPLETE.
 - **EXIT_SIGNAL: true** — Set ONLY together with `STATUS: COMPLETE` (all work done).
 - **EXIT_SIGNAL: false** — Use in ALL other cases, including successful task completion with remaining work.
-- If your task succeeded but unchecked items remain: `STATUS: IN_PROGRESS`, `EXIT_SIGNAL: false`.
+
+### Exit Scenarios
+
+**Scenario: Task done, more work remains** (most common case)
+You completed your task, tests pass, but unchecked items remain in `fix_plan.md`:
+```
+STATUS: IN_PROGRESS
+EXIT_SIGNAL: false
+RECOMMENDATION: Next task is <next unchecked item>
+```
+**CRITICAL: This is NOT `STATUS: COMPLETE`. `COMPLETE` means ALL work is done.**
+
+**Scenario: All work done**
+Every item in `fix_plan.md` is `[x]`, tests pass, nothing left:
+```
+STATUS: COMPLETE
+EXIT_SIGNAL: true
+RECOMMENDATION: All requirements met, project ready for review
+```
+
+**Scenario: Blocked**
+Cannot proceed — external dependency, recurring error, or need human input:
+```
+STATUS: BLOCKED
+EXIT_SIGNAL: false
+RECOMMENDATION: Blocked on <specific issue>
+```
 
 ## Specs
 Detailed epic specs are available in `.ralph/specs/` for reference when implementing a task:
