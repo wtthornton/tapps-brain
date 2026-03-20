@@ -4,6 +4,46 @@ from __future__ import annotations
 
 __version__ = "1.0.0"
 
+__all__ = [
+    "BM25Scorer",
+    "ConsolidatedEntry",
+    "ConsolidationConfig",
+    "ConsolidationReason",
+    "DecayConfig",
+    "FederatedStore",
+    "FederationConfig",
+    "GCResult",
+    "InjectionConfig",
+    "MemoryEntry",
+    "MemoryGarbageCollector",
+    "MemoryRetriever",
+    "MemoryScope",
+    "MemorySnapshot",
+    "MemorySource",
+    "MemoryStore",
+    "MemoryTier",
+    "RecallConfig",
+    "RecallOrchestrator",
+    "RecallResult",
+    "RelationEntry",
+    "SafetyCheckResult",
+    "ScoredMemory",
+    "SimilarityResult",
+    "__version__",
+    "calculate_decayed_confidence",
+    "check_content_safety",
+    "compute_similarity",
+    "consolidate",
+    "export_memories",
+    "export_to_markdown",
+    "extract_relations",
+    "find_similar",
+    "get_effective_confidence",
+    "import_memories",
+    "inject_memories",
+    "is_stale",
+]
+
 # Core types
 # BM25
 from tapps_brain.bm25 import BM25Scorer as BM25Scorer
