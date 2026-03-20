@@ -1,7 +1,7 @@
 ---
 id: EPIC-008
 title: "MCP server — expose tapps-brain via Model Context Protocol"
-status: planned
+status: complete
 priority: critical
 created: 2026-03-20
 target_date: 2026-05-15
