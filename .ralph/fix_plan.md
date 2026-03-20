@@ -4,10 +4,16 @@
 
 ### EPIC-008: MCP Server (Critical)
 - [ ] Read EPIC-008.md and understand all stories
-- [ ] Implement MCP server exposing tapps-brain via Model Context Protocol
-- [ ] Add MCP tool handlers for store, recall, search, forget
-- [ ] Add MCP resource endpoints for memory stats and health
-- [ ] Write tests for MCP server integration
+- [ ] Implement MCP server bootstrap and server lifecycle wiring
+- [ ] Add MCP tool handler: store
+- [ ] Add MCP tool handler: recall
+- [ ] Add MCP tool handler: search
+- [ ] Add MCP tool handler: forget
+- [ ] Add MCP resource endpoint: memory stats
+- [ ] Add MCP resource endpoint: health
+- [ ] Write targeted tests for MCP tool handlers
+- [ ] Write targeted tests for MCP resource endpoints
+- [ ] Run full MCP server integration tests
 - [ ] Update docs for MCP usage
 
 ### EPIC-006: Knowledge Graph (High)

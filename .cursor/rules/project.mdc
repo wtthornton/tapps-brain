@@ -1,0 +1,108 @@
+---
+description: Project rules for tapps-brain
+globs:
+alwaysApply: true
+---
+
+# tapps-brain
+
+Persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
+
+## Build & Development Commands
+
+```bash
+# Install dependencies (uses uv package manager)
+uv sync --extra dev
+
+# Install with optional vector search support
+uv sync --extra dev --extra vector
+
+# Run all tests
+pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+
+# Run a single test file
+pytest tests/unit/test_memory_store.py -v
+
+# Lint
+ruff check src/ tests/
+
+# Format check
+ruff format --check src/ tests/
+
+# Auto-fix lint/format
+ruff check --fix src/ tests/
+ruff format src/ tests/
+
+# Type check (strict mode)
+mypy --strict src/tapps_brain/
+```
+
+## Architecture
+
+### Source layout: `src/tapps_brain/`
+
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1-v4).
+
+**Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
+
+**Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides Okapi BM25. `fusion.py` implements Reciprocal Rank Fusion for hybrid search.
+
+**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives stale memories.
+
+**Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
+
+**Federation** — `federation.py` enables cross-project memory sharing via hub at `~/.tapps-brain/memory/federated.db`.
+
+### Key design decisions
+
+- **Synchronous by design** — no async/await in core code
+- **Write-through cache** — all mutations update both in-memory dict and SQLite
+- **Lazy decay** — exponential decay computed on read, not via background tasks
+- **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls
+- **Max 500 entries per project** — enforced in MemoryStore
+
+## Code Quality
+
+- Python 3.12+, strict mypy, ruff with extensive rule set
+- Line length: 100 chars
+- Tests ignore ANN (annotations) and PLR (pylint refactor) rules
+- Coverage minimum: 95%
+- LF line endings enforced via `.gitattributes`
+
+## Planning
+
+Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`.
+
+## Ralph (Autonomous Dev Loop)
+
+This project is configured for Ralph — an autonomous development loop that drives Claude Code CLI through tasks iteratively.
+
+### Ralph Rules
+
+- **fix_plan.md is the single source of truth for task priority.** PROMPT.md defines *how* to work (rules, constraints, process). fix_plan.md defines *what* to work on (priorities, order). PROMPT.md must NEVER override or restate priorities — always defer to fix_plan.md for task selection.
+- Do ONE task per loop from fix_plan.md, in the order listed.
+- Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
+
+### Session Startup Requirement (Always)
+
+- At the start of every new session in this workspace, read these files before any planning or edits:
+  - `.ralph/fix_plan.md`
+  - `.ralph/PROMPT.md`
+  - `.ralphrc`
+  - `CLAUDE.md`
+  - `.ralph/AGENT.md`
+- If any of the above files change during the session, re-read the changed file(s) before continuing.
+
+### Ralph Files
+
+- `.ralph/PROMPT.md` — Process instructions for the autonomous agent (NOT priorities)
+- `.ralph/AGENT.md` — Build/test/lint commands
+- `.ralph/fix_plan.md` — **The priority-ordered task list** (top to bottom)
+- `.ralph/specs/` — Detailed requirement specs (reference only, not task drivers)
+- `.ralph/logs/` — Loop execution logs
+- `.ralphrc` — Project-level Ralph configuration
+
+### Important
+
+- **Do not modify** `.ralph/` or `.ralphrc` during a Ralph loop
+- Ralph commits its own changes with descriptive messages referencing stories

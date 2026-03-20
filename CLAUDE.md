@@ -86,12 +86,18 @@ Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `doc
 
 This project is configured for [Ralph for Claude Code](https://github.com/frankbria/ralph-claude-code) — an autonomous development loop that drives Claude Code CLI through tasks iteratively.
 
+### Ralph Rules
+
+- **fix_plan.md is the single source of truth for task priority.** PROMPT.md defines *how* to work (rules, constraints, process). fix_plan.md defines *what* to work on (priorities, order). PROMPT.md must NEVER override or restate priorities — always defer to fix_plan.md for task selection.
+- Do ONE task per loop from fix_plan.md, in the order listed.
+- Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
+
 ### Ralph Files
 
-- `.ralph/PROMPT.md` — High-level goals and instructions for the autonomous agent
+- `.ralph/PROMPT.md` — Process instructions for the autonomous agent (NOT priorities)
 - `.ralph/AGENT.md` — Build/test/lint commands Ralph uses
-- `.ralph/fix_plan.md` — Prioritized task checklist (Ralph works through this)
-- `.ralph/specs/` — Detailed requirement specs
+- `.ralph/fix_plan.md` — **The priority-ordered task list** (Ralph works through this top to bottom)
+- `.ralph/specs/` — Detailed requirement specs (reference only, not task drivers)
 - `.ralph/logs/` — Loop execution logs
 - `.ralphrc` — Project-level Ralph configuration (rate limits, tool permissions, timeouts)
 
@@ -120,4 +126,4 @@ Ralph reads `.ralph/PROMPT.md` + `.ralph/fix_plan.md`, invokes Claude Code CLI, 
 - **Do not modify** `.ralph/` or `.ralphrc` during a Ralph loop — these are Ralph's control files
 - Ralph commits its own changes with descriptive messages referencing stories
 - The fix_plan.md is kept in sync with `docs/planning/epics/` priorities
-- EPIC-008 (MCP server) is the current top priority in the fix plan
+- See fix_plan.md for current task priorities (not PROMPT.md or epic files)
