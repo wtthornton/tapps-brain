@@ -117,6 +117,15 @@ ralph --live
 ralph-import docs/some-spec.md
 ```
 
+### Ralph on Windows (use WSL)
+
+Ralph’s global install is bash-based (`~/.ralph/ralph_loop.sh`). Run it from **WSL Ubuntu**, not PowerShell.
+
+1. **Install Ralph inside WSL** (or sync from Windows): copy `C:\Users\<you>\.ralph\` → `~/.ralph/` and `ralph*` wrappers → `~/.local/bin/`, then fix CRLF if copied from Windows:
+   `bash scripts/wsl-fix-ralph-crlf.sh`
+2. **Dependencies in WSL**: `tmux` (for `--monitor`), `jq`, and `claude` on `PATH`. If `sudo apt install jq` is not an option, install a user-local binary (see `scripts/wsl-verify-ralph.sh`).
+3. From the repo: `cd /mnt/c/cursor/tapps-brain` (or your path), ensure `export PATH="$HOME/.local/bin:$PATH"`, then `ralph --live` or `ralph --monitor`.
+
 ### How It Works
 
 Ralph reads `.ralph/PROMPT.md` + `.ralph/fix_plan.md`, invokes Claude Code CLI, analyzes the output, checks progress, and loops until tasks are complete. It includes a circuit breaker to stop if no progress is being made, rate limiting, and session continuity across iterations.
