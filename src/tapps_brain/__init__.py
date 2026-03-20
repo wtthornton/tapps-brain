@@ -52,6 +52,13 @@ from tapps_brain.models import (
 from tapps_brain.models import (
     MemoryTier as MemoryTier,
 )
+from tapps_brain.models import (
+    RecallResult as RecallResult,
+)
+
+# Recall (EPIC-003)
+from tapps_brain.recall import RecallConfig as RecallConfig
+from tapps_brain.recall import RecallOrchestrator as RecallOrchestrator
 
 # Relations
 from tapps_brain.relations import RelationEntry as RelationEntry

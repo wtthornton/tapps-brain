@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -169,6 +169,48 @@ class MemoryEntry(BaseModel):
             raise ValueError(msg)
 
         return self
+
+
+# ---------------------------------------------------------------------------
+# Auto-recall models (Epic 003)
+# ---------------------------------------------------------------------------
+
+
+class RecallResult(BaseModel):
+    """Result of an auto-recall operation.
+
+    Returned by ``RecallOrchestrator.recall()`` and the ``RecallHookLike``
+    protocol. Contains the formatted memory section ready for injection,
+    metadata about which memories were selected, and timing information.
+    """
+
+    memory_section: str = Field(
+        default="",
+        description="Formatted markdown section for injection into the prompt.",
+    )
+    memories: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of injected memory summaries (key, confidence, tier, score, stale).",
+    )
+    token_count: int = Field(
+        default=0,
+        ge=0,
+        description="Estimated token count of the injected memory section.",
+    )
+    recall_time_ms: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Time taken for the recall operation in milliseconds.",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="Whether the results were truncated due to token budget.",
+    )
+    memory_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of memories injected.",
+    )
 
 
 class MemorySnapshot(BaseModel):

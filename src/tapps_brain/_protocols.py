@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tapps_brain.models import RecallResult
+
 
 @runtime_checkable
 class ProjectProfileLike(Protocol):
@@ -74,3 +76,31 @@ class LookupEngineLike(Protocol):
     """
 
     async def lookup(self, library: str, topic: str) -> LookupResult: ...
+
+
+# ---------------------------------------------------------------------------
+# Auto-recall protocols (Epic 003)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class RecallHookLike(Protocol):
+    """Interface for auto-recall hooks.
+
+    Host agents implement this to integrate automatic memory recall
+    before processing a user message. tapps-brain provides a default
+    implementation via ``RecallOrchestrator``.
+    """
+
+    def recall(self, message: str, **kwargs: object) -> RecallResult: ...
+
+
+@runtime_checkable
+class CaptureHookLike(Protocol):
+    """Interface for auto-capture hooks.
+
+    Host agents implement this to capture new facts from agent
+    responses and persist them back to the memory store.
+    """
+
+    def capture(self, response: str, **kwargs: object) -> list[str]: ...

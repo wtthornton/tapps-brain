@@ -585,6 +585,32 @@ class MemoryStore:
 
         return report
 
+    # ------------------------------------------------------------------
+    # Auto-recall (EPIC-003)
+    # ------------------------------------------------------------------
+
+    def recall(self, message: str, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Search for relevant memories and return injection-ready context.
+
+        Convenience wrapper around ``RecallOrchestrator.recall()``. The
+        orchestrator is created lazily on first call and reused after.
+
+        Args:
+            message: The user's incoming message to match against.
+            **kwargs: Override ``RecallConfig`` fields for this call.
+
+        Returns:
+            ``RecallResult`` with formatted memory section, metadata,
+            and timing information.
+        """
+        from tapps_brain.recall import RecallOrchestrator
+
+        with self._lock:
+            if not hasattr(self, "_recall_orchestrator"):
+                self._recall_orchestrator = RecallOrchestrator(self)
+
+        return self._recall_orchestrator.recall(message, **kwargs)
+
     def close(self) -> None:
         """Close the underlying persistence layer."""
         self._persistence.close()
