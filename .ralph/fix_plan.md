@@ -11,7 +11,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Add **`tapps-brain-mcp` console script** in `pyproject.toml` pointing at `tapps_brain.mcp_server:main`.
 - [x] **MCP prompts** (`@mcp.prompt`): recall / store-summary / remember workflows (STORY-008.6).
 - [x] **Federation & maintenance tools** (STORY-008.5): federation status/subscribe/unsubscribe/publish, consolidate, GC, export/import.
-- [ ] **MCP integration tests** — protocol-level coverage (e.g. `tests/integration/test_mcp_integration.py`): initialize, tools/list, tools/call, resources, prompts when added.
+- [x] **MCP integration tests** — protocol-level coverage (e.g. `tests/integration/test_mcp_integration.py`): initialize, tools/list, tools/call, resources, prompts when added.
 - [ ] **User-facing MCP docs** with runnable client examples (e.g. `docs/guides/mcp.md` or README section; update `docs/planning/epics/EPIC-008.md` as needed).
 
 ### EPIC-006: Knowledge Graph (High) — remaining work
