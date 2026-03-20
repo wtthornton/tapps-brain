@@ -868,6 +868,62 @@ class MemoryStore:
         """
         return list(self._relations.get(key, []))
 
+    def find_related(
+        self,
+        key: str,
+        *,
+        max_hops: int = 2,
+    ) -> list[tuple[str, int]]:
+        """Find entries related to *key* via BFS traversal of the relation graph.
+
+        Two entries are considered connected when they share an entity
+        (subject or object_entity) in their extracted relations.
+
+        Args:
+            key: Starting entry key.
+            max_hops: Maximum traversal depth (default 2).
+
+        Returns:
+            List of ``(entry_key, hop_distance)`` tuples, ordered by hop
+            distance (ascending) then key name.  The starting key is
+            **not** included in the results.
+
+        Raises:
+            KeyError: If *key* does not exist in the store.
+        """
+        with self._lock:
+            if key not in self._entries:
+                raise KeyError(key)
+
+            # Build entity -> set[entry_key] index from all relations
+            entity_to_keys: dict[str, set[str]] = {}
+            for entry_key, rels in self._relations.items():
+                for rel in rels:
+                    for entity in (rel["subject"].lower(), rel["object_entity"].lower()):
+                        entity_to_keys.setdefault(entity, set()).add(entry_key)
+
+            # BFS
+            visited: set[str] = {key}
+            result: list[tuple[str, int]] = []
+            frontier: set[str] = {key}
+
+            for hop in range(1, max_hops + 1):
+                next_frontier: set[str] = set()
+                for current_key in frontier:
+                    # Collect entities from current_key's relations
+                    for rel in self._relations.get(current_key, []):
+                        for entity in (rel["subject"].lower(), rel["object_entity"].lower()):
+                            for neighbor_key in entity_to_keys.get(entity, set()):
+                                if neighbor_key not in visited:
+                                    visited.add(neighbor_key)
+                                    result.append((neighbor_key, hop))
+                                    next_frontier.add(neighbor_key)
+                frontier = next_frontier
+
+        # Sort by hop distance, then key name for determinism
+        result.sort(key=lambda t: (t[1], t[0]))
+        return result
+
     def close(self) -> None:
         """Close the underlying persistence layer."""
         self._persistence.close()

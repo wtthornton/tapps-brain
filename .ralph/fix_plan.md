@@ -29,7 +29,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] On `MemoryStore.__init__`, load all persisted relations into memory. Add test for close/reopen round-trip. Commit: `feat(story-006.2): load relations on cold start`
 
 #### 006-D: Graph query API — find_related
-- [ ] Add `find_related(key, max_hops=2)` to `store.py` — BFS traversal of relation graph, dedup by key, order by hop distance. Add unit tests with A→B→C chain. Commit: `feat(story-006.3): find_related graph traversal`
+- [x] Add `find_related(key, max_hops=2)` to `store.py` — BFS traversal of relation graph, dedup by key, order by hop distance. Add unit tests with A→B→C chain. Commit: `feat(story-006.3): find_related graph traversal`
 
 #### 006-E: Graph query API — query_relations
 - [ ] Add `query_relations(subject=None, predicate=None, object_entity=None)` to `store.py` — filter relations by field. Add unit tests. Commit: `feat(story-006.3): query_relations filter API`

@@ -727,3 +727,73 @@ class TestRelationsWiring:
         rels_after = s2.get_relations("dep-note")
         assert rels_after == rels_before
         s2.close()
+
+
+class TestFindRelated:
+    """Tests for find_related() BFS graph traversal (EPIC-006, story 006.3)."""
+
+    def test_find_related_nonexistent_key_raises(self, store: MemoryStore) -> None:
+        """find_related raises KeyError for unknown key."""
+        with pytest.raises(KeyError):
+            store.find_related("no-such-key")
+
+    def test_find_related_no_relations(self, store: MemoryStore) -> None:
+        """Entry with no relations returns empty list."""
+        store.save(key="lonely", value="Just a note with no relations")
+        assert store.find_related("lonely") == []
+
+    def test_find_related_direct_hop(self, store: MemoryStore) -> None:
+        """Two entries sharing an entity are 1 hop apart."""
+        # Both mention "persistence layer" — connected via shared entity
+        store.save(key="a", value="MemoryStore manages persistence layer")
+        store.save(key="b", value="CacheLayer manages persistence layer")
+        related = store.find_related("a")
+        keys = [k for k, _hop in related]
+        assert "b" in keys
+        # Should be hop 1
+        hop_map = dict(related)
+        assert hop_map["b"] == 1
+
+    def test_find_related_chain_a_b_c(self, store: MemoryStore) -> None:
+        """A→B→C chain: B is hop 1, C is hop 2 from A."""
+        # A and B share entity "ServiceB"
+        store.save(key="a", value="ServiceA uses ServiceB")
+        # B and C share entity "ServiceC"
+        store.save(key="b", value="ServiceB uses ServiceC")
+        # C is standalone but connected via ServiceC
+        store.save(key="c", value="ServiceC manages DataStore")
+
+        related = store.find_related("a")
+        hop_map = dict(related)
+        # b shares "ServiceB" with a -> hop 1
+        assert hop_map.get("b") == 1
+        # c shares "ServiceC" with b -> hop 2
+        assert hop_map.get("c") == 2
+
+    def test_find_related_max_hops_limits_depth(self, store: MemoryStore) -> None:
+        """max_hops=1 excludes hop-2 results."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        store.save(key="b", value="ServiceB uses ServiceC")
+        store.save(key="c", value="ServiceC manages DataStore")
+
+        related = store.find_related("a", max_hops=1)
+        keys = [k for k, _hop in related]
+        assert "b" in keys
+        assert "c" not in keys
+
+    def test_find_related_dedup(self, store: MemoryStore) -> None:
+        """Each related key appears only once, at its shortest hop distance."""
+        # a and b share "ServiceX"; a and b also share via different relation
+        store.save(key="a", value="ServiceX manages Config and ServiceX uses Logger")
+        store.save(key="b", value="ServiceX handles requests and Logger provides output")
+        related = store.find_related("a")
+        keys = [k for k, _hop in related]
+        # b should appear exactly once
+        assert keys.count("b") == 1
+
+    def test_find_related_excludes_self(self, store: MemoryStore) -> None:
+        """The starting key is never in the results."""
+        store.save(key="self-ref", value="AuthService manages tokens")
+        related = store.find_related("self-ref")
+        keys = [k for k, _hop in related]
+        assert "self-ref" not in keys
