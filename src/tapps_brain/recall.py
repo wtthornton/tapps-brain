@@ -229,9 +229,10 @@ class RecallOrchestrator:
 
         lines = ["### Project Memory"]
         for mem in filtered:
-            key = mem.get("key", "")
-            conf = mem.get("confidence", 0.0)
-            tier = mem.get("tier", "pattern")
+            key = str(mem.get("key", ""))
+            raw_conf = mem.get("confidence", 0.0)
+            conf = float(raw_conf) if isinstance(raw_conf, (int, float, str)) else 0.0
+            tier = str(mem.get("tier", "pattern"))
             # Look up value from store for the section
             entry = self._store.get(str(key)) if key else None
             value = entry.value if entry else str(key)

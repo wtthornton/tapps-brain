@@ -11,7 +11,10 @@ docs/planning/
     ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
     ├── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
     ├── EPIC-003.md      ← Auto-recall — pre-prompt memory injection hook (done)
-    └── EPIC-004.md      ← Bi-temporal fact versioning with validity windows (done)
+    ├── EPIC-004.md      ← Bi-temporal fact versioning with validity windows (done)
+    ├── EPIC-005.md      ← CLI tool for memory management and operations (planned)
+    ├── EPIC-006.md      ← Persistent knowledge graph and semantic queries (planned)
+    └── EPIC-007.md      ← Observability — metrics, audit trail, health checks (planned)
 ```
 
 ## Why This Structure
