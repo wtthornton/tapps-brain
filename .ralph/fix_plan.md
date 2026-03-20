@@ -38,7 +38,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Add `use_graph_boost: bool` and `graph_boost_factor: float` to `RecallConfig`. In recall logic, extract query entities, call `find_related()`, boost connected entries' scores. Add unit tests. Commit: `feat(story-006.4): graph-based recall boost`
 
 #### 006-G: Relation transfer on supersede
-- [ ] In `store.supersede()`, copy relations from old key to new key via `get_relations()` + `save_relations()`. Add unit tests. Commit: `feat(story-006.5): transfer relations on supersede`
+- [x] In `store.supersede()`, copy relations from old key to new key via `get_relations()` + `save_relations()`. Add unit tests. Commit: `feat(story-006.5): transfer relations on supersede`
 
 #### 006-H: Relation transfer on consolidation
 - [ ] In `consolidation.py`, merge relations from all source entries, deduplicate same subject-predicate-object triples, persist on consolidated entry. Add unit tests. Commit: `feat(story-006.5): merge relations on consolidation`

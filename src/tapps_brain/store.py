@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from tapps_brain.embeddings import EmbeddingProvider
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, StoreHealthReport
-from tapps_brain.relations import extract_relations
+from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.safety import check_content_safety
 
 logger = structlog.get_logger(__name__)
@@ -707,6 +707,23 @@ class MemoryStore:
             updated_new = new_entry.model_copy(update={"valid_at": now})
             self._entries[new_key] = updated_new
         self._persistence.save(updated_new)
+
+        # Transfer relations from old entry to new entry
+        old_relations = self.get_relations(old_key)
+        if old_relations:
+            transferred = [
+                RelationEntry(
+                    subject=r["subject"],
+                    predicate=r["predicate"],
+                    object_entity=r["object_entity"],
+                    source_entry_keys=[new_key],
+                    confidence=float(r.get("confidence", 0.8)),
+                )
+                for r in old_relations
+            ]
+            self._persistence.save_relations(new_key, transferred)
+            with self._lock:
+                self._relations[new_key] = self._persistence.load_relations(new_key)
 
         return updated_new
 

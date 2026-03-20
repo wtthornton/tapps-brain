@@ -604,6 +604,41 @@ class TestSupersede:
         assert old is not None
         assert old.superseded_by == "config-b"
 
+    def test_supersede_transfers_relations(self, store: MemoryStore) -> None:
+        """Relations from old entry are copied to the new entry."""
+        store.save(key="svc-old", value="ServiceA uses ServiceB")
+        old_rels = store.get_relations("svc-old")
+        assert len(old_rels) >= 1  # Extracted from "uses" pattern
+
+        new_entry = store.supersede("svc-old", "ServiceA v2 uses ServiceB")
+        new_rels = store.get_relations(new_entry.key)
+        # New entry should have at least the transferred relations
+        old_subjects = {r["subject"].lower() for r in old_rels}
+        new_subjects = {r["subject"].lower() for r in new_rels}
+        assert old_subjects.issubset(new_subjects)
+
+    def test_supersede_no_relations_no_error(self, store: MemoryStore) -> None:
+        """Supersede works fine when old entry has no relations."""
+        store.save(key="plain", value="Just a plain note with no relations")
+        assert store.get_relations("plain") == []
+        new_entry = store.supersede("plain", "Updated plain note")
+        assert new_entry.key is not None  # No error
+
+    def test_supersede_relations_persist_after_restart(self, tmp_path: Path) -> None:
+        """Transferred relations survive store close/reopen."""
+        store1 = MemoryStore(tmp_path)
+        store1.save(key="fact-a", value="ServiceX manages DataStore")
+        store1.supersede("fact-a", "ServiceX v2 manages DataStore", key="fact-a.v2")
+        rels_before = store1.get_relations("fact-a.v2")
+        assert len(rels_before) >= 1
+        store1.close()
+
+        store2 = MemoryStore(tmp_path)
+        rels_after = store2.get_relations("fact-a.v2")
+        assert len(rels_after) >= 1
+        assert rels_after[0]["subject"].lower() == rels_before[0]["subject"].lower()
+        store2.close()
+
 
 class TestHistory:
     """Tests for MemoryStore.history() (EPIC-004, STORY-004.4)."""
