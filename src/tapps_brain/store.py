@@ -924,6 +924,51 @@ class MemoryStore:
         result.sort(key=lambda t: (t[1], t[0]))
         return result
 
+    def query_relations(
+        self,
+        *,
+        subject: str | None = None,
+        predicate: str | None = None,
+        object_entity: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Filter relations by subject, predicate, and/or object_entity.
+
+        All filters use case-insensitive matching.  When multiple filters are
+        provided they are combined with AND logic.  Passing no filters returns
+        all relations.
+
+        Args:
+            subject: Filter by subject entity.
+            predicate: Filter by predicate/relationship type.
+            object_entity: Filter by object entity.
+
+        Returns:
+            List of matching relation dicts.
+        """
+        with self._lock:
+            matches: list[dict[str, Any]] = []
+            for rels in self._relations.values():
+                for rel in rels:
+                    if subject is not None and rel["subject"].lower() != subject.lower():
+                        continue
+                    if predicate is not None and rel["predicate"].lower() != predicate.lower():
+                        continue
+                    if (
+                        object_entity is not None
+                        and rel["object_entity"].lower() != object_entity.lower()
+                    ):
+                        continue
+                    matches.append(dict(rel))
+            # Deduplicate by (subject, predicate, object_entity) triple
+            seen: set[tuple[str, str, str]] = set()
+            deduped: list[dict[str, Any]] = []
+            for m in matches:
+                triple = (m["subject"].lower(), m["predicate"].lower(), m["object_entity"].lower())
+                if triple not in seen:
+                    seen.add(triple)
+                    deduped.append(m)
+        return deduped
+
     def close(self) -> None:
         """Close the underlying persistence layer."""
         self._persistence.close()

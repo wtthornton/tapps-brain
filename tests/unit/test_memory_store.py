@@ -797,3 +797,71 @@ class TestFindRelated:
         related = store.find_related("self-ref")
         keys = [k for k, _hop in related]
         assert "self-ref" not in keys
+
+    # ------------------------------------------------------------------
+    # query_relations
+    # ------------------------------------------------------------------
+
+    def test_query_relations_no_filters(self, store: MemoryStore) -> None:
+        """No filters returns all relations."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        store.save(key="b", value="ServiceC manages DataStore")
+        all_rels = store.query_relations()
+        assert len(all_rels) >= 2
+
+    def test_query_relations_filter_by_subject(self, store: MemoryStore) -> None:
+        """Filter by subject returns only matching relations."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        store.save(key="b", value="ServiceC manages DataStore")
+        results = store.query_relations(subject="ServiceA")
+        assert len(results) >= 1
+        assert all(r["subject"].lower() == "servicea" for r in results)
+
+    def test_query_relations_filter_by_predicate(self, store: MemoryStore) -> None:
+        """Filter by predicate returns only matching relations."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        results = store.query_relations(predicate="uses")
+        assert len(results) >= 1
+        assert all(r["predicate"].lower() == "uses" for r in results)
+
+    def test_query_relations_filter_by_object_entity(self, store: MemoryStore) -> None:
+        """Filter by object_entity returns only matching relations."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        results = store.query_relations(object_entity="ServiceB")
+        assert len(results) >= 1
+        assert all(r["object_entity"].lower() == "serviceb" for r in results)
+
+    def test_query_relations_combined_filters(self, store: MemoryStore) -> None:
+        """Multiple filters are AND-combined."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        store.save(key="b", value="ServiceA manages Config")
+        # Only the "uses" relation for ServiceA
+        results = store.query_relations(subject="ServiceA", predicate="uses")
+        assert len(results) >= 1
+        for r in results:
+            assert r["subject"].lower() == "servicea"
+            assert r["predicate"].lower() == "uses"
+
+    def test_query_relations_case_insensitive(self, store: MemoryStore) -> None:
+        """Filters are case-insensitive."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        results_lower = store.query_relations(subject="servicea")
+        results_upper = store.query_relations(subject="SERVICEA")
+        assert len(results_lower) == len(results_upper)
+        assert len(results_lower) >= 1
+
+    def test_query_relations_no_match(self, store: MemoryStore) -> None:
+        """Non-matching filter returns empty list."""
+        store.save(key="a", value="ServiceA uses ServiceB")
+        results = store.query_relations(subject="NonExistent")
+        assert results == []
+
+    def test_query_relations_deduplicates(self, store: MemoryStore) -> None:
+        """Same triple from multiple entries appears only once."""
+        # Both entries mention the same relation
+        store.save(key="a", value="ServiceA uses ServiceB")
+        store.save(key="b", value="ServiceA uses ServiceB")
+        results = store.query_relations(
+            subject="ServiceA", predicate="uses", object_entity="ServiceB"
+        )
+        assert len(results) == 1
