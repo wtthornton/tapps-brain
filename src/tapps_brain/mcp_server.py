@@ -30,7 +30,7 @@ def _lazy_import_mcp() -> Any:  # noqa: ANN401
     except ImportError:
         sys.stderr.write(
             "ERROR: The 'mcp' package is required for the MCP server.\n"
-            "Install it with: uv sync --extra mcp (or --extra dev for tests)\n"
+            "Install it with: uv sync --extra mcp  (or --extra all)\n"
         )
         sys.exit(1)
     return FastMCP

@@ -54,7 +54,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Add explicit `__all__` to `__init__.py` with all public symbols organized by group. Create empty `src/tapps_brain/py.typed` marker. Add test verifying all `__all__` symbols are importable. Commit: `feat(story-009.2): curated __all__ and py.typed`
 
 #### 009-B: Dependency extras reorganization
-- [ ] In `pyproject.toml`, move `typer` to `[cli]` extra, create `[all]` extra combining cli+mcp+vector+reranker. Add graceful `ImportError` messages in `cli.py` and `mcp_server.py` when extras missing. Add unit tests for graceful errors. Commit: `feat(story-009.1): optional extras for cli and mcp`
+- [x] In `pyproject.toml`, move `typer` to `[cli]` extra, create `[all]` extra combining cli+mcp+vector+reranker. Add graceful `ImportError` messages in `cli.py` and `mcp_server.py` when extras missing. Add unit tests for graceful errors. Commit: `feat(story-009.1): optional extras for cli and mcp`
 
 #### 009-C: Entry points and version unification
 - [ ] Declare `tapps-brain` CLI entry point in `pyproject.toml`. Replace hardcoded `__version__` with `importlib.metadata.version()`. Verify CLI `--version` and MCP server version match. Add unit tests. Commit: `feat(story-009.3): entry points and unified version`

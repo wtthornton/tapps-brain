@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
-import typer
+
+try:
+    import typer
+except ImportError:
+    _msg = (
+        "The 'typer' package is required for the tapps-brain CLI.\n"
+        "Install it with: uv sync --extra cli  (or --extra all)\n"
+    )
+    raise SystemExit(_msg) from None
 
 from tapps_brain import __version__
 
