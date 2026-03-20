@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
-# Start Ralph loop in background from WSL (log under project .ralph/logs/).
+# Start Ralph in a detached tmux session so it survives after `wsl.exe` exits.
+# Plain nohup is killed when the WSL invocation from Windows ends.
 set -euo pipefail
-export PATH="${HOME}/.local/bin:${PATH}"
 REPO="${1:-/mnt/c/cursor/tapps-brain}"
-cd "$REPO"
-mkdir -p .ralph/logs
+SESSION="${RALPH_TMUX_SESSION:-ralph-loop}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-LOG=".ralph/logs/nohup-ralph-${STAMP}.out"
+LOG="${REPO}/.ralph/logs/tmux-ralph-${STAMP}.log"
+
+mkdir -p "${REPO}/.ralph/logs"
 : >>"$LOG"
-nohup ralph >>"$LOG" 2>&1 &
-echo "RALPH_PID=$!"
+
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "ERROR: tmux is required for background Ralph from Windows." >&2
+  echo "Install: sudo apt install -y tmux" >&2
+  exit 1
+fi
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  tmux kill-session -t "$SESSION"
+fi
+
+# shellcheck disable=SC2016
+tmux new-session -d -s "$SESSION" \
+  "export PATH=\$HOME/.local/bin:\$PATH; cd $REPO; ralph 2>&1 | tee -a $LOG"
+
+echo "RALPH_TMUX_SESSION=$SESSION"
 echo "RALPH_LOG=$LOG"
+echo "Attach: tmux attach -t $SESSION"
+echo "List:   tmux ls"
