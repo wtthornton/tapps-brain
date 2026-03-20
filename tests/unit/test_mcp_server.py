@@ -399,6 +399,73 @@ class TestMcpMain:
         assert captured[0][1].get("transport") == "stdio"
 
 
+class TestPrompts:
+    """Test MCP prompt registration and execution (STORY-008.6)."""
+
+    def _prompt_fn(self, mcp_server, name: str):
+        for p in mcp_server._prompt_manager.list_prompts():
+            if p.name == name:
+                return p.fn
+        msg = f"prompt not found: {name}"
+        raise KeyError(msg)
+
+    def test_all_prompts_registered(self, mcp_server):
+        prompt_names = {p.name for p in mcp_server._prompt_manager.list_prompts()}
+        assert {"recall", "store_summary", "remember"}.issubset(prompt_names)
+
+    def test_recall_prompt_with_results(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(
+            key="prompt-test", value="PostgreSQL is the primary database", tier="architectural"
+        )
+
+        fn = self._prompt_fn(mcp_server, "recall")
+        messages = fn(topic="database")
+        assert isinstance(messages, list)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        # Should contain recall results (BM25 may or may not match)
+        assert "database" in messages[0]["content"]
+
+    def test_recall_prompt_no_results(self, mcp_server):
+        fn = self._prompt_fn(mcp_server, "recall")
+        messages = fn(topic="nonexistent-xyz-topic-42")
+        assert isinstance(messages, list)
+        assert len(messages) == 1
+        assert "No memories found" in messages[0]["content"]
+
+    def test_store_summary_prompt_empty(self, mcp_server):
+        fn = self._prompt_fn(mcp_server, "store_summary")
+        messages = fn()
+        assert isinstance(messages, list)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert "Total entries: 0" in messages[0]["content"]
+        assert "empty" in messages[0]["content"].lower()
+
+    def test_store_summary_prompt_with_entries(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="sum-1", value="First entry content", tier="pattern")
+        store.save(key="sum-2", value="Second entry content", tier="architectural")
+
+        fn = self._prompt_fn(mcp_server, "store_summary")
+        messages = fn()
+        content = messages[0]["content"]
+        assert "Total entries: 2" in content
+        assert "sum-1" in content or "sum-2" in content
+
+    def test_remember_prompt(self, mcp_server):
+        fn = self._prompt_fn(mcp_server, "remember")
+        messages = fn(fact="We use ruff for linting")
+        assert isinstance(messages, list)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        content = messages[0]["content"]
+        assert "ruff for linting" in content
+        assert "memory_save" in content
+        assert "tier" in content
+
+
 class TestProjectDirResolution:
     """Test project directory resolution logic."""
 

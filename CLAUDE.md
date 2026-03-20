@@ -119,7 +119,16 @@ ralph-import docs/some-spec.md
 
 ### Ralph on Windows (use WSL)
 
-Ralph’s global install is bash-based (`~/.ralph/ralph_loop.sh`). Run it from **WSL Ubuntu**, not PowerShell.
+Ralph’s global install is bash-based (`~/.ralph/ralph_loop.sh`). **Do not double-click `ralph` or run it from Explorer** — the file has no `.exe`; Windows shows **“Open with…”** instead of executing it.
+
+From Windows, use **WSL** (or Git Bash). Convenience script from the repo (resolves the project path and runs `ralph` inside your default WSL distro):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/Invoke-RalphWsl.ps1 --status
+powershell -ExecutionPolicy Bypass -File scripts/Invoke-RalphWsl.ps1 --live
+```
+
+Inside WSL directly (same as Linux): ensure `PATH` includes `$HOME/.local/bin`, `cd` to the repo, then `ralph` / `ralph --live`.
 
 1. **Install Ralph inside WSL** (or sync from Windows): copy `C:\Users\<you>\.ralph\` → `~/.ralph/` and `ralph*` wrappers → `~/.local/bin/`, then fix CRLF if copied from Windows:
    `bash scripts/wsl-fix-ralph-crlf.sh`

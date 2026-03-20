@@ -384,6 +384,86 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
         return json.dumps(snapshot.to_dict())
 
     # ------------------------------------------------------------------
+    # Prompts — user-invoked workflow templates (STORY-008.6)
+    # ------------------------------------------------------------------
+
+    @mcp.prompt()  # type: ignore[untyped-decorator]
+    def recall(topic: str) -> list[dict[str, str]]:
+        """What do you remember about a topic?
+
+        Runs auto-recall against the memory store and returns relevant memories
+        formatted for the AI assistant to review and discuss.
+
+        Args:
+            topic: The topic or question to recall memories about.
+        """
+        result = store.recall(topic)
+        if result.memory_count == 0:
+            body = f"No memories found about: {topic}"
+        else:
+            body = (
+                f'Here are {result.memory_count} memories about "{topic}":\n\n'
+                f"{result.memory_section}"
+            )
+        return [{"role": "user", "content": body}]
+
+    @mcp.prompt()  # type: ignore[untyped-decorator]
+    def store_summary() -> list[dict[str, str]]:
+        """Generate a summary of what's in the memory store.
+
+        Returns store statistics, tier distribution, and a sample of recent
+        entries so the AI assistant can give the user an overview.
+        """
+        snap = store.snapshot()
+        schema_ver = store._persistence.get_schema_version()
+        entries = store.list_all()
+
+        lines = [
+            f"Memory store summary for: {snap.project_root}",
+            f"Total entries: {snap.total_count} / 500",
+            f"Schema version: {schema_ver}",
+            f"Tier distribution: {json.dumps(snap.tier_counts)}",
+            "",
+        ]
+        preview_len = 80
+        if entries:
+            lines.append("Recent entries (up to 10):")
+            for entry in entries[:10]:
+                truncated = entry.value[:preview_len]
+                suffix = "…" if len(entry.value) > preview_len else ""
+                lines.append(f"  - [{entry.tier.value}] {entry.key}: {truncated}{suffix}")
+        else:
+            lines.append("The store is empty.")
+
+        return [{"role": "user", "content": "\n".join(lines)}]
+
+    @mcp.prompt()  # type: ignore[untyped-decorator]
+    def remember(fact: str) -> list[dict[str, str]]:
+        """Remember a fact by saving it to the memory store.
+
+        Guides the AI assistant to save a memory with an appropriate tier
+        and tags based on the content of the fact.
+
+        Args:
+            fact: The fact, decision, or piece of knowledge to remember.
+        """
+        body = (
+            f"The user wants you to remember the following:\n\n"
+            f'"{fact}"\n\n'
+            "Please save this to the memory store using the memory_save tool. "
+            "Choose an appropriate:\n"
+            "- **key**: a short, descriptive kebab-case identifier\n"
+            "- **tier**: one of architectural (system-level decisions), "
+            "pattern (coding patterns/conventions), "
+            "procedural (workflows/processes), "
+            "or context (session-specific facts)\n"
+            "- **tags**: relevant category tags\n"
+            "- **confidence**: 0.7-0.9 for stated facts, 0.5-0.7 for inferences\n\n"
+            "Confirm what you saved back to the user."
+        )
+        return [{"role": "user", "content": body}]
+
+    # ------------------------------------------------------------------
     # Attach store to server for testing access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
