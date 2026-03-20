@@ -123,10 +123,18 @@ class MemoryStore:
         for entry in self._persistence.load_all():
             self._entries[entry.key] = entry
 
+        # Cold-start: load all relations into memory, indexed by entry key
+        self._relations: dict[str, list[dict[str, Any]]] = {}
+        all_relations = self._persistence.list_relations()
+        for rel in all_relations:
+            for src_key in rel["source_entry_keys"]:
+                self._relations.setdefault(src_key, []).append(rel)
+
         logger.info(
             "memory_store_initialized",
             project_root=str(project_root),
             entry_count=len(self._entries),
+            relation_count=len(all_relations),
             auto_consolidation=self._consolidation_config.enabled,
         )
 
@@ -253,6 +261,8 @@ class MemoryStore:
         relations = extract_relations(key, value)
         if relations:
             self._persistence.save_relations(key, relations)
+            # Reload from persistence to keep timestamps consistent
+            self._relations[key] = self._persistence.load_relations(key)
 
         # Auto-consolidation check (Epic 58)
         if (
@@ -856,7 +866,7 @@ class MemoryStore:
             List of relation dicts with subject, predicate, object_entity,
             source_entry_keys, confidence, and created_at.
         """
-        return self._persistence.load_relations(key)
+        return list(self._relations.get(key, []))
 
     def close(self) -> None:
         """Close the underlying persistence layer."""
