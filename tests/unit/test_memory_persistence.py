@@ -584,6 +584,104 @@ class TestRelations:
         assert p.list_relations() == []
         p.close()
 
+    def test_save_relations_batch(self, tmp_path: Path) -> None:
+        from tapps_brain.relations import RelationEntry
+
+        p = MemoryPersistence(tmp_path)
+        rels = [
+            RelationEntry(
+                subject="moduleA",
+                predicate="uses",
+                object_entity="moduleB",
+                source_entry_keys=[],
+                confidence=0.9,
+            ),
+            RelationEntry(
+                subject="moduleA",
+                predicate="depends on",
+                object_entity="moduleC",
+                source_entry_keys=["other_key"],
+                confidence=0.7,
+            ),
+        ]
+        saved = p.save_relations("entry_key_1", rels)
+        assert saved == 2
+        assert p.count_relations() == 2
+        # Verify key was added to source_entry_keys
+        loaded = p.load_relations("entry_key_1")
+        assert len(loaded) == 2
+        for r in loaded:
+            assert "entry_key_1" in r["source_entry_keys"]
+        # The second relation should also have "other_key"
+        dep_rel = next(r for r in loaded if r["predicate"] == "depends on")
+        assert "other_key" in dep_rel["source_entry_keys"]
+        p.close()
+
+    def test_save_relations_empty_list(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        saved = p.save_relations("key1", [])
+        assert saved == 0
+        assert p.count_relations() == 0
+        p.close()
+
+    def test_load_relations_filters_by_key(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_relation("A", "uses", "B", ["key1"], 0.8)
+        p.save_relation("C", "uses", "D", ["key2"], 0.8)
+        p.save_relation("E", "uses", "F", ["key1", "key2"], 0.8)
+
+        key1_rels = p.load_relations("key1")
+        assert len(key1_rels) == 2
+        subjects = {r["subject"] for r in key1_rels}
+        assert subjects == {"A", "E"}
+
+        key2_rels = p.load_relations("key2")
+        assert len(key2_rels) == 2
+
+        key3_rels = p.load_relations("key3")
+        assert len(key3_rels) == 0
+        p.close()
+
+    def test_delete_relations_by_key(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_relation("A", "uses", "B", ["key1"], 0.8)
+        p.save_relation("C", "uses", "D", ["key2"], 0.8)
+        p.save_relation("E", "uses", "F", ["key1", "key2"], 0.8)
+
+        deleted = p.delete_relations("key1")
+        assert deleted == 2
+        # Only the key2-only relation remains
+        assert p.count_relations() == 1
+        remaining = p.list_relations()
+        assert remaining[0]["subject"] == "C"
+        p.close()
+
+    def test_delete_relations_no_match(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        p.save_relation("A", "uses", "B", ["key1"], 0.8)
+        deleted = p.delete_relations("nonexistent")
+        assert deleted == 0
+        assert p.count_relations() == 1
+        p.close()
+
+    def test_save_relations_deduplicates_source_keys(self, tmp_path: Path) -> None:
+        from tapps_brain.relations import RelationEntry
+
+        p = MemoryPersistence(tmp_path)
+        rel = RelationEntry(
+            subject="A",
+            predicate="uses",
+            object_entity="B",
+            source_entry_keys=["key1"],
+            confidence=0.8,
+        )
+        # Save with key1 — should not duplicate "key1" in source_entry_keys
+        p.save_relations("key1", [rel])
+        loaded = p.load_relations("key1")
+        assert len(loaded) == 1
+        assert loaded[0]["source_entry_keys"].count("key1") == 1
+        p.close()
+
 
 class TestAuditLogTruncation:
     """Tests for audit log truncation behavior."""

@@ -18,6 +18,8 @@ import structlog
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tapps_brain.relations import RelationEntry
+
 from tapps_brain.models import MemoryEntry
 
 logger = structlog.get_logger(__name__)
@@ -662,6 +664,70 @@ class MemoryPersistence:
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) FROM relations").fetchone()
         return int(row[0]) if row else 0
+
+    def save_relations(self, key: str, relations: list[RelationEntry]) -> int:
+        """Batch-save relations linked to a memory entry key.
+
+        Each relation's ``source_entry_keys`` is ensured to contain *key*.
+        Existing triples are updated (INSERT OR REPLACE).
+
+        Returns:
+            Number of relations saved.
+        """
+        if not relations:
+            return 0
+        now = datetime.now(tz=UTC).isoformat()
+        count = 0
+        with self._lock:
+            for rel in relations:
+                source_keys = list(dict.fromkeys([*rel.source_entry_keys, key]))
+                keys_json = json.dumps(source_keys, ensure_ascii=False)
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO relations "
+                    "(subject, predicate, object_entity, source_entry_keys, "
+                    "confidence, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        rel.subject,
+                        rel.predicate,
+                        rel.object_entity,
+                        keys_json,
+                        rel.confidence,
+                        now,
+                    ),
+                )
+                count += 1
+            self._conn.commit()
+        return count
+
+    def load_relations(self, key: str) -> list[dict[str, Any]]:
+        """Load all relations whose ``source_entry_keys`` contains *key*."""
+        all_relations = self.list_relations()
+        return [r for r in all_relations if key in r["source_entry_keys"]]
+
+    def delete_relations(self, key: str) -> int:
+        """Delete all relations whose ``source_entry_keys`` contains *key*.
+
+        Returns:
+            Number of relations deleted.
+        """
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM relations").fetchall()
+            count = 0
+            for r in rows:
+                try:
+                    keys = json.loads(r["source_entry_keys"])
+                except (json.JSONDecodeError, TypeError):
+                    keys = []
+                if key in keys:
+                    self._conn.execute(
+                        "DELETE FROM relations "
+                        "WHERE subject = ? AND predicate = ? AND object_entity = ?",
+                        (r["subject"], r["predicate"], r["object_entity"]),
+                    )
+                    count += 1
+            if count > 0:
+                self._conn.commit()
+        return count
 
     # ------------------------------------------------------------------
     # Private helpers
