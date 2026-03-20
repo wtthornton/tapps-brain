@@ -464,6 +464,306 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
         return [{"role": "user", "content": body}]
 
     # ------------------------------------------------------------------
+    # Federation tools (STORY-008.5)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def federation_status() -> str:
+        """Show federation hub status: registered projects and subscriptions.
+
+        Returns hub statistics, project list, and active subscriptions.
+        """
+        from tapps_brain.federation import (
+            FederatedStore,
+            load_federation_config,
+        )
+
+        config = load_federation_config()
+        try:
+            hub = FederatedStore()
+            stats = hub.get_stats()
+            hub.close()
+        except Exception:
+            stats = {"error": "hub_unavailable"}
+
+        return json.dumps(
+            {
+                "projects": [p.model_dump(mode="json") for p in config.projects],
+                "subscriptions": [s.model_dump(mode="json") for s in config.subscriptions],
+                "hub_stats": stats,
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def federation_subscribe(
+        project_id: str,
+        sources: list[str] | None = None,
+        tag_filter: list[str] | None = None,
+        min_confidence: float = 0.5,
+    ) -> str:
+        """Subscribe a project to receive memories from other federated projects.
+
+        The project must be registered first. If sources is empty, subscribes
+        to all other projects.
+
+        Args:
+            project_id: The project ID to subscribe.
+            sources: Optional list of source project IDs (empty = all).
+            tag_filter: Optional tag filter — only import memories with these tags.
+            min_confidence: Minimum confidence threshold (0.0-1.0, default 0.5).
+        """
+        from tapps_brain.federation import add_subscription, register_project
+
+        # Auto-register if not already registered
+        register_project(project_id, str(resolved_dir))
+
+        try:
+            add_subscription(
+                subscriber=project_id,
+                sources=sources,
+                tag_filter=tag_filter,
+                min_confidence=min_confidence,
+            )
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
+
+        return json.dumps(
+            {
+                "status": "subscribed",
+                "project_id": project_id,
+                "sources": sources or ["all"],
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def federation_unsubscribe(project_id: str) -> str:
+        """Remove a project's federation subscription.
+
+        Args:
+            project_id: The project ID to unsubscribe.
+        """
+        from tapps_brain.federation import load_federation_config, save_federation_config
+
+        config = load_federation_config()
+        before = len(config.subscriptions)
+        config.subscriptions = [s for s in config.subscriptions if s.subscriber != project_id]
+        removed = before - len(config.subscriptions)
+        save_federation_config(config)
+
+        return json.dumps(
+            {
+                "status": "unsubscribed",
+                "project_id": project_id,
+                "subscriptions_removed": removed,
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def federation_publish(
+        project_id: str,
+        keys: list[str] | None = None,
+    ) -> str:
+        """Publish shared-scope memories to the federation hub.
+
+        Only memories with scope='shared' are published. If keys are specified,
+        only those entries are published.
+
+        Args:
+            project_id: This project's federation identifier.
+            keys: Optional list of specific keys to publish (default: all shared).
+        """
+        from tapps_brain.federation import (
+            FederatedStore,
+            register_project,
+            sync_to_hub,
+        )
+
+        register_project(project_id, str(resolved_dir))
+        hub = FederatedStore()
+        try:
+            result = sync_to_hub(
+                store=store,
+                federated_store=hub,
+                project_id=project_id,
+                project_root=str(resolved_dir),
+                keys=keys,
+            )
+        finally:
+            hub.close()
+
+        return json.dumps({"status": "published", **result})
+
+    # ------------------------------------------------------------------
+    # Maintenance tools (STORY-008.5)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def maintenance_consolidate(
+        threshold: float = 0.7,
+        min_group_size: int = 3,
+        force: bool = True,
+    ) -> str:
+        """Trigger memory consolidation to merge similar entries.
+
+        Scans the store for groups of similar memories and merges them
+        into consolidated entries.
+
+        Args:
+            threshold: Similarity threshold for grouping (0.0-1.0, default 0.7).
+            min_group_size: Minimum entries per group to consolidate (default 3).
+            force: If True, run regardless of last scan time (default True).
+        """
+        from tapps_brain.auto_consolidation import run_periodic_consolidation_scan
+
+        result = run_periodic_consolidation_scan(
+            store=store,
+            project_root=resolved_dir,
+            threshold=threshold,
+            min_group_size=min_group_size,
+            force=force,
+        )
+        return json.dumps(result.to_dict())
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def maintenance_gc(dry_run: bool = False) -> str:
+        """Run garbage collection to archive stale memories.
+
+        Identifies memories that have decayed below usefulness and archives
+        them. Archived entries are removed from the active store and appended
+        to the archive JSONL file.
+
+        Args:
+            dry_run: If True, only identify candidates without archiving (default False).
+        """
+        from tapps_brain.gc import GCResult, MemoryGarbageCollector
+
+        gc = MemoryGarbageCollector()
+        all_entries = store.list_all()
+        candidates = gc.identify_candidates(all_entries)
+
+        if dry_run:
+            return json.dumps(
+                {
+                    "dry_run": True,
+                    "candidates": len(candidates),
+                    "candidate_keys": [e.key for e in candidates],
+                }
+            )
+
+        # Archive and delete candidates
+        if candidates:
+            archive_path = resolved_dir / "memory" / "archive.jsonl"
+            gc.append_to_archive(candidates, archive_path)
+            for entry in candidates:
+                store.delete(entry.key)
+
+        remaining = store.count()
+        result = GCResult(
+            archived_count=len(candidates),
+            remaining_count=remaining,
+            archived_keys=[e.key for e in candidates],
+        )
+        return json.dumps(result.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------
+    # Export / Import tools (STORY-008.5)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_export(
+        tier: str | None = None,
+        scope: str | None = None,
+        min_confidence: float | None = None,
+    ) -> str:
+        """Export memory entries as JSON.
+
+        Returns a JSON string containing all matching entries. Use filters
+        to export a subset.
+
+        Args:
+            tier: Optional tier filter (architectural, pattern, procedural, context).
+            scope: Optional scope filter (project, branch, session).
+            min_confidence: Optional minimum confidence threshold.
+        """
+        entries = store.list_all(tier=tier, scope=scope)
+
+        if min_confidence is not None:
+            entries = [e for e in entries if e.confidence >= min_confidence]
+
+        return json.dumps(
+            {
+                "memories": [e.model_dump(mode="json") for e in entries],
+                "entry_count": len(entries),
+                "project_root": str(resolved_dir),
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_import(
+        memories_json: str,
+        overwrite: bool = False,
+    ) -> str:
+        """Import memory entries from a JSON string.
+
+        Expects a JSON string with a 'memories' array. Each memory object
+        should have at least 'key' and 'value' fields.
+
+        Args:
+            memories_json: JSON string with a 'memories' array of entry objects.
+            overwrite: If True, overwrite existing keys (default False: skip).
+        """
+        try:
+            data = json.loads(memories_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": "invalid_json", "message": str(exc)})
+
+        if not isinstance(data, dict) or "memories" not in data:
+            return json.dumps(
+                {"error": "invalid_format", "message": "Expected {'memories': [...]}"}
+            )
+
+        memories = data["memories"]
+        if not isinstance(memories, list):
+            return json.dumps({"error": "invalid_format", "message": "'memories' must be a list"})
+
+        imported = 0
+        skipped = 0
+        errors = 0
+
+        for mem in memories:
+            if not isinstance(mem, dict) or "key" not in mem or "value" not in mem:
+                errors += 1
+                continue
+
+            key = mem["key"]
+            existing = store.get(key)
+            if existing is not None and not overwrite:
+                skipped += 1
+                continue
+
+            result = store.save(
+                key=key,
+                value=mem["value"],
+                tier=mem.get("tier", "pattern"),
+                source=mem.get("source", "system"),
+                tags=mem.get("tags"),
+                scope=mem.get("scope", "project"),
+            )
+            if isinstance(result, dict):
+                errors += 1
+            else:
+                imported += 1
+
+        return json.dumps(
+            {
+                "status": "imported",
+                "imported": imported,
+                "skipped": skipped,
+                "errors": errors,
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Attach store to server for testing access
     # ------------------------------------------------------------------
     mcp._tapps_store = store

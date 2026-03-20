@@ -96,6 +96,14 @@ class TestCoreTools:
             "memory_ingest",
             "memory_supersede",
             "memory_history",
+            "federation_status",
+            "federation_subscribe",
+            "federation_unsubscribe",
+            "federation_publish",
+            "maintenance_consolidate",
+            "maintenance_gc",
+            "memory_export",
+            "memory_import",
         }
         assert expected.issubset(tool_names)
 
@@ -464,6 +472,170 @@ class TestPrompts:
         assert "ruff for linting" in content
         assert "memory_save" in content
         assert "tier" in content
+
+
+class TestFederationAndMaintenance:
+    """Test federation and maintenance tools (STORY-008.5)."""
+
+    def test_federation_tools_registered(self, mcp_server):
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        expected = {
+            "federation_status",
+            "federation_subscribe",
+            "federation_unsubscribe",
+            "federation_publish",
+        }
+        assert expected.issubset(tool_names)
+
+    def test_maintenance_tools_registered(self, mcp_server):
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "maintenance_consolidate" in tool_names
+        assert "maintenance_gc" in tool_names
+
+    def test_export_import_tools_registered(self, mcp_server):
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "memory_export" in tool_names
+        assert "memory_import" in tool_names
+
+    def test_federation_status_returns_json(self, mcp_server, tmp_path, monkeypatch):
+        # Redirect federation config to tmp_path to avoid touching real home dir
+        monkeypatch.setattr(
+            "tapps_brain.federation._DEFAULT_HUB_DIR", tmp_path / ".tapps-brain" / "memory"
+        )
+        fn = _tool_fn(mcp_server, "federation_status")
+        result = json.loads(fn())
+        assert "projects" in result
+        assert "subscriptions" in result
+        assert "hub_stats" in result
+
+    def test_federation_subscribe_and_unsubscribe(self, mcp_server, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tapps_brain.federation._DEFAULT_HUB_DIR", tmp_path / ".tapps-brain" / "memory"
+        )
+        sub_fn = _tool_fn(mcp_server, "federation_subscribe")
+        result = json.loads(sub_fn(project_id="test-project"))
+        assert result["status"] == "subscribed"
+
+        unsub_fn = _tool_fn(mcp_server, "federation_unsubscribe")
+        result = json.loads(unsub_fn(project_id="test-project"))
+        assert result["status"] == "unsubscribed"
+        assert result["subscriptions_removed"] == 1
+
+    def test_federation_publish_empty(self, mcp_server, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tapps_brain.federation._DEFAULT_HUB_DIR", tmp_path / ".tapps-brain" / "memory"
+        )
+        fn = _tool_fn(mcp_server, "federation_publish")
+        result = json.loads(fn(project_id="test-project"))
+        assert result["status"] == "published"
+        assert result["published"] == 0
+
+    def test_maintenance_consolidate(self, mcp_server):
+        fn = _tool_fn(mcp_server, "maintenance_consolidate")
+        result = json.loads(fn())
+        assert "scanned" in result
+        assert "groups_found" in result
+
+    def test_maintenance_gc_dry_run(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="gc-test", value="test value", tier="context")
+
+        fn = _tool_fn(mcp_server, "maintenance_gc")
+        result = json.loads(fn(dry_run=True))
+        assert result["dry_run"] is True
+        assert "candidates" in result
+
+    def test_maintenance_gc_run(self, mcp_server):
+        fn = _tool_fn(mcp_server, "maintenance_gc")
+        result = json.loads(fn(dry_run=False))
+        assert "archived_count" in result
+        assert "remaining_count" in result
+
+    def test_memory_export(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="exp-1", value="export test", tier="pattern")
+
+        fn = _tool_fn(mcp_server, "memory_export")
+        result = json.loads(fn())
+        assert result["entry_count"] >= 1
+        assert "memories" in result
+        assert any(m["key"] == "exp-1" for m in result["memories"])
+
+    def test_memory_export_with_filters(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="exp-arch", value="arch entry", tier="architectural")
+        store.save(key="exp-ctx", value="ctx entry", tier="context")
+
+        fn = _tool_fn(mcp_server, "memory_export")
+        result = json.loads(fn(tier="architectural"))
+        assert all(m["tier"] == "architectural" for m in result["memories"])
+
+    def test_memory_import_valid(self, mcp_server):
+        payload = json.dumps(
+            {
+                "memories": [
+                    {"key": "imp-1", "value": "imported entry", "tier": "pattern"},
+                    {"key": "imp-2", "value": "another import", "tier": "context"},
+                ]
+            }
+        )
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json=payload))
+        assert result["status"] == "imported"
+        assert result["imported"] == 2
+        assert result["skipped"] == 0
+
+        store = mcp_server._tapps_store
+        assert store.get("imp-1") is not None
+        assert store.get("imp-2") is not None
+
+    def test_memory_import_skip_existing(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="imp-exist", value="original", tier="pattern")
+
+        payload = json.dumps({"memories": [{"key": "imp-exist", "value": "replacement"}]})
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json=payload, overwrite=False))
+        assert result["skipped"] == 1
+        assert result["imported"] == 0
+
+        # Original value preserved
+        assert store.get("imp-exist").value == "original"
+
+    def test_memory_import_overwrite(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="imp-ow", value="original", tier="pattern")
+
+        payload = json.dumps({"memories": [{"key": "imp-ow", "value": "overwritten"}]})
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json=payload, overwrite=True))
+        assert result["imported"] == 1
+        assert store.get("imp-ow").value == "overwritten"
+
+    def test_memory_import_invalid_json(self, mcp_server):
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json="not json"))
+        assert result["error"] == "invalid_json"
+
+    def test_memory_import_invalid_format(self, mcp_server):
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json='{"foo": "bar"}'))
+        assert result["error"] == "invalid_format"
+
+    def test_memory_import_bad_entries(self, mcp_server):
+        payload = json.dumps(
+            {
+                "memories": [
+                    {"key": "good", "value": "ok"},
+                    {"missing_key": True},
+                    "not a dict",
+                ]
+            }
+        )
+        fn = _tool_fn(mcp_server, "memory_import")
+        result = json.loads(fn(memories_json=payload))
+        assert result["imported"] == 1
+        assert result["errors"] == 2
 
 
 class TestProjectDirResolution:
