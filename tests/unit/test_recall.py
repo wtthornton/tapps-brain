@@ -12,7 +12,6 @@ from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
 from tapps_brain.recall import RecallConfig, RecallOrchestrator
 from tapps_brain.store import MemoryStore
 
-
 # ---------------------------------------------------------------------------
 # STORY-003.1: Protocol and model tests
 # ---------------------------------------------------------------------------

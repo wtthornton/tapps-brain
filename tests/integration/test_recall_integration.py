@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
+from tapps_brain.models import MemoryScope, RecallResult
 from tapps_brain.recall import RecallConfig, RecallOrchestrator
 from tapps_brain.store import MemoryStore
 

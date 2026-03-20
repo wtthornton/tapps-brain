@@ -23,11 +23,12 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
 _SCHEMA_V3 = 3
+_SCHEMA_V4 = 4
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -94,8 +95,10 @@ class MemoryPersistence:
                 self._migrate_v1_to_v2(cur)
             if current_version < _SCHEMA_V3:
                 self._migrate_v2_to_v3(cur)
-            if current_version < _SCHEMA_VERSION:
+            if current_version < _SCHEMA_V4:
                 self._migrate_v3_to_v4(cur)
+            if current_version < _SCHEMA_VERSION:
+                self._migrate_v4_to_v5(cur)
 
             self._conn.commit()
 
@@ -271,6 +274,69 @@ class MemoryPersistence:
             (4, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v4_to_v5(self, cur: sqlite3.Cursor) -> None:
+        """Add bi-temporal columns for validity windows (EPIC-004).
+
+        Adds ``valid_at``, ``invalid_at``, ``superseded_by`` to memories
+        and creates an index for temporal queries.
+        """
+        for col in ("valid_at", "invalid_at", "superseded_by"):
+            try:
+                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_temporal ON memories(valid_at, invalid_at)"
+        )
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (5, datetime.now(tz=UTC).isoformat()),
+        )
+
+    def migrate_contradicted_to_temporal(self) -> int:
+        """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
+
+        For each entry where ``contradicted=1`` and ``contradiction_reason``
+        matches ``consolidated into {key}``, sets ``invalid_at = updated_at``
+        and ``superseded_by = {key}``.
+
+        Returns:
+            Number of entries migrated.
+        """
+        import re as _re
+
+        pattern = _re.compile(r"consolidated into (\S+)", _re.IGNORECASE)
+        count = 0
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, updated_at, contradiction_reason, invalid_at "
+                "FROM memories WHERE contradicted = 1 AND contradiction_reason IS NOT NULL"
+            ).fetchall()
+
+            for row in rows:
+                # Skip if already migrated
+                if row["invalid_at"] is not None:
+                    continue
+                reason = row["contradiction_reason"] or ""
+                match = pattern.search(reason)
+                if not match:
+                    continue
+                target_key = match.group(1)
+                self._conn.execute(
+                    "UPDATE memories SET invalid_at = ?, superseded_by = ? WHERE key = ?",
+                    (row["updated_at"], target_key, row["key"]),
+                )
+                count += 1
+
+            if count > 0:
+                self._conn.commit()
+
+        return count
+
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
@@ -326,10 +392,16 @@ class MemoryPersistence:
 
         # Include embedding if schema supports it (v2+)
         schema_ver = self.get_schema_version()
-        if schema_ver >= _SCHEMA_VERSION:
+        if schema_ver >= _SCHEMA_V4:
             columns.append("embedding")
-            placeholders = ", ".join("?" * len(columns))
             values = (*values, embedding_json)
+
+        # Include temporal fields if schema supports it (v5+)
+        if schema_ver >= _SCHEMA_VERSION:
+            columns.extend(["valid_at", "invalid_at", "superseded_by"])
+            values = (*values, entry.valid_at, entry.invalid_at, entry.superseded_by)
+
+        placeholders = ", ".join("?" * len(columns))
 
         cols = ", ".join(columns)
         with self._lock:
@@ -603,6 +675,17 @@ class MemoryPersistence:
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # Read temporal fields (v5+), gracefully handle missing columns
+        valid_at: str | None = None
+        invalid_at: str | None = None
+        superseded_by: str | None = None
+        try:
+            valid_at = row["valid_at"]
+            invalid_at = row["invalid_at"]
+            superseded_by = row["superseded_by"]
+        except (KeyError, IndexError):
+            pass
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -623,6 +706,9 @@ class MemoryPersistence:
             contradiction_reason=row["contradiction_reason"],
             seeded_from=row["seeded_from"],
             embedding=embedding,
+            valid_at=valid_at,
+            invalid_at=invalid_at,
+            superseded_by=superseded_by,
         )
 
     @staticmethod

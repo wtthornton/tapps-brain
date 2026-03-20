@@ -222,6 +222,10 @@ class MemoryStore:
                 contradicted=existing.contradicted if existing else False,
                 contradiction_reason=(existing.contradiction_reason if existing else None),
                 seeded_from=existing.seeded_from if existing else None,
+                # Preserve temporal fields on update (EPIC-004)
+                valid_at=existing.valid_at if existing else None,
+                invalid_at=existing.invalid_at if existing else None,
+                superseded_by=existing.superseded_by if existing else None,
             )
 
             # Max entries enforcement: evict lowest-confidence entry
@@ -326,8 +330,18 @@ class MemoryStore:
         tier: str | None = None,
         scope: str | None = None,
         tags: list[str] | None = None,
+        include_superseded: bool = True,
     ) -> list[MemoryEntry]:
-        """List entries with optional filters."""
+        """List entries with optional filters.
+
+        Args:
+            tier: Filter by tier.
+            scope: Filter by scope.
+            tags: Filter by tags.
+            include_superseded: When ``False``, exclude temporally invalid
+                (superseded/expired) entries. Default ``True`` for backward
+                compatibility.
+        """
         with self._lock:
             entries = list(self._entries.values())
 
@@ -338,6 +352,8 @@ class MemoryStore:
         if tags:
             tag_set = set(tags)
             entries = [e for e in entries if tag_set.intersection(e.tags)]
+        if not include_superseded:
+            entries = [e for e in entries if e.is_temporally_valid()]
 
         return entries
 
@@ -357,8 +373,20 @@ class MemoryStore:
         tags: list[str] | None = None,
         tier: str | None = None,
         scope: str | None = None,
+        as_of: str | None = None,
     ) -> list[MemoryEntry]:
-        """Search via FTS5, with optional post-filters."""
+        """Search via FTS5, with optional post-filters.
+
+        Args:
+            query: Search query string.
+            tags: Filter by tags.
+            tier: Filter by tier.
+            scope: Filter by scope.
+            as_of: ISO-8601 timestamp for point-in-time temporal filtering.
+                When set, only entries valid at that time are returned.
+                When ``None`` (default), temporally invalid entries are excluded
+                using the current time.
+        """
         results = self._persistence.search(query)
 
         if tier is not None:
@@ -368,6 +396,9 @@ class MemoryStore:
         if tags:
             tag_set = set(tags)
             results = [r for r in results if tag_set.intersection(r.tags)]
+
+        # Temporal filtering (EPIC-004)
+        results = [r for r in results if r.is_temporally_valid(as_of)]
 
         return results
 
@@ -584,6 +615,138 @@ class MemoryStore:
         asyncio.run(validator.apply_results(report, self))
 
         return report
+
+    # ------------------------------------------------------------------
+    # Bi-temporal versioning (EPIC-004)
+    # ------------------------------------------------------------------
+
+    def supersede(self, old_key: str, new_value: str, **kwargs: Any) -> MemoryEntry:  # noqa: ANN401
+        """Atomically supersede an existing entry with a new one.
+
+        Sets ``invalid_at`` and ``superseded_by`` on the old entry and
+        creates a new entry with ``valid_at`` set to now.
+
+        Args:
+            old_key: Key of the entry to supersede.
+            new_value: Value for the replacement entry.
+            **kwargs: Additional fields for the new entry (tier, tags, etc.).
+
+        Returns:
+            The newly created ``MemoryEntry``.
+
+        Raises:
+            KeyError: If *old_key* does not exist.
+            ValueError: If *old_key* is already superseded.
+        """
+        now = _utc_now_iso()
+
+        with self._lock:
+            old_entry = self._entries.get(old_key)
+            if old_entry is None:
+                raise KeyError(old_key)
+
+            if old_entry.invalid_at is not None:
+                msg = (
+                    f"Entry '{old_key}' is already superseded (invalid_at={old_entry.invalid_at})."
+                )
+                raise ValueError(msg)
+
+            # Derive new key from old key or kwargs
+            new_key = kwargs.pop("key", f"{old_key}.v{self._version_count(old_key) + 1}")
+
+            # Invalidate the old entry
+            invalidated = old_entry.model_copy(
+                update={
+                    "invalid_at": now,
+                    "superseded_by": new_key,
+                    "updated_at": now,
+                }
+            )
+            self._entries[old_key] = invalidated
+
+        # Persist the invalidated entry
+        self._persistence.save(invalidated)
+
+        # Create the new entry
+        new_kwargs: dict[str, Any] = {
+            "tier": old_entry.tier.value,
+            "source": old_entry.source.value,
+            "source_agent": old_entry.source_agent,
+            "scope": old_entry.scope.value,
+            "tags": list(old_entry.tags),
+            "branch": old_entry.branch,
+            "confidence": old_entry.confidence,
+        }
+        new_kwargs.update(kwargs)
+
+        new_entry = self.save(key=new_key, value=new_value, **new_kwargs)
+        if isinstance(new_entry, dict):
+            msg = f"Failed to create superseding entry: {new_entry.get('message', '')}"
+            raise ValueError(msg)
+
+        # Set valid_at on the new entry
+        with self._lock:
+            updated_new = new_entry.model_copy(update={"valid_at": now})
+            self._entries[new_key] = updated_new
+        self._persistence.save(updated_new)
+
+        return updated_new
+
+    def history(self, key: str) -> list[MemoryEntry]:
+        """Return the full temporal chain for a key, ordered by ``valid_at``.
+
+        Follows the ``superseded_by`` chain forward from the given key
+        to find all successors, and backward to find all predecessors.
+
+        Args:
+            key: Any key in the version chain.
+
+        Returns:
+            All entries in the chain, ordered by ``valid_at`` ascending
+            (entries without ``valid_at`` sort first).
+
+        Raises:
+            KeyError: If *key* does not exist.
+        """
+        with self._lock:
+            if key not in self._entries:
+                raise KeyError(key)
+
+            # Build reverse index: superseded_by -> source key
+            reverse: dict[str, str] = {}
+            for e in self._entries.values():
+                if e.superseded_by:
+                    reverse[e.superseded_by] = e.key
+
+            # Walk backward to the root
+            root = key
+            while root in reverse:
+                root = reverse[root]
+
+            # Walk forward from root collecting the chain
+            chain: list[MemoryEntry] = []
+            current: str | None = root
+            while current is not None:
+                entry = self._entries.get(current)
+                if entry is None:
+                    break
+                chain.append(entry)
+                current = entry.superseded_by
+
+        # Sort by valid_at (None sorts first)
+        chain.sort(key=lambda e: e.valid_at or "")
+        return chain
+
+    def _version_count(self, key: str) -> int:
+        """Count how many versions of a key exist (for generating version suffixes).
+
+        Must be called while holding ``self._lock``.
+        """
+        count = 0
+        for k in self._entries:
+            if k == key or k.startswith(f"{key}.v"):
+                count += 1
+        return count
 
     # ------------------------------------------------------------------
     # Auto-recall (EPIC-003)

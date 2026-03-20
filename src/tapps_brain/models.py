@@ -119,6 +119,20 @@ class MemoryEntry(BaseModel):
         description="Vector embedding for semantic search when enabled.",
     )
 
+    # Bi-temporal versioning (EPIC-004)
+    valid_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC: when this fact became true in the real world.",
+    )
+    invalid_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC: when this fact stopped being true.",
+    )
+    superseded_by: str | None = Field(
+        default=None,
+        description="Key of the entry that replaced this one.",
+    )
+
     # Class-level constants (not serialised)
     _KEY_PATTERN: ClassVar[re.Pattern[str]] = _KEY_SLUG_PATTERN
 
@@ -168,7 +182,36 @@ class MemoryEntry(BaseModel):
             msg = "Branch name is required when scope is 'branch'."
             raise ValueError(msg)
 
+        # Temporal validation: invalid_at must be after valid_at
+        if (
+            self.valid_at is not None
+            and self.invalid_at is not None
+            and self.invalid_at <= self.valid_at
+        ):
+            msg = "invalid_at must be after valid_at."
+            raise ValueError(msg)
+
         return self
+
+    def is_temporally_valid(self, as_of: str | None = None) -> bool:
+        """Check whether this entry is valid at the given point in time.
+
+        If *as_of* is ``None``, uses the current UTC time. An entry with
+        both ``valid_at`` and ``invalid_at`` set to ``None`` is always valid.
+
+        The window is ``[valid_at, invalid_at)`` — inclusive start, exclusive end.
+        """
+        ts = as_of or _utc_now_iso()
+        if self.valid_at is not None and ts < self.valid_at:
+            return False
+        return not (self.invalid_at is not None and ts >= self.invalid_at)
+
+    @property
+    def is_superseded(self) -> bool:
+        """Return ``True`` if this entry has been superseded (invalid_at in the past)."""
+        if self.invalid_at is None:
+            return False
+        return _utc_now_iso() >= self.invalid_at
 
 
 # ---------------------------------------------------------------------------

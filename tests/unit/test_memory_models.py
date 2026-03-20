@@ -192,3 +192,76 @@ class TestMemorySnapshot:
         )
         assert snap.total_count == 2
         assert len(snap.entries) == 2
+
+
+class TestTemporalFields:
+    """Tests for bi-temporal fields on MemoryEntry (EPIC-004, STORY-004.1)."""
+
+    def test_temporal_fields_default_none(self) -> None:
+        entry = MemoryEntry(key="basic", value="basic value")
+        assert entry.valid_at is None
+        assert entry.invalid_at is None
+        assert entry.superseded_by is None
+
+    def test_is_temporally_valid_always_valid(self) -> None:
+        """Entry with no temporal bounds is always valid."""
+        entry = MemoryEntry(key="always", value="always valid")
+        assert entry.is_temporally_valid() is True
+        assert entry.is_temporally_valid("2020-01-01T00:00:00+00:00") is True
+
+    def test_is_temporally_valid_in_window(self) -> None:
+        entry = MemoryEntry(
+            key="windowed",
+            value="windowed value",
+            valid_at="2026-01-01T00:00:00+00:00",
+            invalid_at="2026-12-31T23:59:59+00:00",
+        )
+        assert entry.is_temporally_valid("2026-06-15T00:00:00+00:00") is True
+        assert entry.is_temporally_valid("2025-06-15T00:00:00+00:00") is False
+        assert entry.is_temporally_valid("2027-06-15T00:00:00+00:00") is False
+
+    def test_is_temporally_valid_only_valid_at(self) -> None:
+        entry = MemoryEntry(
+            key="future",
+            value="future fact",
+            valid_at="2099-01-01T00:00:00+00:00",
+        )
+        assert entry.is_temporally_valid("2098-01-01T00:00:00+00:00") is False
+        assert entry.is_temporally_valid("2099-06-01T00:00:00+00:00") is True
+
+    def test_is_temporally_valid_only_invalid_at(self) -> None:
+        entry = MemoryEntry(
+            key="expired",
+            value="expired fact",
+            invalid_at="2020-01-01T00:00:00+00:00",
+        )
+        assert entry.is_temporally_valid("2019-06-01T00:00:00+00:00") is True
+        assert entry.is_temporally_valid("2020-06-01T00:00:00+00:00") is False
+
+    def test_is_superseded_property(self) -> None:
+        entry = MemoryEntry(
+            key="old-fact",
+            value="old value",
+            invalid_at="2020-01-01T00:00:00+00:00",
+        )
+        assert entry.is_superseded is True
+
+        current = MemoryEntry(key="current", value="current value")
+        assert current.is_superseded is False
+
+    def test_invalid_at_must_be_after_valid_at(self) -> None:
+        with pytest.raises(ValidationError, match="invalid_at must be after valid_at"):
+            MemoryEntry(
+                key="bad-window",
+                value="bad window",
+                valid_at="2026-06-01T00:00:00+00:00",
+                invalid_at="2026-01-01T00:00:00+00:00",
+            )
+
+    def test_superseded_by_field(self) -> None:
+        entry = MemoryEntry(
+            key="old-version",
+            value="old value",
+            superseded_by="new-version",
+        )
+        assert entry.superseded_by == "new-version"

@@ -572,3 +572,86 @@ class TestRerankerIntegration:
         assert len(results) == 2
         # Original composite order preserved on failure
         assert results[0].entry.key in ("key-a", "key-b")
+
+
+class TestTemporalFiltering:
+    """Tests for temporal filtering in retriever (EPIC-004, STORY-004.3)."""
+
+    def test_superseded_excluded_by_default(self) -> None:
+        """Entries with invalid_at in the past are excluded by default."""
+        entries = [
+            _make_entry("v1", "old pricing plan", updated_at=_RECENT),
+            _make_entry("v2", "new pricing plan", updated_at=_RECENT),
+        ]
+        # Manually set v1 as superseded
+        entries[0] = entries[0].model_copy(
+            update={"invalid_at": "2020-01-01T00:00:00+00:00", "superseded_by": "v2"}
+        )
+        entries[1] = entries[1].model_copy(update={"valid_at": _RECENT})
+
+        retriever = MemoryRetriever()
+        store = _make_store(entries)
+        results = retriever.search("pricing plan", store)
+        keys = [r.entry.key for r in results]
+        assert "v1" not in keys
+        assert "v2" in keys
+
+    def test_superseded_included_with_flag(self) -> None:
+        """include_superseded=True returns temporally invalid entries marked stale."""
+        entries = [
+            _make_entry("old-fact", "old technology stack", updated_at=_RECENT),
+            _make_entry("new-fact", "new technology stack", updated_at=_RECENT),
+        ]
+        entries[0] = entries[0].model_copy(
+            update={"invalid_at": "2020-01-01T00:00:00+00:00", "superseded_by": "new-fact"}
+        )
+
+        retriever = MemoryRetriever()
+        store = _make_store(entries)
+        results = retriever.search("technology stack", store, include_superseded=True)
+        keys = [r.entry.key for r in results]
+        assert "old-fact" in keys
+
+        old = next(r for r in results if r.entry.key == "old-fact")
+        assert old.stale is True
+
+    def test_as_of_point_in_time(self) -> None:
+        """as_of parameter returns entries valid at that timestamp."""
+        entries = [
+            _make_entry("versioned", "database version info", updated_at=_RECENT),
+        ]
+        entries[0] = entries[0].model_copy(
+            update={
+                "valid_at": "2026-01-01T00:00:00+00:00",
+                "invalid_at": "2026-06-01T00:00:00+00:00",
+            }
+        )
+
+        retriever = MemoryRetriever()
+        store = _make_store(entries)
+
+        # Within window
+        results_in = retriever.search("database version", store, as_of="2026-03-01T00:00:00+00:00")
+        assert any(r.entry.key == "versioned" for r in results_in)
+
+        # Outside window
+        results_out = retriever.search("database version", store, as_of="2026-07-01T00:00:00+00:00")
+        assert not any(r.entry.key == "versioned" for r in results_out)
+
+    def test_superseded_penalty(self) -> None:
+        """Superseded entries included via flag get a score penalty."""
+        entries = [
+            _make_entry("active", "current active data", confidence=0.8, updated_at=_RECENT),
+            _make_entry("superseded", "old superseded data", confidence=0.8, updated_at=_RECENT),
+        ]
+        entries[1] = entries[1].model_copy(update={"invalid_at": "2020-01-01T00:00:00+00:00"})
+
+        retriever = MemoryRetriever()
+        store = _make_store(entries)
+        results = retriever.search("data", store, include_superseded=True)
+
+        active = next((r for r in results if r.entry.key == "active"), None)
+        superseded = next((r for r in results if r.entry.key == "superseded"), None)
+        assert active is not None
+        assert superseded is not None
+        assert active.score > superseded.score

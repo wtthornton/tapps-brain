@@ -532,3 +532,152 @@ class TestMemoryStoreProjectRoot:
 
     def test_project_root_property(self, store: MemoryStore, tmp_path: Path) -> None:
         assert store.project_root == tmp_path
+
+
+class TestSupersede:
+    """Tests for MemoryStore.supersede() (EPIC-004, STORY-004.2)."""
+
+    def test_supersede_basic(self, store: MemoryStore) -> None:
+        """Supersede a fact: old entry gets invalid_at/superseded_by, new entry has valid_at."""
+        store.save(key="pricing", value="Pricing is $297/mo", tier="architectural")
+        new_entry = store.supersede("pricing", "Pricing is $397/mo")
+
+        # Old entry is invalidated
+        old = store.get("pricing")
+        assert old is not None
+        assert old.invalid_at is not None
+        assert old.superseded_by == new_entry.key
+
+        # New entry exists with valid_at
+        assert new_entry.valid_at is not None
+        assert new_entry.value == "Pricing is $397/mo"
+        assert new_entry.tier.value == "architectural"
+
+    def test_supersede_nonexistent_raises_keyerror(self, store: MemoryStore) -> None:
+        with pytest.raises(KeyError):
+            store.supersede("nonexistent", "new value")
+
+    def test_supersede_already_superseded_raises_valueerror(self, store: MemoryStore) -> None:
+        store.save(key="fact-a", value="original fact")
+        store.supersede("fact-a", "updated fact")
+
+        with pytest.raises(ValueError, match="already superseded"):
+            store.supersede("fact-a", "double supersede attempt")
+
+    def test_supersede_persists_to_sqlite(self, tmp_path: Path) -> None:
+        """Supersession survives a cold restart."""
+        s1 = MemoryStore(tmp_path)
+        s1.save(key="db-version", value="PostgreSQL 15")
+        new_entry = s1.supersede("db-version", "PostgreSQL 17")
+        new_key = new_entry.key
+        s1.close()
+
+        s2 = MemoryStore(tmp_path)
+        old = s2.get("db-version")
+        assert old is not None
+        assert old.invalid_at is not None
+        assert old.superseded_by == new_key
+
+        reloaded = s2.get(new_key)
+        assert reloaded is not None
+        assert reloaded.value == "PostgreSQL 17"
+        assert reloaded.valid_at is not None
+        s2.close()
+
+    def test_supersede_inherits_tier_and_tags(self, store: MemoryStore) -> None:
+        store.save(
+            key="tech-stack",
+            value="We use React",
+            tier="architectural",
+            tags=["frontend"],
+        )
+        new = store.supersede("tech-stack", "We use Vue")
+        assert new.tier.value == "architectural"
+        assert "frontend" in new.tags
+
+    def test_supersede_with_custom_key(self, store: MemoryStore) -> None:
+        store.save(key="config-a", value="old config")
+        new = store.supersede("config-a", "new config", key="config-b")
+        assert new.key == "config-b"
+
+        old = store.get("config-a")
+        assert old is not None
+        assert old.superseded_by == "config-b"
+
+
+class TestHistory:
+    """Tests for MemoryStore.history() (EPIC-004, STORY-004.4)."""
+
+    def test_history_single_entry(self, store: MemoryStore) -> None:
+        """A standalone entry returns a single-element list."""
+        store.save(key="standalone", value="no versions")
+        chain = store.history("standalone")
+        assert len(chain) == 1
+        assert chain[0].key == "standalone"
+
+    def test_history_three_version_chain(self, store: MemoryStore) -> None:
+        """Create A -> B -> C, verify history returns [A, B, C]."""
+        store.save(key="fact-v1", value="version 1")
+        v2 = store.supersede("fact-v1", "version 2", key="fact-v2")
+        store.supersede(v2.key, "version 3", key="fact-v3")
+
+        # Calling history on any key in the chain returns the full chain
+        for k in ["fact-v1", "fact-v2", "fact-v3"]:
+            chain = store.history(k)
+            assert len(chain) == 3
+            assert chain[0].key == "fact-v1"
+            assert chain[1].key == "fact-v2"
+            assert chain[2].key == "fact-v3"
+
+    def test_history_nonexistent_raises_keyerror(self, store: MemoryStore) -> None:
+        with pytest.raises(KeyError):
+            store.history("nonexistent")
+
+    def test_history_ordered_by_valid_at(self, store: MemoryStore) -> None:
+        """Entries are ordered by valid_at ascending."""
+        store.save(key="ts-v1", value="first")
+        store.supersede("ts-v1", "second", key="ts-v2")
+        chain = store.history("ts-v1")
+        # v1 has no valid_at (sorts first), v2 has valid_at set
+        assert chain[0].key == "ts-v1"
+        assert chain[1].key == "ts-v2"
+
+
+class TestTemporalFiltering:
+    """Tests for temporal filtering in MemoryStore (EPIC-004, STORY-004.3)."""
+
+    def test_search_excludes_superseded(self, store: MemoryStore) -> None:
+        """Default search excludes temporally invalid entries."""
+        store.save(key="price-old", value="pricing is 297 dollars monthly")
+        store.supersede("price-old", "pricing is 397 dollars monthly", key="price-new")
+
+        results = store.search("pricing dollars monthly")
+        keys = [r.key for r in results]
+        assert "price-old" not in keys
+        assert "price-new" in keys
+
+    def test_search_as_of_returns_old_version(self, store: MemoryStore) -> None:
+        """Point-in-time query returns facts valid at that time."""
+        store.save(key="db-old", value="We use PostgreSQL 15 database")
+        old = store.get("db-old")
+        assert old is not None
+        old_time = old.created_at
+
+        store.supersede("db-old", "We use PostgreSQL 17 database", key="db-new")
+
+        # Search as_of old_time should find old version
+        results = store.search("PostgreSQL database", as_of=old_time)
+        keys = [r.key for r in results]
+        assert "db-old" in keys
+
+    def test_list_all_exclude_superseded(self, store: MemoryStore) -> None:
+        store.save(key="item-a", value="original")
+        store.supersede("item-a", "updated", key="item-b")
+
+        all_entries = store.list_all(include_superseded=True)
+        assert len(all_entries) == 2
+
+        active_only = store.list_all(include_superseded=False)
+        keys = [e.key for e in active_only]
+        assert "item-a" not in keys
+        assert "item-b" in keys

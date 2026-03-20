@@ -9,7 +9,9 @@ docs/planning/
 ├── PLANNING.md          ← This file (conventions & templates)
 └── epics/
     ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
-    └── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
+    ├── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
+    ├── EPIC-003.md      ← Auto-recall — pre-prompt memory injection hook (done)
+    └── EPIC-004.md      ← Bi-temporal fact versioning with validity windows (done)
 ```
 
 ## Why This Structure

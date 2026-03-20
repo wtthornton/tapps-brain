@@ -36,6 +36,9 @@ def make_entry(
     contradicted: bool = False,
     contradiction_reason: str | None = None,
     seeded_from: str | None = None,
+    valid_at: str | None = None,
+    invalid_at: str | None = None,
+    superseded_by: str | None = None,
 ) -> MemoryEntry:
     """Create a ``MemoryEntry`` with sensible test defaults.
 
@@ -66,6 +69,9 @@ def make_entry(
         "contradicted": contradicted,
         "contradiction_reason": contradiction_reason,
         "seeded_from": seeded_from,
+        "valid_at": valid_at,
+        "invalid_at": invalid_at,
+        "superseded_by": superseded_by,
     }
 
     if confidence != -1.0:

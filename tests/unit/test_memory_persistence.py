@@ -137,7 +137,7 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 4  # Epic 65.12: relations table
+        assert persistence.get_schema_version() == 5  # EPIC-004: bi-temporal columns
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -315,15 +315,15 @@ class TestSchemaMigrations:
         conn.commit()
         conn.close()
 
-    def test_migrate_v1_to_v4(self, tmp_path: Path) -> None:
-        """Opening a v1 DB should migrate it all the way to v4."""
+    def test_migrate_v1_to_v5(self, tmp_path: Path) -> None:
+        """Opening a v1 DB should migrate it all the way to v5."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 4
+        assert p.get_schema_version() == 5
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -336,6 +336,11 @@ class TestSchemaMigrations:
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
         assert "session_index" in tables
+
+        # Verify v5 migration: temporal columns exist
+        assert "valid_at" in columns
+        assert "invalid_at" in columns
+        assert "superseded_by" in columns
 
         # Verify v4 migration: relations table exists
         assert "relations" in tables
@@ -360,7 +365,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 4
+        assert p.get_schema_version() == 5
 
         tables = [
             r[0]
@@ -402,7 +407,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 4
+        assert p.get_schema_version() == 5
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -425,7 +430,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 4
+        assert p.get_schema_version() == 5
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -756,3 +761,106 @@ class TestEscapeFtsQuery:
     def test_escape_empty(self) -> None:
         assert MemoryPersistence._escape_fts_query("") == ""
         assert MemoryPersistence._escape_fts_query("   ") == ""
+
+
+class TestTemporalPersistence:
+    """Tests for bi-temporal field persistence (EPIC-004, STORY-004.1)."""
+
+    def test_temporal_fields_round_trip(self, tmp_path: Path) -> None:
+        """Temporal fields survive save -> get round-trip."""
+        p = MemoryPersistence(tmp_path)
+        entry = MemoryEntry(
+            key="temporal-test",
+            value="test value",
+            valid_at="2026-01-01T00:00:00+00:00",
+            invalid_at="2026-12-31T23:59:59+00:00",
+            superseded_by="temporal-test-v2",
+        )
+        p.save(entry)
+        loaded = p.get("temporal-test")
+        assert loaded is not None
+        assert loaded.valid_at == "2026-01-01T00:00:00+00:00"
+        assert loaded.invalid_at == "2026-12-31T23:59:59+00:00"
+        assert loaded.superseded_by == "temporal-test-v2"
+        p.close()
+
+    def test_temporal_fields_default_none(self, tmp_path: Path) -> None:
+        """Entries without temporal fields have None values."""
+        p = MemoryPersistence(tmp_path)
+        entry = MemoryEntry(key="no-temporal", value="plain entry")
+        p.save(entry)
+        loaded = p.get("no-temporal")
+        assert loaded is not None
+        assert loaded.valid_at is None
+        assert loaded.invalid_at is None
+        assert loaded.superseded_by is None
+        p.close()
+
+
+class TestTemporalMigration:
+    """Tests for migrate_contradicted_to_temporal (EPIC-004, STORY-004.5)."""
+
+    def test_migrate_contradicted_entries(self, tmp_path: Path) -> None:
+        """Contradicted entries with 'consolidated into' get temporal fields."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+
+        # Create entries that simulate consolidation
+        for i in range(3):
+            entry = MemoryEntry(
+                key=f"src-{i}",
+                value=f"source value {i}",
+                contradicted=True,
+                contradiction_reason="consolidated into merged-key",
+                updated_at=now,
+            )
+            p.save(entry)
+
+        count = p.migrate_contradicted_to_temporal()
+        assert count == 3
+
+        for i in range(3):
+            loaded = p.get(f"src-{i}")
+            assert loaded is not None
+            assert loaded.invalid_at == now
+            assert loaded.superseded_by == "merged-key"
+
+        p.close()
+
+    def test_migrate_idempotent(self, tmp_path: Path) -> None:
+        """Running migration twice produces the same result."""
+        p = MemoryPersistence(tmp_path)
+        now = datetime.now(tz=UTC).isoformat()
+
+        entry = MemoryEntry(
+            key="idempotent-src",
+            value="source value",
+            contradicted=True,
+            contradiction_reason="consolidated into target-key",
+            updated_at=now,
+        )
+        p.save(entry)
+
+        assert p.migrate_contradicted_to_temporal() == 1
+        assert p.migrate_contradicted_to_temporal() == 0  # Already migrated
+        p.close()
+
+    def test_migrate_skips_non_consolidated(self, tmp_path: Path) -> None:
+        """Entries contradicted for other reasons are left unchanged."""
+        p = MemoryPersistence(tmp_path)
+        entry = MemoryEntry(
+            key="manual-contradiction",
+            value="some fact",
+            contradicted=True,
+            contradiction_reason="manually invalidated by user",
+        )
+        p.save(entry)
+
+        count = p.migrate_contradicted_to_temporal()
+        assert count == 0
+
+        loaded = p.get("manual-contradiction")
+        assert loaded is not None
+        assert loaded.invalid_at is None
+        assert loaded.superseded_by is None
+        p.close()

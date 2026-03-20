@@ -126,6 +126,8 @@ class MemoryRetriever:
         include_contradicted: bool = False,
         include_sources: bool = False,
         min_confidence: float = _MIN_CONFIDENCE_FLOOR,
+        as_of: str | None = None,
+        include_superseded: bool = False,
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
@@ -143,6 +145,10 @@ class MemoryRetriever:
                 consolidated into other entries are filtered out. When True,
                 source entries are included alongside consolidated entries.
             min_confidence: Minimum confidence filter.
+            as_of: ISO-8601 timestamp for point-in-time queries. When set,
+                only entries valid at that time are returned.
+            include_superseded: When True, include temporally invalid entries
+                (marked with ``stale=True`` and a 0.5x relevance penalty).
 
         Returns:
             Scored memories sorted by composite score (descending).
@@ -176,6 +182,11 @@ class MemoryRetriever:
             if entry.contradicted and not include_contradicted and not is_included_source:
                 continue
 
+            # Temporal filtering (EPIC-004)
+            temporally_valid = entry.is_temporally_valid(as_of)
+            if not temporally_valid and not include_superseded:
+                continue
+
             # Calculate effective confidence
             eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
 
@@ -184,6 +195,9 @@ class MemoryRetriever:
                 continue
 
             stale_flag = is_stale(entry, self._config, now=now)
+            # Mark temporally invalid entries as stale (EPIC-004)
+            if not temporally_valid:
+                stale_flag = True
 
             # Compute composite score
             relevance_norm = self._normalize_relevance(relevance_raw)
@@ -196,6 +210,10 @@ class MemoryRetriever:
                 + _W_RECENCY * recency
                 + _W_FREQUENCY * frequency
             )
+
+            # Penalty for superseded entries included via include_superseded
+            if not temporally_valid:
+                composite *= 0.5
 
             # Bonus for exact key match
             if entry.key == query.lower().replace(" ", "-"):

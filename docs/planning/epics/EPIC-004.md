@@ -1,10 +1,11 @@
 ---
 id: EPIC-004
 title: "Bi-temporal fact versioning with validity windows"
-status: planned
+status: done
 priority: high
 created: 2026-03-19
 target_date: 2026-04-30
+completed: 2026-03-19
 tags: [temporal, versioning, schema, retrieval, persistence]
 ---
 
@@ -35,22 +36,22 @@ This enables:
 
 ## Success Criteria
 
-- [ ] `MemoryEntry` has `valid_at` and `invalid_at` optional timestamp fields
-- [ ] SQLite schema migrated to v5 with both columns + index
-- [ ] `MemoryStore.supersede(old_key, new_key_or_entry)` atomically invalidates the old entry and links it to the new one
-- [ ] `MemoryRetriever.search()` filters out temporally invalid entries by default (with opt-in override)
-- [ ] `MemoryStore.search()` respects validity windows
-- [ ] Point-in-time query: `store.search(query, as_of="2026-03-01T00:00:00Z")` returns only facts valid at that timestamp
-- [ ] `store.history(key)` returns the full temporal chain for a key (all versions, including superseded)
-- [ ] Existing entries with `contradicted=True` + `contradiction_reason` containing "consolidated into" can be migrated to use `invalid_at`
-- [ ] All existing tests pass without modification (backward compatibility)
-- [ ] Overall coverage stays at 95%+
+- [x] `MemoryEntry` has `valid_at` and `invalid_at` optional timestamp fields
+- [x] SQLite schema migrated to v5 with both columns + index
+- [x] `MemoryStore.supersede(old_key, new_key_or_entry)` atomically invalidates the old entry and links it to the new one
+- [x] `MemoryRetriever.search()` filters out temporally invalid entries by default (with opt-in override)
+- [x] `MemoryStore.search()` respects validity windows
+- [x] Point-in-time query: `store.search(query, as_of="2026-03-01T00:00:00Z")` returns only facts valid at that timestamp
+- [x] `store.history(key)` returns the full temporal chain for a key (all versions, including superseded)
+- [x] Existing entries with `contradicted=True` + `contradiction_reason` containing "consolidated into" can be migrated to use `invalid_at`
+- [x] All existing tests pass without modification (backward compatibility)
+- [x] Overall coverage stays at 95%+
 
 ## Stories
 
 ### STORY-004.1: Add valid_at / invalid_at fields to MemoryEntry
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/models.py`, `src/tapps_brain/persistence.py`
@@ -62,22 +63,22 @@ The data model is the foundation. Adding optional temporal fields to `MemoryEntr
 
 #### Acceptance Criteria
 
-- [ ] `MemoryEntry` gains two optional fields: `valid_at: str | None = None` (ISO-8601 UTC), `invalid_at: str | None = None` (ISO-8601 UTC)
-- [ ] Computed property `is_temporally_valid(as_of: str | None = None) -> bool`: returns True if `as_of` (or now) falls within `[valid_at, invalid_at)`. Both None = always valid.
-- [ ] Computed property `is_superseded -> bool`: returns True if `invalid_at` is not None and is in the past
-- [ ] `superseded_by: str | None = None` field — key of the entry that replaced this one (nullable)
-- [ ] Pydantic validator: `invalid_at` must be after `valid_at` if both are set
-- [ ] Schema migration v4→v5: `ALTER TABLE memories ADD COLUMN valid_at TEXT`, `ALTER TABLE memories ADD COLUMN invalid_at TEXT`, `ALTER TABLE memories ADD COLUMN superseded_by TEXT`
-- [ ] Index: `CREATE INDEX idx_memories_temporal ON memories(valid_at, invalid_at)`
-- [ ] Existing entries with NULL `valid_at`/`invalid_at` are treated as always-valid (backward compatible)
-- [ ] `_entry_to_row()` and `_row_to_entry()` in persistence handle the new fields
-- [ ] All existing tests pass without modification
+- [x] `MemoryEntry` gains two optional fields: `valid_at: str | None = None` (ISO-8601 UTC), `invalid_at: str | None = None` (ISO-8601 UTC)
+- [x] Computed property `is_temporally_valid(as_of: str | None = None) -> bool`: returns True if `as_of` (or now) falls within `[valid_at, invalid_at)`. Both None = always valid.
+- [x] Computed property `is_superseded -> bool`: returns True if `invalid_at` is not None and is in the past
+- [x] `superseded_by: str | None = None` field — key of the entry that replaced this one (nullable)
+- [x] Pydantic validator: `invalid_at` must be after `valid_at` if both are set
+- [x] Schema migration v4→v5: `ALTER TABLE memories ADD COLUMN valid_at TEXT`, `ALTER TABLE memories ADD COLUMN invalid_at TEXT`, `ALTER TABLE memories ADD COLUMN superseded_by TEXT`
+- [x] Index: `CREATE INDEX idx_memories_temporal ON memories(valid_at, invalid_at)`
+- [x] Existing entries with NULL `valid_at`/`invalid_at` are treated as always-valid (backward compatible)
+- [x] `_entry_to_row()` and `_row_to_entry()` in persistence handle the new fields
+- [x] All existing tests pass without modification
 
 ---
 
 ### STORY-004.2: Implement supersede() on MemoryStore
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-004.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`
@@ -89,25 +90,25 @@ Supersession is the primary write operation for bi-temporal data. It atomically 
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore.supersede(old_key: str, new_value: str, **kwargs) -> MemoryEntry` method that:
+- [x] `MemoryStore.supersede(old_key: str, new_value: str, **kwargs) -> MemoryEntry` method that:
   - Sets `invalid_at = now()` on the old entry
   - Sets `superseded_by = new_key` on the old entry
   - Creates a new entry (via `save()`) with the new value and `valid_at = now()`
   - Returns the new entry
-- [ ] If `old_key` does not exist, raises `KeyError`
-- [ ] If `old_key` is already superseded (`invalid_at` is set), raises `ValueError` with descriptive message
-- [ ] Both operations (invalidation + creation) happen under the store lock (atomic)
-- [ ] Both operations are persisted to SQLite in a single transaction
-- [ ] Audit log records both the invalidation and the new entry
-- [ ] Unit test: supersede a fact, verify old entry has `invalid_at` and `superseded_by`, new entry has `valid_at`
-- [ ] Unit test: supersede an already-superseded entry raises `ValueError`
-- [ ] Unit test: supersede a non-existent key raises `KeyError`
+- [x] If `old_key` does not exist, raises `KeyError`
+- [x] If `old_key` is already superseded (`invalid_at` is set), raises `ValueError` with descriptive message
+- [x] Both operations (invalidation + creation) happen under the store lock (atomic)
+- [x] Both operations are persisted to SQLite in a single transaction
+- [x] Audit log records both the invalidation and the new entry
+- [x] Unit test: supersede a fact, verify old entry has `invalid_at` and `superseded_by`, new entry has `valid_at`
+- [x] Unit test: supersede an already-superseded entry raises `ValueError`
+- [x] Unit test: supersede a non-existent key raises `KeyError`
 
 ---
 
 ### STORY-004.3: Temporal filtering in retrieval
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-004.1
 **Context refs:** `src/tapps_brain/retrieval.py`, `src/tapps_brain/store.py`
@@ -119,22 +120,22 @@ Without temporal filtering, superseded facts pollute search results. The retriev
 
 #### Acceptance Criteria
 
-- [ ] `MemoryRetriever.search()` gains optional `as_of: str | None = None` and `include_superseded: bool = False` parameters
-- [ ] By default (`as_of=None, include_superseded=False`): filters out entries where `is_temporally_valid(now)` is False
-- [ ] When `as_of` is provided: filters using that timestamp instead of now
-- [ ] When `include_superseded=True`: returns all entries regardless of temporal validity (but marks them with `stale=True` in `ScoredMemory`)
-- [ ] `MemoryStore.search()` gains the same `as_of` parameter, applies temporal filtering after FTS5 results
-- [ ] `MemoryStore.list_all()` gains `include_superseded: bool = False` parameter
-- [ ] Composite scoring: superseded entries that are included via `include_superseded=True` get a 0.5x penalty to their relevance score
-- [ ] Unit test: store 3 versions of a fact (v1 superseded, v2 superseded, v3 current), search returns only v3 by default
-- [ ] Unit test: same setup, search with `as_of` timestamp between v1 and v2, returns only v1
-- [ ] Unit test: search with `include_superseded=True` returns all 3 versions
+- [x] `MemoryRetriever.search()` gains optional `as_of: str | None = None` and `include_superseded: bool = False` parameters
+- [x] By default (`as_of=None, include_superseded=False`): filters out entries where `is_temporally_valid(now)` is False
+- [x] When `as_of` is provided: filters using that timestamp instead of now
+- [x] When `include_superseded=True`: returns all entries regardless of temporal validity (but marks them with `stale=True` in `ScoredMemory`)
+- [x] `MemoryStore.search()` gains the same `as_of` parameter, applies temporal filtering after FTS5 results
+- [x] `MemoryStore.list_all()` gains `include_superseded: bool = False` parameter
+- [x] Composite scoring: superseded entries that are included via `include_superseded=True` get a 0.5x penalty to their relevance score
+- [x] Unit test: store 3 versions of a fact (v1 superseded, v2 superseded, v3 current), search returns only v3 by default
+- [x] Unit test: same setup, search with `as_of` timestamp between v1 and v2, returns only v1
+- [x] Unit test: search with `include_superseded=True` returns all 3 versions
 
 ---
 
 ### STORY-004.4: Point-in-time history queries
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-004.2
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`
@@ -146,21 +147,21 @@ A key benefit of bi-temporal data is the ability to trace how a fact evolved. `s
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore.history(key: str) -> list[MemoryEntry]` method that returns the full version chain, ordered by `valid_at` ascending
-- [ ] Follows the `superseded_by` chain forward from the given key to find all successors
-- [ ] Follows the chain backward (entries whose `superseded_by == key`) to find all predecessors
-- [ ] Returns all entries in the chain, including the current (non-superseded) version
-- [ ] If the key has no history (never superseded, no predecessors), returns a single-element list
-- [ ] If the key does not exist, raises `KeyError`
-- [ ] Unit test: create a 3-version chain (A → B → C), call `history("A")`, get [A, B, C] ordered by `valid_at`
-- [ ] Unit test: call `history("C")` (the current version), get the same [A, B, C]
-- [ ] Unit test: call `history("standalone_key")`, get single-element list
+- [x] `MemoryStore.history(key: str) -> list[MemoryEntry]` method that returns the full version chain, ordered by `valid_at` ascending
+- [x] Follows the `superseded_by` chain forward from the given key to find all successors
+- [x] Follows the chain backward (entries whose `superseded_by == key`) to find all predecessors
+- [x] Returns all entries in the chain, including the current (non-superseded) version
+- [x] If the key has no history (never superseded, no predecessors), returns a single-element list
+- [x] If the key does not exist, raises `KeyError`
+- [x] Unit test: create a 3-version chain (A → B → C), call `history("A")`, get [A, B, C] ordered by `valid_at`
+- [x] Unit test: call `history("C")` (the current version), get the same [A, B, C]
+- [x] Unit test: call `history("standalone_key")`, get single-element list
 
 ---
 
 ### STORY-004.5: Migrate contradicted entries to use temporal fields
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-004.1, STORY-004.2
 **Context refs:** `src/tapps_brain/persistence.py`, `src/tapps_brain/consolidation.py`
@@ -172,19 +173,19 @@ Existing entries with `contradicted=True` and `contradiction_reason` containing 
 
 #### Acceptance Criteria
 
-- [ ] Migration function `migrate_contradicted_to_temporal()` in persistence module
-- [ ] For each entry where `contradicted=True` and `contradiction_reason` matches pattern "consolidated into {key}": sets `invalid_at = updated_at` (the time of consolidation) and `superseded_by = {extracted_key}`
-- [ ] Migration is idempotent — running it twice produces the same result
-- [ ] Migration runs as part of the v5 schema migration (after columns are added)
-- [ ] Unit test: create 3 contradicted entries with "consolidated into" reasons, run migration, verify `invalid_at` and `superseded_by` are set correctly
-- [ ] Unit test: entries with `contradicted=True` but no "consolidated into" pattern are left unchanged
-- [ ] Original `contradicted` and `contradiction_reason` fields are preserved (not cleared) for backward compatibility
+- [x] Migration function `migrate_contradicted_to_temporal()` in persistence module
+- [x] For each entry where `contradicted=True` and `contradiction_reason` matches pattern "consolidated into {key}": sets `invalid_at = updated_at` (the time of consolidation) and `superseded_by = {extracted_key}`
+- [x] Migration is idempotent — running it twice produces the same result
+- [x] Migration runs as part of the v5 schema migration (after columns are added)
+- [x] Unit test: create 3 contradicted entries with "consolidated into" reasons, run migration, verify `invalid_at` and `superseded_by` are set correctly
+- [x] Unit test: entries with `contradicted=True` but no "consolidated into" pattern are left unchanged
+- [x] Original `contradicted` and `contradiction_reason` fields are preserved (not cleared) for backward compatibility
 
 ---
 
 ### STORY-004.6: Integration with auto-consolidation
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-004.2, STORY-004.3
 **Context refs:** `src/tapps_brain/consolidation.py`, `src/tapps_brain/auto_consolidation.py`, `src/tapps_brain/store.py`
@@ -196,19 +197,19 @@ Auto-consolidation currently marks source entries as `contradicted=True`. With t
 
 #### Acceptance Criteria
 
-- [ ] `consolidate_entries()` in `consolidation.py` uses `supersede()` (or sets `invalid_at` + `superseded_by`) on source entries when creating a `ConsolidatedEntry`
-- [ ] `ConsolidatedEntry.source_ids` entries are temporally invalidated, not just flagged as contradicted
-- [ ] Auto-consolidation in `auto_consolidation.py` delegates to the updated consolidation logic
-- [ ] `history()` can trace from a source entry to its consolidated result
-- [ ] Backward compatibility: `contradicted` flag is still set (for callers that check it) in addition to temporal fields
-- [ ] Unit test: trigger auto-consolidation on 3 similar entries, verify all sources have `invalid_at` and `superseded_by` pointing to the consolidated entry
-- [ ] Unit test: call `history()` on a source entry, verify the chain includes the consolidated entry
+- [x] `consolidate_entries()` in `consolidation.py` uses `supersede()` (or sets `invalid_at` + `superseded_by`) on source entries when creating a `ConsolidatedEntry`
+- [x] `ConsolidatedEntry.source_ids` entries are temporally invalidated, not just flagged as contradicted
+- [x] Auto-consolidation in `auto_consolidation.py` delegates to the updated consolidation logic
+- [x] `history()` can trace from a source entry to its consolidated result
+- [x] Backward compatibility: `contradicted` flag is still set (for callers that check it) in addition to temporal fields
+- [x] Unit test: trigger auto-consolidation on 3 similar entries, verify all sources have `invalid_at` and `superseded_by` pointing to the consolidated entry
+- [x] Unit test: call `history()` on a source entry, verify the chain includes the consolidated entry
 
 ---
 
 ### STORY-004.7: Integration tests — full temporal lifecycle
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-004.2, STORY-004.3, STORY-004.4, STORY-004.6
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/retrieval.py`
@@ -220,13 +221,13 @@ Individual stories validate components; this story validates the full lifecycle 
 
 #### Acceptance Criteria
 
-- [ ] Integration test: Create fact v1, supersede with v2, supersede with v3. Search returns only v3. Search with `as_of` between v1 and v2 returns only v1. `history()` returns [v1, v2, v3].
-- [ ] Integration test: Create entry with `valid_at` in the future. Search now returns nothing. Search with `as_of` at that future time returns the entry.
-- [ ] Integration test: Create entry with `invalid_at` set to a past time. Search returns nothing. Search with `include_superseded=True` returns it marked stale.
-- [ ] Integration test: Auto-consolidation of 3 entries produces a temporal chain queryable via `history()`
-- [ ] Integration test: Full round-trip through persistence — supersede, restart store (cold-start from SQLite), verify temporal fields survived
-- [ ] Integration test: Recall orchestrator (EPIC-003) excludes superseded entries from auto-recall results
-- [ ] All tests use real `MemoryStore` + SQLite (no mocks)
+- [x] Integration test: Create fact v1, supersede with v2, supersede with v3. Search returns only v3. Search with `as_of` between v1 and v2 returns only v1. `history()` returns [v1, v2, v3].
+- [x] Integration test: Create entry with `valid_at` in the future. Search now returns nothing. Search with `as_of` at that future time returns the entry.
+- [x] Integration test: Create entry with `invalid_at` set to a past time. Search returns nothing. Search with `include_superseded=True` returns it marked stale.
+- [x] Integration test: Auto-consolidation of 3 entries produces a temporal chain queryable via `history()`
+- [x] Integration test: Full round-trip through persistence — supersede, restart store (cold-start from SQLite), verify temporal fields survived
+- [x] Integration test: Recall orchestrator (EPIC-003) excludes superseded entries from auto-recall results
+- [x] All tests use real `MemoryStore` + SQLite (no mocks)
 
 ## Priority Order
 

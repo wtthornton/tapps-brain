@@ -20,9 +20,10 @@ from tapps_brain.consolidation import (
     detect_consolidation_reason,
     should_consolidate,
 )
-from tapps_brain.models import (  # noqa: TC001 - Used at runtime
+from tapps_brain.models import (
     ConsolidatedEntry,
     MemoryEntry,
+    _utc_now_iso,
 )
 from tapps_brain.similarity import find_consolidation_groups
 
@@ -192,12 +193,16 @@ def _persist_consolidated_entry(
         confidence=consolidated.confidence,
     )
 
+    now = _utc_now_iso()
     for key in source_keys:
         if key != consolidated.key:
             store.update_fields(
                 key,
                 contradicted=True,
                 contradiction_reason=f"consolidated into {consolidated.key}",
+                # EPIC-004: set temporal fields for bi-temporal versioning
+                invalid_at=now,
+                superseded_by=consolidated.key,
             )
 
 
