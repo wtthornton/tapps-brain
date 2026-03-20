@@ -8,9 +8,9 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 
 **Already in tree:** `src/tapps_brain/mcp_server.py` (FastMCP, `--project-dir`, `python -m tapps_brain.mcp_server`); tools: `memory_save`, `memory_get`, `memory_delete`, `memory_search`, `memory_list`, `memory_recall`, `memory_reinforce`, `memory_ingest`, `memory_supersede`, `memory_history`; resources: `memory://stats`, `memory://health`, `memory://entries/{key}`, `memory://metrics`; `tests/unit/test_mcp_server.py`; `[project.optional-dependencies] mcp` and `mcp` in `[dev]`.
 
-- [ ] Add **`tapps-brain-mcp` console script** in `pyproject.toml` pointing at `tapps_brain.mcp_server:main` (module docstring expects it; script is not declared yet).
-- [ ] **MCP prompts** (`@mcp.prompt`): recall / store-summary / remember workflows (STORY-008.6).
-- [ ] **Federation & maintenance tools** (STORY-008.5): federation status/subscribe/unsubscribe/publish, consolidate, GC, export/import — not exposed on MCP today.
+- [x] Add **`tapps-brain-mcp` console script** in `pyproject.toml` pointing at `tapps_brain.mcp_server:main`.
+- [x] **MCP prompts** (`@mcp.prompt`): recall / store-summary / remember workflows (STORY-008.6).
+- [x] **Federation & maintenance tools** (STORY-008.5): federation status/subscribe/unsubscribe/publish, consolidate, GC, export/import.
 - [ ] **MCP integration tests** — protocol-level coverage (e.g. `tests/integration/test_mcp_integration.py`): initialize, tools/list, tools/call, resources, prompts when added.
 - [ ] **User-facing MCP docs** with runnable client examples (e.g. `docs/guides/mcp.md` or README section; update `docs/planning/epics/EPIC-008.md` as needed).
 

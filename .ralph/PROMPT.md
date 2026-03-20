@@ -34,8 +34,11 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 - Keep scope tightly limited to the selected task and directly related files
 
 ## Protected Files (DO NOT MODIFY)
-- .ralph/ (entire directory and all contents)
+- .ralph/ (entire directory and all contents — **except** `fix_plan.md`, see below)
 - .ralphrc (project configuration)
+
+## Fix Plan Updates (REQUIRED)
+After completing a task from `fix_plan.md`, you MUST update that file to check off the completed item(s) — change `- [ ]` to `- [x]`. This is the ONE exception to the `.ralph/` protection rule. Do this in the same commit as your implementation work, so the plan always reflects reality.
 
 ## Testing Guidelines
 - LIMIT testing to ~20% of your total effort per loop
@@ -50,7 +53,9 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 2. Identify likely files and search for existing implementations first.
 3. Implement the smallest complete change for that task only.
 4. Run targeted verification first (tests/lint/type checks for touched scope).
-5. Report only: task, files changed, verification, and next action/blocker.
+5. Update `fix_plan.md`: check off the completed item (`- [ ]` → `- [x]`).
+6. Commit implementation + fix_plan update together.
+7. Report only: task, files changed, verification, and next action/blocker.
 
 ## Build & Run
 See AGENT.md for build and run instructions.
