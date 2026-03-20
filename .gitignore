@@ -7,3 +7,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 *.pyc
+
+# Ralph logs (keep config, ignore runtime artifacts)
+.ralph/logs/
+.coverage
