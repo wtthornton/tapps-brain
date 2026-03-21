@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-20 (America/Chicago)
+**Last updated:** 2026-03-21 (America/Chicago)
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -8,7 +8,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1039 passing | Full suite `pytest tests/` |
+| Tests | ~1327 passing | Full suite `pytest tests/` |
 | Coverage | ≥ 95% | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
@@ -21,9 +21,10 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Dependencies (high level)
 
-- **Runtime:** `pydantic`, `structlog`, `pyyaml`, **`typer`** (CLI).
-- **Optional:** `mcp` (MCP server / FastMCP), `vector`, `reranker`.
-- **Dev:** test stack + **`mcp`** so MCP unit tests run under `uv sync --extra dev`.
+- **Runtime (core):** `pydantic`, `structlog`, `pyyaml` — no typer/mcp in core.
+- **Extras:** `[cli]` adds `typer`; `[mcp]` adds `mcp`; `[all]` includes both.
+- **Optional:** `vector` (faiss, sentence_transformers), `reranker` (cohere).
+- **Dev:** test stack + `mcp` so MCP unit tests run under `uv sync --extra dev`.
 
 Install for contributors:
 
@@ -36,19 +37,30 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 | Interface | Module / entry | Notes |
 |-----------|----------------|--------|
-| Library | `from tapps_brain import MemoryStore` | Core |
-| CLI | `python -m tapps_brain.cli` (Typer `app`) | Maintenance, store, recall, etc. |
-| MCP | `python -m tapps_brain.mcp_server` | Requires `mcp` installed; stdio server |
+| Library | `from tapps_brain import MemoryStore` | Core — zero heavy deps |
+| CLI | `tapps-brain` (`tapps_brain.cli:app`) | Requires `[cli]` extra |
+| MCP | `tapps-brain-mcp` (`tapps_brain.mcp_server:main`) | Requires `[mcp]` extra; stdio transport |
 
-Packaging `project.scripts` for `tapps-brain` / `tapps-brain-mcp` may be added under EPIC-009.
+## Epics summary
 
-## Epics vs code (short)
+| Epic | Title | Status | Completed |
+|------|-------|--------|-----------|
+| EPIC-001 | Test Suite Quality — A+ | done | 2026-03-19 |
+| EPIC-002 | Integration Wiring | done | 2026-03-19 |
+| EPIC-003 | Auto-Recall Orchestrator | done | 2026-03-19 |
+| EPIC-004 | Bi-Temporal Fact Versioning | done | 2026-03-19 |
+| EPIC-005 | CLI Tool | done | 2026-03-20 |
+| EPIC-006 | Knowledge Graph | done | 2026-03-20 |
+| EPIC-007 | Observability | done | 2026-03-21 |
+| EPIC-008 | MCP Server | done | 2026-03-21 |
+| EPIC-009 | Multi-Interface Distribution | done | 2026-03-21 |
+| EPIC-010 | Configurable Memory Profiles | done | 2026-03-21 |
+| EPIC-011 | Hive — Multi-Agent Shared Brain | planned | target 2026-06-01 |
+| EPIC-012 | OpenClaw Integration | planned | target 2026-06-15 |
 
-| Epic | Doc status | Code notes |
-|------|------------|------------|
-| EPIC-007 Observability | planned | `MetricsCollector`, `StoreHealthReport`, `store.health()`, `store.get_metrics()` present; full instrumentation / audit query API still open per epic. |
-| EPIC-008 MCP | complete | `mcp_server.py` — 21 tools (CRUD, lifecycle, session/capture, federation, maintenance, export/import), 4 resources, 3 prompts. Full unit + integration tests. Docs at `docs/guides/mcp.md`. |
-| EPIC-009 Distribution | planned | Library + CLI + MCP usage documented; PyPI entry points / extras split TBD. |
+## Current focus
+
+**EPIC-011 (Hive)** is broken into 14 Ralph-sized tasks in `fix_plan.md` and ready for execution. EPIC-012 (OpenClaw) will be decomposed after EPIC-011 is underway.
 
 ## WSL / Windows
 

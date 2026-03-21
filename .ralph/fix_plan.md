@@ -66,28 +66,72 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 010-N: Cross-profile integration tests
 - [x] Integration tests: promotion triggers after 5+ reinforcements, demotion on stale entry, power-law vs exponential at 365 days, importance tags doubling half-life, custom scoring weights ranking, `repo-brain` backward compat. All on real SQLite. Coverage stays at 95%+. Commit: `test(story-010.8): cross-profile integration tests`
 
-## Planned (not yet broken into tasks)
+## High Priority
 
 ### EPIC-011: Hive — Multi-Agent Shared Brain (High)
 
-**Depends on:** EPIC-010 (STORY-010.3)
+**Depends on:** EPIC-010 (STORY-010.3) ✅
 **Target:** 2026-06-01
-**Stories:** 011.1–011.7 (7 stories, see `docs/planning/epics/EPIC-011.md`)
+**Design:** `docs/planning/epics/EPIC-011.md`
 
-Adds shared HiveStore at `~/.tapps-brain/hive/`, agent registry, propagation engine (private/domain/hive scopes), conflict resolution, hive-aware recall, and MCP tools.
+**Goal:** Cross-agent memory sharing with domain namespaces, propagation engine, conflict resolution, and hive-aware recall. Backward compatible — single-agent behavior unchanged when Hive is disabled.
 
-### EPIC-012: OpenClaw Integration (High)
+#### 011-A: HiveStore class and SQLite schema
+- [ ] Create `src/tapps_brain/hive.py` with `HiveStore` class. SQLite at `~/.tapps-brain/hive/hive.db` with WAL mode. Schema: `memories` table with all `MemoryEntry` columns + `namespace TEXT DEFAULT 'universal'` + `source_agent TEXT`. FTS5 index on value + tags. Thread-safe via `threading.Lock`. Commit: `feat(story-011.1): HiveStore class and schema`
 
-**Depends on:** EPIC-010 (STORY-010.3), benefits from EPIC-011
+#### 011-B: HiveStore CRUD operations
+- [ ] Implement `HiveStore.save(entry, namespace, source_agent)`, `HiveStore.get(key, namespace)`, `HiveStore.search(query, namespaces, min_confidence)`, `HiveStore.list_namespaces()`. Add unit tests: save/get/search across namespaces, namespace isolation (search ns-A doesn't return ns-B entries). Commit: `feat(story-011.1): HiveStore CRUD operations`
+
+#### 011-C: AgentRegistration model and AgentRegistry
+- [ ] `AgentRegistration` Pydantic model: `id`, `name`, `profile` (str), `skills` (list[str]), `project_root` (optional str). `AgentRegistry` backed by `~/.tapps-brain/hive/agents.yaml`. Methods: `register(agent)`, `unregister(agent_id)`, `get(agent_id)`, `list_agents()`, `agents_for_domain(domain_name)`. Unit tests. Commit: `feat(story-011.2): agent registry`
+
+#### 011-D: agent_scope field and schema migration
+- [ ] Add `agent_scope` field to `MemoryEntry` model: `Literal["private", "domain", "hive"]`, default `"private"`. SQLite schema migration: add `agent_scope TEXT DEFAULT 'private'` column to `memories` table. Unit tests for model validation. Commit: `feat(story-011.3): agent_scope field and migration`
+
+#### 011-E: PropagationEngine core logic
+- [ ] `PropagationEngine` class in `hive.py`. `propagate(entry, agent_id, hive_store)` — saves to Hive if `agent_scope != "private"`. `domain` → namespace = agent profile name; `hive` → namespace = `"universal"`. Auto-propagation config in profile: `hive.auto_propagate_tiers` and `hive.private_tiers`. Unit tests: private stays local, domain goes to profile namespace, hive goes to universal. Commit: `feat(story-011.3): propagation engine`
+
+#### 011-F: Wire propagation into MemoryStore.save()
+- [ ] `MemoryStore.save()` calls `PropagationEngine.propagate()` when Hive is enabled. `MemoryStore.__init__()` accepts optional `hive_store: HiveStore`. Backward compat: when hive_store is None, no propagation occurs. Unit tests. Commit: `feat(story-011.3): wire propagation into store lifecycle`
+
+#### 011-G: ConflictPolicy enum and resolution logic
+- [ ] `ConflictPolicy` enum: `last_write_wins`, `source_authority`, `confidence_max`, `supersede`. `HiveStore.save()` checks for existing key before writing and applies policy. `supersede` (default) uses bi-temporal versioning. `source_authority` rejects writes from agents whose profile doesn't match namespace. Audit log records conflict resolutions. Commit: `feat(story-011.4): conflict resolution policies`
+
+#### 011-H: Conflict resolution unit tests
+- [ ] Unit tests for each policy: two conflicting writes, verify correct winner. Test `supersede` preserves version chain. Test `source_authority` rejects unauthorized writes. Test `confidence_max` keeps higher confidence. Test `last_write_wins` overwrites. Configurable via `hive.conflict_policy` in profile. Commit: `test(story-011.4): conflict resolution tests`
+
+#### 011-I: Hive-aware recall — RecallOrchestrator changes
+- [ ] `RecallOrchestrator` accepts optional `hive_store: HiveStore`. When enabled, searches: (1) local store, (2) Hive universal namespace, (3) Hive domain namespace matching agent profile. Hive results scored at `hive_recall_weight` (default 0.8, configurable). Results merged and deduplicated by key. `RecallResult` includes `hive_memory_count`. Commit: `feat(story-011.5): hive-aware recall`
+
+#### 011-J: Hive-aware recall — unit tests and store wiring
+- [ ] `store.recall()` passes Hive store when available. Unit tests: recall finds Hive memory not in local; local outranks Hive for same key; Hive disabled = identical results; `hive_recall_weight=0.5` ranking test. Commit: `test(story-011.5): hive-aware recall tests`
+
+#### 011-K: Hive MCP tools
+- [ ] MCP tools: `hive_status()` (namespace list, counts, agents), `hive_search(query, namespace)`, `hive_propagate(key, agent_scope)`, `agent_register(agent_id, profile, skills)`, `agent_list()`. All return JSON. Unit tests. Commit: `feat(story-011.6): Hive MCP tools`
+
+#### 011-L: Hive CLI commands
+- [ ] CLI: `tapps-brain hive status`, `tapps-brain hive search <query>`, `tapps-brain agent register`, `tapps-brain agent list`. Uses existing CLI patterns. Unit tests. Commit: `feat(story-011.6): Hive CLI commands`
+
+#### 011-M: Integration tests — multi-agent round-trip
+- [ ] Agent A (repo-brain) saves with `agent_scope="hive"` → Agent B (personal-assistant) recalls it. Domain scope isolation: matching profile finds it, non-matching doesn't. Supersede policy preserves version chain. Source_authority rejects unauthorized writes. Auto-propagation for configured tiers. All on real SQLite, cleaned up in fixtures. Commit: `test(story-011.7): multi-agent integration tests`
+
+#### 011-N: Integration tests — backward compat and coverage
+- [ ] Hive disabled produces identical results to standalone store. `hive_recall_weight` affects ranking. Full lint/type/test pass. Coverage stays at 95%+. Commit: `test(story-011.7): backward compat and coverage validation`
+
+---
+
+### EPIC-012: OpenClaw Integration (High) — not yet broken into tasks
+
+**Depends on:** EPIC-010 (STORY-010.3) ✅, benefits from EPIC-011
 **Target:** 2026-06-15
 **Stories:** 012.1–012.7 (7 stories, see `docs/planning/epics/EPIC-012.md`)
 
-ContextEngine plugin for OpenClaw, auto-recall/capture hooks, pre-compaction flush, Markdown import, PyPI publish, and ClawHub skill packaging.
+ContextEngine plugin for OpenClaw, auto-recall/capture hooks, pre-compaction flush, Markdown import, PyPI publish, and ClawHub skill packaging. Will be broken into Ralph-sized tasks after EPIC-011 is underway.
 
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
-- **EPIC-010** tasks are sequential through 010-G (foundation → profiles → wiring). After 010-G, tasks 010-H through 010-L can be done in any order. 010-M and 010-N come last.
+- **EPIC-011** tasks are sequential through 011-F (foundation → schema → propagation → wiring). After 011-F, tasks 011-G/H and 011-I/J can be done in parallel. 011-K and 011-L are independent. 011-M and 011-N come last.
 - Always cross-check **`docs/planning/epics/`** before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.
