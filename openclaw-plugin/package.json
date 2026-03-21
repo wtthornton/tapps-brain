@@ -1,0 +1,31 @@
+{
+  "name": "@tapps-brain/openclaw-plugin",
+  "version": "1.1.0",
+  "description": "OpenClaw ContextEngine plugin for tapps-brain persistent memory",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "openclaw",
+    "context-engine",
+    "memory",
+    "tapps-brain"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "plugin.json",
+    "README.md"
+  ]
+}

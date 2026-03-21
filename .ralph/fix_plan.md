@@ -40,7 +40,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 2: OpenClaw Plugin Skeleton (TypeScript)
 
 #### 012-D: OpenClaw plugin directory and manifest
-- [ ] Create `openclaw-plugin/` directory: `plugin.json` (ContextEngine slot), `package.json`, `tsconfig.json`, `README.md`. Minimal TypeScript skeleton in `src/index.ts` that exports hook stubs. Commit: `feat(story-012.2): openclaw plugin skeleton`
+- [x] Create `openclaw-plugin/` directory: `plugin.json` (ContextEngine slot), `package.json`, `tsconfig.json`, `README.md`. Minimal TypeScript skeleton in `src/index.ts` that exports hook stubs. Commit: `feat(story-012.2): openclaw plugin skeleton`
 
 #### 012-E: Bootstrap hook — spawn MCP and first-run import
 - [ ] Implement `bootstrap` hook in `src/index.ts`: spawn `tapps-brain-mcp` as child process, import MEMORY.md on first run via `memory_import` MCP tool, run initial `recall()` for session primer. Read `--project-dir` from OpenClaw workspace path. Commit: `feat(story-012.2): bootstrap hook with MCP spawn`
