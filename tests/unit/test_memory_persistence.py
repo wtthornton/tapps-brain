@@ -137,7 +137,7 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 6  # v5 temporal + v6 observability bump
+        assert persistence.get_schema_version() == 7  # v7 agent_scope (EPIC-011)
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -323,7 +323,7 @@ class TestSchemaMigrations:
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 6
+        assert p.get_schema_version() == 7
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -365,7 +365,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 6
+        assert p.get_schema_version() == 7
 
         tables = [
             r[0]
@@ -407,7 +407,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 6
+        assert p.get_schema_version() == 7
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -430,7 +430,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 6
+        assert p.get_schema_version() == 7
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:

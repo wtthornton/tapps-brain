@@ -27,6 +27,7 @@ from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
 
 if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
+    from tapps_brain.hive import HiveStore
     from tapps_brain.retrieval import MemoryRetriever
     from tapps_brain.store import MemoryStore
 
@@ -75,11 +76,17 @@ class RecallOrchestrator:
         retriever: MemoryRetriever | None = None,
         config: RecallConfig | None = None,
         decay_config: DecayConfig | None = None,
+        hive_store: HiveStore | None = None,
+        hive_recall_weight: float = 0.8,
+        hive_agent_profile: str = "repo-brain",
     ) -> None:
         self._store = store
         self._retriever = retriever
         self._config = config or RecallConfig()
         self._decay_config = decay_config
+        self._hive_store = hive_store
+        self._hive_recall_weight = hive_recall_weight
+        self._hive_agent_profile = hive_agent_profile
 
     # ------------------------------------------------------------------
     # Recall
@@ -119,6 +126,15 @@ class RecallOrchestrator:
         if cfg.use_graph_boost and memories:
             memories = self._apply_graph_boost(memories, cfg.graph_boost_factor)
 
+        # Hive recall: merge local + Hive results (EPIC-011)
+        hive_count = 0
+        if self._hive_store is not None:
+            hive_memories, hive_count = self._search_hive(message, memories)
+            if hive_memories:
+                memories = self._merge_hive_results(memories, hive_memories)
+                # Rebuild section to include Hive results
+                memory_section = self._rebuild_section(memories)
+
         # Post-filter: scope, tier, branch, dedupe
 
         if memories and self._needs_post_filter(cfg):
@@ -133,6 +149,7 @@ class RecallOrchestrator:
             recall_time_ms=round(elapsed_ms, 2),
             truncated=result.get("truncated", False),
             memory_count=len(memories),
+            hive_memory_count=hive_count,
         )
 
     # ------------------------------------------------------------------
@@ -160,6 +177,93 @@ class RecallOrchestrator:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Hive recall helpers (EPIC-011)
+    # ------------------------------------------------------------------
+
+    def _search_hive(
+        self,
+        message: str,
+        local_memories: list[dict[str, object]],
+    ) -> tuple[list[dict[str, object]], int]:
+        """Search the Hive for relevant memories not already in local results.
+
+        Returns (hive_memories, count).
+        """
+        if self._hive_store is None:
+            return [], 0
+
+        local_keys = {str(m.get("key", "")) for m in local_memories}
+
+        # Search universal + agent's domain namespace
+        namespaces = ["universal", self._hive_agent_profile]
+        try:
+            hive_results = self._hive_store.search(
+                message,
+                namespaces=namespaces,
+                min_confidence=self._config.min_confidence,
+                limit=20,
+            )
+        except Exception:
+            logger.debug("hive_recall_search_failed", exc_info=True)
+            return [], 0
+
+        hive_memories: list[dict[str, object]] = []
+        for entry in hive_results:
+            key = str(entry.get("key", ""))
+            if key in local_keys:
+                continue  # Deduplicate — local wins
+
+            # Apply hive weight to confidence
+            raw_conf = entry.get("confidence", 0.6)
+            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.6
+            hive_memories.append({
+                "key": key,
+                "confidence": round(conf * self._hive_recall_weight, 4),
+                "tier": entry.get("tier", "pattern"),
+                "score": round(conf * self._hive_recall_weight, 4),
+                "source": "hive",
+                "namespace": entry.get("namespace", "universal"),
+                "value": entry.get("value", ""),
+            })
+
+        return hive_memories, len(hive_memories)
+
+    @staticmethod
+    def _merge_hive_results(
+        local: list[dict[str, object]],
+        hive: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        """Merge local and Hive results, sorted by score descending."""
+        merged = [*local, *hive]
+
+        def _score(m: dict[str, object]) -> float:
+            raw = m.get("score", 0.0)
+            return float(raw) if isinstance(raw, (int, float)) else 0.0
+
+        merged.sort(key=_score, reverse=True)
+        return merged
+
+    @staticmethod
+    def _rebuild_section(memories: list[dict[str, object]]) -> str:
+        """Rebuild the formatted memory section from merged results."""
+        if not memories:
+            return ""
+        lines = ["### Project Memory"]
+        for mem in memories:
+            key = str(mem.get("key", ""))
+            raw_conf = mem.get("confidence", 0.0)
+            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
+            tier = str(mem.get("tier", "pattern"))
+            value = str(mem.get("value", key))
+            src = str(mem.get("source", "local"))
+            origin = f" [hive:{mem.get('namespace', '')}]" if src == "hive" else ""
+            lines.append(
+                f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): "
+                f"{value}"
+            )
+        return "\n".join(lines)
 
     def _apply_graph_boost(
         self,

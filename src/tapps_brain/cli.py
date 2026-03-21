@@ -44,12 +44,16 @@ federation_app = typer.Typer(help="Manage cross-project federation.", no_args_is
 maintenance_app = typer.Typer(help="Run store maintenance operations.", no_args_is_help=True)
 
 profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
+hive_app = typer.Typer(help="Manage the Hive shared brain.", no_args_is_help=True)
+agent_app = typer.Typer(help="Manage Hive agent registrations.", no_args_is_help=True)
 
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
 app.add_typer(federation_app, name="federation")
 app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(profile_app, name="profile")
+app.add_typer(hive_app, name="hive")
+app.add_typer(agent_app, name="agent")
 
 # ---------------------------------------------------------------------------
 # Global options
@@ -997,6 +1001,119 @@ def profile_layers(
                     f"{k}={v}x" for k, v in la_info["importance_tags"].items()
                 )
                 typer.echo(f"    Importance tags:  {tags_str}")
+
+
+# ---------------------------------------------------------------------------
+# Hive commands (EPIC-011)
+# ---------------------------------------------------------------------------
+
+
+@hive_app.command("status")
+def hive_status(as_json: JsonFlag = False) -> None:
+    """Show Hive status: namespaces, entry counts, registered agents."""
+    from tapps_brain.hive import AgentRegistry, HiveStore
+
+    hive = HiveStore()
+    namespaces = hive.list_namespaces()
+    ns_counts: dict[str, int] = {}
+    for ns in namespaces:
+        rows = hive._conn.execute(
+            "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
+            (ns,),
+        ).fetchone()
+        ns_counts[ns] = rows[0] if rows else 0
+    total = sum(ns_counts.values())
+
+    registry = AgentRegistry()
+    agents = [
+        {"id": a.id, "profile": a.profile, "skills": a.skills}
+        for a in registry.list_agents()
+    ]
+    hive.close()
+
+    data: dict[str, Any] = {
+        "namespaces": ns_counts,
+        "total_entries": total,
+        "agents": agents,
+    }
+    if as_json:
+        _output(data, as_json=True)
+    else:
+        typer.echo(f"Hive: {total} entries across {len(namespaces)} namespaces")
+        for ns, count in ns_counts.items():
+            typer.echo(f"  {ns}: {count}")
+        if agents:
+            typer.echo(f"\nAgents ({len(agents)}):")
+            for a in agents:
+                typer.echo(f"  {a['id']} (profile={a['profile']})")
+        else:
+            typer.echo("\nNo registered agents.")
+
+
+@hive_app.command("search")
+def hive_search(
+    query: str,
+    namespace: Annotated[str | None, typer.Option(help="Namespace filter.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Search the Hive shared brain."""
+    from tapps_brain.hive import HiveStore
+
+    hive = HiveStore()
+    ns_list = [namespace] if namespace else None
+    results = hive.search(query, namespaces=ns_list, limit=20)
+    hive.close()
+
+    if as_json:
+        _output({"results": results, "count": len(results)}, as_json=True)
+    else:
+        if not results:
+            typer.echo("No results found.")
+            return
+        for r in results:
+            typer.echo(
+                f"[{r.get('namespace', '?')}] {r['key']} "
+                f"(conf={r.get('confidence', 0):.2f}): "
+                f"{r['value'][:80]}"
+            )
+
+
+@agent_app.command("register")
+def agent_register(
+    agent_id: str,
+    profile: Annotated[str, typer.Option(help="Memory profile name.")] = "repo-brain",
+    skills: Annotated[str, typer.Option(help="Comma-separated skills.")] = "",
+) -> None:
+    """Register an agent in the Hive."""
+    from tapps_brain.hive import AgentRegistration, AgentRegistry
+
+    registry = AgentRegistry()
+    skill_list = [s.strip() for s in skills.split(",") if s.strip()]
+    agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
+    registry.register(agent)
+    typer.echo(f"Registered agent '{agent_id}' with profile '{profile}'.")
+
+
+@agent_app.command("list")
+def agent_list(as_json: JsonFlag = False) -> None:
+    """List all registered agents in the Hive."""
+    from tapps_brain.hive import AgentRegistry
+
+    registry = AgentRegistry()
+    agents = registry.list_agents()
+
+    if as_json:
+        _output(
+            {"agents": [a.model_dump(mode="json") for a in agents], "count": len(agents)},
+            as_json=True,
+        )
+    else:
+        if not agents:
+            typer.echo("No registered agents.")
+            return
+        for a in agents:
+            skills = ", ".join(a.skills) if a.skills else "none"
+            typer.echo(f"  {a.id} (profile={a.profile}, skills={skills})")
 
 
 # ---------------------------------------------------------------------------

@@ -8,16 +8,18 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1327 passing | Full suite `pytest tests/` |
+| Tests | ~1386 passing | Full suite `pytest tests/` |
 | Coverage | ≥ 95% | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
 
 ## Storage / schema
 
-- **SQLite schema version:** **v6** (forward migrations from v1).
+- **SQLite schema version:** **v7** (forward migrations from v1).
 - **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
-- **v6:** version bump for observability alignment (no new columns); new DBs open at v6.
+- **v6:** version bump for observability alignment (no new columns).
+- **v7:** `agent_scope` column for Hive propagation (EPIC-011).
+- **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
 ## Dependencies (high level)
 
@@ -55,12 +57,12 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-008 | MCP Server | done | 2026-03-21 |
 | EPIC-009 | Multi-Interface Distribution | done | 2026-03-21 |
 | EPIC-010 | Configurable Memory Profiles | done | 2026-03-21 |
-| EPIC-011 | Hive — Multi-Agent Shared Brain | planned | target 2026-06-01 |
+| EPIC-011 | Hive — Multi-Agent Shared Brain | done | 2026-03-21 |
 | EPIC-012 | OpenClaw Integration | planned | target 2026-06-15 |
 
 ## Current focus
 
-**EPIC-011 (Hive)** is broken into 14 Ralph-sized tasks in `fix_plan.md` and ready for execution. EPIC-012 (OpenClaw) will be decomposed after EPIC-011 is underway.
+**EPIC-012 (OpenClaw)** is broken into 17 Ralph-sized tasks in `fix_plan.md` and ready for execution. EPIC-011 (Hive) was completed 2026-03-21 — added `HiveStore`, `AgentRegistry`, `PropagationEngine`, `ConflictPolicy`, hive-aware recall, 5 MCP tools, 4 CLI commands, schema v7, 71 new tests.
 
 ## WSL / Windows
 

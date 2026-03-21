@@ -48,9 +48,9 @@ uv build
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), and MCP exposure via `mcp_server.py` (21 tools including session index/search/capture, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v6**; v5 = bi-temporal columns, v6 = version bump for tooling). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (26 tools including 5 Hive tools, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v7**; v5 = bi-temporal columns, v6 = version bump for tooling, v7 = `agent_scope` for Hive). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
 
-**Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting. `ConsolidatedEntry` extends it for merged memories.
+**Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, access counting, and `agent_scope` for Hive propagation. `ConsolidatedEntry` extends it for merged memories. `RecallResult` includes `hive_memory_count` for observability.
 
 **Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides pure-Python Okapi BM25 scoring. `fusion.py` implements Reciprocal Rank Fusion for hybrid BM25 + vector search.
 
@@ -59,6 +59,8 @@ uv build
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 
 **Federation** — `federation.py` enables cross-project memory sharing via a hub at `~/.tapps-brain/memory/federated.db`.
+
+**Hive** — `hive.py` (EPIC-011) enables cross-agent memory sharing via `~/.tapps-brain/hive/hive.db`. `HiveStore` (SQLite, WAL, FTS5, namespace-aware) stores shared memories. `AgentRegistry` (YAML-backed) tracks agent registrations. `PropagationEngine` routes entries to the Hive based on `agent_scope` (`private`/`domain`/`hive`). `ConflictPolicy` resolves concurrent writes (supersede, source_authority, confidence_max, last_write_wins). Hive-aware recall in `recall.py` merges local + Hive results with configurable weight (default 0.8). Backward compatible — disabled by default.
 
 **Pluggable extensions** — `_protocols.py` defines Protocol interfaces. Optional deps (faiss, sentence_transformers, cohere) detected lazily via `_feature_flags.py`. Embeddings (`embeddings.py`) and reranking (`reranker.py`) are opt-in.
 

@@ -124,6 +124,12 @@ class MemoryEntry(BaseModel):
         description="Vector embedding for semantic search when enabled.",
     )
 
+    # Hive agent scope (EPIC-011)
+    agent_scope: str = Field(
+        default="private",
+        description="Hive propagation scope: 'private' | 'domain' | 'hive'.",
+    )
+
     # Bi-temporal versioning (EPIC-004)
     valid_at: str | None = Field(
         default=None,
@@ -258,6 +264,11 @@ class RecallResult(BaseModel):
         default=0,
         ge=0,
         description="Number of memories injected.",
+    )
+    hive_memory_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of memories from the Hive (EPIC-011).",
     )
 
 

@@ -900,6 +900,146 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             })
 
     # ------------------------------------------------------------------
+    # Hive tools (EPIC-011)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_status() -> str:
+        """Return Hive status: namespaces, entry counts, registered agents."""
+        try:
+            from tapps_brain.hive import AgentRegistry, HiveStore
+
+            hive = HiveStore()
+            namespaces = hive.list_namespaces()
+            ns_counts: dict[str, int] = {}
+            for ns in namespaces:
+                rows = hive._conn.execute(
+                    "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
+                    (ns,),
+                ).fetchone()
+                ns_counts[ns] = rows[0] if rows else 0
+
+            registry = AgentRegistry()
+            agents = [
+                {"id": a.id, "profile": a.profile, "skills": a.skills}
+                for a in registry.list_agents()
+            ]
+            hive.close()
+            return json.dumps({
+                "namespaces": ns_counts,
+                "total_entries": sum(ns_counts.values()),
+                "agents": agents,
+            })
+        except Exception as exc:
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_search(query: str, namespace: str | None = None) -> str:
+        """Search the Hive shared brain.
+
+        Args:
+            query: Full-text search query.
+            namespace: Optional namespace filter (e.g. 'universal', 'repo-brain').
+        """
+        try:
+            from tapps_brain.hive import HiveStore
+
+            hive = HiveStore()
+            ns_list = [namespace] if namespace else None
+            results = hive.search(query, namespaces=ns_list, limit=20)
+            hive.close()
+            return json.dumps({"results": results, "count": len(results)})
+        except Exception as exc:
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_propagate(key: str, agent_scope: str = "hive") -> str:
+        """Manually propagate a local memory to the Hive.
+
+        Args:
+            key: Key of the local memory to propagate.
+            agent_scope: Scope: 'domain' or 'hive' (default).
+        """
+        entry = store.get(key)
+        if entry is None:
+            return json.dumps({"error": "not_found", "message": f"Key '{key}' not found."})
+
+        try:
+            from tapps_brain.hive import HiveStore, PropagationEngine
+
+            hive = HiveStore()
+            profile_name = "repo-brain"
+            if store.profile is not None:
+                profile_name = getattr(store.profile, "name", "repo-brain")
+
+            tier_val = (
+                entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            )
+            result = PropagationEngine.propagate(
+                key=entry.key,
+                value=entry.value,
+                agent_scope=agent_scope,
+                agent_id="mcp-user",
+                agent_profile=profile_name,
+                tier=tier_val,
+                confidence=entry.confidence,
+                source=entry.source.value,
+                tags=entry.tags,
+                hive_store=hive,
+            )
+            hive.close()
+            if result is None:
+                return json.dumps({"propagated": False, "reason": "scope is private"})
+            return json.dumps({"propagated": True, **result})
+        except Exception as exc:
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def agent_register(
+        agent_id: str,
+        profile: str = "repo-brain",
+        skills: str = "",
+    ) -> str:
+        """Register an agent in the Hive.
+
+        Args:
+            agent_id: Unique agent identifier.
+            profile: Memory profile name (determines domain namespace).
+            skills: Comma-separated list of skills.
+        """
+        try:
+            from tapps_brain.hive import AgentRegistration, AgentRegistry
+
+            registry = AgentRegistry()
+            skill_list = [s.strip() for s in skills.split(",") if s.strip()]
+            agent = AgentRegistration(
+                id=agent_id, profile=profile, skills=skill_list
+            )
+            registry.register(agent)
+            return json.dumps({
+                "registered": True,
+                "agent_id": agent_id,
+                "profile": profile,
+                "skills": skill_list,
+            })
+        except Exception as exc:
+            return json.dumps({"error": "registry_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def agent_list() -> str:
+        """List all registered agents in the Hive."""
+        try:
+            from tapps_brain.hive import AgentRegistry
+
+            registry = AgentRegistry()
+            agents = [
+                a.model_dump(mode="json") for a in registry.list_agents()
+            ]
+            return json.dumps({"agents": agents, "count": len(agents)})
+        except Exception as exc:
+            return json.dumps({"error": "registry_error", "message": str(exc)})
+
+    # ------------------------------------------------------------------
     # Attach store to server for testing access
     # ------------------------------------------------------------------
     mcp._tapps_store = store

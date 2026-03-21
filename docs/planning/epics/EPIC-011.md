@@ -1,9 +1,10 @@
 ---
 id: EPIC-011
 title: "Hive — multi-agent shared brain with domain namespaces"
-status: planned
+status: done
 priority: high
 created: 2026-03-21
+completed: 2026-03-21
 target_date: 2026-06-01
 tags: [hive, multi-agent, shared-memory, domains, propagation]
 ---
@@ -27,20 +28,20 @@ This epic depends on EPIC-010 (profiles) for per-agent profile support.
 
 ## Success Criteria
 
-- [ ] Hive store exists at `~/.tapps-brain/hive/hive.db` with namespace and agent columns
-- [ ] Agents register with ID, profile, and skills
-- [ ] Memories propagate to the Hive based on `agent_scope`
-- [ ] Domain namespaces isolate skill-specific knowledge
-- [ ] Recall merges local + Hive results with configurable weight
-- [ ] Conflict resolution handles concurrent writes from multiple agents
-- [ ] Existing single-agent behavior is unchanged when Hive is disabled
-- [ ] Coverage stays at 95%+
+- [x] Hive store exists at `~/.tapps-brain/hive/hive.db` with namespace and agent columns
+- [x] Agents register with ID, profile, and skills
+- [x] Memories propagate to the Hive based on `agent_scope`
+- [x] Domain namespaces isolate skill-specific knowledge
+- [x] Recall merges local + Hive results with configurable weight
+- [x] Conflict resolution handles concurrent writes from multiple agents
+- [x] Existing single-agent behavior is unchanged when Hive is disabled
+- [x] Coverage stays at 95%+
 
 ## Stories
 
 ### STORY-011.1: Hive store and schema
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** EPIC-010 (STORY-010.3)
 **Context refs:** `src/tapps_brain/federation.py`, `src/tapps_brain/persistence.py`
@@ -52,22 +53,22 @@ The Hive needs its own SQLite store with namespace-aware schema. This is the fou
 
 #### Acceptance Criteria
 
-- [ ] New `src/tapps_brain/hive.py` module with `HiveStore` class
-- [ ] SQLite database at `~/.tapps-brain/hive/hive.db` with WAL mode
-- [ ] Schema: `memories` table with all `MemoryEntry` columns + `namespace TEXT DEFAULT 'universal'` + `source_agent TEXT`
-- [ ] FTS5 index covering value + tags (for Hive-wide search)
-- [ ] `HiveStore.save(entry, namespace, source_agent)` — writes to Hive DB
-- [ ] `HiveStore.search(query, namespaces, min_confidence)` — searches across specified namespaces
-- [ ] `HiveStore.get(key, namespace)` — retrieves by key within a namespace
-- [ ] `HiveStore.list_namespaces()` — returns active namespace names
-- [ ] Thread-safe via `threading.Lock` (same pattern as `MemoryStore`)
-- [ ] Unit tests: save/search/get across namespaces, namespace isolation (search in ns-A doesn't return ns-B entries)
+- [x] New `src/tapps_brain/hive.py` module with `HiveStore` class
+- [x] SQLite database at `~/.tapps-brain/hive/hive.db` with WAL mode
+- [x] Schema: `memories` table with all `MemoryEntry` columns + `namespace TEXT DEFAULT 'universal'` + `source_agent TEXT`
+- [x] FTS5 index covering value + tags (for Hive-wide search)
+- [x] `HiveStore.save(entry, namespace, source_agent)` — writes to Hive DB
+- [x] `HiveStore.search(query, namespaces, min_confidence)` — searches across specified namespaces
+- [x] `HiveStore.get(key, namespace)` — retrieves by key within a namespace
+- [x] `HiveStore.list_namespaces()` — returns active namespace names
+- [x] Thread-safe via `threading.Lock` (same pattern as `MemoryStore`)
+- [x] Unit tests: save/search/get across namespaces, namespace isolation (search in ns-A doesn't return ns-B entries)
 
 ---
 
 ### STORY-011.2: Agent registry
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-011.1
 **Context refs:** `src/tapps_brain/hive.py`
@@ -79,20 +80,20 @@ The Hive needs to know which agents exist, what profiles they use, and what skil
 
 #### Acceptance Criteria
 
-- [ ] `AgentRegistration` Pydantic model: `id`, `name`, `profile` (str), `skills` (list[str]), `project_root` (optional str)
-- [ ] `AgentRegistry` class backed by `~/.tapps-brain/hive/agents.yaml`
-- [ ] `registry.register(agent)` — adds/updates an agent
-- [ ] `registry.unregister(agent_id)` — removes an agent
-- [ ] `registry.get(agent_id) -> AgentRegistration | None`
-- [ ] `registry.list_agents() -> list[AgentRegistration]`
-- [ ] `registry.agents_for_domain(domain_name) -> list[AgentRegistration]` — returns agents whose profile matches the domain
-- [ ] Unit tests: register, unregister, list, domain lookup
+- [x] `AgentRegistration` Pydantic model: `id`, `name`, `profile` (str), `skills` (list[str]), `project_root` (optional str)
+- [x] `AgentRegistry` class backed by `~/.tapps-brain/hive/agents.yaml`
+- [x] `registry.register(agent)` — adds/updates an agent
+- [x] `registry.unregister(agent_id)` — removes an agent
+- [x] `registry.get(agent_id) -> AgentRegistration | None`
+- [x] `registry.list_agents() -> list[AgentRegistration]`
+- [x] `registry.agents_for_domain(domain_name) -> list[AgentRegistration]` — returns agents whose profile matches the domain
+- [x] Unit tests: register, unregister, list, domain lookup
 
 ---
 
 ### STORY-011.3: Agent scope field and propagation engine
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-011.1, STORY-011.2
 **Context refs:** `src/tapps_brain/models.py`, `src/tapps_brain/store.py`
@@ -104,22 +105,22 @@ This is the core mechanism: when an agent saves a memory, the propagation engine
 
 #### Acceptance Criteria
 
-- [ ] `agent_scope` field added to `MemoryEntry` model: `Literal["private", "domain", "hive"]`, default `"private"`
-- [ ] SQLite schema migration: add `agent_scope TEXT DEFAULT 'private'` column to `memories` table
-- [ ] `PropagationEngine` class in `src/tapps_brain/hive.py`
-- [ ] `PropagationEngine.propagate(entry, agent_id, hive_store)` — saves to Hive if `agent_scope != "private"`
-- [ ] `agent_scope="domain"` → saved to `namespace=agent.profile` in Hive
-- [ ] `agent_scope="hive"` → saved to `namespace="universal"` in Hive
-- [ ] `MemoryStore.save()` calls propagation engine when Hive is enabled
-- [ ] Auto-propagation config in profile: `hive.auto_propagate_tiers` lists tiers that auto-propagate; `hive.private_tiers` lists tiers that never propagate
-- [ ] Unit tests: private stays local, domain goes to profile namespace, hive goes to universal
-- [ ] Backward compat: when Hive is disabled (default), no propagation occurs; existing behavior unchanged
+- [x] `agent_scope` field added to `MemoryEntry` model: `Literal["private", "domain", "hive"]`, default `"private"`
+- [x] SQLite schema migration: add `agent_scope TEXT DEFAULT 'private'` column to `memories` table
+- [x] `PropagationEngine` class in `src/tapps_brain/hive.py`
+- [x] `PropagationEngine.propagate(entry, agent_id, hive_store)` — saves to Hive if `agent_scope != "private"`
+- [x] `agent_scope="domain"` → saved to `namespace=agent.profile` in Hive
+- [x] `agent_scope="hive"` → saved to `namespace="universal"` in Hive
+- [x] `MemoryStore.save()` calls propagation engine when Hive is enabled
+- [x] Auto-propagation config in profile: `hive.auto_propagate_tiers` lists tiers that auto-propagate; `hive.private_tiers` lists tiers that never propagate
+- [x] Unit tests: private stays local, domain goes to profile namespace, hive goes to universal
+- [x] Backward compat: when Hive is disabled (default), no propagation occurs; existing behavior unchanged
 
 ---
 
 ### STORY-011.4: Conflict resolution
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-011.3
 **Context refs:** `src/tapps_brain/hive.py`, `src/tapps_brain/store.py`
@@ -131,21 +132,21 @@ When multiple agents write to the Hive, conflicts are inevitable. Agent A says "
 
 #### Acceptance Criteria
 
-- [ ] `ConflictPolicy` enum: `last_write_wins`, `source_authority`, `confidence_max`, `supersede`
-- [ ] `HiveStore.save()` checks for existing key in the target namespace before writing
-- [ ] `last_write_wins`: overwrites if new entry is more recent
-- [ ] `source_authority`: accepts write only if source agent's profile matches the namespace domain; otherwise rejects with logged warning
-- [ ] `confidence_max`: keeps the version with higher confidence
-- [ ] `supersede` (default): uses bi-temporal versioning — marks old version with `invalid_at`, creates new version with `superseded_by` link
-- [ ] Conflict policy configurable in profile: `hive.conflict_policy`
-- [ ] Audit log records conflict resolutions with both versions
-- [ ] Unit tests: each policy with two conflicting writes, verify correct winner
+- [x] `ConflictPolicy` enum: `last_write_wins`, `source_authority`, `confidence_max`, `supersede`
+- [x] `HiveStore.save()` checks for existing key in the target namespace before writing
+- [x] `last_write_wins`: overwrites if new entry is more recent
+- [x] `source_authority`: accepts write only if source agent's profile matches the namespace domain; otherwise rejects with logged warning
+- [x] `confidence_max`: keeps the version with higher confidence
+- [x] `supersede` (default): uses bi-temporal versioning — marks old version with `invalid_at`, creates new version with `superseded_by` link
+- [x] Conflict policy configurable in profile: `hive.conflict_policy`
+- [x] Audit log records conflict resolutions with both versions
+- [x] Unit tests: each policy with two conflicting writes, verify correct winner
 
 ---
 
 ### STORY-011.5: Hive-aware recall
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-011.3
 **Context refs:** `src/tapps_brain/recall.py`, `src/tapps_brain/retrieval.py`
@@ -157,23 +158,23 @@ This is the user-facing payoff. When an agent runs `recall()`, it should seamles
 
 #### Acceptance Criteria
 
-- [ ] `RecallOrchestrator` accepts optional `hive_store: HiveStore` parameter
-- [ ] When Hive is enabled, recall searches: (1) local store, (2) Hive universal namespace, (3) Hive domain namespace matching agent profile
-- [ ] Hive results scored at `hive_recall_weight` multiplier (default 0.8, configurable in profile)
-- [ ] Results merged and deduplicated by key (highest score wins)
-- [ ] Token budget applies to merged results (not per-source)
-- [ ] `RecallResult` includes `hive_memory_count` field for observability
-- [ ] `store.recall()` convenience method passes Hive store when available
-- [ ] When Hive is disabled, recall behavior is identical to current code
-- [ ] Unit test: recall finds memory from Hive that doesn't exist locally
-- [ ] Unit test: local memory with same key outranks Hive memory (higher score)
-- [ ] Unit test: Hive disabled produces identical results to current behavior
+- [x] `RecallOrchestrator` accepts optional `hive_store: HiveStore` parameter
+- [x] When Hive is enabled, recall searches: (1) local store, (2) Hive universal namespace, (3) Hive domain namespace matching agent profile
+- [x] Hive results scored at `hive_recall_weight` multiplier (default 0.8, configurable in profile)
+- [x] Results merged and deduplicated by key (highest score wins)
+- [x] Token budget applies to merged results (not per-source)
+- [x] `RecallResult` includes `hive_memory_count` field for observability
+- [x] `store.recall()` convenience method passes Hive store when available
+- [x] When Hive is disabled, recall behavior is identical to current code
+- [x] Unit test: recall finds memory from Hive that doesn't exist locally
+- [x] Unit test: local memory with same key outranks Hive memory (higher score)
+- [x] Unit test: Hive disabled produces identical results to current behavior
 
 ---
 
 ### STORY-011.6: Hive MCP tools
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-011.5
 **Context refs:** `src/tapps_brain/mcp_server.py`
@@ -185,19 +186,19 @@ MCP clients need to interact with the Hive directly — checking status, searchi
 
 #### Acceptance Criteria
 
-- [ ] MCP tool: `hive_status()` — returns Hive DB stats (namespace list, entry counts per namespace, registered agents)
-- [ ] MCP tool: `hive_search(query, namespace)` — searches Hive with optional namespace filter
-- [ ] MCP tool: `hive_propagate(key, agent_scope)` — manually propagates an existing local memory to the Hive
-- [ ] MCP tool: `agent_register(agent_id, profile, skills)` — registers current agent
-- [ ] MCP tool: `agent_list()` — lists registered agents
-- [ ] All tools return JSON; errors return `{"error": "...", "message": "..."}`
-- [ ] Unit tests for each tool
+- [x] MCP tool: `hive_status()` — returns Hive DB stats (namespace list, entry counts per namespace, registered agents)
+- [x] MCP tool: `hive_search(query, namespace)` — searches Hive with optional namespace filter
+- [x] MCP tool: `hive_propagate(key, agent_scope)` — manually propagates an existing local memory to the Hive
+- [x] MCP tool: `agent_register(agent_id, profile, skills)` — registers current agent
+- [x] MCP tool: `agent_list()` — lists registered agents
+- [x] All tools return JSON; errors return `{"error": "...", "message": "..."}`
+- [x] Unit tests for each tool
 
 ---
 
 ### STORY-011.7: Integration tests — multi-agent round-trip
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-011.4, STORY-011.5
 **Context refs:** `tests/integration/`
@@ -209,15 +210,15 @@ The Hive involves multiple stores, propagation, conflict resolution, and cross-s
 
 #### Acceptance Criteria
 
-- [ ] Integration test: Agent A (repo-brain) saves "We use PostgreSQL" with `agent_scope="hive"` → Agent B (personal-assistant) recalls "database" → finds it
-- [ ] Integration test: Agent A saves to `domain` scope → only agents with matching profile find it; other agents don't
-- [ ] Integration test: Agent A and Agent B both write conflicting values for same key → `supersede` policy preserves both with version chain
-- [ ] Integration test: `source_authority` policy — dev agent's write to `repo-brain` domain accepted; calendar agent's write rejected
-- [ ] Integration test: recall with Hive disabled produces identical results to standalone store
-- [ ] Integration test: auto-propagation — save `architectural` tier entry (in `auto_propagate_tiers`), verify it appears in Hive; save `context` tier entry (in `private_tiers`), verify it stays local
-- [ ] Integration test: `hive_recall_weight=0.5` — local results rank higher than identical Hive results
-- [ ] All tests use real SQLite databases (no mocks), cleaned up in fixtures
-- [ ] Overall coverage stays at 95%+
+- [x] Integration test: Agent A (repo-brain) saves "We use PostgreSQL" with `agent_scope="hive"` → Agent B (personal-assistant) recalls "database" → finds it
+- [x] Integration test: Agent A saves to `domain` scope → only agents with matching profile find it; other agents don't
+- [x] Integration test: Agent A and Agent B both write conflicting values for same key → `supersede` policy preserves both with version chain
+- [x] Integration test: `source_authority` policy — dev agent's write to `repo-brain` domain accepted; calendar agent's write rejected
+- [x] Integration test: recall with Hive disabled produces identical results to standalone store
+- [x] Integration test: auto-propagation — save `architectural` tier entry (in `auto_propagate_tiers`), verify it appears in Hive; save `context` tier entry (in `private_tiers`), verify it stays local
+- [x] Integration test: `hive_recall_weight=0.5` — local results rank higher than identical Hive results
+- [x] All tests use real SQLite databases (no mocks), cleaned up in fixtures
+- [x] Overall coverage stays at 95%+
 
 ## Priority Order
 

@@ -98,6 +98,36 @@ class LimitsConfig(BaseModel):
     max_tags: int = Field(default=10, ge=1)
 
 
+class HiveConfig(BaseModel):
+    """Hive propagation configuration (EPIC-011).
+
+    Controls how memories flow between the local store and the Hive.
+    When absent or all defaults, Hive is effectively disabled.
+    """
+
+    auto_propagate_tiers: list[str] = Field(
+        default_factory=list,
+        description="Tiers that auto-propagate to the Hive (e.g. ['architectural']).",
+    )
+    private_tiers: list[str] = Field(
+        default_factory=list,
+        description="Tiers that never propagate (e.g. ['context']).",
+    )
+    conflict_policy: str = Field(
+        default="supersede",
+        description=(
+            "Conflict resolution: 'supersede' | 'source_authority'"
+            " | 'confidence_max' | 'last_write_wins'."
+        ),
+    )
+    recall_weight: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Weight multiplier for Hive results in recall (0.0-1.0).",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main profile model
 # ---------------------------------------------------------------------------
@@ -139,6 +169,7 @@ class MemoryProfile(BaseModel):
     gc: GCConfig = Field(default_factory=GCConfig)
     recall: RecallProfileConfig = Field(default_factory=RecallProfileConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    hive: HiveConfig = Field(default_factory=HiveConfig)
 
     @model_validator(mode="after")
     def _validate_layers(self) -> MemoryProfile:

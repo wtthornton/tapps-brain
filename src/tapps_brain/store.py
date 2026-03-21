@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tapps_brain.embeddings import EmbeddingProvider
+    from tapps_brain.hive import HiveStore
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
 from tapps_brain.relations import RelationEntry, extract_relations
@@ -108,6 +109,8 @@ class MemoryStore:
         write_rules: Any = None,  # noqa: ANN401
         lookup_engine: Any = None,  # noqa: ANN401
         profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
+        hive_store: HiveStore | None = None,
+        hive_agent_id: str = "unknown",
     ) -> None:
         self._project_root = project_root
         self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
@@ -118,6 +121,8 @@ class MemoryStore:
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
         self._metrics = MetricsCollector()
+        self._hive_store = hive_store
+        self._hive_agent_id = hive_agent_id
 
         # EPIC-010: resolve and store the active profile
         self._profile = self._resolve_profile(project_root, profile)
@@ -312,6 +317,10 @@ class MemoryStore:
 
         self._persistence.save(entry)
 
+        # Hive propagation (EPIC-011)
+        if self._hive_store is not None:
+            self._propagate_to_hive(entry)
+
         # Extract and persist relations (EPIC-006)
         relations = extract_relations(key, value)
         if relations:
@@ -365,6 +374,43 @@ class MemoryStore:
             logger.debug("auto_consolidation_check_failed", exc_info=True)
         finally:
             self._consolidation_in_progress = False
+
+    def _propagate_to_hive(self, entry: MemoryEntry) -> None:
+        """Propagate a saved entry to the Hive if appropriate (EPIC-011)."""
+        if self._hive_store is None:
+            return
+        try:
+            from tapps_brain.hive import PropagationEngine
+
+            # Read Hive config from profile if available
+            auto_propagate: list[str] | None = None
+            private: list[str] | None = None
+            agent_profile = "repo-brain"
+            if self._profile is not None:
+                hive_cfg = getattr(self._profile, "hive", None)
+                if hive_cfg is not None:
+                    auto_propagate = hive_cfg.auto_propagate_tiers
+                    private = hive_cfg.private_tiers
+                agent_profile = getattr(self._profile, "name", "repo-brain")
+
+            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+
+            PropagationEngine.propagate(
+                key=entry.key,
+                value=entry.value,
+                agent_scope=entry.agent_scope,
+                agent_id=self._hive_agent_id,
+                agent_profile=agent_profile,
+                tier=tier_str,
+                confidence=entry.confidence,
+                source=entry.source.value if hasattr(entry.source, "value") else str(entry.source),
+                tags=entry.tags,
+                hive_store=self._hive_store,
+                auto_propagate_tiers=auto_propagate,
+                private_tiers=private,
+            )
+        except Exception:
+            logger.debug("hive_propagation_failed", key=entry.key, exc_info=True)
 
     def get(
         self,
@@ -909,7 +955,20 @@ class MemoryStore:
         self._metrics.increment("store.recall")
         with self._lock:
             if not hasattr(self, "_recall_orchestrator"):
-                self._recall_orchestrator = RecallOrchestrator(self)
+                # Wire Hive store and profile for hive-aware recall (EPIC-011)
+                hive_weight = 0.8
+                agent_profile = "repo-brain"
+                if self._profile is not None:
+                    hive_cfg = getattr(self._profile, "hive", None)
+                    if hive_cfg is not None:
+                        hive_weight = hive_cfg.recall_weight
+                    agent_profile = getattr(self._profile, "name", "repo-brain")
+                self._recall_orchestrator = RecallOrchestrator(
+                    self,
+                    hive_store=self._hive_store,
+                    hive_recall_weight=hive_weight,
+                    hive_agent_profile=agent_profile,
+                )
 
         with MetricsTimer(self._metrics, "store.recall_ms"):
             return self._recall_orchestrator.recall(message, **kwargs)

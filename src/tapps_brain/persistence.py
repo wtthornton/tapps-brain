@@ -25,7 +25,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -33,6 +33,7 @@ _SCHEMA_V3 = 3
 _SCHEMA_V4 = 4
 _SCHEMA_V5 = 5
 _SCHEMA_V6 = 6
+_SCHEMA_V7 = 7
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -105,6 +106,8 @@ class MemoryPersistence:
                 self._migrate_v4_to_v5(cur)
             if current_version < _SCHEMA_V6:
                 self._migrate_v5_to_v6(cur)
+            if current_version < _SCHEMA_V7:
+                self._migrate_v6_to_v7(cur)
 
             self._conn.commit()
 
@@ -312,6 +315,23 @@ class MemoryPersistence:
             (6, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v6_to_v7(self, cur: sqlite3.Cursor) -> None:
+        """Add agent_scope column for Hive propagation (EPIC-011).
+
+        Adds ``agent_scope TEXT DEFAULT 'private'`` to memories table.
+        Existing entries default to ``'private'`` (no Hive propagation).
+        """
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN agent_scope TEXT DEFAULT 'private'")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (7, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -416,6 +436,11 @@ class MemoryPersistence:
         if schema_ver >= _SCHEMA_V5:
             columns.extend(["valid_at", "invalid_at", "superseded_by"])
             values = (*values, entry.valid_at, entry.invalid_at, entry.superseded_by)
+
+        # Include agent_scope if schema supports it (v7+)
+        if schema_ver >= _SCHEMA_V7:
+            columns.append("agent_scope")
+            values = (*values, entry.agent_scope)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -766,6 +791,15 @@ class MemoryPersistence:
         except (KeyError, IndexError):
             pass
 
+        # Read agent_scope (v7+), gracefully handle missing column
+        agent_scope: str = "private"
+        try:
+            val = row["agent_scope"]
+            if val is not None:
+                agent_scope = val
+        except (KeyError, IndexError):
+            pass
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -789,6 +823,7 @@ class MemoryPersistence:
             valid_at=valid_at,
             invalid_at=invalid_at,
             superseded_by=superseded_by,
+            agent_scope=agent_scope,
         )
 
     @staticmethod
