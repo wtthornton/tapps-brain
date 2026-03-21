@@ -5,6 +5,7 @@ status: done
 priority: high
 created: 2026-03-19
 target_date: 2026-05-15
+completed: 2026-03-20
 tags: [relations, graph, persistence, retrieval]
 ---
 
@@ -26,21 +27,21 @@ The `relations.py` module already defines `RelationEntry(subject, predicate, obj
 
 ## Success Criteria
 
-- [ ] Relations persisted in SQLite (new `relations` table in schema v6)
-- [ ] Relations automatically extracted and stored on `save()` and `ingest_context()`
-- [ ] `store.find_related(key, max_hops=2)` returns entries connected via the graph
-- [ ] `store.query_relations(subject=..., predicate=..., object=...)` for direct graph queries
-- [ ] Auto-recall scoring boosts memories connected to the query via the knowledge graph
-- [ ] Consolidation merges relation sets when entries are consolidated
-- [ ] Supersession (EPIC-004) transfers relations from old entry to new entry
-- [ ] Relations survive store close/reopen (persistence round-trip)
-- [ ] Overall coverage stays at 95%+
+- [x] Relations persisted in SQLite (new `relations` table in schema v6)
+- [x] Relations automatically extracted and stored on `save()` and `ingest_context()`
+- [x] `store.find_related(key, max_hops=2)` returns entries connected via the graph
+- [x] `store.query_relations(subject=..., predicate=..., object=...)` for direct graph queries
+- [x] Auto-recall scoring boosts memories connected to the query via the knowledge graph
+- [x] Consolidation merges relation sets when entries are consolidated
+- [x] Supersession (EPIC-004) transfers relations from old entry to new entry
+- [x] Relations survive store close/reopen (persistence round-trip)
+- [x] Overall coverage stays at 95%+
 
 ## Stories
 
 ### STORY-006.1: Schema v6 — relations table
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/persistence.py`, `src/tapps_brain/relations.py`
@@ -52,21 +53,21 @@ Relations need a home in SQLite before anything else can be built. The schema mi
 
 #### Acceptance Criteria
 
-- [ ] Schema migration v5→v6 adds `relations` table: `id INTEGER PRIMARY KEY, source_key TEXT NOT NULL, subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, confidence REAL DEFAULT 1.0, created_at TEXT NOT NULL, FOREIGN KEY(source_key) REFERENCES memories(key)`
-- [ ] Index: `CREATE INDEX idx_relations_source ON relations(source_key)`
-- [ ] Index: `CREATE INDEX idx_relations_subject ON relations(subject)`
-- [ ] Index: `CREATE INDEX idx_relations_object ON relations(object)`
-- [ ] `save_relations(key, relations: list[RelationEntry])` and `load_relations(key) -> list[RelationEntry]` in persistence
-- [ ] `delete_relations(key)` for cleanup when entries are removed
-- [ ] Migration is idempotent — running twice produces the same result
-- [ ] Existing stores (v5) auto-migrate on open
-- [ ] All existing tests pass without modification
+- [x] Schema migration v5→v6 adds `relations` table: `id INTEGER PRIMARY KEY, source_key TEXT NOT NULL, subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, confidence REAL DEFAULT 1.0, created_at TEXT NOT NULL, FOREIGN KEY(source_key) REFERENCES memories(key)`
+- [x] Index: `CREATE INDEX idx_relations_source ON relations(source_key)`
+- [x] Index: `CREATE INDEX idx_relations_subject ON relations(subject)`
+- [x] Index: `CREATE INDEX idx_relations_object ON relations(object)`
+- [x] `save_relations(key, relations: list[RelationEntry])` and `load_relations(key) -> list[RelationEntry]` in persistence
+- [x] `delete_relations(key)` for cleanup when entries are removed
+- [x] Migration is idempotent — running twice produces the same result
+- [x] Existing stores (v5) auto-migrate on open
+- [x] All existing tests pass without modification
 
 ---
 
 ### STORY-006.2: Auto-extract and persist relations on save
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-006.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/relations.py`
@@ -78,18 +79,18 @@ Relations should be extracted automatically when entries are saved, not only whe
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore.save()` calls `extract_relations()` on the saved entry and persists results
-- [ ] `MemoryStore.ingest_context()` extracts and persists relations for each created entry
-- [ ] Relations are loaded from SQLite on store open (cold-start)
-- [ ] `MemoryStore.get_relations(key) -> list[RelationEntry]` convenience method
-- [ ] Unit test: save an entry mentioning "project uses PostgreSQL", verify relation is persisted
-- [ ] Unit test: close and reopen store, verify relations survive
+- [x] `MemoryStore.save()` calls `extract_relations()` on the saved entry and persists results
+- [x] `MemoryStore.ingest_context()` extracts and persists relations for each created entry
+- [x] Relations are loaded from SQLite on store open (cold-start)
+- [x] `MemoryStore.get_relations(key) -> list[RelationEntry]` convenience method
+- [x] Unit test: save an entry mentioning "project uses PostgreSQL", verify relation is persisted
+- [x] Unit test: close and reopen store, verify relations survive
 
 ---
 
 ### STORY-006.3: Graph query API
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-006.2
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/relations.py`
@@ -101,18 +102,18 @@ Direct graph queries let callers ask "what uses X?" or "what does Y depend on?" 
 
 #### Acceptance Criteria
 
-- [ ] `store.find_related(key, max_hops=2) -> list[MemoryEntry]` — returns entries connected via relation graph, up to N hops
-- [ ] `store.query_relations(subject=None, predicate=None, object=None) -> list[RelationEntry]` — filter relations by any combination of fields
-- [ ] Results are deduplicated and ordered by hop distance (closest first)
-- [ ] Temporal filtering: superseded entries excluded by default (consistent with EPIC-004)
-- [ ] Unit test: create A→B→C relation chain, `find_related("A", max_hops=2)` returns [B, C]
-- [ ] Unit test: `query_relations(predicate="uses")` returns all "uses" relations
+- [x] `store.find_related(key, max_hops=2) -> list[MemoryEntry]` — returns entries connected via relation graph, up to N hops
+- [x] `store.query_relations(subject=None, predicate=None, object=None) -> list[RelationEntry]` — filter relations by any combination of fields
+- [x] Results are deduplicated and ordered by hop distance (closest first)
+- [x] Temporal filtering: superseded entries excluded by default (consistent with EPIC-004)
+- [x] Unit test: create A→B→C relation chain, `find_related("A", max_hops=2)` returns [B, C]
+- [x] Unit test: `query_relations(predicate="uses")` returns all "uses" relations
 
 ---
 
 ### STORY-006.4: Recall scoring boost via knowledge graph
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-006.3
 **Context refs:** `src/tapps_brain/recall.py`, `src/tapps_brain/retrieval.py`
@@ -124,17 +125,17 @@ EPIC-003's auto-recall returns memories based on text similarity. If the knowled
 
 #### Acceptance Criteria
 
-- [ ] `RecallConfig` gains `use_graph_boost: bool = True` and `graph_boost_factor: float = 0.15`
-- [ ] When enabled, recall checks if any result entries are graph-connected to entities mentioned in the query
-- [ ] Connected entries receive a configurable score boost (default +0.15)
-- [ ] Boost is applied after primary scoring, before token budget truncation
-- [ ] Unit test: entry not matching query text but graph-connected to query entity gets boosted into results
+- [x] `RecallConfig` gains `use_graph_boost: bool = True` and `graph_boost_factor: float = 0.15`
+- [x] When enabled, recall checks if any result entries are graph-connected to entities mentioned in the query
+- [x] Connected entries receive a configurable score boost (default +0.15)
+- [x] Boost is applied after primary scoring, before token budget truncation
+- [x] Unit test: entry not matching query text but graph-connected to query entity gets boosted into results
 
 ---
 
 ### STORY-006.5: Relation transfer on supersede and consolidation
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-006.2
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/consolidation.py`
@@ -146,18 +147,18 @@ When entries are superseded or consolidated, their relations should transfer to 
 
 #### Acceptance Criteria
 
-- [ ] `store.supersede()` copies relations from old entry to new entry (with updated `source_key`)
-- [ ] Consolidation merges relation sets from all source entries into the consolidated entry
-- [ ] Duplicate relations (same subject-predicate-object) are deduplicated during transfer
-- [ ] Old entry's relations are preserved (for history queries) but marked with the old key
-- [ ] Unit test: supersede entry with 3 relations, verify new entry inherits them
-- [ ] Unit test: consolidate 3 entries with overlapping relations, verify merged set
+- [x] `store.supersede()` copies relations from old entry to new entry (with updated `source_key`)
+- [x] Consolidation merges relation sets from all source entries into the consolidated entry
+- [x] Duplicate relations (same subject-predicate-object) are deduplicated during transfer
+- [x] Old entry's relations are preserved (for history queries) but marked with the old key
+- [x] Unit test: supersede entry with 3 relations, verify new entry inherits them
+- [x] Unit test: consolidate 3 entries with overlapping relations, verify merged set
 
 ---
 
 ### STORY-006.6: Integration tests — persistent graph lifecycle
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-006.3, STORY-006.4, STORY-006.5
 **Context refs:** `src/tapps_brain/store.py`
@@ -169,11 +170,11 @@ Individual stories validate components; this validates the full lifecycle with r
 
 #### Acceptance Criteria
 
-- [ ] Integration test: save 10 entries with various relationships, close/reopen store, verify all relations survived
-- [ ] Integration test: `find_related()` traverses 2 hops through persisted relations
-- [ ] Integration test: supersede an entry, verify new entry's relations include transferred set
-- [ ] Integration test: recall with graph boost ranks connected entry higher than text-only match
-- [ ] All tests use real `MemoryStore` + SQLite (no mocks)
+- [x] Integration test: save 10 entries with various relationships, close/reopen store, verify all relations survived
+- [x] Integration test: `find_related()` traverses 2 hops through persisted relations
+- [x] Integration test: supersede an entry, verify new entry's relations include transferred set
+- [x] Integration test: recall with graph boost ranks connected entry higher than text-only match
+- [x] All tests use real `MemoryStore` + SQLite (no mocks)
 
 ## Priority Order
 

@@ -1,10 +1,11 @@
 ---
 id: EPIC-008
 title: "MCP server — expose tapps-brain via Model Context Protocol"
-status: complete
+status: done
 priority: critical
 created: 2026-03-20
 target_date: 2026-05-15
+completed: 2026-03-21
 tags: [mcp, integration, server]
 ---
 
@@ -33,20 +34,20 @@ MCP primitives map cleanly to tapps-brain's API:
 
 ## Success Criteria
 
-- [ ] `mcp` added as a core dependency with `[mcp]` optional extra
-- [ ] `tapps-brain-mcp` entry point runs a stdio MCP server
-- [ ] All core MemoryStore operations exposed as MCP tools
-- [ ] Read-only store data exposed as MCP resources
-- [ ] Workflow templates exposed as MCP prompts
-- [ ] Works with Claude Code, Cursor, and VS Code Copilot (stdio transport)
-- [ ] In-process and MCP Inspector test coverage
-- [ ] Overall coverage stays at 95%+
+- [x] `mcp` added as a core dependency with `[mcp]` optional extra
+- [x] `tapps-brain-mcp` entry point runs a stdio MCP server
+- [x] All core MemoryStore operations exposed as MCP tools
+- [x] Read-only store data exposed as MCP resources
+- [x] Workflow templates exposed as MCP prompts
+- [x] Works with Claude Code, Cursor, and VS Code Copilot (stdio transport)
+- [x] In-process and MCP Inspector test coverage
+- [x] Overall coverage stays at 95%+
 
 ## Stories
 
 ### STORY-008.1: MCP server skeleton and project setup
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `pyproject.toml`, `src/tapps_brain/__init__.py`, `src/tapps_brain/cli.py`
@@ -58,19 +59,19 @@ Before any tools or resources can be implemented, the project needs the `mcp` de
 
 #### Acceptance Criteria
 
-- [ ] `mcp>=1.26.0` added as optional dependency under `[mcp]` extra in `pyproject.toml`
-- [ ] `src/tapps_brain/mcp_server.py` module with `FastMCP("tapps-brain")` instance
-- [ ] `--project-dir` argument support (defaults to cwd, matches CLI behavior)
-- [ ] Shared `get_store()` helper reused or mirrored from CLI
-- [ ] Entry point `tapps-brain-mcp = "tapps_brain.mcp_server:main"` in `pyproject.toml`
-- [ ] Server starts via stdio transport and responds to `initialize` handshake
-- [ ] Unit test confirming server instantiation and capability negotiation
+- [x] `mcp>=1.26.0` added as optional dependency under `[mcp]` extra in `pyproject.toml`
+- [x] `src/tapps_brain/mcp_server.py` module with `FastMCP("tapps-brain")` instance
+- [x] `--project-dir` argument support (defaults to cwd, matches CLI behavior)
+- [x] Shared `get_store()` helper reused or mirrored from CLI
+- [x] Entry point `tapps-brain-mcp = "tapps_brain.mcp_server:main"` in `pyproject.toml`
+- [x] Server starts via stdio transport and responds to `initialize` handshake
+- [x] Unit test confirming server instantiation and capability negotiation
 
 ---
 
 ### STORY-008.2: Core memory tools — CRUD and search
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-008.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/models.py`
@@ -82,20 +83,20 @@ The highest-value MCP integration is letting AI assistants save, retrieve, and s
 
 #### Acceptance Criteria
 
-- [ ] `memory_save` tool — save a memory entry (key, value, tier, source, tags, scope, confidence)
-- [ ] `memory_get` tool — retrieve a single entry by key
-- [ ] `memory_delete` tool — delete an entry by key
-- [ ] `memory_search` tool — FTS5 search with optional tier/scope filters and `as_of` for point-in-time
-- [ ] `memory_list` tool — list entries with optional tier/scope/include_superseded filters
-- [ ] All tools return structured JSON content
-- [ ] Input validation with clear error messages for invalid tiers/scopes/keys
-- [ ] Unit tests for each tool including error cases
+- [x] `memory_save` tool — save a memory entry (key, value, tier, source, tags, scope, confidence)
+- [x] `memory_get` tool — retrieve a single entry by key
+- [x] `memory_delete` tool — delete an entry by key
+- [x] `memory_search` tool — FTS5 search with optional tier/scope filters and `as_of` for point-in-time
+- [x] `memory_list` tool — list entries with optional tier/scope/include_superseded filters
+- [x] All tools return structured JSON content
+- [x] Input validation with clear error messages for invalid tiers/scopes/keys
+- [x] Unit tests for each tool including error cases
 
 ---
 
 ### STORY-008.3: Recall and lifecycle tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-008.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/recall.py`, `src/tapps_brain/reinforcement.py`
@@ -107,18 +108,18 @@ Beyond basic CRUD, AI assistants need to trigger recall (pre-prompt memory injec
 
 #### Acceptance Criteria
 
-- [ ] `memory_recall` tool — run auto-recall for a message, return ranked memories with scores
-- [ ] `memory_reinforce` tool — boost a memory's confidence after it proved useful
-- [ ] `memory_ingest` tool — extract and store memories from conversation context
-- [ ] `memory_supersede` tool — create a new version of a memory (bi-temporal)
-- [ ] `memory_history` tool — show the version chain for a key
-- [ ] Unit tests for each tool
+- [x] `memory_recall` tool — run auto-recall for a message, return ranked memories with scores
+- [x] `memory_reinforce` tool — boost a memory's confidence after it proved useful
+- [x] `memory_ingest` tool — extract and store memories from conversation context
+- [x] `memory_supersede` tool — create a new version of a memory (bi-temporal)
+- [x] `memory_history` tool — show the version chain for a key
+- [x] Unit tests for each tool
 
 ---
 
 ### STORY-008.4: Resources — read-only store views
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-008.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/metrics.py`, `src/tapps_brain/audit.py`
@@ -130,18 +131,18 @@ MCP resources let clients pull context into prompts without invoking tools. Stor
 
 #### Acceptance Criteria
 
-- [ ] `memory://stats` resource — entry count, tier distribution, schema version, store path
-- [ ] `memory://health` resource — health report (store health check output)
-- [ ] `memory://entries/{key}` resource template — full detail view of a single entry
-- [ ] `memory://metrics` resource — operation metrics and latency data
-- [ ] Resources return structured text/JSON content
-- [ ] Unit tests for each resource
+- [x] `memory://stats` resource — entry count, tier distribution, schema version, store path
+- [x] `memory://health` resource — health report (store health check output)
+- [x] `memory://entries/{key}` resource template — full detail view of a single entry
+- [x] `memory://metrics` resource — operation metrics and latency data
+- [x] Resources return structured text/JSON content
+- [x] Unit tests for each resource
 
 ---
 
 ### STORY-008.5: Federation and maintenance tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-008.2
 **Context refs:** `src/tapps_brain/federation.py`, `src/tapps_brain/auto_consolidation.py`, `src/tapps_brain/gc.py`
@@ -153,20 +154,20 @@ Multi-project setups need federation management, and store maintenance (consolid
 
 #### Acceptance Criteria
 
-- [ ] `federation_status` tool — hub info, registered projects, subscriptions
-- [ ] `federation_subscribe` / `federation_unsubscribe` tools
-- [ ] `federation_publish` tool — publish memories to the hub
-- [ ] `maintenance_consolidate` tool — trigger auto-consolidation
-- [ ] `maintenance_gc` tool — trigger garbage collection (with dry_run option)
-- [ ] `memory_export` tool — export entries as JSON
-- [ ] `memory_import` tool — import entries from JSON
-- [ ] Unit tests for each tool
+- [x] `federation_status` tool — hub info, registered projects, subscriptions
+- [x] `federation_subscribe` / `federation_unsubscribe` tools
+- [x] `federation_publish` tool — publish memories to the hub
+- [x] `maintenance_consolidate` tool — trigger auto-consolidation
+- [x] `maintenance_gc` tool — trigger garbage collection (with dry_run option)
+- [x] `memory_export` tool — export entries as JSON
+- [x] `memory_import` tool — import entries from JSON
+- [x] Unit tests for each tool
 
 ---
 
 ### STORY-008.6: Prompts — workflow templates
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-008.2, STORY-008.3
 **Context refs:** `src/tapps_brain/recall.py`
@@ -178,17 +179,17 @@ MCP prompts are user-invoked workflow templates (like slash commands). They let 
 
 #### Acceptance Criteria
 
-- [ ] `recall` prompt — "What do you remember about {topic}?" — runs recall and formats results
-- [ ] `store-summary` prompt — generates a summary of what's in the memory store
-- [ ] `remember` prompt — "Remember that {fact}" — guides the AI to save a memory with appropriate tier/tags
-- [ ] Each prompt has clear description and argument definitions
-- [ ] Unit tests for each prompt
+- [x] `recall` prompt — "What do you remember about {topic}?" — runs recall and formats results
+- [x] `store-summary` prompt — generates a summary of what's in the memory store
+- [x] `remember` prompt — "Remember that {fact}" — guides the AI to save a memory with appropriate tier/tags
+- [x] Each prompt has clear description and argument definitions
+- [x] Unit tests for each prompt
 
 ---
 
 ### STORY-008.7: Integration testing and MCP Inspector validation
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-008.2, STORY-008.3, STORY-008.4, STORY-008.5, STORY-008.6
 **Context refs:** `tests/integration/`
@@ -200,13 +201,13 @@ Unit tests verify individual tools in isolation. Integration tests verify the fu
 
 #### Acceptance Criteria
 
-- [ ] Integration test using in-memory client-server pair (no subprocess)
-- [ ] Test covers: initialize handshake, tools/list, tools/call for each tool category
-- [ ] Test covers: resources/list, resources/read for each resource
-- [ ] Test covers: prompts/list, prompts/get for each prompt
-- [ ] Error handling test: invalid tool arguments, missing keys, protocol errors
-- [ ] Documentation in `docs/guides/mcp.md` with setup instructions for Claude Code, Cursor, and VS Code
-- [ ] Overall test coverage remains at 95%+
+- [x] Integration test using in-memory client-server pair (no subprocess)
+- [x] Test covers: initialize handshake, tools/list, tools/call for each tool category
+- [x] Test covers: resources/list, resources/read for each resource
+- [x] Test covers: prompts/list, prompts/get for each prompt
+- [x] Error handling test: invalid tool arguments, missing keys, protocol errors
+- [x] Documentation in `docs/guides/mcp.md` with setup instructions for Claude Code, Cursor, and VS Code
+- [x] Overall test coverage remains at 95%+
 
 ## Priority Order
 

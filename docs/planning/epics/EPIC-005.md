@@ -1,10 +1,11 @@
 ---
 id: EPIC-005
 title: "CLI tool for memory management and operations"
-status: planned
+status: done
 priority: high
 created: 2026-03-19
 target_date: 2026-04-30
+completed: 2026-03-20
 tags: [cli, operations, ux]
 ---
 
@@ -26,22 +27,22 @@ The project already has `typer` as a dependency pattern (used in the MCP wrapper
 
 ## Success Criteria
 
-- [ ] `tapps-brain` CLI entry point installed via `pip install tapps-brain`
-- [ ] `tapps-brain store list` / `show` / `search` / `stats` commands for store inspection
-- [ ] `tapps-brain memory show <key>` / `history <key>` / `search <query>` for memory operations
-- [ ] `tapps-brain import` / `export` commands for JSON and Markdown formats
-- [ ] `tapps-brain federation list` / `subscribe` / `unsubscribe` / `publish` commands
-- [ ] `tapps-brain maintenance consolidate` / `gc` / `migrate` for store maintenance
-- [ ] `tapps-brain recall <message>` for testing auto-recall from the terminal
-- [ ] Shell completions for bash/zsh/fish
-- [ ] All commands work with `--project-dir` flag (defaults to cwd)
-- [ ] Overall coverage stays at 95%+
+- [x] `tapps-brain` CLI entry point installed via `pip install tapps-brain`
+- [x] `tapps-brain store list` / `show` / `search` / `stats` commands for store inspection
+- [x] `tapps-brain memory show <key>` / `history <key>` / `search <query>` for memory operations
+- [x] `tapps-brain import` / `export` commands for JSON and Markdown formats
+- [x] `tapps-brain federation list` / `subscribe` / `unsubscribe` / `publish` commands
+- [x] `tapps-brain maintenance consolidate` / `gc` / `migrate` for store maintenance
+- [x] `tapps-brain recall <message>` for testing auto-recall from the terminal
+- [x] Shell completions for bash/zsh/fish
+- [x] All commands work with `--project-dir` flag (defaults to cwd)
+- [x] Overall coverage stays at 95%+
 
 ## Stories
 
 ### STORY-005.1: CLI skeleton and project discovery
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `pyproject.toml`, `src/tapps_brain/store.py`
@@ -53,19 +54,19 @@ The CLI needs a consistent entry point, argument parsing, and project directory 
 
 #### Acceptance Criteria
 
-- [ ] `src/tapps_brain/cli.py` module with typer-based CLI app
-- [ ] Entry point registered in `pyproject.toml` as `[project.scripts] tapps-brain = "tapps_brain.cli:app"`
-- [ ] `--project-dir` global option (defaults to cwd, resolves `.tapps-brain/` directory)
-- [ ] `--json` global flag for machine-readable output on all commands
-- [ ] Shared `get_store()` helper that opens a `MemoryStore` from the resolved project dir
-- [ ] `tapps-brain --version` prints package version
-- [ ] Unit tests for project directory resolution and store initialization
+- [x] `src/tapps_brain/cli.py` module with typer-based CLI app
+- [x] Entry point registered in `pyproject.toml` as `[project.scripts] tapps-brain = "tapps_brain.cli:app"`
+- [x] `--project-dir` global option (defaults to cwd, resolves `.tapps-brain/` directory)
+- [x] `--json` global flag for machine-readable output on all commands
+- [x] Shared `get_store()` helper that opens a `MemoryStore` from the resolved project dir
+- [x] `tapps-brain --version` prints package version
+- [x] Unit tests for project directory resolution and store initialization
 
 ---
 
 ### STORY-005.2: Store inspection commands
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-005.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`
@@ -77,22 +78,22 @@ The most basic CLI need is inspecting what's in the store — how many entries, 
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain store stats` — entry count, tier distribution, schema version, store path, federation status
-- [ ] `tapps-brain store list` — tabular list of all entries (key, tier, confidence, decay, valid_at/invalid_at)
-- [ ] `tapps-brain store list --tier architectural` — filter by tier
-- [ ] `tapps-brain store list --include-superseded` — include temporally invalid entries
-- [ ] `tapps-brain memory show <key>` — full detail view of a single entry (all fields)
-- [ ] `tapps-brain memory history <key>` — version chain display
-- [ ] `tapps-brain memory search <query>` — FTS5 search with scored results
-- [ ] `tapps-brain memory search <query> --as-of 2026-03-01` — point-in-time search
-- [ ] All commands support `--json` output
-- [ ] Unit tests for each command with a pre-populated store
+- [x] `tapps-brain store stats` — entry count, tier distribution, schema version, store path, federation status
+- [x] `tapps-brain store list` — tabular list of all entries (key, tier, confidence, decay, valid_at/invalid_at)
+- [x] `tapps-brain store list --tier architectural` — filter by tier
+- [x] `tapps-brain store list --include-superseded` — include temporally invalid entries
+- [x] `tapps-brain memory show <key>` — full detail view of a single entry (all fields)
+- [x] `tapps-brain memory history <key>` — version chain display
+- [x] `tapps-brain memory search <query>` — FTS5 search with scored results
+- [x] `tapps-brain memory search <query> --as-of 2026-03-01` — point-in-time search
+- [x] All commands support `--json` output
+- [x] Unit tests for each command with a pre-populated store
 
 ---
 
 ### STORY-005.3: Import/export commands
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-005.1
 **Context refs:** `src/tapps_brain/io.py`
@@ -104,19 +105,19 @@ Backup and migration require import/export. The `io.py` module already supports 
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain export --format json > backup.json` — export all entries
-- [ ] `tapps-brain export --format markdown > backup.md` — export as Markdown
-- [ ] `tapps-brain export --tier architectural --format json` — filtered export
-- [ ] `tapps-brain import backup.json` — import from JSON (auto-detects format)
-- [ ] `tapps-brain import backup.md` — import from Markdown
-- [ ] `tapps-brain import --dry-run backup.json` — preview without writing
-- [ ] Unit tests for round-trip export/import
+- [x] `tapps-brain export --format json > backup.json` — export all entries
+- [x] `tapps-brain export --format markdown > backup.md` — export as Markdown
+- [x] `tapps-brain export --tier architectural --format json` — filtered export
+- [x] `tapps-brain import backup.json` — import from JSON (auto-detects format)
+- [x] `tapps-brain import backup.md` — import from Markdown
+- [x] `tapps-brain import --dry-run backup.json` — preview without writing
+- [x] Unit tests for round-trip export/import
 
 ---
 
 ### STORY-005.4: Federation management commands
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-005.1
 **Context refs:** `src/tapps_brain/federation.py`
@@ -128,19 +129,19 @@ Federation is configured programmatically today. A CLI lets ops manage cross-pro
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain federation status` — show hub path, registered projects, subscription counts
-- [ ] `tapps-brain federation list` — list all federated projects
-- [ ] `tapps-brain federation subscribe <project-name>` — subscribe to a project's memories
-- [ ] `tapps-brain federation unsubscribe <project-name>` — unsubscribe
-- [ ] `tapps-brain federation publish` — publish current project's memories to the hub
-- [ ] All commands support `--json` output
-- [ ] Unit tests for each command
+- [x] `tapps-brain federation status` — show hub path, registered projects, subscription counts
+- [x] `tapps-brain federation list` — list all federated projects
+- [x] `tapps-brain federation subscribe <project-name>` — subscribe to a project's memories
+- [x] `tapps-brain federation unsubscribe <project-name>` — unsubscribe
+- [x] `tapps-brain federation publish` — publish current project's memories to the hub
+- [x] All commands support `--json` output
+- [x] Unit tests for each command
 
 ---
 
 ### STORY-005.5: Maintenance commands
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-005.1
 **Context refs:** `src/tapps_brain/auto_consolidation.py`, `src/tapps_brain/gc.py`, `src/tapps_brain/persistence.py`
@@ -152,19 +153,19 @@ Store maintenance (consolidation, GC, schema migration) should be runnable from 
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain maintenance consolidate` — trigger auto-consolidation, report merged entries
-- [ ] `tapps-brain maintenance gc` — trigger garbage collection, report archived entries
-- [ ] `tapps-brain maintenance gc --dry-run` — preview without archiving
-- [ ] `tapps-brain maintenance migrate` — run schema migrations, report before/after version
-- [ ] `tapps-brain maintenance migrate --dry-run` — preview migrations
-- [ ] `tapps-brain recall <message>` — test auto-recall from terminal, display formatted result
-- [ ] Unit tests for each command
+- [x] `tapps-brain maintenance consolidate` — trigger auto-consolidation, report merged entries
+- [x] `tapps-brain maintenance gc` — trigger garbage collection, report archived entries
+- [x] `tapps-brain maintenance gc --dry-run` — preview without archiving
+- [x] `tapps-brain maintenance migrate` — run schema migrations, report before/after version
+- [x] `tapps-brain maintenance migrate --dry-run` — preview migrations
+- [x] `tapps-brain recall <message>` — test auto-recall from terminal, display formatted result
+- [x] Unit tests for each command
 
 ---
 
 ### STORY-005.6: Shell completions and documentation
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-005.2, STORY-005.3, STORY-005.4, STORY-005.5
 **Context refs:** `docs/guides/`
@@ -176,9 +177,9 @@ Shell completions improve CLI usability. Documentation ensures the CLI is discov
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain --install-completion` installs shell completions (typer built-in)
-- [ ] `docs/guides/cli.md` with full command reference, examples, and common workflows
-- [ ] README updated with CLI section
+- [x] `tapps-brain --install-completion` installs shell completions (typer built-in)
+- [x] `docs/guides/cli.md` with full command reference, examples, and common workflows
+- [x] README updated with CLI section
 
 ## Priority Order
 

@@ -5,6 +5,7 @@ status: done
 priority: medium
 created: 2026-03-19
 target_date: 2026-05-30
+completed: 2026-03-21
 tags: [observability, metrics, audit, monitoring]
 ---
 
@@ -35,18 +36,18 @@ This epic adds a zero-dependency metrics layer (in-memory counters/histograms), 
 
 ## Success Criteria
 
-- [ ] `store.get_metrics()` returns structured counters and histograms for all core operations
-- [ ] `store.audit(key=..., event_type=..., since=..., until=...)` queries the JSONL audit log
-- [ ] `store.health()` returns a structured health report (entry counts, schema version, federation status, consolidation state)
-- [ ] Metrics are zero-cost when not read (lazy computation, no per-operation overhead beyond incrementing a counter)
-- [ ] Optional OpenTelemetry exporter (behind feature flag, no required dependency)
-- [ ] Overall coverage stays at 95%+
+- [x] `store.get_metrics()` returns structured counters and histograms for all core operations
+- [x] `store.audit(key=..., event_type=..., since=..., until=...)` queries the JSONL audit log
+- [x] `store.health()` returns a structured health report (entry counts, schema version, federation status, consolidation state)
+- [x] Metrics are zero-cost when not read (lazy computation, no per-operation overhead beyond incrementing a counter)
+- [x] Optional OpenTelemetry exporter (behind feature flag, no required dependency)
+- [x] Overall coverage stays at 95%+
 
 ## Stories
 
 ### STORY-007.1: In-memory metrics collector
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/store.py`
@@ -58,20 +59,20 @@ A lightweight metrics layer is the foundation for all observability. It must be 
 
 #### Acceptance Criteria
 
-- [ ] New `src/tapps_brain/metrics.py` module with `MetricsCollector` class
-- [ ] Counter support: `increment(name, value=1, tags=None)` — thread-safe via `threading.Lock`
-- [ ] Histogram support: `observe(name, value, tags=None)` — stores min/max/mean/p50/p95/p99 using reservoir sampling
-- [ ] `snapshot() -> MetricsSnapshot` — returns a frozen copy of all counters and histograms
-- [ ] `reset()` — clears all metrics (for testing)
-- [ ] `MetricsSnapshot` is a Pydantic model, serializable to JSON
-- [ ] No external dependencies
-- [ ] Unit tests for thread safety (concurrent increments from multiple threads)
+- [x] New `src/tapps_brain/metrics.py` module with `MetricsCollector` class
+- [x] Counter support: `increment(name, value=1, tags=None)` — thread-safe via `threading.Lock`
+- [x] Histogram support: `observe(name, value, tags=None)` — stores min/max/mean/p50/p95/p99 using reservoir sampling
+- [x] `snapshot() -> MetricsSnapshot` — returns a frozen copy of all counters and histograms
+- [x] `reset()` — clears all metrics (for testing)
+- [x] `MetricsSnapshot` is a Pydantic model, serializable to JSON
+- [x] No external dependencies
+- [x] Unit tests for thread safety (concurrent increments from multiple threads)
 
 ---
 
 ### STORY-007.2: Instrument core operations
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-007.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/recall.py`, `src/tapps_brain/consolidation.py`, `src/tapps_brain/gc.py`
@@ -83,19 +84,19 @@ Metrics are only useful if the core paths emit them. This story instruments save
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore` creates a `MetricsCollector` instance (shared with recall orchestrator)
-- [ ] `store.get_metrics() -> MetricsSnapshot` convenience method
-- [ ] Instrumented operations with counters: `store.save` (count), `store.get` (count, hits, misses), `store.search` (count, result_count), `store.recall` (count, token_count), `store.supersede` (count), `store.consolidate` (count, merged_count), `store.gc` (count, archived_count)
-- [ ] Instrumented operations with latency histograms: `save_ms`, `get_ms`, `search_ms`, `recall_ms`
-- [ ] Overhead < 0.1ms per operation (just counter increment)
-- [ ] Unit test: perform 100 saves, verify `get_metrics().counters["store.save"]` == 100
-- [ ] Unit test: verify latency histogram has reasonable p50/p95 values
+- [x] `MemoryStore` creates a `MetricsCollector` instance (shared with recall orchestrator)
+- [x] `store.get_metrics() -> MetricsSnapshot` convenience method
+- [x] Instrumented operations with counters: `store.save` (count), `store.get` (count, hits, misses), `store.search` (count, result_count), `store.recall` (count, token_count), `store.supersede` (count), `store.consolidate` (count, merged_count), `store.gc` (count, archived_count)
+- [x] Instrumented operations with latency histograms: `save_ms`, `get_ms`, `search_ms`, `recall_ms`
+- [x] Overhead < 0.1ms per operation (just counter increment)
+- [x] Unit test: perform 100 saves, verify `get_metrics().counters["store.save"]` == 100
+- [x] Unit test: verify latency histogram has reasonable p50/p95 values
 
 ---
 
 ### STORY-007.3: Audit trail query API
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`
@@ -107,20 +108,20 @@ The JSONL audit log is write-only today. Operators and integrators need to query
 
 #### Acceptance Criteria
 
-- [ ] New `src/tapps_brain/audit.py` module with `AuditReader` class
-- [ ] `query(key=None, event_type=None, since=None, until=None, limit=100) -> list[AuditEntry]`
-- [ ] `AuditEntry` model: `timestamp`, `event_type`, `key`, `details` (dict)
-- [ ] Reads from the existing JSONL file (no schema change needed)
-- [ ] Efficient: uses seek/readline, doesn't load entire file into memory
-- [ ] `store.audit(**kwargs)` convenience method that delegates to `AuditReader`
-- [ ] Unit test: write 50 audit events, query by key, verify filtered results
-- [ ] Unit test: query by time range, verify correct windowing
+- [x] New `src/tapps_brain/audit.py` module with `AuditReader` class
+- [x] `query(key=None, event_type=None, since=None, until=None, limit=100) -> list[AuditEntry]`
+- [x] `AuditEntry` model: `timestamp`, `event_type`, `key`, `details` (dict)
+- [x] Reads from the existing JSONL file (no schema change needed)
+- [x] Efficient: uses seek/readline, doesn't load entire file into memory
+- [x] `store.audit(**kwargs)` convenience method that delegates to `AuditReader`
+- [x] Unit test: write 50 audit events, query by key, verify filtered results
+- [x] Unit test: query by time range, verify correct windowing
 
 ---
 
 ### STORY-007.4: Health check API
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-007.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`, `src/tapps_brain/federation.py`
@@ -132,17 +133,17 @@ A single `store.health()` call gives operators a snapshot of store state — ent
 
 #### Acceptance Criteria
 
-- [ ] `store.health() -> HealthReport` method
-- [ ] `HealthReport` model with fields: `entry_count` (int), `max_entries` (int), `tier_distribution` (dict), `schema_version` (int), `store_path` (str), `federation_enabled` (bool), `federation_project_count` (int), `oldest_entry_age_days` (float), `consolidation_candidates` (int), `gc_candidates` (int)
-- [ ] Computed lazily (no background scanning)
-- [ ] `HealthReport` is a Pydantic model, serializable to JSON
-- [ ] Unit test: populate store, verify health report matches expected values
+- [x] `store.health() -> HealthReport` method
+- [x] `HealthReport` model with fields: `entry_count` (int), `max_entries` (int), `tier_distribution` (dict), `schema_version` (int), `store_path` (str), `federation_enabled` (bool), `federation_project_count` (int), `oldest_entry_age_days` (float), `consolidation_candidates` (int), `gc_candidates` (int)
+- [x] Computed lazily (no background scanning)
+- [x] `HealthReport` is a Pydantic model, serializable to JSON
+- [x] Unit test: populate store, verify health report matches expected values
 
 ---
 
 ### STORY-007.5: Optional OpenTelemetry exporter
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-007.2
 **Context refs:** `src/tapps_brain/_feature_flags.py`, `pyproject.toml`
@@ -154,20 +155,20 @@ Teams with existing monitoring infrastructure (Grafana, Datadog, New Relic) want
 
 #### Acceptance Criteria
 
-- [ ] New optional dependency group: `[project.optional-dependencies] otel = ["opentelemetry-api", "opentelemetry-sdk"]`
-- [ ] `src/tapps_brain/otel_exporter.py` module with `OTelExporter` class
-- [ ] `OTelExporter.export(snapshot: MetricsSnapshot)` — converts to OTel metrics
-- [ ] Feature flag: `HAS_OTEL` in `_feature_flags.py`, lazy detection
-- [ ] `MetricsCollector` accepts an optional `exporter` callback — called on each `snapshot()`
-- [ ] When `opentelemetry` is not installed, the exporter is silently unavailable
-- [ ] Unit test: mock OTel SDK, verify metrics are exported in correct format
-- [ ] Unit test: verify graceful behavior when OTel is not installed
+- [x] New optional dependency group: `[project.optional-dependencies] otel = ["opentelemetry-api", "opentelemetry-sdk"]`
+- [x] `src/tapps_brain/otel_exporter.py` module with `OTelExporter` class
+- [x] `OTelExporter.export(snapshot: MetricsSnapshot)` — converts to OTel metrics
+- [x] Feature flag: `HAS_OTEL` in `_feature_flags.py`, lazy detection
+- [x] `MetricsCollector` accepts an optional `exporter` callback — called on each `snapshot()`
+- [x] When `opentelemetry` is not installed, the exporter is silently unavailable
+- [x] Unit test: mock OTel SDK, verify metrics are exported in correct format
+- [x] Unit test: verify graceful behavior when OTel is not installed
 
 ---
 
 ### STORY-007.6: Integration tests and CLI integration
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-007.2, STORY-007.3, STORY-007.4
 **Context refs:** `src/tapps_brain/store.py`
@@ -179,11 +180,11 @@ Validates the full observability stack with a real store — metrics accumulatio
 
 #### Acceptance Criteria
 
-- [ ] Integration test: perform 50 mixed operations (save, search, recall, supersede), verify metrics snapshot reflects all of them
-- [ ] Integration test: perform mutations, query audit trail, verify correct event sequence
-- [ ] Integration test: populate store near capacity, verify health report flags consolidation/GC candidates
-- [ ] If EPIC-005 (CLI) is done: `tapps-brain store stats` includes metrics summary
-- [ ] All tests use real `MemoryStore` + SQLite (no mocks)
+- [x] Integration test: perform 50 mixed operations (save, search, recall, supersede), verify metrics snapshot reflects all of them
+- [x] Integration test: perform mutations, query audit trail, verify correct event sequence
+- [x] Integration test: populate store near capacity, verify health report flags consolidation/GC candidates
+- [x] If EPIC-005 (CLI) is done: `tapps-brain store stats` includes metrics summary
+- [x] All tests use real `MemoryStore` + SQLite (no mocks)
 
 ## Priority Order
 

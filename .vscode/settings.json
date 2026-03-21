@@ -1,4 +1,10 @@
 {
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#4a3fbf",
+    "titleBar.activeForeground": "#ffffff",
+    "titleBar.inactiveBackground": "#3a3199",
+    "titleBar.inactiveForeground": "#ccccee"
+  },
   "terminal.integrated.defaultProfile.windows": "Ubuntu",
   "terminal.integrated.profiles.windows": {
     "Ubuntu": {

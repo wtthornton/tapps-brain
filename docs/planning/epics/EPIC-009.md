@@ -5,6 +5,7 @@ status: done
 priority: high
 created: 2026-03-20
 target_date: 2026-05-31
+completed: 2026-03-21
 tags: [distribution, packaging, library, cli, mcp]
 ---
 
@@ -24,21 +25,21 @@ Key distribution insight from 2026 research: MCP servers are most commonly distr
 
 ## Success Criteria
 
-- [ ] Library API organized with clear public/internal boundaries
-- [ ] `pip install tapps-brain` gives the library only (minimal deps)
-- [ ] `pip install tapps-brain[cli]` adds CLI dependencies (typer)
-- [ ] `pip install tapps-brain[mcp]` adds MCP server dependencies
-- [ ] `pip install tapps-brain[all]` installs everything
-- [ ] `uvx tapps-brain-mcp` works for MCP server distribution
-- [ ] MCP Registry `server.json` manifest published
-- [ ] Client config examples for Claude Code, Cursor, VS Code Copilot
-- [ ] `py.typed` marker for PEP 561 type checking support
+- [x] Library API organized with clear public/internal boundaries
+- [x] `pip install tapps-brain` gives the library only (minimal deps)
+- [x] `pip install tapps-brain[cli]` adds CLI dependencies (typer)
+- [x] `pip install tapps-brain[mcp]` adds MCP server dependencies
+- [x] `pip install tapps-brain[all]` installs everything
+- [x] `uvx tapps-brain-mcp` works for MCP server distribution
+- [x] MCP Registry `server.json` manifest published
+- [x] Client config examples for Claude Code, Cursor, VS Code Copilot
+- [x] `py.typed` marker for PEP 561 type checking support
 
 ## Stories
 
 ### STORY-009.1: Dependency extras reorganization
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-008 STORY-008.1
 **Context refs:** `pyproject.toml`, `src/tapps_brain/__init__.py`
@@ -50,20 +51,20 @@ Today `typer` is a core dependency even for library-only consumers. With MCP add
 
 #### Acceptance Criteria
 
-- [ ] Core dependencies reduced to: `pydantic`, `structlog`, `pyyaml` (no `typer`, no `mcp`)
-- [ ] `[cli]` extra adds `typer>=0.24,<1`
-- [ ] `[mcp]` extra adds `mcp>=1.26.0`
-- [ ] `[all]` extra combines `cli`, `mcp`, `vector`, `reranker`
-- [ ] `[dev]` extra still includes everything needed for development
-- [ ] CLI entry point gracefully errors if `typer` not installed: "Install with `pip install tapps-brain[cli]`"
-- [ ] MCP entry point gracefully errors if `mcp` not installed: "Install with `pip install tapps-brain[mcp]`"
-- [ ] All existing tests pass with full extras installed
+- [x] Core dependencies reduced to: `pydantic`, `structlog`, `pyyaml` (no `typer`, no `mcp`)
+- [x] `[cli]` extra adds `typer>=0.24,<1`
+- [x] `[mcp]` extra adds `mcp>=1.26.0`
+- [x] `[all]` extra combines `cli`, `mcp`, `vector`, `reranker`
+- [x] `[dev]` extra still includes everything needed for development
+- [x] CLI entry point gracefully errors if `typer` not installed: "Install with `pip install tapps-brain[cli]`"
+- [x] MCP entry point gracefully errors if `mcp` not installed: "Install with `pip install tapps-brain[mcp]`"
+- [x] All existing tests pass with full extras installed
 
 ---
 
 ### STORY-009.2: Library API surface cleanup
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/__init__.py`, `src/tapps_brain/_protocols.py`
@@ -75,18 +76,18 @@ The library exports 91 symbols from `__init__.py`. Library consumers need a clea
 
 #### Acceptance Criteria
 
-- [ ] `__all__` explicitly defined in `__init__.py` with curated public API
-- [ ] Exports organized into logical groups (core, retrieval, lifecycle, federation, config)
-- [ ] `py.typed` marker file added for PEP 561
-- [ ] Internal modules prefixed with `_` are excluded from `__all__`
-- [ ] No breaking changes — all currently exported symbols remain importable
-- [ ] Type stubs verified with `mypy --strict`
+- [x] `__all__` explicitly defined in `__init__.py` with curated public API
+- [x] Exports organized into logical groups (core, retrieval, lifecycle, federation, config)
+- [x] `py.typed` marker file added for PEP 561
+- [x] Internal modules prefixed with `_` are excluded from `__all__`
+- [x] No breaking changes — all currently exported symbols remain importable
+- [x] Type stubs verified with `mypy --strict`
 
 ---
 
 ### STORY-009.3: MCP Registry manifest and client configs
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-008 STORY-008.7
 **Context refs:** `pyproject.toml`
@@ -98,21 +99,21 @@ For tapps-brain to be discoverable in the MCP ecosystem, it needs a registry man
 
 #### Acceptance Criteria
 
-- [ ] `server.json` manifest following `https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`
-- [ ] Manifest specifies PyPI package type with `uvx tapps-brain-mcp` as the command
-- [ ] `docs/guides/mcp.md` includes config snippets for:
+- [x] `server.json` manifest following `https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`
+- [x] Manifest specifies PyPI package type with `uvx tapps-brain-mcp` as the command
+- [x] `docs/guides/mcp.md` includes config snippets for:
   - Claude Code (`.claude/settings.json` or `claude_desktop_config.json`)
   - Cursor (`.cursor/mcp.json`)
   - VS Code Copilot (`mcp.json` in workspace)
   - Generic stdio config
-- [ ] Config snippets include `--project-dir` usage examples
-- [ ] README updated with MCP setup section
+- [x] Config snippets include `--project-dir` usage examples
+- [x] README updated with MCP setup section
 
 ---
 
 ### STORY-009.4: Unified version and metadata
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-009.1
 **Context refs:** `pyproject.toml`, `src/tapps_brain/__init__.py`
@@ -124,17 +125,17 @@ With three interfaces, version consistency matters. The library `__version__`, C
 
 #### Acceptance Criteria
 
-- [ ] Version defined in exactly one place (`pyproject.toml`)
-- [ ] `tapps_brain.__version__` reads from package metadata (`importlib.metadata`)
-- [ ] CLI `--version` uses `tapps_brain.__version__`
-- [ ] MCP server reports version in `initialize` response via `serverInfo`
-- [ ] Version bump requires changing only `pyproject.toml`
+- [x] Version defined in exactly one place (`pyproject.toml`)
+- [x] `tapps_brain.__version__` reads from package metadata (`importlib.metadata`)
+- [x] CLI `--version` uses `tapps_brain.__version__`
+- [x] MCP server reports version in `initialize` response via `serverInfo`
+- [x] Version bump requires changing only `pyproject.toml`
 
 ---
 
 ### STORY-009.5: CI pipeline for multi-interface testing
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-009.1, STORY-009.2
 **Context refs:** `.github/workflows/` (if exists), `pyproject.toml`
@@ -146,13 +147,13 @@ Three interfaces with optional extras create a test matrix. CI must verify that 
 
 #### Acceptance Criteria
 
-- [ ] CI test matrix: `[core-only, cli, mcp, all]` extras combinations
-- [ ] `core-only` run: `pip install .` then `pytest tests/unit/test_memory_store.py tests/unit/test_memory_persistence.py -v`
-- [ ] `cli` run: `pip install .[cli]` then `pytest tests/ -v` (CLI tests included)
-- [ ] `mcp` run: `pip install .[mcp]` then `pytest tests/ -v` (MCP tests included)
-- [ ] `all` run: `pip install .[all,dev]` then full test suite with coverage
-- [ ] Graceful skip for tests requiring unavailable extras (pytest markers)
-- [ ] Coverage floor maintained at 95% on `all` run
+- [x] CI test matrix: `[core-only, cli, mcp, all]` extras combinations
+- [x] `core-only` run: `pip install .` then `pytest tests/unit/test_memory_store.py tests/unit/test_memory_persistence.py -v`
+- [x] `cli` run: `pip install .[cli]` then `pytest tests/ -v` (CLI tests included)
+- [x] `mcp` run: `pip install .[mcp]` then `pytest tests/ -v` (MCP tests included)
+- [x] `all` run: `pip install .[all,dev]` then full test suite with coverage
+- [x] Graceful skip for tests requiring unavailable extras (pytest markers)
+- [x] Coverage floor maintained at 95% on `all` run
 
 ## Priority Order
 
