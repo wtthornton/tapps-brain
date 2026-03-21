@@ -345,6 +345,82 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
         )
 
     # ------------------------------------------------------------------
+    # Session tools — index, search, capture
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_index_session(
+        session_id: str,
+        chunks: list[str],
+    ) -> str:
+        """Index session chunks for future search.
+
+        Save a session summary (as a list of text chunks) so it can be
+        searched later with memory_search_sessions.
+
+        Args:
+            session_id: Session identifier (e.g. conversation or task ID).
+            chunks: List of text chunks — summaries or key facts from the session.
+        """
+        stored = store.index_session(session_id, chunks)
+        return json.dumps(
+            {
+                "status": "indexed",
+                "session_id": session_id,
+                "chunks_stored": stored,
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_search_sessions(
+        query: str,
+        limit: int = 10,
+    ) -> str:
+        """Search past session summaries.
+
+        Returns matching chunks from previously indexed sessions,
+        ranked by relevance.
+
+        Args:
+            query: Search query text.
+            limit: Maximum number of results to return (default 10).
+        """
+        results = store.search_sessions(query, limit=limit)
+        return json.dumps(
+            {
+                "results": results,
+                "count": len(results),
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_capture(
+        response: str,
+        source: str = "agent",
+    ) -> str:
+        """Extract and persist new facts from an agent response.
+
+        Scans the given response text for decision-like statements and
+        saves them as new memory entries. Use this at the end of a session
+        to capture what happened.
+
+        Args:
+            response: The agent's response text to scan for facts.
+            source: Source attribution — one of: human, agent, inferred, system.
+        """
+        from tapps_brain.recall import RecallOrchestrator
+
+        orchestrator = RecallOrchestrator(store)
+        created_keys = orchestrator.capture(response, source=source)
+        return json.dumps(
+            {
+                "status": "captured",
+                "created_keys": created_keys,
+                "count": len(created_keys),
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Resources — read-only store views
     # ------------------------------------------------------------------
 
