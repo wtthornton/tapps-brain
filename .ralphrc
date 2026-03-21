@@ -20,11 +20,10 @@ CLAUDE_OUTPUT_FORMAT="json"
 # Tool permissions
 # Comma-separated list of allowed tools
 # Safe git subcommands only - broad Bash(git *) allows destructive commands like git clean/git rm (Issue #149)
-ALLOWED_TOOLS="Write,Read,Edit,Bash,Glob,Grep,TodoWrite"
+ALLOWED_TOOLS="Write,Read,Edit,Glob,Grep,TodoWrite,WebFetch,Bash(git add *),Bash(git commit *),Bash(git diff *),Bash(git log *),Bash(git status),Bash(git status *),Bash(git push *),Bash(git pull *),Bash(git fetch *),Bash(git checkout *),Bash(git branch *),Bash(git stash *),Bash(git merge *),Bash(git tag *),Bash(uv *),Bash(pip *),Bash(python *),Bash(python3 *),Bash(pytest *),Bash(pytest),Bash(ruff *),Bash(mypy *),Bash(ls *),Bash(cat *),Bash(mkdir *),Bash(cp *),Bash(mv *),Bash(head *),Bash(tail *),Bash(wc *),Bash(find *),Bash(which *),Bash(echo *)"
 
 # Session management
-# false = fresh session per loop (clean context, no degradation across tasks)
-# true = resume session (accumulates context, degrades over many loops)
+# false = fresh context per loop (patched ralph_loop.sh line 1342 to fix live mode extraction)
 SESSION_CONTINUITY=false
 SESSION_EXPIRY_HOURS=24
 

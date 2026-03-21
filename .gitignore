@@ -24,5 +24,8 @@ build/
 .ralph/.loop_start_sha
 .ralph/.ralph_session
 .ralph/.response_analysis
+.ralph/.ralph_session_history
+.ralph/live.log
+.ralph/progress.json
 .ralph/status.json
 .coverage

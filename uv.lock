@@ -1803,10 +1803,20 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "structlog" },
-    { name = "typer" },
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "cohere" },
+    { name = "faiss-cpu" },
+    { name = "mcp" },
+    { name = "numpy" },
+    { name = "sentence-transformers" },
+    { name = "typer" },
+]
+cli = [
+    { name = "typer" },
+]
 dev = [
     { name = "mcp" },
     { name = "mypy" },
@@ -1815,6 +1825,7 @@ dev = [
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "typer" },
 ]
 mcp = [
     { name = "mcp" },
@@ -1845,9 +1856,11 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9,<1" },
     { name = "sentence-transformers", marker = "extra == 'vector'", specifier = ">=5.2.3,<6" },
     { name = "structlog", specifier = ">=25.5.0,<26" },
-    { name = "typer", specifier = ">=0.12.3,<1" },
+    { name = "tapps-brain", extras = ["cli", "mcp", "vector", "reranker"], marker = "extra == 'all'" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12.3,<1" },
+    { name = "typer", marker = "extra == 'dev'", specifier = ">=0.12.3,<1" },
 ]
-provides-extras = ["mcp", "vector", "reranker", "dev"]
+provides-extras = ["cli", "mcp", "vector", "reranker", "all", "dev"]
 
 [[package]]
 name = "threadpoolctl"
