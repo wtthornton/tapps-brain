@@ -22,6 +22,12 @@ let mcpClient: McpClient | null = null;
 /** Keys already injected in this session — used for dedup in ingest(). */
 const injectedKeys: Set<string> = new Set();
 
+/** Turn counter for afterTurn rate limiting — capture at most once every 3 turns. */
+let lastCaptureTurn = 0;
+
+/** Minimum number of turns between captures. */
+const CAPTURE_RATE_LIMIT = 3;
+
 /** Default token budget for memory injection (characters ≈ tokens × 4). */
 const DEFAULT_TOKEN_BUDGET = 4000;
 
@@ -294,14 +300,49 @@ export async function ingest(
  * AfterTurn hook: receives agent response, calls memory_capture via MCP.
  * Rate limited to max once every 3 turns.
  *
+ * 1. Checks turn-based rate limit (every 3 turns).
+ * 2. Calls `memory_capture` with the agent response content.
+ * 3. Returns captured keys for observability.
+ *
  * Implementation: story 012-G
  */
 export async function afterTurn(
   _ctx: OpenClawContext,
-  _response: AgentResponse,
+  response: AgentResponse,
 ): Promise<CaptureResult> {
-  // TODO(012-G): call memory_capture, respect rate limit
-  return { captured: false };
+  // 1. Rate limit: only capture once every CAPTURE_RATE_LIMIT turns
+  const turnsSinceCapture = response.turnNumber - lastCaptureTurn;
+  if (turnsSinceCapture < CAPTURE_RATE_LIMIT) {
+    return { captured: false };
+  }
+
+  const client = getMcpClient();
+
+  try {
+    // 2. Call memory_capture with the agent response
+    const captureResult = await client.callTool("memory_capture", {
+      content: response.content,
+    });
+
+    const parsed = JSON.parse(
+      typeof captureResult === "string" ? captureResult : JSON.stringify(captureResult),
+    ) as { captured?: string[]; keys?: string[] };
+
+    const keys = parsed.keys ?? parsed.captured ?? [];
+
+    // 3. Update rate limit state
+    lastCaptureTurn = response.turnNumber;
+
+    // Log captured keys (console.log for plugin observability)
+    if (keys.length > 0) {
+      console.log(`[tapps-brain] afterTurn: captured ${keys.length} key(s):`, keys);
+    }
+
+    return { captured: keys.length > 0, keys };
+  } catch {
+    // Fail gracefully — don't block the turn if capture fails
+    return { captured: false };
+  }
 }
 
 /**
@@ -316,6 +357,19 @@ export async function compact(
 ): Promise<CompactResult> {
   // TODO(012-H): call memory_ingest + memory_index_session
   return { entriesIngested: 0, sessionIndexed: false };
+}
+
+// ---------------------------------------------------------------------------
+// Testing helpers — reset plugin state between tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Reset all plugin state. Intended for use in tests only.
+ */
+export function _resetPluginState(): void {
+  mcpClient = null;
+  injectedKeys.clear();
+  lastCaptureTurn = 0;
 }
 
 // ---------------------------------------------------------------------------
