@@ -56,6 +56,7 @@ After completing a task from `fix_plan.md`, you MUST update that file to check o
 5. Update `fix_plan.md`: check off the completed item (`- [ ]` → `- [x]`).
 6. Commit implementation + fix_plan update together.
 7. Report only: task, files changed, verification, and next action/blocker.
+8. **STOP. End your response immediately after the status block.** Do NOT start another task. Do NOT say "moving to the next task." The Ralph harness will re-invoke you for the next item. Your response MUST end within 2 lines of the closing `---END_RALPH_STATUS---`.
 
 ## Build & Run
 See AGENT.md for build and run instructions.

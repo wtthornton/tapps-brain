@@ -1,7 +1,7 @@
 ---
 id: EPIC-006
 title: "Persistent knowledge graph and semantic queries"
-status: planned
+status: done
 priority: high
 created: 2026-03-19
 target_date: 2026-05-15

@@ -1,6 +1,6 @@
 # Ralph Fix Plan — tapps-brain
 
-Aligned with the repo as of **2026-03-20**. For full story text, see `docs/planning/epics/EPIC-*.md`.
+Aligned with the repo as of **2026-03-21**. For full story text, see `docs/planning/epics/EPIC-*.md`.
 
 **Task sizing:** Each item is scoped to ONE Ralph loop (~15 min). Do one, check it off, commit.
 
@@ -11,86 +11,83 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] EPIC-003: Auto-recall orchestrator (done)
 - [x] EPIC-004: Bi-temporal fact versioning (done)
 - [x] EPIC-005: CLI tool (done)
+- [x] EPIC-006: Knowledge Graph (done)
+- [x] EPIC-007: Observability (done)
 - [x] EPIC-008: MCP Server (done)
+- [x] EPIC-009: Multi-Interface Distribution (done)
 
 ## High Priority
 
-### EPIC-006: Knowledge Graph (High)
+### EPIC-010: Configurable Memory Profiles (Critical)
 
-**Already in tree:** `relations` table in SQLite, `Persistence.save_relation`/`list_relations`, `relations.py` extraction, `RetrievalEngine` query expansion. **Not wired:** MemoryStore doesn't persist relations on save/ingest; no `find_related`/`query_relations`; no recall boost; no relation transfer on supersede/consolidation.
+**Goal:** Make memory tiers, half-lives, scoring weights, and decay models configurable via YAML profile files. Ship 6 built-in profiles for different use cases. Zero behavior change with default `repo-brain` profile.
 
-#### 006-A: Persistence layer for relations
-- [x] Verify/add `save_relations(key, relations)`, `load_relations(key)`, `delete_relations(key)` in `persistence.py`. Add unit tests in `test_memory_persistence.py`. Commit: `feat(story-006.1): relation persistence methods`
+**Design doc:** `docs/planning/DESIGN-CONFIGURABLE-MEMORY-PROFILES.md`
 
-#### 006-B: Wire relations into MemoryStore save/ingest
-- [x] In `store.py`, call `extract_relations()` from `save()` and `ingest_context()`, persist via `self._persistence.save_relations()`. Add `get_relations(key)` convenience method. Add unit tests. Commit: `feat(story-006.2): auto-extract relations on save/ingest`
+#### 010-A: Profile data model — Pydantic models
+- [ ] Create `src/tapps_brain/profile.py` with Pydantic v2 models: `LayerDefinition`, `PromotionThreshold`, `ScoringConfig`, `GCConfig`, `RecallProfileConfig`, `LimitsConfig`, `MemoryProfile`. Add `extends` field for profile inheritance (max depth 3). Add validation (unique layer names, weights sum to ~1.0, half_life >= 1). Commit: `feat(story-010.1): profile data model`
 
-#### 006-C: Load relations on store init (cold start)
-- [x] On `MemoryStore.__init__`, load all persisted relations into memory. Add test for close/reopen round-trip. Commit: `feat(story-006.2): load relations on cold start`
+#### 010-B: Profile loading and resolution
+- [ ] In `profile.py`, add `load_profile(path)`, `resolve_profile(project_dir, profile_name)` (project → user-global → built-in → hardcoded default), `get_builtin_profile(name)`, `list_builtin_profiles()`. Add unit tests for loading, validation errors, inheritance merging, resolution order. Commit: `feat(story-010.1): profile loading and resolution`
 
-#### 006-D: Graph query API — find_related
-- [x] Add `find_related(key, max_hops=2)` to `store.py` — BFS traversal of relation graph, dedup by key, order by hop distance. Add unit tests with A→B→C chain. Commit: `feat(story-006.3): find_related graph traversal`
+#### 010-C: Ship 6 built-in profile YAML files
+- [ ] Create `src/tapps_brain/profiles/` directory with `repo-brain.yaml`, `personal-assistant.yaml`, `customer-support.yaml`, `research-knowledge.yaml`, `project-management.yaml`, `home-automation.yaml`. Include as package data in `pyproject.toml`. Commit: `feat(story-010.2): built-in profile YAML files`
 
-#### 006-E: Graph query API — query_relations
-- [x] Add `query_relations(subject=None, predicate=None, object_entity=None)` to `store.py` — filter relations by field. Add unit tests. Commit: `feat(story-006.3): query_relations filter API`
+#### 010-D: Built-in profile tests
+- [ ] Add unit tests: each built-in profile loads and validates, weights sum to 1.0, `repo-brain` profile produces identical `DecayConfig` values to current hardcoded defaults. Commit: `test(story-010.2): built-in profile validation tests`
 
-#### 006-F: Recall scoring boost via graph
-- [x] Add `use_graph_boost: bool` and `graph_boost_factor: float` to `RecallConfig`. In recall logic, extract query entities, call `find_related()`, boost connected entries' scores. Add unit tests. Commit: `feat(story-006.4): graph-based recall boost`
+#### 010-E: Wire profile into MemoryStore init
+- [ ] `MemoryStore.__init__()` accepts optional `profile: MemoryProfile | None`. When not provided, resolves from project dir → user-global → built-in `repo-brain`. Expose `store.profile` property. Derive `DecayConfig` from profile layer definitions. Commit: `feat(story-010.3): wire profile into MemoryStore`
 
-#### 006-G: Relation transfer on supersede
-- [x] In `store.supersede()`, copy relations from old key to new key via `get_relations()` + `save_relations()`. Add unit tests. Commit: `feat(story-006.5): transfer relations on supersede`
+#### 010-F: Profile-driven tier validation and GC config
+- [ ] `store.save()` validates tier against profile layer names (not just `MemoryTier` enum). Unknown tier names fall back to lowest half-life layer. `GCConfig` thresholds read from profile. ALL existing tests must pass unchanged. Commit: `feat(story-010.3): profile-driven tier validation and GC`
 
-#### 006-H: Relation transfer on consolidation
-- [x] In `consolidation.py`, merge relations from all source entries, deduplicate same subject-predicate-object triples, persist on consolidated entry. Add unit tests. Commit: `feat(story-006.5): merge relations on consolidation`
+#### 010-G: Wire profile into MemoryStore — integration test
+- [ ] Add integration test: create store with `personal-assistant` profile, save entries with `identity`/`long-term`/`short-term`/`ephemeral` tiers, verify decay uses profile half-lives. Verify `repo-brain` profile produces identical behavior to no-profile store. Commit: `test(story-010.3): profile integration test`
 
-#### 006-I: Graph lifecycle integration tests
-- [x] Create `tests/integration/test_graph_integration.py` — save entries with relations, close/reopen store, verify find_related traversal, supersede transfer, recall boost ranking. All on real SQLite. Commit: `test(story-006.6): graph lifecycle integration tests`
+#### 010-H: Configurable scoring weights
+- [ ] `MemoryRetriever.__init__()` accepts optional `ScoringConfig`. When provided, uses its weights instead of module constants. `MemoryStore` passes `profile.scoring` to its retriever. `RecallConfig` defaults from `profile.recall`. Add unit tests: custom weights rank differently, default `ScoringConfig()` identical to current constants. Commit: `feat(story-010.4): configurable scoring weights`
 
-### EPIC-009: Multi-Interface Distribution (High)
+#### 010-I: Promotion engine — core logic
+- [ ] Create `src/tapps_brain/promotion.py` with `PromotionEngine`. `check_promotion(entry, profile)` returns target tier if criteria met (min_access_count, min_age_days, min_confidence). `check_demotion(entry, profile)` returns target tier if stale. Desirable difficulty bonus: reinforce boost scales with `(1.0 - decayed_confidence)`. Stability growth: effective half-life grows with `log1p(reinforce_count) * 0.3`. Add unit tests. Commit: `feat(story-010.5): promotion engine`
 
-**Current:** `typer` is a core dep (should be optional), no `__all__`, no `py.typed`, no MCP registry manifest.
+#### 010-J: Wire promotion into store lifecycle
+- [ ] `store.reinforce()` calls `check_promotion()` after updating access count; if promoted, updates tier and logs to audit JSONL. GC `identify_candidates()` calls `check_demotion()` before archival; demoted entries get new tier instead of being archived. Add unit tests. Commit: `feat(story-010.5): wire promotion into store lifecycle`
 
-#### 009-A: Library API surface cleanup
-- [x] Add explicit `__all__` to `__init__.py` with all public symbols organized by group. Create empty `src/tapps_brain/py.typed` marker. Add test verifying all `__all__` symbols are importable. Commit: `feat(story-009.2): curated __all__ and py.typed`
+#### 010-K: Enhanced decay — power-law model
+- [ ] `calculate_decayed_confidence()` accepts `decay_model` parameter: `"exponential"` (default) or `"power_law"`. Power-law formula: `C₀ × (1 + t / (k × H))^(-β)`. Default params produce identical behavior to current code. Add unit tests: power-law has longer tail, exponential unchanged. Commit: `feat(story-010.6): power-law decay model`
 
-#### 009-B: Dependency extras reorganization
-- [x] In `pyproject.toml`, move `typer` to `[cli]` extra, create `[all]` extra combining cli+mcp+vector+reranker. Add graceful `ImportError` messages in `cli.py` and `mcp_server.py` when extras missing. Add unit tests for graceful errors. Commit: `feat(story-009.1): optional extras for cli and mcp`
+#### 010-L: Enhanced decay — importance tags
+- [ ] Importance tags: `effective_half_life = base_half_life * max(importance_multipliers)`. Layer definition's `importance_tags` dict maps tag names to multiplier floats. Extend `DecayConfig` with `decay_model` and `decay_exponent` fields. Add unit tests. Commit: `feat(story-010.6): importance tags for decay`
 
-#### 009-C: Entry points and version unification
-- [x] Declare `tapps-brain` CLI entry point in `pyproject.toml`. Replace hardcoded `__version__` with `importlib.metadata.version()`. Verify CLI `--version` and MCP server version match. Add unit tests. Commit: `feat(story-009.3): entry points and unified version`
+#### 010-M: Profile CLI commands and MCP tools
+- [ ] CLI: `tapps-brain profile show|list|set|layers`. MCP tools: `profile_info()`, `profile_switch(name)`. Add unit tests. Commit: `feat(story-010.7): profile CLI commands and MCP tools`
 
-#### 009-D: MCP Registry manifest
-- [x] Create `server.json` following MCP Registry schema. Commit: `feat(story-009.4): MCP registry server.json`
+#### 010-N: Cross-profile integration tests
+- [ ] Integration tests: promotion triggers after 5+ reinforcements, demotion on stale entry, power-law vs exponential at 365 days, importance tags doubling half-life, custom scoring weights ranking, `repo-brain` backward compat. All on real SQLite. Coverage stays at 95%+. Commit: `test(story-010.8): cross-profile integration tests`
 
-#### 009-E: Distribution integration tests
-- [x] Add pytest markers `requires_cli` / `requires_mcp` to relevant test files. Verify core import works without extras. Commit: `test(story-009.5): extras-aware test markers`
+## Planned (not yet broken into tasks)
 
-## Medium Priority
+### EPIC-011: Hive — Multi-Agent Shared Brain (High)
 
-### EPIC-007: Observability (Medium)
+**Depends on:** EPIC-010 (STORY-010.3)
+**Target:** 2026-06-01
+**Stories:** 011.1–011.7 (7 stories, see `docs/planning/epics/EPIC-011.md`)
 
-**Already in tree:** `metrics.py` (MetricsCollector, snapshots, health), `audit.py` (AuditReader), `store.health()`, `store.get_metrics()`. **Not wired:** counters/histograms not populated from store operations. No OTel exporter.
+Adds shared HiveStore at `~/.tapps-brain/hive/`, agent registry, propagation engine (private/domain/hive scopes), conflict resolution, hive-aware recall, and MCP tools.
 
-#### 007-A: Instrument save/get/search paths
-- [x] In `store.py`, add `self._metrics.increment()` and `self._metrics.observe()` calls to `save()`, `get()`, and `search()`. Add unit tests verifying counters increment. Commit: `feat(story-007.2): instrument save/get/search metrics`
+### EPIC-012: OpenClaw Integration (High)
 
-#### 007-B: Instrument recall/supersede/consolidate/GC paths
-- [x] In `store.py`, add metrics to `recall()`, `supersede()`, consolidate, and `gc()`. Add unit tests. Commit: `feat(story-007.2): instrument lifecycle operation metrics`
+**Depends on:** EPIC-010 (STORY-010.3), benefits from EPIC-011
+**Target:** 2026-06-15
+**Stories:** 012.1–012.7 (7 stories, see `docs/planning/epics/EPIC-012.md`)
 
-#### 007-C: Expose store.audit() convenience
-- [x] Add `store.audit(**kwargs)` method delegating to `AuditReader`. Add unit tests. If already exists, verify and add missing test coverage. Commit: `feat(story-007.3): store.audit() convenience method`
-
-#### 007-D: OpenTelemetry exporter
-- [x] Create `otel_exporter.py` with `OTelExporter` class, add `otel` optional dep to `pyproject.toml`, add feature flag in `_feature_flags.py`. Add unit tests with mocked OTel SDK. Commit: `feat(story-007.5): optional OpenTelemetry exporter`
-
-#### 007-E: Observability integration tests
-- [x] Create `tests/integration/test_observability_integration.py` — perform 50 mixed operations, verify metrics snapshot, query audit trail, verify health report. Real SQLite. Commit: `test(story-007.6): observability integration tests`
+ContextEngine plugin for OpenClaw, auto-recall/capture hooks, pre-compaction flush, Markdown import, PyPI publish, and ClawHub skill packaging.
 
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
-- **EPIC-006** — Do not assume "greenfield"; persistence and retrieval expansion exist — wire store lifecycle and graph APIs next.
-- **EPIC-009** — 009-A (API cleanup) should come before 009-B (extras split) since __all__ defines the public surface.
+- **EPIC-010** tasks are sequential through 010-G (foundation → profiles → wiring). After 010-G, tasks 010-H through 010-L can be done in any order. 010-M and 010-N come last.
 - Always cross-check **`docs/planning/epics/`** before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.

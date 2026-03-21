@@ -1,7 +1,7 @@
 ---
 id: EPIC-009
 title: "Multi-interface distribution — library, CLI, and MCP packaging"
-status: planned
+status: done
 priority: high
 created: 2026-03-20
 target_date: 2026-05-31

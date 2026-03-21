@@ -1,7 +1,7 @@
 ---
 id: EPIC-007
 title: "Observability — metrics, audit trail queries, and health checks"
-status: planned
+status: done
 priority: medium
 created: 2026-03-19
 target_date: 2026-05-30
