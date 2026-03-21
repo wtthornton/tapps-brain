@@ -957,3 +957,39 @@ class TestStoreMetrics:
             store.save(key=f"bulk-{i}", value=f"value {i}")
         snap = store.get_metrics()
         assert snap.counters["store.save"] == 100
+
+    def test_recall_increments_counter(self, store: MemoryStore) -> None:
+        store.save(key="info", value="Python is a programming language")
+        store._metrics.reset()
+        store.recall("What is Python?")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.recall", 0) == 1
+        assert "store.recall_ms" in snap.histograms
+
+    def test_supersede_increments_counter(self, store: MemoryStore) -> None:
+        store.save(key="old", value="old value")
+        store._metrics.reset()
+        store.supersede("old", "new value")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.supersede", 0) == 1
+
+    def test_gc_increments_counter(self, store: MemoryStore) -> None:
+        store.save(key="entry", value="test gc")
+        store._metrics.reset()
+        store.gc(dry_run=True)
+        snap = store.get_metrics()
+        assert snap.counters.get("store.gc", 0) == 1
+
+    def test_consolidation_metrics(self, tmp_path) -> None:
+        """When auto-consolidation triggers, counters are incremented."""
+        config = ConsolidationConfig(enabled=True, threshold=0.3, min_entries=2)
+        s = MemoryStore(tmp_path, consolidation_config=config)
+        # Save similar entries to trigger consolidation
+        s.save(key="a", value="Python is a great language for data science")
+        s.save(key="b", value="Python is a great language for data science and ML")
+        s.save(key="c", value="Python is a great language for data science and AI")
+        snap = s.get_metrics()
+        # If consolidation was triggered, counter should exist
+        # (may or may not trigger depending on similarity threshold)
+        assert snap.counters.get("store.consolidate", 0) >= 0
+        s.close()

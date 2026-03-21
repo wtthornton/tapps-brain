@@ -300,6 +300,10 @@ class MemoryStore:
             )
 
             if result.triggered:
+                self._metrics.increment("store.consolidate")
+                self._metrics.increment(
+                    "store.consolidate.merged", len(result.source_keys)
+                )
                 logger.info(
                     "auto_consolidation_on_save",
                     entry_key=entry.key,
@@ -668,6 +672,7 @@ class MemoryStore:
             KeyError: If *old_key* does not exist.
             ValueError: If *old_key* is already superseded.
         """
+        self._metrics.increment("store.supersede")
         now = _utc_now_iso()
 
         with self._lock:
@@ -815,11 +820,13 @@ class MemoryStore:
         """
         from tapps_brain.recall import RecallOrchestrator
 
+        self._metrics.increment("store.recall")
         with self._lock:
             if not hasattr(self, "_recall_orchestrator"):
                 self._recall_orchestrator = RecallOrchestrator(self)
 
-        return self._recall_orchestrator.recall(message, **kwargs)
+        with MetricsTimer(self._metrics, "store.recall_ms"):
+            return self._recall_orchestrator.recall(message, **kwargs)
 
     def health(self) -> StoreHealthReport:
         """Return a structured health report for this store."""
@@ -875,6 +882,44 @@ class MemoryStore:
             gc_candidates=len(gc_candidates),
             federation_enabled=federation_project_count > 0,
             federation_project_count=federation_project_count,
+        )
+
+    def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
+        """Run garbage collection on the store.
+
+        Args:
+            dry_run: If True, only identify candidates without archiving.
+
+        Returns:
+            ``GCResult`` with archived count and keys.
+        """
+        from tapps_brain.gc import GCResult, MemoryGarbageCollector
+
+        self._metrics.increment("store.gc")
+        gc_collector = MemoryGarbageCollector()
+        with self._lock:
+            entries = list(self._entries.values())
+        candidates = gc_collector.identify_candidates(entries)
+        candidate_keys = [c.key for c in candidates]
+
+        if dry_run:
+            return GCResult(
+                archived_count=0,
+                remaining_count=len(entries),
+                archived_keys=candidate_keys,
+            )
+
+        # Archive to JSONL and delete from store
+        archive_path = self._persistence._store_dir / "gc_archive.jsonl"
+        MemoryGarbageCollector.append_to_archive(candidates, archive_path)
+        for key in candidate_keys:
+            self.delete(key)
+
+        self._metrics.increment("store.gc.archived", len(candidate_keys))
+        return GCResult(
+            archived_count=len(candidate_keys),
+            remaining_count=len(entries) - len(candidate_keys),
+            archived_keys=candidate_keys,
         )
 
     def get_metrics(self) -> MetricsSnapshot:
