@@ -901,7 +901,7 @@ class TestMaintenanceGcWithDecayedEntries:
         old_iso = old_time.isoformat()
         with store._lock:
             store._entries[entry.key] = entry.model_copy(update={"updated_at": old_iso})
-            store._persistence.upsert(store._entries[entry.key])
+            store._persistence.save(store._entries[entry.key])
 
         gc_fn = _tool_fn(mcp_server, "maintenance_gc")
 
