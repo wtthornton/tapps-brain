@@ -17,7 +17,10 @@ docs/planning/
     ├── EPIC-006.md      ← Persistent knowledge graph and semantic queries (planned)
     ├── EPIC-007.md      ← Observability — metrics, audit trail, health checks (planned)
     ├── EPIC-008.md      ← MCP server — expose tapps-brain via MCP (planned)
-    └── EPIC-009.md      ← Multi-interface distribution (planned)
+    ├── EPIC-009.md      ← Multi-interface distribution (planned)
+    ├── EPIC-010.md      ← Configurable memory profiles — pluggable layers and scoring (planned)
+    ├── EPIC-011.md      ← Hive — multi-agent shared brain with domain namespaces (planned)
+    └── EPIC-012.md      ← OpenClaw integration — ContextEngine plugin and ClawHub skill (planned)
 ```
 
 ## Why This Structure

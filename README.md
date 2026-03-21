@@ -452,6 +452,9 @@ tests/
 | [EPIC-007](docs/planning/epics/EPIC-007.md) | Observability | In progress |
 | [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server (21 tools, 4 resources, 3 prompts) | Done |
 | [EPIC-009](docs/planning/epics/EPIC-009.md) | Multi-interface distribution | Planned |
+| [EPIC-010](docs/planning/epics/EPIC-010.md) | Configurable memory profiles | Planned |
+| [EPIC-011](docs/planning/epics/EPIC-011.md) | Hive — multi-agent shared brain | Planned |
+| [EPIC-012](docs/planning/epics/EPIC-012.md) | OpenClaw ContextEngine + ClawHub | Planned |
 
 </details>
 
