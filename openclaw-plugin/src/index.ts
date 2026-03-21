@@ -19,6 +19,12 @@ import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
 /** Singleton MCP client, initialized by bootstrap(). */
 let mcpClient: McpClient | null = null;
 
+/** Keys already injected in this session — used for dedup in ingest(). */
+const injectedKeys: Set<string> = new Set();
+
+/** Default token budget for memory injection (characters ≈ tokens × 4). */
+const DEFAULT_TOKEN_BUDGET = 4000;
+
 /**
  * Get the active MCP client. Throws if bootstrap() has not been called.
  */
@@ -216,14 +222,72 @@ function slugify(text: string): string {
  * Ingest hook: receives user message, calls memory_recall via MCP,
  * and injects relevant memories into context.
  *
+ * 1. Calls `memory_recall(message)` to get ranked memories.
+ * 2. Filters out keys already injected in this session (dedup).
+ * 3. Builds a `memory_section` string within the token budget.
+ * 4. Returns the section for injection as a system-level prefix.
+ *
  * Implementation: story 012-F
  */
 export async function ingest(
   _ctx: OpenClawContext,
-  _message: UserMessage,
+  message: UserMessage,
 ): Promise<IngestResult> {
-  // TODO(012-F): call memory_recall, build memory_section, dedup keys
-  return { memorySection: "", keysInjected: [] };
+  const client = getMcpClient();
+
+  try {
+    // 1. Call memory_recall with the user's message
+    const recallResult = await client.callTool("memory_recall", {
+      message: message.content,
+    });
+
+    const recall = JSON.parse(
+      typeof recallResult === "string" ? recallResult : JSON.stringify(recallResult),
+    ) as { memories?: Array<{ key: string; value: string; tier?: string; confidence?: number }> };
+
+    const memories = recall.memories ?? [];
+
+    // 2. Skip if no relevant memories found
+    if (memories.length === 0) {
+      return { memorySection: "", keysInjected: [] };
+    }
+
+    // 3. Filter out keys already injected in this session (dedup)
+    const newMemories = memories.filter((m) => !injectedKeys.has(m.key));
+
+    if (newMemories.length === 0) {
+      return { memorySection: "", keysInjected: [] };
+    }
+
+    // 4. Build memory_section within token budget
+    const lines: string[] = [];
+    let charCount = 0;
+    const keysInjected: string[] = [];
+    const budgetChars = DEFAULT_TOKEN_BUDGET;
+
+    // Header
+    const header = "## Relevant Memories\n";
+    charCount += header.length;
+    lines.push(header);
+
+    for (const mem of newMemories) {
+      const entry = `- **${mem.key}**: ${mem.value}\n`;
+      if (charCount + entry.length > budgetChars) {
+        break; // Respect token budget
+      }
+      lines.push(entry);
+      charCount += entry.length;
+      keysInjected.push(mem.key);
+      injectedKeys.add(mem.key);
+    }
+
+    const memorySection = keysInjected.length > 0 ? lines.join("") : "";
+
+    return { memorySection, keysInjected };
+  } catch {
+    // Fail gracefully — don't block the turn if recall fails
+    return { memorySection: "", keysInjected: [] };
+  }
 }
 
 /**
