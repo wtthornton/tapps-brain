@@ -993,3 +993,36 @@ class TestStoreMetrics:
         # (may or may not trigger depending on similarity threshold)
         assert snap.counters.get("store.consolidate", 0) >= 0
         s.close()
+
+
+class TestStoreAudit:
+    """Verify store.audit() convenience method (STORY-007.3)."""
+
+    def test_audit_returns_entries_after_save(self, store: MemoryStore) -> None:
+        store.save(key="audited", value="some value")
+        entries = store.audit(key="audited")
+        assert len(entries) >= 1
+        assert entries[0].key == "audited"
+
+    def test_audit_filter_by_event_type(self, store: MemoryStore) -> None:
+        store.save(key="a", value="val")
+        store.delete("a")
+        saves = store.audit(event_type="save")
+        deletes = store.audit(event_type="delete")
+        assert all(e.event_type == "save" for e in saves)
+        assert all(e.event_type == "delete" for e in deletes)
+
+    def test_audit_empty_store_returns_empty(self, store: MemoryStore) -> None:
+        entries = store.audit()
+        assert entries == []
+
+    def test_audit_respects_limit(self, store: MemoryStore) -> None:
+        for i in range(10):
+            store.save(key=f"lim-{i}", value=f"value {i}")
+        entries = store.audit(limit=3)
+        assert len(entries) == 3
+
+    def test_audit_time_range_filter(self, store: MemoryStore) -> None:
+        store.save(key="t1", value="time test")
+        entries = store.audit(since="2000-01-01", until="2099-12-31")
+        assert len(entries) >= 1

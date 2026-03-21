@@ -78,7 +78,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] In `store.py`, add metrics to `recall()`, `supersede()`, consolidate, and `gc()`. Add unit tests. Commit: `feat(story-007.2): instrument lifecycle operation metrics`
 
 #### 007-C: Expose store.audit() convenience
-- [ ] Add `store.audit(**kwargs)` method delegating to `AuditReader`. Add unit tests. If already exists, verify and add missing test coverage. Commit: `feat(story-007.3): store.audit() convenience method`
+- [x] Add `store.audit(**kwargs)` method delegating to `AuditReader`. Add unit tests. If already exists, verify and add missing test coverage. Commit: `feat(story-007.3): store.audit() convenience method`
 
 #### 007-D: OpenTelemetry exporter
 - [ ] Create `otel_exporter.py` with `OTelExporter` class, add `otel` optional dep to `pyproject.toml`, add feature flag in `_feature_flags.py`. Add unit tests with mocked OTel SDK. Commit: `feat(story-007.5): optional OpenTelemetry exporter`

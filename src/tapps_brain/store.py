@@ -922,6 +922,40 @@ class MemoryStore:
             archived_keys=candidate_keys,
         )
 
+    def audit(
+        self,
+        *,
+        key: str | None = None,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[Any]:
+        """Query the JSONL audit trail.
+
+        Convenience wrapper around ``AuditReader.query()``.
+
+        Args:
+            key: Filter by memory entry key.
+            event_type: Filter by event type (save, delete, etc.).
+            since: ISO-8601 lower bound (inclusive).
+            until: ISO-8601 upper bound (inclusive).
+            limit: Maximum number of entries to return.
+
+        Returns:
+            List of ``AuditEntry`` objects matching the filters.
+        """
+        from tapps_brain.audit import AuditReader
+
+        reader = AuditReader(self._persistence._audit_path)
+        return reader.query(
+            key=key,
+            event_type=event_type,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+
     def get_metrics(self) -> MetricsSnapshot:
         """Return a snapshot of in-process operation metrics."""
         return self._metrics.snapshot()
