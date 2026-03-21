@@ -4,6 +4,9 @@ Tests import_memory_md and import_openclaw_workspace against a real
 MemoryStore with SQLite persistence. Verifies tier assignment, deduplication,
 daily note date extraction, and data persistence across store re-opens.
 
+Also tests the full recall → capture round-trip that ContextEngine hooks
+exercise (save → recall → capture → verify).
+
 Story: STORY-012.7 from EPIC-012
 """
 
@@ -14,7 +17,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tapps_brain.markdown_import import import_memory_md, import_openclaw_workspace
-from tapps_brain.models import MemorySource, MemoryTier
+from tapps_brain.models import MemorySource, MemoryTier, RecallResult
+from tapps_brain.recall import RecallOrchestrator
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -372,3 +376,161 @@ class TestWorkspaceImportIntegration:
         assert result2["daily_notes"] == 0
         assert result2["skipped"] == 3
         store2.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests — recall + capture round-trip (ContextEngine hook simulation)
+# ---------------------------------------------------------------------------
+
+
+class TestRecallCaptureRoundTrip:
+    """Integration tests for the full recall → capture loop.
+
+    Simulates the flow that ContextEngine hooks exercise:
+    1. Bootstrap: import MEMORY.md → populate store
+    2. Ingest hook: recall relevant memories for user message
+    3. AfterTurn hook: capture new facts from agent response
+    4. Verify: new entries created and recallable
+    """
+
+    def test_import_recall_capture_full_loop(self, tmp_path: Path, store: MemoryStore) -> None:
+        """Import → recall → capture → verify new entries created."""
+        # Step 1: Bootstrap — import MEMORY.md (simulates bootstrap hook)
+        md_path = tmp_path / "MEMORY.md"
+        md_path.write_text(
+            "# Tech Stack\nPython 3.12 with SQLite persistence.\n\n"
+            "## Testing\npytest with 95% coverage requirement.\n",
+            encoding="utf-8",
+        )
+        count = import_memory_md(md_path, store)
+        assert count == 2
+
+        # Step 2: Ingest hook — recall memories matching user message
+        orch = RecallOrchestrator(store)
+        result = orch.recall("What is our tech stack and how do we test?")
+        assert isinstance(result, RecallResult)
+        assert result.memory_count > 0
+        recalled_keys = [m["key"] for m in result.memories]
+        assert "tech-stack" in recalled_keys
+
+        # Step 3: AfterTurn hook — capture new facts from agent response
+        response = (
+            "We decided to add mypy strict mode for all new modules. "
+            "Key decision: adopt ruff as the sole linter replacing flake8."
+        )
+        new_keys = orch.capture(response)
+        assert len(new_keys) > 0
+
+        # Step 4: Verify new entries exist in the store
+        for key in new_keys:
+            entry = store.get(key)
+            assert entry is not None, f"Captured entry {key!r} missing from store"
+            assert entry.source.value == "agent"
+
+    def test_captured_facts_are_recallable(self, tmp_path: Path, store: MemoryStore) -> None:
+        """Facts captured from agent response can be recalled in a later turn."""
+        # Seed with initial memory
+        store.save(
+            key="db-choice",
+            value="We use SQLite for local persistence",
+            tier="architectural",
+            source="human",
+        )
+
+        orch = RecallOrchestrator(store)
+
+        # Capture a new fact
+        response = "We decided to add Redis caching for expensive queries."
+        new_keys = orch.capture(response)
+        assert len(new_keys) > 0
+
+        # Later turn: recall should find the captured fact
+        result = orch.recall("caching strategy Redis expensive queries")
+        recalled_keys = [m["key"] for m in result.memories]
+        # At least one of the captured keys should appear
+        assert any(k in recalled_keys for k in new_keys), (
+            f"None of captured keys {new_keys} found in recall: {recalled_keys}"
+        )
+
+    def test_capture_deduplication_across_turns(self, store: MemoryStore) -> None:
+        """Capturing the same response twice does not create duplicates."""
+        store.save(
+            key="base-fact",
+            value="Python is our primary language",
+            tier="architectural",
+            source="human",
+        )
+
+        orch = RecallOrchestrator(store)
+        response = "We decided to use gRPC for internal service communication."
+        keys1 = orch.capture(response)
+        keys2 = orch.capture(response)
+
+        assert len(keys1) > 0
+        assert keys2 == [], f"Expected no new keys on repeat capture, got {keys2}"
+
+    def test_round_trip_persists_across_restart(self, tmp_path: Path, store_dir: Path) -> None:
+        """Captured facts survive store close and re-open."""
+        # First session: save + capture
+        store1 = MemoryStore(store_dir)
+        store1.save(
+            key="framework",
+            value="FastAPI for HTTP endpoints",
+            tier="architectural",
+            source="human",
+        )
+        orch1 = RecallOrchestrator(store1)
+        new_keys = orch1.capture("We decided to adopt GraphQL alongside REST for the public API.")
+        assert len(new_keys) > 0
+        store1.close()
+
+        # Second session: verify persisted + recallable
+        store2 = MemoryStore(store_dir)
+        for key in new_keys:
+            entry = store2.get(key)
+            assert entry is not None, f"Entry {key!r} not found after restart"
+
+        orch2 = RecallOrchestrator(store2)
+        result = orch2.recall("GraphQL public API REST")
+        recalled_keys = [m["key"] for m in result.memories]
+        assert any(k in recalled_keys for k in new_keys), (
+            f"Captured keys {new_keys} not recallable after restart: {recalled_keys}"
+        )
+        store2.close()
+
+    def test_workspace_import_then_recall_capture(self, tmp_path: Path, store: MemoryStore) -> None:
+        """Full workspace import → recall → capture simulating OpenClaw session."""
+        # Set up workspace
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / "MEMORY.md").write_text(
+            "# Architecture\nMicroservices with event-driven communication.\n\n"
+            "### Deploy Pattern\nBlue-green deployments on Kubernetes.\n",
+            encoding="utf-8",
+        )
+        mem_dir = workspace / "memory"
+        mem_dir.mkdir()
+        (mem_dir / "2026-03-20.md").write_text(
+            "Discussed scaling strategy for Q2.", encoding="utf-8"
+        )
+
+        # Bootstrap: import workspace
+        result = import_openclaw_workspace(workspace, store)
+        assert result["memory_md"] == 2
+        assert result["daily_notes"] == 1
+
+        # Ingest hook: user asks about architecture
+        orch = RecallOrchestrator(store)
+        recall_result = orch.recall("microservices architecture deployment")
+        assert recall_result.memory_count > 0
+
+        # AfterTurn hook: capture new facts
+        new_keys = orch.capture(
+            "We decided to migrate from blue-green to canary deployments. "
+            "Key decision: use Istio service mesh for traffic splitting."
+        )
+        assert len(new_keys) > 0
+
+        # Verify: all captured entries accessible
+        for key in new_keys:
+            assert store.get(key) is not None
