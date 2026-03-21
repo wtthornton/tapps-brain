@@ -107,6 +107,7 @@ class MemoryStore:
         embedding_provider: EmbeddingProvider | None = None,
         write_rules: Any = None,  # noqa: ANN401
         lookup_engine: Any = None,  # noqa: ANN401
+        profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
     ) -> None:
         self._project_root = project_root
         self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
@@ -117,6 +118,9 @@ class MemoryStore:
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
         self._metrics = MetricsCollector()
+
+        # EPIC-010: resolve and store the active profile
+        self._profile = self._resolve_profile(project_root, profile)
 
         # Cold-start: load all entries into memory
         self._entries: dict[str, MemoryEntry] = {}
@@ -146,6 +150,42 @@ class MemoryStore:
     def set_consolidation_config(self, config: ConsolidationConfig) -> None:
         """Update the consolidation configuration."""
         self._consolidation_config = config
+
+    @staticmethod
+    def _resolve_profile(project_root: Path, profile: Any) -> Any:  # noqa: ANN401
+        """Resolve the active memory profile (EPIC-010).
+
+        When *profile* is an explicit ``MemoryProfile``, use it directly.
+        Otherwise, attempt resolution from project/user/built-in defaults.
+        Falls back gracefully to ``None`` if the profile module isn't
+        available or no profile files exist.
+        """
+        if profile is not None:
+            return profile
+        try:
+            from tapps_brain.profile import resolve_profile as _resolve
+
+            return _resolve(project_root)
+        except Exception:
+            return None
+
+    @property
+    def profile(self) -> Any:  # noqa: ANN401
+        """Return the active ``MemoryProfile``, or ``None``."""
+        return self._profile
+
+    def _get_decay_config(self) -> Any:  # noqa: ANN401
+        """Return a ``DecayConfig`` derived from the active profile (EPIC-010)."""
+        if self._profile is not None:
+            try:
+                from tapps_brain.decay import decay_config_from_profile
+
+                return decay_config_from_profile(self._profile)
+            except Exception:
+                pass
+        from tapps_brain.decay import DecayConfig
+
+        return DecayConfig()
 
     # ------------------------------------------------------------------
     # CRUD operations
@@ -217,10 +257,21 @@ class MemoryStore:
         with self._lock:
             existing = self._entries.get(key)
 
+            # EPIC-010: Accept profile layer names as tier values.
+            # Try MemoryTier enum first; if it fails, accept the raw
+            # string when the active profile defines a layer with that name.
+            try:
+                tier_val: MemoryTier | str = MemoryTier(tier)
+            except ValueError:
+                if self._profile is not None and tier in self._profile.layer_names:
+                    tier_val = tier  # type: ignore[assignment]
+                else:
+                    tier_val = MemoryTier(tier)  # Raise original error
+
             entry = MemoryEntry(
                 key=key,
                 value=value,
-                tier=MemoryTier(tier),
+                tier=tier_val,
                 confidence=confidence,
                 source=MemorySource(source),
                 source_agent=source_agent,
@@ -491,19 +542,56 @@ class MemoryStore:
         Raises:
             KeyError: If the entry does not exist.
         """
-        from tapps_brain.decay import DecayConfig
         from tapps_brain.reinforcement import reinforce as _reinforce
+
+        decay_cfg = self._get_decay_config()
 
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
                 raise KeyError(key)
 
-            updates = _reinforce(entry, DecayConfig(), confidence_boost=confidence_boost)
+            updates = _reinforce(entry, decay_cfg, confidence_boost=confidence_boost)
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated
 
         self._persistence.save(updated)
+
+        # EPIC-010: Check promotion after reinforcement
+        if self._profile is not None:
+            try:
+                from tapps_brain.promotion import PromotionEngine
+
+                engine = PromotionEngine(decay_cfg)
+                target_tier = engine.check_promotion(updated, self._profile)
+                if target_tier is not None:
+                    old_tier = str(updated.tier)
+                    promoted = updated.model_copy(
+                        update={"tier": target_tier, "updated_at": _utc_now_iso()}
+                    )
+                    with self._lock:
+                        self._entries[key] = promoted
+                    self._persistence.save(promoted)
+                    self._persistence.append_audit(
+                        action="promote",
+                        key=key,
+                        extra={
+                            "from_tier": old_tier,
+                            "to_tier": target_tier,
+                            "access_count": updated.access_count,
+                            "reinforce_count": updated.reinforce_count,
+                        },
+                    )
+                    logger.info(
+                        "memory_promoted",
+                        key=key,
+                        from_tier=old_tier,
+                        to_tier=target_tier,
+                    )
+                    return promoted
+            except Exception:
+                logger.debug("promotion_check_failed", key=key, exc_info=True)
+
         return updated
 
     # ------------------------------------------------------------------
@@ -702,7 +790,7 @@ class MemoryStore:
 
         # Create the new entry
         new_kwargs: dict[str, Any] = {
-            "tier": old_entry.tier.value,
+            "tier": str(old_entry.tier),
             "source": old_entry.source.value,
             "source_agent": old_entry.source_agent,
             "scope": old_entry.scope.value,

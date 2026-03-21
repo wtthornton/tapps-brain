@@ -1,0 +1,118 @@
+profile:
+  name: "home-automation"
+  version: "1.0"
+  description: "Memory for home automation and IoT agents"
+
+  layers:
+    - name: "household-profile"
+      description: "Residents, preferences, allergies, routines, permanent config"
+      half_life_days: 365
+      decay_model: "power_law"
+      decay_exponent: 0.5
+      confidence_floor: 0.10
+      importance_tags:
+        safety: 3.0
+        allergy: 3.0
+        medical: 3.0
+      promotion_to: null
+      demotion_to: "learned-patterns"
+
+    - name: "learned-patterns"
+      description: "Behavioral patterns, energy usage, schedule regularities"
+      half_life_days: 60
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        energy: 1.3
+        comfort: 1.2
+      promotion_to: "household-profile"
+      promotion_threshold:
+        min_access_count: 20
+        min_age_days: 30
+        min_confidence: 0.8
+      demotion_to: "recent-events"
+
+    - name: "recent-events"
+      description: "Recent device events, anomalies, guest visits, weather"
+      half_life_days: 7
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        anomaly: 2.0
+        maintenance: 1.5
+        guest: 1.3
+      promotion_to: "learned-patterns"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 3
+        min_confidence: 0.5
+      demotion_to: "transient"
+
+    - name: "future-events"
+      description: "Scheduled events, reminders, maintenance due dates"
+      half_life_days: 90
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        maintenance: 1.5
+        recurring: 1.3
+      promotion_to: "learned-patterns"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 14
+        min_confidence: 0.5
+      demotion_to: "transient"
+
+    - name: "transient"
+      description: "Momentary sensor readings, door open/close, motion events"
+      half_life_days: 1
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.0
+      promotion_to: "recent-events"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 1
+        min_confidence: 0.3
+      demotion_to: null
+
+  scoring:
+    relevance: 0.30
+    confidence: 0.20
+    recency: 0.35
+    frequency: 0.15
+    bm25_norm_k: 5.0
+    frequency_cap: 20
+
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 1
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 2000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 750
+    max_key_length: 128
+    max_value_length: 4096
+    max_tags: 10

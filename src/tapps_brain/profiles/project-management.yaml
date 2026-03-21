@@ -1,0 +1,102 @@
+profile:
+  name: "project-management"
+  version: "1.0"
+  description: "Memory for project management and coordination agents"
+
+  layers:
+    - name: "decisions"
+      description: "Approved decisions, strategic direction, stakeholder commitments"
+      half_life_days: 180
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        approved: 2.0
+        stakeholder: 1.5
+        budget: 1.5
+      promotion_to: null
+      demotion_to: "plans"
+
+    - name: "plans"
+      description: "Active plans, milestones, dependencies, timelines"
+      half_life_days: 45
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        deadline: 1.5
+        blocker: 2.0
+        risk: 1.5
+      promotion_to: "decisions"
+      promotion_threshold:
+        min_access_count: 10
+        min_age_days: 30
+        min_confidence: 0.7
+      demotion_to: "activity"
+
+    - name: "activity"
+      description: "Recent updates, status changes, meeting notes, action items"
+      half_life_days: 14
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        action-item: 1.3
+        blocker: 1.5
+      promotion_to: "plans"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 7
+        min_confidence: 0.5
+      demotion_to: "noise"
+
+    - name: "noise"
+      description: "FYI updates, casual observations, transient context"
+      half_life_days: 5
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.05
+      promotion_to: "activity"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 2
+        min_confidence: 0.4
+      demotion_to: null
+
+  scoring:
+    relevance: 0.35
+    confidence: 0.25
+    recency: 0.25
+    frequency: 0.15
+    bm25_norm_k: 5.0
+    frequency_cap: 20
+
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 7
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 2000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 500
+    max_key_length: 128
+    max_value_length: 4096
+    max_tags: 10

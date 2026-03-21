@@ -69,6 +69,11 @@ MAX_VALUE_LENGTH: int = 4096
 MAX_TAGS: int = 10
 
 
+def tier_str(tier: MemoryTier | str) -> str:
+    """Return the string value of a tier, handling both MemoryTier enum and str."""
+    return tier.value if isinstance(tier, MemoryTier) else str(tier)
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -79,7 +84,7 @@ class MemoryEntry(BaseModel):
 
     key: str = Field(description="Unique slug identifier (max 128 chars).")
     value: str = Field(description="Memory content (max 4096 chars).")
-    tier: MemoryTier = Field(default=MemoryTier.pattern, description="Decay classification.")
+    tier: MemoryTier | str = Field(default=MemoryTier.pattern, description="Decay classification.")
     confidence: float = Field(
         default=-1.0,
         ge=-1.0,

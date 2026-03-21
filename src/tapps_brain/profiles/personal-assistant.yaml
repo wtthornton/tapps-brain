@@ -1,0 +1,97 @@
+profile:
+  name: "personal-assistant"
+  version: "1.0"
+  description: "Memory for personal AI assistants (OpenClaw, general agents)"
+
+  layers:
+    - name: "identity"
+      description: "User identity, core preferences, long-term goals"
+      half_life_days: 365
+      decay_model: "power_law"
+      decay_exponent: 0.5
+      confidence_floor: 0.10
+      importance_tags:
+        preference: 1.5
+        identity: 2.0
+      promotion_to: null
+      demotion_to: "long-term"
+
+    - name: "long-term"
+      description: "Durable facts, relationships, learned preferences"
+      half_life_days: 90
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        important: 1.5
+        recurring: 1.3
+      promotion_to: "identity"
+      promotion_threshold:
+        min_access_count: 20
+        min_age_days: 60
+        min_confidence: 0.8
+      demotion_to: "short-term"
+
+    - name: "short-term"
+      description: "Recent conversations, active tasks, temporary notes"
+      half_life_days: 7
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      promotion_to: "long-term"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 3
+        min_confidence: 0.5
+      demotion_to: "ephemeral"
+
+    - name: "ephemeral"
+      description: "Momentary context, current conversation state"
+      half_life_days: 1
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.0
+      promotion_to: "short-term"
+      promotion_threshold:
+        min_access_count: 2
+        min_age_days: 1
+        min_confidence: 0.3
+      demotion_to: null
+
+  scoring:
+    relevance: 0.30
+    confidence: 0.20
+    recency: 0.30
+    frequency: 0.20
+    bm25_norm_k: 5.0
+    frequency_cap: 20
+
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 7
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 3000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 500
+    max_key_length: 128
+    max_value_length: 4096
+    max_tags: 10

@@ -268,16 +268,19 @@ class TestMemoryRetriever:
 
 class TestScoringHelpers:
     def test_normalize_relevance_zero(self) -> None:
-        assert MemoryRetriever._normalize_relevance(0.0) == 0.0
+        retriever = MemoryRetriever()
+        assert retriever._normalize_relevance(0.0) == 0.0
 
     def test_normalize_relevance_positive(self) -> None:
         # BM25 normalization: score / (score + 5.0)
-        score = MemoryRetriever._normalize_relevance(5.0)
+        retriever = MemoryRetriever()
+        score = retriever._normalize_relevance(5.0)
         assert 0.0 < score < 1.0
         assert score == pytest.approx(0.5)
 
     def test_normalize_relevance_large(self) -> None:
-        score = MemoryRetriever._normalize_relevance(100.0)
+        retriever = MemoryRetriever()
+        score = retriever._normalize_relevance(100.0)
         assert score > 0.9
 
     def test_recency_score_recent(self) -> None:
@@ -291,12 +294,14 @@ class TestScoringHelpers:
         assert score < 0.1
 
     def test_frequency_score_zero(self) -> None:
+        retriever = MemoryRetriever()
         entry = _make_entry(access_count=0)
-        assert MemoryRetriever._frequency_score(entry) == 0.0
+        assert retriever._frequency_score(entry) == 0.0
 
     def test_frequency_score_capped(self) -> None:
+        retriever = MemoryRetriever()
         entry = _make_entry(access_count=100)
-        assert MemoryRetriever._frequency_score(entry) == 1.0
+        assert retriever._frequency_score(entry) == 1.0
 
 
 # ---------------------------------------------------------------------------

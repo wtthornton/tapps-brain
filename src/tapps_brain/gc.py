@@ -54,8 +54,27 @@ class GCResult(BaseModel):
 class MemoryGarbageCollector:
     """Archives stale memories from the active store."""
 
-    def __init__(self, config: DecayConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: DecayConfig | None = None,
+        *,
+        floor_retention_days: int | None = None,
+        session_expiry_days: int | None = None,
+        contradicted_threshold: float | None = None,
+    ) -> None:
         self._config = config or DecayConfig()
+        # EPIC-010: Allow profile-driven GC thresholds
+        self._floor_retention_days = (
+            floor_retention_days if floor_retention_days is not None else _FLOOR_RETENTION_DAYS
+        )
+        self._session_expiry_days = (
+            session_expiry_days if session_expiry_days is not None else _SESSION_EXPIRY_DAYS
+        )
+        self._contradicted_threshold = (
+            contradicted_threshold
+            if contradicted_threshold is not None
+            else _CONTRADICTED_ARCHIVE_THRESHOLD
+        )
 
     def identify_candidates(
         self,
@@ -86,17 +105,17 @@ class MemoryGarbageCollector:
         # Criterion 1: at floor confidence for extended period
         if effective <= self._config.confidence_floor:
             days_at_floor = self._days_at_floor(entry, now)
-            if days_at_floor >= _FLOOR_RETENTION_DAYS:
+            if days_at_floor >= self._floor_retention_days:
                 return True
 
         # Criterion 2: contradicted and low confidence
-        if entry.contradicted and effective < _CONTRADICTED_ARCHIVE_THRESHOLD:
+        if entry.contradicted and effective < self._contradicted_threshold:
             return True
 
         # Criterion 3: expired session-scoped memory
         if entry.scope == "session":
             days_since_update = _days_since_timestamp(entry.updated_at, now)
-            if days_since_update >= _SESSION_EXPIRY_DAYS:
+            if days_since_update >= self._session_expiry_days:
                 return True
 
         return False

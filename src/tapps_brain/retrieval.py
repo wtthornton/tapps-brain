@@ -96,6 +96,7 @@ class MemoryRetriever:
         self,
         config: DecayConfig | None = None,
         *,
+        scoring_config: object | None = None,  # ScoringConfig from profile (EPIC-010)
         semantic_enabled: bool = False,
         hybrid_config: object = None,
         reranker: Reranker | None = None,
@@ -116,6 +117,23 @@ class MemoryRetriever:
         self._retrieval_policy = retrieval_policy
         self._relations_enabled = relations_enabled
         self._expand_queries = expand_queries
+
+        # EPIC-010: use configurable scoring weights if provided
+        self._scoring_config = scoring_config
+        if scoring_config is not None:
+            self._w_relevance = getattr(scoring_config, "relevance", _W_RELEVANCE)
+            self._w_confidence = getattr(scoring_config, "confidence", _W_CONFIDENCE)
+            self._w_recency = getattr(scoring_config, "recency", _W_RECENCY)
+            self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
+            self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
+            self._bm25_norm_k = float(getattr(scoring_config, "bm25_norm_k", _BM25_NORM_K))
+        else:
+            self._w_relevance = _W_RELEVANCE
+            self._w_confidence = _W_CONFIDENCE
+            self._w_recency = _W_RECENCY
+            self._w_frequency = _W_FREQUENCY
+            self._frequency_cap = _FREQUENCY_CAP
+            self._bm25_norm_k = _BM25_NORM_K
 
     def search(
         self,
@@ -205,10 +223,10 @@ class MemoryRetriever:
             frequency = self._frequency_score(entry)
 
             composite = (
-                _W_RELEVANCE * relevance_norm
-                + _W_CONFIDENCE * eff_conf
-                + _W_RECENCY * recency
-                + _W_FREQUENCY * frequency
+                self._w_relevance * relevance_norm
+                + self._w_confidence * eff_conf
+                + self._w_recency * recency
+                + self._w_frequency * frequency
             )
 
             # Penalty for superseded entries included via include_superseded
@@ -598,17 +616,17 @@ class MemoryRetriever:
         overlap = len(query_words & entry_words)
         return overlap / len(query_words)
 
-    @staticmethod
-    def _normalize_relevance(raw_score: float) -> float:
+    def _normalize_relevance(self, raw_score: float) -> float:
         """Normalize relevance score to 0.0-1.0 range.
 
         Uses sigmoid normalization: ``score / (score + K)`` where
-        K=5.0, tuned for BM25 scores (typical range 0-15+).
-        A BM25 score of 5.0 maps to 0.5 normalized.
+        K defaults to 5.0, tuned for BM25 scores (typical range 0-15+).
+        A BM25 score of K maps to 0.5 normalized. K is configurable
+        via ``scoring_config.bm25_norm_k`` (EPIC-010).
         """
         if raw_score <= 0:
             return 0.0
-        return raw_score / (raw_score + _BM25_NORM_K)
+        return raw_score / (raw_score + self._bm25_norm_k)
 
     @staticmethod
     def _recency_score(entry: MemoryEntry, now: datetime) -> float:
@@ -622,7 +640,10 @@ class MemoryRetriever:
         days = max((now - updated).total_seconds() / 86400.0, 0.0)
         return 1.0 / (1.0 + days)
 
-    @staticmethod
-    def _frequency_score(entry: MemoryEntry) -> float:
-        """Compute access frequency score: ``min(1.0, access_count / 20)``."""
-        return min(1.0, entry.access_count / _FREQUENCY_CAP)
+    def _frequency_score(self, entry: MemoryEntry) -> float:
+        """Compute access frequency score: ``min(1.0, access_count / cap)``.
+
+        The frequency cap defaults to 20.0 and is configurable via
+        ``scoring_config.frequency_cap`` (EPIC-010).
+        """
+        return min(1.0, entry.access_count / self._frequency_cap)

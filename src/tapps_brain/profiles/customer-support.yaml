@@ -1,0 +1,101 @@
+profile:
+  name: "customer-support"
+  version: "1.0"
+  description: "Memory for customer support agents"
+
+  layers:
+    - name: "product-knowledge"
+      description: "Product features, pricing, policies, known issues"
+      half_life_days: 120
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        policy: 2.0
+        pricing: 1.5
+        known-issue: 1.5
+      promotion_to: null
+      demotion_to: "customer-patterns"
+
+    - name: "customer-patterns"
+      description: "Common issues, resolution playbooks, escalation triggers"
+      half_life_days: 60
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        escalation: 1.5
+        recurring: 1.3
+      promotion_to: "product-knowledge"
+      promotion_threshold:
+        min_access_count: 15
+        min_age_days: 30
+        min_confidence: 0.7
+      demotion_to: "interaction-history"
+
+    - name: "interaction-history"
+      description: "Recent customer interactions, open tickets, pending actions"
+      half_life_days: 14
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        vip: 2.0
+        escalated: 1.5
+      promotion_to: "customer-patterns"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 7
+        min_confidence: 0.5
+      demotion_to: "session-context"
+
+    - name: "session-context"
+      description: "Current conversation state, active ticket details"
+      half_life_days: 3
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.05
+      promotion_to: "interaction-history"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 1
+        min_confidence: 0.4
+      demotion_to: null
+
+  scoring:
+    relevance: 0.35
+    confidence: 0.25
+    recency: 0.15
+    frequency: 0.25
+    bm25_norm_k: 5.0
+    frequency_cap: 20
+
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 7
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 2000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 500
+    max_key_length: 128
+    max_value_length: 4096
+    max_tags: 10

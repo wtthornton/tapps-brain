@@ -1,0 +1,98 @@
+profile:
+  name: "research-knowledge"
+  version: "1.0"
+  description: "Memory for research and knowledge management agents"
+
+  layers:
+    - name: "established-facts"
+      description: "Verified findings, published results, confirmed hypotheses"
+      half_life_days: 365
+      decay_model: "power_law"
+      decay_exponent: 0.7
+      confidence_floor: 0.10
+      importance_tags:
+        verified: 2.0
+        published: 1.5
+        replicated: 2.0
+      promotion_to: null
+      demotion_to: "working-knowledge"
+
+    - name: "working-knowledge"
+      description: "Current hypotheses, draft findings, literature notes"
+      half_life_days: 60
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        promising: 1.3
+        cited: 1.5
+      promotion_to: "established-facts"
+      promotion_threshold:
+        min_access_count: 12
+        min_age_days: 30
+        min_confidence: 0.8
+      demotion_to: "observations"
+
+    - name: "observations"
+      description: "Raw observations, experiment notes, data points"
+      half_life_days: 21
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      promotion_to: "working-knowledge"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 7
+        min_confidence: 0.5
+      demotion_to: "scratch"
+
+    - name: "scratch"
+      description: "Quick notes, brainstorm ideas, tentative thoughts"
+      half_life_days: 3
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.0
+      promotion_to: "observations"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 1
+        min_confidence: 0.3
+      demotion_to: null
+
+  scoring:
+    relevance: 0.50
+    confidence: 0.25
+    recency: 0.10
+    frequency: 0.15
+    bm25_norm_k: 5.0
+    frequency_cap: 20
+
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 7
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 2000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 1000
+    max_key_length: 128
+    max_value_length: 8192
+    max_tags: 10

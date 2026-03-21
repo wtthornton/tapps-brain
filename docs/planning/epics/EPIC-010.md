@@ -1,7 +1,7 @@
 ---
 id: EPIC-010
 title: "Configurable memory profiles — pluggable layers and scoring"
-status: planned
+status: done
 priority: critical
 created: 2026-03-21
 target_date: 2026-05-01

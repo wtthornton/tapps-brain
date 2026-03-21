@@ -70,6 +70,7 @@ include = ["src/tapps_brain/"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tapps_brain"]
+artifacts = ["src/tapps_brain/profiles/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

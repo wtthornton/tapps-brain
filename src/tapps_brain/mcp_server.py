@@ -112,7 +112,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             {
                 "status": "saved",
                 "key": result.key,
-                "tier": result.tier.value,
+                "tier": str(result.tier),
                 "confidence": result.confidence,
             }
         )
@@ -160,7 +160,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 {
                     "key": e.key,
                     "value": e.value,
-                    "tier": e.tier.value,
+                    "tier": str(e.tier),
                     "confidence": e.confidence,
                     "tags": e.tags,
                 }
@@ -191,7 +191,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 {
                     "key": e.key,
                     "value": e.value[:200],
-                    "tier": e.tier.value,
+                    "tier": str(e.tier),
                     "confidence": e.confidence,
                     "tags": e.tags,
                     "scope": e.scope.value,
@@ -308,7 +308,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 "status": "superseded",
                 "old_key": old_key,
                 "new_key": entry.key,
-                "tier": entry.tier.value,
+                "tier": str(entry.tier),
                 "confidence": entry.confidence,
             }
         )
@@ -334,7 +334,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 {
                     "key": e.key,
                     "value": e.value[:200],
-                    "tier": e.tier.value,
+                    "tier": str(e.tier),
                     "confidence": e.confidence,
                     "valid_at": e.valid_at,
                     "invalid_at": e.invalid_at,
@@ -507,7 +507,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             for entry in entries[:10]:
                 truncated = entry.value[:preview_len]
                 suffix = "…" if len(entry.value) > preview_len else ""
-                lines.append(f"  - [{entry.tier.value}] {entry.key}: {truncated}{suffix}")
+                lines.append(f"  - [{entry.tier!s}] {entry.key}: {truncated}{suffix}")
         else:
             lines.append("The store is empty.")
 
@@ -838,6 +838,66 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 "errors": errors,
             }
         )
+
+    # ------------------------------------------------------------------
+    # Profile tools (EPIC-010)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def profile_info() -> str:
+        """Return the active profile name, layers, and scoring config."""
+        profile = store.profile
+        if profile is None:
+            return json.dumps({"error": "no_profile", "message": "No profile loaded."})
+
+        return json.dumps({
+            "name": profile.name,
+            "description": profile.description,
+            "version": profile.version,
+            "layers": [
+                {
+                    "name": la.name,
+                    "half_life_days": la.half_life_days,
+                    "decay_model": la.decay_model,
+                    "confidence_floor": la.confidence_floor,
+                }
+                for la in profile.layers
+            ],
+            "scoring": {
+                "relevance": profile.scoring.relevance,
+                "confidence": profile.scoring.confidence,
+                "recency": profile.scoring.recency,
+                "frequency": profile.scoring.frequency,
+            },
+        })
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def profile_switch(name: str) -> str:
+        """Switch to a different built-in memory profile.
+
+        Args:
+            name: Name of the built-in profile (e.g. 'personal-assistant').
+        """
+        try:
+            from tapps_brain.profile import get_builtin_profile
+
+            profile = get_builtin_profile(name)
+            # Note: This only takes effect for future operations within this session.
+            # For permanent change, use the CLI: tapps-brain profile set <name>
+            store._profile = profile
+            return json.dumps({
+                "switched": True,
+                "profile": profile.name,
+                "layer_count": len(profile.layers),
+            })
+        except FileNotFoundError:
+            from tapps_brain.profile import list_builtin_profiles
+
+            return json.dumps({
+                "error": "profile_not_found",
+                "message": f"No built-in profile '{name}'.",
+                "available": list_builtin_profiles(),
+            })
 
     # ------------------------------------------------------------------
     # Attach store to server for testing access

@@ -388,7 +388,7 @@ class MemoryPersistence:
         values: tuple[Any, ...] = (
             entry.key,
             entry.value,
-            entry.tier.value,
+            entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier),
             entry.confidence,
             entry.source.value,
             entry.source_agent,
@@ -801,6 +801,27 @@ class MemoryPersistence:
         if not tokens:
             return ""
         return " ".join(f'"{t}"' for t in tokens)
+
+    def append_audit(
+        self,
+        action: str,
+        key: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Append an entry to the JSONL audit log with optional extra fields (EPIC-010)."""
+        record: dict[str, Any] = {
+            "action": action,
+            "key": key,
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+        }
+        if extra:
+            record.update(extra)
+        try:
+            with self._audit_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self._maybe_truncate_audit()
+        except OSError:
+            logger.debug("audit_log_write_failed", key=key, action=action)
 
     def _audit_log(self, action: str, key: str) -> None:
         """Append an entry to the JSONL audit log."""

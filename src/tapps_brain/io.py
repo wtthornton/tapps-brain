@@ -41,8 +41,8 @@ GroupByOption = Literal["tier", "tag", "none"]
 def _entry_to_frontmatter(entry: MemoryEntry) -> str:
     """Render a MemoryEntry as Obsidian-style YAML frontmatter."""
     tags = entry.tags.copy()
-    if entry.tier.value not in tags:
-        tags.append(entry.tier.value)
+    if str(entry.tier) not in tags:
+        tags.append(str(entry.tier))
     lines = [
         "---",
         f"tags: {json.dumps(tags)}",
@@ -50,7 +50,7 @@ def _entry_to_frontmatter(entry: MemoryEntry) -> str:
         f"updated_at: {entry.updated_at!r}",
         f"confidence: {entry.confidence:.2f}",
         f"source: {entry.source.value!r}",
-        f"tier: {entry.tier.value!r}",
+        f"tier: {str(entry.tier)!r}",
         "---",
     ]
     return "\n".join(lines)
@@ -106,7 +106,7 @@ def export_to_markdown(
     elif group_by == "tier":
         by_tier: dict[str, list[MemoryEntry]] = {}
         for e in entries:
-            t = e.tier.value
+            t = str(e.tier)
             by_tier.setdefault(t, []).append(e)
         for tier_name in ("architectural", "pattern", "context"):
             tier_entries = by_tier.get(tier_name, [])
@@ -180,7 +180,7 @@ def export_memories(
 
     # Apply filters
     if tier is not None:
-        entries = [e for e in entries if e.tier.value == tier]
+        entries = [e for e in entries if str(e.tier) == tier]
     if scope is not None:
         entries = [e for e in entries if e.scope.value == scope]
     if min_confidence is not None:
@@ -310,7 +310,7 @@ def import_memories(
         store.save(
             key=entry.key,
             value=entry.value,
-            tier=entry.tier.value,
+            tier=str(entry.tier),
             source=entry.source.value,
             source_agent=source_agent,
             scope=entry.scope.value,

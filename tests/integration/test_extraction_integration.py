@@ -47,7 +47,7 @@ class TestIngestContextIntegration:
         assert len(keys) == 1
         entry = store.get(keys[0])
         assert entry is not None
-        assert entry.tier.value == "architectural"
+        assert str(entry.tier) == "architectural"
         assert "PostgreSQL" in entry.value
 
     def test_multiple_decision_patterns_create_multiple_entries(self, store: MemoryStore) -> None:
@@ -103,6 +103,6 @@ class TestIngestContextIntegration:
         store2 = MemoryStore(tmp_path)
         entry = store2.get(key)
         assert entry is not None
-        assert entry.tier.value == "architectural"
+        assert str(entry.tier) == "architectural"
         assert "PostgreSQL" in entry.value
         store2.close()

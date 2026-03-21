@@ -43,10 +43,13 @@ memory_app = typer.Typer(help="Query and inspect individual memories.", no_args_
 federation_app = typer.Typer(help="Manage cross-project federation.", no_args_is_help=True)
 maintenance_app = typer.Typer(help="Run store maintenance operations.", no_args_is_help=True)
 
+profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
+
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
 app.add_typer(federation_app, name="federation")
 app.add_typer(maintenance_app, name="maintenance")
+app.add_typer(profile_app, name="profile")
 
 # ---------------------------------------------------------------------------
 # Global options
@@ -106,7 +109,7 @@ def _entry_to_row(entry: Any) -> dict[str, Any]:  # noqa: ANN401
     eff_conf, _ = get_effective_confidence(entry, DecayConfig())
     row: dict[str, Any] = {
         "key": entry.key,
-        "tier": entry.tier.value,
+        "tier": str(entry.tier),
         "confidence": f"{entry.confidence:.2f}",
         "effective": f"{eff_conf:.2f}",
         "scope": entry.scope.value,
@@ -287,7 +290,7 @@ def memory_show(
             eff_conf, _ = get_effective_confidence(entry, DecayConfig())
             typer.echo(f"Key:           {entry.key}")
             typer.echo(f"Value:         {entry.value}")
-            typer.echo(f"Tier:          {entry.tier.value}")
+            typer.echo(f"Tier:          {entry.tier!s}")
             typer.echo(f"Confidence:    {entry.confidence:.2f}")
             typer.echo(f"Effective:     {eff_conf:.2f}")
             typer.echo(f"Source:        {entry.source.value}")
@@ -841,6 +844,159 @@ def recall_cmd(
                 typer.echo(result.memory_section)
     finally:
         store.close()
+
+
+# ===================================================================
+# PROFILE COMMANDS (EPIC-010)
+# ===================================================================
+
+
+@profile_app.command("show")
+def profile_show(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show the active memory profile."""
+    from tapps_brain.profile import resolve_profile
+
+    root = _resolve_project_dir(project_dir)
+    profile = resolve_profile(root)
+
+    data = {
+        "name": profile.name,
+        "description": profile.description,
+        "version": profile.version,
+        "layer_count": len(profile.layers),
+        "layers": [
+            {
+                "name": la.name,
+                "half_life_days": la.half_life_days,
+                "decay_model": la.decay_model,
+            }
+            for la in profile.layers
+        ],
+    }
+    if as_json:
+        _output(data, as_json=True)
+    else:
+        typer.echo(f"Profile:       {profile.name}")
+        typer.echo(f"Description:   {profile.description}")
+        typer.echo(f"Version:       {profile.version}")
+        typer.echo(f"Layers ({len(profile.layers)}):")
+        for la in profile.layers:
+            typer.echo(f"  - {la.name}: {la.half_life_days}d ({la.decay_model})")
+
+
+@profile_app.command("list")
+def profile_list(
+    as_json: JsonFlag = False,
+) -> None:
+    """List available built-in profiles."""
+    from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
+
+    names = list_builtin_profiles()
+    profiles = []
+    for name in names:
+        p = get_builtin_profile(name)
+        profiles.append({
+            "name": p.name,
+            "description": p.description,
+            "layers": len(p.layers),
+        })
+
+    if as_json:
+        _output(profiles, as_json=True)
+    else:
+        typer.echo("Available profiles:")
+        for p in profiles:
+            typer.echo(f"  {p['name']:25s} ({p['layers']} layers) — {p['description']}")
+
+
+@profile_app.command("set")
+def profile_set(
+    name: str,
+    project_dir: ProjectDir = None,
+) -> None:
+    """Set the active profile for this project."""
+    import yaml
+
+    from tapps_brain.profile import get_builtin_profile
+
+    # Verify profile exists
+    profile = get_builtin_profile(name)
+
+    root = _resolve_project_dir(project_dir)
+    profile_dir = root / ".tapps-brain"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    profile_path = profile_dir / "profile.yaml"
+
+    # Write a minimal profile YAML that references the built-in
+    data = {"profile": {"name": name, "extends": name, "layers": []}}
+    profile_path.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
+
+    typer.echo(f"Profile set to '{profile.name}' at {profile_path}")
+
+
+@profile_app.command("layers")
+def profile_layers(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show detailed layer information for the active profile."""
+    from tapps_brain.profile import resolve_profile
+
+    root = _resolve_project_dir(project_dir)
+    profile = resolve_profile(root)
+
+    layers_data = []
+    for la in profile.layers:
+        layer_info: dict[str, Any] = {
+            "name": la.name,
+            "description": la.description,
+            "half_life_days": la.half_life_days,
+            "decay_model": la.decay_model,
+            "confidence_floor": la.confidence_floor,
+        }
+        if la.promotion_to:
+            layer_info["promotion_to"] = la.promotion_to
+        if la.promotion_threshold:
+            layer_info["promotion_threshold"] = {
+                "min_access_count": la.promotion_threshold.min_access_count,
+                "min_age_days": la.promotion_threshold.min_age_days,
+                "min_confidence": la.promotion_threshold.min_confidence,
+            }
+        if la.demotion_to:
+            layer_info["demotion_to"] = la.demotion_to
+        if la.importance_tags:
+            layer_info["importance_tags"] = la.importance_tags
+        layers_data.append(layer_info)
+
+    if as_json:
+        _output(layers_data, as_json=True)
+    else:
+        typer.echo(f"Profile: {profile.name}")
+        typer.echo(f"Layers ({len(profile.layers)}):")
+        for la_info in layers_data:
+            typer.echo(f"\n  [{la_info['name']}]")
+            typer.echo(f"    Description:      {la_info.get('description', '')}")
+            typer.echo(f"    Half-life:        {la_info['half_life_days']} days")
+            typer.echo(f"    Decay model:      {la_info['decay_model']}")
+            typer.echo(f"    Confidence floor: {la_info['confidence_floor']}")
+            if "promotion_to" in la_info:
+                pt = la_info.get("promotion_threshold", {})
+                typer.echo(
+                    f"    Promotion:        → {la_info['promotion_to']} "
+                    f"(access≥{pt.get('min_access_count', '?')}, "
+                    f"age≥{pt.get('min_age_days', '?')}d, "
+                    f"conf≥{pt.get('min_confidence', '?')})"
+                )
+            if "demotion_to" in la_info:
+                typer.echo(f"    Demotion:         → {la_info['demotion_to']}")
+            if "importance_tags" in la_info:
+                tags_str = ", ".join(
+                    f"{k}={v}x" for k, v in la_info["importance_tags"].items()
+                )
+                typer.echo(f"    Importance tags:  {tags_str}")
 
 
 # ---------------------------------------------------------------------------
