@@ -900,3 +900,60 @@ class TestFindRelated:
             subject="ServiceA", predicate="uses", object_entity="ServiceB"
         )
         assert len(results) == 1
+
+
+class TestStoreMetrics:
+    """Verify metrics instrumentation of save/get/search (STORY-007.2)."""
+
+    def test_save_increments_counter(self, store: MemoryStore) -> None:
+        for i in range(5):
+            store.save(key=f"k{i}", value=f"value {i}")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.save", 0) == 5
+
+    def test_save_records_latency(self, store: MemoryStore) -> None:
+        store.save(key="lat", value="latency test")
+        snap = store.get_metrics()
+        assert "store.save_ms" in snap.histograms
+        assert snap.histograms["store.save_ms"].count == 1
+        assert snap.histograms["store.save_ms"].min > 0
+
+    def test_get_hit_miss_counters(self, store: MemoryStore) -> None:
+        store.save(key="exists", value="hello")
+        store._metrics.reset()
+        store.get("exists")
+        store.get("missing")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.get", 0) == 2
+        assert snap.counters.get("store.get.hit", 0) == 1
+        assert snap.counters.get("store.get.miss", 0) == 1
+
+    def test_get_records_latency(self, store: MemoryStore) -> None:
+        store.save(key="x", value="y")
+        store._metrics.reset()
+        store.get("x")
+        snap = store.get_metrics()
+        assert "store.get_ms" in snap.histograms
+
+    def test_search_counters(self, store: MemoryStore) -> None:
+        store.save(key="doc1", value="Python is great")
+        store.save(key="doc2", value="Python programming language")
+        store._metrics.reset()
+        results = store.search("Python")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.search", 0) == 1
+        assert snap.counters.get("store.search.results", 0) == len(results)
+
+    def test_search_records_latency(self, store: MemoryStore) -> None:
+        store.save(key="s", value="searchable content")
+        store._metrics.reset()
+        store.search("searchable")
+        snap = store.get_metrics()
+        assert "store.search_ms" in snap.histograms
+
+    def test_hundred_saves_counter(self, store: MemoryStore) -> None:
+        """100 saves should produce count=100."""
+        for i in range(100):
+            store.save(key=f"bulk-{i}", value=f"value {i}")
+        snap = store.get_metrics()
+        assert snap.counters["store.save"] == 100

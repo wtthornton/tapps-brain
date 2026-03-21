@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from tapps_brain.embeddings import EmbeddingProvider
 
-from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, StoreHealthReport
+from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
 from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.safety import check_content_safety
 
@@ -209,6 +209,10 @@ class MemoryStore:
         if not safety.safe and safety.sanitised_content:
             value = safety.sanitised_content
 
+        self._metrics.increment("store.save")
+        _timer = MetricsTimer(self._metrics, "store.save_ms")
+        _timer.__enter__()
+
         now = _utc_now_iso()
         with self._lock:
             existing = self._entries.get(key)
@@ -272,6 +276,7 @@ class MemoryStore:
         ):
             self._maybe_consolidate(entry)
 
+        _timer.__exit__(None, None, None)
         return entry
 
     def _maybe_consolidate(self, entry: MemoryEntry) -> None:
@@ -321,27 +326,31 @@ class MemoryStore:
 
         Updates ``last_accessed`` and ``access_count`` on read.
         """
-        with self._lock:
-            if scope is not None and branch is not None:
-                entry = self._resolve_scope(key, scope, branch)
-            else:
-                entry = self._entries.get(key)
+        self._metrics.increment("store.get")
+        with MetricsTimer(self._metrics, "store.get_ms"):
+            with self._lock:
+                if scope is not None and branch is not None:
+                    entry = self._resolve_scope(key, scope, branch)
+                else:
+                    entry = self._entries.get(key)
 
-            if entry is None:
-                return None
+                if entry is None:
+                    self._metrics.increment("store.get.miss")
+                    return None
 
-            # Update access metadata
-            now = _utc_now_iso()
-            updated = entry.model_copy(
-                update={
-                    "last_accessed": now,
-                    "access_count": entry.access_count + 1,
-                }
-            )
-            self._entries[updated.key] = updated
+                # Update access metadata
+                now = _utc_now_iso()
+                updated = entry.model_copy(
+                    update={
+                        "last_accessed": now,
+                        "access_count": entry.access_count + 1,
+                    }
+                )
+                self._entries[updated.key] = updated
 
-        self._persistence.save(updated)
-        return updated
+            self._metrics.increment("store.get.hit")
+            self._persistence.save(updated)
+            return updated
 
     def list_all(
         self,
@@ -405,20 +414,23 @@ class MemoryStore:
                 When ``None`` (default), temporally invalid entries are excluded
                 using the current time.
         """
-        results = self._persistence.search(query)
+        self._metrics.increment("store.search")
+        with MetricsTimer(self._metrics, "store.search_ms"):
+            results = self._persistence.search(query)
 
-        if tier is not None:
-            results = [r for r in results if r.tier == tier]
-        if scope is not None:
-            results = [r for r in results if r.scope == scope]
-        if tags:
-            tag_set = set(tags)
-            results = [r for r in results if tag_set.intersection(r.tags)]
+            if tier is not None:
+                results = [r for r in results if r.tier == tier]
+            if scope is not None:
+                results = [r for r in results if r.scope == scope]
+            if tags:
+                tag_set = set(tags)
+                results = [r for r in results if tag_set.intersection(r.tags)]
 
-        # Temporal filtering (EPIC-004)
-        results = [r for r in results if r.is_temporally_valid(as_of)]
+            # Temporal filtering (EPIC-004)
+            results = [r for r in results if r.is_temporally_valid(as_of)]
 
-        return results
+            self._metrics.increment("store.search.results", len(results))
+            return results
 
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
         """Partial update of specific fields on an existing entry.

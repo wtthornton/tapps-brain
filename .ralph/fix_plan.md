@@ -72,7 +72,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 **Already in tree:** `metrics.py` (MetricsCollector, snapshots, health), `audit.py` (AuditReader), `store.health()`, `store.get_metrics()`. **Not wired:** counters/histograms not populated from store operations. No OTel exporter.
 
 #### 007-A: Instrument save/get/search paths
-- [ ] In `store.py`, add `self._metrics.increment()` and `self._metrics.observe()` calls to `save()`, `get()`, and `search()`. Add unit tests verifying counters increment. Commit: `feat(story-007.2): instrument save/get/search metrics`
+- [x] In `store.py`, add `self._metrics.increment()` and `self._metrics.observe()` calls to `save()`, `get()`, and `search()`. Add unit tests verifying counters increment. Commit: `feat(story-007.2): instrument save/get/search metrics`
 
 #### 007-B: Instrument recall/supersede/consolidate/GC paths
 - [ ] In `store.py`, add metrics to `recall()`, `supersede()`, consolidate, and `gc()`. Add unit tests. Commit: `feat(story-007.2): instrument lifecycle operation metrics`
