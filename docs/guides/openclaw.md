@@ -2,9 +2,154 @@
 
 Persistent cross-session memory for your OpenClaw agents. 21 MCP tools, zero LLM dependency, works offline.
 
+There are two ways to integrate tapps-brain with OpenClaw:
+
+| Method | Best for | Setup |
+|--------|----------|-------|
+| **ContextEngine plugin** | Automatic recall/capture, zero-config | `npm install` + `plugin.json` |
+| **MCP sidecar** | Manual control, custom workflows | `pip install` + `openclaw.json` |
+
+The **ContextEngine plugin** (recommended) handles everything automatically — bootstrap,
+recall, capture, and pre-compaction flush — with no agent prompting required. The **MCP
+sidecar** gives you direct access to all 21 tools for custom integrations.
+
 ---
 
-## Quick Start (5 minutes)
+## Option A: ContextEngine Plugin (recommended)
+
+### 1. Install
+
+**Prerequisites:** Node 18+, Python 3.12+, tapps-brain with MCP support.
+
+```bash
+# Install the Python backend
+pip install tapps-brain[mcp]
+
+# Install the OpenClaw plugin
+cd openclaw-plugin
+npm install
+npm run build
+```
+
+### 2. Register the plugin
+
+Copy `openclaw-plugin/` into your OpenClaw plugins directory (or symlink it), then add
+the plugin to your OpenClaw config:
+
+```json
+{
+  "plugins": {
+    "tapps-brain": {
+      "path": "./plugins/tapps-brain",
+      "slot": "ContextEngine",
+      "settings": {
+        "mcpCommand": "tapps-brain-mcp",
+        "tokenBudget": 2000,
+        "captureRateLimit": 3
+      }
+    }
+  }
+}
+```
+
+### 3. How it works
+
+The plugin registers four hooks that run automatically:
+
+#### Bootstrap
+
+On startup, the plugin spawns `tapps-brain-mcp` as a child process (JSON-RPC over
+stdio). On first run it imports your workspace `MEMORY.md` and runs an initial recall to
+prime the session context.
+
+#### Auto-recall (ingest hook)
+
+Every user message triggers a `memory_recall` call. Relevant memories are injected into
+the agent's context as a system prefix, respecting the configured token budget. Keys are
+deduplicated within the session to avoid repeating the same facts.
+
+```
+User message → memory_recall() → ranked memories injected into context
+```
+
+#### Auto-capture (afterTurn hook)
+
+After the agent responds, the plugin calls `memory_capture` to extract and persist new
+facts. To avoid noise, capture is rate-limited: by default it fires once every 3 turns
+(configurable via `captureRateLimit`).
+
+```
+Agent response → memory_capture() → new facts saved to store
+```
+
+#### Pre-compaction flush (compact hook)
+
+When OpenClaw compacts the context window, the plugin flushes the about-to-be-discarded
+context into tapps-brain via `memory_ingest` and indexes the session chunks with
+`memory_index_session`. This ensures no knowledge is lost during compaction.
+
+### 4. Plugin settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `mcpCommand` | `"tapps-brain-mcp"` | Command to spawn the MCP server |
+| `profilePath` | `".tapps-brain/profile.yaml"` | Path to memory profile config |
+| `tokenBudget` | `2000` | Max tokens for injected memories |
+| `captureRateLimit` | `3` | Capture every N turns (0 = every turn) |
+
+### 5. Profile switching
+
+tapps-brain supports configurable memory profiles (EPIC-010) that control tier weights,
+decay rates, and scoring parameters. To use a custom profile with the plugin:
+
+1. Create a profile YAML at `.tapps-brain/profile.yaml` in your project:
+
+```yaml
+name: my-project
+tier_weights:
+  architectural: 1.0
+  pattern: 0.8
+  procedural: 0.6
+  context: 0.4
+scoring:
+  relevance_weight: 0.4
+  confidence_weight: 0.3
+  recency_weight: 0.15
+  frequency_weight: 0.15
+```
+
+2. Set `profilePath` in your plugin settings to point to the file.
+
+The MCP server loads the profile at startup and applies it to all recall and scoring
+operations.
+
+### 6. Hive integration (multi-agent sharing)
+
+When multiple OpenClaw agents share a workspace, the Hive (EPIC-011) enables cross-agent
+memory sharing. Memories marked with `agent_scope: "hive"` propagate to a shared store
+at `~/.tapps-brain/hive/hive.db`.
+
+To enable Hive with the ContextEngine plugin:
+
+1. Register each agent in the Hive agent registry (via the `hive_register_agent` MCP
+   tool or programmatically).
+
+2. Set `agent_scope` to `"domain"` or `"hive"` when saving memories that should be
+   shared.
+
+3. Recall automatically merges local + Hive results with configurable weight (default
+   0.8 local, 0.2 Hive).
+
+No plugin configuration changes are needed — Hive awareness is built into the MCP server.
+
+---
+
+## Option B: MCP Sidecar (manual control)
+
+Use the MCP sidecar when you need direct access to all 21 tools or want to build custom
+recall/capture workflows.
+
+### Quick Start (5 minutes)
 
 ### 1. Install tapps-brain
 
@@ -282,3 +427,4 @@ Ask your agent: *"read the memory://health resource"* — it returns a health re
 - [MCP Server Guide](mcp.md) — detailed tool/resource/prompt reference
 - [Auto-Recall Guide](auto-recall.md) — recall orchestrator configuration
 - [Federation Guide](federation.md) — cross-project memory sharing
+- [OpenClaw Plugin README](../../openclaw-plugin/README.md) — plugin development guide
