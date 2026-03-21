@@ -301,9 +301,7 @@ class MemoryStore:
 
             if result.triggered:
                 self._metrics.increment("store.consolidate")
-                self._metrics.increment(
-                    "store.consolidate.merged", len(result.source_keys)
-                )
+                self._metrics.increment("store.consolidate.merged", len(result.source_keys))
                 logger.info(
                     "auto_consolidation_on_save",
                     entry_key=entry.key,

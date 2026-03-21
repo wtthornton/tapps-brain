@@ -84,7 +84,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Create `otel_exporter.py` with `OTelExporter` class, add `otel` optional dep to `pyproject.toml`, add feature flag in `_feature_flags.py`. Add unit tests with mocked OTel SDK. Commit: `feat(story-007.5): optional OpenTelemetry exporter`
 
 #### 007-E: Observability integration tests
-- [ ] Create `tests/integration/test_observability_integration.py` — perform 50 mixed operations, verify metrics snapshot, query audit trail, verify health report. Real SQLite. Commit: `test(story-007.6): observability integration tests`
+- [x] Create `tests/integration/test_observability_integration.py` — perform 50 mixed operations, verify metrics snapshot, query audit trail, verify health report. Real SQLite. Commit: `test(story-007.6): observability integration tests`
 
 ## Notes
 
