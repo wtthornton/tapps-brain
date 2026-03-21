@@ -12,11 +12,12 @@ tags: [mcp, integration, server]
 
 ## Progress in tree (2026-03-20)
 
-- `src/tapps_brain/mcp_server.py` — FastMCP server, tools (CRUD, search, list, recall, reinforce, ingest, supersede, history), resources (stats, health, metrics, entry template)
+- `src/tapps_brain/mcp_server.py` — FastMCP server, tools (CRUD, search, list, recall, reinforce, ingest, supersede, history, **index_session, search_sessions, capture**), resources (stats, health, metrics, entry template), prompts (recall, store_summary, remember)
 - `mcp` optional extra + included in `dev` for tests; `python -m tapps_brain.mcp_server`
-- `tests/unit/test_mcp_server.py` — registration + handler execution coverage
+- `tests/unit/test_mcp_server.py` — registration + handler execution coverage (including session & capture tools)
+- `docs/guides/mcp.md` — client setup (Claude Code, Cursor, VS Code), full tool/resource/prompt reference
 
-Still open vs this epic: declared **`tapps-brain-mcp`** console script / packaging, MCP **prompts**, registry manifest, and any client-specific docs.
+All library-level MemoryStore operations are now exposed as MCP tools, including session indexing and the capture pipeline. Remaining: registry manifest (STORY-008.7 scope).
 
 ## Context
 

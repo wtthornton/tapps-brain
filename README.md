@@ -99,14 +99,14 @@ store.close()
 
 - **Memory reinforcement** — `store.reinforce(key)` resets decay clock and optionally boosts confidence
 - **Fact extraction** — `store.ingest_context(text)` auto-captures decision-like statements from session context
-- **Session indexing** — `store.index_session()` / `search_sessions()` / `cleanup_sessions()` for FTS5 search over past sessions
+- **Session indexing** — `store.index_session()` / `search_sessions()` / `cleanup_sessions()` for FTS5 search over past sessions (also available as MCP tools: `memory_index_session`, `memory_search_sessions`)
 - **Doc validation** — `store.validate_entries()` scores memories against authoritative docs via pluggable `LookupEngineLike`
 - **Cross-project federation** — publish/subscribe model for sharing memories across projects via a central hub
 
 ### Auto-Recall (Epic 3)
 
 - **Recall orchestrator** — `store.recall(message)` searches the store and returns injection-ready context with token budget enforcement
-- **Capture pipeline** — `store.recall().capture(response)` extracts new facts from agent responses and persists them back to the store
+- **Capture pipeline** — extracts new facts from agent responses and persists them back to the store (library: `RecallOrchestrator.capture()`, MCP: `memory_capture` tool)
 - **Protocol-based hooks** — `RecallHookLike` and `CaptureHookLike` protocols for host agent integration (< 10 lines of glue code)
 - **Quality gates** — deduplication window, relevance thresholds, scope/tier/branch filtering, staleness exclusion
 
@@ -215,12 +215,13 @@ tests/
 - [Federation Guide](docs/guides/federation.md) — Cross-project memory sharing setup and usage
 - [Planning Conventions](docs/planning/PLANNING.md) — Epic/story format for AI-assisted development
 - [Auto-Recall Guide](docs/guides/auto-recall.md) — Recall orchestrator usage, configuration, and integration examples
+- [MCP Server Guide](docs/guides/mcp.md) — Setup for Claude Code, Cursor, VS Code Copilot; full tool/resource/prompt reference
 - [EPIC-001](docs/planning/epics/EPIC-001.md) — Test suite quality (done)
 - [EPIC-002](docs/planning/epics/EPIC-002.md) — Integration wiring (done)
 - [EPIC-003](docs/planning/epics/EPIC-003.md) — Auto-recall orchestrator + capture pipeline (done)
 - [EPIC-004](docs/planning/epics/EPIC-004.md) — Bi-temporal fact versioning (done)
 - [EPIC-007](docs/planning/epics/EPIC-007.md) — Observability (in progress; see STATUS)
-- [EPIC-008](docs/planning/epics/EPIC-008.md) — MCP server (in progress; see STATUS)
+- [EPIC-008](docs/planning/epics/EPIC-008.md) — MCP server (complete — 21 tools, 4 resources, 3 prompts)
 - [EPIC-009](docs/planning/epics/EPIC-009.md) — Multi-interface distribution (planned)
 
 ## License

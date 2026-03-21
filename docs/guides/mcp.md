@@ -144,6 +144,38 @@ memory_supersede(
 )
 ```
 
+### Session & Capture Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory_index_session` | Index session chunks (summaries/key facts) for future search |
+| `memory_search_sessions` | Search past session summaries by relevance |
+| `memory_capture` | Extract and persist new facts from an agent response |
+
+**Example — indexing a session:**
+
+```
+memory_index_session(
+    session_id="session-abc",
+    chunks=["Refactored auth middleware", "Added rate limiting to API"]
+)
+```
+
+**Example — searching sessions:**
+
+```
+memory_search_sessions(query="rate limiting", limit=5)
+```
+
+**Example — capturing facts from a response:**
+
+```
+memory_capture(
+    response="We decided to use Redis for caching and set TTL to 15 minutes.",
+    source="agent"
+)
+```
+
 ### Federation Tools
 
 | Tool | Description |

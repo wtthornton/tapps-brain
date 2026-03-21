@@ -47,7 +47,7 @@ Packaging `project.scripts` for `tapps-brain` / `tapps-brain-mcp` may be added u
 | Epic | Doc status | Code notes |
 |------|------------|------------|
 | EPIC-007 Observability | planned | `MetricsCollector`, `StoreHealthReport`, `store.health()`, `store.get_metrics()` present; full instrumentation / audit query API still open per epic. |
-| EPIC-008 MCP | planned | `mcp_server.py` + `tests/unit/test_mcp_server.py`; prompts / packaging polish per epic. |
+| EPIC-008 MCP | complete | `mcp_server.py` — 21 tools (CRUD, lifecycle, session/capture, federation, maintenance, export/import), 4 resources, 3 prompts. Full unit + integration tests. Docs at `docs/guides/mcp.md`. |
 | EPIC-009 Distribution | planned | Library + CLI + MCP usage documented; PyPI entry points / extras split TBD. |
 
 ## WSL / Windows
