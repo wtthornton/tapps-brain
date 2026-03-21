@@ -19,11 +19,20 @@ fi
 INPUT=$(cat)
 
 # Extract response text — try multiple JSON paths for compatibility
+# Claude Code Stop hook input varies by mode (agent vs legacy, json vs stream-json)
 response_text=""
-for path in '.result' '.content' '.result.text' '.message.content'; do
+
+# Try structured JSON paths first
+for path in '.result' '.content' '.result.text' '.message.content' '.message.content[0].text'; do
   response_text=$(echo "$INPUT" | jq -r "$path // empty" 2>/dev/null || true)
   [[ -n "$response_text" ]] && break
 done
+
+# Fallback: if no JSON path worked, treat entire input as text
+# (handles cases where Claude Code passes raw text or unknown format)
+if [[ -z "$response_text" ]]; then
+  response_text="$INPUT"
+fi
 
 # Parse RALPH_STATUS block fields (use grep -oP on platforms that support it, fallback to sed)
 extract_field() {
