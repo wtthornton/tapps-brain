@@ -7,6 +7,28 @@
  * @module @tapps-brain/openclaw-plugin
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
+
+// ---------------------------------------------------------------------------
+// Plugin state — shared across hooks within a session
+// ---------------------------------------------------------------------------
+
+/** Singleton MCP client, initialized by bootstrap(). */
+let mcpClient: McpClient | null = null;
+
+/**
+ * Get the active MCP client. Throws if bootstrap() has not been called.
+ */
+export function getMcpClient(): McpClient {
+  if (!mcpClient) {
+    throw new Error("MCP client not initialized — call bootstrap() first");
+  }
+  return mcpClient;
+}
+
 // ---------------------------------------------------------------------------
 // Types — OpenClaw ContextEngine hook signatures
 // ---------------------------------------------------------------------------
@@ -63,20 +85,131 @@ export interface CompactResult {
 }
 
 // ---------------------------------------------------------------------------
-// Hook stubs — implementations in follow-up stories (012-E through 012-H)
+// Hooks — bootstrap (012-E), stubs for 012-F through 012-H
 // ---------------------------------------------------------------------------
 
 /**
  * Bootstrap hook: spawns tapps-brain-mcp, imports MEMORY.md on first run,
  * and runs initial recall for session primer.
  *
- * Implementation: story 012-E
+ * 1. Spawns `tapps-brain-mcp --project-dir <workspaceDir>` as a child process.
+ * 2. On first run (no `.tapps-brain/` dir), imports MEMORY.md via MCP tool.
+ * 3. Runs initial `memory_recall` to generate a session primer.
  */
 export async function bootstrap(
-  _ctx: OpenClawContext,
+  ctx: OpenClawContext,
 ): Promise<BootstrapResult> {
-  // TODO(012-E): spawn MCP child process, first-run import, initial recall
-  return { success: false };
+  const projectDir = ctx.workspaceDir || ctx.projectDir;
+
+  try {
+    // 1. Spawn MCP child process
+    mcpClient = new McpClient(projectDir);
+    await mcpClient.start();
+
+    let memoriesImported = 0;
+
+    // 2. First-run: import MEMORY.md if it exists and store is fresh
+    if (isFirstRun(projectDir) && hasMemoryMd(projectDir)) {
+      const memoryMdPath = resolve(projectDir, "MEMORY.md");
+      const content = readFileSync(memoryMdPath, "utf-8");
+
+      // Parse MEMORY.md headings into memory entries for import
+      const memories = parseMemoryMdForImport(content);
+      if (memories.length > 0) {
+        const importResult = (await mcpClient.callTool("memory_import", {
+          memories_json: JSON.stringify({ memories }),
+          overwrite: false,
+        })) as string;
+
+        const parsed = JSON.parse(
+          typeof importResult === "string" ? importResult : JSON.stringify(importResult),
+        ) as { imported?: number };
+        memoriesImported = parsed.imported ?? 0;
+      }
+    }
+
+    // 3. Initial recall for session primer
+    const recallResult = (await mcpClient.callTool("memory_recall", {
+      message: "session start — retrieve key project context",
+    })) as string;
+
+    const recall = JSON.parse(
+      typeof recallResult === "string" ? recallResult : JSON.stringify(recallResult),
+    ) as { memories?: Array<{ key: string }> };
+
+    const primerKeys = (recall.memories ?? []).map(
+      (m: { key: string }) => m.key,
+    );
+
+    return {
+      success: true,
+      memoriesImported,
+      primerKeys,
+    };
+  } catch (err) {
+    // Clean up on failure
+    if (mcpClient) {
+      mcpClient.stop();
+      mcpClient = null;
+    }
+    return { success: false };
+  }
+}
+
+/**
+ * Parse a MEMORY.md file into importable memory entries.
+ *
+ * Heading levels map to tiers:
+ * - H1/H2 → architectural
+ * - H3 → pattern
+ * - H4+ → procedural
+ *
+ * Body text under each heading becomes the value.
+ */
+function parseMemoryMdForImport(
+  content: string,
+): Array<{ key: string; value: string; tier: string }> {
+  const lines = content.split("\n");
+  const entries: Array<{ key: string; value: string; tier: string }> = [];
+  let currentKey = "";
+  let currentTier = "procedural";
+  let currentBody: string[] = [];
+
+  const flush = (): void => {
+    if (currentKey && currentBody.length > 0) {
+      const value = currentBody.join("\n").trim();
+      if (value) {
+        entries.push({ key: slugify(currentKey), value, tier: currentTier });
+      }
+    }
+    currentBody = [];
+  };
+
+  for (const line of lines) {
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (headingMatch) {
+      flush();
+      const level = headingMatch[1].length;
+      currentKey = headingMatch[2].trim();
+      currentTier =
+        level <= 2 ? "architectural" : level === 3 ? "pattern" : "procedural";
+    } else {
+      currentBody.push(line);
+    }
+  }
+  flush();
+
+  return entries;
+}
+
+/**
+ * Slugify a heading string for use as a memory key.
+ */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
