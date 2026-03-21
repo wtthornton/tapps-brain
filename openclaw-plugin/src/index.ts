@@ -346,17 +346,80 @@ export async function afterTurn(
 }
 
 /**
- * Compact hook: receives context being compacted, flushes to memory store
- * and indexes the session.
+ * Compact hook: receives context being compacted, flushes durable facts
+ * to the memory store and indexes the session for later search.
+ *
+ * 1. Concatenates compaction chunks into a single context string.
+ * 2. Calls `memory_ingest(context)` to extract and persist durable facts.
+ * 3. Calls `memory_index_session(session_id, chunks)` to index the session.
+ * 4. Returns counts for observability.
+ *
+ * Only processes non-empty chunks. Fails gracefully — never blocks compaction.
  *
  * Implementation: story 012-H
  */
 export async function compact(
-  _ctx: OpenClawContext,
-  _chunks: CompactionChunk[],
+  ctx: OpenClawContext,
+  chunks: CompactionChunk[],
 ): Promise<CompactResult> {
-  // TODO(012-H): call memory_ingest + memory_index_session
-  return { entriesIngested: 0, sessionIndexed: false };
+  // Skip if no chunks to process
+  if (!chunks || chunks.length === 0) {
+    return { entriesIngested: 0, sessionIndexed: false };
+  }
+
+  const client = getMcpClient();
+
+  try {
+    // 1. Concatenate chunk contents, filtering out empty chunks
+    const nonEmptyChunks = chunks.filter((c) => c.content.trim().length > 0);
+    if (nonEmptyChunks.length === 0) {
+      return { entriesIngested: 0, sessionIndexed: false };
+    }
+
+    const context = nonEmptyChunks.map((c) => c.content).join("\n\n");
+
+    // 2. Call memory_ingest to extract durable facts from compacted context
+    const ingestResult = await client.callTool("memory_ingest", {
+      context,
+      source: "compaction",
+    });
+
+    const ingestParsed = JSON.parse(
+      typeof ingestResult === "string" ? ingestResult : JSON.stringify(ingestResult),
+    ) as { created_keys?: string[]; keys?: string[] };
+
+    const createdKeys = ingestParsed.created_keys ?? ingestParsed.keys ?? [];
+    const entriesIngested = createdKeys.length;
+
+    if (entriesIngested > 0) {
+      console.log(
+        `[tapps-brain] compact: ingested ${entriesIngested} entries from compaction`,
+      );
+    }
+
+    // 3. Call memory_index_session to index the session chunks
+    let sessionIndexed = false;
+    const sessionId = ctx.sessionId;
+
+    if (sessionId) {
+      const sessionChunks = nonEmptyChunks.map((c) => c.content);
+
+      await client.callTool("memory_index_session", {
+        session_id: sessionId,
+        chunks: sessionChunks,
+      });
+
+      sessionIndexed = true;
+      console.log(
+        `[tapps-brain] compact: indexed session ${sessionId} with ${sessionChunks.length} chunk(s)`,
+      );
+    }
+
+    return { entriesIngested, sessionIndexed };
+  } catch {
+    // Fail gracefully — never block compaction if memory ops fail
+    return { entriesIngested: 0, sessionIndexed: false };
+  }
 }
 
 // ---------------------------------------------------------------------------
