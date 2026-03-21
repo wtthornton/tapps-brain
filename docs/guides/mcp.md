@@ -72,6 +72,26 @@ Add to `.vscode/mcp.json`:
 }
 ```
 
+### OpenClaw
+
+Add to `~/.openclaw/openclaw.json` (top-level `mcp` key):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "tapps-brain": {
+        "command": "tapps-brain-mcp",
+        "args": ["--project-dir", "/path/to/your/project"],
+        "transport": "stdio"
+      }
+    }
+  }
+}
+```
+
+Restart the gateway after saving. See the [OpenClaw Guide](openclaw.md) for per-agent config, virtual environment tips, and troubleshooting.
+
 ### Generic MCP Client
 
 The server uses stdio transport. Start it with:

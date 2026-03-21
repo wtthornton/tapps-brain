@@ -434,6 +434,7 @@ tests/
 | Guide | Description |
 |-------|-------------|
 | [MCP Server Guide](docs/guides/mcp.md) | Client setup for Claude Code, Cursor, VS Code Copilot; full tool/resource/prompt reference |
+| [OpenClaw Guide](docs/guides/openclaw.md) | Install, configure, and test tapps-brain with OpenClaw |
 | [Auto-Recall Guide](docs/guides/auto-recall.md) | Recall orchestrator usage, configuration, integration patterns |
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup and operations |
 | [Project Status](docs/planning/STATUS.md) | Schema version, dependencies, interfaces, quality gates |
