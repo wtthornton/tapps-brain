@@ -46,6 +46,13 @@ class FeatureFlags:
         return self._cache["sentence_transformers"]
 
     @property
+    def otel(self) -> bool:
+        """True when ``opentelemetry`` SDK is importable."""
+        if "otel" not in self._cache:
+            self._cache["otel"] = self._probe("opentelemetry.sdk")
+        return self._cache["otel"]
+
+    @property
     def memory_semantic_search(self) -> bool:
         """True when optional deps for semantic search are available."""
         return self.sentence_transformers
@@ -56,7 +63,13 @@ class FeatureFlags:
 
     def as_dict(self) -> dict[str, bool]:
         """Return all evaluated flags as a plain dict."""
-        _ = (self.faiss, self.numpy, self.sentence_transformers, self.memory_semantic_search)
+        _ = (
+            self.faiss,
+            self.numpy,
+            self.sentence_transformers,
+            self.memory_semantic_search,
+            self.otel,
+        )
         return dict(self._cache)
 
 

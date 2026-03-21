@@ -47,6 +47,10 @@ vector = [
 reranker = [
     "cohere>=5.0,<6",
 ]
+otel = [
+    "opentelemetry-api>=1.20,<3",
+    "opentelemetry-sdk>=1.20,<3",
+]
 all = [
     "tapps-brain[cli,mcp,vector,reranker]",
 ]
@@ -100,6 +104,8 @@ module = [
     "yaml",
     "mcp",
     "mcp.*",
+    "opentelemetry",
+    "opentelemetry.*",
 ]
 ignore_missing_imports = true
 
