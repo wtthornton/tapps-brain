@@ -11,8 +11,11 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
-from pydantic import AnyUrl
+
+pytestmark = pytest.mark.requires_mcp
+
+from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
+from pydantic import AnyUrl  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path

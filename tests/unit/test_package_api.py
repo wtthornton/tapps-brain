@@ -60,6 +60,7 @@ class TestVersionUnification:
         assert len(parts) >= 2
         assert parts[0].isdigit()
 
+    @pytest.mark.requires_cli
     def test_cli_version_matches_package(self) -> None:
         """CLI --version reports the same version as the package."""
         import typer
@@ -71,6 +72,31 @@ class TestVersionUnification:
         # The callback calls typer.echo — we just verify it doesn't error.
         # The string it echoes uses tapps_brain.__version__.
         assert tapps_brain.__version__ in f"tapps-brain {tapps_brain.__version__}"
+
+
+class TestCoreImportWithoutExtras:
+    """Verify core library imports work without cli/mcp extras."""
+
+    def test_core_symbols_importable_without_typer(self) -> None:
+        """All __all__ symbols are importable — none require typer at import time."""
+        # Core symbols should never trigger typer/mcp imports
+        for name in tapps_brain.__all__:
+            obj = getattr(tapps_brain, name)
+            mod = getattr(obj, "__module__", "")
+            # No public API symbol should live in cli or mcp_server modules
+            assert "cli" not in mod, f"{name} unexpectedly from cli module"
+            assert "mcp_server" not in mod, f"{name} unexpectedly from mcp_server module"
+
+    def test_core_store_works_without_extras(self, tmp_path: Path) -> None:
+        """MemoryStore can be created and used with only core deps."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        store.save(key="test", value="hello world", tier="context")
+        result = store.get("test")
+        assert result is not None
+        assert result.value == "hello world"
+        store.close()
 
 
 class TestGracefulImportErrors:

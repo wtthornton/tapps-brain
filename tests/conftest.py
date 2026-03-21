@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_HAS_TYPER = importlib.util.find_spec("typer") is not None
+_HAS_MCP = importlib.util.find_spec("mcp") is not None
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip tests marked requires_cli / requires_mcp when extras are missing."""
+    skip_cli = pytest.mark.skip(reason="requires [cli] extra (typer)")
+    skip_mcp = pytest.mark.skip(reason="requires [mcp] extra (mcp)")
+    for item in items:
+        if "requires_cli" in item.keywords and not _HAS_TYPER:
+            item.add_marker(skip_cli)
+        if "requires_mcp" in item.keywords and not _HAS_MCP:
+            item.add_marker(skip_mcp)
 
 
 @pytest.fixture()

@@ -73,6 +73,8 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 markers = [
     "benchmark: performance benchmarks (deselect with '-m not benchmark')",
+    "requires_cli: tests requiring the [cli] extra (typer)",
+    "requires_mcp: tests requiring the [mcp] extra (mcp SDK)",
 ]
 filterwarnings = [
     "ignore:unclosed database:ResourceWarning",

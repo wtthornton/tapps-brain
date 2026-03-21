@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.requires_mcp
+
 
 def _tool_fn(mcp_server, name: str):
     for tool in mcp_server._tool_manager.list_tools():

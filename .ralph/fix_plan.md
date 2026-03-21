@@ -63,7 +63,7 @@ Aligned with the repo as of **2026-03-20**. For full story text, see `docs/plann
 - [x] Create `server.json` following MCP Registry schema. Commit: `feat(story-009.4): MCP registry server.json`
 
 #### 009-E: Distribution integration tests
-- [ ] Add pytest markers `requires_cli` / `requires_mcp` to relevant test files. Verify core import works without extras. Commit: `test(story-009.5): extras-aware test markers`
+- [x] Add pytest markers `requires_cli` / `requires_mcp` to relevant test files. Verify core import works without extras. Commit: `test(story-009.5): extras-aware test markers`
 
 ## Medium Priority
 

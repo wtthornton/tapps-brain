@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from tapps_brain.cli import app
-from tapps_brain.store import MemoryStore
+pytestmark = pytest.mark.requires_cli
+
+from typer.testing import CliRunner  # noqa: E402
+
+from tapps_brain.cli import app  # noqa: E402
+from tapps_brain.store import MemoryStore  # noqa: E402
 
 runner = CliRunner()
 
