@@ -1,0 +1,40 @@
+#!/bin/bash
+# .ralph/hooks/protect-ralph-files.sh
+# PreToolUse hook for Edit/Write. Blocks edits to .ralph/ except fix_plan.md.
+# Exit 0 = allow, Exit 2 = block.
+
+set -euo pipefail
+
+RALPH_DIR="${CLAUDE_PROJECT_DIR:-.}/.ralph"
+[[ -d "$RALPH_DIR" ]] || exit 0
+
+INPUT=$(cat)
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+
+# Normalize path (remove leading ./ if present)
+FILE_PATH="${FILE_PATH#./}"
+
+# Allow fix_plan.md edits (Ralph checks off tasks)
+if [[ "$FILE_PATH" == *".ralph/fix_plan.md" ]]; then
+  exit 0
+fi
+
+# Allow status.json updates (hooks write this)
+if [[ "$FILE_PATH" == *".ralph/status.json" ]]; then
+  exit 0
+fi
+
+# Block all other .ralph/ modifications
+if [[ "$FILE_PATH" == *".ralph/"* ]]; then
+  echo "BLOCKED: Cannot modify Ralph infrastructure file: $FILE_PATH" >&2
+  echo "Only .ralph/fix_plan.md checkboxes may be updated by the agent." >&2
+  exit 2
+fi
+
+# Block .ralphrc modifications
+if [[ "$FILE_PATH" == *".ralphrc"* ]]; then
+  echo "BLOCKED: Cannot modify Ralph configuration: $FILE_PATH" >&2
+  exit 2
+fi
+
+exit 0

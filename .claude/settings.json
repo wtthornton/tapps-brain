@@ -1,0 +1,120 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-session-start.sh",
+            "statusMessage": "Injecting Ralph loop context..."
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-stop.sh",
+            "statusMessage": "Analyzing Ralph response..."
+          }
+        ]
+      }
+    ],
+
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/validate-command.sh",
+            "statusMessage": "Validating command..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/protect-ralph-files.sh",
+            "statusMessage": "Checking file protection..."
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-file-change.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-bash-command.sh"
+          }
+        ]
+      }
+    ],
+
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-subagent-done.sh"
+          }
+        ]
+      }
+    ],
+
+    "StopFailure": [
+      {
+        "matcher": "rate_limit|server_error",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-stop-failure.sh",
+            "statusMessage": "Handling API error..."
+          }
+        ]
+      }
+    ],
+
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-teammate-idle.sh",
+            "statusMessage": "Checking teammate work queue..."
+          }
+        ]
+      }
+    ],
+
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ralph/hooks/on-task-completed.sh",
+            "statusMessage": "Validating task completion..."
+          }
+        ]
+      }
+    ]
+  }
+}

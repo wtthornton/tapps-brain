@@ -29,3 +29,18 @@ build/
 .ralph/progress.json
 .ralph/status.json
 .coverage
+
+# Claude Code local settings (experimental, not committed)
+.claude/settings.local.json
+
+# Claude Code worktrees (agent isolation)
+.claude/worktrees/
+
+# Claude Code agent memory (project-scoped)
+.claude/agent-memory/
+.claude/agent-memory-local/
+
+# Ralph crash diagnostics
+.ralph/.last_crash_code
+.ralph/.total_loop_count
+.ralph/.files_modified_this_loop
