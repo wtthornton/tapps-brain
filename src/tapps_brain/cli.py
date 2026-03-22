@@ -964,6 +964,54 @@ def maintenance_gc_config(
         store.close()
 
 
+@maintenance_app.command("consolidation-config")
+def maintenance_consolidation_config(
+    project_dir: ProjectDir = None,
+    set_enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable or disable auto-consolidation."),
+    ] = None,
+    set_threshold: Annotated[
+        float | None,
+        typer.Option("--threshold", help="Similarity threshold for merging entries."),
+    ] = None,
+    set_min_entries: Annotated[
+        int | None,
+        typer.Option("--min-entries", help="Minimum entries required before consolidation."),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show or update auto-consolidation configuration."""
+    from tapps_brain.store import ConsolidationConfig
+
+    store = _get_store(project_dir)
+    try:
+        current: ConsolidationConfig = store.get_consolidation_config()
+
+        if set_enabled is not None or set_threshold is not None or set_min_entries is not None:
+            new_cfg = ConsolidationConfig(
+                enabled=set_enabled if set_enabled is not None else current.enabled,
+                threshold=set_threshold if set_threshold is not None else current.threshold,
+                min_entries=set_min_entries if set_min_entries is not None else current.min_entries,
+            )
+            store.set_consolidation_config(new_cfg)
+            data: dict[str, object] = {"status": "updated", **new_cfg.to_dict()}
+        else:
+            data = current.to_dict()
+
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            cfg = store.get_consolidation_config()
+            typer.echo(f"enabled:     {cfg.enabled}")
+            typer.echo(f"threshold:   {cfg.threshold}")
+            typer.echo(f"min_entries: {cfg.min_entries}")
+            if set_enabled is not None or set_threshold is not None or set_min_entries is not None:
+                typer.echo("Configuration updated.")
+    finally:
+        store.close()
+
+
 @maintenance_app.command("migrate")
 def maintenance_migrate(
     project_dir: ProjectDir = None,

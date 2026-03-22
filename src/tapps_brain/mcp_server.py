@@ -841,6 +841,44 @@ def create_server(  # noqa: PLR0915
         store.set_gc_config(new_cfg)
         return json.dumps({"status": "updated", **new_cfg.to_dict()})
 
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_consolidation_config() -> str:
+        """Return the current auto-consolidation configuration.
+
+        Returns the active consolidation settings: enabled, threshold, and
+        min_entries.
+        """
+        cfg = store.get_consolidation_config()
+        return json.dumps(cfg.to_dict())
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_consolidation_config_set(
+        enabled: bool | None = None,
+        threshold: float | None = None,
+        min_entries: int | None = None,
+    ) -> str:
+        """Update auto-consolidation configuration.
+
+        Only provided parameters are updated; omitted parameters keep their
+        current values.
+
+        Args:
+            enabled: Whether auto-consolidation runs on save (default False).
+            threshold: Similarity threshold for merging entries (default 0.7).
+            min_entries: Minimum entries required before consolidation runs
+                (default 3).
+        """
+        from tapps_brain.store import ConsolidationConfig
+
+        current = store.get_consolidation_config()
+        new_cfg = ConsolidationConfig(
+            enabled=enabled if enabled is not None else current.enabled,
+            threshold=threshold if threshold is not None else current.threshold,
+            min_entries=min_entries if min_entries is not None else current.min_entries,
+        )
+        store.set_consolidation_config(new_cfg)
+        return json.dumps({"status": "updated", **new_cfg.to_dict()})
+
     # ------------------------------------------------------------------
     # Export / Import tools (STORY-008.5)
     # ------------------------------------------------------------------

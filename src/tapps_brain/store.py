@@ -94,6 +94,14 @@ class ConsolidationConfig:
     threshold: float = 0.7
     min_entries: int = 3
 
+    def to_dict(self) -> dict[str, object]:
+        """Return config as a plain dict."""
+        return {
+            "enabled": self.enabled,
+            "threshold": self.threshold,
+            "min_entries": self.min_entries,
+        }
+
 
 class MemoryStore:
     """In-memory cache with SQLite write-through persistence.
@@ -167,6 +175,10 @@ class MemoryStore:
     def project_root(self) -> Path:
         """Return the project root path."""
         return self._project_root
+
+    def get_consolidation_config(self) -> ConsolidationConfig:
+        """Return the active consolidation configuration."""
+        return self._consolidation_config
 
     def set_consolidation_config(self, config: ConsolidationConfig) -> None:
         """Update the consolidation configuration."""
