@@ -92,10 +92,58 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 012-Q: Final validation and STATUS.md update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update `docs/planning/STATUS.md` to mark EPIC-012 done. Update `__init__.py` exports if new public API surfaces were added. Commit: `chore(epic-012): final validation and status update`
 
+## Active — EPIC-013: Hive-Aware MCP Surface
+
+**Depends on:** EPIC-011 ✅, EPIC-012 ✅
+**Target:** 2026-07-15
+**Design:** `docs/planning/epics/EPIC-013.md`
+
+**Goal:** Wire Hive agent identity and scope propagation through the MCP server and OpenClaw plugin so orchestrators can create agents with unique profiles sharing a Hive.
+
+### Phase 1: MCP Server Hive Wiring (Python — sequential)
+
+#### 013-A: MCP server CLI flags — `--agent-id` and `--enable-hive`
+- [ ] Add `--agent-id <id>` and `--enable-hive` arguments to MCP server argparse. When `--enable-hive` is set, instantiate `HiveStore()` and pass it + `hive_agent_id` to `MemoryStore`. Store resolved agent ID and HiveStore on the server so all tools can access them. Backward compatible: no flags = identical to today. Add unit test confirming store receives `hive_store` and `hive_agent_id` when flags are set. Commit: `feat(story-013.1): MCP server --agent-id and --enable-hive flags`
+
+#### 013-B: Expose `agent_scope` in `memory_save` MCP tool
+- [ ] Add `agent_scope: str = "private"` parameter to `memory_save`. Pass through to `store.save()`. When Hive is enabled and scope is `"domain"` or `"hive"`, the store's `_propagate_to_hive()` handles propagation automatically. Add unit test with mocked HiveStore verifying propagation triggers. Commit: `feat(story-013.2): agent_scope parameter in memory_save`
+
+#### 013-C: Expose `source_agent` in `memory_save` MCP tool
+- [ ] Add `source_agent: str = ""` parameter to `memory_save`. When empty, fall back to server's `--agent-id` (or `"unknown"`). Pass through to `store.save(source_agent=...)`. Add unit test verifying both explicit and fallback paths. Commit: `feat(story-013.3): source_agent parameter in memory_save`
+
+### Phase 2: Hive Tools Refactor (Python)
+
+#### 013-D: Hive tools reuse server's HiveStore instance
+- [ ] Refactor `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_list` to reuse the server's shared `HiveStore` when available, instead of creating throwaway instances per call. When `--enable-hive` is not set, fall back to creating a temporary `HiveStore` (current behavior). Add unit tests for both paths. Commit: `feat(story-013.4): Hive tools reuse shared HiveStore`
+
+#### 013-E: `hive_propagate` uses server's agent identity
+- [ ] Update `hive_propagate` to read agent_id from the store's `_hive_agent_id` instead of hardcoded `"mcp-user"`. Read profile from the store's resolved profile instead of defaulting separately. Add unit test verifying correct agent_id flows through. Commit: `feat(story-013.4): hive_propagate uses server agent identity`
+
+### Phase 3: Composite Tool (Python)
+
+#### 013-F: `agent_create` composite MCP tool
+- [ ] Add `agent_create` MCP tool: (1) register agent in AgentRegistry with profile and skills, (2) validate profile exists (built-in or project), (3) return namespace assignment and profile summary. Invalid profile returns error with available profiles listed. Add unit test for happy path and invalid profile. Commit: `feat(story-013.5): agent_create composite MCP tool`
+
+### Phase 4: OpenClaw Plugin (TypeScript)
+
+#### 013-G: OpenClaw plugin — `agentId` and `hiveEnabled` config
+- [ ] Add `agentId` and `hiveEnabled` fields to plugin `plugin.json` config schema. Update bootstrap hook to pass `--agent-id` and `--enable-hive` flags to MCP spawn. Auto-call `agent_register` on first run with configured agent ID and profile. Omitting config fields preserves current behavior. Commit: `feat(story-013.6): OpenClaw plugin agent identity and Hive config`
+
+### Phase 5: Documentation & Testing
+
+#### 013-H: OpenClaw guide — multi-agent Hive patterns
+- [ ] Add "Multi-Agent Hive" section to `docs/guides/openclaw.md`. Cover: orchestrator creating child agents, profile inheritance (base + extends), agent scope usage (private/domain/hive), example `plugin.json` for orchestrator and child agents. Include shared-profile and per-role-profile scenarios. Commit: `docs(story-013.7): multi-agent Hive patterns in OpenClaw guide`
+
+#### 013-I: Integration tests — multi-agent Hive round-trip
+- [ ] Integration test with real SQLite: two agents with different profiles sharing a Hive. Save with different `agent_scope` values, verify propagation and recall merging. Test conflict resolution across agents. Agent A `hive` scope → B can recall. Agent A `private` → B cannot see. Agent A `domain` same profile as B → B can recall. File: `tests/integration/test_hive_mcp_roundtrip.py`. Commit: `test(story-013.8): multi-agent Hive round-trip integration tests`
+
+#### 013-J: Final validation and status update
+- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-013 status to done. Update this fix_plan. Commit: `chore(epic-013): final validation and status update`
+
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
-- **Dependency graph:** 012-A → 012-B → 012-C (markdown import). 012-D → 012-E (plugin skeleton). 012-F, 012-G, 012-H (hooks, parallel after 012-E). 012-I, 012-J (integration tests). 012-K (docs). 012-L through 012-P (distribution, mostly independent). 012-Q last.
-- Always cross-check **`docs/planning/epics/EPIC-012.md`** before starting a task.
+- **Dependency graph (EPIC-013):** 013-A → 013-B, 013-C (memory_save params). 013-A → 013-D, 013-E (Hive tools refactor). 013-A + 013-F (agent_create). 013-F → 013-G (OpenClaw plugin). 013-G → 013-H (docs). 013-B + 013-C + 013-D → 013-I (integration tests). 013-J last.
+- Always cross-check **`docs/planning/epics/EPIC-013.md`** before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.
