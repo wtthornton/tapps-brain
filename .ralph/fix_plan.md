@@ -165,7 +165,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 3: Documentation
 
 #### 014-D: Getting Started guide
-- [ ] Create `docs/guides/getting-started.md` mapping use cases to interfaces (Library / CLI / MCP). Quick example for each (3-5 lines). Link from README Quick Start section. Commit: `docs(story-014.4): getting started guide`
+- [x] Create `docs/guides/getting-started.md` mapping use cases to interfaces (Library / CLI / MCP). Quick example for each (3-5 lines). Link from README Quick Start section. Commit: `docs(story-014.4): getting started guide`
 
 #### 014-E: CHANGELOG.md
 - [ ] Create `CHANGELOG.md` (keepachangelog.com format). v1.1.0: EPIC-013 features. v1.0.0: EPICs 001–012 summary. Link from README and pyproject.toml. Commit: `docs(story-014.5): CHANGELOG.md`

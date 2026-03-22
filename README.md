@@ -94,6 +94,8 @@ pip install tapps-brain[all]       # Everything above (except otel)
 
 ## Quick Start
 
+> **New here?** See the [Getting Started guide](docs/guides/getting-started.md) for a use-case map and a 3-line example for each interface (Library / CLI / MCP).
+
 ```python
 from pathlib import Path
 from tapps_brain import MemoryStore
@@ -599,6 +601,7 @@ tests/
 
 | Guide | Description |
 |-------|-------------|
+| [Getting Started](docs/guides/getting-started.md) | Use-case map and quick example for each interface (Library / CLI / MCP) |
 | [Profile Design Guide](docs/guides/profiles.md) | Design custom profiles: layers, decay models, scoring weights, promotion rules, Hive config, anti-patterns |
 | [Profile Catalog](docs/guides/profile-catalog.md) | All 6 built-in profiles explained with comparison tables and selection flowchart |
 | [Hive Guide](docs/guides/hive.md) | Cross-agent memory sharing: namespaces, propagation, conflict resolution, architecture patterns |
