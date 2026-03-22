@@ -611,6 +611,7 @@ tests/
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup and operations |
 | [Project Status](docs/planning/STATUS.md) | Schema version, dependencies, interfaces, quality gates |
 | [Planning Conventions](docs/planning/PLANNING.md) | Epic/story format for AI-assisted development |
+| [Changelog](CHANGELOG.md) | Version history in Keep a Changelog format |
 
 <details>
 <summary><strong>Epic tracker</strong></summary>
