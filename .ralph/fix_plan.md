@@ -254,7 +254,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 ### Phase 4: Edge Cases (independent)
 
 #### 016-F: Unicode and boundary value tests
-- [ ] Create `tests/unit/test_edge_cases.py`. Tests: emoji in key/value (save + recall + FTS search). CJK characters (save + recall). Mixed RTL/LTR text. Key at exactly MAX_KEY_LENGTH — accepted. Key at MAX_KEY_LENGTH+1 — rejected. Value at MAX_VALUE_LENGTH — accepted. Value at MAX_VALUE_LENGTH+1 — rejected. Commit: `test(story-016.6): unicode and boundary value tests`
+- [x] Create `tests/unit/test_edge_cases.py`. Tests: emoji in key/value (save + recall + FTS search). CJK characters (save + recall). Mixed RTL/LTR text. Key at exactly MAX_KEY_LENGTH — accepted. Key at MAX_KEY_LENGTH+1 — rejected. Value at MAX_VALUE_LENGTH — accepted. Value at MAX_VALUE_LENGTH+1 — rejected. Commit: `test(story-016.6): unicode and boundary value tests`
 
 ### Phase 5: Final Validation
 
