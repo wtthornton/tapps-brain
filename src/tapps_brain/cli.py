@@ -436,6 +436,68 @@ def memory_search(
         store.close()
 
 
+@memory_app.command("audit")
+def memory_audit(
+    key: Annotated[str | None, typer.Argument(help="Filter by memory entry key.")] = None,
+    project_dir: ProjectDir = None,
+    event_type: Annotated[
+        str | None, typer.Option("--type", help="Filter by event type (save, delete, etc.).")
+    ] = None,
+    since: Annotated[
+        str | None, typer.Option("--since", help="Lower bound timestamp (ISO-8601, inclusive).")
+    ] = None,
+    until: Annotated[
+        str | None, typer.Option("--until", help="Upper bound timestamp (ISO-8601, inclusive).")
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum number of events to return.")] = 50,
+    as_json: JsonFlag = False,
+) -> None:
+    """Query the audit trail for memory events.
+
+    Filter by key, event type, or time range. Example:
+
+        memory audit my-key --type save --since 2026-01-01 --limit 20
+    """
+    store = _get_store(project_dir)
+    try:
+        entries = store.audit(
+            key=key,
+            event_type=event_type,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+        if as_json:
+            _output(
+                [
+                    {
+                        "timestamp": e.timestamp,
+                        "event_type": e.event_type,
+                        "key": e.key,
+                        **e.details,
+                    }
+                    for e in entries
+                ],
+                as_json=True,
+            )
+        else:
+            if not entries:
+                typer.echo("  (no audit events found)")
+                return
+            rows = [
+                {
+                    "timestamp": e.timestamp[:19].replace("T", " "),
+                    "event_type": e.event_type,
+                    "key": e.key,
+                }
+                for e in entries
+            ]
+            _print_table(rows, columns=["timestamp", "event_type", "key"])
+            typer.echo(f"\n{len(entries)} events")
+    finally:
+        store.close()
+
+
 # ===================================================================
 # IMPORT / EXPORT COMMANDS
 # ===================================================================

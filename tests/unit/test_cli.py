@@ -772,3 +772,142 @@ class TestMemoryRelatedCommand:
             app, ["memory", "related", "nonexistent-key", "--project-dir", project_dir]
         )
         assert result.exit_code == 1
+
+
+# ===================================================================
+# Memory audit command (015-D)
+# ===================================================================
+
+
+@pytest.fixture()
+def audit_project_dir(tmp_path: Path):
+    """Create a MemoryStore with some saved entries to generate audit events."""
+    s = MemoryStore(tmp_path)
+    s.save(key="audit-key-one", value="First entry for audit testing", tier="architectural")
+    s.save(key="audit-key-two", value="Second entry for audit testing", tier="pattern")
+    s.save(key="audit-key-one", value="Updated first entry", tier="architectural")  # re-save
+    s.close()
+    return str(tmp_path)
+
+
+class TestMemoryAuditCommand:
+    def test_audit_no_events_empty_store(self, tmp_path):
+        """Empty store with no audit log returns friendly message."""
+        result = runner.invoke(
+            app, ["memory", "audit", "--project-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "no audit events found" in result.stdout
+
+    def test_audit_all_events_table(self, audit_project_dir):
+        """Without filters, returns all events in table format."""
+        result = runner.invoke(
+            app, ["memory", "audit", "--project-dir", audit_project_dir]
+        )
+        assert result.exit_code == 0
+        # Should have header columns
+        assert "TIMESTAMP" in result.stdout
+        assert "EVENT_TYPE" in result.stdout
+        assert "KEY" in result.stdout
+        assert "events" in result.stdout
+
+    def test_audit_filter_by_key(self, audit_project_dir):
+        """Filtering by key returns only events for that key."""
+        result = runner.invoke(
+            app,
+            ["memory", "audit", "audit-key-one", "--project-dir", audit_project_dir],
+        )
+        assert result.exit_code == 0
+        assert "audit-key-one" in result.stdout
+        # The other key should not appear
+        assert "audit-key-two" not in result.stdout
+
+    def test_audit_filter_by_type(self, audit_project_dir):
+        """Filtering by event type returns only matching events."""
+        result = runner.invoke(
+            app,
+            ["memory", "audit", "--type", "save", "--project-dir", audit_project_dir],
+        )
+        assert result.exit_code == 0
+        assert "save" in result.stdout
+
+    def test_audit_json_output(self, audit_project_dir):
+        """JSON output returns list of event dicts."""
+        result = runner.invoke(
+            app,
+            ["memory", "audit", "--project-dir", audit_project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        event = data[0]
+        assert "timestamp" in event
+        assert "event_type" in event
+        assert "key" in event
+
+    def test_audit_json_filter_by_key(self, audit_project_dir):
+        """JSON output with key filter returns only events for that key."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "audit",
+                "audit-key-two",
+                "--project-dir",
+                audit_project_dir,
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        # All returned events should be for the filtered key
+        for event in data:
+            assert event["key"] == "audit-key-two"
+
+    def test_audit_limit_option(self, audit_project_dir):
+        """Limit option caps the number of returned events."""
+        result = runner.invoke(
+            app,
+            ["memory", "audit", "--limit", "1", "--project-dir", audit_project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert len(data) <= 1
+
+    def test_audit_since_filter(self, audit_project_dir):
+        """Since filter with future date returns no events."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "audit",
+                "--since",
+                "2099-01-01",
+                "--project-dir",
+                audit_project_dir,
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data == []
+
+    def test_audit_until_filter(self, audit_project_dir):
+        """Until filter with past date returns no events."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "audit",
+                "--until",
+                "2000-01-01",
+                "--project-dir",
+                audit_project_dir,
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data == []
