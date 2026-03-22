@@ -89,7 +89,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 7: Final Validation
 
 #### 012-Q: Final validation and STATUS.md update
-- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update `docs/planning/STATUS.md` to mark EPIC-012 done. Update `__init__.py` exports if new public API surfaces were added. Commit: `chore(epic-012): final validation and status update`
+- [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update `docs/planning/STATUS.md` to mark EPIC-012 done. Update `__init__.py` exports if new public API surfaces were added. Commit: `chore(epic-012): final validation and status update`
 
 ## Notes
 

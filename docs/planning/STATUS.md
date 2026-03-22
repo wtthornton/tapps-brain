@@ -8,7 +8,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1386 passing | Full suite `pytest tests/` |
+| Tests | ~1443 passing | Full suite `pytest tests/` |
 | Coverage | ≥ 95% | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
@@ -58,11 +58,11 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-009 | Multi-Interface Distribution | done | 2026-03-21 |
 | EPIC-010 | Configurable Memory Profiles | done | 2026-03-21 |
 | EPIC-011 | Hive — Multi-Agent Shared Brain | done | 2026-03-21 |
-| EPIC-012 | OpenClaw Integration | planned | target 2026-06-15 |
+| EPIC-012 | OpenClaw Integration | done | 2026-03-21 |
 
 ## Current focus
 
-**EPIC-012 (OpenClaw)** is broken into 17 Ralph-sized tasks in `fix_plan.md` and ready for execution. EPIC-011 (Hive) was completed 2026-03-21 — added `HiveStore`, `AgentRegistry`, `PropagationEngine`, `ConflictPolicy`, hive-aware recall, 5 MCP tools, 4 CLI commands, schema v7, 71 new tests.
+**EPIC-012 (OpenClaw)** completed 2026-03-21 — added markdown import (`import_memory_md`, `import_openclaw_workspace`), OpenClaw ContextEngine plugin with bootstrap/ingest/afterTurn/compact hooks, integration tests, PyPI publishing prep, ClawHub skill packaging, and documentation. All 12 epics complete.
 
 ## WSL / Windows
 

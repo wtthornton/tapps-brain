@@ -36,6 +36,10 @@ from tapps_brain.injection import inject_memories as inject_memories
 from tapps_brain.io import export_memories as export_memories
 from tapps_brain.io import export_to_markdown as export_to_markdown
 from tapps_brain.io import import_memories as import_memories
+
+# Markdown Import (EPIC-012)
+from tapps_brain.markdown_import import import_memory_md as import_memory_md
+from tapps_brain.markdown_import import import_openclaw_workspace as import_openclaw_workspace
 from tapps_brain.models import (
     ConsolidatedEntry as ConsolidatedEntry,
 )
@@ -122,6 +126,8 @@ __all__ = [
     "find_similar",
     "get_effective_confidence",
     "import_memories",
+    "import_memory_md",
+    "import_openclaw_workspace",
     "inject_memories",
     "is_stale",
 ]

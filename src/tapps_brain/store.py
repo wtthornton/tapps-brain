@@ -269,7 +269,7 @@ class MemoryStore:
                 tier_val: MemoryTier | str = MemoryTier(tier)
             except ValueError:
                 if self._profile is not None and tier in self._profile.layer_names:
-                    tier_val = tier  # type: ignore[assignment]
+                    tier_val = tier
                 else:
                     tier_val = MemoryTier(tier)  # Raise original error
 

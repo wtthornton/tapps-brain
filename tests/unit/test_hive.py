@@ -150,9 +150,7 @@ class TestHiveStoreSave:
 
     def test_save_persists_to_db(self, hive: HiveStore) -> None:
         hive.save(key="lang", value="Python 3.12", source_agent="dev-agent")
-        row = hive._conn.execute(
-            "SELECT * FROM hive_memories WHERE key='lang'"
-        ).fetchone()
+        row = hive._conn.execute("SELECT * FROM hive_memories WHERE key='lang'").fetchone()
         assert row is not None
         assert row["value"] == "Python 3.12"
         assert row["source_agent"] == "dev-agent"

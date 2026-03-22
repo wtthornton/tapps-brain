@@ -850,26 +850,28 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
         if profile is None:
             return json.dumps({"error": "no_profile", "message": "No profile loaded."})
 
-        return json.dumps({
-            "name": profile.name,
-            "description": profile.description,
-            "version": profile.version,
-            "layers": [
-                {
-                    "name": la.name,
-                    "half_life_days": la.half_life_days,
-                    "decay_model": la.decay_model,
-                    "confidence_floor": la.confidence_floor,
-                }
-                for la in profile.layers
-            ],
-            "scoring": {
-                "relevance": profile.scoring.relevance,
-                "confidence": profile.scoring.confidence,
-                "recency": profile.scoring.recency,
-                "frequency": profile.scoring.frequency,
-            },
-        })
+        return json.dumps(
+            {
+                "name": profile.name,
+                "description": profile.description,
+                "version": profile.version,
+                "layers": [
+                    {
+                        "name": la.name,
+                        "half_life_days": la.half_life_days,
+                        "decay_model": la.decay_model,
+                        "confidence_floor": la.confidence_floor,
+                    }
+                    for la in profile.layers
+                ],
+                "scoring": {
+                    "relevance": profile.scoring.relevance,
+                    "confidence": profile.scoring.confidence,
+                    "recency": profile.scoring.recency,
+                    "frequency": profile.scoring.frequency,
+                },
+            }
+        )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def profile_switch(name: str) -> str:
@@ -885,19 +887,23 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             # Note: This only takes effect for future operations within this session.
             # For permanent change, use the CLI: tapps-brain profile set <name>
             store._profile = profile
-            return json.dumps({
-                "switched": True,
-                "profile": profile.name,
-                "layer_count": len(profile.layers),
-            })
+            return json.dumps(
+                {
+                    "switched": True,
+                    "profile": profile.name,
+                    "layer_count": len(profile.layers),
+                }
+            )
         except FileNotFoundError:
             from tapps_brain.profile import list_builtin_profiles
 
-            return json.dumps({
-                "error": "profile_not_found",
-                "message": f"No built-in profile '{name}'.",
-                "available": list_builtin_profiles(),
-            })
+            return json.dumps(
+                {
+                    "error": "profile_not_found",
+                    "message": f"No built-in profile '{name}'.",
+                    "available": list_builtin_profiles(),
+                }
+            )
 
     # ------------------------------------------------------------------
     # Hive tools (EPIC-011)
@@ -925,11 +931,13 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
                 for a in registry.list_agents()
             ]
             hive.close()
-            return json.dumps({
-                "namespaces": ns_counts,
-                "total_entries": sum(ns_counts.values()),
-                "agents": agents,
-            })
+            return json.dumps(
+                {
+                    "namespaces": ns_counts,
+                    "total_entries": sum(ns_counts.values()),
+                    "agents": agents,
+                }
+            )
         except Exception as exc:
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
@@ -972,9 +980,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             if store.profile is not None:
                 profile_name = getattr(store.profile, "name", "repo-brain")
 
-            tier_val = (
-                entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            )
+            tier_val = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
             result = PropagationEngine.propagate(
                 key=entry.key,
                 value=entry.value,
@@ -1012,16 +1018,16 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
 
             registry = AgentRegistry()
             skill_list = [s.strip() for s in skills.split(",") if s.strip()]
-            agent = AgentRegistration(
-                id=agent_id, profile=profile, skills=skill_list
-            )
+            agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
             registry.register(agent)
-            return json.dumps({
-                "registered": True,
-                "agent_id": agent_id,
-                "profile": profile,
-                "skills": skill_list,
-            })
+            return json.dumps(
+                {
+                    "registered": True,
+                    "agent_id": agent_id,
+                    "profile": profile,
+                    "skills": skill_list,
+                }
+            )
         except Exception as exc:
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
@@ -1032,9 +1038,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             from tapps_brain.hive import AgentRegistry
 
             registry = AgentRegistry()
-            agents = [
-                a.model_dump(mode="json") for a in registry.list_agents()
-            ]
+            agents = [a.model_dump(mode="json") for a in registry.list_agents()]
             return json.dumps({"agents": agents, "count": len(agents)})
         except Exception as exc:
             return json.dumps({"error": "registry_error", "message": str(exc)})

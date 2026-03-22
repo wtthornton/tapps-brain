@@ -218,15 +218,17 @@ class RecallOrchestrator:
             # Apply hive weight to confidence
             raw_conf = entry.get("confidence", 0.6)
             conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.6
-            hive_memories.append({
-                "key": key,
-                "confidence": round(conf * self._hive_recall_weight, 4),
-                "tier": entry.get("tier", "pattern"),
-                "score": round(conf * self._hive_recall_weight, 4),
-                "source": "hive",
-                "namespace": entry.get("namespace", "universal"),
-                "value": entry.get("value", ""),
-            })
+            hive_memories.append(
+                {
+                    "key": key,
+                    "confidence": round(conf * self._hive_recall_weight, 4),
+                    "tier": entry.get("tier", "pattern"),
+                    "score": round(conf * self._hive_recall_weight, 4),
+                    "source": "hive",
+                    "namespace": entry.get("namespace", "universal"),
+                    "value": entry.get("value", ""),
+                }
+            )
 
         return hive_memories, len(hive_memories)
 
@@ -259,10 +261,7 @@ class RecallOrchestrator:
             value = str(mem.get("value", key))
             src = str(mem.get("source", "local"))
             origin = f" [hive:{mem.get('namespace', '')}]" if src == "hive" else ""
-            lines.append(
-                f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): "
-                f"{value}"
-            )
+            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): {value}")
         return "\n".join(lines)
 
     def _apply_graph_boost(

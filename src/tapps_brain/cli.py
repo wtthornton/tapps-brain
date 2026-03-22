@@ -902,18 +902,20 @@ def profile_list(
     profiles = []
     for name in names:
         p = get_builtin_profile(name)
-        profiles.append({
-            "name": p.name,
-            "description": p.description,
-            "layers": len(p.layers),
-        })
+        profiles.append(
+            {
+                "name": p.name,
+                "description": p.description,
+                "layers": len(p.layers),
+            }
+        )
 
     if as_json:
         _output(profiles, as_json=True)
     else:
         typer.echo("Available profiles:")
-        for p in profiles:
-            typer.echo(f"  {p['name']:25s} ({p['layers']} layers) — {p['description']}")
+        for item in profiles:
+            typer.echo(f"  {item['name']:25s} ({item['layers']} layers) — {item['description']}")
 
 
 @profile_app.command("set")
@@ -997,9 +999,7 @@ def profile_layers(
             if "demotion_to" in la_info:
                 typer.echo(f"    Demotion:         → {la_info['demotion_to']}")
             if "importance_tags" in la_info:
-                tags_str = ", ".join(
-                    f"{k}={v}x" for k, v in la_info["importance_tags"].items()
-                )
+                tags_str = ", ".join(f"{k}={v}x" for k, v in la_info["importance_tags"].items())
                 typer.echo(f"    Importance tags:  {tags_str}")
 
 
@@ -1026,8 +1026,7 @@ def hive_status(as_json: JsonFlag = False) -> None:
 
     registry = AgentRegistry()
     agents = [
-        {"id": a.id, "profile": a.profile, "skills": a.skills}
-        for a in registry.list_agents()
+        {"id": a.id, "profile": a.profile, "skills": a.skills} for a in registry.list_agents()
     ]
     hive.close()
 

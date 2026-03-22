@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -293,7 +294,7 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
             layer_importance_tags[layer.name] = dict(layer.importance_tags)
 
     # Map legacy fields from matching layer names
-    legacy: dict[str, int] = {}
+    legacy: dict[str, Any] = {}
     legacy_map = {
         "architectural": "architectural_half_life_days",
         "pattern": "pattern_half_life_days",

@@ -58,9 +58,7 @@ def _make_store(
 class TestMultiAgentRoundTrip:
     """Agent A saves → Hive → Agent B recalls."""
 
-    def test_agent_a_hive_scope_found_by_agent_b(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_agent_a_hive_scope_found_by_agent_b(self, tmp_path: Path, hive: HiveStore) -> None:
         """Agent A saves with hive scope → Agent B recalls it."""
         # Agent A propagates to Hive
         PropagationEngine.propagate(
@@ -82,9 +80,7 @@ class TestMultiAgentRoundTrip:
         hive_keys = [m.get("key") for m in result.memories if m.get("source") == "hive"]
         assert "db-choice" in hive_keys
 
-    def test_domain_scope_isolation(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_domain_scope_isolation(self, tmp_path: Path, hive: HiveStore) -> None:
         """Domain scope: matching profile finds it, non-matching doesn't."""
         PropagationEngine.propagate(
             key="code-pattern",
@@ -148,9 +144,7 @@ class TestConflictResolutionIntegration:
 class TestAutoPropagatioIntegration:
     """Auto-propagation based on tier configuration."""
 
-    def test_auto_propagate_architectural_to_hive(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_auto_propagate_architectural_to_hive(self, tmp_path: Path, hive: HiveStore) -> None:
         result = PropagationEngine.propagate(
             key="arch-fact",
             value="REST API design",
@@ -168,9 +162,7 @@ class TestAutoPropagatioIntegration:
         assert result is not None
         assert result["namespace"] == "repo-brain"
 
-    def test_private_tier_stays_local(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_private_tier_stays_local(self, tmp_path: Path, hive: HiveStore) -> None:
         result = PropagationEngine.propagate(
             key="ctx-fact",
             value="Current debug session",
@@ -197,9 +189,7 @@ class TestBackwardCompat:
         assert result.hive_memory_count == 0
         assert result.memory_count >= 1
 
-    def test_hive_recall_weight_affects_ranking(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_hive_recall_weight_affects_ranking(self, tmp_path: Path, hive: HiveStore) -> None:
         """Hive results should be weighted lower than local results."""
         # Put a memory in the Hive
         hive.save(
@@ -217,9 +207,7 @@ class TestBackwardCompat:
         keys = [m.get("key") for m in result.memories]
         assert "local-fact" in keys
 
-    def test_agent_registry_survives_restart(
-        self, tmp_path: Path, registry: AgentRegistry
-    ) -> None:
+    def test_agent_registry_survives_restart(self, tmp_path: Path, registry: AgentRegistry) -> None:
         registry.register(AgentRegistration(id="dev", profile="repo-brain", skills=["coding"]))
         # New instance loads from disk
         reg2 = AgentRegistry(registry_path=tmp_path / "agents.yaml")

@@ -257,8 +257,7 @@ class HiveStore:
 
         with self._lock:
             existing = self._conn.execute(
-                "SELECT * FROM hive_memories "
-                "WHERE namespace = ? AND key = ?",
+                "SELECT * FROM hive_memories WHERE namespace = ? AND key = ?",
                 (namespace, key),
             ).fetchone()
 
@@ -436,9 +435,7 @@ class HiveStore:
             )
             # Rebuild FTS index
             with contextlib.suppress(sqlite3.OperationalError):
-                self._conn.execute(
-                    "INSERT INTO hive_fts(hive_fts) VALUES('rebuild')"
-                )
+                self._conn.execute("INSERT INTO hive_fts(hive_fts) VALUES('rebuild')")
             self._conn.commit()
 
         logger.info(
@@ -581,11 +578,7 @@ class PropagationEngine:
         if private_tiers and tier in private_tiers:
             effective_scope = "private"
         # Auto-propagation for configured tiers
-        elif (
-            auto_propagate_tiers
-            and tier in auto_propagate_tiers
-            and effective_scope == "private"
-        ):
+        elif auto_propagate_tiers and tier in auto_propagate_tiers and effective_scope == "private":
             effective_scope = "domain"
 
         if effective_scope == "private":

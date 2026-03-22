@@ -23,7 +23,6 @@ from tapps_brain.profile import (
     resolve_profile,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -125,12 +124,12 @@ class TestScoringConfig:
 
     def test_weights_sum_too_low(self) -> None:
         """Weights summing well below 1.0 must be rejected."""
-        with pytest.raises(ValueError, match="sum to ~1.0"):
+        with pytest.raises(ValueError, match=r"sum to ~1\.0"):
             ScoringConfig(relevance=0.10, confidence=0.10, recency=0.10, frequency=0.10)
 
     def test_weights_sum_too_high(self) -> None:
         """Weights summing well above 1.0 must be rejected."""
-        with pytest.raises(ValueError, match="sum to ~1.0"):
+        with pytest.raises(ValueError, match=r"sum to ~1\.0"):
             ScoringConfig(relevance=0.50, confidence=0.50, recency=0.50, frequency=0.50)
 
     def test_weights_at_lower_boundary(self) -> None:
@@ -355,9 +354,7 @@ class TestBuiltinProfiles:
                 + profile.scoring.recency
                 + profile.scoring.frequency
             )
-            assert abs(total - 1.0) < 0.05, (
-                f"Profile '{name}' scoring weights sum to {total}"
-            )
+            assert abs(total - 1.0) < 0.05, f"Profile '{name}' scoring weights sum to {total}"
 
     def test_repo_brain_layer_half_lives(self) -> None:
         profile = get_builtin_profile("repo-brain")
@@ -595,7 +592,9 @@ class TestResolveProfile:
         with pytest.raises(FileNotFoundError):
             resolve_profile(tmp_path, profile_name="does-not-exist")
 
-    def test_user_global_profile_used(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_user_global_profile_used(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When no project profile exists but user-global does, use it."""
         fake_home = tmp_path / "home"
         fake_home.mkdir()

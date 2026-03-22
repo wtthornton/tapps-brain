@@ -19,9 +19,7 @@ from tapps_brain.models import MemoryEntry
 from tapps_brain.profile import (
     GCConfig,
     LayerDefinition,
-    LimitsConfig,
     MemoryProfile,
-    ScoringConfig,
     get_builtin_profile,
 )
 from tapps_brain.store import MemoryStore
@@ -272,7 +270,10 @@ class TestRepoBrainBackwardCompat:
         default_config = DecayConfig()
 
         # All four legacy half-lives should match
-        assert profile_config.architectural_half_life_days == default_config.architectural_half_life_days
+        assert (
+            profile_config.architectural_half_life_days
+            == default_config.architectural_half_life_days
+        )
         assert profile_config.pattern_half_life_days == default_config.pattern_half_life_days
         assert profile_config.procedural_half_life_days == default_config.procedural_half_life_days
         assert profile_config.context_half_life_days == default_config.context_half_life_days
