@@ -48,7 +48,7 @@ uv build
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (28 tools including 5 Hive tools and 2 Profile tools, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v7**; v5 = bi-temporal columns, v6 = version bump for tooling, v7 = `agent_scope` for Hive). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (29 tools including 5 Hive tools, 1 `agent_create` composite tool, and 2 Profile tools, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v7**; v5 = bi-temporal columns, v6 = version bump for tooling, v7 = `agent_scope` for Hive). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, access counting, and `agent_scope` for Hive propagation. `ConsolidatedEntry` extends it for merged memories. `RecallResult` includes `hive_memory_count` for observability.
 
@@ -93,6 +93,7 @@ This project is configured for [Ralph for Claude Code](https://github.com/frankb
 - **fix_plan.md is the single source of truth for task priority.** PROMPT.md defines *how* to work (rules, constraints, process). fix_plan.md defines *what* to work on (priorities, order). PROMPT.md must NEVER override or restate priorities — always defer to fix_plan.md for task selection.
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
+- **Do NOT run pytest, ruff, or mypy mid-epic.** QA is deferred to epic boundaries (when the last `- [ ]` in a `##` section is completed). Set `TESTS_STATUS: DEFERRED` for all mid-epic tasks. This saves 2-5 minutes per loop.
 
 ### Ralph Files
 

@@ -27,19 +27,19 @@ The result: an OpenClaw orchestrator that creates multiple agents cannot give ea
 
 ## Success Criteria
 
-- [ ] MCP server accepts `--agent-id` and `--enable-hive` CLI flags
-- [ ] `memory_save` tool exposes `agent_scope` parameter; saves auto-propagate when Hive is enabled
-- [ ] `hive_propagate` and other Hive tools use the server's agent identity, not hardcoded values
-- [ ] OpenClaw plugin supports `agentId` and `hiveEnabled` config; auto-registers on bootstrap
-- [ ] A composite `agent_create` MCP tool exists for one-call agent setup
-- [ ] Multi-agent Hive pattern documented in OpenClaw guide
-- [ ] All changes covered by tests; 95% coverage maintained
+- [x] MCP server accepts `--agent-id` and `--enable-hive` CLI flags
+- [x] `memory_save` tool exposes `agent_scope` parameter; saves auto-propagate when Hive is enabled
+- [x] `hive_propagate` and other Hive tools use the server's agent identity, not hardcoded values
+- [x] OpenClaw plugin supports `agentId` and `hiveEnabled` config; auto-registers on bootstrap
+- [x] A composite `agent_create` MCP tool exists for one-call agent setup
+- [x] Multi-agent Hive pattern documented in OpenClaw guide
+- [x] All changes covered by tests; 95% coverage maintained
 
 ## Stories
 
 ### STORY-013.1: MCP server Hive wiring — CLI flags and shared HiveStore
 
-**Status:** todo
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-011 (done)
 
@@ -52,7 +52,7 @@ Add `--agent-id <id>` and `--enable-hive` CLI arguments to the MCP server entry 
 
 ### STORY-013.2: Expose `agent_scope` in `memory_save` MCP tool
 
-**Status:** todo
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-013.1
 
@@ -65,7 +65,7 @@ Add `agent_scope: str = "private"` parameter to the `memory_save` MCP tool. Pass
 
 ### STORY-013.3: Expose `source_agent` in `memory_save` MCP tool
 
-**Status:** todo
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-013.1
 
@@ -78,7 +78,7 @@ Add `source_agent: str = ""` parameter to `memory_save`. When empty, fall back t
 
 ### STORY-013.4: Hive tools reuse server's HiveStore and agent identity
 
-**Status:** todo
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-013.1
 
@@ -92,7 +92,7 @@ Refactor `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agen
 
 ### STORY-013.5: `agent_create` composite MCP tool
 
-**Status:** todo
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-013.1
 
@@ -105,7 +105,7 @@ Add `agent_create` MCP tool that performs in one call: (1) register agent in Age
 
 ### STORY-013.6: OpenClaw plugin — agent identity and Hive config
 
-**Status:** todo
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-013.1, STORY-013.5
 
@@ -118,7 +118,7 @@ Add `agentId` and `hiveEnabled` fields to the OpenClaw plugin's `plugin.json` co
 
 ### STORY-013.7: OpenClaw guide — multi-agent Hive patterns
 
-**Status:** todo
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-013.6
 
@@ -134,7 +134,7 @@ Update `docs/guides/openclaw.md` with a "Multi-Agent Hive" section documenting:
 
 ### STORY-013.8: Integration tests — multi-agent Hive round-trip
 
-**Status:** todo
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-013.2, STORY-013.3, STORY-013.4
 
@@ -149,7 +149,7 @@ Integration test with real SQLite: create two agents with different profiles sha
 
 ### STORY-013.9: Final validation and status update
 
-**Status:** todo
+**Status:** done
 **Effort:** S
 **Depends on:** All above
 
