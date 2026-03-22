@@ -207,6 +207,7 @@ class MemoryStore:
         tags: list[str] | None = None,
         branch: str | None = None,
         confidence: float = -1.0,
+        agent_scope: str = "private",
         *,
         skip_consolidation: bool = False,
     ) -> MemoryEntry | dict[str, Any]:
@@ -222,6 +223,7 @@ class MemoryStore:
             source: Source of the memory (human, agent, inferred, system).
             source_agent: Identifier of the agent saving the memory.
             scope: Visibility scope (project, branch, session).
+            agent_scope: Hive propagation scope (private, domain, hive).
             tags: Tags for categorization.
             branch: Git branch name (required when scope=branch).
             confidence: Confidence score (-1.0 for auto from source).
@@ -281,6 +283,7 @@ class MemoryStore:
                 source=MemorySource(source),
                 source_agent=source_agent,
                 scope=MemoryScope(scope),
+                agent_scope=agent_scope,
                 tags=tags or [],
                 created_at=existing.created_at if existing else now,
                 updated_at=now,

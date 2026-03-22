@@ -106,7 +106,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Add `--agent-id <id>` and `--enable-hive` arguments to MCP server argparse. When `--enable-hive` is set, instantiate `HiveStore()` and pass it + `hive_agent_id` to `MemoryStore`. Store resolved agent ID and HiveStore on the server so all tools can access them. Backward compatible: no flags = identical to today. Add unit test confirming store receives `hive_store` and `hive_agent_id` when flags are set. Commit: `feat(story-013.1): MCP server --agent-id and --enable-hive flags`
 
 #### 013-B: Expose `agent_scope` in `memory_save` MCP tool
-- [ ] Add `agent_scope: str = "private"` parameter to `memory_save`. Pass through to `store.save()`. When Hive is enabled and scope is `"domain"` or `"hive"`, the store's `_propagate_to_hive()` handles propagation automatically. Add unit test with mocked HiveStore verifying propagation triggers. Commit: `feat(story-013.2): agent_scope parameter in memory_save`
+- [x] Add `agent_scope: str = "private"` parameter to `memory_save`. Pass through to `store.save()`. When Hive is enabled and scope is `"domain"` or `"hive"`, the store's `_propagate_to_hive()` handles propagation automatically. Add unit test with mocked HiveStore verifying propagation triggers. Commit: `feat(story-013.2): agent_scope parameter in memory_save`
 
 #### 013-C: Expose `source_agent` in `memory_save` MCP tool
 - [ ] Add `source_agent: str = ""` parameter to `memory_save`. When empty, fall back to server's `--agent-id` (or `"unknown"`). Pass through to `store.save(source_agent=...)`. Add unit test verifying both explicit and fallback paths. Commit: `feat(story-013.3): source_agent parameter in memory_save`

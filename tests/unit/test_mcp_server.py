@@ -993,3 +993,82 @@ class TestMCPHiveWiring:
         assert store._hive_agent_id == "solo-agent"
         assert server._tapps_agent_id == "solo-agent"
         store.close()
+
+
+class TestMemorySaveAgentScope:
+    """Tests for agent_scope parameter in memory_save (STORY-013.2)."""
+
+    def test_memory_save_default_agent_scope_is_private(self, mcp_server):
+        """memory_save without agent_scope sets private on the entry."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="scope-test", value="test value"))
+        assert result["status"] == "saved"
+
+        store = mcp_server._tapps_store
+        entry = store.get("scope-test")
+        assert entry is not None
+        assert entry.agent_scope == "private"
+
+    def test_memory_save_agent_scope_domain(self, mcp_server):
+        """memory_save with agent_scope='domain' sets it on the entry."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(
+            save_fn(key="domain-test", value="domain value", agent_scope="domain")
+        )
+        assert result["status"] == "saved"
+
+        store = mcp_server._tapps_store
+        entry = store.get("domain-test")
+        assert entry is not None
+        assert entry.agent_scope == "domain"
+
+    def test_memory_save_agent_scope_hive(self, mcp_server):
+        """memory_save with agent_scope='hive' sets it on the entry."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(
+            save_fn(key="hive-test", value="hive value", agent_scope="hive")
+        )
+        assert result["status"] == "saved"
+
+        store = mcp_server._tapps_store
+        entry = store.get("hive-test")
+        assert entry is not None
+        assert entry.agent_scope == "hive"
+
+    def test_memory_save_hive_scope_triggers_propagation(self, store_dir):
+        """When Hive is enabled, saving with agent_scope='hive' propagates."""
+        from unittest.mock import patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        store = server._tapps_store
+
+        with patch.object(store, "_propagate_to_hive") as mock_propagate:
+            save_fn = _tool_fn(server, "memory_save")
+            save_fn(key="prop-test", value="propagated value", agent_scope="hive")
+            mock_propagate.assert_called_once()
+            propagated_entry = mock_propagate.call_args[0][0]
+            assert propagated_entry.agent_scope == "hive"
+
+        store._hive_store.close()
+        store.close()
+
+    def test_memory_save_private_scope_still_calls_propagate(self, store_dir):
+        """Private scope entries still call _propagate_to_hive (engine decides)."""
+        from unittest.mock import patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        store = server._tapps_store
+
+        with patch.object(store, "_propagate_to_hive") as mock_propagate:
+            save_fn = _tool_fn(server, "memory_save")
+            save_fn(key="priv-test", value="private value", agent_scope="private")
+            mock_propagate.assert_called_once()
+            propagated_entry = mock_propagate.call_args[0][0]
+            assert propagated_entry.agent_scope == "private"
+
+        store._hive_store.close()
+        store.close()
