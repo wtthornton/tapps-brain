@@ -10,9 +10,9 @@ author: tapps-brain contributors
 license: MIT
 slot: ContextEngine
 install: pip install tapps-brain[mcp]
-homepage: https://github.com/anthropics/tapps-brain
-repository: https://github.com/anthropics/tapps-brain
-documentation: https://github.com/anthropics/tapps-brain/tree/main/docs
+homepage: https://github.com/wtthornton/tapps-brain
+repository: https://github.com/wtthornton/tapps-brain
+documentation: https://github.com/wtthornton/tapps-brain/tree/main/docs
 triggers:
   - bootstrap
   - ingest
@@ -132,7 +132,7 @@ automatically via `openclaw.plugin.json`.
   `high_confidence`, or `fast_context` scoring profiles
 - **Hive sharing:** Multiple OpenClaw agents share knowledge via the Hive
 - **Federation:** Cross-project memory sharing via a federated hub
-- **26 MCP tools:** Full programmatic control when you need it
+- **28 MCP tools:** Full programmatic control when you need it
 
 ## Configuration
 

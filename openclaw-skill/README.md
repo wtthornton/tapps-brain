@@ -33,7 +33,7 @@ This installs `tapps-brain[mcp]` from PyPI and auto-configures the MCP server.
   `fast_context` scoring profiles
 - **Hive sharing** -- multiple OpenClaw agents share knowledge via the Hive
 - **Federation** -- cross-project memory sharing via a federated hub
-- **26 MCP tools** -- full programmatic control when you need it
+- **28 MCP tools** -- full programmatic control when you need it
 
 ## How It Works
 
@@ -77,9 +77,9 @@ Settings in `openclaw.plugin.json` (auto-installed with the skill):
 
 ## Links
 
-- [Documentation](https://github.com/anthropics/tapps-brain/tree/main/docs)
-- [Source](https://github.com/anthropics/tapps-brain)
-- [OpenClaw Integration Guide](https://github.com/anthropics/tapps-brain/blob/main/docs/guides/openclaw.md)
+- [Documentation](https://github.com/wtthornton/tapps-brain/tree/main/docs)
+- [Source](https://github.com/wtthornton/tapps-brain)
+- [OpenClaw Integration Guide](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw.md)
 - [PyPI](https://pypi.org/project/tapps-brain/)
 
 ## License

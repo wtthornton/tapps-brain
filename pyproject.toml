@@ -29,11 +29,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tapps-brain/tapps-brain"
-Repository = "https://github.com/tapps-brain/tapps-brain"
-Documentation = "https://github.com/tapps-brain/tapps-brain/tree/main/docs"
-Changelog = "https://github.com/tapps-brain/tapps-brain/blob/main/CHANGELOG.md"
-"Bug Tracker" = "https://github.com/tapps-brain/tapps-brain/issues"
+Homepage = "https://github.com/wtthornton/tapps-brain"
+Repository = "https://github.com/wtthornton/tapps-brain"
+Documentation = "https://github.com/wtthornton/tapps-brain/tree/main/docs"
+Changelog = "https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/wtthornton/tapps-brain/issues"
 
 [project.scripts]
 tapps-brain = "tapps_brain.cli:app"

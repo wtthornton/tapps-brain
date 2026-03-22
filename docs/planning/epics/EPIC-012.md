@@ -173,7 +173,7 @@ Distribution is what turns a working integration into adoption. PyPI publish mak
 - [x] `uv build` produces clean wheel and sdist
 - [x] Published to PyPI: `pip install tapps-brain[mcp]` works
 - [x] `openclaw-skill/` directory with `SKILL.md` (YAML frontmatter + instructions) and `openclaw.plugin.json`
-- [x] SKILL.md declares all 21 MCP tools, triggers, capabilities, permissions
+- [x] SKILL.md declares all 28 MCP tools, triggers, capabilities, permissions
 - [x] `openclaw.plugin.json` auto-configures MCP server on install
 - [x] Submitted to ClawHub registry (PR to `github.com/openclaw/clawhub` or `openclaw skill publish`)
 - [x] Version consistency check: pyproject.toml version = SKILL.md version = plugin.json version

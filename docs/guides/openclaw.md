@@ -1,6 +1,6 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. 21 MCP tools, zero LLM dependency, works offline.
+Persistent cross-session memory for your OpenClaw agents. 28 MCP tools, zero LLM dependency, works offline.
 
 There are two ways to integrate tapps-brain with OpenClaw:
 
@@ -11,7 +11,7 @@ There are two ways to integrate tapps-brain with OpenClaw:
 
 The **ContextEngine plugin** (recommended) handles everything automatically — bootstrap,
 recall, capture, and pre-compaction flush — with no agent prompting required. The **MCP
-sidecar** gives you direct access to all 21 tools for custom integrations.
+sidecar** gives you direct access to all 28 tools for custom integrations.
 
 ---
 
@@ -25,16 +25,22 @@ sidecar** gives you direct access to all 21 tools for custom integrations.
 # Install the Python backend
 pip install tapps-brain[mcp]
 
-# Install the OpenClaw plugin
-cd openclaw-plugin
+# Clone the repo to get the OpenClaw plugin source
+git clone https://github.com/wtthornton/tapps-brain.git
+cd tapps-brain/openclaw-plugin
 npm install
 npm run build
 ```
 
+> **Note:** The ContextEngine plugin is a TypeScript package inside the tapps-brain
+> repository at `openclaw-plugin/`. You need to clone the repo (or download that
+> directory) to build it. The `pip install` only provides the Python backend and MCP
+> server — the OpenClaw plugin wrapper is separate.
+
 ### 2. Register the plugin
 
-Copy `openclaw-plugin/` into your OpenClaw plugins directory (or symlink it), then add
-the plugin to your OpenClaw config:
+Copy the built `openclaw-plugin/` directory into your OpenClaw plugins directory (or
+symlink it), then add the plugin to your OpenClaw config:
 
 ```json
 {
@@ -88,7 +94,33 @@ When OpenClaw compacts the context window, the plugin flushes the about-to-be-di
 context into tapps-brain via `memory_ingest` and indexes the session chunks with
 `memory_index_session`. This ensures no knowledge is lost during compaction.
 
-### 4. Plugin settings
+### 4. Test it
+
+After registering the plugin and restarting OpenClaw, verify the integration is working:
+
+1. Start a new OpenClaw session. The bootstrap hook should log that `tapps-brain-mcp`
+   has spawned.
+
+2. Ask your agent:
+
+```
+"remember that we use PostgreSQL 16 for the main database"
+```
+
+3. Start a **new session** and ask:
+
+```
+"what do you remember about the database?"
+```
+
+If the agent recalls the PostgreSQL fact without being prompted, auto-recall is working.
+You can also check the store directly:
+
+```bash
+tapps-brain search "PostgreSQL" --project-dir /path/to/your/project
+```
+
+### 5. Plugin settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -97,7 +129,7 @@ context into tapps-brain via `memory_ingest` and indexes the session chunks with
 | `tokenBudget` | `2000` | Max tokens for injected memories |
 | `captureRateLimit` | `3` | Capture every N turns (0 = every turn) |
 
-### 5. Profile switching
+### 6. Profile switching
 
 tapps-brain supports configurable memory profiles (EPIC-010) that control tier weights,
 decay rates, and scoring parameters. To use a custom profile with the plugin:
@@ -123,7 +155,7 @@ scoring:
 The MCP server loads the profile at startup and applies it to all recall and scoring
 operations.
 
-### 6. Hive integration (multi-agent sharing)
+### 7. Hive integration (multi-agent sharing)
 
 When multiple OpenClaw agents share a workspace, the Hive (EPIC-011) enables cross-agent
 memory sharing. Memories marked with `agent_scope: "hive"` propagate to a shared store
@@ -146,7 +178,7 @@ No plugin configuration changes are needed — Hive awareness is built into the 
 
 ## Option B: MCP Sidecar (manual control)
 
-Use the MCP sidecar when you need direct access to all 21 tools or want to build custom
+Use the MCP sidecar when you need direct access to all 28 tools or want to build custom
 recall/capture workflows.
 
 ### Quick Start (5 minutes)
@@ -162,7 +194,7 @@ pip install tapps-brain[mcp]
 **From source (latest):**
 
 ```bash
-git clone https://github.com/anthropics/tapps-brain.git
+git clone https://github.com/wtthornton/tapps-brain.git
 cd tapps-brain
 pip install .[mcp]
 ```
@@ -231,7 +263,7 @@ If it recalls the PostgreSQL fact, you're set.
 
 ## What you get
 
-### 21 MCP Tools
+### 28 MCP Tools
 
 | Category | Tools |
 |----------|-------|
@@ -240,6 +272,8 @@ If it recalls the PostgreSQL fact, you're set.
 | **Sessions** | `memory_index_session`, `memory_search_sessions`, `memory_capture` |
 | **Federation** | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
 | **Maintenance** | `maintenance_consolidate`, `maintenance_gc`, `memory_export`, `memory_import` |
+| **Profiles** | `profile_info`, `profile_switch` |
+| **Hive** | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_list` |
 
 ### 4 MCP Resources
 

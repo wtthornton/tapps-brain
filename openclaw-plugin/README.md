@@ -1,6 +1,6 @@
 # tapps-brain OpenClaw Plugin
 
-ContextEngine plugin that integrates [tapps-brain](https://github.com/anthropics/tapps-brain) persistent memory into [OpenClaw](https://openclaw.dev).
+ContextEngine plugin that integrates [tapps-brain](https://github.com/wtthornton/tapps-brain) persistent memory into [OpenClaw](https://openclaw.dev).
 
 ## Features
 
