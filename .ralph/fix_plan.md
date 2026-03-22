@@ -236,7 +236,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 - [x] Add unit tests for `federation subscribe` (happy path + non-existent dir error). Add unit tests for `federation unsubscribe` (happy path + unknown project error). Add unit tests for `federation publish` (happy path). Use Click CliRunner with isolated tmp dirs. Commit: `test(story-016.1): CLI federation command tests`
 
 #### 016-B: CLI maintenance gc archive path and agent create error path
-- [ ] Add unit test for `maintenance gc` non-dry-run: create stale entries, run gc, verify entries archived. Add unit test for `agent create` with invalid profile: verify error message lists available profiles. Commit: `test(story-016.2): CLI gc archive and agent create error tests`
+- [x] Add unit test for `maintenance gc` non-dry-run: create stale entries, run gc, verify entries archived. Add unit test for `agent create` with invalid profile: verify error message lists available profiles. Commit: `test(story-016.2): CLI gc archive and agent create error tests`
 
 ### Phase 2: Concurrency Tests (sequential)
 

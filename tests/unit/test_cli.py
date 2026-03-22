@@ -554,6 +554,39 @@ class TestMaintenanceCommands:
         data = json.loads(result.stdout)
         assert "archived" in data
 
+    def test_gc_archives_stale_entries(self, tmp_path: Path) -> None:
+        """016-B: GC non-dry-run archives session-scoped entries older than 7 days."""
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+
+        # Create store and save a session-scoped entry
+        s = MemoryStore(tmp_path)
+        s.save(key="old-session-fact", value="temporary session info", scope="session")
+        s.close()
+
+        # Back-date updated_at to 8 days ago so GC identifies it as stale
+        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
+        old_ts = (datetime.now(tz=timezone.utc) - timedelta(days=8)).isoformat()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE memories SET updated_at = ? WHERE key = ?",
+            (old_ts, "old-session-fact"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Run gc non-dry-run
+        result = runner.invoke(app, ["maintenance", "gc", "--project-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        # Verify at least 1 entry was archived
+        assert "Archived 1" in result.stdout
+
+        # Verify archive file was written
+        archive_path = tmp_path / ".tapps-brain" / "memory" / "archive.jsonl"
+        assert archive_path.exists()
+        archive_content = archive_path.read_text()
+        assert "old-session-fact" in archive_content
+
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
@@ -842,6 +875,8 @@ class TestAgentCreateCommand:
         )
         assert result.exit_code == 1
         assert "not found" in result.stderr or "not found" in result.output
+        # 016-B: error message must list available profiles
+        assert "Available profiles" in result.stderr or "Available profiles" in result.output
 
     def test_agent_create_invalid_profile_json(self):
         result = runner.invoke(
