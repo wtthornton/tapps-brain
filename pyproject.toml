@@ -89,7 +89,7 @@ markers = [
     "requires_mcp: tests requiring the [mcp] extra (mcp SDK)",
 ]
 filterwarnings = [
-    "ignore:unclosed database:ResourceWarning",
+    "error::ResourceWarning",
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 

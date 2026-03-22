@@ -249,7 +249,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 ### Phase 3: Resource Cleanup (independent)
 
 #### 016-E: Fix unclosed SQLite connections in tests
-- [ ] Run `pytest tests/ -W error::ResourceWarning` to identify all offending tests. Add proper teardown (store.close(), connection.close()) to affected fixtures and tests. Verify zero ResourceWarning with strict warnings enabled. Commit: `fix(story-016.5): close leaked SQLite connections in tests`
+- [x] Run `pytest tests/ -W error::ResourceWarning` to identify all offending tests. Add proper teardown (store.close(), connection.close()) to affected fixtures and tests. Verify zero ResourceWarning with strict warnings enabled. Commit: `fix(story-016.5): close leaked SQLite connections in tests`
 
 ### Phase 4: Edge Cases (independent)
 
