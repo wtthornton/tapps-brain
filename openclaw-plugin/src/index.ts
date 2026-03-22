@@ -45,11 +45,22 @@ export function getMcpClient(): McpClient {
 // Types — OpenClaw ContextEngine hook signatures
 // ---------------------------------------------------------------------------
 
+/** Plugin settings from plugin.json. */
+export interface PluginSettings {
+  mcpCommand?: string;
+  profilePath?: string;
+  tokenBudget?: number;
+  captureRateLimit?: number;
+  agentId?: string;
+  hiveEnabled?: boolean;
+}
+
 /** OpenClaw context passed to hooks. */
 export interface OpenClawContext {
   projectDir: string;
   sessionId: string;
   workspaceDir: string;
+  settings?: PluginSettings;
 }
 
 /** Message structure for ingest hook. */
@@ -112,11 +123,21 @@ export async function bootstrap(
   ctx: OpenClawContext,
 ): Promise<BootstrapResult> {
   const projectDir = ctx.workspaceDir || ctx.projectDir;
+  const settings = ctx.settings ?? {};
+  const agentId = settings.agentId || "";
+  const hiveEnabled = settings.hiveEnabled ?? false;
 
   try {
-    // 1. Spawn MCP child process
+    // 1. Spawn MCP child process with optional Hive flags
     mcpClient = new McpClient(projectDir);
-    await mcpClient.start();
+    const extraArgs: string[] = [];
+    if (agentId) {
+      extraArgs.push("--agent-id", agentId);
+    }
+    if (hiveEnabled) {
+      extraArgs.push("--enable-hive");
+    }
+    await mcpClient.start(settings.mcpCommand ?? "tapps-brain-mcp", extraArgs);
 
     let memoriesImported = 0;
 
@@ -140,7 +161,21 @@ export async function bootstrap(
       }
     }
 
-    // 3. Initial recall for session primer
+    // 3. Auto-register agent on first run when Hive is enabled
+    if (hiveEnabled && agentId) {
+      try {
+        await mcpClient.callTool("agent_register", {
+          agent_id: agentId,
+          profile: settings.profilePath ?? "default",
+        });
+        console.log(`[tapps-brain] bootstrap: registered agent "${agentId}"`);
+      } catch {
+        // Non-fatal — agent may already be registered
+        console.log(`[tapps-brain] bootstrap: agent registration skipped (may already exist)`);
+      }
+    }
+
+    // 4. Initial recall for session primer
     const recallResult = (await mcpClient.callTool("memory_recall", {
       message: "session start — retrieve key project context",
     })) as string;

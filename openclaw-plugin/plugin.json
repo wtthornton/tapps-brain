@@ -22,6 +22,8 @@
     "mcpCommand": "tapps-brain-mcp",
     "profilePath": ".tapps-brain/profile.yaml",
     "tokenBudget": 2000,
-    "captureRateLimit": 3
+    "captureRateLimit": 3,
+    "agentId": "",
+    "hiveEnabled": false
   }
 }

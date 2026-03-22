@@ -67,13 +67,15 @@ export class McpClient {
    * Spawn the `tapps-brain-mcp` child process.
    *
    * @param command - Override for the MCP command (default: "tapps-brain-mcp").
+   * @param extraArgs - Additional CLI arguments (e.g., "--agent-id", "--enable-hive").
    */
-  async start(command = "tapps-brain-mcp"): Promise<void> {
+  async start(command = "tapps-brain-mcp", extraArgs: string[] = []): Promise<void> {
     if (this.process) {
       return; // Already running
     }
 
-    this.process = spawn(command, ["--project-dir", this._projectDir], {
+    const args = ["--project-dir", this._projectDir, ...extraArgs];
+    this.process = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
     });

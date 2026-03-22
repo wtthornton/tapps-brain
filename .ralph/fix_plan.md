@@ -127,7 +127,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 4: OpenClaw Plugin (TypeScript)
 
 #### 013-G: OpenClaw plugin — `agentId` and `hiveEnabled` config
-- [ ] Add `agentId` and `hiveEnabled` fields to plugin `plugin.json` config schema. Update bootstrap hook to pass `--agent-id` and `--enable-hive` flags to MCP spawn. Auto-call `agent_register` on first run with configured agent ID and profile. Omitting config fields preserves current behavior. Commit: `feat(story-013.6): OpenClaw plugin agent identity and Hive config`
+- [x] Add `agentId` and `hiveEnabled` fields to plugin `plugin.json` config schema. Update bootstrap hook to pass `--agent-id` and `--enable-hive` flags to MCP spawn. Auto-call `agent_register` on first run with configured agent ID and profile. Omitting config fields preserves current behavior. Commit: `feat(story-013.6): OpenClaw plugin agent identity and Hive config`
 
 ### Phase 5: Documentation & Testing
 
