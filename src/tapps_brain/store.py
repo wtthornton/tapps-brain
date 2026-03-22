@@ -1248,6 +1248,93 @@ class MemoryStore:
                     deduped.append(m)
         return deduped
 
+    # ------------------------------------------------------------------
+    # Tag management (EPIC-015)
+    # ------------------------------------------------------------------
+
+    def list_tags(self) -> dict[str, int]:
+        """Return all unique tags across all entries with their usage counts.
+
+        Returns:
+            Dict mapping tag → count of entries that carry that tag.
+        """
+        with self._lock:
+            entries = list(self._entries.values())
+        counts: dict[str, int] = {}
+        for entry in entries:
+            for tag in entry.tags:
+                counts[tag] = counts.get(tag, 0) + 1
+        return counts
+
+    def update_tags(
+        self,
+        key: str,
+        *,
+        add: list[str] | None = None,
+        remove: list[str] | None = None,
+    ) -> MemoryEntry | dict[str, str]:
+        """Atomically add and/or remove tags on an existing entry.
+
+        Args:
+            key: The memory entry key.
+            add: Tags to add (ignored when already present).
+            remove: Tags to remove (ignored when not present).
+
+        Returns:
+            The updated ``MemoryEntry`` on success, or a dict with
+            ``"error"`` and ``"message"`` keys on failure.
+        """
+        from tapps_brain.models import MAX_TAGS
+
+        add_set = set(add or [])
+        remove_set = set(remove or [])
+
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return {"error": "not_found", "message": f"Entry '{key}' not found."}
+
+            current = list(entry.tags)
+            # Remove first, then add (preserves existing order)
+            updated_tags = [t for t in current if t not in remove_set]
+            for tag in add_set:
+                if tag not in updated_tags:
+                    updated_tags.append(tag)
+
+            if len(updated_tags) > MAX_TAGS:
+                return {
+                    "error": "too_many_tags",
+                    "message": (
+                        f"Cannot have more than {MAX_TAGS} tags "
+                        f"({len(updated_tags)} would result)."
+                    ),
+                }
+
+            from tapps_brain.models import _utc_now_iso
+
+            updated = entry.model_copy(update={"tags": updated_tags, "updated_at": _utc_now_iso()})
+            self._entries[key] = updated
+
+        self._persistence.save(updated)
+        return updated
+
+    def entries_by_tag(
+        self,
+        tag: str,
+        *,
+        tier: str | None = None,
+    ) -> list[MemoryEntry]:
+        """Return all entries that carry a specific tag.
+
+        Args:
+            tag: The tag to filter by.
+            tier: Optional tier filter.
+
+        Returns:
+            List of matching ``MemoryEntry`` objects.
+        """
+        return self.list_all(tags=[tag], tier=tier)
+
     def close(self) -> None:
         """Close the underlying persistence layer."""
         self._persistence.close()

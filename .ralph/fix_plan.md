@@ -200,7 +200,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 3: Tag Management
 
 #### 015-E: Tag management MCP tools — list_tags, update_tags, entries_by_tag
-- [ ] Add 3 MCP tools: `memory_list_tags()`, `memory_update_tags(key, add, remove)`, `memory_entries_by_tag(tag, tier)`. Add `store.update_tags(key, add, remove)` method for atomic tag modification. Add unit tests. Commit: `feat(story-015.5): tag management MCP tools`
+- [x] Add 3 MCP tools: `memory_list_tags()`, `memory_update_tags(key, add, remove)`, `memory_entries_by_tag(tag, tier)`. Add `store.update_tags(key, add, remove)` method for atomic tag modification. Add unit tests. Commit: `feat(story-015.5): tag management MCP tools`
 
 #### 015-F: Tag management CLI commands
 - [ ] Add CLI commands: `memory tags` (list all with counts) and `memory tag <key> --add tag1 --remove tag2`. Add unit tests. Commit: `feat(story-015.6): tag management CLI commands`

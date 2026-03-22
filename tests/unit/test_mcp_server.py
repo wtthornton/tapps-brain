@@ -1822,3 +1822,195 @@ class TestAuditTrailMCPTool:
         result = json.loads(fn(key="totally-nonexistent-key-xyz"))
         assert result["events"] == []
         assert result["count"] == 0
+
+
+class TestTagManagementMCPTools:
+    """Tests for memory_list_tags, memory_update_tags, memory_entries_by_tag (EPIC-015 story-015.5)."""
+
+    @pytest.fixture
+    def server_with_tags(self, tmp_path):
+        """Server with entries that carry tags."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(tmp_path)
+        store = server._tapps_store
+        store.save(key="entry-alpha", value="Alpha entry.", tier="pattern", tags=["python", "web"])
+        store.save(
+            key="entry-beta", value="Beta entry.", tier="architectural", tags=["python", "db"]
+        )
+        store.save(key="entry-gamma", value="Gamma entry.", tier="context", tags=["web"])
+        yield server
+        store.close()
+
+    # ------------------------------------------------------------------
+    # memory_list_tags
+    # ------------------------------------------------------------------
+
+    def test_memory_list_tags_registered(self, mcp_server):
+        """memory_list_tags is registered on the server."""
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_list_tags" in tool_names
+
+    def test_memory_list_tags_returns_structure(self, server_with_tags):
+        """memory_list_tags returns JSON with tags list and total count."""
+        fn = _tool_fn(server_with_tags, "memory_list_tags")
+        result = json.loads(fn())
+        assert "tags" in result
+        assert "total" in result
+        assert isinstance(result["tags"], list)
+        assert result["total"] == len(result["tags"])
+
+    def test_memory_list_tags_correct_counts(self, server_with_tags):
+        """Tags are counted correctly across all entries."""
+        fn = _tool_fn(server_with_tags, "memory_list_tags")
+        result = json.loads(fn())
+        tag_map = {item["tag"]: item["count"] for item in result["tags"]}
+        assert tag_map["python"] == 2
+        assert tag_map["web"] == 2
+        assert tag_map["db"] == 1
+
+    def test_memory_list_tags_sorted_by_count_desc(self, server_with_tags):
+        """Tags are sorted by count descending."""
+        fn = _tool_fn(server_with_tags, "memory_list_tags")
+        result = json.loads(fn())
+        counts = [item["count"] for item in result["tags"]]
+        assert counts == sorted(counts, reverse=True)
+
+    def test_memory_list_tags_empty_store(self, mcp_server):
+        """Empty store returns empty tags list."""
+        fn = _tool_fn(mcp_server, "memory_list_tags")
+        result = json.loads(fn())
+        assert result["tags"] == []
+        assert result["total"] == 0
+
+    # ------------------------------------------------------------------
+    # memory_update_tags
+    # ------------------------------------------------------------------
+
+    def test_memory_update_tags_registered(self, mcp_server):
+        """memory_update_tags is registered on the server."""
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_update_tags" in tool_names
+
+    def test_memory_update_tags_add_tags(self, server_with_tags):
+        """Adding new tags appends them to the entry."""
+        fn = _tool_fn(server_with_tags, "memory_update_tags")
+        result = json.loads(fn(key="entry-gamma", add=["new-tag"]))
+        assert result["status"] == "updated"
+        assert "new-tag" in result["tags"]
+        assert "web" in result["tags"]  # existing tag preserved
+
+    def test_memory_update_tags_remove_tags(self, server_with_tags):
+        """Removing a tag drops it from the entry."""
+        fn = _tool_fn(server_with_tags, "memory_update_tags")
+        result = json.loads(fn(key="entry-alpha", remove=["web"]))
+        assert result["status"] == "updated"
+        assert "web" not in result["tags"]
+        assert "python" in result["tags"]  # other tag preserved
+
+    def test_memory_update_tags_add_and_remove(self, server_with_tags):
+        """Add and remove can be used together atomically."""
+        fn = _tool_fn(server_with_tags, "memory_update_tags")
+        result = json.loads(fn(key="entry-beta", add=["new-tag"], remove=["db"]))
+        assert result["status"] == "updated"
+        assert "new-tag" in result["tags"]
+        assert "db" not in result["tags"]
+
+    def test_memory_update_tags_add_duplicate_noop(self, server_with_tags):
+        """Adding an already-present tag is a no-op (no duplicates)."""
+        fn = _tool_fn(server_with_tags, "memory_update_tags")
+        result = json.loads(fn(key="entry-alpha", add=["python"]))
+        assert result["status"] == "updated"
+        assert result["tags"].count("python") == 1
+
+    def test_memory_update_tags_remove_nonexistent_noop(self, server_with_tags):
+        """Removing a tag that's not present is a no-op (no error)."""
+        fn = _tool_fn(server_with_tags, "memory_update_tags")
+        result = json.loads(fn(key="entry-alpha", remove=["nonexistent-tag"]))
+        assert result["status"] == "updated"
+        assert "python" in result["tags"]
+
+    def test_memory_update_tags_not_found(self, mcp_server):
+        """Updating tags on a nonexistent key returns error JSON."""
+        fn = _tool_fn(mcp_server, "memory_update_tags")
+        result = json.loads(fn(key="does-not-exist", add=["x"]))
+        assert result["error"] == "not_found"
+        assert "does-not-exist" in result["message"]
+
+    def test_memory_update_tags_too_many_tags(self, tmp_path):
+        """Exceeding 10 tags returns an error."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(tmp_path)
+        store = server._tapps_store
+        store.save(
+            key="taggy",
+            value="Entry with 9 tags.",
+            tags=["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"],
+        )
+        fn = _tool_fn(server, "memory_update_tags")
+        # Adding 2 more would exceed 10
+        result = json.loads(fn(key="taggy", add=["t10", "t11"]))
+        assert result["error"] == "too_many_tags"
+        store.close()
+
+    # ------------------------------------------------------------------
+    # memory_entries_by_tag
+    # ------------------------------------------------------------------
+
+    def test_memory_entries_by_tag_registered(self, mcp_server):
+        """memory_entries_by_tag is registered on the server."""
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_entries_by_tag" in tool_names
+
+    def test_memory_entries_by_tag_returns_structure(self, server_with_tags):
+        """memory_entries_by_tag returns JSON with entries list and count."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result = json.loads(fn(tag="python"))
+        assert "tag" in result
+        assert "entries" in result
+        assert "count" in result
+        assert result["tag"] == "python"
+        assert isinstance(result["entries"], list)
+        assert result["count"] == len(result["entries"])
+
+    def test_memory_entries_by_tag_correct_entries(self, server_with_tags):
+        """Only entries with the specified tag are returned."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result = json.loads(fn(tag="python"))
+        keys = {e["key"] for e in result["entries"]}
+        assert "entry-alpha" in keys
+        assert "entry-beta" in keys
+        assert "entry-gamma" not in keys
+
+    def test_memory_entries_by_tag_with_tier_filter(self, server_with_tags):
+        """Tier filter narrows results further."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result = json.loads(fn(tag="python", tier="architectural"))
+        assert result["count"] == 1
+        assert result["entries"][0]["key"] == "entry-beta"
+
+    def test_memory_entries_by_tag_empty_string_tier_no_filter(self, server_with_tags):
+        """Empty tier string is treated as no tier filter."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result_no_tier = json.loads(fn(tag="python"))
+        result_empty_tier = json.loads(fn(tag="python", tier=""))
+        assert result_no_tier["count"] == result_empty_tier["count"]
+
+    def test_memory_entries_by_tag_unknown_tag(self, server_with_tags):
+        """Tag with no matching entries returns empty list."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result = json.loads(fn(tag="nonexistent-tag"))
+        assert result["entries"] == []
+        assert result["count"] == 0
+
+    def test_memory_entries_by_tag_entry_has_expected_fields(self, server_with_tags):
+        """Each entry in the result has key, value, tier, confidence, tags."""
+        fn = _tool_fn(server_with_tags, "memory_entries_by_tag")
+        result = json.loads(fn(tag="web"))
+        for entry in result["entries"]:
+            assert "key" in entry
+            assert "value" in entry
+            assert "tier" in entry
+            assert "confidence" in entry
+            assert "tags" in entry

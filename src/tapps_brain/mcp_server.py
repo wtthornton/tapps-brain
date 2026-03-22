@@ -1260,6 +1260,83 @@ def create_server(  # noqa: PLR0915
         )
 
     # ------------------------------------------------------------------
+    # Tag management tools (EPIC-015)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_list_tags() -> str:
+        """List all tags used in the memory store with their usage counts.
+
+        Returns a JSON object with a ``tags`` list (each item has ``tag`` and
+        ``count`` fields) sorted by count descending, and a ``total`` field
+        with the number of distinct tags.
+        """
+        counts = store.list_tags()
+        tags_list = sorted(
+            [{"tag": t, "count": c} for t, c in counts.items()],
+            key=lambda x: (-x["count"], x["tag"]),
+        )
+        return json.dumps({"tags": tags_list, "total": len(tags_list)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_update_tags(
+        key: str,
+        add: list[str] | None = None,
+        remove: list[str] | None = None,
+    ) -> str:
+        """Atomically add and/or remove tags on an existing memory entry.
+
+        Tags are deduplicated. The operation respects the 10-tag maximum.
+        Removing a non-existent tag is a no-op. Adding an already-present
+        tag is a no-op.
+
+        Args:
+            key: The memory entry key to update.
+            add: List of tags to add (optional).
+            remove: List of tags to remove (optional).
+        """
+        result = store.update_tags(key, add=add, remove=remove)
+        if isinstance(result, dict):
+            return json.dumps(result)
+        return json.dumps(
+            {
+                "status": "updated",
+                "key": result.key,
+                "tags": result.tags,
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_entries_by_tag(
+        tag: str,
+        tier: str = "",
+    ) -> str:
+        """Return all memory entries that carry a specific tag.
+
+        Args:
+            tag: The tag to filter by.
+            tier: Optional tier filter (architectural, pattern, procedural, context).
+                  Pass empty string to skip tier filtering.
+        """
+        entries = store.entries_by_tag(tag, tier=tier or None)
+        return json.dumps(
+            {
+                "tag": tag,
+                "entries": [
+                    {
+                        "key": e.key,
+                        "value": e.value,
+                        "tier": str(e.tier),
+                        "confidence": e.confidence,
+                        "tags": e.tags,
+                    }
+                    for e in entries
+                ],
+                "count": len(entries),
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
