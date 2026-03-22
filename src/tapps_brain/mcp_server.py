@@ -1075,6 +1075,69 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def agent_create(
+        agent_id: str,
+        profile: str = "repo-brain",
+        skills: str = "",
+    ) -> str:
+        """Create an agent: register in the Hive with a validated profile.
+
+        Combines agent registration with profile validation. Returns
+        namespace assignment and profile summary on success. Returns an
+        error with available profiles listed when the profile is invalid.
+
+        Args:
+            agent_id: Unique agent identifier (slug).
+            profile: Memory profile name (must be a valid built-in or project profile).
+            skills: Comma-separated list of skills.
+        """
+        try:
+            from tapps_brain.hive import AgentRegistration, AgentRegistry
+            from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
+
+            # Validate profile exists
+            try:
+                prof = get_builtin_profile(profile)
+            except FileNotFoundError:
+                available = list_builtin_profiles()
+                return json.dumps({
+                    "error": "invalid_profile",
+                    "message": f"Profile '{profile}' not found.",
+                    "available_profiles": available,
+                })
+
+            # Register agent
+            skill_list = [s.strip() for s in skills.split(",") if s.strip()]
+            agent = AgentRegistration(
+                id=agent_id, profile=profile, skills=skill_list
+            )
+            registry = AgentRegistry()
+            registry.register(agent)
+
+            # Derive namespace (same logic as PropagationEngine)
+            namespace = profile
+
+            # Build profile summary
+            layer_names = [layer.name for layer in prof.layers]
+            profile_summary = {
+                "name": prof.name,
+                "version": prof.version,
+                "layers": layer_names,
+                "description": prof.description,
+            }
+
+            return json.dumps({
+                "created": True,
+                "agent_id": agent_id,
+                "profile": profile,
+                "namespace": namespace,
+                "skills": skill_list,
+                "profile_summary": profile_summary,
+            })
+        except Exception as exc:
+            return json.dumps({"error": "agent_create_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def agent_list() -> str:
         """List all registered agents in the Hive."""
         try:

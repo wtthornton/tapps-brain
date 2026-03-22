@@ -122,7 +122,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 3: Composite Tool (Python)
 
 #### 013-F: `agent_create` composite MCP tool
-- [ ] Add `agent_create` MCP tool: (1) register agent in AgentRegistry with profile and skills, (2) validate profile exists (built-in or project), (3) return namespace assignment and profile summary. Invalid profile returns error with available profiles listed. Add unit test for happy path and invalid profile. Commit: `feat(story-013.5): agent_create composite MCP tool`
+- [x] Add `agent_create` MCP tool: (1) register agent in AgentRegistry with profile and skills, (2) validate profile exists (built-in or project), (3) return namespace assignment and profile summary. Invalid profile returns error with available profiles listed. Add unit test for happy path and invalid profile. Commit: `feat(story-013.5): agent_create composite MCP tool`
 
 ### Phase 4: OpenClaw Plugin (TypeScript)
 

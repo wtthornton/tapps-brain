@@ -1250,3 +1250,42 @@ class TestHiveToolsReuseSharedStore:
         result = json.loads(search_fn(query="test"))
         assert "results" in result or "error" in result
         server._tapps_store.close()
+
+    def test_agent_create_happy_path(self, store_dir):
+        """agent_create registers agent and returns profile summary."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        create_fn = _tool_fn(server, "agent_create")
+        result = json.loads(
+            create_fn(agent_id="qa-1", profile="repo-brain", skills="testing,review")
+        )
+        assert result["created"] is True
+        assert result["agent_id"] == "qa-1"
+        assert result["profile"] == "repo-brain"
+        assert result["namespace"] == "repo-brain"
+        assert result["skills"] == ["testing", "review"]
+        assert "profile_summary" in result
+        summary = result["profile_summary"]
+        assert summary["name"] == "repo-brain"
+        assert isinstance(summary["layers"], list)
+        assert len(summary["layers"]) > 0
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_agent_create_invalid_profile(self, store_dir):
+        """agent_create returns error with available profiles for invalid profile."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        create_fn = _tool_fn(server, "agent_create")
+        result = json.loads(
+            create_fn(agent_id="bad-agent", profile="nonexistent-profile")
+        )
+        assert result["error"] == "invalid_profile"
+        assert "nonexistent-profile" in result["message"]
+        assert isinstance(result["available_profiles"], list)
+        assert len(result["available_profiles"]) > 0
+        assert "repo-brain" in result["available_profiles"]
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
