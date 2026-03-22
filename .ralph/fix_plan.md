@@ -155,7 +155,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Add validation in `memory_save` MCP tool and `MemoryStore.save()`: reject values not in `{"private", "domain", "hive"}` with clear error listing valid options. Add unit test for valid and invalid values. Commit: `feat(story-014.1): validate agent_scope enum values`
 
 #### 014-B: CLI `agent create` command
-- [ ] Add `agent create` subcommand to CLI mirroring MCP `agent_create`: register agent with profile validation, print namespace and profile summary. Reuse `AgentRegistry` and `profile.py`. Add unit test for happy path and invalid profile. Commit: `feat(story-014.2): CLI agent create command`
+- [x] Add `agent create` subcommand to CLI mirroring MCP `agent_create`: register agent with profile validation, print namespace and profile summary. Reuse `AgentRegistry` and `profile.py`. Add unit test for happy path and invalid profile. Commit: `feat(story-014.2): CLI agent create command`
 
 ### Phase 2: Resilience
 

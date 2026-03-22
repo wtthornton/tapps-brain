@@ -593,3 +593,69 @@ class TestAgentCommands:
         data = json.loads(result.stdout)
         assert "agents" in data
         assert "count" in data
+
+
+class TestAgentCreateCommand:
+    """Tests for agent create CLI command (014-B)."""
+
+    def test_agent_create_valid_profile(self):
+        result = runner.invoke(
+            app,
+            ["agent", "create", "test-create-agent", "--profile", "repo-brain"],
+        )
+        assert result.exit_code == 0
+        assert "test-create-agent" in result.stdout
+        assert "repo-brain" in result.stdout
+
+    def test_agent_create_json(self):
+        result = runner.invoke(
+            app,
+            ["agent", "create", "test-create-json-agent", "--profile", "repo-brain", "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["created"] is True
+        assert data["agent_id"] == "test-create-json-agent"
+        assert data["profile"] == "repo-brain"
+        assert "namespace" in data
+        assert "profile_summary" in data
+        ps = data["profile_summary"]
+        assert "name" in ps
+        assert "version" in ps
+        assert "layers" in ps
+
+    def test_agent_create_with_skills(self):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "create",
+                "test-skilled-agent",
+                "--profile",
+                "repo-brain",
+                "--skills",
+                "coding,review",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["skills"] == ["coding", "review"]
+
+    def test_agent_create_invalid_profile(self):
+        result = runner.invoke(
+            app,
+            ["agent", "create", "bad-agent", "--profile", "nonexistent-profile-xyz"],
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.stderr or "not found" in result.output
+
+    def test_agent_create_invalid_profile_json(self):
+        result = runner.invoke(
+            app,
+            ["agent", "create", "bad-agent", "--profile", "nonexistent-profile-xyz", "--json"],
+        )
+        # exit code may be 1; JSON output goes to stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "invalid_profile"
+        assert "available_profiles" in data

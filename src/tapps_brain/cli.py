@@ -1077,6 +1077,75 @@ def hive_search(
             )
 
 
+@agent_app.command("create")
+def agent_create(
+    agent_id: str,
+    profile: Annotated[str, typer.Option(help="Memory profile name.")] = "repo-brain",
+    skills: Annotated[str, typer.Option(help="Comma-separated skills.")] = "",
+    as_json: JsonFlag = False,
+) -> None:
+    """Create an agent with profile validation and print namespace and profile summary."""
+    from tapps_brain.hive import AgentRegistration, AgentRegistry
+    from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
+
+    # Validate profile
+    try:
+        prof = get_builtin_profile(profile)
+    except FileNotFoundError:
+        available = list_builtin_profiles()
+        if as_json:
+            _output(
+                {
+                    "error": "invalid_profile",
+                    "message": f"Profile '{profile}' not found.",
+                    "available_profiles": available,
+                },
+                as_json=True,
+            )
+        else:
+            typer.echo(f"Error: Profile '{profile}' not found.", err=True)
+            typer.echo(f"Available profiles: {', '.join(available)}", err=True)
+        raise typer.Exit(code=1)
+
+    # Register agent
+    skill_list = [s.strip() for s in skills.split(",") if s.strip()]
+    agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
+    registry = AgentRegistry()
+    registry.register(agent)
+
+    # Namespace = profile name (same as PropagationEngine)
+    namespace = profile
+    layer_names = [layer.name for layer in prof.layers]
+    profile_summary = {
+        "name": prof.name,
+        "version": prof.version,
+        "layers": layer_names,
+        "description": prof.description,
+    }
+
+    if as_json:
+        _output(
+            {
+                "created": True,
+                "agent_id": agent_id,
+                "profile": profile,
+                "namespace": namespace,
+                "skills": skill_list,
+                "profile_summary": profile_summary,
+            },
+            as_json=True,
+        )
+    else:
+        typer.echo(f"Created agent '{agent_id}'.")
+        typer.echo(f"  Profile:   {profile}")
+        typer.echo(f"  Namespace: {namespace}")
+        typer.echo(f"  Layers:    {', '.join(layer_names)}")
+        if prof.description:
+            typer.echo(f"  Desc:      {prof.description}")
+        if skill_list:
+            typer.echo(f"  Skills:    {', '.join(skill_list)}")
+
+
 @agent_app.command("register")
 def agent_register(
     agent_id: str,
