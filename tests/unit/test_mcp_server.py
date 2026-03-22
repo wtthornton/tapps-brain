@@ -399,8 +399,8 @@ class TestMcpMain:
         captured: list[object] = []
         real_create = ms.create_server
 
-        def wrap(project_dir=None):
-            srv = real_create(project_dir)
+        def wrap(project_dir=None, **kwargs):
+            srv = real_create(project_dir, **kwargs)
 
             def run(*args, **kwargs):
                 captured.append((args, kwargs))
@@ -948,3 +948,48 @@ class TestSessionAndCaptureTools:
         assert result["status"] == "captured"
         assert isinstance(result["created_keys"], list)
         assert isinstance(result["count"], int)
+
+
+# ------------------------------------------------------------------
+# EPIC-013 — Hive-aware MCP wiring
+# ------------------------------------------------------------------
+
+
+class TestMCPHiveWiring:
+    """Tests for --agent-id and --enable-hive flags (STORY-013.1)."""
+
+    def test_default_no_hive(self, store_dir):
+        """Without flags, store has no HiveStore and agent_id='unknown'."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        store = server._tapps_store
+        assert store._hive_store is None
+        assert store._hive_agent_id == "unknown"
+        assert server._tapps_hive_enabled is False
+        assert server._tapps_agent_id == "unknown"
+        store.close()
+
+    def test_enable_hive_creates_hive_store(self, store_dir):
+        """--enable-hive instantiates a HiveStore on the store."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        store = server._tapps_store
+        assert store._hive_store is not None
+        assert store._hive_agent_id == "test-agent"
+        assert server._tapps_hive_enabled is True
+        assert server._tapps_agent_id == "test-agent"
+        store._hive_store.close()
+        store.close()
+
+    def test_agent_id_without_hive(self, store_dir):
+        """--agent-id alone sets the ID but no HiveStore."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, agent_id="solo-agent")
+        store = server._tapps_store
+        assert store._hive_store is None
+        assert store._hive_agent_id == "solo-agent"
+        assert server._tapps_agent_id == "solo-agent"
+        store.close()

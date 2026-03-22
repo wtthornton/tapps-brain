@@ -41,18 +41,46 @@ def _resolve_project_dir(project_dir: str | None) -> Path:
     return Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
 
 
-def _get_store(project_dir: Path) -> Any:  # noqa: ANN401
-    """Open a MemoryStore for the given project directory."""
+def _get_store(
+    project_dir: Path,
+    *,
+    enable_hive: bool = False,
+    agent_id: str = "unknown",
+) -> Any:  # noqa: ANN401
+    """Open a MemoryStore for the given project directory.
+
+    When *enable_hive* is ``True``, a shared :class:`HiveStore` is
+    created and wired into the store together with *agent_id*.
+    """
     from tapps_brain.store import MemoryStore
 
-    return MemoryStore(project_dir)
+    hive_store = None
+    if enable_hive:
+        from tapps_brain.hive import HiveStore
+
+        hive_store = HiveStore()
+
+    return MemoryStore(
+        project_dir,
+        hive_store=hive_store,
+        hive_agent_id=agent_id,
+    )
 
 
-def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0915
+def create_server(  # noqa: PLR0915
+    project_dir: Path | None = None,
+    *,
+    enable_hive: bool = False,
+    agent_id: str = "unknown",
+) -> Any:  # noqa: ANN401
     """Create and configure a FastMCP server instance.
 
     Args:
         project_dir: Project root directory. Defaults to cwd.
+        enable_hive: When ``True``, create a shared ``HiveStore`` and
+            wire it into the ``MemoryStore``.
+        agent_id: Agent identifier passed to the store as
+            ``hive_agent_id``.
 
     Returns:
         A configured FastMCP server instance.
@@ -60,7 +88,7 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
     fastmcp_cls = _lazy_import_mcp()
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
-    store = _get_store(resolved_dir)
+    store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
 
     mcp = fastmcp_cls(
         "tapps-brain",
@@ -1044,9 +1072,11 @@ def create_server(project_dir: Path | None = None) -> Any:  # noqa: ANN401, PLR0
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     # ------------------------------------------------------------------
-    # Attach store to server for testing access
+    # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
+    mcp._tapps_agent_id = agent_id
+    mcp._tapps_hive_enabled = enable_hive
 
     return mcp
 
@@ -1063,10 +1093,26 @@ def main() -> None:
         default=None,
         help="Project root directory (defaults to cwd).",
     )
+    parser.add_argument(
+        "--agent-id",
+        type=str,
+        default="unknown",
+        help="Agent identifier for Hive propagation (default: 'unknown').",
+    )
+    parser.add_argument(
+        "--enable-hive",
+        action="store_true",
+        default=False,
+        help="Enable Hive multi-agent shared brain.",
+    )
     args = parser.parse_args()
 
     project_dir = Path(args.project_dir) if args.project_dir else None
-    server = create_server(project_dir)
+    server = create_server(
+        project_dir,
+        enable_hive=args.enable_hive,
+        agent_id=args.agent_id,
+    )
     server.run(transport="stdio")
 
 
