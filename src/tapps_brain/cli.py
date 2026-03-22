@@ -498,6 +498,69 @@ def memory_audit(
         store.close()
 
 
+@memory_app.command("tags")
+def memory_tags(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List all tags with their usage counts across the store."""
+    store = _get_store(project_dir)
+    try:
+        counts = store.list_tags()
+        if as_json:
+            _output(
+                [{"tag": tag, "count": cnt} for tag, cnt in sorted(counts.items())],
+                as_json=True,
+            )
+        else:
+            if not counts:
+                typer.echo("  (no tags found)")
+                return
+            rows = [{"tag": tag, "count": str(cnt)} for tag, cnt in sorted(counts.items())]
+            _print_table(rows, columns=["tag", "count"])
+            typer.echo(f"\n{len(counts)} tags")
+    finally:
+        store.close()
+
+
+@memory_app.command("tag")
+def memory_tag(
+    key: Annotated[str, typer.Argument(help="Memory entry key.")],
+    project_dir: ProjectDir = None,
+    add: Annotated[
+        list[str] | None,
+        typer.Option("--add", help="Tags to add (repeatable).", show_default=False),
+    ] = None,
+    remove: Annotated[
+        list[str] | None,
+        typer.Option("--remove", help="Tags to remove (repeatable).", show_default=False),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Add or remove tags on a memory entry.
+
+    Example:
+
+        memory tag my-key --add important --add python --remove old-tag
+    """
+    store = _get_store(project_dir)
+    try:
+        result = store.update_tags(key, add=add or [], remove=remove or [])
+        if isinstance(result, dict):
+            # Error dict returned by store
+            if as_json:
+                _output(result, as_json=True)
+            else:
+                typer.echo(f"Error ({result.get('error')}): {result.get('message')}", err=True)
+            raise typer.Exit(code=1)
+        if as_json:
+            _output({"key": result.key, "tags": list(result.tags)}, as_json=True)
+        else:
+            typer.echo(f"Updated tags for '{key}': {', '.join(result.tags) if result.tags else '(none)'}")
+    finally:
+        store.close()
+
+
 # ===================================================================
 # IMPORT / EXPORT COMMANDS
 # ===================================================================

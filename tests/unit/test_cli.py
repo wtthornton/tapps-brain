@@ -911,3 +911,162 @@ class TestMemoryAuditCommand:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data == []
+
+
+# ---------------------------------------------------------------------------
+# Tag management CLI commands (015-F)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def tags_project_dir(tmp_path: Path):
+    """Create a MemoryStore with tagged entries."""
+    s = MemoryStore(tmp_path)
+    s.save(key="alpha", value="First entry", tier="architectural", tags=["python", "core"])
+    s.save(key="beta", value="Second entry", tier="pattern", tags=["python", "api"])
+    s.save(key="gamma", value="Third entry", tier="procedural", tags=["core"])
+    s.close()
+    return str(tmp_path)
+
+
+class TestMemoryTagsCommand:
+    def test_tags_empty_store(self, tmp_path):
+        """Empty store shows friendly message."""
+        result = runner.invoke(app, ["memory", "tags", "--project-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "no tags found" in result.stdout
+
+    def test_tags_table_output(self, tags_project_dir):
+        """Table output shows TAG and COUNT columns."""
+        result = runner.invoke(app, ["memory", "tags", "--project-dir", tags_project_dir])
+        assert result.exit_code == 0
+        assert "TAG" in result.stdout
+        assert "COUNT" in result.stdout
+        assert "python" in result.stdout
+        assert "core" in result.stdout
+        assert "tags" in result.stdout
+
+    def test_tags_json_output(self, tags_project_dir):
+        """JSON output is a list of {tag, count} dicts."""
+        result = runner.invoke(
+            app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        tags_map = {item["tag"]: item["count"] for item in data}
+        assert tags_map["python"] == 2
+        assert tags_map["core"] == 2
+        assert tags_map["api"] == 1
+
+    def test_tags_sorted_alphabetically(self, tags_project_dir):
+        """Tags are returned in alphabetical order."""
+        result = runner.invoke(
+            app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        tag_names = [item["tag"] for item in data]
+        assert tag_names == sorted(tag_names)
+
+
+class TestMemoryTagCommand:
+    def test_tag_add(self, tags_project_dir):
+        """Adding a tag updates the entry."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "tag",
+                "alpha",
+                "--add",
+                "new-tag",
+                "--project-dir",
+                tags_project_dir,
+            ],
+        )
+        assert result.exit_code == 0
+        assert "new-tag" in result.stdout
+
+    def test_tag_remove(self, tags_project_dir):
+        """Removing a tag updates the entry."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "tag",
+                "alpha",
+                "--remove",
+                "python",
+                "--project-dir",
+                tags_project_dir,
+            ],
+        )
+        assert result.exit_code == 0
+        assert "python" not in result.stdout or "Updated" in result.stdout
+
+    def test_tag_add_and_remove(self, tags_project_dir):
+        """Simultaneous add and remove updates correctly."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "tag",
+                "alpha",
+                "--add",
+                "fresh",
+                "--remove",
+                "python",
+                "--project-dir",
+                tags_project_dir,
+            ],
+        )
+        assert result.exit_code == 0
+        assert "fresh" in result.stdout
+
+    def test_tag_json_output(self, tags_project_dir):
+        """JSON output returns key and updated tags list."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "tag",
+                "beta",
+                "--add",
+                "new",
+                "--project-dir",
+                tags_project_dir,
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["key"] == "beta"
+        assert "new" in data["tags"]
+
+    def test_tag_not_found(self, tmp_path):
+        """Non-existent key returns error exit code."""
+        result = runner.invoke(
+            app,
+            ["memory", "tag", "no-such-key", "--add", "x", "--project-dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+
+    def test_tag_not_found_json(self, tmp_path):
+        """Non-existent key with --json returns error dict."""
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "tag",
+                "no-such-key",
+                "--add",
+                "x",
+                "--project-dir",
+                str(tmp_path),
+                "--json",
+            ],
+        )
+        assert result.exit_code != 0
+        data = json.loads(result.stdout)
+        assert data.get("error") == "not_found"
