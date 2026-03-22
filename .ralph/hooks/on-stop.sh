@@ -19,19 +19,23 @@ fi
 INPUT=$(cat)
 
 # Extract response text — try multiple JSON paths for compatibility
-# Claude Code Stop hook input varies by mode (agent vs legacy, json vs stream-json)
 response_text=""
-
-# Try structured JSON paths first
-for path in '.result' '.content' '.result.text' '.message.content' '.message.content[0].text'; do
+for path in '.result' '.content' '.result.text' '.message.content' '.response[0].text' '.response'; do
   response_text=$(echo "$INPUT" | jq -r "$path // empty" 2>/dev/null || true)
   [[ -n "$response_text" ]] && break
 done
 
-# Fallback: if no JSON path worked, treat entire input as text
-# (handles cases where Claude Code passes raw text or unknown format)
+# Fallback: if no JSON path matched, use raw input as text
+# This handles agent mode and unexpected payload formats (WSL-WINDOWS-VERSION-DIVERGENCE bug)
 if [[ -z "$response_text" ]]; then
   response_text="$INPUT"
+fi
+
+# STREAM-3: If response_text contains JSON-escaped RALPH_STATUS block (literal \n instead of
+# newlines), unescape it so grep-based field extraction works correctly.
+# This happens when the response arrives from JSONL stream extraction.
+if echo "$response_text" | grep -q '\\n.*RALPH_STATUS' 2>/dev/null; then
+  response_text=$(printf '%b' "$response_text")
 fi
 
 # Parse RALPH_STATUS block fields (use grep -oP on platforms that support it, fallback to sed)
@@ -49,6 +53,11 @@ tasks_done=$(extract_field "TASKS_COMPLETED_THIS_LOOP" "0")
 files_modified_reported=$(extract_field "FILES_MODIFIED" "0")
 work_type=$(extract_field "WORK_TYPE" "UNKNOWN")
 recommendation=$(echo "$response_text" | grep "RECOMMENDATION:" | tail -1 | sed 's/.*RECOMMENDATION:[[:space:]]*//' || echo "")
+
+# STREAM-3: Fallback inference — if WORK_TYPE is UNKNOWN but files were modified, infer IMPLEMENTATION
+if [[ "$work_type" == "UNKNOWN" && "$files_modified_reported" -gt 0 ]]; then
+  work_type="IMPLEMENTATION"
+fi
 
 # Count actual files modified (from PostToolUse tracking)
 actual_files_modified=0
@@ -81,6 +90,7 @@ cat > "$local_tmp" <<EOF
 }
 EOF
 mv "$local_tmp" "$RALPH_DIR/status.json"
+rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs copy+unlink orphans
 
 # Update circuit breaker — check for progress
 if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
@@ -90,6 +100,7 @@ if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
     jq '.consecutive_no_progress = 0 | .state = "CLOSED"' \
       "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
       && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+    rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
   fi
 else
   # No progress — increment counter
@@ -104,10 +115,12 @@ else
       jq ".consecutive_no_progress = $new_count | .state = \"OPEN\"" \
         "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
         && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+      rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
     else
       jq ".consecutive_no_progress = $new_count" \
         "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
         && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+      rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
     fi
   fi
 fi
