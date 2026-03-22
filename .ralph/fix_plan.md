@@ -1,6 +1,6 @@
 # Ralph Fix Plan — tapps-brain
 
-Aligned with the repo as of **2026-03-21**. For full story text, see `docs/planning/epics/EPIC-*.md`.
+Aligned with the repo as of **2026-03-22**. For full story text, see `docs/planning/epics/EPIC-*.md`.
 
 **Task sizing:** Each item is scoped to ONE Ralph loop (~15 min). Do one, check it off, commit.
 
@@ -19,6 +19,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] EPIC-011: Hive — Multi-Agent Shared Brain (done — 14 tasks, all checked)
 - [x] EPIC-012: OpenClaw Integration (done — 17 tasks, all checked)
 - [x] EPIC-013: Hive-Aware MCP Surface (done — 10 tasks, all checked)
+- [x] EPIC-015: Analytics & Operational Surface (done — 10 tasks, all checked)
 
 ## Completed — EPIC-012: OpenClaw Integration
 
@@ -221,11 +222,51 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 015-J: Final validation and status update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-015 status to done. Update this fix_plan. Commit: `chore(epic-015): final validation and status update`
 
+## Active — EPIC-016: Test Suite Hardening
+
+**Depends on:** EPIC-015 ✅
+**Target:** 2026-04-15
+**Design:** `docs/planning/epics/EPIC-016.md`
+
+**Goal:** Close testing gaps: untested CLI commands, missing concurrency tests, resource leaks, and unicode/boundary edge cases.
+
+### Phase 1: CLI Coverage Gaps (independent)
+
+#### 016-A: CLI federation command tests — subscribe, unsubscribe, publish
+- [x] Add unit tests for `federation subscribe` (happy path + non-existent dir error). Add unit tests for `federation unsubscribe` (happy path + unknown project error). Add unit tests for `federation publish` (happy path). Use Click CliRunner with isolated tmp dirs. Commit: `test(story-016.1): CLI federation command tests`
+
+#### 016-B: CLI maintenance gc archive path and agent create error path
+- [ ] Add unit test for `maintenance gc` non-dry-run: create stale entries, run gc, verify entries archived. Add unit test for `agent create` with invalid profile: verify error message lists available profiles. Commit: `test(story-016.2): CLI gc archive and agent create error tests`
+
+### Phase 2: Concurrency Tests (sequential)
+
+#### 016-C: Concurrent save and recall stress tests
+- [ ] Create `tests/unit/test_concurrent.py`. Test: 10 threads saving 50 entries each — all 500 persisted, no corruption. Test: 5 threads saving while 5 threads recalling — no exceptions. Test: concurrent save at max capacity (500) — eviction correct under contention. 30-second timeout on all tests. Commit: `test(story-016.3): concurrent save and recall stress tests`
+
+#### 016-D: Concurrent GC and Hive stress tests
+- [ ] In `test_concurrent.py`, add: GC running while saves happen — no exceptions, archive consistent. Multiple agents propagating to HiveStore concurrently — all entries arrive. Concurrent recall from Hive during propagation — no exceptions. 30-second timeout. Commit: `test(story-016.4): concurrent GC and Hive stress tests`
+
+### Phase 3: Resource Cleanup (independent)
+
+#### 016-E: Fix unclosed SQLite connections in tests
+- [ ] Run `pytest tests/ -W error::ResourceWarning` to identify all offending tests. Add proper teardown (store.close(), connection.close()) to affected fixtures and tests. Verify zero ResourceWarning with strict warnings enabled. Commit: `fix(story-016.5): close leaked SQLite connections in tests`
+
+### Phase 4: Edge Cases (independent)
+
+#### 016-F: Unicode and boundary value tests
+- [ ] Create `tests/unit/test_edge_cases.py`. Tests: emoji in key/value (save + recall + FTS search). CJK characters (save + recall). Mixed RTL/LTR text. Key at exactly MAX_KEY_LENGTH — accepted. Key at MAX_KEY_LENGTH+1 — rejected. Value at MAX_VALUE_LENGTH — accepted. Value at MAX_VALUE_LENGTH+1 — rejected. Commit: `test(story-016.6): unicode and boundary value tests`
+
+### Phase 5: Final Validation
+
+#### 016-G: Final validation and status update
+- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Verify zero ResourceWarning. Update EPIC-016 status to done. Update STATUS.md with new test count. Update this fix_plan. Commit: `chore(epic-016): final validation and status update`
+
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
 - **Dependency graph (EPIC-014):** All tasks 014-A through 014-E are independent. 014-F last.
 - **Dependency graph (EPIC-015):** 015-A → 015-B. 015-C → 015-D. 015-E → 015-F. 015-G, 015-H, 015-I independent. 015-J last.
+- **Dependency graph (EPIC-016):** 016-A, 016-B, 016-E, 016-F independent. 016-C → 016-D. 016-G last.
 - Always cross-check the relevant epic file before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.

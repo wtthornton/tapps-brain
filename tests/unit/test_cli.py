@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -320,6 +321,198 @@ class TestFederationCommands:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert isinstance(data, list)
+
+
+class TestFederationSubscribeCommand:
+    """Tests for federation subscribe command (016-A)."""
+
+    def test_subscribe_happy_path(self, tmp_path: Path) -> None:
+        """Subscribe to a project returns success message."""
+        mock_config = MagicMock()
+        mock_config.subscriptions = [MagicMock()]  # 1 subscription
+
+        with patch("tapps_brain.federation.add_subscription", return_value=mock_config):
+            result = runner.invoke(
+                app,
+                ["federation", "subscribe", "source-project", "--project-dir", str(tmp_path)],
+            )
+        assert result.exit_code == 0
+        assert "Subscribed" in result.stdout
+
+    def test_subscribe_json_output(self, tmp_path: Path) -> None:
+        """Subscribe --json returns expected keys."""
+        mock_config = MagicMock()
+        mock_config.subscriptions = [MagicMock()]
+
+        with patch("tapps_brain.federation.add_subscription", return_value=mock_config):
+            result = runner.invoke(
+                app,
+                [
+                    "federation",
+                    "subscribe",
+                    "source-project",
+                    "--project-dir",
+                    str(tmp_path),
+                    "--json",
+                ],
+            )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "subscriber" in data
+        assert "source" in data
+        assert data["source"] == "source-project"
+        assert data["subscriptions"] == 1
+
+    def test_subscribe_nonexistent_project_error(self, tmp_path: Path) -> None:
+        """Subscribe raises ValueError for an unregistered subscriber — exits non-zero."""
+        with patch(
+            "tapps_brain.federation.add_subscription",
+            side_effect=ValueError("Subscriber 'xxx' is not registered in the federation hub"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "federation",
+                    "subscribe",
+                    "nonexistent-project",
+                    "--project-dir",
+                    str(tmp_path),
+                ],
+            )
+        assert result.exit_code != 0
+
+
+class TestFederationUnsubscribeCommand:
+    """Tests for federation unsubscribe command (016-A)."""
+
+    def test_unsubscribe_happy_path(self, tmp_path: Path) -> None:
+        """Unsubscribe removes a matching subscription."""
+        from tapps_brain.federation import FederationConfig, FederationSubscription
+
+        project_name = tmp_path.name
+        config = FederationConfig(
+            subscriptions=[
+                FederationSubscription(subscriber=project_name, sources=["source-project"])
+            ]
+        )
+
+        with (
+            patch("tapps_brain.federation.load_federation_config", return_value=config),
+            patch("tapps_brain.federation.save_federation_config"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "federation",
+                    "unsubscribe",
+                    "source-project",
+                    "--project-dir",
+                    str(tmp_path),
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Unsubscribed" in result.stdout
+
+    def test_unsubscribe_unknown_project(self, tmp_path: Path) -> None:
+        """Unsubscribe with no existing subscription shows informative message."""
+        from tapps_brain.federation import FederationConfig
+
+        config = FederationConfig(subscriptions=[])
+
+        with (
+            patch("tapps_brain.federation.load_federation_config", return_value=config),
+            patch("tapps_brain.federation.save_federation_config"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "federation",
+                    "unsubscribe",
+                    "no-such-project",
+                    "--project-dir",
+                    str(tmp_path),
+                ],
+            )
+        assert result.exit_code == 0
+        assert "No subscription found" in result.stdout
+
+    def test_unsubscribe_json_output(self, tmp_path: Path) -> None:
+        """Unsubscribe --json returns removed count."""
+        from tapps_brain.federation import FederationConfig, FederationSubscription
+
+        project_name = tmp_path.name
+        config = FederationConfig(
+            subscriptions=[
+                FederationSubscription(subscriber=project_name, sources=["source-project"])
+            ]
+        )
+
+        with (
+            patch("tapps_brain.federation.load_federation_config", return_value=config),
+            patch("tapps_brain.federation.save_federation_config"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "federation",
+                    "unsubscribe",
+                    "source-project",
+                    "--project-dir",
+                    str(tmp_path),
+                    "--json",
+                ],
+            )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "removed" in data
+        assert data["removed"] == 1
+
+
+class TestFederationPublishCommand:
+    """Tests for federation publish command (016-A)."""
+
+    def test_publish_happy_path(self, project_dir: str) -> None:
+        """Publish syncs entries to hub and reports published count."""
+        mock_hub = MagicMock()
+        mock_hub.close = MagicMock()
+
+        with (
+            patch("tapps_brain.federation.register_project"),
+            patch("tapps_brain.federation.FederatedStore", return_value=mock_hub),
+            patch(
+                "tapps_brain.federation.sync_to_hub",
+                return_value={"published": 3, "skipped": 0},
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["federation", "publish", "--project-dir", project_dir],
+            )
+        assert result.exit_code == 0
+        assert "Published" in result.stdout
+        assert "3" in result.stdout
+
+    def test_publish_json_output(self, project_dir: str) -> None:
+        """Publish --json returns published/skipped counts."""
+        mock_hub = MagicMock()
+        mock_hub.close = MagicMock()
+
+        with (
+            patch("tapps_brain.federation.register_project"),
+            patch("tapps_brain.federation.FederatedStore", return_value=mock_hub),
+            patch(
+                "tapps_brain.federation.sync_to_hub",
+                return_value={"published": 2, "skipped": 1},
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["federation", "publish", "--project-dir", project_dir, "--json"],
+            )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["published"] == 2
+        assert data["skipped"] == 1
 
 
 # ===================================================================
