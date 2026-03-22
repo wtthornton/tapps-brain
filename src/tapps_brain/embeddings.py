@@ -22,9 +22,9 @@ if feature_flags.sentence_transformers:
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError:
-        SentenceTransformer = None  # type: ignore[assignment, misc]
+        SentenceTransformer = None
 else:
-    SentenceTransformer = None  # type: ignore[assignment, misc]
+    SentenceTransformer = None
 
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"
 
@@ -91,7 +91,7 @@ class SentenceTransformerProvider:
 
         self._model_name = model_name
         self._model = SentenceTransformer(model_name)
-        self._dim: int = self._model.get_sentence_embedding_dimension()  # type: ignore[assignment]
+        self._dim: int = self._model.get_sentence_embedding_dimension()
 
     @property
     def dimension(self) -> int:

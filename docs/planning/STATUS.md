@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-21 (America/Chicago) — EPIC-013 complete
+**Last updated:** 2026-03-22 (America/Chicago) — EPIC-014 complete
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -8,7 +8,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1515 passing | Full suite `pytest tests/` |
+| Tests | ~1537 passing | Full suite `pytest tests/` |
 | Coverage | ≥ 95% | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
@@ -60,10 +60,11 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-011 | Hive — Multi-Agent Shared Brain | done | 2026-03-21 |
 | EPIC-012 | OpenClaw Integration | done | 2026-03-21 |
 | EPIC-013 | Hive-Aware MCP Surface | done | 2026-03-21 |
+| EPIC-014 | Hardening — Validation, Parity, Resilience, Docs | done | 2026-03-22 |
 
 ## Current focus
 
-**EPIC-013 (Hive-Aware MCP Surface)** completed 2026-03-21 — wired Hive agent identity through MCP server (`--agent-id`, `--enable-hive` CLI flags), exposed `agent_scope` and `source_agent` in `memory_save`, refactored Hive tools to share server's `HiveStore` instance, added `agent_create` composite tool, updated OpenClaw plugin for multi-agent Hive config, added multi-agent Hive patterns documentation, and integration tests for multi-agent round-trip. All 13 epics complete.
+**EPIC-014 (Hardening)** completed 2026-03-22 — added `agent_scope` enum validation in MCP and store, `agent create` CLI command, graceful SQLite corruption handling with actionable error messages, Getting Started guide, CHANGELOG.md, and full lint/type/test suite passing at 95.48% coverage. All 14 epics complete.
 
 ## WSL / Windows
 

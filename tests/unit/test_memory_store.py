@@ -10,8 +10,8 @@ import pytest
 
 from tapps_brain.models import MemoryEntry
 from tapps_brain.store import (
-    VALID_AGENT_SCOPES,
     _MAX_ENTRIES,
+    VALID_AGENT_SCOPES,
     ConsolidationConfig,
     MemoryStore,
     _scope_rank,

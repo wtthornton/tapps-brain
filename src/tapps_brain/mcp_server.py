@@ -135,8 +135,7 @@ def create_server(  # noqa: PLR0915
                 {
                     "error": "invalid_agent_scope",
                     "message": (
-                        f"Invalid agent_scope {agent_scope!r}. "
-                        f"Valid values: {list(_valid_scopes)}"
+                        f"Invalid agent_scope {agent_scope!r}. Valid values: {list(_valid_scopes)}"
                     ),
                     "valid_values": list(_valid_scopes),
                 }

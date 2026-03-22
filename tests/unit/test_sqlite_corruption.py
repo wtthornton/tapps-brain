@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -12,7 +11,7 @@ from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
-    pass
+    from pathlib import Path
 
 
 def _write_corrupt_db(db_path: Path) -> None:
@@ -44,9 +43,9 @@ class TestSQLiteCorruptionHandling:
         with caplog.at_level(logging.ERROR), pytest.raises(sqlite3.DatabaseError):
             MemoryPersistence(tmp_path)
 
-        # The structured log event should contain the corruption message
+        # The stdlib log should contain the corruption event name
         assert any(
-            "database_corrupt" in record.message or "database_corrupt" in str(record.__dict__)
+            "database_corrupt" in record.message or "database_corrupt" in str(record.args)
             for record in caplog.records
         )
 
@@ -58,9 +57,7 @@ class TestSQLiteCorruptionHandling:
         with pytest.raises(sqlite3.DatabaseError):
             MemoryStore(tmp_path)
 
-    def test_memory_store_custom_store_dir_raises_on_corrupt_db(
-        self, tmp_path: Path
-    ) -> None:
+    def test_memory_store_custom_store_dir_raises_on_corrupt_db(self, tmp_path: Path) -> None:
         """MemoryStore raises sqlite3.DatabaseError for custom store_dir corrupt DB."""
         db_path = tmp_path / ".tapps-mcp" / "memory" / "memory.db"
         _write_corrupt_db(db_path)
@@ -70,7 +67,7 @@ class TestSQLiteCorruptionHandling:
 
     def test_memory_persistence_clean_db_succeeds(self, tmp_path: Path) -> None:
         """MemoryPersistence initializes normally when no DB file exists yet."""
-        p = MemoryPersistence(tmp_path)
+        MemoryPersistence(tmp_path)
         assert (tmp_path / ".tapps-brain" / "memory" / "memory.db").exists()
 
     def test_memory_store_clean_db_succeeds(self, tmp_path: Path) -> None:

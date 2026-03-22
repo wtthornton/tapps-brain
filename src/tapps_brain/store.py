@@ -247,8 +247,7 @@ class MemoryStore:
             return {
                 "error": "invalid_agent_scope",
                 "message": (
-                    f"Invalid agent_scope {agent_scope!r}. "
-                    f"Valid values: {list(VALID_AGENT_SCOPES)}"
+                    f"Invalid agent_scope {agent_scope!r}. Valid values: {list(VALID_AGENT_SCOPES)}"
                 ),
                 "valid_values": list(VALID_AGENT_SCOPES),
             }

@@ -1,7 +1,7 @@
 ---
 id: EPIC-014
 title: "Hardening — input validation, interface parity, resilience, and onboarding docs"
-status: todo
+status: done
 priority: high
 created: 2026-03-21
 target_date: 2026-08-01

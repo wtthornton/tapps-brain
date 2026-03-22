@@ -1105,7 +1105,7 @@ def agent_create(
         else:
             typer.echo(f"Error: Profile '{profile}' not found.", err=True)
             typer.echo(f"Available profiles: {', '.join(available)}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     # Register agent
     skill_list = [s.strip() for s in skills.split(",") if s.strip()]

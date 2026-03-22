@@ -171,7 +171,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Create `CHANGELOG.md` (keepachangelog.com format). v1.1.0: EPIC-013 features. v1.0.0: EPICs 001–012 summary. Link from README and pyproject.toml. Commit: `docs(story-014.5): CHANGELOG.md`
 
 #### 014-F: Final validation and status update
-- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-014 status to done. Update this fix_plan. Commit: `chore(epic-014): final validation and status update`
+- [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-014 status to done. Update this fix_plan. Commit: `chore(epic-014): final validation and status update`
 
 ## Queued — EPIC-015: Analytics & Operational Surface
 

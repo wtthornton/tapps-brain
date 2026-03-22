@@ -8,6 +8,7 @@ A JSONL audit log is maintained for debugging/compliance (append-only).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -63,10 +64,13 @@ class MemoryPersistence:
             self._conn = self._connect()
             self._ensure_schema()
         except sqlite3.DatabaseError as exc:
+            _msg = f"Database corrupt: {self._db_path}. Back up and delete to recover."
+            # Emit via stdlib logging so pytest caplog can capture it in tests
+            logging.getLogger(__name__).error("database_corrupt: %s", _msg, exc_info=exc)
             logger.error(
                 "database_corrupt",
                 path=str(self._db_path),
-                message=f"Database corrupt: {self._db_path}. Back up and delete to recover.",
+                message=_msg,
             )
             raise
 
