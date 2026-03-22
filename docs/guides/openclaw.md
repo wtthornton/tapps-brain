@@ -174,6 +174,174 @@ To enable Hive with the ContextEngine plugin:
 
 No plugin configuration changes are needed — Hive awareness is built into the MCP server.
 
+### 8. Multi-Agent Hive patterns
+
+When an orchestrator spawns multiple agents — e.g., a planner, a coder, and a reviewer —
+each agent can have its own identity and memory profile while sharing knowledge through the
+Hive. This section covers the configuration patterns enabled by EPIC-013.
+
+#### How it works
+
+```
+Orchestrator
+├── Agent "planner"  (profile: repo-brain)   ──┐
+├── Agent "coder"    (profile: repo-brain)   ──┤── shared Hive
+└── Agent "reviewer" (profile: code-review)  ──┘
+```
+
+Each agent runs its own `tapps-brain-mcp` process with `--agent-id` and `--enable-hive`.
+Private memories stay local; memories marked `domain` or `hive` propagate to the shared
+store at `~/.tapps-brain/hive/hive.db`. Recall automatically merges local + Hive results.
+
+#### Agent scope explained
+
+| Scope | Visibility | Use when |
+|-------|-----------|----------|
+| `private` | Only the saving agent | Agent-specific scratch notes, intermediate reasoning |
+| `domain` | Agents sharing the same profile | Conventions or patterns relevant to a role (e.g., all `repo-brain` agents) |
+| `hive` | All agents in the Hive | Cross-cutting facts: tech stack, project decisions, API contracts |
+
+Default is `private` — you must explicitly set `domain` or `hive` to share.
+
+#### Orchestrator plugin.json
+
+The orchestrator creates child agents and enables Hive coordination:
+
+```json
+{
+  "plugins": {
+    "tapps-brain": {
+      "path": "./plugins/tapps-brain",
+      "slot": "ContextEngine",
+      "settings": {
+        "mcpCommand": "tapps-brain-mcp",
+        "tokenBudget": 2000,
+        "captureRateLimit": 3,
+        "agentId": "orchestrator",
+        "hiveEnabled": true
+      }
+    }
+  }
+}
+```
+
+When `hiveEnabled` is `true` and `agentId` is set, the bootstrap hook:
+
+1. Passes `--agent-id orchestrator --enable-hive` to the MCP server.
+2. Auto-registers the agent in the Hive agent registry.
+3. All subsequent `memory_save` calls can include `agent_scope` to control propagation.
+
+#### Child agent plugin.json (shared profile)
+
+Each child agent uses its own `agentId` but can share a profile:
+
+```json
+{
+  "plugins": {
+    "tapps-brain": {
+      "path": "./plugins/tapps-brain",
+      "slot": "ContextEngine",
+      "settings": {
+        "mcpCommand": "tapps-brain-mcp",
+        "tokenBudget": 2000,
+        "captureRateLimit": 3,
+        "agentId": "coder-1",
+        "hiveEnabled": true
+      }
+    }
+  }
+}
+```
+
+Agents with the same profile can see each other's `domain`-scoped memories. All agents
+see `hive`-scoped memories regardless of profile.
+
+#### Child agent plugin.json (per-role profile)
+
+For specialized agents, use different profiles to tune recall behavior per role:
+
+```json
+{
+  "plugins": {
+    "tapps-brain": {
+      "path": "./plugins/tapps-brain",
+      "slot": "ContextEngine",
+      "settings": {
+        "mcpCommand": "tapps-brain-mcp",
+        "profilePath": ".tapps-brain/profiles/code-review.yaml",
+        "tokenBudget": 3000,
+        "captureRateLimit": 5,
+        "agentId": "reviewer-1",
+        "hiveEnabled": true
+      }
+    }
+  }
+}
+```
+
+A `code-review` profile might weight `pattern`-tier memories higher and use a larger
+token budget so the reviewer sees more coding conventions.
+
+#### Profile inheritance
+
+Profiles support a `base` field for inheritance. A child profile extends and overrides
+specific settings from the base:
+
+```yaml
+# .tapps-brain/profiles/code-review.yaml
+name: code-review
+base: repo-brain          # Inherits tier weights, decay, scoring from repo-brain
+tier_weights:
+  pattern: 1.0            # Override: boost pattern-tier for code review
+scoring:
+  relevance_weight: 0.5   # Override: favor relevance over confidence
+```
+
+This lets teams define a shared base profile and specialize per agent role without
+duplicating the full configuration.
+
+#### Creating agents via MCP
+
+An orchestrator can also create agents programmatically using the `agent_create` MCP tool:
+
+```
+agent_create(agent_id="qa-1", profile="repo-brain", skills="testing,review")
+```
+
+This registers the agent, validates the profile exists, and returns the namespace
+assignment. The orchestrator can call this before handing off work to a child agent.
+
+#### Example: planner + coder workflow
+
+1. **Orchestrator** bootstraps with `agentId: "orchestrator"`, `hiveEnabled: true`.
+2. Orchestrator calls `agent_create(agent_id="planner", profile="repo-brain")`.
+3. Orchestrator calls `agent_create(agent_id="coder", profile="repo-brain")`.
+4. **Planner** saves architectural decisions with `agent_scope: "hive"`:
+   ```
+   memory_save(key="api-design", value="REST with versioned endpoints",
+               tier="architectural", agent_scope="hive")
+   ```
+5. **Coder** recalls and automatically sees the planner's Hive memories merged with its
+   own local context. The coder saves implementation patterns as `domain`-scoped so other
+   `repo-brain` agents can learn from them.
+6. Both agents' `private` memories remain isolated — no cross-contamination of
+   intermediate reasoning.
+
+#### Conflict resolution
+
+When two agents write to the same key in the Hive, the conflict policy determines the
+winner. The default policy is `confidence_max` — the entry with the highest confidence
+score wins. Other policies:
+
+| Policy | Behavior |
+|--------|----------|
+| `confidence_max` | Highest confidence wins (default) |
+| `last_write_wins` | Most recent write wins |
+| `source_authority` | The original author's version wins |
+| `supersede` | New version always replaces old |
+
+Conflict policy is configured at the Hive level and applies to all agents.
+
 ---
 
 ## Option B: MCP Sidecar (manual control)
