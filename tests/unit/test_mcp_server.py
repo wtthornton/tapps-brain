@@ -1072,3 +1072,46 @@ class TestMemorySaveAgentScope:
 
         store._hive_store.close()
         store.close()
+
+
+class TestMemorySaveSourceAgent:
+    """Tests for source_agent parameter in memory_save (STORY-013.3)."""
+
+    def test_memory_save_explicit_source_agent(self, mcp_server):
+        """memory_save with explicit source_agent stores it on the entry."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(
+            save_fn(key="sa-explicit", value="test", source_agent="my-agent")
+        )
+        assert result["status"] == "saved"
+
+        store = mcp_server._tapps_store
+        entry = store.get("sa-explicit")
+        assert entry is not None
+        assert entry.source_agent == "my-agent"
+
+    def test_memory_save_empty_source_agent_falls_back_to_agent_id(self, store_dir):
+        """When source_agent is empty, falls back to server's --agent-id."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, agent_id="server-agent-id")
+        save_fn = _tool_fn(server, "memory_save")
+        result = json.loads(save_fn(key="sa-fallback", value="test"))
+        assert result["status"] == "saved"
+
+        store = server._tapps_store
+        entry = store.get("sa-fallback")
+        assert entry is not None
+        assert entry.source_agent == "server-agent-id"
+        store.close()
+
+    def test_memory_save_default_source_agent_is_unknown(self, mcp_server):
+        """When no source_agent and no --agent-id, defaults to 'unknown'."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="sa-default", value="test"))
+        assert result["status"] == "saved"
+
+        store = mcp_server._tapps_store
+        entry = store.get("sa-default")
+        assert entry is not None
+        assert entry.source_agent == "unknown"

@@ -113,6 +113,7 @@ def create_server(  # noqa: PLR0915
         scope: str = "project",
         confidence: float = -1.0,
         agent_scope: str = "private",
+        source_agent: str = "",
     ) -> str:
         """Save or update a memory entry.
 
@@ -125,7 +126,10 @@ def create_server(  # noqa: PLR0915
             scope: Visibility scope — one of: project, branch, session.
             confidence: Confidence score (0.0-1.0, or -1.0 for auto).
             agent_scope: Hive propagation scope — one of: private, domain, hive.
+            source_agent: Agent that produced this memory. Falls back to
+                server's --agent-id when empty.
         """
+        resolved_agent = source_agent if source_agent else agent_id
         result = store.save(
             key=key,
             value=value,
@@ -135,6 +139,7 @@ def create_server(  # noqa: PLR0915
             scope=scope,
             confidence=confidence,
             agent_scope=agent_scope,
+            source_agent=resolved_agent,
         )
         if isinstance(result, dict):
             # Error from safety check or write rules
