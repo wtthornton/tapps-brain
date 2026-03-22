@@ -59,8 +59,16 @@ class MemoryPersistence:
         self._audit_path = self._store_dir / "memory_log.jsonl"
         self._lock = threading.Lock()
 
-        self._conn = self._connect()
-        self._ensure_schema()
+        try:
+            self._conn = self._connect()
+            self._ensure_schema()
+        except sqlite3.DatabaseError as exc:
+            logger.error(
+                "database_corrupt",
+                path=str(self._db_path),
+                message=f"Database corrupt: {self._db_path}. Back up and delete to recover.",
+            )
+            raise
 
     # ------------------------------------------------------------------
     # Connection and schema

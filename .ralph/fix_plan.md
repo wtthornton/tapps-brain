@@ -160,7 +160,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 2: Resilience
 
 #### 014-C: Graceful SQLite corruption handling
-- [ ] Wrap `MemoryPersistence.__init__()` / `MemoryStore.__init__()` with try/except for `sqlite3.DatabaseError`. Log actionable message: `"Database corrupt: {path}. Back up and delete to recover."` Store still raises but error is clear. Add unit test with corrupted DB file. Commit: `feat(story-014.3): graceful SQLite corruption handling`
+- [x] Wrap `MemoryPersistence.__init__()` / `MemoryStore.__init__()` with try/except for `sqlite3.DatabaseError`. Log actionable message: `"Database corrupt: {path}. Back up and delete to recover."` Store still raises but error is clear. Add unit test with corrupted DB file. Commit: `feat(story-014.3): graceful SQLite corruption handling`
 
 ### Phase 3: Documentation
 

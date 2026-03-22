@@ -7,6 +7,7 @@ Auto-consolidation triggers on save when enabled (Epic 58).
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -116,7 +117,16 @@ class MemoryStore:
         hive_agent_id: str = "unknown",
     ) -> None:
         self._project_root = project_root
-        self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
+        try:
+            self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
+        except sqlite3.DatabaseError:
+            _db_path = project_root / store_dir / "memory" / "memory.db"
+            logger.error(
+                "database_corrupt",
+                path=str(_db_path),
+                message=f"Database corrupt: {_db_path}. Back up and delete to recover.",
+            )
+            raise
         self._lock = threading.Lock()
         self._consolidation_config = consolidation_config or ConsolidationConfig()
         self._embedding_provider = embedding_provider
