@@ -208,7 +208,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 4: Operational Controls (all independent)
 
 #### 015-G: GC config MCP tools and CLI
-- [ ] Add MCP tools: `memory_gc_config()` and `memory_gc_config_set(floor_retention_days, session_expiry_days, contradicted_threshold)`. Add CLI: `maintenance gc-config [--set key=value]`. Make GC accept runtime config updates. Add unit tests. Commit: `feat(story-015.7): GC config MCP tools and CLI`
+- [x] Add MCP tools: `memory_gc_config()` and `memory_gc_config_set(floor_retention_days, session_expiry_days, contradicted_threshold)`. Add CLI: `maintenance gc-config [--set key=value]`. Make GC accept runtime config updates. Add unit tests. Commit: `feat(story-015.7): GC config MCP tools and CLI`
 
 #### 015-H: Auto-consolidation config MCP tools and CLI
 - [ ] Add MCP tools: `memory_consolidation_config()` and `memory_consolidation_config_set(enabled, threshold, min_entries)`. Add CLI: `maintenance consolidation-config [--set key=value]`. Delegate to existing `store.set_consolidation_config()`. Add unit tests. Commit: `feat(story-015.8): auto-consolidation config MCP tools and CLI`

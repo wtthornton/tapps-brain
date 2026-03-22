@@ -761,7 +761,7 @@ def create_server(  # noqa: PLR0915
         """
         from tapps_brain.gc import GCResult, MemoryGarbageCollector
 
-        gc = MemoryGarbageCollector()
+        gc = MemoryGarbageCollector(gc_config=store.get_gc_config())
         all_entries = store.list_all()
         candidates = gc.identify_candidates(all_entries)
 
@@ -788,6 +788,58 @@ def create_server(  # noqa: PLR0915
             archived_keys=[e.key for e in candidates],
         )
         return json.dumps(result.model_dump(mode="json"))
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_gc_config() -> str:
+        """Return the current garbage collection configuration.
+
+        Returns the active GC thresholds: floor_retention_days,
+        session_expiry_days, and contradicted_threshold.
+        """
+        gc_cfg = store.get_gc_config()
+        return json.dumps(gc_cfg.to_dict())
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_gc_config_set(
+        floor_retention_days: int | None = None,
+        session_expiry_days: int | None = None,
+        contradicted_threshold: float | None = None,
+    ) -> str:
+        """Update garbage collection configuration thresholds.
+
+        Only provided parameters are updated; omitted parameters keep their
+        current values.
+
+        Args:
+            floor_retention_days: Days a memory stays at floor confidence before
+                archival (default 30).
+            session_expiry_days: Days after session end before session-scoped
+                memories are archived (default 7).
+            contradicted_threshold: Confidence threshold below which contradicted
+                memories are archived (default 0.2).
+        """
+        from tapps_brain.gc import GCConfig
+
+        current = store.get_gc_config()
+        new_cfg = GCConfig(
+            floor_retention_days=(
+                floor_retention_days
+                if floor_retention_days is not None
+                else current.floor_retention_days
+            ),
+            session_expiry_days=(
+                session_expiry_days
+                if session_expiry_days is not None
+                else current.session_expiry_days
+            ),
+            contradicted_threshold=(
+                contradicted_threshold
+                if contradicted_threshold is not None
+                else current.contradicted_threshold
+            ),
+        )
+        store.set_gc_config(new_cfg)
+        return json.dumps({"status": "updated", **new_cfg.to_dict()})
 
     # ------------------------------------------------------------------
     # Export / Import tools (STORY-008.5)

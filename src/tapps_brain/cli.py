@@ -907,6 +907,63 @@ def maintenance_gc(
         store.close()
 
 
+@maintenance_app.command("gc-config")
+def maintenance_gc_config(
+    project_dir: ProjectDir = None,
+    set_floor: Annotated[
+        int | None,
+        typer.Option("--floor-retention-days", help="Days at floor confidence before archival."),
+    ] = None,
+    set_session: Annotated[
+        int | None,
+        typer.Option("--session-expiry-days", help="Days after session end before archival."),
+    ] = None,
+    set_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--contradicted-threshold", help="Confidence threshold for contradicted archival."
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show or update garbage collection configuration."""
+    from tapps_brain.gc import GCConfig
+
+    store = _get_store(project_dir)
+    try:
+        current: GCConfig = store.get_gc_config()
+
+        # If any --set flags given, update and save back to store
+        if set_floor is not None or set_session is not None or set_threshold is not None:
+            new_cfg = GCConfig(
+                floor_retention_days=(
+                    set_floor if set_floor is not None else current.floor_retention_days
+                ),
+                session_expiry_days=(
+                    set_session if set_session is not None else current.session_expiry_days
+                ),
+                contradicted_threshold=(
+                    set_threshold if set_threshold is not None else current.contradicted_threshold
+                ),
+            )
+            store.set_gc_config(new_cfg)
+            data: dict[str, object] = {"status": "updated", **new_cfg.to_dict()}
+        else:
+            data = current.to_dict()
+
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            cfg = store.get_gc_config()
+            typer.echo(f"floor_retention_days:   {cfg.floor_retention_days}")
+            typer.echo(f"session_expiry_days:    {cfg.session_expiry_days}")
+            typer.echo(f"contradicted_threshold: {cfg.contradicted_threshold}")
+            if set_floor is not None or set_session is not None or set_threshold is not None:
+                typer.echo("Configuration updated.")
+    finally:
+        store.close()
+
+
 @maintenance_app.command("migrate")
 def maintenance_migrate(
     project_dir: ProjectDir = None,

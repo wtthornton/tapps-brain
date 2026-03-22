@@ -133,6 +133,9 @@ class MemoryStore:
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
+        from tapps_brain.gc import GCConfig as _GCConfig
+
+        self._gc_config = _GCConfig()
         self._metrics = MetricsCollector()
         self._hive_store = hive_store
         self._hive_agent_id = hive_agent_id
@@ -168,6 +171,14 @@ class MemoryStore:
     def set_consolidation_config(self, config: ConsolidationConfig) -> None:
         """Update the consolidation configuration."""
         self._consolidation_config = config
+
+    def get_gc_config(self) -> Any:  # noqa: ANN401
+        """Return the active GCConfig instance."""
+        return self._gc_config
+
+    def set_gc_config(self, config: Any) -> None:  # noqa: ANN401
+        """Update the GC configuration at runtime."""
+        self._gc_config = config
 
     @staticmethod
     def _resolve_profile(project_root: Path, profile: Any) -> Any:  # noqa: ANN401

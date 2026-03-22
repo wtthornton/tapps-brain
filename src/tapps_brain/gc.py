@@ -8,6 +8,7 @@ to an external JSONL file for visibility.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,23 @@ _CONTRADICTED_ARCHIVE_THRESHOLD = 0.2
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class GCConfig:
+    """Runtime-configurable garbage collection thresholds."""
+
+    floor_retention_days: int = field(default=_FLOOR_RETENTION_DAYS)
+    session_expiry_days: int = field(default=_SESSION_EXPIRY_DAYS)
+    contradicted_threshold: float = field(default=_CONTRADICTED_ARCHIVE_THRESHOLD)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return config as a plain dict."""
+        return {
+            "floor_retention_days": self.floor_retention_days,
+            "session_expiry_days": self.session_expiry_days,
+            "contradicted_threshold": self.contradicted_threshold,
+        }
+
+
 class GCResult(BaseModel):
     """Result of a garbage collection run."""
 
@@ -61,19 +79,21 @@ class MemoryGarbageCollector:
         floor_retention_days: int | None = None,
         session_expiry_days: int | None = None,
         contradicted_threshold: float | None = None,
+        gc_config: GCConfig | None = None,
     ) -> None:
         self._config = config or DecayConfig()
-        # EPIC-010: Allow profile-driven GC thresholds
+        # GCConfig takes precedence; individual kwargs override its defaults.
+        _gc = gc_config or GCConfig()
         self._floor_retention_days = (
-            floor_retention_days if floor_retention_days is not None else _FLOOR_RETENTION_DAYS
+            floor_retention_days if floor_retention_days is not None else _gc.floor_retention_days
         )
         self._session_expiry_days = (
-            session_expiry_days if session_expiry_days is not None else _SESSION_EXPIRY_DAYS
+            session_expiry_days if session_expiry_days is not None else _gc.session_expiry_days
         )
         self._contradicted_threshold = (
             contradicted_threshold
             if contradicted_threshold is not None
-            else _CONTRADICTED_ARCHIVE_THRESHOLD
+            else _gc.contradicted_threshold
         )
 
     def identify_candidates(
