@@ -196,6 +196,58 @@ memory_capture(
 )
 ```
 
+### Profile Tools
+
+| Tool | Description |
+|------|-------------|
+| `profile_info` | Return the active profile's name, layers, scoring config, and Hive settings |
+| `profile_switch` | Switch to a different built-in profile by name |
+
+**Example — checking the active profile:**
+
+```
+profile_info()
+→ { "name": "repo-brain", "layers": [...], "scoring": {...} }
+```
+
+**Example — switching profiles:**
+
+```
+profile_switch(name="personal-assistant")
+```
+
+Profiles configure layers, decay models, scoring weights, promotion rules, and limits. See the [Profile Design Guide](profiles.md) and [Profile Catalog](profile-catalog.md).
+
+### Hive Tools (Multi-Agent Shared Brain)
+
+| Tool | Description |
+|------|-------------|
+| `hive_status` | Return namespaces, entry counts per namespace, and registered agents |
+| `hive_search` | Search the Hive with optional namespace filter |
+| `hive_propagate` | Manually propagate a local memory to the Hive |
+| `agent_register` | Register an agent in the Hive registry (id, profile, skills) |
+
+**Example — checking Hive status:**
+
+```
+hive_status()
+→ { "namespaces": {"universal": 5, "developer": 12}, "agents": [...] }
+```
+
+**Example — searching the Hive:**
+
+```
+hive_search(query="authentication patterns", namespace="universal")
+```
+
+**Example — registering an agent:**
+
+```
+agent_register(agent_id="qa-agent", profile="repo-brain", skills="testing,review")
+```
+
+The Hive enables cross-agent memory sharing with namespace isolation and conflict resolution. See the [Hive Guide](hive.md).
+
 ### Federation Tools
 
 | Tool | Description |
@@ -239,14 +291,16 @@ Prompts are user-invoked workflow templates:
 
 ## Memory Tiers
 
-When saving memories, choose the tier that matches the information's durability:
+The default `repo-brain` profile defines four tiers. Custom profiles can define any number of tiers with custom names — use `profile_info()` to see the active layers.
 
-| Tier | Half-life | Use for |
+| Tier (default) | Half-life | Use for |
 |------|-----------|---------|
 | `architectural` | 180 days | System-level decisions, tech stack choices |
-| `pattern` | 90 days | Coding conventions, API patterns |
+| `pattern` | 60 days | Coding conventions, API patterns |
 | `procedural` | 30 days | Workflows, deployment steps |
 | `context` | 14 days | Session-specific facts, current task details |
+
+See the [Profile Catalog](profile-catalog.md) for other built-in profiles with different tier definitions.
 
 ## Scopes
 
