@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +194,7 @@ class TestMaintenanceGcConfigCLI:
         from tapps_brain.cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["--project-dir", str(tmp_path), "maintenance", "gc-config"])
+        result = runner.invoke(app, ["maintenance", "gc-config", "--project-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "floor_retention_days" in result.output
         assert "30" in result.output
@@ -203,7 +206,7 @@ class TestMaintenanceGcConfigCLI:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["--project-dir", str(tmp_path), "maintenance", "gc-config", "--json"]
+            app, ["maintenance", "gc-config", "--project-dir", str(tmp_path), "--json"]
         )
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -219,10 +222,10 @@ class TestMaintenanceGcConfigCLI:
         result = runner.invoke(
             app,
             [
-                "--project-dir",
-                str(tmp_path),
                 "maintenance",
                 "gc-config",
+                "--project-dir",
+                str(tmp_path),
                 "--floor-retention-days",
                 "60",
                 "--json",
@@ -241,10 +244,10 @@ class TestMaintenanceGcConfigCLI:
         result = runner.invoke(
             app,
             [
-                "--project-dir",
-                str(tmp_path),
                 "maintenance",
                 "gc-config",
+                "--project-dir",
+                str(tmp_path),
                 "--session-expiry-days",
                 "14",
                 "--contradicted-threshold",

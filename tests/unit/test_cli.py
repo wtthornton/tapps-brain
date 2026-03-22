@@ -821,17 +821,13 @@ def audit_project_dir(tmp_path: Path):
 class TestMemoryAuditCommand:
     def test_audit_no_events_empty_store(self, tmp_path):
         """Empty store with no audit log returns friendly message."""
-        result = runner.invoke(
-            app, ["memory", "audit", "--project-dir", str(tmp_path)]
-        )
+        result = runner.invoke(app, ["memory", "audit", "--project-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "no audit events found" in result.stdout
 
     def test_audit_all_events_table(self, audit_project_dir):
         """Without filters, returns all events in table format."""
-        result = runner.invoke(
-            app, ["memory", "audit", "--project-dir", audit_project_dir]
-        )
+        result = runner.invoke(app, ["memory", "audit", "--project-dir", audit_project_dir])
         assert result.exit_code == 0
         # Should have header columns
         assert "TIMESTAMP" in result.stdout
@@ -976,9 +972,7 @@ class TestMemoryTagsCommand:
 
     def test_tags_json_output(self, tags_project_dir):
         """JSON output is a list of {tag, count} dicts."""
-        result = runner.invoke(
-            app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"]
-        )
+        result = runner.invoke(app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert isinstance(data, list)
@@ -989,9 +983,7 @@ class TestMemoryTagsCommand:
 
     def test_tags_sorted_alphabetically(self, tags_project_dir):
         """Tags are returned in alphabetical order."""
-        result = runner.invoke(
-            app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"]
-        )
+        result = runner.invoke(app, ["memory", "tags", "--project-dir", tags_project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         tag_names = [item["tag"] for item in data]

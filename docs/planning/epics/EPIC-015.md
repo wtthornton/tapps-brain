@@ -1,7 +1,7 @@
 ---
 id: EPIC-015
 title: "Analytics & Operational Surface — expose graph, audit, tags, GC, and consolidation controls"
-status: todo
+status: done
 priority: high
 created: 2026-03-22
 target_date: 2026-09-01

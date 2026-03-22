@@ -1328,8 +1328,7 @@ class MemoryStore:
                 return {
                     "error": "too_many_tags",
                     "message": (
-                        f"Cannot have more than {MAX_TAGS} tags "
-                        f"({len(updated_tags)} would result)."
+                        f"Cannot have more than {MAX_TAGS} tags ({len(updated_tags)} would result)."
                     ),
                 }
 

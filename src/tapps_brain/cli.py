@@ -556,7 +556,8 @@ def memory_tag(
         if as_json:
             _output({"key": result.key, "tags": list(result.tags)}, as_json=True)
         else:
-            typer.echo(f"Updated tags for '{key}': {', '.join(result.tags) if result.tags else '(none)'}")
+            tag_str = ", ".join(result.tags) if result.tags else "(none)"
+            typer.echo(f"Updated tags for '{key}': {tag_str}")
     finally:
         store.close()
 
@@ -1495,12 +1496,11 @@ def agent_delete(
 
     if as_json:
         _output({"deleted": removed, "agent_id": agent_id}, as_json=True)
+    elif removed:
+        typer.echo(f"Deleted agent '{agent_id}'.")
     else:
-        if removed:
-            typer.echo(f"Deleted agent '{agent_id}'.")
-        else:
-            typer.echo(f"Agent '{agent_id}' not found.", err=True)
-            raise typer.Exit(code=1)
+        typer.echo(f"Agent '{agent_id}' not found.", err=True)
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------

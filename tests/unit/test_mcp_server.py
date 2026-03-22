@@ -1797,9 +1797,7 @@ class TestKnowledgeGraphTools:
         for rel in result["relations"]:
             assert rel["predicate"].lower() == "uses"
 
-    def test_memory_query_relations_empty_strings_treated_as_no_filter(
-        self, server_with_relations
-    ):
+    def test_memory_query_relations_empty_strings_treated_as_no_filter(self, server_with_relations):
         """Empty string arguments are treated the same as omitting the filter."""
         fn = _tool_fn(server_with_relations, "memory_query_relations")
         result_no_filter = json.loads(fn())
@@ -1890,7 +1888,10 @@ class TestAuditTrailMCPTool:
 
 
 class TestTagManagementMCPTools:
-    """Tests for memory_list_tags, memory_update_tags, memory_entries_by_tag (EPIC-015 story-015.5)."""
+    """Tests for memory_list_tags, memory_update_tags, memory_entries_by_tag.
+
+    Covers EPIC-015 story-015.5.
+    """
 
     @pytest.fixture
     def server_with_tags(self, tmp_path):

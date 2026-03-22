@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +162,7 @@ class TestMaintenanceConsolidationConfigCLI:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["--project-dir", str(tmp_path), "maintenance", "consolidation-config"]
+            app, ["maintenance", "consolidation-config", "--project-dir", str(tmp_path)]
         )
         assert result.exit_code == 0
         assert "enabled" in result.output
@@ -173,7 +176,7 @@ class TestMaintenanceConsolidationConfigCLI:
         runner = CliRunner()
         result = runner.invoke(
             app,
-            ["--project-dir", str(tmp_path), "maintenance", "consolidation-config", "--json"],
+            ["maintenance", "consolidation-config", "--project-dir", str(tmp_path), "--json"],
         )
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -190,10 +193,10 @@ class TestMaintenanceConsolidationConfigCLI:
         result = runner.invoke(
             app,
             [
-                "--project-dir",
-                str(tmp_path),
                 "maintenance",
                 "consolidation-config",
+                "--project-dir",
+                str(tmp_path),
                 "--enabled",
                 "--json",
             ],
@@ -212,10 +215,10 @@ class TestMaintenanceConsolidationConfigCLI:
         result = runner.invoke(
             app,
             [
-                "--project-dir",
-                str(tmp_path),
                 "maintenance",
                 "consolidation-config",
+                "--project-dir",
+                str(tmp_path),
                 "--threshold",
                 "0.5",
                 "--min-entries",

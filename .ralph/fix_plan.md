@@ -173,7 +173,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 014-F: Final validation and status update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-014 status to done. Update this fix_plan. Commit: `chore(epic-014): final validation and status update`
 
-## Queued — EPIC-015: Analytics & Operational Surface
+## Completed — EPIC-015: Analytics & Operational Surface
 
 **Depends on:** EPIC-014
 **Target:** 2026-09-01
@@ -219,7 +219,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 5: Final Validation
 
 #### 015-J: Final validation and status update
-- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-015 status to done. Update this fix_plan. Commit: `chore(epic-015): final validation and status update`
+- [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-015 status to done. Update this fix_plan. Commit: `chore(epic-015): final validation and status update`
 
 ## Notes
 

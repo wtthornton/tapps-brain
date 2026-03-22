@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-22 (America/Chicago) — EPIC-014 complete
+**Last updated:** 2026-03-22 (America/Chicago) — EPIC-015 complete
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
