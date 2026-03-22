@@ -141,10 +141,42 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 013-J: Final validation and status update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-013 status to done. Update this fix_plan. Commit: `chore(epic-013): final validation and status update`
 
+## Active — EPIC-014: Hardening — Validation, Parity, Resilience, Docs
+
+**Depends on:** EPIC-013 ✅
+**Target:** 2026-08-01
+**Design:** `docs/planning/epics/EPIC-014.md`
+
+**Goal:** Close five high-value gaps: input validation, CLI parity, DB resilience, onboarding docs, and release tracking.
+
+### Phase 1: Validation & Parity (all independent)
+
+#### 014-A: Validate `agent_scope` enum in MCP and store
+- [ ] Add validation in `memory_save` MCP tool and `MemoryStore.save()`: reject values not in `{"private", "domain", "hive"}` with clear error listing valid options. Add unit test for valid and invalid values. Commit: `feat(story-014.1): validate agent_scope enum values`
+
+#### 014-B: CLI `agent create` command
+- [ ] Add `agent create` subcommand to CLI mirroring MCP `agent_create`: register agent with profile validation, print namespace and profile summary. Reuse `AgentRegistry` and `profile.py`. Add unit test for happy path and invalid profile. Commit: `feat(story-014.2): CLI agent create command`
+
+### Phase 2: Resilience
+
+#### 014-C: Graceful SQLite corruption handling
+- [ ] Wrap `MemoryPersistence.__init__()` / `MemoryStore.__init__()` with try/except for `sqlite3.DatabaseError`. Log actionable message: `"Database corrupt: {path}. Back up and delete to recover."` Store still raises but error is clear. Add unit test with corrupted DB file. Commit: `feat(story-014.3): graceful SQLite corruption handling`
+
+### Phase 3: Documentation
+
+#### 014-D: Getting Started guide
+- [ ] Create `docs/guides/getting-started.md` mapping use cases to interfaces (Library / CLI / MCP). Quick example for each (3-5 lines). Link from README Quick Start section. Commit: `docs(story-014.4): getting started guide`
+
+#### 014-E: CHANGELOG.md
+- [ ] Create `CHANGELOG.md` (keepachangelog.com format). v1.1.0: EPIC-013 features. v1.0.0: EPICs 001–012 summary. Link from README and pyproject.toml. Commit: `docs(story-014.5): CHANGELOG.md`
+
+#### 014-F: Final validation and status update
+- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-014 status to done. Update this fix_plan. Commit: `chore(epic-014): final validation and status update`
+
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
-- **Dependency graph (EPIC-013):** 013-A → 013-B, 013-C (memory_save params). 013-A → 013-D, 013-E (Hive tools refactor). 013-A + 013-F (agent_create). 013-F → 013-G (OpenClaw plugin). 013-G → 013-H (docs). 013-B + 013-C + 013-D → 013-I (integration tests). 013-J last.
-- Always cross-check **`docs/planning/epics/EPIC-013.md`** before starting a task.
+- **Dependency graph (EPIC-014):** All tasks 014-A through 014-E are independent. 014-F last.
+- Always cross-check **`docs/planning/epics/EPIC-014.md`** before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.
