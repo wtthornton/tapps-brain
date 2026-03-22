@@ -187,7 +187,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Add 3 MCP tools: `memory_relations(key)`, `memory_find_related(key, max_hops=2)`, `memory_query_relations(subject, predicate, object_entity)`. All delegate to existing store methods. Return JSON. Add unit tests. Commit: `feat(story-015.1): knowledge graph MCP tools`
 
 #### 015-B: Knowledge graph CLI commands — relations, related
-- [ ] Add CLI commands: `memory relations <key>` and `memory related <key> --hops 2`. Table output with `--format json` option. Add unit tests. Commit: `feat(story-015.2): knowledge graph CLI commands`
+- [x] Add CLI commands: `memory relations <key>` and `memory related <key> --hops 2`. Table output with `--format json` option. Add unit tests. Commit: `feat(story-015.2): knowledge graph CLI commands`
 
 ### Phase 2: Audit Trail Exposure
 

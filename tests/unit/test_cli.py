@@ -659,3 +659,116 @@ class TestAgentCreateCommand:
         data = json.loads(result.stdout)
         assert data["error"] == "invalid_profile"
         assert "available_profiles" in data
+
+
+# ===================================================================
+# Memory knowledge-graph commands (015-B)
+# ===================================================================
+
+
+@pytest.fixture()
+def kg_project_dir(tmp_path: Path):
+    """Create a MemoryStore with entries that produce knowledge-graph relations."""
+    s = MemoryStore(tmp_path)
+    # "uses" pattern → triggers extract_relations → subject=Python, predicate=uses, obj=Django
+    s.save(key="python-stack", value="Python uses Django for web apps", tier="architectural")
+    # "manages" pattern → subject=TeamAlpha, predicate=manages, obj=database
+    s.save(key="team-ownership", value="TeamAlpha manages database cluster", tier="pattern")
+    s.close()
+    return str(tmp_path)
+
+
+class TestMemoryRelationsCommand:
+    def test_relations_no_results(self, project_dir):
+        """Entry with no extractable relations returns friendly message."""
+        result = runner.invoke(
+            app, ["memory", "relations", "tech-stack", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "No relations found" in result.stdout
+
+    def test_relations_table_output(self, kg_project_dir):
+        result = runner.invoke(
+            app, ["memory", "relations", "python-stack", "--project-dir", kg_project_dir]
+        )
+        assert result.exit_code == 0
+        # Should contain relation details
+        assert "Python" in result.stdout or "python" in result.stdout.lower()
+        assert "uses" in result.stdout.lower()
+        assert "relations" in result.stdout
+
+    def test_relations_json_output(self, kg_project_dir):
+        result = runner.invoke(
+            app,
+            ["memory", "relations", "python-stack", "--project-dir", kg_project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        # At least one relation extracted
+        assert len(data) >= 1
+        rel = data[0]
+        assert "subject" in rel
+        assert "predicate" in rel
+        assert "object_entity" in rel
+        assert "confidence" in rel
+
+    def test_relations_key_not_found(self, project_dir):
+        """Non-existent key should return empty relations (not error)."""
+        result = runner.invoke(
+            app, ["memory", "relations", "nonexistent-key", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "No relations found" in result.stdout
+
+
+class TestMemoryRelatedCommand:
+    def test_related_no_results(self, project_dir):
+        """Entry with no graph neighbors returns friendly message."""
+        result = runner.invoke(
+            app, ["memory", "related", "tech-stack", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "No related entries found" in result.stdout
+
+    def test_related_table_output(self, kg_project_dir):
+        result = runner.invoke(
+            app, ["memory", "related", "python-stack", "--project-dir", kg_project_dir]
+        )
+        assert result.exit_code == 0
+        # No error — exits cleanly
+        assert result.exit_code == 0
+
+    def test_related_json_output(self, kg_project_dir):
+        result = runner.invoke(
+            app,
+            ["memory", "related", "python-stack", "--project-dir", kg_project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        # Each result has key and hops
+        for item in data:
+            assert "key" in item
+            assert "hops" in item
+
+    def test_related_hops_option(self, kg_project_dir):
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "related",
+                "python-stack",
+                "--hops",
+                "1",
+                "--project-dir",
+                kg_project_dir,
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_related_key_not_found(self, project_dir):
+        result = runner.invoke(
+            app, ["memory", "related", "nonexistent-key", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 1

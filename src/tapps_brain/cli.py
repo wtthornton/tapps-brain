@@ -346,6 +346,65 @@ def memory_history(
         store.close()
 
 
+@memory_app.command("relations")
+def memory_relations(
+    key: Annotated[str, typer.Argument(help="Memory entry key.")],
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show all knowledge-graph relations for a memory entry."""
+    store = _get_store(project_dir)
+    try:
+        rels = store.get_relations(key)
+        if as_json:
+            _output(rels, as_json=True)
+        else:
+            if not rels:
+                typer.echo(f"No relations found for key: {key}")
+                return
+            rows = [
+                {
+                    "subject": r.get("subject", ""),
+                    "predicate": r.get("predicate", ""),
+                    "object": r.get("object_entity", ""),
+                    "confidence": f"{r.get('confidence', 0.0):.2f}",
+                }
+                for r in rels
+            ]
+            _print_table(rows, columns=["subject", "predicate", "object", "confidence"])
+            typer.echo(f"\n{len(rels)} relations")
+    finally:
+        store.close()
+
+
+@memory_app.command("related")
+def memory_related(
+    key: Annotated[str, typer.Argument(help="Memory entry key.")],
+    hops: Annotated[int, typer.Option("--hops", help="Maximum traversal hops.")] = 2,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Find entries related to a key via knowledge-graph traversal."""
+    store = _get_store(project_dir)
+    try:
+        try:
+            results = store.find_related(key, max_hops=hops)
+        except KeyError:
+            typer.echo(f"Entry not found: {key}", err=True)
+            raise typer.Exit(code=1) from None
+        if as_json:
+            _output([{"key": k, "hops": h} for k, h in results], as_json=True)
+        else:
+            if not results:
+                typer.echo(f"No related entries found for key: {key}")
+                return
+            rows = [{"key": k, "hops": str(h)} for k, h in results]
+            _print_table(rows, columns=["key", "hops"])
+            typer.echo(f"\n{len(results)} related entries")
+    finally:
+        store.close()
+
+
 @memory_app.command("search")
 def memory_search(
     query: Annotated[str, typer.Argument(help="Search query.")],
