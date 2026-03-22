@@ -1,6 +1,6 @@
 {
   "name": "tapps-brain",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "displayName": "tapps-brain — Persistent Memory",
   "description": "ContextEngine plugin for tapps-brain: persistent cross-session memory with BM25 ranking, exponential decay, and multi-agent Hive sharing.",
   "slot": "ContextEngine",
