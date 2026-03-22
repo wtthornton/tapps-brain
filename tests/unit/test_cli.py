@@ -491,9 +491,7 @@ class TestProfileCommands:
         assert "Profile" in result.stdout
 
     def test_profile_show_json(self, project_dir):
-        result = runner.invoke(
-            app, ["profile", "show", "--project-dir", project_dir, "--json"]
-        )
+        result = runner.invoke(app, ["profile", "show", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert "name" in data
@@ -514,23 +512,17 @@ class TestProfileCommands:
         assert "repo-brain" in names
 
     def test_profile_set(self, project_dir):
-        result = runner.invoke(
-            app, ["profile", "set", "repo-brain", "--project-dir", project_dir]
-        )
+        result = runner.invoke(app, ["profile", "set", "repo-brain", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "repo-brain" in result.stdout
 
     def test_profile_layers(self, project_dir):
-        result = runner.invoke(
-            app, ["profile", "layers", "--project-dir", project_dir]
-        )
+        result = runner.invoke(app, ["profile", "layers", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "Profile" in result.stdout
 
     def test_profile_layers_json(self, project_dir):
-        result = runner.invoke(
-            app, ["profile", "layers", "--project-dir", project_dir, "--json"]
-        )
+        result = runner.invoke(app, ["profile", "layers", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert isinstance(data, list)
@@ -567,9 +559,7 @@ class TestHiveCommands:
         assert "No results" in result.stdout or result.stdout == ""
 
     def test_hive_search_json(self):
-        result = runner.invoke(
-            app, ["hive", "search", "test-query", "--json"]
-        )
+        result = runner.invoke(app, ["hive", "search", "test-query", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert "results" in data

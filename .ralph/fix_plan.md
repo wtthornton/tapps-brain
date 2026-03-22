@@ -18,6 +18,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] EPIC-010: Configurable Memory Profiles (done — 14 tasks, all checked)
 - [x] EPIC-011: Hive — Multi-Agent Shared Brain (done — 14 tasks, all checked)
 - [x] EPIC-012: OpenClaw Integration (done — 17 tasks, all checked)
+- [x] EPIC-013: Hive-Aware MCP Surface (done — 10 tasks, all checked)
 
 ## Completed — EPIC-012: OpenClaw Integration
 
@@ -92,7 +93,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 012-Q: Final validation and STATUS.md update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update `docs/planning/STATUS.md` to mark EPIC-012 done. Update `__init__.py` exports if new public API surfaces were added. Commit: `chore(epic-012): final validation and status update`
 
-## Active — EPIC-013: Hive-Aware MCP Surface
+## Completed — EPIC-013: Hive-Aware MCP Surface
 
 **Depends on:** EPIC-011 ✅, EPIC-012 ✅
 **Target:** 2026-07-15
@@ -138,7 +139,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Integration test with real SQLite: two agents with different profiles sharing a Hive. Save with different `agent_scope` values, verify propagation and recall merging. Test conflict resolution across agents. Agent A `hive` scope → B can recall. Agent A `private` → B cannot see. Agent A `domain` same profile as B → B can recall. File: `tests/integration/test_hive_mcp_roundtrip.py`. Commit: `test(story-013.8): multi-agent Hive round-trip integration tests`
 
 #### 013-J: Final validation and status update
-- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-013 status to done. Update this fix_plan. Commit: `chore(epic-013): final validation and status update`
+- [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-013 status to done. Update this fix_plan. Commit: `chore(epic-013): final validation and status update`
 
 ## Notes
 

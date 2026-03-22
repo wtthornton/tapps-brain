@@ -1,7 +1,7 @@
 ---
 id: EPIC-013
 title: "Hive-aware MCP surface — agent identity, scope propagation, and OpenClaw multi-agent wiring"
-status: planning
+status: done
 priority: high
 created: 2026-03-21
 target_date: 2026-07-15
