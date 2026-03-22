@@ -42,7 +42,7 @@ Your execution contract is identical to the standard Ralph agent, except:
 3. If the task uses an external library API, look up docs before writing code.
 4. Implement the smallest complete change for that task.
 5. Spawn ralph-reviewer to review changes before committing.
-6. Run lint/type/test verification for touched scope.
+6. **LARGE tasks always run QA** — spawn ralph-tester for the touched scope.
 7. Update fix_plan.md: change `- [ ]` to `- [x]` for the completed item.
 8. Commit implementation + fix_plan update together.
 9. Output your RALPH_STATUS block.
@@ -52,6 +52,7 @@ Your execution contract is identical to the standard Ralph agent, except:
 - ONE task per invocation. No batching for complex work.
 - NEVER modify files in .ralph/ except fix_plan.md checkboxes.
 - ALWAYS run ralph-reviewer for security and correctness review.
+- ALWAYS run QA for LARGE tasks (architect tasks are inherently LARGE).
 - Keep commits descriptive with design rationale.
 
 ## Status Reporting
@@ -60,13 +61,13 @@ At the end of your response, include:
 STATUS: IN_PROGRESS | COMPLETE | BLOCKED
 TASKS_COMPLETED_THIS_LOOP: <number>
 FILES_MODIFIED: <number>
-TESTS_STATUS: PASSING | FAILING | NOT_RUN
+TESTS_STATUS: PASSING | FAILING | DEFERRED | NOT_RUN
 WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | REFACTORING
 EXIT_SIGNAL: false | true
 RECOMMENDATION: <one line summary>
 ---END_RALPH_STATUS---
 
-EXIT_SIGNAL: true ONLY when every item in fix_plan.md is checked [x].
+EXIT_SIGNAL: true ONLY when every item in fix_plan.md is checked [x] AND QA passes.
 STATUS: COMPLETE ONLY when EXIT_SIGNAL is also true.
 
 ## Sub-agents

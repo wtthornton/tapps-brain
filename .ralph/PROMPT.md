@@ -40,13 +40,16 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 ## Fix Plan Updates (REQUIRED)
 After completing a task from `fix_plan.md`, you MUST update that file to check off the completed item(s) — change `- [ ]` to `- [x]`. This is the ONE exception to the `.ralph/` protection rule. Do this in the same commit as your implementation work, so the plan always reflects reality.
 
-## Testing Guidelines
-- LIMIT testing to ~20% of your total effort per loop
-- PRIORITIZE: Implementation > Documentation > Tests
-- Only write tests for NEW functionality you implement
-- Prefer targeted tests for the changed scope during the loop
-- Run: `pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
-- Then: `ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/`
+## Testing Guidelines (Epic-Boundary QA)
+- **Do NOT run tests after every task.** Defer QA to epic boundaries.
+- An **epic boundary** = completing the last `- [ ]` task under a `##` section in fix_plan.md.
+- At epic boundary: run full QA for all changes in that section:
+  `pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
+  `ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/`
+- Before EXIT_SIGNAL: true: mandatory full QA — never exit without passing tests.
+- For LARGE tasks (cross-module): run QA for that task's scope only.
+- Set `TESTS_STATUS: DEFERRED` when QA is intentionally skipped (mid-epic).
+- Only write tests for NEW functionality you implement.
 
 ## Execution Contract (Per Loop)
 1. Restate the selected fix_plan task in 1-2 lines.
@@ -70,7 +73,7 @@ At the end of your response, ALWAYS include this status block:
 STATUS: IN_PROGRESS | COMPLETE | BLOCKED
 TASKS_COMPLETED_THIS_LOOP: <number>
 FILES_MODIFIED: <number>
-TESTS_STATUS: PASSING | FAILING | NOT_RUN
+TESTS_STATUS: PASSING | FAILING | DEFERRED | NOT_RUN
 WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | REFACTORING
 EXIT_SIGNAL: false | true
 RECOMMENDATION: <one line summary of what to do next>

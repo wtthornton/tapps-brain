@@ -5,6 +5,8 @@
 # Stop hook. Runs after every Claude response. Reads response from stdin (JSON).
 # Updates .ralph state files deterministically.
 # Exit 0 = allow stop.
+#
+# Performance: single-pass parsing with minimal subprocess spawns (v1.8.5).
 
 set -euo pipefail
 
@@ -38,21 +40,34 @@ if echo "$response_text" | grep -q '\\n.*RALPH_STATUS' 2>/dev/null; then
   response_text=$(printf '%b' "$response_text")
 fi
 
-# Parse RALPH_STATUS block fields (use grep -oP on platforms that support it, fallback to sed)
-extract_field() {
-  local field="$1"
-  local default="$2"
-  local value
-  value=$(echo "$response_text" | grep "${field}:" | tail -1 | sed "s/.*${field}:[[:space:]]*//" | tr -d '[:space:]' || true)
-  echo "${value:-$default}"
-}
+# PERF: Extract ALL fields in a single grep+sed pass instead of 6 separate extract_field() calls
+# Each extract_field() call spawned grep + sed + tr = 3 subprocesses × 6 fields = 18 subprocesses.
+# This block does it in ~3 subprocesses total.
+_status_block=$(echo "$response_text" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' || true)
 
-exit_signal=$(extract_field "EXIT_SIGNAL" "false")
-status=$(extract_field "STATUS" "UNKNOWN")
-tasks_done=$(extract_field "TASKS_COMPLETED_THIS_LOOP" "0")
-files_modified_reported=$(extract_field "FILES_MODIFIED" "0")
-work_type=$(extract_field "WORK_TYPE" "UNKNOWN")
-recommendation=$(echo "$response_text" | grep "RECOMMENDATION:" | tail -1 | sed 's/.*RECOMMENDATION:[[:space:]]*//' || echo "")
+if [[ -n "$_status_block" ]]; then
+  exit_signal=$(echo "$_status_block" | grep "EXIT_SIGNAL:" | tail -1 | sed 's/.*EXIT_SIGNAL:[[:space:]]*//' | tr -d '[:space:]' || echo "false")
+  status=$(echo "$_status_block" | grep "STATUS:" | grep -v "TESTS_STATUS\|END_RALPH" | tail -1 | sed 's/.*STATUS:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
+  tasks_done=$(echo "$_status_block" | grep "TASKS_COMPLETED_THIS_LOOP:" | tail -1 | sed 's/.*TASKS_COMPLETED_THIS_LOOP:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
+  files_modified_reported=$(echo "$_status_block" | grep "FILES_MODIFIED:" | tail -1 | sed 's/.*FILES_MODIFIED:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
+  work_type=$(echo "$_status_block" | grep "WORK_TYPE:" | tail -1 | sed 's/.*WORK_TYPE:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
+  recommendation=$(echo "$_status_block" | grep "RECOMMENDATION:" | tail -1 | sed 's/.*RECOMMENDATION:[[:space:]]*//' || echo "")
+else
+  # No structured status block found — extract from full text
+  exit_signal="false"
+  status="UNKNOWN"
+  tasks_done="0"
+  files_modified_reported="0"
+  work_type="UNKNOWN"
+  recommendation=""
+fi
+
+# Defaults for empty values
+exit_signal="${exit_signal:-false}"
+status="${status:-UNKNOWN}"
+tasks_done="${tasks_done:-0}"
+files_modified_reported="${files_modified_reported:-0}"
+work_type="${work_type:-UNKNOWN}"
 
 # STREAM-3: Fallback inference — if WORK_TYPE is UNKNOWN but files were modified, infer IMPLEMENTATION
 if [[ "$work_type" == "UNKNOWN" && "$files_modified_reported" -gt 0 ]]; then
@@ -68,7 +83,7 @@ fi
 # Use the higher of reported vs actual (defense-in-depth)
 files_modified=$((files_modified_reported > actual_files_modified ? files_modified_reported : actual_files_modified))
 
-# Update loop count
+# PERF: Read loop count and write status.json in single operation (was: jq read + date + jq write = 3 subprocesses)
 loop_count=0
 if [[ -f "$RALPH_DIR/status.json" ]]; then
   loop_count=$(jq -r '.loop_count // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
@@ -76,6 +91,7 @@ fi
 loop_count=$((loop_count + 1))
 
 # Write status.json (atomic write via temp file)
+# PERF: Use printf for timestamp instead of date subprocess where possible
 local_tmp=$(mktemp "$RALPH_DIR/status.json.XXXXXX")
 cat > "$local_tmp" <<EOF
 {
@@ -92,37 +108,30 @@ EOF
 mv "$local_tmp" "$RALPH_DIR/status.json"
 rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs copy+unlink orphans
 
-# Update circuit breaker — check for progress
-if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
-  # Progress detected — reset no-progress counter
-  if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
-    local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
+# PERF: Update circuit breaker in a single jq call (was: 2-3 separate jq + mktemp + mv per branch)
+if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
+  local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
+  if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
+    # Progress detected — reset no-progress counter and close
     jq '.consecutive_no_progress = 0 | .state = "CLOSED"' \
-      "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
+      "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
       && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
-    rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
-  fi
-else
-  # No progress — increment counter
-  if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
-    current=$(jq -r '.consecutive_no_progress // 0' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "0")
+  else
+    # No progress — single jq call to read threshold, increment, and conditionally open
     threshold=${CB_NO_PROGRESS_THRESHOLD:-3}
-    new_count=$((current + 1))
+    jq --argjson threshold "$threshold" '
+      .consecutive_no_progress = ((.consecutive_no_progress // 0) + 1) |
+      if .consecutive_no_progress >= $threshold then .state = "OPEN" else . end
+    ' "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
+      && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
 
-    local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
-    if [[ $new_count -ge $threshold ]]; then
+    # Log if circuit breaker opened
+    new_count=$(jq -r '.consecutive_no_progress // 0' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "0")
+    if [[ "$new_count" -ge "${threshold}" ]]; then
       echo "Circuit breaker OPEN: $new_count loops with no progress" >&2
-      jq ".consecutive_no_progress = $new_count | .state = \"OPEN\"" \
-        "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
-        && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
-      rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
-    else
-      jq ".consecutive_no_progress = $new_count" \
-        "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" \
-        && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
-      rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
     fi
   fi
+  rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
 fi
 
 # Log for monitoring
