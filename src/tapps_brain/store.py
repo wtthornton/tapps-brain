@@ -38,6 +38,9 @@ logger = structlog.get_logger(__name__)
 # Maximum number of memories per project.
 _MAX_ENTRIES = 500
 
+# Valid Hive propagation scope values.
+VALID_AGENT_SCOPES: tuple[str, ...] = ("private", "domain", "hive")
+
 # RAG safety match count threshold for blocking content.
 # (moved up for visibility, original kept below for compat)
 
@@ -229,6 +232,17 @@ class MemoryStore:
             confidence: Confidence score (-1.0 for auto from source).
             skip_consolidation: If True, skip auto-consolidation check.
         """
+        # agent_scope enum validation
+        if agent_scope not in VALID_AGENT_SCOPES:
+            return {
+                "error": "invalid_agent_scope",
+                "message": (
+                    f"Invalid agent_scope {agent_scope!r}. "
+                    f"Valid values: {list(VALID_AGENT_SCOPES)}"
+                ),
+                "valid_values": list(VALID_AGENT_SCOPES),
+            }
+
         # Write rules validation (Epic 65.17)
         wr_error = _validate_write_rules(key, value, self._write_rules)
         if wr_error is not None:

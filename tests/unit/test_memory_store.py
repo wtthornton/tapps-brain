@@ -10,6 +10,7 @@ import pytest
 
 from tapps_brain.models import MemoryEntry
 from tapps_brain.store import (
+    VALID_AGENT_SCOPES,
     _MAX_ENTRIES,
     ConsolidationConfig,
     MemoryStore,
@@ -1026,3 +1027,39 @@ class TestStoreAudit:
         store.save(key="t1", value="time test")
         entries = store.audit(since="2000-01-01", until="2099-12-31")
         assert len(entries) >= 1
+
+
+class TestAgentScopeValidationInStore:
+    """Tests for agent_scope enum validation in MemoryStore.save() (STORY-014.1)."""
+
+    def test_valid_agent_scope_values(self, store: MemoryStore) -> None:
+        """All valid agent_scope values are accepted by store.save()."""
+        for scope in VALID_AGENT_SCOPES:
+            result = store.save(key=f"scope-{scope}", value=f"value for {scope}", agent_scope=scope)
+            assert isinstance(result, object)
+            # Should return a MemoryEntry, not an error dict
+            assert not isinstance(result, dict), f"Expected MemoryEntry for scope={scope!r}"
+
+    def test_invalid_agent_scope_returns_error_dict(self, store: MemoryStore) -> None:
+        """Invalid agent_scope returns error dict with error='invalid_agent_scope'."""
+        result = store.save(key="bad-scope", value="test", agent_scope="hivee")
+        assert isinstance(result, dict)
+        assert result["error"] == "invalid_agent_scope"
+        assert "valid_values" in result
+        assert sorted(result["valid_values"]) == ["domain", "hive", "private"]
+
+    def test_invalid_agent_scope_not_persisted(self, store: MemoryStore) -> None:
+        """Entry is not stored when agent_scope is invalid."""
+        store.save(key="not-stored", value="test", agent_scope="invalid-value")
+        entry = store.get("not-stored")
+        assert entry is None
+
+    def test_empty_agent_scope_returns_error(self, store: MemoryStore) -> None:
+        """Empty string agent_scope is rejected."""
+        result = store.save(key="empty-scope", value="test", agent_scope="")
+        assert isinstance(result, dict)
+        assert result["error"] == "invalid_agent_scope"
+
+    def test_valid_agent_scopes_constant_contains_expected_values(self) -> None:
+        """VALID_AGENT_SCOPES constant contains the three expected values."""
+        assert set(VALID_AGENT_SCOPES) == {"private", "domain", "hive"}

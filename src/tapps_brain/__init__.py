@@ -89,6 +89,7 @@ from tapps_brain.similarity import find_similar as find_similar
 # Store
 from tapps_brain.store import ConsolidationConfig as ConsolidationConfig
 from tapps_brain.store import MemoryStore as MemoryStore
+from tapps_brain.store import VALID_AGENT_SCOPES as VALID_AGENT_SCOPES
 
 __all__ = [
     "BM25Scorer",
@@ -115,6 +116,7 @@ __all__ = [
     "SafetyCheckResult",
     "ScoredMemory",
     "SimilarityResult",
+    "VALID_AGENT_SCOPES",
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",

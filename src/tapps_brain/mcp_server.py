@@ -129,6 +129,19 @@ def create_server(  # noqa: PLR0915
             source_agent: Agent that produced this memory. Falls back to
                 server's --agent-id when empty.
         """
+        _valid_scopes = ("private", "domain", "hive")
+        if agent_scope not in _valid_scopes:
+            return json.dumps(
+                {
+                    "error": "invalid_agent_scope",
+                    "message": (
+                        f"Invalid agent_scope {agent_scope!r}. "
+                        f"Valid values: {list(_valid_scopes)}"
+                    ),
+                    "valid_values": list(_valid_scopes),
+                }
+            )
+
         resolved_agent = source_agent if source_agent else agent_id
         result = store.save(
             key=key,

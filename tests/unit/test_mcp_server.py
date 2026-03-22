@@ -1111,6 +1111,50 @@ class TestMemorySaveSourceAgent:
         assert entry.source_agent == "unknown"
 
 
+class TestAgentScopeValidation:
+    """Tests for agent_scope enum validation in memory_save (STORY-014.1)."""
+
+    def test_valid_agent_scope_private(self, mcp_server):
+        """memory_save with agent_scope='private' succeeds."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="valid-private", value="test", agent_scope="private"))
+        assert result["status"] == "saved"
+
+    def test_valid_agent_scope_domain(self, mcp_server):
+        """memory_save with agent_scope='domain' succeeds."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="valid-domain", value="test", agent_scope="domain"))
+        assert result["status"] == "saved"
+
+    def test_valid_agent_scope_hive(self, mcp_server):
+        """memory_save with agent_scope='hive' succeeds."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="valid-hive", value="test", agent_scope="hive"))
+        assert result["status"] == "saved"
+
+    def test_invalid_agent_scope_returns_error(self, mcp_server):
+        """memory_save with invalid agent_scope returns error dict."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="bad-scope", value="test", agent_scope="hivee"))
+        assert result["error"] == "invalid_agent_scope"
+        assert "valid_values" in result
+        assert sorted(result["valid_values"]) == ["domain", "hive", "private"]
+
+    def test_invalid_agent_scope_not_persisted(self, mcp_server):
+        """Entry is not stored when agent_scope is invalid."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        save_fn(key="not-stored", value="test", agent_scope="bad-scope")
+        store = mcp_server._tapps_store
+        entry = store.get("not-stored")
+        assert entry is None
+
+    def test_invalid_agent_scope_empty_string(self, mcp_server):
+        """Empty string agent_scope returns error."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="empty-scope", value="test", agent_scope=""))
+        assert result["error"] == "invalid_agent_scope"
+
+
 class TestHiveToolsReuseSharedStore:
     """Tests for Hive tools reusing the server's shared HiveStore (STORY-013.4)."""
 
