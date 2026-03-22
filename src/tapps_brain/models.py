@@ -144,6 +144,12 @@ class MemoryEntry(BaseModel):
         description="Key of the entry that replaced this one.",
     )
 
+    # Integrity hash for tamper detection (H4a)
+    integrity_hash: str | None = Field(
+        default=None,
+        description="HMAC-SHA256 hex digest computed over key|value|tier|source.",
+    )
+
     # Class-level constants (not serialised)
     _KEY_PATTERN: ClassVar[re.Pattern[str]] = _KEY_SLUG_PATTERN
 

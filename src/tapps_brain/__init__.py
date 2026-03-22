@@ -77,6 +77,14 @@ from tapps_brain.relations import extract_relations as extract_relations
 from tapps_brain.retrieval import MemoryRetriever as MemoryRetriever
 from tapps_brain.retrieval import ScoredMemory as ScoredMemory
 
+# Integrity (H4a)
+from tapps_brain.integrity import compute_integrity_hash as compute_integrity_hash
+from tapps_brain.integrity import verify_integrity_hash as verify_integrity_hash
+
+# Rate Limiting (H6a)
+from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
+from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
+
 # Safety
 from tapps_brain.safety import SafetyCheckResult as SafetyCheckResult
 from tapps_brain.safety import check_content_safety as check_content_safety
@@ -110,6 +118,7 @@ __all__ = [
     "MemorySource",
     "MemoryStore",
     "MemoryTier",
+    "RateLimiterConfig",
     "RecallConfig",
     "RecallOrchestrator",
     "RecallResult",
@@ -117,9 +126,11 @@ __all__ = [
     "SafetyCheckResult",
     "ScoredMemory",
     "SimilarityResult",
+    "SlidingWindowRateLimiter",
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
+    "compute_integrity_hash",
     "compute_similarity",
     "consolidate",
     "export_memories",
@@ -132,4 +143,5 @@ __all__ = [
     "import_openclaw_workspace",
     "inject_memories",
     "is_stale",
+    "verify_integrity_hash",
 ]

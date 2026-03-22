@@ -95,7 +95,23 @@ def create_server(  # noqa: PLR0915
         instructions=(
             "tapps-brain is a persistent cross-session memory system. "
             "Use memory tools to save, retrieve, search, and manage "
-            "knowledge across coding sessions."
+            "knowledge across coding sessions.\n\n"
+            "## Hive (multi-agent memory sharing)\n\n"
+            "When Hive is enabled, memories can be shared across agents "
+            "using the `agent_scope` parameter on `memory_save`:\n\n"
+            "- **private** (default): Only visible to the saving agent. "
+            "Use for scratch notes, intermediate reasoning, and "
+            "agent-specific context.\n"
+            "- **domain**: Visible to all agents sharing the same memory "
+            "profile (e.g., all 'repo-brain' agents). Use for conventions, "
+            "patterns, and role-specific knowledge.\n"
+            "- **hive**: Visible to ALL agents in the Hive regardless of "
+            "profile. Use for cross-cutting facts: tech stack decisions, "
+            "project architecture, API contracts, and team agreements.\n\n"
+            "Recall automatically merges local and Hive results. Use "
+            "`hive_status` to see registered agents and namespaces, "
+            "`hive_search` to query the shared store directly, and "
+            "`hive_propagate` to manually share an existing local memory."
         ),
     )
 
@@ -126,6 +142,11 @@ def create_server(  # noqa: PLR0915
             scope: Visibility scope — one of: project, branch, session.
             confidence: Confidence score (0.0-1.0, or -1.0 for auto).
             agent_scope: Hive propagation scope — one of: private, domain, hive.
+                Use 'private' (default) for agent-specific notes and reasoning.
+                Use 'domain' to share with agents using the same profile
+                (e.g., coding conventions shared among all repo-brain agents).
+                Use 'hive' to share with ALL agents (e.g., tech stack decisions,
+                API contracts, architectural choices).
             source_agent: Agent that produced this memory. Falls back to
                 server's --agent-id when empty.
         """
@@ -299,7 +320,11 @@ def create_server(  # noqa: PLR0915
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_ingest(context: str, source: str = "agent") -> str:
+    def memory_ingest(
+        context: str,
+        source: str = "agent",
+        agent_scope: str = "private",
+    ) -> str:
         """Extract and store durable facts from conversation context.
 
         Scans the given text for decision-like statements and saves them
@@ -308,8 +333,13 @@ def create_server(  # noqa: PLR0915
         Args:
             context: Raw session/transcript text to scan for facts.
             source: Source attribution — one of: human, agent, inferred, system.
+            agent_scope: Hive propagation scope for extracted facts — one of:
+                'private' (default, only this agent), 'domain' (same-profile
+                agents), or 'hive' (all agents).
         """
-        created_keys = store.ingest_context(context, source=source)
+        created_keys = store.ingest_context(
+            context, source=source, agent_scope=agent_scope
+        )
         return json.dumps(
             {
                 "status": "ingested",
@@ -445,6 +475,7 @@ def create_server(  # noqa: PLR0915
     def memory_capture(
         response: str,
         source: str = "agent",
+        agent_scope: str = "private",
     ) -> str:
         """Extract and persist new facts from an agent response.
 
@@ -455,11 +486,17 @@ def create_server(  # noqa: PLR0915
         Args:
             response: The agent's response text to scan for facts.
             source: Source attribution — one of: human, agent, inferred, system.
+            agent_scope: Hive propagation scope for captured facts — one of:
+                'private' (default, only this agent), 'domain' (same-profile
+                agents), or 'hive' (all agents). Set to 'hive' to share
+                architectural decisions or cross-cutting facts with all agents.
         """
         from tapps_brain.recall import RecallOrchestrator
 
         orchestrator = RecallOrchestrator(store)
-        created_keys = orchestrator.capture(response, source=source)
+        created_keys = orchestrator.capture(
+            response, source=source, agent_scope=agent_scope
+        )
         return json.dumps(
             {
                 "status": "captured",
@@ -1049,7 +1086,11 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def hive_status() -> str:
-        """Return Hive status: namespaces, entry counts, registered agents."""
+        """Return Hive status: namespaces, entry counts, and registered agents.
+
+        Use this to discover what other agents exist, which profiles they
+        use, and how many shared memories are in each namespace.
+        """
         try:
             from tapps_brain.hive import AgentRegistry, HiveStore
 
@@ -1088,11 +1129,17 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def hive_search(query: str, namespace: str | None = None) -> str:
-        """Search the Hive shared brain.
+        """Search the shared Hive for memories from other agents.
+
+        The Hive contains memories saved with agent_scope 'domain' or 'hive'.
+        Use this to find knowledge shared by other agents — architectural
+        decisions, conventions, or cross-cutting facts.
 
         Args:
             query: Full-text search query.
-            namespace: Optional namespace filter (e.g. 'universal', 'repo-brain').
+            namespace: Optional namespace filter. Namespaces correspond to
+                profile names (e.g. 'repo-brain', 'code-review') for
+                domain-scoped memories, or 'universal' for hive-scoped ones.
         """
         try:
             from tapps_brain.hive import HiveStore
@@ -1109,11 +1156,16 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def hive_propagate(key: str, agent_scope: str = "hive") -> str:
-        """Manually propagate a local memory to the Hive.
+        """Manually propagate a local memory to the Hive shared store.
+
+        Use this to share an existing local memory with other agents after
+        saving it. Memories with 'domain' scope are visible to agents using
+        the same profile; 'hive' scope makes them visible to all agents.
 
         Args:
             key: Key of the local memory to propagate.
-            agent_scope: Scope: 'domain' or 'hive' (default).
+            agent_scope: Propagation scope — 'domain' (same-profile agents)
+                or 'hive' (all agents, default).
         """
         entry = store.get(key)
         if entry is None:

@@ -110,6 +110,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("project-type"),
             confidence=confidence,
+            batch_context="seed",
         )
         _set_seeded_from(store, "project-type")
         seeded += 1
@@ -126,6 +127,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("language"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, key)
         seeded += 1
@@ -142,6 +144,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("framework"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, key)
         seeded += 1
@@ -158,6 +161,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("test-framework"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, key)
         seeded += 1
@@ -174,6 +178,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("package-manager"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, key)
         seeded += 1
@@ -190,6 +195,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("ci-system"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, key)
         seeded += 1
@@ -205,6 +211,7 @@ def _do_seed(
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("docker"),
             confidence=_DEFAULT_CONFIDENCE,
+            batch_context="seed",
         )
         _set_seeded_from(store, "has-docker")
         seeded += 1

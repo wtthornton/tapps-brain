@@ -156,7 +156,14 @@ class RecallOrchestrator:
     # Capture
     # ------------------------------------------------------------------
 
-    def capture(self, response: str, *, source: str = "agent", **kwargs: object) -> list[str]:
+    def capture(
+        self,
+        response: str,
+        *,
+        source: str = "agent",
+        agent_scope: str = "private",
+        **kwargs: object,
+    ) -> list[str]:
         """Extract and persist new facts from an agent response.
 
         Delegates to ``store.ingest_context()`` for rule-based extraction
@@ -165,6 +172,8 @@ class RecallOrchestrator:
         Args:
             response: The agent's response text to scan for facts.
             source: Source attribution for created entries.
+            agent_scope: Hive propagation scope for captured facts —
+                ``'private'`` (default), ``'domain'``, or ``'hive'``.
 
         Returns:
             List of keys for newly created memory entries.
@@ -172,7 +181,9 @@ class RecallOrchestrator:
         if not response or not response.strip():
             return []
 
-        return self._store.ingest_context(response, source=source)
+        return self._store.ingest_context(
+            response, source=source, agent_scope=agent_scope
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -26,7 +26,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -35,6 +35,7 @@ _SCHEMA_V4 = 4
 _SCHEMA_V5 = 5
 _SCHEMA_V6 = 6
 _SCHEMA_V7 = 7
+_SCHEMA_V8 = 8
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -120,6 +121,8 @@ class MemoryPersistence:
                 self._migrate_v5_to_v6(cur)
             if current_version < _SCHEMA_V7:
                 self._migrate_v6_to_v7(cur)
+            if current_version < _SCHEMA_V8:
+                self._migrate_v7_to_v8(cur)
 
             self._conn.commit()
 
@@ -344,6 +347,23 @@ class MemoryPersistence:
             (7, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v7_to_v8(self, cur: sqlite3.Cursor) -> None:
+        """Add integrity_hash column for tamper detection (H4a).
+
+        Stores HMAC-SHA256 hex digest computed over key|value|tier|source.
+        Existing rows get NULL (hash computed on next save/update).
+        """
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN integrity_hash TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (8, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -453,6 +473,18 @@ class MemoryPersistence:
         if schema_ver >= _SCHEMA_V7:
             columns.append("agent_scope")
             values = (*values, entry.agent_scope)
+
+        # Compute and include integrity hash if schema supports it (v8+)
+        if schema_ver >= _SCHEMA_V8:
+            from tapps_brain.integrity import compute_integrity_hash
+
+            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            integrity_hash = compute_integrity_hash(
+                entry.key, entry.value, tier_str, source_str
+            )
+            columns.append("integrity_hash")
+            values = (*values, integrity_hash)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -812,6 +844,13 @@ class MemoryPersistence:
         except (KeyError, IndexError):
             pass
 
+        # Read integrity_hash (v8+), gracefully handle missing column
+        integrity_hash: str | None = None
+        try:
+            integrity_hash = row["integrity_hash"]
+        except (KeyError, IndexError):
+            pass
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -836,6 +875,7 @@ class MemoryPersistence:
             invalid_at=invalid_at,
             superseded_by=superseded_by,
             agent_scope=agent_scope,
+            integrity_hash=integrity_hash,
         )
 
     @staticmethod

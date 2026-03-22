@@ -192,6 +192,7 @@ def _persist_consolidated_entry(
         scope=_get_enum_value(consolidated.scope),
         tags=consolidated.tags,
         confidence=consolidated.confidence,
+        batch_context="consolidate",
     )
 
     # Merge relations from all source entries onto the consolidated entry

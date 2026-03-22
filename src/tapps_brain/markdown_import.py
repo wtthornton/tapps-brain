@@ -111,6 +111,7 @@ def _parse_and_import(text: str, store: MemoryStore) -> int:
             value=value,
             tier=tier.value,
             source=MemorySource.system.value,
+            batch_context="import_markdown",
         )
         imported += 1
         logger.debug("markdown_import.imported", key=key, tier=tier.value)
@@ -185,6 +186,7 @@ def _import_daily_note(path: Path, store: MemoryStore) -> bool:
         value=value,
         tier=MemoryTier.context.value,
         source=MemorySource.system.value,
+        batch_context="import_markdown",
     )
     logger.debug("markdown_import.imported_daily", key=key, date=date_str)
     return True
@@ -228,6 +230,7 @@ def import_openclaw_workspace(
                 value=value,
                 tier=tier.value,
                 source=MemorySource.system.value,
+                batch_context="import_markdown",
             )
             memory_md_count += 1
     else:

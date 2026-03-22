@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from tapps_brain.hive import HiveStore
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
+from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.safety import check_content_safety
 
@@ -123,8 +124,10 @@ class MemoryStore:
         profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
         hive_store: HiveStore | None = None,
         hive_agent_id: str = "unknown",
+        rate_limiter_config: RateLimiterConfig | None = None,
     ) -> None:
         self._project_root = project_root
+        self._rate_limiter = SlidingWindowRateLimiter(rate_limiter_config)
         try:
             self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
         except sqlite3.DatabaseError:
@@ -192,6 +195,11 @@ class MemoryStore:
         """Update the GC configuration at runtime."""
         self._gc_config = config
 
+    @property
+    def rate_limiter(self) -> SlidingWindowRateLimiter:
+        """Return the rate limiter instance for stats/config access."""
+        return self._rate_limiter
+
     @staticmethod
     def _resolve_profile(project_root: Path, profile: Any) -> Any:  # noqa: ANN401
         """Resolve the active memory profile (EPIC-010).
@@ -246,6 +254,7 @@ class MemoryStore:
         agent_scope: str = "private",
         *,
         skip_consolidation: bool = False,
+        batch_context: str | None = None,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -264,6 +273,8 @@ class MemoryStore:
             branch: Git branch name (required when scope=branch).
             confidence: Confidence score (-1.0 for auto from source).
             skip_consolidation: If True, skip auto-consolidation check.
+            batch_context: Operation context for rate limit exemption
+                (e.g. "import_markdown", "seed", "federation_sync", "consolidate").
         """
         # agent_scope enum validation
         if agent_scope not in VALID_AGENT_SCOPES:
@@ -282,6 +293,16 @@ class MemoryStore:
                 "error": "write_rules_violation",
                 "message": wr_error,
             }
+
+        # Rate limit check (H6a) — warn-only, never blocks
+        rate_result = self._rate_limiter.check(batch_context=batch_context)
+        if rate_result.minute_exceeded or rate_result.session_exceeded:
+            logger.warning(
+                "memory_save_rate_warning",
+                key=key,
+                minute_count=rate_result.current_minute_count,
+                session_count=rate_result.current_session_count,
+            )
 
         # RAG safety check on value
         safety = check_content_safety(value)
@@ -699,6 +720,7 @@ class MemoryStore:
         *,
         source: str = "agent",
         capture_prompt: str = "",
+        agent_scope: str = "private",
     ) -> list[str]:
         """Extract durable facts from context and save new entries.
 
@@ -709,6 +731,8 @@ class MemoryStore:
             context: Raw session/transcript text to scan.
             source: Source attribution for created entries.
             capture_prompt: Optional guidance for extraction.
+            agent_scope: Hive propagation scope for captured facts —
+                ``'private'`` (default), ``'domain'``, or ``'hive'``.
 
         Returns:
             List of keys for newly created entries.
@@ -730,6 +754,7 @@ class MemoryStore:
                 value=fact["value"],
                 tier=fact["tier"],
                 source=source,
+                agent_scope=agent_scope,
             )
             if isinstance(result, MemoryEntry):
                 created_keys.append(key)
@@ -1065,6 +1090,12 @@ class MemoryStore:
         fed = load_federation_config()
         federation_project_count = len(fed.projects)
 
+        # Integrity verification (H4c)
+        integrity = self.verify_integrity()
+
+        # Rate limiter anomaly counts (H6c)
+        rl_stats = self._rate_limiter.stats
+
         return StoreHealthReport(
             store_path=str(self._project_root),
             entry_count=len(entries),
@@ -1076,6 +1107,14 @@ class MemoryStore:
             gc_candidates=len(gc_candidates),
             federation_enabled=federation_project_count > 0,
             federation_project_count=federation_project_count,
+            integrity_verified=integrity["verified"],
+            integrity_tampered=integrity["tampered"],
+            integrity_no_hash=integrity["no_hash"],
+            integrity_tampered_keys=integrity["tampered_keys"][:20],
+            rate_limit_minute_anomalies=rl_stats.minute_anomalies,
+            rate_limit_session_anomalies=rl_stats.session_anomalies,
+            rate_limit_total_writes=rl_stats.total_writes,
+            rate_limit_exempt_writes=rl_stats.exempt_writes,
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -1356,6 +1395,74 @@ class MemoryStore:
             List of matching ``MemoryEntry`` objects.
         """
         return self.list_all(tags=[tag], tier=tier)
+
+    # ------------------------------------------------------------------
+    # Integrity verification (H4b)
+    # ------------------------------------------------------------------
+
+    def verify_integrity(self) -> dict[str, Any]:
+        """Scan all entries and verify their HMAC integrity hashes.
+
+        For each entry that has a stored ``integrity_hash``, recomputes the
+        HMAC-SHA256 and checks for a match. Entries without a stored hash
+        (pre-v8 or NULL) are reported separately.
+
+        Returns:
+            Dict with ``total``, ``verified``, ``tampered``, ``no_hash``,
+            ``tampered_keys``, ``missing_hash_keys``, ``tampered_details``.
+        """
+        from tapps_brain.integrity import compute_integrity_hash, verify_integrity_hash
+
+        self._metrics.increment("store.verify_integrity")
+
+        with self._lock:
+            entries = list(self._entries.values())
+
+        total = len(entries)
+        verified = 0
+        tampered: list[str] = []
+        tampered_details: list[dict[str, str]] = []
+        missing_hash_keys: list[str] = []
+
+        for entry in entries:
+            stored_hash = getattr(entry, "integrity_hash", None)
+            if not stored_hash:
+                missing_hash_keys.append(entry.key)
+                continue
+
+            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            source_str = (
+                entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            )
+            if verify_integrity_hash(
+                entry.key, entry.value, tier_str, source_str, stored_hash
+            ):
+                verified += 1
+            else:
+                tampered.append(entry.key)
+                expected = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
+                tampered_details.append(
+                    {
+                        "key": entry.key,
+                        "stored_hash": stored_hash,
+                        "expected_hash": expected,
+                    }
+                )
+                logger.warning(
+                    "integrity_verification_failed",
+                    key=entry.key,
+                    tier=tier_str,
+                )
+
+        return {
+            "total": total,
+            "verified": verified,
+            "tampered": len(tampered),
+            "no_hash": len(missing_hash_keys),
+            "tampered_keys": tampered,
+            "missing_hash_keys": missing_hash_keys,
+            "tampered_details": tampered_details,
+        }
 
     def close(self) -> None:
         """Close the underlying persistence layer."""

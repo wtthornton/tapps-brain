@@ -84,17 +84,23 @@ tools:
     description: Active profile name, layers, scoring config
   - name: profile_switch
     description: Switch to different built-in profile
-  # Hive (Multi-Agent)
+  # Hive (Multi-Agent Sharing)
+  #
+  # Memories are shared via agent_scope on memory_save/memory_capture/memory_ingest:
+  #   private  — only this agent (default)
+  #   domain   — agents sharing the same profile (e.g. all repo-brain agents)
+  #   hive     — ALL agents regardless of profile
+  #
   - name: hive_status
-    description: Namespaces, entry counts, registered agents
+    description: Show namespaces, entry counts, and registered agents
   - name: hive_search
-    description: Search shared Hive memories
+    description: Search shared Hive memories from other agents
   - name: hive_propagate
-    description: Manually propagate local memory to Hive
+    description: Manually share an existing local memory to the Hive
   - name: agent_register
-    description: Register agent in Hive
+    description: Register this agent in the Hive registry
   - name: agent_list
-    description: List registered agents
+    description: List all registered agents and their profiles
 ---
 
 # tapps-brain — Persistent Memory for OpenClaw
@@ -130,7 +136,9 @@ automatically via `openclaw.plugin.json`.
   the context window
 - **Configurable profiles:** Switch between `default`, `long_term`,
   `high_confidence`, or `fast_context` scoring profiles
-- **Hive sharing:** Multiple OpenClaw agents share knowledge via the Hive
+- **Hive sharing:** Multiple agents share knowledge via the Hive — use
+  `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
+  `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
 - **28 MCP tools:** Full programmatic control when you need it
 

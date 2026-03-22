@@ -57,6 +57,16 @@ class StoreHealthReport(BaseModel):
     gc_candidates: int = 0
     federation_enabled: bool = False
     federation_project_count: int = 0
+    # Integrity verification (H4c)
+    integrity_verified: int = 0
+    integrity_tampered: int = 0
+    integrity_no_hash: int = 0
+    integrity_tampered_keys: list[str] = Field(default_factory=list)
+    # Rate limiter anomaly counts (H6c)
+    rate_limit_minute_anomalies: int = 0
+    rate_limit_session_anomalies: int = 0
+    rate_limit_total_writes: int = 0
+    rate_limit_exempt_writes: int = 0
 
 
 # ---------------------------------------------------------------------------

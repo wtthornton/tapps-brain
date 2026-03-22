@@ -630,6 +630,7 @@ def sync_from_hub(
                 source_agent=f"federated:{source_id}",
                 scope="project",
                 tags=[*entry_tags, "federated", f"from:{source_id}"],
+                batch_context="federation_sync",
             )
             imported += 1
 
