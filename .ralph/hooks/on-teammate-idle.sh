@@ -16,8 +16,8 @@ teammate_name=$(echo "$INPUT" | jq -r '.teammate_name // "unknown"' 2>/dev/null 
 # Check if there are remaining tasks in fix_plan
 remaining=0
 if [[ -f "$RALPH_DIR/fix_plan.md" ]]; then
-  total=$(grep -c '^\- \[' "$RALPH_DIR/fix_plan.md" 2>/dev/null || echo "0")
-  done=$(grep -c '^\- \[x\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null || echo "0")
+  total=$(grep -c '^\- \[' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || total=0
+  done=$(grep -c '^\- \[x\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || done=0
   remaining=$((total - done))
 fi
 

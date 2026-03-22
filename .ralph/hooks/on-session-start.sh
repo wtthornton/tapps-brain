@@ -24,8 +24,8 @@ fi
 total_tasks=0
 done_tasks=0
 if [[ -f "$RALPH_DIR/fix_plan.md" ]]; then
-  total_tasks=$(grep -c '^\- \[' "$RALPH_DIR/fix_plan.md" 2>/dev/null || echo "0")
-  done_tasks=$(grep -c '^\- \[x\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null || echo "0")
+  total_tasks=$(grep -c '^\- \[' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || total_tasks=0
+  done_tasks=$(grep -c '^\- \[x\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || done_tasks=0
 fi
 remaining=$((total_tasks - done_tasks))
 
@@ -45,10 +45,18 @@ fi
 : > "$RALPH_DIR/.files_modified_this_loop" 2>/dev/null || true
 
 # Emit context to stderr (injected into Claude's system prompt)
-cat >&2 <<EOF
+if [[ $total_tasks -gt 0 && $remaining -eq 0 ]]; then
+  cat >&2 <<EOF
+Ralph loop #$((loop_count + 1)). Tasks: $done_tasks/$total_tasks complete, 0 remaining.
+Circuit breaker: $cb_state.$([ -n "$last_status" ] && echo " Last loop: $last_status.")
+ALL TASKS COMPLETE. Do NOT run tests, lint, or any verification. Emit your RALPH_STATUS block with STATUS: COMPLETE, TASKS_COMPLETED_THIS_LOOP: 0, TESTS_STATUS: PASSING, EXIT_SIGNAL: true, and STOP immediately.
+EOF
+else
+  cat >&2 <<EOF
 Ralph loop #$((loop_count + 1)). Tasks: $done_tasks/$total_tasks complete, $remaining remaining.
 Circuit breaker: $cb_state.$([ -n "$last_status" ] && echo " Last loop: $last_status.")
-Read .ralph/fix_plan.md and do the FIRST unchecked item.
+Read .ralph/fix_plan.md and do the FIRST unchecked item. IMPORTANT: Only run tests at epic boundaries (last task in a ## section). Otherwise set TESTS_STATUS: DEFERRED — do NOT run any test commands.
 EOF
+fi
 
 exit 0
