@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-22 (America/Chicago) — EPIC-015 complete
+**Last updated:** 2026-03-22 (America/Chicago) — EPIC-016 done
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -8,8 +8,8 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1537 passing | Full suite `pytest tests/` |
-| Coverage | ≥ 95% | `tapps_brain` package |
+| Tests | ~1678 passing | Full suite `pytest tests/` |
+| Coverage | ≥ 95% (96.48%) | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
 
@@ -61,10 +61,12 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-012 | OpenClaw Integration | done | 2026-03-21 |
 | EPIC-013 | Hive-Aware MCP Surface | done | 2026-03-21 |
 | EPIC-014 | Hardening — Validation, Parity, Resilience, Docs | done | 2026-03-22 |
+| EPIC-015 | Analytics & Operational Surface | done | 2026-03-22 |
+| EPIC-016 | Test Suite Hardening — CLI gaps, concurrency, cleanup | done | 2026-03-22 |
 
 ## Current focus
 
-**EPIC-014 (Hardening)** completed 2026-03-22 — added `agent_scope` enum validation in MCP and store, `agent create` CLI command, graceful SQLite corruption handling with actionable error messages, Getting Started guide, CHANGELOG.md, and full lint/type/test suite passing at 95.48% coverage. All 14 epics complete.
+**All epics complete.** EPIC-016 closed with 1678 passing tests, 96.48% coverage, zero ResourceWarnings, clean lint and mypy. No active work streams.
 
 ## WSL / Windows
 

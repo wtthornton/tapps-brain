@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import threading
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from tapps_brain.hive import HiveStore
 from tapps_brain.store import MemoryStore
@@ -39,7 +42,6 @@ class TestConcurrentSave:
         num_threads = 10
         entries_per_thread = 50
         errors: list[Exception] = []
-        done = threading.Event()
 
         def saver(thread_id: int) -> None:
             try:
@@ -50,7 +52,7 @@ class TestConcurrentSave:
                         value=f"value from thread {thread_id} entry {i}",
                         tier="context",
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         threads = [threading.Thread(target=saver, args=(t,)) for t in range(num_threads)]
@@ -80,7 +82,7 @@ class TestConcurrentSave:
                     key = f"corruption-thread-{thread_id}-{i}"
                     val = f"thread={thread_id} i={i}"
                     store.save(key=key, value=val, tier="context")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         threads = [threading.Thread(target=saver, args=(t,)) for t in range(num_threads)]
@@ -120,7 +122,7 @@ class TestConcurrentSaveAndRecall:
                     key = f"concurrent-save-{thread_id}-{idx}"
                     store.save(key=key, value=f"value {idx}", tier="context")
                     idx += 1
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         def recaller(thread_id: int) -> None:
@@ -128,7 +130,7 @@ class TestConcurrentSaveAndRecall:
                 while not stop_event.is_set():
                     store.search("seed value")
                     time.sleep(0.005)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         save_threads = [threading.Thread(target=saver, args=(t,)) for t in range(5)]
@@ -168,7 +170,7 @@ class TestConcurrentSaveAtCapacity:
                     for i in range(20):
                         key = f"cap-thread-{thread_id}-{i}"
                         s.save(key=key, value=f"overflow value {i}", tier="context")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors.append(exc)
 
             threads = [threading.Thread(target=saver, args=(t,)) for t in range(5)]
@@ -214,7 +216,7 @@ class TestConcurrentGCAndSaves:
                         s.save(key=key, value=f"fresh value {idx}", tier="pattern")
                         idx += 1
                         time.sleep(0.002)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors.append(exc)
 
             def gc_runner() -> None:
@@ -222,13 +224,13 @@ class TestConcurrentGCAndSaves:
                     while not stop_event.is_set():
                         s.gc(dry_run=False)
                         time.sleep(0.01)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors.append(exc)
 
             save_threads = [threading.Thread(target=saver, args=(t,)) for t in range(3)]
             gc_thread = threading.Thread(target=gc_runner)
 
-            all_threads = save_threads + [gc_thread]
+            all_threads = [*save_threads, gc_thread]
             for t in all_threads:
                 t.start()
 
@@ -273,14 +275,14 @@ class TestConcurrentGCAndSaves:
                             value=f"new value {i}",
                             tier="pattern",
                         )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors.append(exc)
 
             # Launch saves and GC simultaneously
             save_threads = [threading.Thread(target=saver, args=(t,)) for t in range(3)]
             gc_thread = threading.Thread(target=lambda: s.gc(dry_run=False))
 
-            all_threads = save_threads + [gc_thread]
+            all_threads = [*save_threads, gc_thread]
             for t in all_threads:
                 t.start()
             for t in all_threads:
@@ -328,7 +330,7 @@ class TestConcurrentHivePropagation:
                         tier="pattern",
                         conflict_policy="last_write_wins",
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         threads = [threading.Thread(target=propagate, args=(a,)) for a in range(num_agents)]
@@ -367,7 +369,7 @@ class TestConcurrentHivePropagation:
                         tier="pattern",
                         conflict_policy="last_write_wins",
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         threads = [threading.Thread(target=ns_writer, args=(ns,)) for ns in namespaces]
@@ -417,7 +419,7 @@ class TestConcurrentHiveRecallDuringPropagation:
                     )
                     idx += 1
                     time.sleep(0.003)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         def reader(thread_id: int) -> None:
@@ -425,7 +427,7 @@ class TestConcurrentHiveRecallDuringPropagation:
                 while not stop_event.is_set():
                     hive_store.search("content", namespaces=["universal"], limit=20)
                     time.sleep(0.005)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         write_threads = [threading.Thread(target=writer, args=(t,)) for t in range(3)]

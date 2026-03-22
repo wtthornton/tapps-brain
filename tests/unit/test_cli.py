@@ -557,7 +557,7 @@ class TestMaintenanceCommands:
     def test_gc_archives_stale_entries(self, tmp_path: Path) -> None:
         """016-B: GC non-dry-run archives session-scoped entries older than 7 days."""
         import sqlite3
-        from datetime import datetime, timedelta, timezone
+        from datetime import UTC, datetime, timedelta
 
         # Create store and save a session-scoped entry
         s = MemoryStore(tmp_path)
@@ -566,7 +566,7 @@ class TestMaintenanceCommands:
 
         # Back-date updated_at to 8 days ago so GC identifies it as stale
         db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
-        old_ts = (datetime.now(tz=timezone.utc) - timedelta(days=8)).isoformat()
+        old_ts = (datetime.now(tz=UTC) - timedelta(days=8)).isoformat()
         conn = sqlite3.connect(str(db_path))
         conn.execute(
             "UPDATE memories SET updated_at = ? WHERE key = ?",

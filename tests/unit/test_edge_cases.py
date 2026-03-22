@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from pydantic import ValidationError
 
 from tapps_brain.models import MAX_KEY_LENGTH, MAX_VALUE_LENGTH
 from tapps_brain.store import MemoryStore
@@ -46,7 +47,7 @@ class TestEmojiInValues:
         """Recall returns entries whose values contain emoji."""
         store.save(key="emoji-recall", value="Rocket launch 🚀 successful")
         results = store.recall("Rocket launch")
-        assert any(e.key == "emoji-recall" for e in results.memories)
+        assert any(e["key"] == "emoji-recall" for e in results.memories)
 
     def test_fts_search_with_emoji_value(self, store: MemoryStore) -> None:
         """FTS search finds entries with emoji in values (searches ASCII tokens)."""
@@ -97,7 +98,7 @@ class TestCJKInValues:
         """Recall returns entries with CJK content when queried by ASCII words."""
         store.save(key="cjk-recall", value="project status 项目状态 complete")
         results = store.recall("project status")
-        assert any(e.key == "cjk-recall" for e in results.memories)
+        assert any(e["key"] == "cjk-recall" for e in results.memories)
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +152,7 @@ class TestKeyLengthBoundaries:
         """A key one character beyond MAX_KEY_LENGTH is rejected."""
         key = "a" + "b" * MAX_KEY_LENGTH  # MAX_KEY_LENGTH + 1 total
         assert len(key) == MAX_KEY_LENGTH + 1
-        with pytest.raises(Exception):  # ValidationError (Pydantic) or ValueError
+        with pytest.raises(ValidationError):
             store.save(key=key, value="should fail")
 
     def test_key_minimum_length_accepted(self, store: MemoryStore) -> None:
@@ -180,7 +181,7 @@ class TestValueLengthBoundaries:
         """A value exactly MAX_VALUE_LENGTH characters long is accepted."""
         value = "x" * MAX_VALUE_LENGTH
         assert len(value) == MAX_VALUE_LENGTH
-        entry = store.save(key="max-value-len", value=value)
+        store.save(key="max-value-len", value=value)
         loaded = store.get("max-value-len")
         assert loaded is not None
         assert len(loaded.value) == MAX_VALUE_LENGTH
@@ -189,7 +190,7 @@ class TestValueLengthBoundaries:
         """A value one character beyond MAX_VALUE_LENGTH is rejected."""
         value = "x" * (MAX_VALUE_LENGTH + 1)
         assert len(value) == MAX_VALUE_LENGTH + 1
-        with pytest.raises(Exception):  # ValidationError (Pydantic) or ValueError
+        with pytest.raises(ValidationError):
             store.save(key="over-max-value", value=value)
 
     def test_value_with_unicode_at_max_length(self, store: MemoryStore) -> None:
@@ -197,7 +198,7 @@ class TestValueLengthBoundaries:
         # Each '你' is one Python character, so MAX_VALUE_LENGTH chars total
         value = "你" * MAX_VALUE_LENGTH
         assert len(value) == MAX_VALUE_LENGTH
-        entry = store.save(key="unicode-max-value", value=value)
+        store.save(key="unicode-max-value", value=value)
         loaded = store.get("unicode-max-value")
         assert loaded is not None
         assert len(loaded.value) == MAX_VALUE_LENGTH

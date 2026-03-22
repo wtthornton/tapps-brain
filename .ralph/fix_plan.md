@@ -222,7 +222,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 #### 015-J: Final validation and status update
 - [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-015 status to done. Update this fix_plan. Commit: `chore(epic-015): final validation and status update`
 
-## Active — EPIC-016: Test Suite Hardening
+## Completed — EPIC-016: Test Suite Hardening
 
 **Depends on:** EPIC-015 ✅
 **Target:** 2026-04-15
@@ -259,7 +259,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 ### Phase 5: Final Validation
 
 #### 016-G: Final validation and status update
-- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Verify zero ResourceWarning. Update EPIC-016 status to done. Update STATUS.md with new test count. Update this fix_plan. Commit: `chore(epic-016): final validation and status update`
+- [x] Run full test suite, verify coverage >= 95%. Run lint and type checks. Verify zero ResourceWarning. Update EPIC-016 status to done. Update STATUS.md with new test count. Update this fix_plan. Commit: `chore(epic-016): final validation and status update`
 
 ## Notes
 
