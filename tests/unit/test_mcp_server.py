@@ -1440,7 +1440,7 @@ class TestMCPAdditionalCoverage:
             server._tapps_store._hive_store,
             "list_namespaces",
             lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-        )  # noqa: E501
+        )
         status_fn = _tool_fn(server, "hive_status")
         result = json.loads(status_fn())
         assert result.get("error") == "hive_error" or "namespaces" in result
