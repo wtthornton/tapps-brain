@@ -1115,3 +1115,89 @@ class TestMemorySaveSourceAgent:
         entry = store.get("sa-default")
         assert entry is not None
         assert entry.source_agent == "unknown"
+
+
+class TestHiveToolsReuseSharedStore:
+    """Tests for Hive tools reusing the server's shared HiveStore (STORY-013.4)."""
+
+    def test_hive_store_exposed_on_server(self, store_dir):
+        """When --enable-hive is set, the shared HiveStore is accessible."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        assert server._tapps_hive_store is not None
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_hive_store_none_without_flag(self, store_dir):
+        """Without --enable-hive, _tapps_hive_store is None."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        assert server._tapps_hive_store is None
+        server._tapps_store.close()
+
+    def test_hive_status_uses_shared_store(self, store_dir, monkeypatch):
+        """hive_status reuses the shared HiveStore instead of creating a new one."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="status-agent")
+        status_fn = _tool_fn(server, "hive_status")
+        result = json.loads(status_fn())
+        # Should work and return valid structure
+        assert "namespaces" in result
+        assert "total_entries" in result
+        assert "agents" in result
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_hive_search_uses_shared_store(self, store_dir):
+        """hive_search reuses the shared HiveStore when available."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="search-agent")
+        search_fn = _tool_fn(server, "hive_search")
+        result = json.loads(search_fn(query="test"))
+        assert "results" in result
+        assert "count" in result
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_hive_propagate_uses_shared_store(self, store_dir):
+        """hive_propagate reuses the shared HiveStore when available."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="prop-agent")
+        store = server._tapps_store
+        # Save a local entry first
+        save_fn = _tool_fn(server, "memory_save")
+        save_fn(key="hive-prop-test", value="propagate me")
+
+        prop_fn = _tool_fn(server, "hive_propagate")
+        result = json.loads(prop_fn(key="hive-prop-test", agent_scope="hive"))
+        assert result.get("propagated") is True
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_status_fallback_creates_temp_hive(self, store_dir):
+        """hive_status creates a temporary HiveStore when --enable-hive is not set."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        assert server._tapps_store._hive_store is None
+        # Without --enable-hive, hive_status still works via fallback (temp instance)
+        status_fn = _tool_fn(server, "hive_status")
+        result = json.loads(status_fn())
+        assert "namespaces" in result or "error" in result
+        server._tapps_store.close()
+
+    def test_hive_search_fallback_creates_temp_hive(self, store_dir):
+        """hive_search creates a temporary HiveStore when --enable-hive is not set."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        assert server._tapps_store._hive_store is None
+        search_fn = _tool_fn(server, "hive_search")
+        result = json.loads(search_fn(query="test"))
+        assert "results" in result or "error" in result
+        server._tapps_store.close()

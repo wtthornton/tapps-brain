@@ -951,7 +951,8 @@ def create_server(  # noqa: PLR0915
         try:
             from tapps_brain.hive import AgentRegistry, HiveStore
 
-            hive = HiveStore()
+            shared = getattr(store, "_hive_store", None)
+            hive = shared if shared is not None else HiveStore()
             namespaces = hive.list_namespaces()
             ns_counts: dict[str, int] = {}
             for ns in namespaces:
@@ -966,7 +967,8 @@ def create_server(  # noqa: PLR0915
                 {"id": a.id, "profile": a.profile, "skills": a.skills}
                 for a in registry.list_agents()
             ]
-            hive.close()
+            if shared is None:
+                hive.close()
             return json.dumps(
                 {
                     "namespaces": ns_counts,
@@ -988,10 +990,12 @@ def create_server(  # noqa: PLR0915
         try:
             from tapps_brain.hive import HiveStore
 
-            hive = HiveStore()
+            shared = getattr(store, "_hive_store", None)
+            hive = shared if shared is not None else HiveStore()
             ns_list = [namespace] if namespace else None
             results = hive.search(query, namespaces=ns_list, limit=20)
-            hive.close()
+            if shared is None:
+                hive.close()
             return json.dumps({"results": results, "count": len(results)})
         except Exception as exc:
             return json.dumps({"error": "hive_error", "message": str(exc)})
@@ -1011,7 +1015,8 @@ def create_server(  # noqa: PLR0915
         try:
             from tapps_brain.hive import HiveStore, PropagationEngine
 
-            hive = HiveStore()
+            shared = getattr(store, "_hive_store", None)
+            hive = shared if shared is not None else HiveStore()
             profile_name = "repo-brain"
             if store.profile is not None:
                 profile_name = getattr(store.profile, "name", "repo-brain")
@@ -1029,7 +1034,8 @@ def create_server(  # noqa: PLR0915
                 tags=entry.tags,
                 hive_store=hive,
             )
-            hive.close()
+            if shared is None:
+                hive.close()
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
             return json.dumps({"propagated": True, **result})
@@ -1085,6 +1091,8 @@ def create_server(  # noqa: PLR0915
     mcp._tapps_store = store
     mcp._tapps_agent_id = agent_id
     mcp._tapps_hive_enabled = enable_hive
+    # Expose the shared HiveStore (if any) so Hive tools can reuse it
+    mcp._tapps_hive_store = getattr(store, "_hive_store", None)
 
     return mcp
 

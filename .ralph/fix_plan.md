@@ -114,7 +114,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 2: Hive Tools Refactor (Python)
 
 #### 013-D: Hive tools reuse server's HiveStore instance
-- [ ] Refactor `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_list` to reuse the server's shared `HiveStore` when available, instead of creating throwaway instances per call. When `--enable-hive` is not set, fall back to creating a temporary `HiveStore` (current behavior). Add unit tests for both paths. Commit: `feat(story-013.4): Hive tools reuse shared HiveStore`
+- [x] Refactor `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_list` to reuse the server's shared `HiveStore` when available, instead of creating throwaway instances per call. When `--enable-hive` is not set, fall back to creating a temporary `HiveStore` (current behavior). Add unit tests for both paths. Commit: `feat(story-013.4): Hive tools reuse shared HiveStore`
 
 #### 013-E: `hive_propagate` uses server's agent identity
 - [ ] Update `hive_propagate` to read agent_id from the store's `_hive_agent_id` instead of hardcoded `"mcp-user"`. Read profile from the store's resolved profile instead of defaulting separately. Add unit test verifying correct agent_id flows through. Commit: `feat(story-013.4): hive_propagate uses server agent identity`
