@@ -173,10 +173,59 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 #### 014-F: Final validation and status update
 - [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-014 status to done. Update this fix_plan. Commit: `chore(epic-014): final validation and status update`
 
+## Queued — EPIC-015: Analytics & Operational Surface
+
+**Depends on:** EPIC-014
+**Target:** 2026-09-01
+**Design:** `docs/planning/epics/EPIC-015.md`
+
+**Goal:** Expose hidden analytics (knowledge graph, audit trail, tags) and operational controls (GC thresholds, auto-consolidation config, agent lifecycle) through MCP and CLI so production teams can inspect, tune, and debug their memory stores.
+
+### Phase 1: Knowledge Graph Exposure (MCP → CLI)
+
+#### 015-A: Knowledge graph MCP tools — relations, find_related, query_relations
+- [ ] Add 3 MCP tools: `memory_relations(key)`, `memory_find_related(key, max_hops=2)`, `memory_query_relations(subject, predicate, object_entity)`. All delegate to existing store methods. Return JSON. Add unit tests. Commit: `feat(story-015.1): knowledge graph MCP tools`
+
+#### 015-B: Knowledge graph CLI commands — relations, related
+- [ ] Add CLI commands: `memory relations <key>` and `memory related <key> --hops 2`. Table output with `--format json` option. Add unit tests. Commit: `feat(story-015.2): knowledge graph CLI commands`
+
+### Phase 2: Audit Trail Exposure
+
+#### 015-C: Audit trail MCP tool
+- [ ] Add `memory_audit(key, event_type, since, until, limit=50)` MCP tool delegating to `store.audit()`. Return JSON array of events. Add unit test. Commit: `feat(story-015.3): audit trail MCP tool`
+
+#### 015-D: Audit trail CLI command
+- [ ] Add `memory audit [key] --type save --since 2026-01-01 --limit 20` CLI command. Table output with `--format json`. Add unit test. Commit: `feat(story-015.4): audit trail CLI command`
+
+### Phase 3: Tag Management
+
+#### 015-E: Tag management MCP tools — list_tags, update_tags, entries_by_tag
+- [ ] Add 3 MCP tools: `memory_list_tags()`, `memory_update_tags(key, add, remove)`, `memory_entries_by_tag(tag, tier)`. Add `store.update_tags(key, add, remove)` method for atomic tag modification. Add unit tests. Commit: `feat(story-015.5): tag management MCP tools`
+
+#### 015-F: Tag management CLI commands
+- [ ] Add CLI commands: `memory tags` (list all with counts) and `memory tag <key> --add tag1 --remove tag2`. Add unit tests. Commit: `feat(story-015.6): tag management CLI commands`
+
+### Phase 4: Operational Controls (all independent)
+
+#### 015-G: GC config MCP tools and CLI
+- [ ] Add MCP tools: `memory_gc_config()` and `memory_gc_config_set(floor_retention_days, session_expiry_days, contradicted_threshold)`. Add CLI: `maintenance gc-config [--set key=value]`. Make GC accept runtime config updates. Add unit tests. Commit: `feat(story-015.7): GC config MCP tools and CLI`
+
+#### 015-H: Auto-consolidation config MCP tools and CLI
+- [ ] Add MCP tools: `memory_consolidation_config()` and `memory_consolidation_config_set(enabled, threshold, min_entries)`. Add CLI: `maintenance consolidation-config [--set key=value]`. Delegate to existing `store.set_consolidation_config()`. Add unit tests. Commit: `feat(story-015.8): auto-consolidation config MCP tools and CLI`
+
+#### 015-I: Agent lifecycle — delete, CLI parity, Hive stats
+- [ ] Add `agent_delete(agent_id)` MCP tool with `AgentRegistry.unregister()`. Add CLI: `agent list` and `agent delete <id>`. Add per-namespace entry counts to `hive_status` output. Add unit tests. Commit: `feat(story-015.9): agent lifecycle and Hive stats`
+
+### Phase 5: Final Validation
+
+#### 015-J: Final validation and status update
+- [ ] Run full test suite, verify coverage >= 95%. Run lint and type checks. Update EPIC-015 status to done. Update this fix_plan. Commit: `chore(epic-015): final validation and status update`
+
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
 - **Dependency graph (EPIC-014):** All tasks 014-A through 014-E are independent. 014-F last.
-- Always cross-check **`docs/planning/epics/EPIC-014.md`** before starting a task.
+- **Dependency graph (EPIC-015):** 015-A → 015-B. 015-C → 015-D. 015-E → 015-F. 015-G, 015-H, 015-I independent. 015-J last.
+- Always cross-check the relevant epic file before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.
