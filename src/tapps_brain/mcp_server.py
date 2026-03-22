@@ -1017,6 +1017,7 @@ def create_server(  # noqa: PLR0915
 
             shared = getattr(store, "_hive_store", None)
             hive = shared if shared is not None else HiveStore()
+            agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
             if store.profile is not None:
                 profile_name = getattr(store.profile, "name", "repo-brain")
@@ -1026,7 +1027,7 @@ def create_server(  # noqa: PLR0915
                 key=entry.key,
                 value=entry.value,
                 agent_scope=agent_scope,
-                agent_id="mcp-user",
+                agent_id=agent_id,
                 agent_profile=profile_name,
                 tier=tier_val,
                 confidence=entry.confidence,

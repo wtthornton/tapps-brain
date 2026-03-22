@@ -1012,9 +1012,7 @@ class TestMemorySaveAgentScope:
     def test_memory_save_agent_scope_domain(self, mcp_server):
         """memory_save with agent_scope='domain' sets it on the entry."""
         save_fn = _tool_fn(mcp_server, "memory_save")
-        result = json.loads(
-            save_fn(key="domain-test", value="domain value", agent_scope="domain")
-        )
+        result = json.loads(save_fn(key="domain-test", value="domain value", agent_scope="domain"))
         assert result["status"] == "saved"
 
         store = mcp_server._tapps_store
@@ -1025,9 +1023,7 @@ class TestMemorySaveAgentScope:
     def test_memory_save_agent_scope_hive(self, mcp_server):
         """memory_save with agent_scope='hive' sets it on the entry."""
         save_fn = _tool_fn(mcp_server, "memory_save")
-        result = json.loads(
-            save_fn(key="hive-test", value="hive value", agent_scope="hive")
-        )
+        result = json.loads(save_fn(key="hive-test", value="hive value", agent_scope="hive"))
         assert result["status"] == "saved"
 
         store = mcp_server._tapps_store
@@ -1080,9 +1076,7 @@ class TestMemorySaveSourceAgent:
     def test_memory_save_explicit_source_agent(self, mcp_server):
         """memory_save with explicit source_agent stores it on the entry."""
         save_fn = _tool_fn(mcp_server, "memory_save")
-        result = json.loads(
-            save_fn(key="sa-explicit", value="test", source_agent="my-agent")
-        )
+        result = json.loads(save_fn(key="sa-explicit", value="test", source_agent="my-agent"))
         assert result["status"] == "saved"
 
         store = mcp_server._tapps_store
@@ -1176,6 +1170,61 @@ class TestHiveToolsReuseSharedStore:
         prop_fn = _tool_fn(server, "hive_propagate")
         result = json.loads(prop_fn(key="hive-prop-test", agent_scope="hive"))
         assert result.get("propagated") is True
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_propagate_uses_server_agent_identity(self, store_dir):
+        """hive_propagate reads agent_id from the store, not hardcoded 'mcp-user'."""
+        from unittest.mock import patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="my-agent-42")
+        store = server._tapps_store
+        # Verify the store received the correct agent_id
+        assert store._hive_agent_id == "my-agent-42"
+
+        save_fn = _tool_fn(server, "memory_save")
+        save_fn(key="identity-test", value="check agent id")
+
+        # Patch PropagationEngine.propagate to capture the agent_id passed
+        with patch("tapps_brain.hive.PropagationEngine.propagate", wraps=None) as mock_propagate:
+            mock_propagate.return_value = {"namespace": "test", "key": "identity-test"}
+            prop_fn = _tool_fn(server, "hive_propagate")
+            result = json.loads(prop_fn(key="identity-test", agent_scope="hive"))
+            mock_propagate.assert_called_once()
+            call_kwargs = mock_propagate.call_args
+            assert call_kwargs.kwargs.get("agent_id") == "my-agent-42"
+            assert result.get("propagated") is True
+
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_propagate_agent_id_fallback(self, store_dir):
+        """hive_propagate falls back to 'mcp-user' when _hive_agent_id is absent."""
+        from unittest.mock import patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True)
+        store = server._tapps_store
+
+        save_fn = _tool_fn(server, "memory_save")
+        save_fn(key="fallback-test", value="check fallback")
+
+        # Remove _hive_agent_id to simulate legacy store without the attribute
+        if hasattr(store, "_hive_agent_id"):
+            delattr(store, "_hive_agent_id")
+
+        with patch("tapps_brain.hive.PropagationEngine.propagate", wraps=None) as mock_propagate:
+            mock_propagate.return_value = {"namespace": "test", "key": "fallback-test"}
+            prop_fn = _tool_fn(server, "hive_propagate")
+            result = json.loads(prop_fn(key="fallback-test", agent_scope="hive"))
+            mock_propagate.assert_called_once()
+            call_kwargs = mock_propagate.call_args
+            assert call_kwargs.kwargs.get("agent_id") == "mcp-user"
+            assert result.get("propagated") is True
+
         store._hive_store.close()
         store.close()
 
