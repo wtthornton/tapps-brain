@@ -192,7 +192,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 ### Phase 2: Audit Trail Exposure
 
 #### 015-C: Audit trail MCP tool
-- [ ] Add `memory_audit(key, event_type, since, until, limit=50)` MCP tool delegating to `store.audit()`. Return JSON array of events. Add unit test. Commit: `feat(story-015.3): audit trail MCP tool`
+- [x] Add `memory_audit(key, event_type, since, until, limit=50)` MCP tool delegating to `store.audit()`. Return JSON array of events. Add unit test. Commit: `feat(story-015.3): audit trail MCP tool`
 
 #### 015-D: Audit trail CLI command
 - [ ] Add `memory audit [key] --type save --since 2026-01-01 --limit 20` CLI command. Table output with `--format json`. Add unit test. Commit: `feat(story-015.4): audit trail CLI command`

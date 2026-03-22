@@ -1740,3 +1740,85 @@ class TestKnowledgeGraphTools:
         result_no_filter = json.loads(fn())
         result_empty_strings = json.loads(fn(subject="", predicate="", object_entity=""))
         assert result_no_filter["count"] == result_empty_strings["count"]
+
+
+class TestAuditTrailMCPTool:
+    """Tests for memory_audit MCP tool (EPIC-015 story-015.3)."""
+
+    @pytest.fixture
+    def server_with_events(self, tmp_path):
+        """Server with a couple of saved entries to generate audit events."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(tmp_path)
+        store = server._tapps_store
+        store.save(key="audit-key-1", value="First entry for audit testing.", tier="pattern")
+        store.save(key="audit-key-2", value="Second entry for audit testing.", tier="context")
+        yield server
+        store.close()
+
+    def test_memory_audit_registered(self, mcp_server):
+        """memory_audit tool is registered on the server."""
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_audit" in tool_names
+
+    def test_memory_audit_returns_structure(self, server_with_events):
+        """memory_audit returns JSON with events list and count."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn())
+        assert "events" in result
+        assert "count" in result
+        assert isinstance(result["events"], list)
+        assert result["count"] == len(result["events"])
+
+    def test_memory_audit_has_save_events(self, server_with_events):
+        """After saving entries, audit log contains save events."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn())
+        event_types = {e["event_type"] for e in result["events"]}
+        assert "save" in event_types
+
+    def test_memory_audit_filter_by_key(self, server_with_events):
+        """Filtering by key returns only events for that key."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn(key="audit-key-1"))
+        for event in result["events"]:
+            assert event["key"] == "audit-key-1"
+
+    def test_memory_audit_filter_by_event_type(self, server_with_events):
+        """Filtering by event_type returns only matching events."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn(event_type="save"))
+        for event in result["events"]:
+            assert event["event_type"] == "save"
+
+    def test_memory_audit_empty_strings_treated_as_no_filter(self, server_with_events):
+        """Empty string arguments behave like no filter (return all events)."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result_no_filter = json.loads(fn())
+        result_empty = json.loads(fn(key="", event_type="", since="", until=""))
+        assert result_no_filter["count"] == result_empty["count"]
+
+    def test_memory_audit_limit_respected(self, server_with_events):
+        """limit parameter caps the number of returned events."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn(limit=1))
+        assert result["count"] <= 1
+        assert len(result["events"]) <= 1
+
+    def test_memory_audit_event_fields(self, server_with_events):
+        """Each event has timestamp, event_type, key, and details fields."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn())
+        for event in result["events"]:
+            assert "timestamp" in event
+            assert "event_type" in event
+            assert "key" in event
+            assert "details" in event
+
+    def test_memory_audit_no_events_for_missing_key(self, server_with_events):
+        """Filtering by a key that was never saved returns empty events list."""
+        fn = _tool_fn(server_with_events, "memory_audit")
+        result = json.loads(fn(key="totally-nonexistent-key-xyz"))
+        assert result["events"] == []
+        assert result["count"] == 0

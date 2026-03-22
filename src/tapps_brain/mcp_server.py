@@ -1222,6 +1222,44 @@ def create_server(  # noqa: PLR0915
         return json.dumps({"relations": matches, "count": len(matches)})
 
     # ------------------------------------------------------------------
+    # Audit trail tools (EPIC-015)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_audit(
+        key: str = "",
+        event_type: str = "",
+        since: str = "",
+        until: str = "",
+        limit: int = 50,
+    ) -> str:
+        """Query the audit trail for memory events.
+
+        Returns a JSON array of matching audit events from the append-only
+        JSONL audit log. All filters are optional and combined with AND logic.
+
+        Args:
+            key: Filter by memory entry key (optional).
+            event_type: Filter by event type, e.g. "save", "delete" (optional).
+            since: ISO-8601 lower bound, inclusive (optional).
+            until: ISO-8601 upper bound, inclusive (optional).
+            limit: Maximum number of events to return (default 50).
+        """
+        entries = store.audit(
+            key=key or None,
+            event_type=event_type or None,
+            since=since or None,
+            until=until or None,
+            limit=limit,
+        )
+        return json.dumps(
+            {
+                "events": [e.model_dump() for e in entries],
+                "count": len(entries),
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
