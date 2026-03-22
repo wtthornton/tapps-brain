@@ -1631,3 +1631,112 @@ class TestMCPAdditionalCoverage:
         assert result.get("error") == "hive_error"
         store._hive_store.close()
         store.close()
+
+
+class TestKnowledgeGraphTools:
+    """Tests for memory_relations, memory_find_related, memory_query_relations (EPIC-015)."""
+
+    @pytest.fixture
+    def server_with_relations(self, tmp_path):
+        """Server with two entries that have extractable relations."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(tmp_path)
+        store = server._tapps_store
+        # Save entries with entity-rich content so relations are extracted
+        store.save(
+            key="python-fastapi",
+            value="Python uses FastAPI to build REST APIs. FastAPI depends on Starlette.",
+            tier="architectural",
+        )
+        store.save(
+            key="python-testing",
+            value="Python uses pytest for unit testing. Pytest supports parametrize.",
+            tier="pattern",
+        )
+        yield server
+        store.close()
+
+    def test_memory_relations_registered(self, mcp_server):
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_relations" in tool_names
+
+    def test_memory_find_related_registered(self, mcp_server):
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_find_related" in tool_names
+
+    def test_memory_query_relations_registered(self, mcp_server):
+        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        assert "memory_query_relations" in tool_names
+
+    def test_memory_relations_returns_list(self, server_with_relations):
+        fn = _tool_fn(server_with_relations, "memory_relations")
+        result = json.loads(fn(key="python-fastapi"))
+        assert "key" in result
+        assert result["key"] == "python-fastapi"
+        assert "relations" in result
+        assert isinstance(result["relations"], list)
+        assert "count" in result
+        assert result["count"] == len(result["relations"])
+
+    def test_memory_relations_empty_for_missing_key(self, server_with_relations):
+        """Relations for a key that doesn't exist return empty list (not an error)."""
+        fn = _tool_fn(server_with_relations, "memory_relations")
+        result = json.loads(fn(key="nonexistent-key"))
+        assert result["relations"] == []
+        assert result["count"] == 0
+
+    def test_memory_find_related_not_found(self, server_with_relations):
+        """find_related returns error JSON for a key not in the store."""
+        fn = _tool_fn(server_with_relations, "memory_find_related")
+        result = json.loads(fn(key="does-not-exist"))
+        assert result.get("error") == "not_found"
+        assert "does-not-exist" in result["message"]
+
+    def test_memory_find_related_returns_structure(self, server_with_relations):
+        """find_related returns key, max_hops, related list, and count."""
+        fn = _tool_fn(server_with_relations, "memory_find_related")
+        result = json.loads(fn(key="python-fastapi", max_hops=2))
+        assert result["key"] == "python-fastapi"
+        assert result["max_hops"] == 2
+        assert isinstance(result["related"], list)
+        assert result["count"] == len(result["related"])
+        # Each related item has key and hops fields
+        for item in result["related"]:
+            assert "key" in item
+            assert "hops" in item
+            assert isinstance(item["hops"], int)
+
+    def test_memory_find_related_default_hops(self, server_with_relations):
+        """find_related works without explicit max_hops (defaults to 2)."""
+        fn = _tool_fn(server_with_relations, "memory_find_related")
+        result = json.loads(fn(key="python-fastapi"))
+        assert result["max_hops"] == 2
+        assert isinstance(result["related"], list)
+
+    def test_memory_query_relations_no_filter(self, server_with_relations):
+        """query_relations with no filters returns all relations."""
+        fn = _tool_fn(server_with_relations, "memory_query_relations")
+        result = json.loads(fn())
+        assert "relations" in result
+        assert isinstance(result["relations"], list)
+        assert "count" in result
+        assert result["count"] == len(result["relations"])
+
+    def test_memory_query_relations_with_filter(self, server_with_relations):
+        """query_relations with predicate filter narrows results."""
+        fn = _tool_fn(server_with_relations, "memory_query_relations")
+        # Filter by a predicate — result should only contain matching rows (or empty)
+        result = json.loads(fn(predicate="uses"))
+        assert isinstance(result["relations"], list)
+        for rel in result["relations"]:
+            assert rel["predicate"].lower() == "uses"
+
+    def test_memory_query_relations_empty_strings_treated_as_no_filter(
+        self, server_with_relations
+    ):
+        """Empty string arguments are treated the same as omitting the filter."""
+        fn = _tool_fn(server_with_relations, "memory_query_relations")
+        result_no_filter = json.loads(fn())
+        result_empty_strings = json.loads(fn(subject="", predicate="", object_entity=""))
+        assert result_no_filter["count"] == result_empty_strings["count"]

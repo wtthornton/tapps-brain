@@ -1164,6 +1164,64 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     # ------------------------------------------------------------------
+    # Knowledge graph tools (EPIC-015)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_relations(key: str) -> str:
+        """Return all relations associated with a memory entry key.
+
+        Args:
+            key: The memory entry key to look up relations for.
+        """
+        relations = store.get_relations(key)
+        return json.dumps({"key": key, "relations": relations, "count": len(relations)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_find_related(key: str, max_hops: int = 2) -> str:
+        """Find entries related to a key via BFS traversal of the relation graph.
+
+        Args:
+            key: Starting entry key.
+            max_hops: Maximum traversal depth (default 2).
+        """
+        try:
+            results = store.find_related(key, max_hops=max_hops)
+            return json.dumps(
+                {
+                    "key": key,
+                    "max_hops": max_hops,
+                    "related": [{"key": k, "hops": h} for k, h in results],
+                    "count": len(results),
+                }
+            )
+        except KeyError:
+            return json.dumps({"error": "not_found", "message": f"Entry '{key}' not found."})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_query_relations(
+        subject: str = "",
+        predicate: str = "",
+        object_entity: str = "",
+    ) -> str:
+        """Filter relations by subject, predicate, and/or object_entity.
+
+        All filters use case-insensitive matching and are combined with AND logic.
+        Omit a field (or pass empty string) to skip that filter.
+
+        Args:
+            subject: Filter by subject entity (optional).
+            predicate: Filter by predicate/relationship type (optional).
+            object_entity: Filter by object entity (optional).
+        """
+        matches = store.query_relations(
+            subject=subject or None,
+            predicate=predicate or None,
+            object_entity=object_entity or None,
+        )
+        return json.dumps({"relations": matches, "count": len(matches)})
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
