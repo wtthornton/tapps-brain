@@ -8,16 +8,17 @@ description: >
   cross-project federation, and multi-agent Hive sharing.
 author: tapps-brain contributors
 license: MIT
-slot: ContextEngine
+kind: context-engine
 install: pip install tapps-brain[mcp]
 homepage: https://github.com/wtthornton/tapps-brain
 repository: https://github.com/wtthornton/tapps-brain
 documentation: https://github.com/wtthornton/tapps-brain/tree/main/docs
-triggers:
+hooks:
   - bootstrap
   - ingest
-  - afterTurn
+  - assemble
   - compact
+  - dispose
 capabilities:
   - recall
   - capture
@@ -123,19 +124,20 @@ automatically via `openclaw.plugin.json`.
 | Hook        | What happens                                                  |
 |-------------|---------------------------------------------------------------|
 | `bootstrap` | Spawns `tapps-brain-mcp`, imports MEMORY.md on first run      |
-| `ingest`    | Auto-recalls relevant memories and injects them into context  |
-| `afterTurn` | Captures new facts from agent responses (rate-limited)        |
-| `compact`   | Flushes important context to memory before compaction         |
+| `ingest`    | Captures durable facts from messages (rate-limited)           |
+| `assemble`  | Recalls memories → `systemPromptAddition` before model call   |
+| `compact`   | Flushes context to memory before compaction                   |
+| `dispose`   | Stops MCP child process on gateway shutdown                   |
 
 ## Features
 
-- **Auto-recall:** Relevant memories injected before every turn (no explicit
-  tool calls needed)
-- **Auto-capture:** Facts extracted from agent responses automatically
+- **Auto-recall:** Relevant memories injected via `systemPromptAddition`
+  before every model call (no explicit tool calls needed)
+- **Auto-capture:** Facts extracted from messages via `ingest()` automatically
 - **Pre-compaction flush:** Important context saved before OpenClaw compresses
   the context window
-- **Configurable profiles:** Switch between `default`, `long_term`,
-  `high_confidence`, or `fast_context` scoring profiles
+- **Configurable profiles:** Switch between built-in profiles or create custom
+  ones via `.tapps-brain/profile.yaml`
 - **Hive sharing:** Multiple agents share knowledge via the Hive — use
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
@@ -151,7 +153,9 @@ Settings are configured in `openclaw.plugin.json` (auto-installed):
 | `mcpCommand`       | `tapps-brain-mcp`    | Command to spawn the MCP server    |
 | `profilePath`      | `.tapps-brain/profile.yaml` | Path to custom profile      |
 | `tokenBudget`      | `2000`               | Max tokens for memory injection    |
-| `captureRateLimit` | `3`                  | Capture every N turns              |
+| `captureRateLimit` | `3`                  | Capture every N ingest() calls     |
+| `agentId`          | `""`                 | Agent ID for Hive sharing          |
+| `hiveEnabled`      | `false`              | Enable multi-agent Hive            |
 
 ## Permissions
 

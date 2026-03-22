@@ -2,9 +2,9 @@
  * tapps-brain OpenClaw ContextEngine Plugin
  *
  * Integrates tapps-brain persistent memory as the ContextEngine for OpenClaw.
- * Provides hooks for bootstrap, auto-recall, auto-capture, and pre-compaction flush.
+ * Uses the official ContextEngine API (v2026.3.7): ingest / assemble / compact.
  *
- * @module @tapps-brain/openclaw-plugin
+ * @module tapps-brain-memory
  */
 
 import { readFileSync } from "node:fs";
@@ -13,40 +13,59 @@ import { resolve } from "node:path";
 import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
 
 // ---------------------------------------------------------------------------
-// Plugin state — shared across hooks within a session
+// Types — OpenClaw ContextEngine interface (v2026.3.7)
 // ---------------------------------------------------------------------------
 
-/** Singleton MCP client, initialized by bootstrap(). */
-let mcpClient: McpClient | null = null;
-
-/** Keys already injected in this session — used for dedup in ingest(). */
-const injectedKeys: Set<string> = new Set();
-
-/** Turn counter for afterTurn rate limiting — capture at most once every 3 turns. */
-let lastCaptureTurn = 0;
-
-/** Minimum number of turns between captures. */
-const CAPTURE_RATE_LIMIT = 3;
-
-/** Default token budget for memory injection (characters ≈ tokens × 4). */
-const DEFAULT_TOKEN_BUDGET = 4000;
-
-/**
- * Get the active MCP client. Throws if bootstrap() has not been called.
- */
-export function getMcpClient(): McpClient {
-  if (!mcpClient) {
-    throw new Error("MCP client not initialized — call bootstrap() first");
-  }
-  return mcpClient;
+/** Message in the conversation context. */
+interface Message {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  [key: string]: unknown;
 }
 
-// ---------------------------------------------------------------------------
-// Types — OpenClaw ContextEngine hook signatures
-// ---------------------------------------------------------------------------
+/** Token budget with soft and hard limits. */
+interface TokenBudget {
+  soft: number;
+  hard: number;
+}
 
-/** Plugin settings from plugin.json. */
-export interface PluginSettings {
+/** Parameters passed to ingest(). */
+interface IngestParams {
+  sessionId: string;
+  message: Message;
+  isHeartbeat?: boolean;
+}
+
+/** Parameters passed to assemble(). */
+interface AssembleParams {
+  sessionId: string;
+  messages: Message[];
+  tokenBudget: TokenBudget;
+}
+
+/** Result returned from assemble(). */
+interface AssembleResult {
+  messages: Message[];
+  estimatedTokens: number;
+  systemPromptAddition?: string;
+}
+
+/** Parameters passed to compact(). */
+interface CompactParams {
+  sessionId: string;
+  force?: boolean;
+}
+
+/** Engine info descriptor. */
+interface ContextEngineInfo {
+  id: string;
+  name: string;
+  version: string;
+  ownsCompaction: boolean;
+}
+
+/** Plugin configuration from openclaw.plugin.json configSchema. */
+export interface PluginConfig {
   mcpCommand?: string;
   profilePath?: string;
   tokenBudget?: number;
@@ -55,153 +74,321 @@ export interface PluginSettings {
   hiveEnabled?: boolean;
 }
 
-/** OpenClaw context passed to hooks. */
-export interface OpenClawContext {
-  projectDir: string;
-  sessionId: string;
-  workspaceDir: string;
-  settings?: PluginSettings;
+/** OpenClaw plugin API passed to the register() callback. */
+interface OpenClawPluginApi {
+  logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  config: PluginConfig;
+  runtime: { workspaceDir: string; sessionId: string };
+  registerContextEngine(
+    id: string,
+    factory: (config: PluginConfig) => TappsBrainEngine,
+  ): void;
 }
 
-/** Message structure for ingest hook. */
-export interface UserMessage {
-  role: "user";
-  content: string;
-}
-
-/** Agent response structure for afterTurn hook. */
-export interface AgentResponse {
-  role: "assistant";
-  content: string;
-  turnNumber: number;
-}
-
-/** Context chunk being compacted. */
-export interface CompactionChunk {
-  content: string;
-  tokenCount: number;
-}
-
-/** Result returned from bootstrap hook. */
-export interface BootstrapResult {
-  success: boolean;
-  memoriesImported?: number;
-  primerKeys?: string[];
-}
-
-/** Result returned from ingest hook. */
-export interface IngestResult {
-  memorySection: string;
-  keysInjected: string[];
-}
-
-/** Result returned from afterTurn hook. */
-export interface CaptureResult {
-  captured: boolean;
-  keys?: string[];
-}
-
-/** Result returned from compact hook. */
-export interface CompactResult {
-  entriesIngested: number;
-  sessionIndexed: boolean;
+/** Plugin entry definition. */
+interface PluginEntryDef {
+  id: string;
+  name: string;
+  register: (api: OpenClawPluginApi) => void;
 }
 
 // ---------------------------------------------------------------------------
-// Hooks — bootstrap (012-E), stubs for 012-F through 012-H
+// definePluginEntry shim
+//
+// At runtime OpenClaw provides `definePluginEntry` from
+// `openclaw/plugin-sdk/core`. For build-time we define a passthrough so
+// TypeScript compiles without the runtime dependency.
 // ---------------------------------------------------------------------------
 
-/**
- * Bootstrap hook: spawns tapps-brain-mcp, imports MEMORY.md on first run,
- * and runs initial recall for session primer.
- *
- * 1. Spawns `tapps-brain-mcp --project-dir <workspaceDir>` as a child process.
- * 2. On first run (no `.tapps-brain/` dir), imports MEMORY.md via MCP tool.
- * 3. Runs initial `memory_recall` to generate a session primer.
- */
-export async function bootstrap(
-  ctx: OpenClawContext,
-): Promise<BootstrapResult> {
-  const projectDir = ctx.workspaceDir || ctx.projectDir;
-  const settings = ctx.settings ?? {};
-  const agentId = settings.agentId || "";
-  const hiveEnabled = settings.hiveEnabled ?? false;
+let definePluginEntry: (def: PluginEntryDef) => PluginEntryDef;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sdk = require("openclaw/plugin-sdk/core") as { definePluginEntry: typeof definePluginEntry };
+  definePluginEntry = sdk.definePluginEntry;
+} catch {
+  // Fallback: identity function (dev/test without openclaw installed)
+  definePluginEntry = (def: PluginEntryDef) => def;
+}
 
-  try {
-    // 1. Spawn MCP child process with optional Hive flags
-    mcpClient = new McpClient(projectDir);
+// ---------------------------------------------------------------------------
+// TappsBrainEngine — the ContextEngine implementation
+// ---------------------------------------------------------------------------
+
+class TappsBrainEngine {
+  private mcpClient: McpClient;
+  private injectedKeys = new Set<string>();
+  private ingestCount = 0;
+  private recentMessages: string[] = [];
+
+  private readonly config: PluginConfig;
+  private readonly workspaceDir: string;
+  private readonly captureRateLimit: number;
+  private readonly tokenBudget: number;
+  private readonly hiveEnabled: boolean;
+  private readonly agentId: string;
+
+  readonly info: ContextEngineInfo = {
+    id: "tapps-brain-memory",
+    name: "tapps-brain — Persistent Memory",
+    version: "1.2.0",
+    ownsCompaction: false,
+  };
+
+  constructor(config: PluginConfig, workspaceDir: string) {
+    this.config = config;
+    this.workspaceDir = workspaceDir;
+    this.captureRateLimit = config.captureRateLimit ?? 3;
+    this.tokenBudget = (config.tokenBudget ?? 2000) * 4; // tokens → chars
+    this.hiveEnabled = config.hiveEnabled ?? false;
+    this.agentId = config.agentId ?? "";
+    this.mcpClient = new McpClient(workspaceDir);
+  }
+
+  /**
+   * bootstrap — called once at session start (optional hook).
+   *
+   * Spawns tapps-brain-mcp, imports MEMORY.md on first run,
+   * and registers the agent in the Hive if enabled.
+   */
+  async bootstrap(): Promise<void> {
     const extraArgs: string[] = [];
-    if (agentId) {
-      extraArgs.push("--agent-id", agentId);
+    if (this.agentId) {
+      extraArgs.push("--agent-id", this.agentId);
     }
-    if (hiveEnabled) {
+    if (this.hiveEnabled) {
       extraArgs.push("--enable-hive");
     }
-    await mcpClient.start(settings.mcpCommand ?? "tapps-brain-mcp", extraArgs);
 
-    let memoriesImported = 0;
-
-    // 2. First-run: import MEMORY.md if it exists and store is fresh
-    if (isFirstRun(projectDir) && hasMemoryMd(projectDir)) {
-      const memoryMdPath = resolve(projectDir, "MEMORY.md");
-      const content = readFileSync(memoryMdPath, "utf-8");
-
-      // Parse MEMORY.md headings into memory entries for import
-      const memories = parseMemoryMdForImport(content);
-      if (memories.length > 0) {
-        const importResult = (await mcpClient.callTool("memory_import", {
-          memories_json: JSON.stringify({ memories }),
-          overwrite: false,
-        })) as string;
-
-        const parsed = JSON.parse(
-          typeof importResult === "string" ? importResult : JSON.stringify(importResult),
-        ) as { imported?: number };
-        memoriesImported = parsed.imported ?? 0;
-      }
-    }
-
-    // 3. Auto-register agent on first run when Hive is enabled
-    if (hiveEnabled && agentId) {
-      try {
-        await mcpClient.callTool("agent_register", {
-          agent_id: agentId,
-          profile: settings.profilePath ?? "default",
-        });
-        console.log(`[tapps-brain] bootstrap: registered agent "${agentId}"`);
-      } catch {
-        // Non-fatal — agent may already be registered
-        console.log(`[tapps-brain] bootstrap: agent registration skipped (may already exist)`);
-      }
-    }
-
-    // 4. Initial recall for session primer
-    const recallResult = (await mcpClient.callTool("memory_recall", {
-      message: "session start — retrieve key project context",
-    })) as string;
-
-    const recall = JSON.parse(
-      typeof recallResult === "string" ? recallResult : JSON.stringify(recallResult),
-    ) as { memories?: Array<{ key: string }> };
-
-    const primerKeys = (recall.memories ?? []).map(
-      (m: { key: string }) => m.key,
+    await this.mcpClient.start(
+      this.config.mcpCommand ?? "tapps-brain-mcp",
+      extraArgs,
     );
 
-    return {
-      success: true,
-      memoriesImported,
-      primerKeys,
-    };
-  } catch (err) {
-    // Clean up on failure
-    if (mcpClient) {
-      mcpClient.stop();
-      mcpClient = null;
+    // First-run: import MEMORY.md if it exists and store is fresh
+    if (isFirstRun(this.workspaceDir) && hasMemoryMd(this.workspaceDir)) {
+      const memoryMdPath = resolve(this.workspaceDir, "MEMORY.md");
+      const content = readFileSync(memoryMdPath, "utf-8");
+      const memories = parseMemoryMdForImport(content);
+      if (memories.length > 0) {
+        await this.mcpClient.callTool("memory_import", {
+          memories_json: JSON.stringify({ memories }),
+          overwrite: false,
+        });
+      }
     }
-    return { success: false };
+
+    // Register agent in the Hive
+    if (this.hiveEnabled && this.agentId) {
+      try {
+        await this.mcpClient.callTool("agent_register", {
+          agent_id: this.agentId,
+          profile: this.config.profilePath ?? "default",
+        });
+      } catch {
+        // Non-fatal — agent may already be registered
+      }
+    }
+  }
+
+  /**
+   * ingest — called when a new message enters the context window.
+   *
+   * Captures durable facts from the message text. Rate-limited:
+   * captures once every `captureRateLimit` calls.
+   */
+  async ingest({
+    message,
+    isHeartbeat,
+  }: IngestParams): Promise<{ ingested: true }> {
+    if (isHeartbeat || !message.content?.trim()) {
+      return { ingested: true };
+    }
+
+    // Track recent messages for compact() flush
+    this.recentMessages.push(message.content);
+    if (this.recentMessages.length > 20) {
+      this.recentMessages.shift();
+    }
+
+    this.ingestCount++;
+
+    // Rate limit: only capture every N calls
+    if (
+      this.captureRateLimit > 0 &&
+      this.ingestCount % this.captureRateLimit !== 0
+    ) {
+      return { ingested: true };
+    }
+
+    try {
+      await this.mcpClient.callTool("memory_capture", {
+        response: message.content,
+        source: message.role === "user" ? "human" : "agent",
+        agent_scope: this.hiveEnabled ? "hive" : "private",
+      });
+    } catch {
+      // Fail gracefully — never block the conversation
+    }
+
+    return { ingested: true };
+  }
+
+  /**
+   * assemble — called before the agent responds.
+   *
+   * Recalls relevant memories and returns them as a
+   * systemPromptAddition. Messages are passed through unchanged
+   * since we don't own compaction.
+   */
+  async assemble({
+    messages,
+    tokenBudget,
+  }: AssembleParams): Promise<AssembleResult> {
+    const budget = Math.min(this.tokenBudget, (tokenBudget.soft ?? 2000) * 4);
+
+    try {
+      // Build a query from recent user messages
+      const recentUserMessages = messages
+        .filter((m) => m.role === "user")
+        .slice(-3)
+        .map((m) => m.content)
+        .join(" ");
+
+      const query = recentUserMessages || "session context";
+
+      const recallResult = await this.mcpClient.callTool("memory_recall", {
+        message: query,
+      });
+
+      const recall = JSON.parse(
+        typeof recallResult === "string"
+          ? recallResult
+          : JSON.stringify(recallResult),
+      ) as {
+        memories?: Array<{
+          key: string;
+          value: string;
+          tier?: string;
+          confidence?: number;
+        }>;
+      };
+
+      const memories = recall.memories ?? [];
+      if (memories.length === 0) {
+        return { messages, estimatedTokens: 0 };
+      }
+
+      // Filter out keys already injected in this session
+      const newMemories = memories.filter((m) => !this.injectedKeys.has(m.key));
+      if (newMemories.length === 0) {
+        return { messages, estimatedTokens: 0 };
+      }
+
+      // Build markdown section within token budget
+      const lines: string[] = [];
+      let charCount = 0;
+
+      const header = "## Relevant Memories\n";
+      charCount += header.length;
+      lines.push(header);
+
+      for (const mem of newMemories) {
+        const entry = `- **${mem.key}**: ${mem.value}\n`;
+        if (charCount + entry.length > budget) {
+          break;
+        }
+        lines.push(entry);
+        charCount += entry.length;
+        this.injectedKeys.add(mem.key);
+      }
+
+      const systemPromptAddition = lines.length > 1 ? lines.join("") : undefined;
+      const estimatedTokens = systemPromptAddition
+        ? Math.ceil(charCount / 4)
+        : 0;
+
+      return { messages, estimatedTokens, systemPromptAddition };
+    } catch {
+      // Fail gracefully — return messages unchanged
+      return { messages, estimatedTokens: 0 };
+    }
+  }
+
+  /**
+   * compact — called when OpenClaw compresses the context window.
+   *
+   * Since ownsCompaction is false, OpenClaw handles the actual
+   * compaction. We use this signal to flush recent conversation
+   * context into tapps-brain before it's discarded.
+   */
+  async compact({
+    sessionId,
+  }: CompactParams): Promise<{ ok: true; compacted: true }> {
+    if (this.recentMessages.length === 0) {
+      return { ok: true, compacted: true };
+    }
+
+    try {
+      const context = this.recentMessages.join("\n\n");
+
+      // Extract and persist durable facts
+      await this.mcpClient.callTool("memory_ingest", {
+        context,
+        source: "compaction",
+        agent_scope: this.hiveEnabled ? "hive" : "private",
+      });
+
+      // Index the session chunks
+      if (sessionId) {
+        await this.mcpClient.callTool("memory_index_session", {
+          session_id: sessionId,
+          chunks: this.recentMessages,
+        });
+      }
+
+      // Clear — these messages are now persisted
+      this.recentMessages = [];
+    } catch {
+      // Fail gracefully — never block compaction
+    }
+
+    return { ok: true, compacted: true };
+  }
+
+  /**
+   * dispose — called on gateway shutdown.
+   * Stops the MCP child process.
+   */
+  dispose(): void {
+    this.mcpClient.stop();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Plugin entry — the default export OpenClaw loads
+// ---------------------------------------------------------------------------
+
+export default definePluginEntry({
+  id: "tapps-brain-memory",
+  name: "tapps-brain — Persistent Memory",
+  register(api) {
+    api.registerContextEngine("tapps-brain-memory", (config: PluginConfig) => {
+      const workspaceDir = api.runtime.workspaceDir;
+      const engine = new TappsBrainEngine(config, workspaceDir);
+
+      // Bootstrap asynchronously — don't block registration
+      engine.bootstrap().catch((err) => {
+        api.logger.warn("[tapps-brain] bootstrap failed:", err);
+      });
+
+      return engine;
+    });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 /**
  * Parse a MEMORY.md file into importable memory entries.
@@ -210,8 +397,6 @@ export async function bootstrap(
  * - H1/H2 → architectural
  * - H3 → pattern
  * - H4+ → procedural
- *
- * Body text under each heading becomes the value.
  */
 function parseMemoryMdForImport(
   content: string,
@@ -258,225 +443,3 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
-/**
- * Ingest hook: receives user message, calls memory_recall via MCP,
- * and injects relevant memories into context.
- *
- * 1. Calls `memory_recall(message)` to get ranked memories.
- * 2. Filters out keys already injected in this session (dedup).
- * 3. Builds a `memory_section` string within the token budget.
- * 4. Returns the section for injection as a system-level prefix.
- *
- * Implementation: story 012-F
- */
-export async function ingest(
-  _ctx: OpenClawContext,
-  message: UserMessage,
-): Promise<IngestResult> {
-  const client = getMcpClient();
-
-  try {
-    // 1. Call memory_recall with the user's message
-    const recallResult = await client.callTool("memory_recall", {
-      message: message.content,
-    });
-
-    const recall = JSON.parse(
-      typeof recallResult === "string" ? recallResult : JSON.stringify(recallResult),
-    ) as { memories?: Array<{ key: string; value: string; tier?: string; confidence?: number }> };
-
-    const memories = recall.memories ?? [];
-
-    // 2. Skip if no relevant memories found
-    if (memories.length === 0) {
-      return { memorySection: "", keysInjected: [] };
-    }
-
-    // 3. Filter out keys already injected in this session (dedup)
-    const newMemories = memories.filter((m) => !injectedKeys.has(m.key));
-
-    if (newMemories.length === 0) {
-      return { memorySection: "", keysInjected: [] };
-    }
-
-    // 4. Build memory_section within token budget
-    const lines: string[] = [];
-    let charCount = 0;
-    const keysInjected: string[] = [];
-    const budgetChars = DEFAULT_TOKEN_BUDGET;
-
-    // Header
-    const header = "## Relevant Memories\n";
-    charCount += header.length;
-    lines.push(header);
-
-    for (const mem of newMemories) {
-      const entry = `- **${mem.key}**: ${mem.value}\n`;
-      if (charCount + entry.length > budgetChars) {
-        break; // Respect token budget
-      }
-      lines.push(entry);
-      charCount += entry.length;
-      keysInjected.push(mem.key);
-      injectedKeys.add(mem.key);
-    }
-
-    const memorySection = keysInjected.length > 0 ? lines.join("") : "";
-
-    return { memorySection, keysInjected };
-  } catch {
-    // Fail gracefully — don't block the turn if recall fails
-    return { memorySection: "", keysInjected: [] };
-  }
-}
-
-/**
- * AfterTurn hook: receives agent response, calls memory_capture via MCP.
- * Rate limited to max once every 3 turns.
- *
- * 1. Checks turn-based rate limit (every 3 turns).
- * 2. Calls `memory_capture` with the agent response content.
- * 3. Returns captured keys for observability.
- *
- * Implementation: story 012-G
- */
-export async function afterTurn(
-  _ctx: OpenClawContext,
-  response: AgentResponse,
-): Promise<CaptureResult> {
-  // 1. Rate limit: only capture once every CAPTURE_RATE_LIMIT turns
-  const turnsSinceCapture = response.turnNumber - lastCaptureTurn;
-  if (turnsSinceCapture < CAPTURE_RATE_LIMIT) {
-    return { captured: false };
-  }
-
-  const client = getMcpClient();
-
-  try {
-    // 2. Call memory_capture with the agent response
-    const captureResult = await client.callTool("memory_capture", {
-      content: response.content,
-    });
-
-    const parsed = JSON.parse(
-      typeof captureResult === "string" ? captureResult : JSON.stringify(captureResult),
-    ) as { captured?: string[]; keys?: string[] };
-
-    const keys = parsed.keys ?? parsed.captured ?? [];
-
-    // 3. Update rate limit state
-    lastCaptureTurn = response.turnNumber;
-
-    // Log captured keys (console.log for plugin observability)
-    if (keys.length > 0) {
-      console.log(`[tapps-brain] afterTurn: captured ${keys.length} key(s):`, keys);
-    }
-
-    return { captured: keys.length > 0, keys };
-  } catch {
-    // Fail gracefully — don't block the turn if capture fails
-    return { captured: false };
-  }
-}
-
-/**
- * Compact hook: receives context being compacted, flushes durable facts
- * to the memory store and indexes the session for later search.
- *
- * 1. Concatenates compaction chunks into a single context string.
- * 2. Calls `memory_ingest(context)` to extract and persist durable facts.
- * 3. Calls `memory_index_session(session_id, chunks)` to index the session.
- * 4. Returns counts for observability.
- *
- * Only processes non-empty chunks. Fails gracefully — never blocks compaction.
- *
- * Implementation: story 012-H
- */
-export async function compact(
-  ctx: OpenClawContext,
-  chunks: CompactionChunk[],
-): Promise<CompactResult> {
-  // Skip if no chunks to process
-  if (!chunks || chunks.length === 0) {
-    return { entriesIngested: 0, sessionIndexed: false };
-  }
-
-  const client = getMcpClient();
-
-  try {
-    // 1. Concatenate chunk contents, filtering out empty chunks
-    const nonEmptyChunks = chunks.filter((c) => c.content.trim().length > 0);
-    if (nonEmptyChunks.length === 0) {
-      return { entriesIngested: 0, sessionIndexed: false };
-    }
-
-    const context = nonEmptyChunks.map((c) => c.content).join("\n\n");
-
-    // 2. Call memory_ingest to extract durable facts from compacted context
-    const ingestResult = await client.callTool("memory_ingest", {
-      context,
-      source: "compaction",
-    });
-
-    const ingestParsed = JSON.parse(
-      typeof ingestResult === "string" ? ingestResult : JSON.stringify(ingestResult),
-    ) as { created_keys?: string[]; keys?: string[] };
-
-    const createdKeys = ingestParsed.created_keys ?? ingestParsed.keys ?? [];
-    const entriesIngested = createdKeys.length;
-
-    if (entriesIngested > 0) {
-      console.log(
-        `[tapps-brain] compact: ingested ${entriesIngested} entries from compaction`,
-      );
-    }
-
-    // 3. Call memory_index_session to index the session chunks
-    let sessionIndexed = false;
-    const sessionId = ctx.sessionId;
-
-    if (sessionId) {
-      const sessionChunks = nonEmptyChunks.map((c) => c.content);
-
-      await client.callTool("memory_index_session", {
-        session_id: sessionId,
-        chunks: sessionChunks,
-      });
-
-      sessionIndexed = true;
-      console.log(
-        `[tapps-brain] compact: indexed session ${sessionId} with ${sessionChunks.length} chunk(s)`,
-      );
-    }
-
-    return { entriesIngested, sessionIndexed };
-  } catch {
-    // Fail gracefully — never block compaction if memory ops fail
-    return { entriesIngested: 0, sessionIndexed: false };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Testing helpers — reset plugin state between tests
-// ---------------------------------------------------------------------------
-
-/**
- * Reset all plugin state. Intended for use in tests only.
- */
-export function _resetPluginState(): void {
-  mcpClient = null;
-  injectedKeys.clear();
-  lastCaptureTurn = 0;
-}
-
-// ---------------------------------------------------------------------------
-// Plugin export — default ContextEngine interface
-// ---------------------------------------------------------------------------
-
-export default {
-  bootstrap,
-  ingest,
-  afterTurn,
-  compact,
-};

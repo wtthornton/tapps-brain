@@ -6,11 +6,11 @@ There are two ways to integrate tapps-brain with OpenClaw:
 
 | Method | Best for | Setup |
 |--------|----------|-------|
-| **ContextEngine plugin** | Automatic recall/capture, zero-config | `npm install` + `plugin.json` |
+| **ContextEngine plugin** | Automatic recall/capture, zero-config | `npm install` + `openclaw.plugin.json` |
 | **MCP sidecar** | Manual control, custom workflows | `pip install` + `openclaw.json` |
 
 The **ContextEngine plugin** (recommended) handles everything automatically — bootstrap,
-recall, capture, and pre-compaction flush — with no agent prompting required. The **MCP
+ingest, assemble, compact, and dispose — with no agent prompting required. The **MCP
 sidecar** gives you direct access to all 28 tools for custom integrations.
 
 ---
@@ -19,7 +19,7 @@ sidecar** gives you direct access to all 28 tools for custom integrations.
 
 ### 1. Install
 
-**Prerequisites:** Node 18+, Python 3.12+, tapps-brain with MCP support.
+**Prerequisites:** Node 18+, Python 3.12+, OpenClaw >= v2026.3.7, tapps-brain with MCP support.
 
 ```bash
 # Install the Python backend
@@ -39,60 +39,69 @@ npm run build
 
 ### 2. Register the plugin
 
-Copy the built `openclaw-plugin/` directory into your OpenClaw plugins directory (or
-symlink it), then add the plugin to your OpenClaw config:
+Install the built plugin into OpenClaw:
 
-```json
-{
-  "plugins": {
-    "tapps-brain": {
-      "path": "./plugins/tapps-brain",
-      "slot": "ContextEngine",
-      "settings": {
-        "mcpCommand": "tapps-brain-mcp",
-        "tokenBudget": 2000,
-        "captureRateLimit": 3
-      }
-    }
-  }
-}
+```bash
+openclaw plugin install ./openclaw-plugin
+```
+
+Then activate it in your OpenClaw config (`openclaw.yaml` or equivalent):
+
+```yaml
+plugins:
+  slots:
+    contextEngine: tapps-brain-memory
+  entries:
+    tapps-brain-memory:
+      enabled: true
+      config:
+        mcpCommand: tapps-brain-mcp
+        tokenBudget: 2000
+        captureRateLimit: 3
+        agentId: my-agent          # optional: for Hive sharing
+        hiveEnabled: true          # optional: enable multi-agent Hive
 ```
 
 ### 3. How it works
 
-The plugin registers four hooks that run automatically:
+The plugin uses `definePluginEntry` to register a ContextEngine with these lifecycle hooks:
 
-#### Bootstrap
+#### Bootstrap (optional)
 
 On startup, the plugin spawns `tapps-brain-mcp` as a child process (JSON-RPC over
-stdio). On first run it imports your workspace `MEMORY.md` and runs an initial recall to
-prime the session context.
+stdio). On first run it imports your workspace `MEMORY.md`. If Hive is enabled, it
+registers the agent in the Hive registry.
 
-#### Auto-recall (ingest hook)
+#### Ingest
 
-Every user message triggers a `memory_recall` call. Relevant memories are injected into
-the agent's context as a system prefix, respecting the configured token budget. Keys are
-deduplicated within the session to avoid repeating the same facts.
-
-```
-User message → memory_recall() → ranked memories injected into context
-```
-
-#### Auto-capture (afterTurn hook)
-
-After the agent responds, the plugin calls `memory_capture` to extract and persist new
-facts. To avoid noise, capture is rate-limited: by default it fires once every 3 turns
-(configurable via `captureRateLimit`).
+Called when a new message enters the context window. The plugin captures durable facts
+from the message via `memory_capture`. Rate-limited: by default it fires once every 3
+ingest calls (configurable via `captureRateLimit`).
 
 ```
-Agent response → memory_capture() → new facts saved to store
+New message → ingest() → memory_capture() → new facts saved to store
 ```
 
-#### Pre-compaction flush (compact hook)
+#### Assemble
 
-When OpenClaw compacts the context window, the plugin flushes the about-to-be-discarded
+Called before every model call. The plugin recalls relevant memories and returns them
+as `systemPromptAddition` — a markdown section injected into the system prompt.
+Keys are deduplicated within the session to avoid repeating the same facts.
+
+```
+assemble() → memory_recall() → systemPromptAddition with ranked memories
+```
+
+#### Compact
+
+When OpenClaw compacts the context window, the plugin flushes recent conversation
 context into tapps-brain via `memory_ingest` and indexes the session chunks with
 `memory_index_session`. This ensures no knowledge is lost during compaction.
+The plugin sets `ownsCompaction: false` — OpenClaw handles the actual compaction.
+
+#### Dispose
+
+On gateway shutdown, the plugin stops the MCP child process.
 
 ### 4. Test it
 
@@ -122,12 +131,16 @@ tapps-brain search "PostgreSQL" --project-dir /path/to/your/project
 
 ### 5. Plugin settings
 
+Defined in `openclaw.plugin.json` `configSchema`:
+
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `mcpCommand` | `"tapps-brain-mcp"` | Command to spawn the MCP server |
 | `profilePath` | `".tapps-brain/profile.yaml"` | Path to memory profile config |
 | `tokenBudget` | `2000` | Max tokens for injected memories |
-| `captureRateLimit` | `3` | Capture every N turns (0 = every turn) |
+| `captureRateLimit` | `3` | Capture every N ingest() calls (0 = every call) |
+| `agentId` | `""` | Agent ID for Hive sharing |
+| `hiveEnabled` | `false` | Enable multi-agent Hive |
 
 ### 6. Profile switching
 
@@ -203,26 +216,24 @@ store at `~/.tapps-brain/hive/hive.db`. Recall automatically merges local + Hive
 
 Default is `private` — you must explicitly set `domain` or `hive` to share.
 
-#### Orchestrator plugin.json
+#### Orchestrator config
 
 The orchestrator creates child agents and enables Hive coordination:
 
-```json
-{
-  "plugins": {
-    "tapps-brain": {
-      "path": "./plugins/tapps-brain",
-      "slot": "ContextEngine",
-      "settings": {
-        "mcpCommand": "tapps-brain-mcp",
-        "tokenBudget": 2000,
-        "captureRateLimit": 3,
-        "agentId": "orchestrator",
-        "hiveEnabled": true
-      }
-    }
-  }
-}
+```yaml
+# openclaw.yaml — orchestrator agent
+plugins:
+  slots:
+    contextEngine: tapps-brain-memory
+  entries:
+    tapps-brain-memory:
+      enabled: true
+      config:
+        mcpCommand: tapps-brain-mcp
+        tokenBudget: 2000
+        captureRateLimit: 3
+        agentId: orchestrator
+        hiveEnabled: true
 ```
 
 When `hiveEnabled` is `true` and `agentId` is set, the bootstrap hook:
@@ -231,52 +242,48 @@ When `hiveEnabled` is `true` and `agentId` is set, the bootstrap hook:
 2. Auto-registers the agent in the Hive agent registry.
 3. All subsequent `memory_save` calls can include `agent_scope` to control propagation.
 
-#### Child agent plugin.json (shared profile)
+#### Child agent config (shared profile)
 
 Each child agent uses its own `agentId` but can share a profile:
 
-```json
-{
-  "plugins": {
-    "tapps-brain": {
-      "path": "./plugins/tapps-brain",
-      "slot": "ContextEngine",
-      "settings": {
-        "mcpCommand": "tapps-brain-mcp",
-        "tokenBudget": 2000,
-        "captureRateLimit": 3,
-        "agentId": "coder-1",
-        "hiveEnabled": true
-      }
-    }
-  }
-}
+```yaml
+# openclaw.yaml — coder agent
+plugins:
+  slots:
+    contextEngine: tapps-brain-memory
+  entries:
+    tapps-brain-memory:
+      enabled: true
+      config:
+        mcpCommand: tapps-brain-mcp
+        tokenBudget: 2000
+        captureRateLimit: 3
+        agentId: coder-1
+        hiveEnabled: true
 ```
 
 Agents with the same profile can see each other's `domain`-scoped memories. All agents
 see `hive`-scoped memories regardless of profile.
 
-#### Child agent plugin.json (per-role profile)
+#### Child agent config (per-role profile)
 
 For specialized agents, use different profiles to tune recall behavior per role:
 
-```json
-{
-  "plugins": {
-    "tapps-brain": {
-      "path": "./plugins/tapps-brain",
-      "slot": "ContextEngine",
-      "settings": {
-        "mcpCommand": "tapps-brain-mcp",
-        "profilePath": ".tapps-brain/profiles/code-review.yaml",
-        "tokenBudget": 3000,
-        "captureRateLimit": 5,
-        "agentId": "reviewer-1",
-        "hiveEnabled": true
-      }
-    }
-  }
-}
+```yaml
+# openclaw.yaml — reviewer agent
+plugins:
+  slots:
+    contextEngine: tapps-brain-memory
+  entries:
+    tapps-brain-memory:
+      enabled: true
+      config:
+        mcpCommand: tapps-brain-mcp
+        profilePath: .tapps-brain/profiles/code-review.yaml
+        tokenBudget: 3000
+        captureRateLimit: 5
+        agentId: reviewer-1
+        hiveEnabled: true
 ```
 
 A `code-review` profile might weight `pattern`-tier memories higher and use a larger

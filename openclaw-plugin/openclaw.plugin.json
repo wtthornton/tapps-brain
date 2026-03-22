@@ -4,14 +4,6 @@
   "description": "ContextEngine plugin for tapps-brain: persistent cross-session memory with BM25 ranking, exponential decay, and multi-agent Hive sharing.",
   "version": "1.2.0",
   "kind": "context-engine",
-  "install": {
-    "pip": "tapps-brain[mcp]>=1.2.0"
-  },
-  "mcp": {
-    "command": "tapps-brain-mcp",
-    "transport": "stdio",
-    "args": ["--project-dir", "${workspaceDir}"]
-  },
   "configSchema": {
     "type": "object",
     "properties": {
@@ -28,7 +20,7 @@
       "tokenBudget": {
         "type": "number",
         "default": 2000,
-        "description": "Max tokens for injected memories"
+        "description": "Max tokens for injected memories in assemble()"
       },
       "captureRateLimit": {
         "type": "number",
@@ -38,7 +30,7 @@
       "agentId": {
         "type": "string",
         "default": "",
-        "description": "Unique agent identifier for Hive"
+        "description": "Unique agent identifier for Hive multi-agent sharing"
       },
       "hiveEnabled": {
         "type": "boolean",
