@@ -475,3 +475,131 @@ class TestMetricsCommand:
         data = json.loads(result.stdout)
         assert "counters" in data
         assert "histograms" in data
+
+
+# ===================================================================
+# Profile commands (EPIC-010)
+# ===================================================================
+
+
+class TestProfileCommands:
+    """Tests for profile show, list, set, and layers commands."""
+
+    def test_profile_show(self, project_dir):
+        result = runner.invoke(app, ["profile", "show", "--project-dir", project_dir])
+        assert result.exit_code == 0
+        assert "Profile" in result.stdout
+
+    def test_profile_show_json(self, project_dir):
+        result = runner.invoke(
+            app, ["profile", "show", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "name" in data
+        assert "layers" in data
+        assert isinstance(data["layers"], list)
+
+    def test_profile_list(self):
+        result = runner.invoke(app, ["profile", "list"])
+        assert result.exit_code == 0
+        assert "repo-brain" in result.stdout
+
+    def test_profile_list_json(self):
+        result = runner.invoke(app, ["profile", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        names = [p["name"] for p in data]
+        assert "repo-brain" in names
+
+    def test_profile_set(self, project_dir):
+        result = runner.invoke(
+            app, ["profile", "set", "repo-brain", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "repo-brain" in result.stdout
+
+    def test_profile_layers(self, project_dir):
+        result = runner.invoke(
+            app, ["profile", "layers", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "Profile" in result.stdout
+
+    def test_profile_layers_json(self, project_dir):
+        result = runner.invoke(
+            app, ["profile", "layers", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        assert len(data) > 0
+        assert "name" in data[0]
+        assert "half_life_days" in data[0]
+
+
+# ===================================================================
+# Hive commands (EPIC-011)
+# ===================================================================
+
+
+class TestHiveCommands:
+    """Tests for hive status and search CLI commands."""
+
+    def test_hive_status(self):
+        result = runner.invoke(app, ["hive", "status"])
+        assert result.exit_code == 0
+        # Either shows entry count or empty state
+        assert "Hive" in result.stdout or "entries" in result.stdout
+
+    def test_hive_status_json(self):
+        result = runner.invoke(app, ["hive", "status", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "namespaces" in data
+        assert "total_entries" in data
+        assert "agents" in data
+
+    def test_hive_search_no_results(self):
+        result = runner.invoke(app, ["hive", "search", "xyzzy-nonexistent-query-12345"])
+        assert result.exit_code == 0
+        assert "No results" in result.stdout or result.stdout == ""
+
+    def test_hive_search_json(self):
+        result = runner.invoke(
+            app, ["hive", "search", "test-query", "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "results" in data
+        assert "count" in data
+
+
+# ===================================================================
+# Agent commands (EPIC-011)
+# ===================================================================
+
+
+class TestAgentCommands:
+    """Tests for agent register and list CLI commands."""
+
+    def test_agent_register(self):
+        result = runner.invoke(
+            app,
+            ["agent", "register", "test-cli-agent", "--profile", "repo-brain", "--skills", ""],
+        )
+        assert result.exit_code == 0
+        assert "test-cli-agent" in result.stdout
+
+    def test_agent_list(self):
+        result = runner.invoke(app, ["agent", "list"])
+        # Either shows agents or "No registered agents."
+        assert result.exit_code == 0
+
+    def test_agent_list_json(self):
+        result = runner.invoke(app, ["agent", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "agents" in data
+        assert "count" in data

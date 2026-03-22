@@ -1100,17 +1100,17 @@ def create_server(  # noqa: PLR0915
                 prof = get_builtin_profile(profile)
             except FileNotFoundError:
                 available = list_builtin_profiles()
-                return json.dumps({
-                    "error": "invalid_profile",
-                    "message": f"Profile '{profile}' not found.",
-                    "available_profiles": available,
-                })
+                return json.dumps(
+                    {
+                        "error": "invalid_profile",
+                        "message": f"Profile '{profile}' not found.",
+                        "available_profiles": available,
+                    }
+                )
 
             # Register agent
             skill_list = [s.strip() for s in skills.split(",") if s.strip()]
-            agent = AgentRegistration(
-                id=agent_id, profile=profile, skills=skill_list
-            )
+            agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
             registry = AgentRegistry()
             registry.register(agent)
 
@@ -1126,14 +1126,16 @@ def create_server(  # noqa: PLR0915
                 "description": prof.description,
             }
 
-            return json.dumps({
-                "created": True,
-                "agent_id": agent_id,
-                "profile": profile,
-                "namespace": namespace,
-                "skills": skill_list,
-                "profile_summary": profile_summary,
-            })
+            return json.dumps(
+                {
+                    "created": True,
+                    "agent_id": agent_id,
+                    "profile": profile,
+                    "namespace": namespace,
+                    "skills": skill_list,
+                    "profile_summary": profile_summary,
+                }
+            )
         except Exception as exc:
             return json.dumps({"error": "agent_create_error", "message": str(exc)})
 

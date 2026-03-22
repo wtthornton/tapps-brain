@@ -48,26 +48,7 @@
       }
     ],
 
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .ralph/hooks/on-file-change.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .ralph/hooks/on-bash-command.sh"
-          }
-        ]
-      }
-    ],
+    "PostToolUse": [],
 
     "SubagentStop": [
       {

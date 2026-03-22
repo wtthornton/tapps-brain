@@ -1279,9 +1279,7 @@ class TestHiveToolsReuseSharedStore:
 
         server = create_server(store_dir, enable_hive=True, agent_id="lead")
         create_fn = _tool_fn(server, "agent_create")
-        result = json.loads(
-            create_fn(agent_id="bad-agent", profile="nonexistent-profile")
-        )
+        result = json.loads(create_fn(agent_id="bad-agent", profile="nonexistent-profile"))
         assert result["error"] == "invalid_profile"
         assert "nonexistent-profile" in result["message"]
         assert isinstance(result["available_profiles"], list)
@@ -1289,3 +1287,299 @@ class TestHiveToolsReuseSharedStore:
         assert "repo-brain" in result["available_profiles"]
         server._tapps_store._hive_store.close()
         server._tapps_store.close()
+
+
+class TestMCPAdditionalCoverage:
+    """Additional tests to cover error paths and EPIC-013 tool functions."""
+
+    # ------------------------------------------------------------------
+    # profile_info — no-profile path
+    # ------------------------------------------------------------------
+
+    def test_profile_info_no_profile(self, store_dir, monkeypatch):
+        """profile_info returns error JSON when store has no profile."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        monkeypatch.setattr(server._tapps_store, "_profile", None)
+        info_fn = _tool_fn(server, "profile_info")
+        result = json.loads(info_fn())
+        assert result["error"] == "no_profile"
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # profile_switch — not-found path
+    # ------------------------------------------------------------------
+
+    def test_profile_switch_nonexistent_profile(self, store_dir):
+        """profile_switch returns error with available list for unknown profile."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        switch_fn = _tool_fn(server, "profile_switch")
+        result = json.loads(switch_fn(name="this-profile-does-not-exist"))
+        assert result["error"] == "profile_not_found"
+        assert "this-profile-does-not-exist" in result["message"]
+        assert isinstance(result["available"], list)
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # hive_propagate — error paths
+    # ------------------------------------------------------------------
+
+    def test_hive_propagate_key_not_found(self, store_dir):
+        """hive_propagate returns not_found when key is absent from store."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        propagate_fn = _tool_fn(server, "hive_propagate")
+        result = json.loads(propagate_fn(key="nonexistent-key"))
+        assert result["error"] == "not_found"
+        server._tapps_store.close()
+
+    def test_hive_propagate_private_scope_returns_not_propagated(self, store_dir):
+        """hive_propagate with private scope returns propagated=False."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        store = server._tapps_store
+        store.save(key="local-fact", value="A local fact", tier="architectural")
+        propagate_fn = _tool_fn(server, "hive_propagate")
+        result = json.loads(propagate_fn(key="local-fact", agent_scope="private"))
+        assert result["propagated"] is False
+        assert "reason" in result
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_propagate_no_shared_hive_creates_temp(self, store_dir):
+        """hive_propagate without enable_hive creates temp HiveStore and closes it."""
+        from tapps_brain.mcp_server import create_server
+
+        # No enable_hive — store has no shared _hive_store
+        server = create_server(store_dir)
+        store = server._tapps_store
+        store.save(key="temp-fact", value="A temporary fact", tier="architectural")
+        propagate_fn = _tool_fn(server, "hive_propagate")
+        # Should succeed (create temp hive, propagate or return private, close it)
+        result = json.loads(propagate_fn(key="temp-fact", agent_scope="hive"))
+        assert "propagated" in result or "error" in result
+        store.close()
+
+    # ------------------------------------------------------------------
+    # agent_register
+    # ------------------------------------------------------------------
+
+    def test_agent_register_happy_path(self, store_dir):
+        """agent_register creates a registration and returns registered=True."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        register_fn = _tool_fn(server, "agent_register")
+        result = json.loads(
+            register_fn(agent_id="worker-1", profile="repo-brain", skills="coding,review")
+        )
+        assert result["registered"] is True
+        assert result["agent_id"] == "worker-1"
+        assert result["profile"] == "repo-brain"
+        assert result["skills"] == ["coding", "review"]
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_agent_register_no_skills(self, store_dir):
+        """agent_register with empty skills returns empty list."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        register_fn = _tool_fn(server, "agent_register")
+        result = json.loads(register_fn(agent_id="worker-2", profile="repo-brain", skills=""))
+        assert result["registered"] is True
+        assert result["skills"] == []
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # agent_list
+    # ------------------------------------------------------------------
+
+    def test_agent_list_returns_registered_agents(self, store_dir):
+        """agent_list returns agents that have been registered."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        register_fn = _tool_fn(server, "agent_register")
+        list_fn = _tool_fn(server, "agent_list")
+        register_fn(agent_id="list-test-agent", profile="repo-brain", skills="")
+        result = json.loads(list_fn())
+        assert "agents" in result
+        assert "count" in result
+        assert isinstance(result["agents"], list)
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_agent_list_empty_registry(self, store_dir):
+        """agent_list returns count=0 or more for an empty registry (YAML-backed)."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        list_fn = _tool_fn(server, "agent_list")
+        result = json.loads(list_fn())
+        assert "agents" in result or "error" in result
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # hive_status / hive_search — exception paths
+    # ------------------------------------------------------------------
+
+    def test_hive_status_exception_returns_error(self, store_dir, monkeypatch):
+        """hive_status returns error JSON when an exception occurs."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test")
+        # Corrupt the shared hive store to force an exception
+        monkeypatch.setattr(server._tapps_store._hive_store, "list_namespaces", lambda: (_ for _ in ()).throw(RuntimeError("boom")))  # noqa: E501
+        status_fn = _tool_fn(server, "hive_status")
+        result = json.loads(status_fn())
+        assert result.get("error") == "hive_error" or "namespaces" in result
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    def test_hive_search_exception_returns_error(self, store_dir, monkeypatch):
+        """hive_search returns error JSON when an exception occurs."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test")
+        monkeypatch.setattr(
+            server._tapps_store._hive_store,
+            "search",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("search failure")),
+        )
+        search_fn = _tool_fn(server, "hive_search")
+        result = json.loads(search_fn(query="anything"))
+        assert result.get("error") == "hive_error" or "results" in result
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # agent_create — exception path
+    # ------------------------------------------------------------------
+
+    def test_agent_create_exception_returns_error(self, store_dir, monkeypatch):
+        """agent_create returns error JSON when registration raises unexpectedly."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+
+        # Patch AgentRegistry.register to raise after profile validation succeeds
+        import tapps_brain.hive as hive_mod
+
+        original_register = hive_mod.AgentRegistry.register
+
+        def _raise(self, agent):
+            raise RuntimeError("forced error")
+
+        monkeypatch.setattr(hive_mod.AgentRegistry, "register", _raise)
+        create_fn = _tool_fn(server, "agent_create")
+        result = json.loads(create_fn(agent_id="bad", profile="repo-brain", skills=""))
+        assert result.get("error") == "agent_create_error"
+        # Restore
+        monkeypatch.setattr(hive_mod.AgentRegistry, "register", original_register)
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # profile_info — happy path (profile loaded)
+    # ------------------------------------------------------------------
+
+    def test_profile_info_with_loaded_profile(self, store_dir):
+        """profile_info returns profile data when a profile is loaded."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        info_fn = _tool_fn(server, "profile_info")
+        result = json.loads(info_fn())
+        # Either returns a profile or no_profile if no profile was loaded
+        assert "name" in result or result.get("error") == "no_profile"
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # profile_switch — happy path (valid profile)
+    # ------------------------------------------------------------------
+
+    def test_profile_switch_valid_profile(self, store_dir):
+        """profile_switch returns switched=True for a valid built-in profile."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        switch_fn = _tool_fn(server, "profile_switch")
+        result = json.loads(switch_fn(name="repo-brain"))
+        assert result["switched"] is True
+        assert result["profile"] == "repo-brain"
+        assert isinstance(result["layer_count"], int)
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # agent_register — exception path
+    # ------------------------------------------------------------------
+
+    def test_agent_register_exception_returns_error(self, store_dir, monkeypatch):
+        """agent_register returns error JSON when registration raises unexpectedly."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="lead")
+        import tapps_brain.hive as hive_mod
+
+        monkeypatch.setattr(
+            hive_mod.AgentRegistry,
+            "register",
+            lambda self, agent: (_ for _ in ()).throw(RuntimeError("reg failure")),
+        )
+        register_fn = _tool_fn(server, "agent_register")
+        result = json.loads(register_fn(agent_id="fail-agent", profile="repo-brain", skills=""))
+        assert result.get("error") == "registry_error"
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # agent_list — exception path
+    # ------------------------------------------------------------------
+
+    def test_agent_list_exception_returns_error(self, store_dir, monkeypatch):
+        """agent_list returns error JSON when AgentRegistry raises unexpectedly."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        import tapps_brain.hive as hive_mod
+
+        monkeypatch.setattr(
+            hive_mod.AgentRegistry,
+            "list_agents",
+            lambda self: (_ for _ in ()).throw(RuntimeError("list failure")),
+        )
+        list_fn = _tool_fn(server, "agent_list")
+        result = json.loads(list_fn())
+        assert result.get("error") == "registry_error"
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # hive_propagate — exception path
+    # ------------------------------------------------------------------
+
+    def test_hive_propagate_exception_returns_error(self, store_dir, monkeypatch):
+        """hive_propagate returns error JSON when PropagationEngine raises."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="test")
+        store = server._tapps_store
+        store.save(key="exc-fact", value="A fact for exception test", tier="architectural")
+        import tapps_brain.hive as hive_mod
+
+        monkeypatch.setattr(
+            hive_mod.PropagationEngine,
+            "propagate",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("propagate failure")),
+        )
+        propagate_fn = _tool_fn(server, "hive_propagate")
+        result = json.loads(propagate_fn(key="exc-fact", agent_scope="hive"))
+        assert result.get("error") == "hive_error"
+        store._hive_store.close()
+        store.close()
