@@ -40,6 +40,15 @@ CB_OUTPUT_DECLINE_THRESHOLD=70
 CB_AUTO_RESET=true
 CB_COOLDOWN_MINUTES=10
 
+# Log rotation (v1.1.0)
+LOG_MAX_SIZE_MB=10
+LOG_MAX_FILES=5
+LOG_MAX_OUTPUT_FILES=20
+
+# Dry-run mode (v1.1.0) — preview execution without API calls
+# Also activatable via: ralph --dry-run
+DRY_RUN=false
+
 # Auto-update Claude CLI at startup
 CLAUDE_AUTO_UPDATE=true
 

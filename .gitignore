@@ -44,3 +44,4 @@ build/
 .ralph/.last_crash_code
 .ralph/.total_loop_count
 .ralph/.files_modified_this_loop
+openclaw-plugin/node_modules/

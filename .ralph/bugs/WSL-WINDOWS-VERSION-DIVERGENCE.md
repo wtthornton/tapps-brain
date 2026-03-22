@@ -1,8 +1,10 @@
 # Bug: WSL and Windows Ralph installs diverge after update — causes silent loop crash
 
 **Discovered:** 2026-03-21
+**Resolved:** 2026-03-21 (Ralph v1.1.0)
 **Severity:** Critical — Ralph silently stops after 1 task with no error in ralph.log
 **Affects:** Any user running Ralph from WSL on a Windows host
+**Status:** RESOLVED — Fixed in Ralph v1.1.0 with `check_version_divergence()` startup check, on-stop.sh text fallback, and both WSL/Windows installs synced to v1.1.0.
 
 ## Symptoms
 
