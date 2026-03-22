@@ -17,8 +17,9 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] EPIC-009: Multi-Interface Distribution (done)
 - [x] EPIC-010: Configurable Memory Profiles (done — 14 tasks, all checked)
 - [x] EPIC-011: Hive — Multi-Agent Shared Brain (done — 14 tasks, all checked)
+- [x] EPIC-012: OpenClaw Integration (done — 17 tasks, all checked)
 
-## Active — EPIC-012: OpenClaw Integration
+## Completed — EPIC-012: OpenClaw Integration
 
 **Depends on:** EPIC-010 ✅, EPIC-011 ✅
 **Target:** 2026-06-15

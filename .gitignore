@@ -28,6 +28,7 @@ build/
 .ralph/live.log
 .ralph/progress.json
 .ralph/status.json
+.ralph/status.json.*
 .coverage
 
 # Claude Code local settings (experimental, not committed)
@@ -44,4 +45,5 @@ build/
 .ralph/.last_crash_code
 .ralph/.total_loop_count
 .ralph/.files_modified_this_loop
+.ralph/STOP
 openclaw-plugin/node_modules/
