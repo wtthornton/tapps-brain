@@ -20,7 +20,11 @@ docs/planning/
     ├── EPIC-009.md      ← Multi-interface distribution (done)
     ├── EPIC-010.md      ← Configurable memory profiles — pluggable layers and scoring (done)
     ├── EPIC-011.md      ← Hive — multi-agent shared brain with domain namespaces (done)
-    └── EPIC-012.md      ← OpenClaw integration — ContextEngine plugin and ClawHub skill (done)
+    ├── EPIC-012.md      ← OpenClaw integration — ContextEngine plugin and ClawHub skill (done)
+    ├── EPIC-013.md      ← Hive-aware MCP surface (done)
+    ├── EPIC-014.md      ← Hardening — validation, parity, resilience, docs (done)
+    ├── EPIC-015.md      ← Analytics & operational surface (done)
+    └── EPIC-016.md      ← Test suite hardening — CLI gaps, concurrency, resource cleanup (done)
 ```
 
 ## Why This Structure

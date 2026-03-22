@@ -61,7 +61,7 @@ Add it to your editor's MCP config (e.g. `.mcp.json` for Claude Code):
 }
 ```
 
-The AI assistant now has 29 tools — `memory_save`, `memory_recall`, `memory_search`, Hive tools, and more — with no custom integration code required.
+The AI assistant now has 41 tools — `memory_save`, `memory_recall`, `memory_search`, Hive tools, knowledge graph, audit trail, and more — with no custom integration code required.
 
 ---
 

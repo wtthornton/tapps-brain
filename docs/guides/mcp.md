@@ -226,6 +226,9 @@ Profiles configure layers, decay models, scoring weights, promotion rules, and l
 | `hive_search` | Search the Hive with optional namespace filter |
 | `hive_propagate` | Manually propagate a local memory to the Hive |
 | `agent_register` | Register an agent in the Hive registry (id, profile, skills) |
+| `agent_create` | Composite: register + validate profile + namespace assignment |
+| `agent_list` | List all registered agents |
+| `agent_delete` | Remove an agent registration |
 
 **Example — checking Hive status:**
 
@@ -259,12 +262,38 @@ The Hive enables cross-agent memory sharing with namespace isolation and conflic
 
 Federation enables cross-project memory sharing. See the [Federation Guide](federation.md) for details.
 
+### Knowledge Graph Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory_relations` | Get relations for a memory entry |
+| `memory_find_related` | BFS traversal from an entity |
+| `memory_query_relations` | Query relation triples |
+
+### Tag Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory_tags` | List all tags in the store |
+| `memory_tag_update` | Add or remove tags on entries |
+| `memory_by_tag` | Filter entries by tag |
+
+### Audit Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory_audit` | Query the audit trail with optional filters |
+
 ### Maintenance Tools
 
 | Tool | Description |
 |------|-------------|
 | `maintenance_consolidate` | Merge similar memories (deterministic, Jaccard + TF-IDF) |
 | `maintenance_gc` | Archive stale memories (supports `dry_run`) |
+| `maintenance_gc_config` | View or set GC thresholds at runtime |
+| `maintenance_consolidation_config` | View or set consolidation configuration |
+| `maintenance_health` | Store health report |
+| `maintenance_migrate` | Run schema migrations |
 | `memory_export` | Export entries as JSON (with tier/scope/confidence filters) |
 | `memory_import` | Import entries from JSON |
 

@@ -11,6 +11,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] — 2026-03-22
+
+### Added — EPICs 014–016: Hardening, Analytics & Test Suite
+
+#### Hardening (EPIC-014)
+- **`agent_scope` enum validation** — invalid values now return clear errors instead
+  of silently defaulting to `private`.
+- **CLI `agent create` command** — matches MCP `agent_create` composite tool behavior,
+  closing the 3-interface parity gap.
+- **SQLite corruption detection** — corrupted databases detected at startup with
+  recovery instructions instead of hard crashes.
+- **Getting Started guide** (`docs/guides/getting-started.md`) — use-case map with
+  quick examples for Library, CLI, and MCP interfaces.
+- **CHANGELOG** — release history now tracked in Keep a Changelog format.
+
+#### Analytics & Operational Surface (EPIC-015)
+- **Knowledge graph MCP tools + CLI commands** — `memory_relations`,
+  `memory_find_related`, `memory_query_relations` exposed via all interfaces.
+- **Audit trail queryable** — `memory_audit` MCP tool and `memory audit` CLI command
+  for querying the JSONL audit log.
+- **Tag management** — `memory_tags`, `memory_tag_update`, `memory_by_tag` tools and
+  CLI equivalents for listing, updating, and filtering by tags.
+- **Runtime GC configuration** — `maintenance_gc_config` MCP tool and CLI command to
+  view/set GC thresholds without restarting.
+- **Auto-consolidation config** — `maintenance_consolidation_config` exposed via MCP
+  and CLI.
+- **Agent lifecycle tools** — `agent_delete`, `agent_list` MCP tools and CLI commands.
+- **Hive statistics** — `hive_status` now includes entry counts per namespace.
+
+#### Test Suite Hardening (EPIC-016)
+- **CLI federation command tests** — `subscribe`, `unsubscribe`, `publish` now tested.
+- **Thread safety verification** — concurrent tests for `MemoryStore`, `HiveStore`,
+  metrics, and recall.
+- **Resource leak fixes** — eliminated 15 `ResourceWarning: unclosed database`
+  warnings across the test suite.
+- **Unicode and boundary value tests** — emoji, CJK, RTL, and max key/value length
+  boundary tests added.
+
+### Changed
+- **MCP tool count** — expanded from 29 to **41 tools** (knowledge graph, audit,
+  tags, GC config, consolidation config, agent lifecycle, health, migrate).
+- **CLI command count** — expanded from 19 to **36 commands** across 7 groups.
+- **Test count** — grew from 1226 to **1683 tests** with 96.48% coverage.
+
+---
+
 ## [1.1.0] — 2026-07-15
 
 ### Added — EPIC-013: Hive-Aware MCP Surface
@@ -98,6 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PyPI publish preparation** — `project.urls`, wheel + sdist verified,
   publish checklist at `scripts/publish-checklist.md`.
 
-[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/wtthornton/tapps-brain/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/wtthornton/tapps-brain/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wtthornton/tapps-brain/releases/tag/v1.0.0

@@ -47,3 +47,6 @@ build/
 .ralph/.files_modified_this_loop
 .ralph/STOP
 openclaw-plugin/node_modules/
+
+# LOCK-1: Instance lock file (auto-released by flock)
+.ralph/.ralph.lock

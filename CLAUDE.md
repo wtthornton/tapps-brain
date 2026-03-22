@@ -15,7 +15,7 @@ uv sync --extra dev
 # Install with optional vector search support
 uv sync --extra dev --extra vector
 
-# Run all tests
+# Run all tests (1683 tests, 96%+ coverage)
 pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Run a single test file
@@ -48,7 +48,7 @@ uv build
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (29 tools including 5 Hive tools, 1 `agent_create` composite tool, and 2 Profile tools, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v7**; v5 = bi-temporal columns, v6 = version bump for tooling, v7 = `agent_scope` for Hive). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (41 tools including Hive, knowledge graph, audit, tags, and profile tools, 4 resources, 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v7**; v5 = bi-temporal columns, v6 = version bump for tooling, v7 = `agent_scope` for Hive). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, access counting, and `agent_scope` for Hive propagation. `ConsolidatedEntry` extends it for merged memories. `RecallResult` includes `hive_memory_count` for observability.
 

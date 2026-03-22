@@ -8,7 +8,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1678 passing | Full suite `pytest tests/` |
+| Tests | ~1683 passing | Full suite `pytest tests/` |
 | Coverage | ≥ 95% (96.48%) | `tapps_brain` package |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
@@ -66,7 +66,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**All epics complete.** EPIC-016 closed with 1678 passing tests, 96.48% coverage, zero ResourceWarnings, clean lint and mypy. No active work streams.
+**All 16 epics complete.** v1.2.0 released with 1683 passing tests, 96.48% coverage, 41 MCP tools, 36 CLI commands, zero ResourceWarnings, clean lint and mypy. No active work streams.
 
 ## WSL / Windows
 

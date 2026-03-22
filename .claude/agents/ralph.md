@@ -183,3 +183,20 @@ Assign:
 ### Sequential Fallback
 If tasks have dependencies (shared files, import chains), run them sequentially
 as in normal mode. Team mode is an optimization, not a requirement.
+
+## Environment Notes
+
+- **Python**: Use `python3` (not `python`) — WSL/Ubuntu only provides `python3` by default
+- **pip**: Use `pip3` or `python3 -m pip`
+
+## Sub-Agent Time Budgets
+
+When spawning sub-agents for QA at epic boundaries:
+
+1. **Calculate remaining time**: Check how long the current invocation has been running
+2. **Allocate time budgets**:
+   - ralph-tester: 60% of remaining time
+   - ralph-reviewer: 30% of remaining time
+   - Leave 10% margin for your own reporting
+3. **Pass deadline** in the agent prompt: "DEADLINE_EPOCH=<epoch>. You have ~Ns remaining."
+4. **If < 10 minutes remain**: Skip full QA. Set `TESTS_STATUS: DEFERRED` with reason "insufficient time budget"
