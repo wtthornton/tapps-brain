@@ -244,7 +244,7 @@ Aligned with the repo as of **2026-03-22**. For full story text, see `docs/plann
 - [x] Create `tests/unit/test_concurrent.py`. Test: 10 threads saving 50 entries each — all 500 persisted, no corruption. Test: 5 threads saving while 5 threads recalling — no exceptions. Test: concurrent save at max capacity (500) — eviction correct under contention. 30-second timeout on all tests. Commit: `test(story-016.3): concurrent save and recall stress tests`
 
 #### 016-D: Concurrent GC and Hive stress tests
-- [ ] In `test_concurrent.py`, add: GC running while saves happen — no exceptions, archive consistent. Multiple agents propagating to HiveStore concurrently — all entries arrive. Concurrent recall from Hive during propagation — no exceptions. 30-second timeout. Commit: `test(story-016.4): concurrent GC and Hive stress tests`
+- [x] In `test_concurrent.py`, add: GC running while saves happen — no exceptions, archive consistent. Multiple agents propagating to HiveStore concurrently — all entries arrive. Concurrent recall from Hive during propagation — no exceptions. 30-second timeout. Commit: `test(story-016.4): concurrent GC and Hive stress tests`
 
 ### Phase 3: Resource Cleanup (independent)
 

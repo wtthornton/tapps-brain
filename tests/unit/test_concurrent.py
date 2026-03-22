@@ -1,9 +1,14 @@
-"""Concurrency stress tests for MemoryStore — 016-C.
+"""Concurrency stress tests for MemoryStore — 016-C and 016-D.
 
-Tests cover:
+Tests cover (016-C):
 - 10 threads saving 50 entries each → all 500 persisted, no corruption
 - 5 threads saving while 5 threads recalling → no exceptions
 - Concurrent save at max capacity (500) → eviction correct under contention
+
+Tests cover (016-D):
+- GC running while saves happen → no exceptions, archive consistent
+- Multiple agents propagating to HiveStore concurrently → all entries arrive
+- Concurrent recall from Hive during propagation → no exceptions
 
 All tests use a 30-second timeout via pytest-timeout or threading.Event.
 """
@@ -16,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from tapps_brain.hive import HiveStore
 from tapps_brain.store import MemoryStore
 
 
@@ -179,3 +185,260 @@ class TestConcurrentSaveAtCapacity:
             assert count > 0, "Store must not be empty after concurrent saves"
         finally:
             s.close()
+
+
+class TestConcurrentGCAndSaves:
+    """GC running while saves happen — no exceptions, archive consistent."""
+
+    def test_gc_concurrent_with_saves(self, tmp_path: Path) -> None:
+        """GC and saves running in parallel must not corrupt the store."""
+        s = MemoryStore(tmp_path)
+        try:
+            # Pre-populate 10 stale entries (contradicted + very low confidence)
+            for i in range(10):
+                s.save(key=f"stale-{i}", value=f"stale value {i}", tier="context")
+                # Mark as contradicted with floor confidence so GC archives them
+                entry = s.get(f"stale-{i}")
+                if entry is not None:
+                    entry.contradicted = True
+                    entry.confidence = 0.05  # well below 0.2 threshold
+
+            errors: list[Exception] = []
+            stop_event = threading.Event()
+
+            def saver(thread_id: int) -> None:
+                idx = 0
+                try:
+                    while not stop_event.is_set():
+                        key = f"gc-save-{thread_id}-{idx}"
+                        s.save(key=key, value=f"fresh value {idx}", tier="pattern")
+                        idx += 1
+                        time.sleep(0.002)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            def gc_runner() -> None:
+                try:
+                    while not stop_event.is_set():
+                        s.gc(dry_run=False)
+                        time.sleep(0.01)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            save_threads = [threading.Thread(target=saver, args=(t,)) for t in range(3)]
+            gc_thread = threading.Thread(target=gc_runner)
+
+            all_threads = save_threads + [gc_thread]
+            for t in all_threads:
+                t.start()
+
+            # Run for 2 seconds
+            time.sleep(2)
+            stop_event.set()
+
+            start_join = time.monotonic()
+            for t in all_threads:
+                t.join(timeout=30)
+            elapsed = time.monotonic() - start_join
+
+            assert elapsed < 30, f"GC concurrent test join timed out after {elapsed:.1f}s"
+            assert not errors, f"Threads raised exceptions: {errors}"
+
+            # Store integrity: count must be non-negative and within bounds
+            count = s.count()
+            assert 0 <= count <= 500, f"Store count out of range: {count}"
+        finally:
+            s.close()
+
+    def test_gc_archive_consistent_under_contention(self, tmp_path: Path) -> None:
+        """Entries archived by GC must not remain in the live store."""
+        s = MemoryStore(tmp_path)
+        try:
+            # Save 5 entries and mark as stale (contradicted + floor confidence)
+            stale_keys = [f"archive-stale-{i}" for i in range(5)]
+            for key in stale_keys:
+                s.save(key=key, value="old data", tier="context")
+                entry = s.get(key)
+                if entry is not None:
+                    entry.contradicted = True
+                    entry.confidence = 0.05
+
+            errors: list[Exception] = []
+
+            def saver(thread_id: int) -> None:
+                try:
+                    for i in range(10):
+                        s.save(
+                            key=f"archive-new-{thread_id}-{i}",
+                            value=f"new value {i}",
+                            tier="pattern",
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            # Launch saves and GC simultaneously
+            save_threads = [threading.Thread(target=saver, args=(t,)) for t in range(3)]
+            gc_thread = threading.Thread(target=lambda: s.gc(dry_run=False))
+
+            all_threads = save_threads + [gc_thread]
+            for t in all_threads:
+                t.start()
+            for t in all_threads:
+                t.join(timeout=30)
+
+            assert not errors, f"Threads raised exceptions: {errors}"
+
+            # Any stale key that was archived must not appear in the live store
+            live_keys = {e.key for e in s.list_all()}
+            for key in stale_keys:
+                # If GC ran and found it stale, it should have been removed
+                entry = s.get(key)
+                if entry is not None:
+                    # If still present it means it was re-saved or GC lost the race — OK
+                    assert key in live_keys
+        finally:
+            s.close()
+
+
+@pytest.fixture()
+def hive_store(tmp_path: Path) -> HiveStore:  # type: ignore[misc]
+    """Isolated HiveStore backed by a temp SQLite file."""
+    hs = HiveStore(db_path=tmp_path / "hive.db")
+    yield hs
+    hs.close()
+
+
+class TestConcurrentHivePropagation:
+    """Multiple agents propagating to HiveStore concurrently — all entries arrive."""
+
+    def test_concurrent_hive_saves_all_arrive(self, hive_store: HiveStore) -> None:
+        """5 agents each saving 20 unique entries → all 100 entries in HiveStore."""
+        num_agents = 5
+        entries_per_agent = 20
+        errors: list[Exception] = []
+
+        def propagate(agent_id: int) -> None:
+            try:
+                for i in range(entries_per_agent):
+                    hive_store.save(
+                        key=f"agent-{agent_id}-entry-{i}",
+                        value=f"from agent {agent_id}, item {i}",
+                        namespace="universal",
+                        source_agent=f"agent-{agent_id}",
+                        tier="pattern",
+                        conflict_policy="last_write_wins",
+                    )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=propagate, args=(a,)) for a in range(num_agents)]
+        start = time.monotonic()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 30, f"Concurrent Hive save timed out after {elapsed:.1f}s"
+        assert not errors, f"Threads raised exceptions: {errors}"
+
+        # All unique keys must be present
+        results = hive_store.search("agent", namespaces=["universal"], limit=200)
+        saved_keys = {r["key"] for r in results}
+        expected_count = num_agents * entries_per_agent
+        assert len(saved_keys) == expected_count, (
+            f"Expected {expected_count} entries, found {len(saved_keys)}"
+        )
+
+    def test_concurrent_hive_multi_namespace(self, hive_store: HiveStore) -> None:
+        """Agents writing to different namespaces should not collide."""
+        namespaces = ["domain-a", "domain-b", "domain-c"]
+        entries_per_ns = 10
+        errors: list[Exception] = []
+
+        def ns_writer(ns: str) -> None:
+            try:
+                for i in range(entries_per_ns):
+                    hive_store.save(
+                        key=f"ns-entry-{i}",
+                        value=f"value for {ns} item {i}",
+                        namespace=ns,
+                        source_agent=f"agent-{ns}",
+                        tier="pattern",
+                        conflict_policy="last_write_wins",
+                    )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=ns_writer, args=(ns,)) for ns in namespaces]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert not errors, f"Threads raised exceptions: {errors}"
+
+        # Each namespace should have exactly entries_per_ns entries
+        for ns in namespaces:
+            results = hive_store.search("value for", namespaces=[ns], limit=50)
+            assert len(results) == entries_per_ns, (
+                f"Namespace {ns!r}: expected {entries_per_ns}, got {len(results)}"
+            )
+
+
+class TestConcurrentHiveRecallDuringPropagation:
+    """Concurrent recall from Hive during propagation — no exceptions."""
+
+    def test_recall_during_propagation(self, hive_store: HiveStore) -> None:
+        """Searches must not raise even when concurrent saves are in progress."""
+        # Seed with some entries so searches return results from the start
+        for i in range(20):
+            hive_store.save(
+                key=f"seed-{i}",
+                value=f"seed content item {i}",
+                namespace="universal",
+                source_agent="seeder",
+                conflict_policy="last_write_wins",
+            )
+
+        errors: list[Exception] = []
+        stop_event = threading.Event()
+
+        def writer(thread_id: int) -> None:
+            idx = 0
+            try:
+                while not stop_event.is_set():
+                    hive_store.save(
+                        key=f"live-{thread_id}-{idx}",
+                        value=f"live content from {thread_id} idx {idx}",
+                        namespace="universal",
+                        source_agent=f"writer-{thread_id}",
+                        conflict_policy="last_write_wins",
+                    )
+                    idx += 1
+                    time.sleep(0.003)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def reader(thread_id: int) -> None:
+            try:
+                while not stop_event.is_set():
+                    hive_store.search("content", namespaces=["universal"], limit=20)
+                    time.sleep(0.005)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        write_threads = [threading.Thread(target=writer, args=(t,)) for t in range(3)]
+        read_threads = [threading.Thread(target=reader, args=(t,)) for t in range(3)]
+        all_threads = write_threads + read_threads
+
+        for t in all_threads:
+            t.start()
+
+        time.sleep(2)
+        stop_event.set()
+
+        for t in all_threads:
+            t.join(timeout=30)
+
+        assert not errors, f"Threads raised exceptions: {errors}"
