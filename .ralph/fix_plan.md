@@ -214,7 +214,7 @@ Aligned with the repo as of **2026-03-21**. For full story text, see `docs/plann
 - [x] Add MCP tools: `memory_consolidation_config()` and `memory_consolidation_config_set(enabled, threshold, min_entries)`. Add CLI: `maintenance consolidation-config [--set key=value]`. Delegate to existing `store.set_consolidation_config()`. Add unit tests. Commit: `feat(story-015.8): auto-consolidation config MCP tools and CLI`
 
 #### 015-I: Agent lifecycle — delete, CLI parity, Hive stats
-- [ ] Add `agent_delete(agent_id)` MCP tool with `AgentRegistry.unregister()`. Add CLI: `agent list` and `agent delete <id>`. Add per-namespace entry counts to `hive_status` output. Add unit tests. Commit: `feat(story-015.9): agent lifecycle and Hive stats`
+- [x] Add `agent_delete(agent_id)` MCP tool with `AgentRegistry.unregister()`. Add CLI: `agent list` and `agent delete <id>`. Add per-namespace entry counts to `hive_status` output. Add unit tests. Commit: `feat(story-015.9): agent lifecycle and Hive stats`
 
 ### Phase 5: Final Validation
 

@@ -1471,6 +1471,71 @@ class TestMCPAdditionalCoverage:
         server._tapps_store.close()
 
     # ------------------------------------------------------------------
+    # agent_delete
+    # ------------------------------------------------------------------
+
+    def test_agent_delete_removes_registered_agent(self, store_dir):
+        """agent_delete returns deleted=True for an existing agent."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        register_fn = _tool_fn(server, "agent_register")
+        delete_fn = _tool_fn(server, "agent_delete")
+        register_fn(agent_id="del-agent-1", profile="repo-brain", skills="")
+        result = json.loads(delete_fn(agent_id="del-agent-1"))
+        assert result["deleted"] is True
+        assert result["agent_id"] == "del-agent-1"
+        server._tapps_store.close()
+
+    def test_agent_delete_missing_agent_returns_false(self, store_dir):
+        """agent_delete returns deleted=False for an agent that does not exist."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        delete_fn = _tool_fn(server, "agent_delete")
+        result = json.loads(delete_fn(agent_id="no-such-agent"))
+        assert result["deleted"] is False
+        assert "not found" in result.get("message", "").lower()
+        server._tapps_store.close()
+
+    def test_agent_delete_exception_returns_error(self, store_dir, monkeypatch):
+        """agent_delete returns error JSON when AgentRegistry raises unexpectedly."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        import tapps_brain.hive as hive_mod
+
+        monkeypatch.setattr(
+            hive_mod.AgentRegistry,
+            "unregister",
+            lambda self, agent_id: (_ for _ in ()).throw(RuntimeError("delete failure")),
+        )
+        delete_fn = _tool_fn(server, "agent_delete")
+        result = json.loads(delete_fn(agent_id="fail-agent"))
+        assert result.get("error") == "registry_error"
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # hive_status namespace_entries per agent
+    # ------------------------------------------------------------------
+
+    def test_hive_status_agents_include_namespace_entries(self, store_dir):
+        """hive_status agents list includes namespace_entries field."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="ns-test-agent")
+        register_fn = _tool_fn(server, "agent_register")
+        status_fn = _tool_fn(server, "hive_status")
+        register_fn(agent_id="ns-agent", profile="repo-brain", skills="")
+        result = json.loads(status_fn())
+        assert "agents" in result
+        for agent in result["agents"]:
+            assert "namespace_entries" in agent
+            assert isinstance(agent["namespace_entries"], int)
+        server._tapps_store._hive_store.close()
+        server._tapps_store.close()
+
+    # ------------------------------------------------------------------
     # hive_status / hive_search — exception paths
     # ------------------------------------------------------------------
 

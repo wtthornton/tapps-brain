@@ -1066,7 +1066,12 @@ def create_server(  # noqa: PLR0915
 
             registry = AgentRegistry()
             agents = [
-                {"id": a.id, "profile": a.profile, "skills": a.skills}
+                {
+                    "id": a.id,
+                    "profile": a.profile,
+                    "skills": a.skills,
+                    "namespace_entries": ns_counts.get(a.profile, 0),
+                }
                 for a in registry.list_agents()
             ]
             if shared is None:
@@ -1250,6 +1255,30 @@ def create_server(  # noqa: PLR0915
             registry = AgentRegistry()
             agents = [a.model_dump(mode="json") for a in registry.list_agents()]
             return json.dumps({"agents": agents, "count": len(agents)})
+        except Exception as exc:
+            return json.dumps({"error": "registry_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def agent_delete(agent_id: str) -> str:
+        """Delete a registered agent from the Hive.
+
+        Args:
+            agent_id: Unique agent identifier to remove.
+        """
+        try:
+            from tapps_brain.hive import AgentRegistry
+
+            registry = AgentRegistry()
+            removed = registry.unregister(agent_id)
+            if removed:
+                return json.dumps({"deleted": True, "agent_id": agent_id})
+            return json.dumps(
+                {
+                    "deleted": False,
+                    "agent_id": agent_id,
+                    "message": f"Agent '{agent_id}' not found.",
+                }
+            )
         except Exception as exc:
             return json.dumps({"error": "registry_error", "message": str(exc)})
 

@@ -1315,7 +1315,13 @@ def hive_status(as_json: JsonFlag = False) -> None:
 
     registry = AgentRegistry()
     agents = [
-        {"id": a.id, "profile": a.profile, "skills": a.skills} for a in registry.list_agents()
+        {
+            "id": a.id,
+            "profile": a.profile,
+            "skills": a.skills,
+            "namespace_entries": ns_counts.get(a.profile, 0),
+        }
+        for a in registry.list_agents()
     ]
     hive.close()
 
@@ -1333,7 +1339,10 @@ def hive_status(as_json: JsonFlag = False) -> None:
         if agents:
             typer.echo(f"\nAgents ({len(agents)}):")
             for a in agents:
-                typer.echo(f"  {a['id']} (profile={a['profile']})")
+                typer.echo(
+                    f"  {a['id']} (profile={a['profile']}, "
+                    f"namespace_entries={a['namespace_entries']})"
+                )
         else:
             typer.echo("\nNo registered agents.")
 
@@ -1471,6 +1480,27 @@ def agent_list(as_json: JsonFlag = False) -> None:
         for a in agents:
             skills = ", ".join(a.skills) if a.skills else "none"
             typer.echo(f"  {a.id} (profile={a.profile}, skills={skills})")
+
+
+@agent_app.command("delete")
+def agent_delete(
+    agent_id: str,
+    as_json: JsonFlag = False,
+) -> None:
+    """Delete a registered agent from the Hive."""
+    from tapps_brain.hive import AgentRegistry
+
+    registry = AgentRegistry()
+    removed = registry.unregister(agent_id)
+
+    if as_json:
+        _output({"deleted": removed, "agent_id": agent_id}, as_json=True)
+    else:
+        if removed:
+            typer.echo(f"Deleted agent '{agent_id}'.")
+        else:
+            typer.echo(f"Agent '{agent_id}' not found.", err=True)
+            raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------

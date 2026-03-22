@@ -660,6 +660,34 @@ class TestAgentCreateCommand:
         assert data["error"] == "invalid_profile"
         assert "available_profiles" in data
 
+    def test_agent_delete_existing_agent(self):
+        """agent delete removes a registered agent successfully."""
+        # First register the agent, then delete it
+        runner.invoke(
+            app,
+            ["agent", "register", "del-cli-agent", "--profile", "repo-brain"],
+        )
+        result = runner.invoke(app, ["agent", "delete", "del-cli-agent"])
+        assert result.exit_code == 0
+        assert "Deleted" in result.stdout
+
+    def test_agent_delete_missing_agent_exits_nonzero(self):
+        """agent delete exits with code 1 for an agent that doesn't exist."""
+        result = runner.invoke(app, ["agent", "delete", "no-such-agent-xyz-99999"])
+        assert result.exit_code == 1
+
+    def test_agent_delete_json_output(self):
+        """agent delete --json returns deleted flag."""
+        runner.invoke(
+            app,
+            ["agent", "register", "del-json-cli-agent", "--profile", "repo-brain"],
+        )
+        result = runner.invoke(app, ["agent", "delete", "del-json-cli-agent", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["deleted"] is True
+        assert data["agent_id"] == "del-json-cli-agent"
+
 
 # ===================================================================
 # Memory knowledge-graph commands (015-B)
