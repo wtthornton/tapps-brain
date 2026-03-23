@@ -1734,8 +1734,12 @@ describe("plugin register() — version compatibility dispatch (028-H)", () => {
     return {
       logger: mockLogger,
       config: {} as Record<string, unknown>,
-      runtime: { workspaceDir: "/tmp/ws", sessionId: "s1" },
-      version: overrides.version,
+      runtime: {
+        workspaceDir: "/tmp/ws",
+        sessionId: "s1",
+        version: overrides.version,
+        agent: { resolveAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/ws") },
+      },
       registerContextEngine: overrides.registerContextEngine ?? vi.fn(),
       registerHook: overrides.registerHook,
       registerTool: overrides.registerTool,
@@ -1864,8 +1868,12 @@ describe("plugin register() — version compatibility dispatch (028-H)", () => {
     const api = {
       logger: mockLogger,
       config: {},
-      runtime: { workspaceDir: "/tmp/ws", sessionId: "s1" },
-      version: "2026.3.7",
+      runtime: {
+        workspaceDir: "/tmp/ws",
+        sessionId: "s1",
+        version: "2026.3.7",
+        agent: { resolveAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/ws") },
+      },
       // registerContextEngine intentionally absent
       _logger: mockLogger,
     };

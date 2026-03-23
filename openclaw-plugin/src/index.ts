@@ -2248,7 +2248,7 @@ export default definePluginEntry({
   name: "tapps-brain — Persistent Memory",
   register(api) {
     const mode = getCompatibilityMode(api.runtime.version, api.logger);
-    const resolvedDir = api.runtime.agent.resolveAgentWorkspaceDir();
+    const resolvedDir = api.runtime.agent?.resolveAgentWorkspaceDir() ?? null;
     if (!resolvedDir) {
       api.logger.warn(
         "[tapps-brain] Could not resolve workspace directory from runtime. " +
