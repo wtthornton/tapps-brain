@@ -44,6 +44,32 @@
         "type": "boolean",
         "default": false,
         "description": "Enable Hive cross-agent memory sharing"
+      },
+      "citations": {
+        "type": "string",
+        "enum": ["auto", "on", "off"],
+        "default": "auto",
+        "description": "Citation footers in assemble() output: 'auto'/'on' appends 'Source: memory/<tier>/<key>.md', 'off' disables"
+      },
+      "toolGroups": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": ["all"],
+            "description": "Register all tool groups (default)"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["core", "lifecycle", "search", "admin", "hive", "federation", "graph"]
+            },
+            "uniqueItems": true,
+            "description": "Register only the listed tool groups"
+          }
+        ],
+        "default": "all",
+        "description": "Tool groups to expose as native OpenClaw tools. Groups: core, lifecycle, search, admin, hive, federation, graph. Example: [\"core\",\"lifecycle\",\"search\"] for a coder agent."
       }
     }
   }

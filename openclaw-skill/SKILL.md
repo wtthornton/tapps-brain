@@ -132,22 +132,22 @@ tools:
     description: Atomically add and/or remove tags on a memory entry
   - name: memory_entries_by_tag
     description: Return all entries carrying a specific tag
-  # Resources (store views via MCP resources/read)
-  - name: memory_stats
-    description: Return store statistics — entry count, tier distribution, schema version, capacity
-  - name: memory_health
-    description: Return store health report — DB status, WAL mode, decay health, consolidation readiness
-  - name: memory_metrics
-    description: Return operation metrics — counters and latency histograms for all operations
-  - name: memory_entry_detail
+resources:
+  - uri: memory://stats
+    description: Entry count, tier distribution, schema version, and capacity
+  - uri: memory://health
+    description: Store health report — DB status, WAL mode, decay health, consolidation readiness
+  - uri: memory://metrics
+    description: Operation counters and latency histograms for all operations
+  - uri: "memory://entries/{key}"
     description: Full detail view of a single entry — all fields including decay state and access count
-  # Prompts (guided workflows via MCP prompts/get)
-  - name: memory_recall_prompt
-    description: Invoke the 'recall' prompt — auto-recall memories about a topic and return them formatted
-  - name: memory_store_summary_prompt
-    description: Invoke the 'store_summary' prompt — natural-language overview of store contents and stats
-  - name: memory_remember_prompt
-    description: Invoke the 'remember' prompt — guided workflow to save a fact with appropriate tier and tags
+prompts:
+  - name: recall
+    description: "Auto-recall memories about a topic: 'What do you remember about {topic}?'"
+  - name: store_summary
+    description: Natural-language overview of store contents and stats
+  - name: remember
+    description: Guided workflow to save a fact with appropriate tier and tags
 ---
 
 # tapps-brain — Persistent Memory for OpenClaw
