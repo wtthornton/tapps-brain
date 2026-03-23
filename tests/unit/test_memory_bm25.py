@@ -70,7 +70,7 @@ class TestPreprocess:
     def test_removes_stop_words(self) -> None:
         result = preprocess("the quick brown fox")
         assert "the" not in result
-        # "quick" stems to "quick" (stripping "ly" would leave "quick" but no "ly" suffix)
+        # "quick" has no strippable suffix, so stem("quick") == "quick"
         assert "quick" in result
 
     def test_stems_tokens(self) -> None:

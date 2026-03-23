@@ -47,7 +47,7 @@ class TestDecayConfig:
         cfg = DecayConfig()
         assert cfg.architectural_half_life_days == 180
         assert cfg.pattern_half_life_days == 60
-        assert cfg.procedural_half_life_days == 30  # Epic 65.11
+        assert cfg.procedural_half_life_days == 30  # story-019.1: procedural tier added
         assert cfg.context_half_life_days == 14
 
     def test_default_ceilings(self) -> None:

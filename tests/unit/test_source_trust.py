@@ -193,13 +193,34 @@ class TestSourceTrustRanking:
         # Manually set source to a string not in the trust dict
         entry = entry.model_copy(update={"source": "custom"})
 
-        retriever = MemoryRetriever()
+        # Use all-1.0 trust as reference — unknown source should behave identically
+        config_all_one = ScoringConfig(
+            source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0}
+        )
+        retriever_default = MemoryRetriever()
+        retriever_all_one = MemoryRetriever(scoring_config=config_all_one)
         store = _make_store([entry])
 
-        results = retriever.search("test data", store)
-        assert len(results) == 1
-        # Score should be positive (not zeroed out)
-        assert results[0].score > 0
+        results_default = retriever_default.search("test data", store)
+        results_all_one = retriever_all_one.search("test data", store)
+        assert len(results_default) == 1
+        # Unknown source falls back to trust=1.0 — score must match the all-1.0 retriever
+        assert results_default[0].score == pytest.approx(results_all_one[0].score, rel=1e-6)
+
+    def test_empty_source_trust_dict_uses_no_penalty(self) -> None:
+        """Empty source_trust dict causes all sources to get trust=1.0 (get default)."""
+        config = ScoringConfig(source_trust={})
+        entries = [
+            _make_entry("agent-entry", "test content", source=MemorySource.agent),
+            _make_entry("inferred-entry", "test content", source=MemorySource.inferred),
+        ]
+        retriever = MemoryRetriever(scoring_config=config)
+        store = _make_store(entries)
+
+        results = retriever.search("test content", store)
+        assert len(results) == 2
+        # With empty trust dict, all sources default to 1.0 → scores should be equal
+        assert results[0].score == pytest.approx(results[1].score, rel=1e-6)
 
     def test_trust_1_preserves_original_score(self) -> None:
         """Trust=1.0 should not modify the composite score (identity multiplier)."""
