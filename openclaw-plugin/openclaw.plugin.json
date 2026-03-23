@@ -5,6 +5,9 @@
   "version": "1.2.0",
   "minimumVersion": "2026.3.1",
   "kind": "context-engine",
+  "slots": {
+    "memory": "tapps-brain-memory"
+  },
   "configSchema": {
     "type": "object",
     "properties": {

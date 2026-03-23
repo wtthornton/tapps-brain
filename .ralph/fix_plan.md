@@ -425,7 +425,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Plugin Registration (sequential)
 
 #### 026-A: Register as memory slot plugin in OpenClaw
-- [ ] Update `openclaw-plugin/openclaw.plugin.json` to declare both `kind: "context-engine"` and `slots.memory`. In `register()`, call `api.registerTool("memory_search", ...)` backed by tapps-brain's MCP `memory_search`. Call `api.registerTool("memory_get", ...)` backed by tapps-brain's MCP `memory_get`. When `plugins.slots.memory = "tapps-brain-memory"`, OpenClaw's built-in tools are replaced. Fall back gracefully if memory slot is not claimed. Commit: `feat(story-026.1): register tapps-brain as OpenClaw memory slot plugin`
+- [x] Update `openclaw-plugin/openclaw.plugin.json` to declare both `kind: "context-engine"` and `slots.memory`. In `register()`, call `api.registerTool("memory_search", ...)` backed by tapps-brain's MCP `memory_search`. Call `api.registerTool("memory_get", ...)` backed by tapps-brain's MCP `memory_get`. When `plugins.slots.memory = "tapps-brain-memory"`, OpenClaw's built-in tools are replaced. Fall back gracefully if memory slot is not claimed. Commit: `feat(story-026.1): register tapps-brain as OpenClaw memory slot plugin`
 
 ### Phase 2: Tool Replacement (sequential — depends on 026-A)
 

@@ -675,12 +675,166 @@ export class TappsBrainEngine {
   }
 
   /**
+   * callMcpTool — proxy an arbitrary MCP tool call through the ready-gate.
+   *
+   * Awaits `this.ready` so callers never reach the MCP process before
+   * bootstrap completes. Returns `null` if bootstrap failed.
+   *
+   * Exported for use by `registerMemorySlotTools` and future tool handlers
+   * that need direct MCP access without going through higher-level engine
+   * methods.
+   */
+  async callMcpTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    try {
+      await this.ready;
+    } catch {
+      return null;
+    }
+    return this.mcpClient.callTool(name, args);
+  }
+
+  /**
    * dispose — called on gateway shutdown.
    * Stops the MCP child process.
    */
   dispose(): void {
     this.mcpClient.stop();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Memory slot tools — memory_search and memory_get backed by tapps-brain MCP
+//
+// When `plugins.slots.memory = "tapps-brain-memory"` is configured in
+// OpenClaw, these tools replace the built-in memory-core tools so that all
+// memory operations route through tapps-brain's SQLite store.
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Falls back gracefully if the API is absent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register `memory_search` and `memory_get` tools backed by tapps-brain MCP.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerMemorySlotTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  // ------------------------------------------------------------------
+  // memory_search — full-text search over tapps-brain persistent store
+  // ------------------------------------------------------------------
+  api.registerTool("memory_search", {
+    description:
+      "Search tapps-brain persistent memory using full-text search (BM25 ranking). " +
+      "Returns matching entries in OpenClaw snippet format. " +
+      "Replaces memory-core when plugins.slots.memory = 'tapps-brain-memory'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query text" },
+        tier: {
+          type: "string",
+          enum: ["architectural", "pattern", "procedural", "context"],
+          description: "Optional tier filter",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results to return (default: 10)",
+        },
+      },
+      required: ["query"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const query = args.query as string;
+      const tier = args.tier as string | undefined;
+      const limit = (args.limit as number | undefined) ?? 10;
+
+      const raw = await engine.callMcpTool("memory_search", {
+        query,
+        ...(tier !== undefined ? { tier } : {}),
+      });
+
+      if (raw === null) {
+        return { snippets: [] };
+      }
+
+      try {
+        const entries = JSON.parse(
+          typeof raw === "string" ? raw : JSON.stringify(raw),
+        ) as Array<{
+          key: string;
+          value: string;
+          tier?: string;
+          confidence?: number;
+        }>;
+
+        const snippets = entries.slice(0, limit).map((e) => ({
+          text: e.value,
+          path: `memory/${e.tier ?? "context"}/${e.key}.md`,
+          score: e.confidence ?? 0,
+        }));
+
+        return { snippets };
+      } catch {
+        return { snippets: [] };
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_get — retrieve a single entry by key or path
+  // ------------------------------------------------------------------
+  api.registerTool("memory_get", {
+    description:
+      "Retrieve a single tapps-brain memory entry by key or path. " +
+      "Returns the entry value as Markdown text. " +
+      "Accepts bare keys ('my-key') or path format ('memory/tier/my-key.md'). " +
+      "Returns empty string for missing entries (graceful degradation).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description:
+            "Memory key or path (e.g. 'my-key' or 'memory/tier/my-key.md')",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      let key = (args.key as string) ?? "";
+
+      // Extract bare key from path format: "memory/tier/my-key.md" → "my-key"
+      if (key.includes("/")) {
+        key = key.replace(/\.md$/, "").split("/").pop() ?? key;
+      }
+
+      const raw = await engine.callMcpTool("memory_get", { key });
+
+      if (raw === null) {
+        return "";
+      }
+
+      try {
+        const entry = JSON.parse(
+          typeof raw === "string" ? raw : JSON.stringify(raw),
+        ) as { value?: string; error?: string };
+
+        if (entry.error) {
+          return "";
+        }
+        return entry.value ?? "";
+      } catch {
+        return "";
+      }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +846,23 @@ export default definePluginEntry({
   name: "tapps-brain — Persistent Memory",
   register(api) {
     const mode = getCompatibilityMode(api.version, api.logger);
+    const workspaceDir = api.runtime.workspaceDir;
+
+    // Create a shared engine instance used across all registration paths.
+    // Bootstrap runs asynchronously; hooks and tool handlers await readiness
+    // via the internal `ready` promise — they never block or fail hard.
+    const engine = new TappsBrainEngine(api.config, workspaceDir, api.logger);
+    engine.bootstrap().catch((err: unknown) => {
+      api.logger.warn("[tapps-brain] bootstrap failed:", err);
+    });
+
+    // Register memory slot tools (memory_search / memory_get) unconditionally.
+    // When plugins.slots.memory = "tapps-brain-memory" is set in the OpenClaw
+    // config, these tools replace the built-in memory-core tools. Falls back
+    // gracefully if registerTool is unavailable (older OpenClaw builds).
+    if (api.registerTool) {
+      registerMemorySlotTools(api, engine);
+    }
 
     if (mode === "context-engine") {
       // v2026.3.7+: full ContextEngine lifecycle (ingest/assemble/compact)
@@ -701,19 +872,12 @@ export default definePluginEntry({
         );
         return;
       }
+      // Return the shared engine from the factory. The engine is already
+      // bootstrapped above; the factory config parameter is intentionally
+      // unused since we consumed api.config at construction time.
       api.registerContextEngine(
         "tapps-brain-memory",
-        (config: PluginConfig) => {
-          const workspaceDir = api.runtime.workspaceDir;
-          const engine = new TappsBrainEngine(config, workspaceDir, api.logger);
-
-          // Bootstrap asynchronously — don't block registration
-          engine.bootstrap().catch((err: unknown) => {
-            api.logger.warn("[tapps-brain] bootstrap failed:", err);
-          });
-
-          return engine;
-        },
+        (_config: PluginConfig) => engine,
       );
     } else if (mode === "hook-only") {
       // v2026.3.1-2026.3.6: inject memories via before_agent_start hook
@@ -723,17 +887,6 @@ export default definePluginEntry({
         );
         return;
       }
-      const workspaceDir = api.runtime.workspaceDir;
-      const engine = new TappsBrainEngine(
-        api.config,
-        workspaceDir,
-        api.logger,
-      );
-
-      // Bootstrap once at plugin load — hook calls will await this.ready
-      engine.bootstrap().catch((err: unknown) => {
-        api.logger.warn("[tapps-brain] bootstrap failed:", err);
-      });
 
       api.registerHook(
         "before_agent_start",
@@ -758,12 +911,10 @@ export default definePluginEntry({
           }
         },
       );
-    } else {
-      // <v2026.3.1: tools-only — warning already logged in getCompatibilityMode
-      // No memory injection is possible without at least registerHook.
-      // If registerTool is available, we could expose MCP tools in future work.
-      // For now, the warning is the only action (memory injection unavailable).
     }
+    // <v2026.3.1: tools-only — warning already logged in getCompatibilityMode.
+    // Memory injection is unavailable without registerHook; memory slot tools
+    // are still registered above if registerTool is available.
   },
 });
 
