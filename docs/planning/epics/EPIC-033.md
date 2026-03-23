@@ -1,7 +1,8 @@
 ---
 id: EPIC-033
 title: "OpenClaw plugin SDK alignment — fix API type drift and runtime bugs"
-status: planned
+status: done
+completed: 2026-03-23
 priority: critical
 created: 2026-03-23
 tags: [openclaw-plugin, bug, sdk, type-safety]

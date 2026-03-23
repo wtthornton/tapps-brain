@@ -47,7 +47,11 @@ _DIAG_GRADE_D_MIN = 0.40
 
 app = typer.Typer(
     name="tapps-brain",
-    help="Persistent cross-session memory system for AI coding assistants.",
+    help=(
+        "Persistent cross-session memory for AI assistants — SQLite, BM25, decay, "
+        "Hive, federation. Sub-apps: store, memory, feedback, diagnostics, flywheel, "
+        "hive, openclaw, …"
+    ),
     no_args_is_help=True,
 )
 store_app = typer.Typer(help="Inspect store contents and statistics.", no_args_is_help=True)
@@ -65,6 +69,10 @@ diagnostics_app = typer.Typer(
     help="Quality diagnostics scorecard (EPIC-030).",
     no_args_is_help=True,
 )
+flywheel_app = typer.Typer(
+    help="Continuous improvement flywheel (EPIC-031).",
+    no_args_is_help=True,
+)
 
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
@@ -76,6 +84,7 @@ app.add_typer(agent_app, name="agent")
 app.add_typer(openclaw_app, name="openclaw")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(diagnostics_app, name="diagnostics")
+app.add_typer(flywheel_app, name="flywheel")
 
 # ---------------------------------------------------------------------------
 # Global options
@@ -1911,6 +1920,131 @@ def diagnostics_history_cmd(
         ]
         _print_table(slim, columns=["recorded_at", "composite", "circuit", "id"])
         typer.echo(f"\n{len(hist)} row(s)")
+    finally:
+        store.close()
+
+
+@flywheel_app.command("process")
+def flywheel_process_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    since: Annotated[str, typer.Option(help="ISO-8601 lower bound for applying events.")] = "",
+) -> None:
+    """Apply feedback events to memory confidence (Bayesian update)."""
+    store = _get_store(project_dir)
+    try:
+        res = store.process_feedback(since=since.strip() or None)
+        _output(res, as_json=as_json)
+    finally:
+        store.close()
+
+
+@flywheel_app.command("gaps")
+def flywheel_gaps_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    limit: Annotated[int, typer.Option(min=1, max=100)] = 10,
+    semantic: Annotated[bool, typer.Option(help="Use optional embedding+HDBSCAN clustering.")] = False,
+) -> None:
+    """List prioritized knowledge gaps."""
+    store = _get_store(project_dir)
+    try:
+        gaps = store.knowledge_gaps(limit=limit, semantic=semantic)
+        rows = [g.model_dump(mode="json") for g in gaps]
+        if as_json:
+            _output({"gaps": rows, "count": len(rows)}, as_json=True)
+            return
+        if not rows:
+            typer.echo("No clustered gaps.")
+            return
+        slim = [
+            {
+                "pattern": r.get("query_pattern", "")[:60],
+                "priority": f"{float(r.get('priority_score', 0.0)):.4f}",
+                "count": str(r.get("count", "")),
+            }
+            for r in rows
+        ]
+        _print_table(slim, columns=["pattern", "priority", "count"])
+    finally:
+        store.close()
+
+
+@flywheel_app.command("report")
+def flywheel_report_cmd(
+    project_dir: ProjectDir = None,
+    period: Annotated[int, typer.Option("--period", help="Days of history window.")] = 7,
+    format: Annotated[str, typer.Option("--format", help="json or markdown.")] = "markdown",
+) -> None:
+    """Generate a quality self-report."""
+    store = _get_store(project_dir)
+    try:
+        rep = store.generate_report(period_days=period)
+        fmt = format.strip().lower()
+        if fmt == "json":
+            _output(rep.model_dump(mode="json"), as_json=True)
+        else:
+            typer.echo(rep.rendered_text)
+    finally:
+        store.close()
+
+
+@flywheel_app.command("evaluate")
+def flywheel_evaluate_cmd(
+    suite_path: Annotated[str, typer.Argument(help="BEIR directory or YAML suite file.")],
+    project_dir: ProjectDir = None,
+    k: Annotated[int, typer.Option(min=1, max=50)] = 5,
+    format: Annotated[str, typer.Option("--format", help="json or table.")] = "json",
+) -> None:
+    """Run offline retrieval evaluation against the store."""
+    from tapps_brain.evaluation import EvalSuite, evaluate
+
+    store = _get_store(project_dir)
+    try:
+        p = Path(suite_path).expanduser().resolve()
+        if not p.exists():
+            typer.secho(f"Not found: {p}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        if p.is_dir():
+            suite = EvalSuite.load_beir_dir(p)
+        elif p.suffix.lower() in (".yaml", ".yml"):
+            suite = EvalSuite.load_yaml(p)
+        else:
+            typer.secho("Expected a BEIR directory or .yaml suite.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        report = evaluate(store, suite, k=k)
+        fmt = format.strip().lower()
+        if fmt == "table":
+            typer.echo(f"Suite: {report.suite_name}  k={report.k}  passed={report.passed}")
+            typer.echo(f"MRR={report.mrr:.4f}  NDCG@k={report.mean_ndcg_at_k:.4f}")
+            for row in report.per_query:
+                typer.echo(
+                    f"  {row.query_id}: P@k={row.precision_at_k:.4f} "
+                    f"R@k={row.recall_at_k:.4f} RR={row.reciprocal_rank:.4f} "
+                    f"nDCG={row.ndcg_at_k:.4f}"
+                )
+        else:
+            _output(report.model_dump(mode="json"), as_json=True)
+    finally:
+        store.close()
+
+
+@flywheel_app.command("hive-feedback")
+def flywheel_hive_feedback_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    threshold: Annotated[int, typer.Option(min=1, help="Min projects with negative signal.")] = 3,
+) -> None:
+    """Aggregate Hive feedback and apply cross-project confidence penalties."""
+    from tapps_brain.flywheel import aggregate_hive_feedback, process_hive_feedback
+
+    store = _get_store(project_dir)
+    try:
+        hs = getattr(store, "_hive_store", None)
+        agg = aggregate_hive_feedback(hs)
+        proc = process_hive_feedback(hs, threshold=threshold)
+        out = {"aggregate": None if agg is None else agg.model_dump(mode="json"), "process": proc}
+        _output(out, as_json=as_json)
     finally:
         store.close()
 

@@ -1,6 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-22 (America/Chicago) — BUG-001 + BUG-002 queued, EPIC-017–025 planned
+**Last updated:** 2026-03-23 (America/Chicago) — release **v1.3.0**; feedback, diagnostics, flywheel (v9–v11 schema); EPIC-033 done
+
+**Package version (PyPI / `pyproject.toml`):** **1.3.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -8,17 +10,21 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~1683 passing | Full suite `pytest tests/` |
-| Coverage | ≥ 95% (96.48%) | `tapps_brain` package |
+| Tests | ~2300+ collected (`pytest tests/`) | Benchmarks excluded in CI-style runs via `-m "not benchmark"` |
+| Coverage | ≥ 95% | `tapps_brain` package (`--cov-fail-under=95`) |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
 
 ## Storage / schema
 
-- **SQLite schema version:** **v7** (forward migrations from v1).
+- **SQLite schema version:** **v11** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
 - **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
 - **v6:** version bump for observability alignment (no new columns).
 - **v7:** `agent_scope` column for Hive propagation (EPIC-011).
+- **v8:** `integrity_hash` on `memories` (tamper detection).
+- **v9:** `feedback_events` table (EPIC-029).
+- **v10:** `diagnostics_history` table (EPIC-030).
+- **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
 - **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
 ## Dependencies (high level)
@@ -72,15 +78,19 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-023 | Code Review — Config, Profiles & Observability | planned | — |
 | EPIC-024 | Code Review — Unit Tests Part 1 | planned | — |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | planned | — |
+| EPIC-029 | Feedback collection | done | 2026-03-23 |
+| EPIC-030 | Diagnostics & self-monitoring | done | 2026-03-23 |
+| EPIC-031 | Continuous improvement flywheel | done | 2026-03-23 |
+| EPIC-032 | OTel GenAI semantic conventions | planned | — |
+| EPIC-033 | OpenClaw plugin SDK alignment | done | 2026-03-23 |
 
 ## Current focus
 
-**All 16 feature epics complete.** v1.2.0 released with 1683 passing tests, 96.48% coverage, 41 MCP tools, 36 CLI commands.
+**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`).
 
-**Active work:**
-- **BUG-001** (7 tasks): Pre-review critical fixes — tier priority, type safety, HiveStore leak, exception narrowing, version consistency, timezone standardization
-- **BUG-002** (4 tasks): Source trust regression — uncommitted M2 feature breaks recall for agent-sourced memories via 0.7x multiplier pushing scores below `_MIN_SCORE=0.3` cutoff. Must fix before committing the feature.
-- **EPIC-017–025** (planned): Comprehensive code review cycle — storage, retrieval, lifecycle, safety, federation, interfaces, config, unit tests, integration tests
+**Next (see fix_plan):**
+- **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export).
+- **EPIC-017–025** — code review cycle (still tracked as planned epics).
 
 ## WSL / Windows
 

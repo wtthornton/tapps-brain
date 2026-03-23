@@ -7,7 +7,8 @@ There are **two complementary deployment paths** for getting tapps-brain into Op
 1. **MCP Server integration** — configure OpenClaw to use our existing `tapps-brain-mcp` stdio server (works today, zero code changes)
 2. **ClawHub Skill** — package as a first-class OpenClaw skill and publish to the ClawHub registry for one-command install
 
-Both paths can coexist. The MCP route gives immediate access to all 28 tools. The ClawHub skill provides discoverability, auto-configuration, and a polished install experience for the OpenClaw community.
+Both paths can coexist. The MCP route gives immediate access to the full tool surface
+(**54** tools and **7** resources as of v1.3.0). The ClawHub skill provides discoverability, auto-configuration, and a polished install experience for the OpenClaw community.
 
 ---
 

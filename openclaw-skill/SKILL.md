@@ -1,6 +1,6 @@
 ---
 name: tapps-brain-memory
-version: "1.2.0"
+version: "1.3.0"
 displayName: "tapps-brain — Persistent Memory"
 description: >
   Persistent cross-session memory for OpenClaw agents. BM25 ranking,
@@ -132,6 +132,35 @@ tools:
     description: Atomically add and/or remove tags on a memory entry
   - name: memory_entries_by_tag
     description: Return all entries carrying a specific tag
+  # Feedback (EPIC-029)
+  - name: feedback_rate
+    description: Rate a recalled memory (helpful / partial / irrelevant / outdated)
+  - name: feedback_gap
+    description: Report a knowledge gap query
+  - name: feedback_issue
+    description: Flag a quality issue on a memory entry
+  - name: feedback_record
+    description: Record a generic feedback event
+  - name: feedback_query
+    description: Query feedback events with filters
+  # Diagnostics & flywheel (EPIC-030 / EPIC-031)
+  - name: diagnostics_report
+    description: Quality diagnostics scorecard and circuit breaker state
+  - name: diagnostics_history
+    description: Recent persisted diagnostics snapshots
+  - name: flywheel_process
+    description: Apply feedback events to confidence scores
+  - name: flywheel_gaps
+    description: Cluster and prioritize knowledge gaps
+  - name: flywheel_report
+    description: Markdown quality report for a time period
+  - name: flywheel_evaluate
+    description: Offline BEIR-style retrieval evaluation
+  - name: flywheel_hive_feedback
+    description: Aggregate Hive feedback and apply confidence penalties
+  # OpenClaw migration
+  - name: openclaw_migrate
+    description: Migrate OpenClaw workspace memories into tapps-brain
 resources:
   - uri: memory://stats
     description: Entry count, tier distribution, schema version, and capacity
@@ -139,6 +168,12 @@ resources:
     description: Store health report — DB status, WAL mode, decay health, consolidation readiness
   - uri: memory://metrics
     description: Operation counters and latency histograms for all operations
+  - uri: memory://feedback
+    description: Recent feedback events summary
+  - uri: memory://diagnostics
+    description: Latest diagnostics report (composite score, dimensions, circuit state)
+  - uri: memory://report
+    description: Latest rendered flywheel quality report (markdown)
   - uri: "memory://entries/{key}"
     description: Full detail view of a single entry — all fields including decay state and access count
 prompts:
@@ -188,7 +223,8 @@ automatically via `openclaw.plugin.json`.
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **41 MCP tools:** Full programmatic control when you need it
+- **54 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+  diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration
 

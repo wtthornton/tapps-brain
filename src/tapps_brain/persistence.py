@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -39,6 +39,7 @@ _SCHEMA_V7 = 7
 _SCHEMA_V8 = 8
 _SCHEMA_V9 = 9
 _SCHEMA_V10 = 10
+_SCHEMA_V11 = 11
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -153,6 +154,8 @@ class MemoryPersistence:
                 self._migrate_v8_to_v9(cur)
             if current_version < _SCHEMA_V10:
                 self._migrate_v9_to_v10(cur)
+            if current_version < _SCHEMA_V11:
+                self._migrate_v10_to_v11(cur)
 
             self._conn.commit()
 
@@ -459,6 +462,25 @@ class MemoryPersistence:
             (10, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v10_to_v11(self, cur: sqlite3.Cursor) -> None:
+        """EPIC-031 flywheel: feedback counts on memories + flywheel_meta KV."""
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS flywheel_meta (
+                key   TEXT NOT NULL PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        cur.execute(
+            "ALTER TABLE memories ADD COLUMN positive_feedback_count REAL NOT NULL DEFAULT 0"
+        )
+        cur.execute(
+            "ALTER TABLE memories ADD COLUMN negative_feedback_count REAL NOT NULL DEFAULT 0"
+        )
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (11, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -578,6 +600,11 @@ class MemoryPersistence:
             columns.append("integrity_hash")
             values = (*values, integrity_hash)
 
+        # Flywheel feedback tallies (v11+)
+        if schema_ver >= _SCHEMA_V11:
+            columns.extend(["positive_feedback_count", "negative_feedback_count"])
+            values = (*values, entry.positive_feedback_count, entry.negative_feedback_count)
+
         placeholders = ", ".join("?" * len(columns))
 
         cols = ", ".join(columns)
@@ -677,6 +704,31 @@ class MemoryPersistence:
     def get_schema_version(self) -> int:
         """Return the current schema version (cached after startup)."""
         return self._schema_version
+
+    def flywheel_meta_get(self, key: str) -> str | None:
+        """Read a flywheel_meta value (EPIC-031); None if missing or pre-v11."""
+        if self._schema_version < _SCHEMA_V11:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM flywheel_meta WHERE key = ?",
+                (key,),
+            ).fetchone()
+        return str(row[0]) if row and row[0] is not None else None
+
+    def flywheel_meta_set(self, key: str, value: str) -> None:
+        """Upsert a flywheel_meta key (EPIC-031)."""
+        if self._schema_version < _SCHEMA_V11:
+            return
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO flywheel_meta (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+            self._conn.commit()
 
     def close(self) -> None:
         """Close the database connection."""
@@ -943,6 +995,12 @@ class MemoryPersistence:
         with contextlib.suppress(KeyError, IndexError):
             integrity_hash = row["integrity_hash"]
 
+        pos_fb = 0.0
+        neg_fb = 0.0
+        with contextlib.suppress(KeyError, IndexError):
+            pos_fb = float(row["positive_feedback_count"] or 0)
+            neg_fb = float(row["negative_feedback_count"] or 0)
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -968,6 +1026,8 @@ class MemoryPersistence:
             superseded_by=superseded_by,
             agent_scope=agent_scope,
             integrity_hash=integrity_hash,
+            positive_feedback_count=pos_fb,
+            negative_feedback_count=neg_fb,
         )
 
     @staticmethod

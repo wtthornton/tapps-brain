@@ -121,3 +121,18 @@ class CaptureHookLike(Protocol):
     """
 
     def capture(self, response: str, **kwargs: object) -> list[str]: ...
+
+
+@runtime_checkable
+class ReportSection(Protocol):
+    """Pluggable quality report section (EPIC-031)."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def priority(self) -> int: ...
+
+    def should_include(self, data: Any) -> bool: ...
+
+    def render(self, data: Any) -> str: ...

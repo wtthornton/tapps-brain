@@ -9,6 +9,7 @@ Entry point: ``tapps-brain-mcp`` (see pyproject.toml).
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import logging
 import sys
@@ -726,6 +727,68 @@ def create_server(  # noqa: PLR0915
         rows = store.diagnostics_history(limit=limit)
         return json.dumps({"records": rows, "count": len(rows)})
 
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def flywheel_process(since: str = "") -> str:
+        """Run feedback → confidence pipeline (EPIC-031)."""
+        from tapps_brain.flywheel import FeedbackProcessor, FlywheelConfig
+
+        res = FeedbackProcessor(FlywheelConfig()).process_feedback(
+            store,
+            since=since.strip() or None,
+        )
+        return json.dumps(res)
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def flywheel_gaps(limit: int = 10, semantic: bool = False) -> str:
+        """Return top knowledge gaps as JSON."""
+        gaps = store.knowledge_gaps(limit=limit, semantic=semantic)
+        return json.dumps(
+            {"gaps": [g.model_dump(mode="json") for g in gaps], "count": len(gaps)}
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def flywheel_report(period_days: int = 7) -> str:
+        """Generate quality report (markdown + structured summary)."""
+        rep = store.generate_report(period_days=period_days)
+        return json.dumps(
+            {
+                "rendered_text": rep.rendered_text,
+                "structured_data": rep.structured_data,
+            }
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def flywheel_evaluate(suite_path: str, k: int = 5) -> str:
+        """Run BEIR-format directory or YAML suite evaluation."""
+        from tapps_brain.evaluation import EvalSuite, evaluate
+
+        p = Path(suite_path).expanduser().resolve()
+        if not p.exists():
+            return json.dumps({"error": "not_found", "path": str(p)})
+        if p.is_dir():
+            suite = EvalSuite.load_beir_dir(p)
+        elif p.suffix.lower() in (".yaml", ".yml"):
+            suite = EvalSuite.load_yaml(p)
+        else:
+            return json.dumps({"error": "invalid_suite", "message": "Expected directory or YAML"})
+        report = evaluate(store, suite, k=k)
+        return json.dumps(report.model_dump(mode="json"))
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def flywheel_hive_feedback(threshold: int = 3) -> str:
+        """Aggregate / apply Hive cross-project feedback penalties."""
+        from tapps_brain.flywheel import aggregate_hive_feedback, process_hive_feedback
+
+        hs = getattr(store, "_hive_store", None)
+        agg = aggregate_hive_feedback(hs)
+        proc = process_hive_feedback(hs, threshold=threshold)
+        return json.dumps(
+            {
+                "aggregate": None if agg is None else agg.model_dump(mode="json"),
+                "process": proc,
+            }
+        )
+
     # ------------------------------------------------------------------
     # Resources — read-only store views
     # ------------------------------------------------------------------
@@ -781,6 +844,17 @@ def create_server(  # noqa: PLR0915
         """Latest diagnostics report (does not append history by default)."""
         rep = store.diagnostics(record_history=False)
         return json.dumps(rep.model_dump(mode="json"))
+
+    @mcp.resource("memory://report")  # type: ignore[untyped-decorator]
+    def report_resource() -> str:
+        """Latest flywheel quality report summary (from last ``generate_report``)."""
+        latest = store.latest_quality_report()
+        if latest is None:
+            rep = store.generate_report(period_days=7)
+            payload = rep.structured_data
+        else:
+            payload = latest.get("structured_data", latest)
+        return json.dumps(payload)
 
     # ------------------------------------------------------------------
     # Prompts — user-invoked workflow templates (STORY-008.6)
@@ -1837,9 +1911,21 @@ def create_server(  # noqa: PLR0915
 
 def main() -> None:
     """Entry point for ``tapps-brain-mcp`` command."""
+    try:
+        pkg_ver = importlib.metadata.version("tapps-brain")
+    except importlib.metadata.PackageNotFoundError:  # pragma: no cover
+        pkg_ver = "0.0.0-dev"
     parser = argparse.ArgumentParser(
         prog="tapps-brain-mcp",
-        description="Run the tapps-brain MCP server (stdio transport).",
+        description=(
+            "Run the tapps-brain MCP server (stdio transport). "
+            "Version matches the installed tapps-brain package."
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {pkg_ver}",
     )
     parser.add_argument(
         "--project-dir",

@@ -5,10 +5,10 @@
 **Universal persistent memory for AI agents**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Version 1.2.0](https://img.shields.io/badge/version-1.2.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
+[![Version 1.3.0](https://img.shields.io/badge/version-1.3.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![Tests 1683](https://img.shields.io/badge/tests-1683_passing-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
-[![Coverage 96%](https://img.shields.io/badge/coverage-96.48%25-brightgreen?style=for-the-badge)](pyproject.toml)
+[![Tests 2300+](https://img.shields.io/badge/tests-2300%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
+[![Coverage 95%+](https://img.shields.io/badge/coverage-95%25%2B-brightgreen?style=for-the-badge)](pyproject.toml)
 [![mypy strict](https://img.shields.io/badge/mypy-strict-blue?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 
 A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 ranking, dual decay models, automatic consolidation,<br>cross-project federation, and pluggable vector search.
@@ -31,7 +31,7 @@ AI agents forget everything between sessions. **tapps-brain** gives them persist
 Every operation — search, decay, consolidation, extraction, scoring — is deterministic and reproducible. No API keys, no latency, no cost.
 
 ### Three equal interfaces
-Python library, CLI (36 commands), and MCP server (41 tools) — same engine, same behavior, pick what fits your workflow.
+Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**54** tools, **7** resources) — same engine, same behavior, pick what fits your workflow.
 
 </td>
 <td width="50%">
@@ -133,7 +133,7 @@ store = MemoryStore(Path("."))
 
 Direct access to all 38 modules. Thread-safe, synchronous, zero setup.
 
-### CLI — 36 commands
+### CLI — 41 commands
 
 ```bash
 tapps-brain recall "authentication patterns"
@@ -145,18 +145,19 @@ tapps-brain maintenance health
 tapps-brain hive status
 tapps-brain agent create my-agent --profile repo-brain
 tapps-brain federation status
+tapps-brain flywheel report --period-days 7
 tapps-brain export --format json --output backup.json
 ```
 
-36 commands across 7 groups: `store`, `memory`, `federation`, `maintenance`, `profile`, `hive`/`agent`, and top-level utilities. All support `--json` output.
+Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, …). Many commands support `--json` output.
 
-### MCP server — 41 tools
+### MCP server — 54 tools
 
 ```bash
 tapps-brain-mcp --project-dir /path/to/project
 ```
 
-41 tools, 4 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
+54 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
 
 <details>
 <summary><strong>MCP client configuration</strong></summary>
@@ -201,7 +202,7 @@ tapps-brain-mcp --project-dir /path/to/project
 </details>
 
 <details>
-<summary><strong>Full MCP tool reference (41 tools)</strong></summary>
+<summary><strong>Full MCP tool reference (54 tools)</strong></summary>
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -230,9 +231,21 @@ tapps-brain-mcp --project-dir /path/to/project
 | **Knowledge Graph** | `memory_relations` | Get relations for an entry |
 | | `memory_find_related` | BFS traversal from an entity |
 | | `memory_query_relations` | Query relation triples |
-| **Tags** | `memory_tags` | List all tags in the store |
-| | `memory_tag_update` | Add or remove tags on entries |
-| | `memory_by_tag` | Filter entries by tag |
+| **Tags** | `memory_list_tags` | List tags with usage counts |
+| | `memory_update_tags` | Add/remove tags on an entry |
+| | `memory_entries_by_tag` | List entries that have a tag |
+| **Feedback** | `feedback_rate` | Explicit recall quality rating |
+| | `feedback_gap` | Report a knowledge gap |
+| | `feedback_issue` | Flag a bad entry |
+| | `feedback_record` | Custom feedback event type |
+| | `feedback_query` | Query stored feedback |
+| **Diagnostics** | `diagnostics_report` | Quality scorecard + circuit breaker |
+| | `diagnostics_history` | Historical diagnostics snapshots |
+| **Flywheel** | `flywheel_process` | Bayesian feedback → confidence |
+| | `flywheel_gaps` | Prioritized knowledge gaps |
+| | `flywheel_report` | Markdown quality report |
+| | `flywheel_evaluate` | BEIR-style offline eval |
+| | `flywheel_hive_feedback` | Hive-wide feedback aggregation |
 | **Audit** | `memory_audit` | Query the audit trail |
 | **Federation** | `federation_status` | Hub status and subscriptions |
 | | `federation_subscribe` | Subscribe to another project |
@@ -240,14 +253,15 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `federation_publish` | Publish shared memories to hub |
 | **Maintenance** | `maintenance_consolidate` | Merge similar memories |
 | | `maintenance_gc` | Archive stale memories |
-| | `maintenance_gc_config` | View/set GC thresholds |
-| | `maintenance_consolidation_config` | View/set consolidation config |
+| | `memory_gc_config` | View GC thresholds |
+| | `memory_gc_config_set` | Set GC thresholds |
+| | `memory_consolidation_config` | View consolidation config |
+| | `memory_consolidation_config_set` | Set consolidation config |
 | | `memory_export` | Export entries as JSON |
 | | `memory_import` | Import entries from JSON |
-| | `maintenance_health` | Store health report |
-| | `maintenance_migrate` | Run schema migrations |
+| **OpenClaw** | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
-**Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics`
+**Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics` · `memory://feedback` · `memory://diagnostics` · `memory://report`
 
 **Prompts:** `recall(topic)` · `store_summary()` · `remember(fact)`
 
@@ -467,7 +481,7 @@ All writes pass through prompt injection detection and content sanitization. The
 
 | Layer | Modules | Purpose |
 |-------|---------|---------|
-| **Storage** | `store`, `persistence` | In-memory dict + SQLite write-through (WAL, FTS5, schema v1–v7) |
+| **Storage** | `store`, `persistence` | In-memory dict + SQLite write-through (WAL, FTS5, schema v1–v11) |
 | **Data** | `models`, `profile` | `MemoryEntry` (Pydantic v2), `MemoryProfile` with configurable layers |
 | **Retrieval** | `retrieval`, `bm25`, `fusion` | Composite-scored ranked search, optional hybrid BM25+vector |
 | **Lifecycle** | `decay`, `consolidation`, `auto_consolidation`, `gc`, `promotion` | Dual decay models, Jaccard+TF-IDF merging, archival GC, tier promotion |
@@ -478,9 +492,9 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Federation** | `federation` | Cross-project pub/sub via central SQLite hub |
 | **Relations** | `relations`, `contradictions` | Entity/relation extraction, contradiction detection |
 | **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
-| **Observability** | `metrics`, `audit`, `otel_exporter` | Counters, latency histograms, JSONL audit log, OpenTelemetry |
+| **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
-| **Interfaces** | `cli`, `mcp_server` | Typer CLI (36 commands), FastMCP server (41 tools) |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (54 tools, 7 resources) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy optional dependency detection |
 
 </details>
@@ -503,7 +517,7 @@ All writes pass through prompt injection detection and content sanitization. The
 # Requires Python 3.12+ and uv
 uv sync --extra dev
 
-# Tests (1683 tests, 96%+ coverage)
+# Tests (~2300+ collected; coverage gate ≥95%)
 pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Lint + format
@@ -532,8 +546,8 @@ tests/
 
 | Check | Target | Tool |
 |-------|--------|------|
-| Tests | 1683 passing | pytest |
-| Coverage | ≥ 95% (96.48%) | pytest-cov |
+| Tests | ~2300+ collected | pytest |
+| Coverage | ≥ 95% | pytest-cov |
 | Lint | clean | ruff |
 | Format | 100 char lines | ruff format |
 | Types | strict | mypy |
@@ -556,26 +570,19 @@ tests/
 | [Changelog](CHANGELOG.md) | Version history |
 
 <details>
-<summary><strong>Epic tracker (16 epics — all complete)</strong></summary>
+<summary><strong>Epic tracker (selected)</strong></summary>
 
 | Epic | Title | Status |
 |------|-------|--------|
-| [EPIC-001](docs/planning/epics/EPIC-001.md) | Test suite quality | Done |
-| [EPIC-002](docs/planning/epics/EPIC-002.md) | Integration wiring | Done |
-| [EPIC-003](docs/planning/epics/EPIC-003.md) | Auto-recall + capture pipeline | Done |
-| [EPIC-004](docs/planning/epics/EPIC-004.md) | Bi-temporal fact versioning | Done |
-| [EPIC-005](docs/planning/epics/EPIC-005.md) | CLI tool | Done |
-| [EPIC-006](docs/planning/epics/EPIC-006.md) | Knowledge graph | Done |
-| [EPIC-007](docs/planning/epics/EPIC-007.md) | Observability | Done |
-| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server (41 tools, 4 resources, 3 prompts) | Done |
-| [EPIC-009](docs/planning/epics/EPIC-009.md) | Multi-interface distribution | Done |
-| [EPIC-010](docs/planning/epics/EPIC-010.md) | Configurable memory profiles | Done |
-| [EPIC-011](docs/planning/epics/EPIC-011.md) | Hive — multi-agent shared brain | Done |
-| [EPIC-012](docs/planning/epics/EPIC-012.md) | OpenClaw integration | Done |
-| [EPIC-013](docs/planning/epics/EPIC-013.md) | Hive-aware MCP surface | Done |
-| [EPIC-014](docs/planning/epics/EPIC-014.md) | Hardening — validation, parity, resilience, docs | Done |
-| [EPIC-015](docs/planning/epics/EPIC-015.md) | Analytics & operational surface | Done |
-| [EPIC-016](docs/planning/epics/EPIC-016.md) | Test suite hardening | Done |
+| [EPIC-001](docs/planning/epics/EPIC-001.md)–[016](docs/planning/epics/EPIC-016.md) | Core platform (tests through Hive hardening) | Done |
+| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface grown to 54 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
+| [EPIC-029](docs/planning/epics/EPIC-029.md) | Feedback collection | Done |
+| [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
+| [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |
+| [EPIC-032](docs/planning/epics/EPIC-032.md) | OTel GenAI conventions | Planned |
+| [EPIC-033](docs/planning/epics/EPIC-033.md) | OpenClaw plugin SDK alignment | Done |
+
+See [`docs/planning/STATUS.md`](docs/planning/STATUS.md) and [`docs/planning/epics/`](docs/planning/epics/) for the full list (including code-review epics 017–025).
 
 </details>
 

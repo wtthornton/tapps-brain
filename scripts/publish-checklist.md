@@ -10,9 +10,12 @@ Manual steps to publish a new release of `tapps-brain` to PyPI.
 - [ ] Version bump in `pyproject.toml` (`version = "X.Y.Z"`)
 - [ ] Version strings consistent across:
   - `pyproject.toml`
+  - `server.json` (`"version":`)
   - `openclaw-skill/SKILL.md` (YAML frontmatter `version:`)
-  - `openclaw-plugin/package.json` (`"version":`)
-  - `openclaw-skill/openclaw.plugin.json` (`"version":`)
+  - `openclaw-plugin/package.json` (`"version":`) and `package-lock.json` (root)
+  - `openclaw-plugin/openclaw.plugin.json` and `openclaw-skill/openclaw.plugin.json`
+    (including `install.pip` lower bound `>=X.Y.Z` in the skill manifest)
+  - `openclaw-plugin/src/index.ts` (`ContextEngineInfo.version`)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
 - [ ] CHANGELOG.md updated with release notes (if maintained)
 - [ ] All changes committed and pushed to `main`
@@ -51,6 +54,7 @@ tapps-brain --version
 # Install with MCP extra and verify entry point
 pip install "dist/tapps_brain-*.whl[mcp]"
 tapps-brain-mcp --help
+tapps-brain-mcp --version
 
 # Cleanup
 deactivate

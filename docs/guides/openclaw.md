@@ -1,7 +1,8 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. 41 MCP tools, zero LLM
-dependency, SQLite-backed, works offline.
+Persistent cross-session memory for your OpenClaw agents. **54** MCP tools and
+**7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
+OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
 ---
 
@@ -23,6 +24,14 @@ pip install tapps-brain[mcp]
 ```
 
 Then choose an integration mode below based on your OpenClaw version and needs.
+
+### Diagnostics & flywheel (v1.3.0+)
+
+When `tapps-brain[mcp]>=1.3.0` is installed, the MCP server exposes **diagnostics**
+(`diagnostics_report`, `diagnostics_history`, resource `memory://diagnostics`) and
+**flywheel** tools (`flywheel_process`, `flywheel_gaps`, `flywheel_report`,
+`flywheel_evaluate`, `flywheel_hive_feedback`) plus `memory://report`. From the CLI:
+`tapps-brain flywheel report`, `flywheel process`, `flywheel gaps`, etc.
 
 ---
 
@@ -159,7 +168,7 @@ memory slot is not claimed.
 
 ## Mode 3: MCP Sidecar
 
-Use the MCP sidecar for direct access to all 41 tools, or when you want full manual
+Use the MCP sidecar for direct access to all **54** tools, or when you want full manual
 control over recall and capture workflows. Works with any OpenClaw version.
 
 ### Install
@@ -381,13 +390,13 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | Auto-capture from messages | ✅ | — | — | — |
 | Pre-compaction flush | ✅ | — | — | — |
 | Replaces memory-core tools | — | ✅ | — | — |
-| Direct tool access (41 tools) | ✅ | ✅ | ✅ | ✅ |
+| Direct tool access (54 tools) | ✅ | ✅ | ✅ | ✅ |
 | Hive multi-agent sharing | ✅ | ✅ | ✅ | — |
 | Cross-project federation | ✅ | ✅ | ✅ | — |
 | Custom profiles | ✅ | ✅ | ✅ | — |
 | Citation footers in recall | ✅ | — | — | — |
 | Session memory search | ✅ | — | ✅ | — |
-| MCP resources (health, stats) | ✅ | ✅ | ✅ | — |
+| MCP resources (7 URIs: stats, health, entries, metrics, feedback, diagnostics, report) | ✅ | ✅ | ✅ | — |
 | MCP prompts | — | — | ✅ | — |
 | Minimum OpenClaw version | v2026.3.7 | v2026.3.1 | Any | v2026.3.1 |
 

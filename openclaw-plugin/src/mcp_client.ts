@@ -139,7 +139,7 @@ export class McpClient {
     await this.sendRpc("initialize", {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: "tapps-brain-openclaw", version: "1.0.0" },
+      clientInfo: { name: "tapps-brain-openclaw", version: "1.3.0" },
     });
 
     // Notify server that initialization is complete (no response expected).

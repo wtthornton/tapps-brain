@@ -153,6 +153,12 @@ class TestCoreTools:
             # Diagnostics (EPIC-030)
             "diagnostics_report",
             "diagnostics_history",
+            # Flywheel (EPIC-031)
+            "flywheel_process",
+            "flywheel_gaps",
+            "flywheel_report",
+            "flywheel_evaluate",
+            "flywheel_hive_feedback",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
@@ -487,6 +493,8 @@ class TestMcpToolHandlerExecution:
         assert "events" in snap and snap["count"] >= 1
 
     def test_diagnostics_mcp_tools_and_resource(self, mcp_server):
+        from pathlib import Path
+
         store = mcp_server._tapps_store
         store.save(key="diag-mcp", value="diagnostics mcp content", tier="pattern")
 
@@ -509,8 +517,46 @@ class TestMcpToolHandlerExecution:
         body = json.loads(res.fn())
         assert "composite_score" in body
 
+        fp = _tool_fn(mcp_server, "flywheel_process")
+        assert "processed_events" in json.loads(fp())
+
+        fg = _tool_fn(mcp_server, "flywheel_gaps")
+        assert "gaps" in json.loads(fg(limit=5))
+
+        frp = _tool_fn(mcp_server, "flywheel_report")
+        rep_body = json.loads(frp(period_days=7))
+        assert "rendered_text" in rep_body
+
+        suite = Path(__file__).resolve().parents[1] / "eval"
+        fev = _tool_fn(mcp_server, "flywheel_evaluate")
+        ev_body = json.loads(fev(suite_path=str(suite), k=3))
+        assert "mrr" in ev_body
+
+        hf = _tool_fn(mcp_server, "flywheel_hive_feedback")
+        assert json.loads(hf(threshold=3))["process"]["skipped"] is True
+
+        rr = next(
+            r
+            for r in mcp_server._resource_manager.list_resources()
+            if str(r.uri) == "memory://report"
+        )
+        report_payload = json.loads(rr.fn())
+        assert isinstance(report_payload, dict)
+        assert "composite_score" in report_payload or "period_start" in report_payload
+
 
 class TestMcpMain:
+    def test_main_version_exits_zero(self, monkeypatch, capsys):
+        from tapps_brain import __version__, mcp_server as ms
+
+        monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--version"])
+        with pytest.raises(SystemExit) as exc:
+            ms.main()
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert __version__ in out
+        assert "tapps-brain-mcp" in out
+
     def test_main_invokes_stdio_run(self, tmp_path, monkeypatch):
         from tapps_brain import mcp_server as ms
 

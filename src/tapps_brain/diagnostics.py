@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from pydantic import BaseModel, Field
@@ -186,7 +186,7 @@ class _Dim:
         return self._weight
 
     def check(self, store: MemoryStore) -> DimensionScore:
-        return self._fn(store)
+        return cast(DimensionScore, self._fn(store))
 
 
 def _retrieval_effectiveness(store: MemoryStore) -> DimensionScore:
@@ -393,7 +393,16 @@ def run_diagnostics(
     except Exception:
         pass
     recs: list[str] = []
-    if gaps:
+    gap_line: str | None = None
+    try:
+        from tapps_brain.flywheel import knowledge_gap_summary_for_diagnostics
+
+        gap_line = knowledge_gap_summary_for_diagnostics(store)
+    except Exception:
+        gap_line = None
+    if gap_line:
+        recs.append(gap_line)
+    elif gaps:
         recs.append(f"{gaps} knowledge gap(s) reported — consider capturing missing facts.")
     if composite < 0.6:
         recs.append("Composite score below 0.6 — review dimension breakdown.")

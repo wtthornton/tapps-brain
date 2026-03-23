@@ -1,0 +1,5 @@
+{"_id": "doc-auth", "title": "Auth", "text": "Use JWT tokens for API authentication in production."}
+{"_id": "doc-cache", "title": "Cache", "text": "Redis is used for session caching and rate limiting."}
+{"_id": "doc-deploy", "title": "Deploy", "text": "Deployments run through GitHub Actions to staging first."}
+{"_id": "doc-db", "title": "Database", "text": "PostgreSQL is the primary datastore with migrations in Alembic."}
+{"_id": "doc-logging", "title": "Logging", "text": "Structured JSON logs are shipped to the observability stack."}

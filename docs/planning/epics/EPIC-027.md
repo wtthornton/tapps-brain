@@ -34,7 +34,7 @@ Depends on EPIC-012 (done) and benefits from EPIC-026 (memory slot).
 - [x] Tools are grouped by category with clear descriptions for the agent
 - [x] Per-agent routing works: admin agent gets all tools, read-only agent gets search/recall only
 - [x] Documentation: complete tool reference and configuration guide
-- [x] `openclaw-skill/SKILL.md` updated to declare all 41 tools (currently lists 28)
+- [x] `openclaw-skill/SKILL.md` updated to declare MCP tools (54 as of v1.3.0)
 
 ## Stories
 
@@ -236,7 +236,7 @@ for this.
 **Effort:** S
 **Depends on:** STORY-027.1 through STORY-027.8
 **Context refs:** `openclaw-skill/SKILL.md`, `docs/guides/openclaw.md`
-**Verification:** `openclaw skill info tapps-brain-memory` shows all 41 tools
+**Verification:** `openclaw skill info tapps-brain-memory` reflects the published tool list
 
 #### Why
 
@@ -246,7 +246,7 @@ integration modes: ContextEngine, memory slot, MCP sidecar, and mcp-adapter.
 
 #### Acceptance Criteria
 
-- [x] SKILL.md declares all 41 tools with descriptions
+- [x] SKILL.md declares tools with descriptions (keep in sync with MCP server)
 - [x] SKILL.md declares all 4 resources and 3 prompts
 - [x] `docs/guides/openclaw.md` updated with four integration modes:
   1. **ContextEngine only** (auto-recall/capture, minimal config)

@@ -1,5 +1,12 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v1.3.0 — Align with tapps-brain 1.3.0
+
+- Bumps plugin package, `openclaw.plugin.json`, and `ContextEngineInfo.version` to
+  **1.3.0** alongside the Python release (EPIC-031: diagnostics + flywheel MCP tools,
+  `memory://report`, schema v11).
+- MCP client `clientInfo.version` now matches the plugin release.
+
 ## v1.2.0 — Plugin rename: `tapps-brain` → `tapps-brain-memory`
 
 The plugin package was renamed from `tapps-brain` to `tapps-brain-memory` in

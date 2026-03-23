@@ -52,6 +52,14 @@ def _read_plugin_json_version() -> str:
     return version
 
 
+def _read_openclaw_plugin_manifest_version() -> str:
+    """Read version from openclaw-plugin/openclaw.plugin.json."""
+    plugin = PROJECT_ROOT / "openclaw-plugin" / "openclaw.plugin.json"
+    data = json.loads(plugin.read_text(encoding="utf-8"))
+    version: str = data["version"]
+    return version
+
+
 def _read_server_json_version() -> str:
     """Read version from server.json (MCP server manifest)."""
     server = PROJECT_ROOT / "server.json"
@@ -66,6 +74,7 @@ def test_all_versions_match() -> None:
     skill_md_ver = _read_skill_md_version()
     package_json_ver = _read_package_json_version()
     plugin_json_ver = _read_plugin_json_version()
+    openclaw_plugin_manifest_ver = _read_openclaw_plugin_manifest_version()
     server_json_ver = _read_server_json_version()
 
     versions = {
@@ -73,6 +82,7 @@ def test_all_versions_match() -> None:
         "openclaw-skill/SKILL.md": skill_md_ver,
         "openclaw-plugin/package.json": package_json_ver,
         "openclaw-skill/openclaw.plugin.json": plugin_json_ver,
+        "openclaw-plugin/openclaw.plugin.json": openclaw_plugin_manifest_ver,
         "server.json": server_json_ver,
     }
 

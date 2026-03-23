@@ -1,0 +1,5 @@
+{"_id": "q1", "text": "JWT authentication API"}
+{"_id": "q2", "text": "session cache redis"}
+{"_id": "q3", "text": "how we deploy to staging"}
+{"_id": "q4", "text": "primary database migrations"}
+{"_id": "q5", "text": "structured logging observability"}

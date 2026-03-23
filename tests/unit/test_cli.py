@@ -88,14 +88,14 @@ class TestStoreCommands:
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "Entries: 3 / 500" in result.stdout
-        assert "Schema: v10" in result.stdout
+        assert "Schema: v11" in result.stdout
 
     def test_stats_json(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["total_entries"] == 3
-        assert data["schema_version"] == 10
+        assert data["schema_version"] == 11
 
     def test_list(self, project_dir):
         result = runner.invoke(app, ["store", "list", "--project-dir", project_dir])
@@ -637,14 +637,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v10" in result.stdout
+        assert "v11" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v10" in result.stdout
+        assert "v11" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
@@ -652,7 +652,134 @@ class TestMaintenanceCommands:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["schema_version"] == 10
+        assert data["schema_version"] == 11
+
+
+class TestFlywheelCli:
+    """EPIC-031 flywheel commands."""
+
+    def test_flywheel_process_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app, ["flywheel", "process", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "processed_events" in data
+
+    def test_flywheel_process_text(self, project_dir: str) -> None:
+        result = runner.invoke(app, ["flywheel", "process", "--project-dir", project_dir])
+        assert result.exit_code == 0
+        assert "processed_events" in result.stdout
+
+    def test_flywheel_gaps_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app, ["flywheel", "gaps", "--project-dir", project_dir, "--json", "--limit", "5"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "gaps" in data
+
+    def test_flywheel_gaps_table(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app, ["flywheel", "gaps", "--project-dir", project_dir, "--limit", "3"]
+        )
+        assert result.exit_code == 0
+
+    def test_flywheel_gaps_empty(self, tmp_path: Path) -> None:
+        MemoryStore(tmp_path).close()
+        result = runner.invoke(app, ["flywheel", "gaps", "--project-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "No clustered gaps" in result.stdout
+
+    def test_flywheel_report_markdown(self, project_dir: str) -> None:
+        result = runner.invoke(app, ["flywheel", "report", "--project-dir", project_dir])
+        assert result.exit_code == 0
+        assert "Quality report" in result.stdout
+
+    def test_flywheel_report_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "flywheel",
+                "report",
+                "--project-dir",
+                project_dir,
+                "--format",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "rendered_text" in data
+
+    def test_flywheel_evaluate_table(self, project_dir: str) -> None:
+        suite = Path(__file__).resolve().parents[1] / "eval"
+        result = runner.invoke(
+            app,
+            [
+                "flywheel",
+                "evaluate",
+                str(suite),
+                "--project-dir",
+                project_dir,
+                "--format",
+                "table",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "MRR=" in result.stdout
+
+    def test_flywheel_hive_feedback_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app, ["flywheel", "hive-feedback", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["process"]["skipped"] is True
+
+    def test_flywheel_hive_feedback_text(self, project_dir: str) -> None:
+        result = runner.invoke(app, ["flywheel", "hive-feedback", "--project-dir", project_dir])
+        assert result.exit_code == 0
+
+    def test_flywheel_evaluate_bad_suffix(self, project_dir: str, tmp_path: Path) -> None:
+        bad = tmp_path / "suite.txt"
+        bad.write_text("x", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["flywheel", "evaluate", str(bad), "--project-dir", project_dir],
+        )
+        assert result.exit_code == 1
+
+    def test_flywheel_evaluate_missing_path(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "flywheel",
+                "evaluate",
+                "/nonexistent/beir",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert result.exit_code == 1
+
+    def test_flywheel_evaluate_json(self, project_dir: str) -> None:
+        suite = Path(__file__).resolve().parents[1] / "eval"
+        result = runner.invoke(
+            app,
+            [
+                "flywheel",
+                "evaluate",
+                str(suite),
+                "--project-dir",
+                project_dir,
+                "--format",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "mrr" in data
 
 
 class TestMaintenanceGcConfigCommand:

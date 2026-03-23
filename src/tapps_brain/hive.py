@@ -466,6 +466,38 @@ class HiveStore:
                 superseded_by=superseded_by,
             )
 
+    def patch_confidence(
+        self,
+        *,
+        namespace: str,
+        key: str,
+        confidence: float,
+    ) -> bool:
+        """Update confidence in place (EPIC-031 cross-project flywheel)."""
+        now = datetime.now(tz=UTC).isoformat()
+        c = max(0.05, min(1.0, float(confidence)))
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                UPDATE hive_memories SET confidence = ?, updated_at = ?
+                WHERE namespace = ? AND key = ?
+                """,
+                (c, now, namespace, key),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def get_confidence(self, *, namespace: str, key: str) -> float | None:
+        """Return current confidence for a Hive row, if it exists."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT confidence FROM hive_memories WHERE namespace = ? AND key = ?",
+                (namespace, key),
+            ).fetchone()
+        if row is None:
+            return None
+        return float(row["confidence"])
+
     def _resolve_conflict(
         self,
         *,

@@ -1,7 +1,8 @@
 ---
 id: EPIC-029
 title: "Feedback collection — LLM and project quality signals"
-status: planned
+status: done
+completed: 2026-03-23
 priority: high
 created: 2026-03-23
 tags: [feedback, quality, observability, flywheel]
@@ -21,18 +22,18 @@ tapps-brain already has one implicit positive signal — `reinforce()` — but n
 
 ## Success Criteria
 
-- [ ] `store.rate_recall()` accepts explicit quality ratings on recall results
-- [ ] `store.report_gap()` captures queries where the knowledge base lacks coverage
-- [ ] `store.report_issue()` flags specific entries as stale, wrong, duplicate, or harmful
-- [ ] Implicit signals (recall-not-reinforced, query reformulation, recall-then-store) are tracked automatically
-- [ ] All feedback stored in a dedicated `feedback_events` SQLite table (same DB, new table)
-- [ ] `store.query_feedback()` provides filtered access to feedback history
-- [ ] MCP tools exposed: `feedback_rate`, `feedback_gap`, `feedback_issue`, `feedback_query`
-- [ ] CLI commands: `tapps-brain feedback rate`, `tapps-brain feedback gap`, `tapps-brain feedback list`
-- [ ] Host projects can register custom event types for application-level feedback
-- [ ] Feedback on Hive-sourced entries propagates to shared Hive namespace (when Hive enabled)
-- [ ] Zero new external dependencies
-- [ ] Overall test coverage stays at 95%+
+- [x] `store.rate_recall()` accepts explicit quality ratings on recall results
+- [x] `store.report_gap()` captures queries where the knowledge base lacks coverage
+- [x] `store.report_issue()` flags specific entries as stale, wrong, duplicate, or harmful
+- [x] Implicit signals (recall-not-reinforced, query reformulation, recall-then-store) are tracked automatically
+- [x] All feedback stored in a dedicated `feedback_events` SQLite table (same DB, new table)
+- [x] `store.query_feedback()` provides filtered access to feedback history
+- [x] MCP tools exposed: `feedback_rate`, `feedback_gap`, `feedback_issue`, `feedback_record`, `feedback_query`
+- [x] CLI commands: `tapps-brain feedback rate|gap|issue|record|list`
+- [x] Host projects can register custom event types for application-level feedback
+- [x] Feedback on Hive-sourced entries propagates to shared Hive namespace (when Hive enabled)
+- [x] Zero new external dependencies
+- [x] Overall test coverage stays at 95%+
 
 ## Stories
 

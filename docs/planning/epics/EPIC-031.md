@@ -1,7 +1,8 @@
 ---
 id: EPIC-031
 title: "Continuous improvement flywheel — feedback-driven quality loop"
-status: planned
+status: done
+completed: 2026-03-23
 priority: medium
 created: 2026-03-23
 tags: [flywheel, continuous-improvement, evaluation, self-healing]
@@ -26,16 +27,16 @@ The flywheel has three components:
 
 ## Success Criteria
 
-- [ ] Feedback signals influence confidence scores via Bayesian updating (principled, not ad-hoc)
-- [ ] Knowledge gaps from `report_gap()` are tracked, clustered, and prioritized
-- [ ] Offline evaluation harness runs deterministic retrieval quality tests against BEIR-format golden datasets
-- [ ] Self-reports summarize quality trends, top gaps, and recommended actions via extensible sections
-- [ ] Cross-project feedback aggregation identifies ecosystem-wide patterns via Hive
-- [ ] All flywheel operations are deterministic — no LLM calls required
-- [ ] Optional LLM-as-judge evaluator available for CI (behind feature flag)
-- [ ] MCP tools and CLI commands for evaluation and reports
-- [ ] Zero new required dependencies (LLM-as-judge requires optional `anthropic` or `openai` SDK)
-- [ ] Overall test coverage stays at 95%+
+- [x] Feedback signals influence confidence scores via Bayesian updating (principled, not ad-hoc)
+- [x] Knowledge gaps from `report_gap()` are tracked, clustered, and prioritized
+- [x] Offline evaluation harness runs deterministic retrieval quality tests against BEIR-format golden datasets
+- [x] Self-reports summarize quality trends, top gaps, and recommended actions via extensible sections
+- [x] Cross-project feedback aggregation identifies ecosystem-wide patterns via Hive
+- [x] All flywheel operations are deterministic — no LLM calls required
+- [x] Optional LLM-as-judge evaluator available for CI (behind feature flag)
+- [x] MCP tools (`flywheel_*`) and CLI (`tapps-brain flywheel …`) for evaluation and reports
+- [x] Zero new required dependencies (LLM-as-judge requires optional `anthropic` or `openai` SDK)
+- [x] Overall test coverage stays at 95%+
 
 ## Stories
 

@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] — 2026-03-23
+
+### Added — EPIC-031: Evaluation & continuous-improvement flywheel
+
+- **Offline evaluation** — BEIR-style loaders, IR metrics, optional LLM judges
+  (`evaluation` module, CLI `flywheel evaluate`).
+- **Feedback → confidence** — `MemoryStore.process_feedback()`, schema **v11**
+  (`positive_feedback_count` / `negative_feedback_count` on entries,
+  `flywheel_meta` KV for cursors).
+- **Knowledge gaps** — `GapTracker`, zero-result recall signals, optional
+  semantic clustering hook; `flywheel gaps` CLI / `flywheel_gaps` MCP tool.
+- **Quality reports** — `generate_report`, `ReportRegistry`, `memory://report`
+  resource, CLI `flywheel report`.
+- **Hive flywheel** — `aggregate_hive_feedback`, `process_hive_feedback`, MCP
+  `flywheel_hive_feedback`.
+- **MCP / CLI** — `diagnostics_report`, `diagnostics_history`, flywheel tools;
+  `tapps-brain-mcp --version`.
+
+### Changed
+
+- **MCP surface** — **54** tools and **7** resources (feedback, diagnostics,
+  flywheel, prior graph/audit/Hive coverage).
+- **CLI** — **`flywheel`** command group (`process`, `gaps`, `report`,
+  `evaluate`, `hive-feedback`).
+- **Diagnostics** — recommendations can include flywheel gap summary.
+
+---
+
 ## [1.2.0] — 2026-03-22
 
 ### Added — EPICs 014–016: Hardening, Analytics & Test Suite
@@ -144,7 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PyPI publish preparation** — `project.urls`, wheel + sdist verified,
   publish checklist at `scripts/publish-checklist.md`.
 
-[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/wtthornton/tapps-brain/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/wtthornton/tapps-brain/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/wtthornton/tapps-brain/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wtthornton/tapps-brain/releases/tag/v1.0.0

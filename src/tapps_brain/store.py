@@ -10,8 +10,9 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
@@ -232,6 +233,10 @@ class MemoryStore:
         self._anomaly_detector = AnomalyDetector()
         self._diagnostics_history_store: Any = None
         self._hive_recall_weight_multiplier: float = 1.0
+
+        # EPIC-031: weak gap signals from empty recall (bounded in-memory buffer).
+        self._zero_result_queries: deque[tuple[str, str]] = deque(maxlen=2000)
+        self._latest_quality_report: dict[str, Any] | None = None
 
         logger.info(
             "memory_store_initialized",
@@ -1298,6 +1303,11 @@ class MemoryStore:
             qw = "Memory quality recovering — diagnostic probes in progress."
         if qw is not None:
             result = result.model_copy(update={"quality_warning": qw})
+
+        if not getattr(result, "memory_count", 0) and message.strip():
+            with self._lock:
+                self._zero_result_queries.append((message.strip(), _utc_now_iso()))
+
         return result
 
     def health(self) -> StoreHealthReport:
@@ -1525,7 +1535,10 @@ class MemoryStore:
         self._ensure_diagnostics_history()
         if self._diagnostics_history_store is None:
             return []
-        return self._diagnostics_history_store.history(limit=limit)
+        return cast(
+            list[dict[str, Any]],
+            self._diagnostics_history_store.history(limit=limit),
+        )
 
     # ------------------------------------------------------------------
     # Relations (EPIC-006)
@@ -1797,6 +1810,53 @@ class MemoryStore:
             "missing_hash_keys": missing_hash_keys,
             "tampered_details": tampered_details,
         }
+
+    # ------------------------------------------------------------------
+    # Flywheel (EPIC-031)
+    # ------------------------------------------------------------------
+
+    def zero_result_gap_signals(self) -> list[tuple[str, str]]:
+        """Return (query, timestamp) pairs for recalls that returned no memories."""
+        with self._lock:
+            return list(self._zero_result_queries)
+
+    def process_feedback(
+        self,
+        *,
+        since: str | None = None,
+        config: Any = None,  # noqa: ANN401
+    ) -> dict[str, Any]:
+        """Apply queued feedback events to entry confidence (Bayesian update)."""
+        from tapps_brain.flywheel import FeedbackProcessor, FlywheelConfig
+
+        cfg = config if config is not None else FlywheelConfig()
+        return FeedbackProcessor(cfg).process_feedback(self, since=since)
+
+    def knowledge_gaps(
+        self,
+        limit: int = 10,
+        *,
+        semantic: bool = False,
+    ) -> list[Any]:  # noqa: ANN401
+        """Ranked knowledge gaps (explicit reports + zero-result recall)."""
+        from tapps_brain.flywheel import GapTracker
+
+        gaps = GapTracker().analyze_gaps(self, use_semantic_clustering=semantic)
+        return gaps[:limit]
+
+    def generate_report(self, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Build markdown + structured quality report (flywheel)."""
+        from tapps_brain.flywheel import generate_report as flywheel_generate_report
+
+        qr = flywheel_generate_report(self, **kwargs)
+        with self._lock:
+            self._latest_quality_report = qr.model_dump(mode="json")
+        return qr
+
+    def latest_quality_report(self) -> dict[str, Any] | None:
+        """Last report from ``generate_report`` (None if never run)."""
+        with self._lock:
+            return self._latest_quality_report
 
     # ------------------------------------------------------------------
     # Feedback API (EPIC-029)

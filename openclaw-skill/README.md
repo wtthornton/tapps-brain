@@ -33,7 +33,8 @@ This installs `tapps-brain[mcp]` from PyPI and auto-configures the MCP server.
   `fast_context` scoring profiles
 - **Hive sharing** -- multiple OpenClaw agents share knowledge via the Hive
 - **Federation** -- cross-project memory sharing via a federated hub
-- **28 MCP tools** -- full programmatic control when you need it
+- **54 MCP tools** -- full programmatic control when you need it (memory, feedback,
+  diagnostics, flywheel, Hive, federation, graph, OpenClaw migration)
 
 ## How It Works
 

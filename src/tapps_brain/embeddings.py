@@ -9,7 +9,7 @@ Used by Epic 65.8 hybrid search (BM25 + vector).
 
 from __future__ import annotations
 
-from typing import Protocol, cast, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import structlog
 
@@ -18,11 +18,14 @@ from tapps_brain._feature_flags import feature_flags
 logger = structlog.get_logger(__name__)
 
 # Optional dependency — sentence-transformers
+SentenceTransformer: type[Any] | None
 if feature_flags.sentence_transformers:
     try:
-        from sentence_transformers import SentenceTransformer
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer
     except ImportError:
         SentenceTransformer = None
+    else:
+        SentenceTransformer = _SentenceTransformer
 else:
     SentenceTransformer = None
 

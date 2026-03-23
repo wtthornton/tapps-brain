@@ -274,9 +274,36 @@ Federation enables cross-project memory sharing. See the [Federation Guide](fede
 
 | Tool | Description |
 |------|-------------|
-| `memory_tags` | List all tags in the store |
-| `memory_tag_update` | Add or remove tags on entries |
-| `memory_by_tag` | Filter entries by tag |
+| `memory_list_tags` | List all tags in the store with usage counts |
+| `memory_update_tags` | Atomically add and/or remove tags on an entry |
+| `memory_entries_by_tag` | List entries that include a given tag |
+
+### Feedback Tools (EPIC-029)
+
+| Tool | Description |
+|------|-------------|
+| `feedback_rate` | Record explicit recall quality (`helpful` / `partial` / `irrelevant` / `outdated`) |
+| `feedback_gap` | Report a knowledge gap (missing coverage for a query) |
+| `feedback_issue` | Flag an entry as stale, wrong, duplicate, or harmful |
+| `feedback_record` | Record a custom feedback event type (when registered in profile) |
+| `feedback_query` | Query stored feedback with filters (`event_type`, time range, `entry_key`, …) |
+
+### Diagnostics Tools (EPIC-030)
+
+| Tool | Description |
+|------|-------------|
+| `diagnostics_report` | Composite quality scorecard, dimensions, anomalies, circuit breaker state |
+| `diagnostics_history` | Rolling history of diagnostics snapshots (pruned per retention) |
+
+### Flywheel Tools (EPIC-031)
+
+| Tool | Description |
+|------|-------------|
+| `flywheel_process` | Apply Bayesian feedback processing to update entry confidence signals |
+| `flywheel_gaps` | List prioritized knowledge gaps (optional semantic clustering) |
+| `flywheel_report` | Generate a markdown quality report from diagnostics + feedback + gaps |
+| `flywheel_evaluate` | Run a BEIR-style eval suite against the store |
+| `flywheel_hive_feedback` | Aggregate Hive-scoped feedback and cross-project signals |
 
 ### Audit Tools
 
@@ -307,6 +334,9 @@ Resources are read-only views that MCP clients can pull into context:
 | `memory://health` | Store health report |
 | `memory://entries/{key}` | Full detail view of a single entry |
 | `memory://metrics` | Operation counters and latency histograms |
+| `memory://feedback` | Recent feedback events (up to 500); use `feedback_query` for filtered queries |
+| `memory://diagnostics` | Latest diagnostics report JSON (includes circuit breaker; read-only, does not append history) |
+| `memory://report` | Latest flywheel quality report payload (generates default window if none stored yet) |
 
 ## Prompts
 

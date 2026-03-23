@@ -46,6 +46,20 @@ class FeatureFlags:
         return self._cache["sentence_transformers"]
 
     @property
+    def anthropic_sdk(self) -> bool:
+        """True when ``anthropic`` is importable (LLM-as-judge, EPIC-031)."""
+        if "anthropic_sdk" not in self._cache:
+            self._cache["anthropic_sdk"] = self._probe("anthropic")
+        return self._cache["anthropic_sdk"]
+
+    @property
+    def openai_sdk(self) -> bool:
+        """True when ``openai`` is importable (LLM-as-judge, EPIC-031)."""
+        if "openai_sdk" not in self._cache:
+            self._cache["openai_sdk"] = self._probe("openai")
+        return self._cache["openai_sdk"]
+
+    @property
     def otel(self) -> bool:
         """True when ``opentelemetry`` SDK is importable."""
         if "otel" not in self._cache:
@@ -76,6 +90,8 @@ class FeatureFlags:
             self.numpy,
             self.sentence_transformers,
             self.memory_semantic_search,
+            self.anthropic_sdk,
+            self.openai_sdk,
             self.otel,
         )
         return dict(self._cache)

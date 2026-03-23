@@ -1,7 +1,8 @@
 ---
 id: EPIC-030
 title: "Diagnostics & self-monitoring — quality scorecard and anomaly detection"
-status: planned
+status: done
+completed: 2026-03-23
 priority: high
 created: 2026-03-23
 tags: [diagnostics, self-monitoring, quality, anomaly-detection]
@@ -23,17 +24,17 @@ This epic adds a diagnostics layer that continuously assesses retrieval quality,
 
 ## Success Criteria
 
-- [ ] `store.diagnostics()` returns a `DiagnosticsReport` with composite quality score and per-dimension breakdowns
-- [ ] Six built-in quality dimensions scored: retrieval effectiveness, freshness, completeness, duplication, staleness, integrity
-- [ ] Host projects can register custom quality dimensions via `HealthDimension` Protocol
-- [ ] Anomaly detection via EWMA drift detection flags quality degradation with configurable thresholds
-- [ ] 4-state circuit breaker (CLOSED/DEGRADED/OPEN/HALF_OPEN) degrades gracefully when quality drops
-- [ ] Quality history tracked over time (rolling window of scorecard snapshots)
-- [ ] Per-namespace Hive diagnostics when Hive is enabled
-- [ ] `memory://diagnostics` MCP resource and `diagnostics_report` MCP tool exposed
-- [ ] CLI command: `tapps-brain diagnostics [--format json|table]`
-- [ ] Zero new external dependencies
-- [ ] Overall test coverage stays at 95%+
+- [x] `store.diagnostics()` returns a `DiagnosticsReport` with composite quality score and per-dimension breakdowns
+- [x] Six built-in quality dimensions scored: retrieval effectiveness, freshness, completeness, duplication, staleness, integrity
+- [x] Host projects can register custom quality dimensions via `HealthDimension` Protocol
+- [x] Anomaly detection via EWMA drift detection flags quality degradation with configurable thresholds
+- [x] 4-state circuit breaker (CLOSED/DEGRADED/OPEN/HALF_OPEN) degrades gracefully when quality drops (`RecallResult.quality_warning` when not CLOSED)
+- [x] Quality history tracked over time (`diagnostics_history` table, `store.diagnostics_history()`)
+- [x] Per-namespace Hive diagnostics when Hive is enabled
+- [x] `memory://diagnostics` MCP resource; `diagnostics_report` and `diagnostics_history` MCP tools
+- [x] CLI: `tapps-brain diagnostics report|history` with json/table output
+- [x] Zero new external dependencies
+- [x] Overall test coverage stays at 95%+
 
 ## Stories
 

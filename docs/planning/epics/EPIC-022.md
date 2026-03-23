@@ -12,7 +12,7 @@ tags: [review, mcp, cli, io, quality]
 
 ## Context
 
-Full code review of all user-facing interfaces: MCP server (41 tools), CLI (36 commands), IO, and markdown import.
+Full code review of all user-facing interfaces: MCP server (54 tools), CLI (41 commands), IO, and markdown import.
 
 ## Success Criteria
 

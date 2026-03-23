@@ -154,6 +154,18 @@ class MemoryEntry(BaseModel):
         description="HMAC-SHA256 hex digest computed over key|value|tier|source.",
     )
 
+    # Flywheel feedback tallies (EPIC-031); floats allow fractional implicit signals.
+    positive_feedback_count: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Tally of positive feedback signals applied to this entry.",
+    )
+    negative_feedback_count: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Tally of negative feedback signals applied to this entry.",
+    )
+
     @field_validator("key")
     @classmethod
     def _validate_key(cls, v: str) -> str:
