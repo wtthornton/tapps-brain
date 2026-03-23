@@ -9,6 +9,7 @@ import yaml
 
 from tapps_brain.profile import (
     GCConfig,
+    HiveConfig,
     LayerDefinition,
     LimitsConfig,
     MemoryProfile,
@@ -693,3 +694,119 @@ class TestHelperMethods:
         )
         layer = mp.get_layer_or_default("missing")
         assert layer.name == "only"
+
+
+# ---------------------------------------------------------------------------
+# 7. Bug-fix regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestMergeProfilesHive:
+    """_merge_profiles must preserve child hive configuration (BUG-FIX)."""
+
+    def test_child_hive_config_preserved_after_merge(self) -> None:
+        """The child's hive config must not be silently dropped during inheritance."""
+        parent = MemoryProfile(
+            name="parent",
+            layers=[LayerDefinition(name="a", half_life_days=90)],
+        )
+        child_hive = HiveConfig(
+            auto_propagate_tiers=["architectural"],
+            private_tiers=["context"],
+            conflict_policy="confidence_max",
+            recall_weight=0.6,
+        )
+        child = MemoryProfile(
+            name="child",
+            layers=[LayerDefinition(name="b", half_life_days=7)],
+            hive=child_hive,
+        )
+        merged = _merge_profiles(child, parent)
+        assert merged.hive.auto_propagate_tiers == ["architectural"]
+        assert merged.hive.private_tiers == ["context"]
+        assert merged.hive.conflict_policy == "confidence_max"
+        assert merged.hive.recall_weight == 0.6
+
+    def test_merge_hive_default_when_child_is_default(self) -> None:
+        """When child uses default HiveConfig, the merged result also has defaults."""
+        parent = MemoryProfile(
+            name="parent",
+            layers=[LayerDefinition(name="a", half_life_days=90)],
+            hive=HiveConfig(auto_propagate_tiers=["architectural"], recall_weight=0.5),
+        )
+        child = MemoryProfile(
+            name="child",
+            layers=[LayerDefinition(name="b", half_life_days=7)],
+            # No hive specified — uses default HiveConfig()
+        )
+        merged = _merge_profiles(child, parent)
+        # Child's default hive wins (child overrides parent for scalar configs)
+        assert merged.hive.auto_propagate_tiers == []
+        assert merged.hive.recall_weight == 0.8  # default
+
+
+class TestGetBuiltinProfileSecurity:
+    """get_builtin_profile must reject path-traversal names (BUG-FIX)."""
+
+    def test_path_traversal_with_dotdot_rejected(self) -> None:
+        with pytest.raises(ValueError, match="path separators"):
+            get_builtin_profile("../../etc/passwd")
+
+    def test_path_traversal_with_slash_rejected(self) -> None:
+        with pytest.raises(ValueError, match="path separators"):
+            get_builtin_profile("subdir/malicious")
+
+    def test_path_traversal_with_backslash_rejected(self) -> None:
+        with pytest.raises(ValueError, match="path separators"):
+            get_builtin_profile("subdir\\malicious")
+
+    def test_name_starting_with_dot_rejected(self) -> None:
+        with pytest.raises(ValueError, match="path separators"):
+            get_builtin_profile(".hidden")
+
+    def test_valid_hyphenated_name_accepted(self) -> None:
+        """Normal hyphenated profile names must still work."""
+        profile = get_builtin_profile("repo-brain")
+        assert profile.name == "repo-brain"
+
+    def test_valid_underscored_name_raises_file_not_found(self) -> None:
+        """A safe but non-existent name raises FileNotFoundError, not ValueError."""
+        with pytest.raises(FileNotFoundError):
+            get_builtin_profile("no_such_profile")
+
+
+class TestValidateLayersDuplicateDetection:
+    """_validate_layers duplicate detection must work correctly (code quality)."""
+
+    def test_single_duplicate_detected(self) -> None:
+        with pytest.raises(ValueError, match="unique"):
+            MemoryProfile(
+                name="dup",
+                layers=[
+                    LayerDefinition(name="x", half_life_days=10),
+                    LayerDefinition(name="x", half_life_days=20),
+                ],
+            )
+
+    def test_multiple_duplicates_detected(self) -> None:
+        with pytest.raises(ValueError, match="unique"):
+            MemoryProfile(
+                name="multi-dup",
+                layers=[
+                    LayerDefinition(name="a", half_life_days=10),
+                    LayerDefinition(name="b", half_life_days=20),
+                    LayerDefinition(name="a", half_life_days=30),
+                    LayerDefinition(name="b", half_life_days=40),
+                ],
+            )
+
+    def test_all_unique_names_accepted(self) -> None:
+        mp = MemoryProfile(
+            name="ok",
+            layers=[
+                LayerDefinition(name="alpha", half_life_days=90),
+                LayerDefinition(name="beta", half_life_days=30),
+                LayerDefinition(name="gamma", half_life_days=7),
+            ],
+        )
+        assert len(mp.layers) == 3

@@ -192,7 +192,12 @@ class MemoryProfile(BaseModel):
         names = [layer.name for layer in self.layers]
         if len(names) != len(set(names)):
             seen: set[str] = set()
-            dupes = [n for n in names if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
+            dupes: list[str] = []
+            for n in names:
+                if n in seen:
+                    dupes.append(n)
+                else:
+                    seen.add(n)
             msg = f"Layer names must be unique. Duplicates: {dupes}"
             raise ValueError(msg)
 
@@ -272,7 +277,14 @@ def get_builtin_profile(name: str) -> MemoryProfile:
 
     Raises:
         FileNotFoundError: If no built-in profile with that name exists.
+        ValueError: If *name* contains path-traversal characters.
     """
+    # Reject path-traversal attempts before constructing the path.
+    if "/" in name or "\\" in name or name.startswith("."):
+        msg = (
+            f"Invalid profile name '{name}': must not contain path separators or start with '.'"
+        )
+        raise ValueError(msg)
     profiles_dir = _builtin_profiles_dir()
     path = profiles_dir / f"{name}.yaml"
     if not path.exists():
@@ -316,6 +328,7 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         gc=child.gc,
         recall=child.recall,
         limits=child.limits,
+        hive=child.hive,
     )
 
 
