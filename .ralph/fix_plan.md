@@ -64,7 +64,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] The 6 `test_verify_integrity.py` failures (`test_valid_entries_pass`, `test_tampered_*`, `test_mixed_*`) show `verified == 0` where entries should verify. The `relation_count` field addition or other model changes altered the hash computation, breaking existing integrity checks. Fix: verify `integrity.py` hash computation includes the correct fields and update the integrity test fixtures to match. Commit: `fix: update integrity hash computation for new model fields`
 
 #### BUG-002-F: Consolidation threshold changes in repo-brain.yaml need justification test
-- [ ] The `repo-brain.yaml` changes include `min_access_count` reductions (pattern: 8→5, procedural: 5→3). These make consolidation trigger earlier. Add a test or verify existing tests cover these thresholds to ensure they don't cause premature consolidation. Commit: `test: verify updated consolidation thresholds in repo-brain profile`
+- [x] The `repo-brain.yaml` changes include `min_access_count` reductions (pattern: 8→5, procedural: 5→3). These make consolidation trigger earlier. Add a test or verify existing tests cover these thresholds to ensure they don't cause premature consolidation. Commit: `test: verify updated consolidation thresholds in repo-brain profile`
 
 ---
 
