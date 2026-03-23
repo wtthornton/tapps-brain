@@ -467,19 +467,35 @@ class TestHiveCountAccuracy:
         orch = RecallOrchestrator(store)
 
         fake_hive_memories = [
-            {"key": "hive-alpha", "confidence": 0.7, "tier": "pattern",
-             "score": 0.7, "source": "hive", "namespace": "universal", "value": "Hive alpha fact"},
-            {"key": "hive-beta", "confidence": 0.6, "tier": "context",
-             "score": 0.6, "source": "hive", "namespace": "universal", "value": "Hive beta fact"},
+            {
+                "key": "hive-alpha",
+                "confidence": 0.7,
+                "tier": "pattern",
+                "score": 0.7,
+                "source": "hive",
+                "namespace": "universal",
+                "value": "Hive alpha fact",
+            },
+            {
+                "key": "hive-beta",
+                "confidence": 0.6,
+                "tier": "context",
+                "score": 0.6,
+                "source": "hive",
+                "namespace": "universal",
+                "value": "Hive beta fact",
+            },
         ]
 
-        with patch.object(orch, "_search_hive", return_value=(fake_hive_memories, 2)):
-            with patch.object(orch, "_hive_store", object()):  # non-None triggers hive path
-                # Apply a dedupe_window that removes one hive entry
-                result = orch.recall(
-                    "python tech stack",
-                    dedupe_window=["hive-alpha"],
-                )
+        with (
+            patch.object(orch, "_search_hive", return_value=(fake_hive_memories, 2)),
+            patch.object(orch, "_hive_store", object()),  # non-None triggers hive path
+        ):
+            # Apply a dedupe_window that removes one hive entry
+            result = orch.recall(
+                "python tech stack",
+                dedupe_window=["hive-alpha"],
+            )
 
         # hive-alpha was deduped → only hive-beta remains with source=="hive"
         hive_keys = [m.get("key") for m in result.memories if m.get("source") == "hive"]

@@ -111,7 +111,7 @@ def check_content_safety(content: str) -> SafetyCheckResult:
         return SafetyCheckResult(safe=True)
 
     # Normalise unicode (NFKC) to defeat homograph/lookalike bypass attempts
-    # e.g. "Ɨgnore" → "Ignore", "ｉgnore" → "ignore"
+    # e.g. "Ɨgnore" → "Ignore", "ｉgnore" → "ignore"  # noqa: RUF003
     normalised = unicodedata.normalize("NFKC", content)
 
     flagged: list[str] = []

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 
 from tapps_brain.decay import (
     DecayConfig,
@@ -440,10 +441,10 @@ class TestLayerHalfLivesValidation:
 
     def test_zero_layer_half_life_raises(self) -> None:
         """A value of 0 in layer_half_lives raises ValueError to prevent ZeroDivisionError."""
-        with pytest.raises(Exception):  # pydantic ValidationError
+        with pytest.raises(ValidationError):
             DecayConfig(layer_half_lives={"bad_layer": 0})
 
     def test_negative_layer_half_life_raises(self) -> None:
         """A negative value in layer_half_lives raises ValueError."""
-        with pytest.raises(Exception):  # pydantic ValidationError
+        with pytest.raises(ValidationError):
             DecayConfig(layer_half_lives={"bad_layer": -5})

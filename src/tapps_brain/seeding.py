@@ -92,7 +92,7 @@ def reseed_from_profile(
     return result
 
 
-def _do_seed(
+def _do_seed(  # noqa: PLR0915
     store: MemoryStore,
     profile: ProjectProfileLike,
 ) -> dict[str, Any]:

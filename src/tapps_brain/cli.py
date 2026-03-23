@@ -30,6 +30,12 @@ structlog.configure(
 )
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_PREVIEW_LEN = 80  # Max chars shown for a memory value preview in table output
+
+# ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 
@@ -336,7 +342,9 @@ def memory_history(
             for i, entry in enumerate(chain):
                 marker = " (current)" if not entry.superseded_by else " (superseded)"
                 typer.echo(f"  [{i + 1}] {entry.key}{marker}")
-                val_preview = entry.value[:80] + ("..." if len(entry.value) > 80 else "")
+                val_preview = entry.value[:_PREVIEW_LEN] + (
+                    "..." if len(entry.value) > _PREVIEW_LEN else ""
+                )
                 typer.echo(f"      Value: {val_preview}")
                 if entry.valid_at:
                     typer.echo(f"      Valid: {entry.valid_at}")

@@ -61,6 +61,7 @@ _W_RECENCY = 0.15
 _W_FREQUENCY = 0.15
 
 _FREQUENCY_CAP = 20.0
+_WEIGHT_SUM_TOLERANCE = 0.01  # Allow 1% deviation from 1.0 in scoring weights
 
 # Per-source trust multipliers applied to composite score (M2).
 # These are post-composite multipliers, not additive weights.
@@ -142,12 +143,9 @@ class MemoryRetriever:
             )
             # Warn if profile weights don't sum to ~1.0 (would make scores inconsistent)
             weight_sum = (
-                self._w_relevance
-                + self._w_confidence
-                + self._w_recency
-                + self._w_frequency
+                self._w_relevance + self._w_confidence + self._w_recency + self._w_frequency
             )
-            if abs(weight_sum - 1.0) > 0.01:
+            if abs(weight_sum - 1.0) > _WEIGHT_SUM_TOLERANCE:
                 logger.warning(
                     "scoring_weights_do_not_sum_to_one",
                     weight_sum=round(weight_sum, 4),
