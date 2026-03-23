@@ -125,7 +125,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Scoring Components (all independent)
 
 #### 018-C: Review `bm25.py` + `fusion.py` — text scoring
-- [ ] Review `src/tapps_brain/bm25.py` (227 lines) and `src/tapps_brain/fusion.py` (42 lines). Focus on: BM25 parameter tuning (k1, b), term frequency correctness, IDF calculation, Reciprocal Rank Fusion k constant, empty corpus handling. Fix all issues. Commit: `review(story-018.3): BM25 and fusion scoring review`
+- [x] Review `src/tapps_brain/bm25.py` (227 lines) and `src/tapps_brain/fusion.py` (42 lines). Focus on: BM25 parameter tuning (k1, b), term frequency correctness, IDF calculation, Reciprocal Rank Fusion k constant, empty corpus handling. Fix all issues. Commit: `review(story-018.3): BM25 and fusion scoring review`
 
 #### 018-D: Review `similarity.py` — similarity computation
 - [ ] Review `src/tapps_brain/similarity.py` (318 lines). Focus on: Jaccard + TF-IDF correctness, threshold calibration, edge cases (empty strings, identical entries), performance on large sets. Fix all issues. Commit: `review(story-018.4): similarity computation review`

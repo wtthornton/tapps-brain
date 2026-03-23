@@ -148,6 +148,7 @@ class BM25Scorer:
     _avgdl: float = field(default=0.0, init=False, repr=False)
     _doc_lens: list[int] = field(default_factory=list, init=False, repr=False)
     _doc_terms: list[list[str]] = field(default_factory=list, init=False, repr=False)
+    _tf_maps: list[dict[str, int]] = field(default_factory=list, init=False, repr=False)
     _df: dict[str, int] = field(default_factory=dict, init=False, repr=False)
     _idf: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
@@ -162,6 +163,14 @@ class BM25Scorer:
         self._doc_lens = [len(terms) for terms in self._doc_terms]
         total_len = sum(self._doc_lens)
         self._avgdl = total_len / self._doc_count if self._doc_count else 0.0
+
+        # Pre-compute per-document term-frequency maps (avoids recomputation per query)
+        self._tf_maps = []
+        for terms in self._doc_terms:
+            tf_map: dict[str, int] = {}
+            for t in terms:
+                tf_map[t] = tf_map.get(t, 0) + 1
+            self._tf_maps.append(tf_map)
 
         # Document frequency
         self._df = {}
@@ -206,13 +215,8 @@ class BM25Scorer:
 
     def _score_doc(self, query_terms: list[str], doc_idx: int) -> float:
         """BM25 score for a single document."""
-        doc_terms = self._doc_terms[doc_idx]
         dl = self._doc_lens[doc_idx]
-
-        # Term frequencies in this document
-        tf_map: dict[str, int] = {}
-        for t in doc_terms:
-            tf_map[t] = tf_map.get(t, 0) + 1
+        tf_map = self._tf_maps[doc_idx]
 
         total = 0.0
         for qt in query_terms:
