@@ -18,8 +18,14 @@ import { existsSync } from "node:fs";
 /** MCP protocol version this client implements. */
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
-/** Request timeout in milliseconds (30 s). */
-const REQUEST_TIMEOUT_MS = 30_000;
+/** Request timeout in milliseconds (10 s). */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Exponential backoff delays for reconnect retries (ms). */
+const RECONNECT_DELAYS_MS = [100, 200, 400] as const;
+
+/** Health check interval (ms). */
+const HEALTH_CHECK_INTERVAL_MS = 60_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +76,9 @@ export class McpClient {
   private pending = new Map<number, PendingRequest>();
   private buffer = "";
   private _projectDir: string;
+  private _command = "tapps-brain-mcp";
+  private _extraArgs: string[] = [];
+  private _healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(projectDir: string) {
     this._projectDir = resolve(projectDir);
@@ -91,6 +100,10 @@ export class McpClient {
     if (this.process) {
       return; // Already running
     }
+
+    // Store params so reconnect() can re-use them.
+    this._command = command;
+    this._extraArgs = extraArgs;
 
     const args = ["--project-dir", this._projectDir, ...extraArgs];
     this.process = spawn(command, args, {
@@ -131,15 +144,46 @@ export class McpClient {
 
     // Notify server that initialization is complete (no response expected).
     this.sendNotification("notifications/initialized");
+
+    // Start periodic health checks (skip if already running from a previous start).
+    if (!this._healthCheckTimer) {
+      this._healthCheckTimer = setInterval(() => {
+        this._runHealthCheck().catch(() => {
+          // Health check errors are non-fatal; reconnect will be attempted on
+          // the next callTool() call if the process is dead.
+        });
+      }, HEALTH_CHECK_INTERVAL_MS);
+    }
   }
 
-  /** Stop the MCP child process. */
+  /** Stop the MCP child process and cancel the health-check timer. */
   stop(): void {
+    if (this._healthCheckTimer) {
+      clearInterval(this._healthCheckTimer);
+      this._healthCheckTimer = null;
+    }
     if (this.process) {
       this.process.kill("SIGTERM");
       this.process = null;
     }
     this.pending.clear();
+  }
+
+  /**
+   * Reconnect: tear down any dead process state and spawn a fresh child.
+   *
+   * Safe to call when the process is already null (e.g. after an unexpected
+   * exit).  Should not be called when the process is still alive — use
+   * `stop()` first in that case.
+   */
+  async reconnect(): Promise<void> {
+    // Ensure any lingering process handle is cleared before re-spawning.
+    if (this.process) {
+      this.process.kill("SIGTERM");
+      this.process = null;
+    }
+    this.buffer = "";
+    await this.start(this._command, this._extraArgs);
   }
 
   /** Whether the MCP process is running. */
@@ -150,10 +194,57 @@ export class McpClient {
   /**
    * Call an MCP tool by name with the given arguments.
    *
+   * Automatically reconnects the child process if it has died, retrying up to
+   * 3 times with exponential back-off (100 ms / 200 ms / 400 ms).
+   *
    * @returns The parsed result from the tool response.
    */
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.sendRpc("tools/call", { name, arguments: args });
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt <= RECONNECT_DELAYS_MS.length; attempt++) {
+      // If the process is gone, wait (on retries) then reconnect.
+      if (!this.isRunning) {
+        if (attempt > 0) {
+          await new Promise<void>((res) => setTimeout(res, RECONNECT_DELAYS_MS[attempt - 1]));
+        }
+        try {
+          await this.reconnect();
+        } catch (reconnErr) {
+          lastErr = reconnErr;
+          continue; // Try again after the next delay
+        }
+      }
+
+      try {
+        return await this.sendRpc("tools/call", { name, arguments: args });
+      } catch (err) {
+        lastErr = err;
+        // If the process exited while we were waiting, the exit handler already
+        // set this.process = null — the next loop iteration will reconnect.
+        // If the process is still alive (e.g. a request timeout), mark it dead
+        // so the next attempt triggers a fresh reconnect.
+        if (this.isRunning) {
+          this.process!.kill("SIGTERM");
+          this.process = null;
+        }
+      }
+    }
+
+    throw lastErr ?? new Error(`MCP callTool(${name}) failed after ${RECONNECT_DELAYS_MS.length} retries`);
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal: health check
+  // -----------------------------------------------------------------------
+
+  /**
+   * Lightweight liveness probe: calls `memory_list` with limit=0.
+   * If the call fails the process is likely dead; the next `callTool()` call
+   * will trigger reconnection automatically.
+   */
+  private async _runHealthCheck(): Promise<void> {
+    await this.sendRpc("tools/call", { name: "memory_list", arguments: { limit: 0 } });
   }
 
   // -----------------------------------------------------------------------

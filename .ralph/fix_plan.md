@@ -387,7 +387,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: MCP Client Reliability (sequential)
 
 #### 028-C: Add MCP client reconnection logic
-- [ ] In `openclaw-plugin/src/mcp_client.ts`, the `process.on("exit")` handler sets `this.process = null` but never restarts. Fix: add `reconnect()` method that re-spawns the process. `callTool()` should detect dead process and call `reconnect()` with exponential backoff (3 retries, 100/200/400ms). Add 10s request timeout for pending requests. Add health check: `callTool("memory_list", { limit: 0 })` every 60s. Add TypeScript test: kill child process mock, verify reconnection. Commit: `feat(story-028.1): add MCP client auto-reconnection`
+- [x] In `openclaw-plugin/src/mcp_client.ts`, the `process.on("exit")` handler sets `this.process = null` but never restarts. Fix: add `reconnect()` method that re-spawns the process. `callTool()` should detect dead process and call `reconnect()` with exponential backoff (3 retries, 100/200/400ms). Add 10s request timeout for pending requests. Add health check: `callTool("memory_list", { limit: 0 })` every 60s. Add TypeScript test: kill child process mock, verify reconnection. Commit: `feat(story-028.1): add MCP client auto-reconnection`
 
 ### Phase 3: TypeScript Test Suite (independent after 028-C)
 
