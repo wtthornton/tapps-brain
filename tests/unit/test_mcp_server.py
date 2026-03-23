@@ -1155,6 +1155,111 @@ class TestAgentScopeValidation:
         assert result["error"] == "invalid_agent_scope"
 
 
+class TestMemorySaveInputValidation:
+    """Tests for tier/source validation in memory_save (story-022.1)."""
+
+    def test_invalid_tier_returns_error(self, mcp_server):
+        """memory_save with an unrecognised tier returns error JSON."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="bad-tier", value="test", tier="unknown_tier"))
+        assert result["error"] == "invalid_tier"
+        assert "valid_values" in result
+        assert sorted(result["valid_values"]) == [
+            "architectural",
+            "context",
+            "pattern",
+            "procedural",
+        ]
+
+    def test_invalid_tier_not_persisted(self, mcp_server):
+        """Entries with an invalid tier are not written to the store."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        save_fn(key="bad-tier-np", value="test", tier="wrong")
+        assert mcp_server._tapps_store.get("bad-tier-np") is None
+
+    def test_invalid_source_returns_error(self, mcp_server):
+        """memory_save with an unrecognised source returns error JSON."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="bad-source", value="test", source="robot"))
+        assert result["error"] == "invalid_source"
+        assert "valid_values" in result
+        assert sorted(result["valid_values"]) == ["agent", "human", "inferred", "system"]
+
+    def test_invalid_source_not_persisted(self, mcp_server):
+        """Entries with an invalid source are not written to the store."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        save_fn(key="bad-source-np", value="test", source="alien")
+        assert mcp_server._tapps_store.get("bad-source-np") is None
+
+    def test_valid_tier_and_source_succeed(self, mcp_server):
+        """memory_save with valid tier/source writes successfully."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(
+            save_fn(key="valid-ts", value="test", tier="architectural", source="human")
+        )
+        assert result["status"] == "saved"
+
+
+class TestMemoryReinforceValidation:
+    """Tests for confidence_boost range validation in memory_reinforce (story-022.1)."""
+
+    def test_confidence_boost_above_max_returns_error(self, mcp_server):
+        """confidence_boost > 0.2 returns error JSON."""
+        store = mcp_server._tapps_store
+        store.save(key="rein-valid", value="test", tier="pattern")
+        reinforce_fn = _tool_fn(mcp_server, "memory_reinforce")
+        result = json.loads(reinforce_fn(key="rein-valid", confidence_boost=0.5))
+        assert result["error"] == "invalid_confidence_boost"
+
+    def test_confidence_boost_below_min_returns_error(self, mcp_server):
+        """confidence_boost < 0.0 returns error JSON."""
+        store = mcp_server._tapps_store
+        store.save(key="rein-neg", value="test", tier="pattern")
+        reinforce_fn = _tool_fn(mcp_server, "memory_reinforce")
+        result = json.loads(reinforce_fn(key="rein-neg", confidence_boost=-0.1))
+        assert result["error"] == "invalid_confidence_boost"
+
+    def test_confidence_boost_at_boundary_succeeds(self, mcp_server):
+        """confidence_boost = 0.2 (boundary) succeeds."""
+        store = mcp_server._tapps_store
+        store.save(key="rein-boundary", value="test", tier="pattern")
+        reinforce_fn = _tool_fn(mcp_server, "memory_reinforce")
+        result = json.loads(reinforce_fn(key="rein-boundary", confidence_boost=0.2))
+        assert result["status"] == "reinforced"
+
+    def test_confidence_boost_zero_succeeds(self, mcp_server):
+        """confidence_boost = 0.0 (default) succeeds."""
+        store = mcp_server._tapps_store
+        store.save(key="rein-zero", value="test", tier="pattern")
+        reinforce_fn = _tool_fn(mcp_server, "memory_reinforce")
+        result = json.loads(reinforce_fn(key="rein-zero", confidence_boost=0.0))
+        assert result["status"] == "reinforced"
+
+
+class TestMemorySearchAsOfValidation:
+    """Tests for as_of ISO-8601 validation in memory_search (story-022.1)."""
+
+    def test_invalid_as_of_returns_error(self, mcp_server):
+        """memory_search with malformed as_of returns error JSON."""
+        search_fn = _tool_fn(mcp_server, "memory_search")
+        result = json.loads(search_fn(query="test", as_of="not-a-date"))
+        assert result["error"] == "invalid_as_of"
+
+    def test_valid_as_of_succeeds(self, mcp_server):
+        """memory_search with a valid ISO-8601 as_of does not return error."""
+        search_fn = _tool_fn(mcp_server, "memory_search")
+        result = json.loads(search_fn(query="test", as_of="2025-01-01T00:00:00Z"))
+        assert isinstance(result, list)
+
+    def test_none_as_of_succeeds(self, mcp_server):
+        """memory_search without as_of (None) runs normally."""
+        store = mcp_server._tapps_store
+        store.save(key="search-ao", value="unique search phrase aof", tier="pattern")
+        search_fn = _tool_fn(mcp_server, "memory_search")
+        result = json.loads(search_fn(query="unique search phrase aof"))
+        assert isinstance(result, list)
+
+
 class TestHiveToolsReuseSharedStore:
     """Tests for Hive tools reusing the server's shared HiveStore (STORY-013.4)."""
 

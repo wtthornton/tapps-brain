@@ -689,6 +689,10 @@ class MemoryStore:
             tier_counts=tier_counts,
         )
 
+    def get_schema_version(self) -> int:
+        """Return the current SQLite schema version."""
+        return self._persistence.get_schema_version()
+
     # ------------------------------------------------------------------
     # Reinforcement (Story 002.2)
     # ------------------------------------------------------------------

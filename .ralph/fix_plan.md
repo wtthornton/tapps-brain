@@ -228,7 +228,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: MCP Server (sequential — largest file)
 
 #### 022-A: Review `mcp_server.py` — server setup and core memory tools (lines 1–500)
-- [ ] Review `src/tapps_brain/mcp_server.py` lines 1–500. Focus on: argparse, server init, `memory_save`, `memory_recall`, `memory_delete`, `memory_get`, `memory_list` tools. Check input validation, error responses, JSON serialization. Fix all issues. Commit: `review(story-022.1): mcp_server.py core tools review`
+- [x] Review `src/tapps_brain/mcp_server.py` lines 1–500. Focus on: argparse, server init, `memory_save`, `memory_recall`, `memory_delete`, `memory_get`, `memory_list` tools. Check input validation, error responses, JSON serialization. Fix all issues. Commit: `review(story-022.1): mcp_server.py core tools review`
 
 #### 022-B: Review `mcp_server.py` — Hive, graph, and audit tools (lines 501–1000)
 - [ ] Review `src/tapps_brain/mcp_server.py` lines 501–1000. Focus on: `hive_*` tools, `memory_relations`, `memory_find_related`, `memory_query_relations`, `memory_audit` tools. Check Hive fallback paths, graph query correctness. Fix all issues. Commit: `review(story-022.2): mcp_server.py Hive and graph tools review`

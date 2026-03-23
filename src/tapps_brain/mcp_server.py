@@ -164,6 +164,24 @@ def create_server(  # noqa: PLR0915
                 }
             )
 
+        _valid_tiers = ("architectural", "pattern", "procedural", "context")
+        if tier not in _valid_tiers:
+            return json.dumps(
+                {
+                    "error": "invalid_tier",
+                    "message": f"Invalid tier {tier!r}. Valid values: {list(_valid_tiers)}",
+                    "valid_values": list(_valid_tiers),
+                }
+            )
+        _valid_sources = ("human", "agent", "inferred", "system")
+        if source not in _valid_sources:
+            return json.dumps(
+                {
+                    "error": "invalid_source",
+                    "message": f"Invalid source {source!r}. Valid values: {list(_valid_sources)}",
+                    "valid_values": list(_valid_sources),
+                }
+            )
         resolved_agent = source_agent if source_agent else agent_id
         result = store.save(
             key=key,
@@ -225,6 +243,18 @@ def create_server(  # noqa: PLR0915
             scope: Optional scope filter (project, branch, session).
             as_of: Optional ISO-8601 timestamp for point-in-time query.
         """
+        if as_of is not None:
+            try:
+                from datetime import datetime
+
+                datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+            except ValueError:
+                return json.dumps(
+                    {
+                        "error": "invalid_as_of",
+                        "message": f"as_of must be a valid ISO-8601 timestamp, got {as_of!r}",
+                    }
+                )
         results = store.search(query, tier=tier, scope=scope, as_of=as_of)
         return json.dumps(
             [
@@ -308,6 +338,13 @@ def create_server(  # noqa: PLR0915
             key: The memory entry key to reinforce.
             confidence_boost: Confidence increase (0.0-0.2). Defaults to 0.0.
         """
+        if not (0.0 <= confidence_boost <= 0.2):
+            return json.dumps(
+                {
+                    "error": "invalid_confidence_boost",
+                    "message": f"confidence_boost must be in [0.0, 0.2], got {confidence_boost}",
+                }
+            )
         try:
             entry = store.reinforce(key, confidence_boost=confidence_boost)
         except KeyError:
@@ -511,7 +548,7 @@ def create_server(  # noqa: PLR0915
     def stats_resource() -> str:
         """Store statistics: entry count, tier distribution, schema version."""
         snap = store.snapshot()
-        schema_ver = store._persistence.get_schema_version()
+        schema_ver = store.get_schema_version()
         return json.dumps(
             {
                 "project_root": str(snap.project_root),
@@ -574,7 +611,7 @@ def create_server(  # noqa: PLR0915
         entries so the AI assistant can give the user an overview.
         """
         snap = store.snapshot()
-        schema_ver = store._persistence.get_schema_version()
+        schema_ver = store.get_schema_version()
         entries = store.list_all()
 
         lines = [
