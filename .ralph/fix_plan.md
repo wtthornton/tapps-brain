@@ -411,7 +411,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 5: Documentation (after all above)
 
 #### 028-I: Update documentation for all integration modes
-- [ ] Restructure `docs/guides/openclaw.md`: Quick Start, Integration Modes (ContextEngine / memory slot / MCP sidecar / mcp-adapter), Configuration Reference, Feature Matrix, Migration Guide, Troubleshooting, Version Compatibility. Add config examples for each mode. Add feature matrix table. Add troubleshooting for "memory_search returns 0" and "MCP process crashes". Commit: `docs(story-028.8): comprehensive OpenClaw integration guide`
+- [x] Restructure `docs/guides/openclaw.md`: Quick Start, Integration Modes (ContextEngine / memory slot / MCP sidecar / mcp-adapter), Configuration Reference, Feature Matrix, Migration Guide, Troubleshooting, Version Compatibility. Add config examples for each mode. Add feature matrix table. Add troubleshooting for "memory_search returns 0" and "MCP process crashes". Commit: `docs(story-028.8): comprehensive OpenClaw integration guide`
 
 ---
 

@@ -1,51 +1,77 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. 28 MCP tools, zero LLM dependency, works offline.
-
-There are two ways to integrate tapps-brain with OpenClaw:
-
-| Method | Best for | Setup |
-|--------|----------|-------|
-| **ContextEngine plugin** | Automatic recall/capture, zero-config | `npm install` + `openclaw.plugin.json` |
-| **MCP sidecar** | Manual control, custom workflows | `pip install` + `openclaw.json` |
-
-The **ContextEngine plugin** (recommended) handles everything automatically — bootstrap,
-ingest, assemble, compact, and dispose — with no agent prompting required. The **MCP
-sidecar** gives you direct access to all 28 tools for custom integrations.
+Persistent cross-session memory for your OpenClaw agents. 41 MCP tools, zero LLM
+dependency, SQLite-backed, works offline.
 
 ---
 
-## Option A: ContextEngine Plugin (recommended)
+## Quick Start
 
-### 1. Install
+**Recommended: install via OpenClaw skill registry (one command):**
 
-**Prerequisites:** Node 18+, Python 3.12+, OpenClaw >= v2026.3.7, tapps-brain with MCP support.
+```bash
+openclaw skill install tapps-brain-memory
+```
+
+This installs `tapps-brain[mcp]` from PyPI and configures the ContextEngine plugin
+automatically. Requires OpenClaw v2026.3.1+.
+
+**Manual install (any version):**
+
+```bash
+pip install tapps-brain[mcp]
+```
+
+Then choose an integration mode below based on your OpenClaw version and needs.
+
+---
+
+## Integration Modes
+
+Four ways to integrate tapps-brain, from zero-config to fully custom:
+
+| Mode | OpenClaw Version | Setup Effort | Memory Control | Best For |
+|------|-----------------|--------------|----------------|----------|
+| **ContextEngine plugin** | v2026.3.7+ | Zero-config | Automatic | Production use |
+| **Memory slot plugin** | v2026.3.1+ | Low | memory_search / memory_get replaced | Replacing memory-core |
+| **MCP sidecar** | Any | Medium | Full manual | Custom workflows |
+| **mcp-adapter** | v2026.3.1–3.6 | Low | Hook-based | Older installations |
+
+---
+
+## Mode 1: ContextEngine Plugin (recommended)
+
+The ContextEngine plugin handles everything automatically — bootstrap, ingest, assemble,
+compact, and dispose — with no agent prompting required. Memories are injected into every
+model call and captured from every message.
+
+### Requirements
+
+- Node 18+, Python 3.12+
+- **OpenClaw v2026.3.7+** (uses `definePluginEntry` ContextEngine API)
+- `tapps-brain[mcp]` installed
+
+### Install
+
+If you did not use `openclaw skill install`, build and register manually:
 
 ```bash
 # Install the Python backend
 pip install tapps-brain[mcp]
 
-# Clone the repo to get the OpenClaw plugin source
+# Clone the repo to get the TypeScript plugin
 git clone https://github.com/wtthornton/tapps-brain.git
 cd tapps-brain/openclaw-plugin
 npm install
 npm run build
-```
 
-> **Note:** The ContextEngine plugin is a TypeScript package inside the tapps-brain
-> repository at `openclaw-plugin/`. You need to clone the repo (or download that
-> directory) to build it. The `pip install` only provides the Python backend and MCP
-> server — the OpenClaw plugin wrapper is separate.
-
-### 2. Register the plugin
-
-Install the built plugin into OpenClaw:
-
-```bash
+# Register with OpenClaw
 openclaw plugin install ./openclaw-plugin
 ```
 
-Then activate it in your OpenClaw config (`openclaw.yaml` or equivalent):
+### Configure
+
+Add to your OpenClaw config (`openclaw.yaml`):
 
 ```yaml
 plugins:
@@ -58,331 +84,94 @@ plugins:
         mcpCommand: tapps-brain-mcp
         tokenBudget: 2000
         captureRateLimit: 3
-        agentId: my-agent          # optional: for Hive sharing
-        hiveEnabled: true          # optional: enable multi-agent Hive
 ```
 
-### 3. How it works
+### How it works
 
-The plugin uses `definePluginEntry` to register a ContextEngine with these lifecycle hooks:
+The plugin uses OpenClaw's ContextEngine lifecycle hooks:
 
-#### Bootstrap (optional)
+| Hook | Trigger | What happens |
+|------|---------|--------------|
+| `bootstrap` | Agent startup | Spawns `tapps-brain-mcp`, imports MEMORY.md on first run, registers Hive agent if enabled |
+| `ingest` | New message arrives | Extracts facts via `memory_capture` (rate-limited by `captureRateLimit`) |
+| `assemble` | Before model call | Recalls memories → injects `systemPromptAddition` into system prompt |
+| `compact` | Context compaction | Flushes context to `memory_ingest`, indexes session chunks |
+| `dispose` | Gateway shutdown | Stops MCP child process |
 
-On startup, the plugin spawns `tapps-brain-mcp` as a child process (JSON-RPC over
-stdio). On first run it imports your workspace `MEMORY.md`. If Hive is enabled, it
-registers the agent in the Hive registry.
-
-#### Ingest
-
-Called when a new message enters the context window. The plugin captures durable facts
-from the message via `memory_capture`. Rate-limited: by default it fires once every 3
-ingest calls (configurable via `captureRateLimit`).
+Auto-recall loop:
 
 ```
-New message → ingest() → memory_capture() → new facts saved to store
+User message  →  ingest()  →  memory_capture()  →  new facts saved
+Before model  →  assemble()  →  memory_recall()  →  top memories injected
+After context  →  compact()  →  memory_ingest()  →  session archived
 ```
 
-#### Assemble
+### Test it
 
-Called before every model call. The plugin recalls relevant memories and returns them
-as `systemPromptAddition` — a markdown section injected into the system prompt.
-Keys are deduplicated within the session to avoid repeating the same facts.
+After registering the plugin:
 
 ```
-assemble() → memory_recall() → systemPromptAddition with ranked memories
-```
-
-#### Compact
-
-When OpenClaw compacts the context window, the plugin flushes recent conversation
-context into tapps-brain via `memory_ingest` and indexes the session chunks with
-`memory_index_session`. This ensures no knowledge is lost during compaction.
-The plugin sets `ownsCompaction: false` — OpenClaw handles the actual compaction.
-
-#### Dispose
-
-On gateway shutdown, the plugin stops the MCP child process.
-
-### 4. Test it
-
-After registering the plugin and restarting OpenClaw, verify the integration is working:
-
-1. Start a new OpenClaw session. The bootstrap hook should log that `tapps-brain-mcp`
-   has spawned.
-
-2. Ask your agent:
-
-```
+# Session 1 — save a fact
 "remember that we use PostgreSQL 16 for the main database"
-```
 
-3. Start a **new session** and ask:
-
-```
+# Session 2 — verify recall
 "what do you remember about the database?"
 ```
 
-If the agent recalls the PostgreSQL fact without being prompted, auto-recall is working.
-You can also check the store directly:
+If the agent recalls the PostgreSQL fact without prompting, recall is working. Verify
+directly:
 
 ```bash
 tapps-brain search "PostgreSQL" --project-dir /path/to/your/project
 ```
 
-### 5. Plugin settings
+---
 
-Defined in `openclaw.plugin.json` `configSchema`:
+## Mode 2: Memory Slot Plugin
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `mcpCommand` | `"tapps-brain-mcp"` | Command to spawn the MCP server |
-| `profilePath` | `".tapps-brain/profile.yaml"` | Path to memory profile config |
-| `tokenBudget` | `2000` | Max tokens for injected memories |
-| `captureRateLimit` | `3` | Capture every N ingest() calls (0 = every call) |
-| `agentId` | `""` | Agent ID for Hive sharing |
-| `hiveEnabled` | `false` | Enable multi-agent Hive |
+When enabled, this mode replaces OpenClaw's built-in `memory-core` — so `memory_search`
+and `memory_get` route through tapps-brain's SQLite store instead of the default plugin.
 
-### 6. Profile switching
+> **Status:** Planned (EPIC-026). This mode is declared in `openclaw.plugin.json` but
+> the backing tool implementations are not yet complete. Use Mode 1 or Mode 3 in the
+> meantime.
 
-tapps-brain supports configurable memory profiles (EPIC-010) that control tier weights,
-decay rates, and scoring parameters. To use a custom profile with the plugin:
-
-1. Create a profile YAML at `.tapps-brain/profile.yaml` in your project:
+### Configure (once available)
 
 ```yaml
-name: my-project
-tier_weights:
-  architectural: 1.0
-  pattern: 0.8
-  procedural: 0.6
-  context: 0.4
-scoring:
-  relevance_weight: 0.4
-  confidence_weight: 0.3
-  recency_weight: 0.15
-  frequency_weight: 0.15
-```
-
-2. Set `profilePath` in your plugin settings to point to the file.
-
-The MCP server loads the profile at startup and applies it to all recall and scoring
-operations.
-
-### 7. Hive integration (multi-agent sharing)
-
-When multiple OpenClaw agents share a workspace, the Hive (EPIC-011) enables cross-agent
-memory sharing. Memories marked with `agent_scope: "hive"` propagate to a shared store
-at `~/.tapps-brain/hive/hive.db`.
-
-To enable Hive with the ContextEngine plugin:
-
-1. Register each agent in the Hive agent registry (via the `hive_register_agent` MCP
-   tool or programmatically).
-
-2. Set `agent_scope` to `"domain"` or `"hive"` when saving memories that should be
-   shared.
-
-3. Recall automatically merges local + Hive results with configurable weight (default
-   0.8 local, 0.2 Hive).
-
-No plugin configuration changes are needed — Hive awareness is built into the MCP server.
-
-### 8. Multi-Agent Hive patterns
-
-When an orchestrator spawns multiple agents — e.g., a planner, a coder, and a reviewer —
-each agent can have its own identity and memory profile while sharing knowledge through the
-Hive. This section covers the configuration patterns enabled by EPIC-013.
-
-#### How it works
-
-```
-Orchestrator
-├── Agent "planner"  (profile: repo-brain)   ──┐
-├── Agent "coder"    (profile: repo-brain)   ──┤── shared Hive
-└── Agent "reviewer" (profile: code-review)  ──┘
-```
-
-Each agent runs its own `tapps-brain-mcp` process with `--agent-id` and `--enable-hive`.
-Private memories stay local; memories marked `domain` or `hive` propagate to the shared
-store at `~/.tapps-brain/hive/hive.db`. Recall automatically merges local + Hive results.
-
-#### Agent scope explained
-
-| Scope | Visibility | Use when |
-|-------|-----------|----------|
-| `private` | Only the saving agent | Agent-specific scratch notes, intermediate reasoning |
-| `domain` | Agents sharing the same profile | Conventions or patterns relevant to a role (e.g., all `repo-brain` agents) |
-| `hive` | All agents in the Hive | Cross-cutting facts: tech stack, project decisions, API contracts |
-
-Default is `private` — you must explicitly set `domain` or `hive` to share.
-
-#### Orchestrator config
-
-The orchestrator creates child agents and enables Hive coordination:
-
-```yaml
-# openclaw.yaml — orchestrator agent
 plugins:
   slots:
     contextEngine: tapps-brain-memory
+    memory: tapps-brain-memory        # claim the memory slot
   entries:
     tapps-brain-memory:
       enabled: true
       config:
         mcpCommand: tapps-brain-mcp
         tokenBudget: 2000
-        captureRateLimit: 3
-        agentId: orchestrator
-        hiveEnabled: true
 ```
 
-When `hiveEnabled` is `true` and `agentId` is set, the bootstrap hook:
-
-1. Passes `--agent-id orchestrator --enable-hive` to the MCP server.
-2. Auto-registers the agent in the Hive agent registry.
-3. All subsequent `memory_save` calls can include `agent_scope` to control propagation.
-
-#### Child agent config (shared profile)
-
-Each child agent uses its own `agentId` but can share a profile:
-
-```yaml
-# openclaw.yaml — coder agent
-plugins:
-  slots:
-    contextEngine: tapps-brain-memory
-  entries:
-    tapps-brain-memory:
-      enabled: true
-      config:
-        mcpCommand: tapps-brain-mcp
-        tokenBudget: 2000
-        captureRateLimit: 3
-        agentId: coder-1
-        hiveEnabled: true
-```
-
-Agents with the same profile can see each other's `domain`-scoped memories. All agents
-see `hive`-scoped memories regardless of profile.
-
-#### Child agent config (per-role profile)
-
-For specialized agents, use different profiles to tune recall behavior per role:
-
-```yaml
-# openclaw.yaml — reviewer agent
-plugins:
-  slots:
-    contextEngine: tapps-brain-memory
-  entries:
-    tapps-brain-memory:
-      enabled: true
-      config:
-        mcpCommand: tapps-brain-mcp
-        profilePath: .tapps-brain/profiles/code-review.yaml
-        tokenBudget: 3000
-        captureRateLimit: 5
-        agentId: reviewer-1
-        hiveEnabled: true
-```
-
-A `code-review` profile might weight `pattern`-tier memories higher and use a larger
-token budget so the reviewer sees more coding conventions.
-
-#### Profile inheritance
-
-Profiles support a `base` field for inheritance. A child profile extends and overrides
-specific settings from the base:
-
-```yaml
-# .tapps-brain/profiles/code-review.yaml
-name: code-review
-base: repo-brain          # Inherits tier weights, decay, scoring from repo-brain
-tier_weights:
-  pattern: 1.0            # Override: boost pattern-tier for code review
-scoring:
-  relevance_weight: 0.5   # Override: favor relevance over confidence
-```
-
-This lets teams define a shared base profile and specialize per agent role without
-duplicating the full configuration.
-
-#### Creating agents via MCP
-
-An orchestrator can also create agents programmatically using the `agent_create` MCP tool:
-
-```
-agent_create(agent_id="qa-1", profile="repo-brain", skills="testing,review")
-```
-
-This registers the agent, validates the profile exists, and returns the namespace
-assignment. The orchestrator can call this before handing off work to a child agent.
-
-#### Example: planner + coder workflow
-
-1. **Orchestrator** bootstraps with `agentId: "orchestrator"`, `hiveEnabled: true`.
-2. Orchestrator calls `agent_create(agent_id="planner", profile="repo-brain")`.
-3. Orchestrator calls `agent_create(agent_id="coder", profile="repo-brain")`.
-4. **Planner** saves architectural decisions with `agent_scope: "hive"`:
-   ```
-   memory_save(key="api-design", value="REST with versioned endpoints",
-               tier="architectural", agent_scope="hive")
-   ```
-5. **Coder** recalls and automatically sees the planner's Hive memories merged with its
-   own local context. The coder saves implementation patterns as `domain`-scoped so other
-   `repo-brain` agents can learn from them.
-6. Both agents' `private` memories remain isolated — no cross-contamination of
-   intermediate reasoning.
-
-#### Conflict resolution
-
-When two agents write to the same key in the Hive, the conflict policy determines the
-winner. The default policy is `confidence_max` — the entry with the highest confidence
-score wins. Other policies:
-
-| Policy | Behavior |
-|--------|----------|
-| `confidence_max` | Highest confidence wins (default) |
-| `last_write_wins` | Most recent write wins |
-| `source_authority` | The original author's version wins |
-| `supersede` | New version always replaces old |
-
-Conflict policy is configured at the Hive level and applies to all agents.
+When `slots.memory` is set to `"tapps-brain-memory"`, OpenClaw routes all
+`memory_search` and `memory_get` calls through tapps-brain. Falls back gracefully if the
+memory slot is not claimed.
 
 ---
 
-## Option B: MCP Sidecar (manual control)
+## Mode 3: MCP Sidecar
 
-Use the MCP sidecar when you need direct access to all 28 tools or want to build custom
-recall/capture workflows.
+Use the MCP sidecar for direct access to all 41 tools, or when you want full manual
+control over recall and capture workflows. Works with any OpenClaw version.
 
-### Quick Start (5 minutes)
-
-### 1. Install tapps-brain
-
-**From PyPI:**
+### Install
 
 ```bash
 pip install tapps-brain[mcp]
+tapps-brain-mcp --help    # verify install
 ```
 
-**From source (latest):**
+### Configure
 
-```bash
-git clone https://github.com/wtthornton/tapps-brain.git
-cd tapps-brain
-pip install .[mcp]
-```
-
-Verify the install:
-
-```bash
-tapps-brain-mcp --help
-```
-
-### 2. Add to OpenClaw config
-
-Edit `~/.openclaw/openclaw.json` and add a top-level `"mcp"` key (alongside `"agents"`, `"skills"`, etc.):
+Edit `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -398,7 +187,7 @@ Edit `~/.openclaw/openclaw.json` and add a top-level `"mcp"` key (alongside `"ag
 }
 ```
 
-This uses the current working directory for memory storage. To pin a specific project:
+To pin a specific project directory:
 
 ```json
 {
@@ -414,112 +203,9 @@ This uses the current working directory for memory storage. To pin a specific pr
 }
 ```
 
-### 3. Restart the OpenClaw gateway
+### Per-agent scoping
 
-OpenClaw reads MCP config at startup only — restart after editing `openclaw.json`.
-
-### 4. Test it
-
-Ask your OpenClaw agent:
-
-```
-"remember that we use PostgreSQL 16 for the main database"
-```
-
-Then in a new session:
-
-```
-"what do you remember about the database?"
-```
-
-If it recalls the PostgreSQL fact, you're set.
-
----
-
-## What you get
-
-### 28 MCP Tools
-
-| Category | Tools |
-|----------|-------|
-| **Core** | `memory_save`, `memory_get`, `memory_delete`, `memory_search`, `memory_list` |
-| **Lifecycle** | `memory_recall`, `memory_reinforce`, `memory_ingest`, `memory_supersede`, `memory_history` |
-| **Sessions** | `memory_index_session`, `memory_search_sessions`, `memory_capture` |
-| **Federation** | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
-| **Maintenance** | `maintenance_consolidate`, `maintenance_gc`, `memory_export`, `memory_import` |
-| **Profiles** | `profile_info`, `profile_switch` |
-| **Hive** | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_list` |
-
-### 4 MCP Resources
-
-| URI | Description |
-|-----|-------------|
-| `memory://stats` | Entry count, tier distribution, schema version |
-| `memory://health` | Store health report |
-| `memory://entries/{key}` | Full detail view of a single entry |
-| `memory://metrics` | Operation counters and latency histograms |
-
-### 3 MCP Prompts
-
-| Prompt | Description |
-|--------|-------------|
-| `recall(topic)` | "What do you remember about {topic}?" |
-| `store_summary()` | Overview of what's in the memory store |
-| `remember(fact)` | Guides the agent to save a fact with appropriate tier/tags |
-
----
-
-## How memory works
-
-### Tiers and decay
-
-Every memory has a tier that controls how fast it fades:
-
-| Tier | Half-life | Use for |
-|------|-----------|---------|
-| `architectural` | 180 days | System decisions, tech stack, infrastructure |
-| `pattern` | 90 days | Coding conventions, API patterns |
-| `procedural` | 30 days | Workflows, deployment steps |
-| `context` | 14 days | Session-specific facts, current task details |
-
-Decay is exponential and lazy — computed on read, no background processes.
-
-### Auto-recall loop
-
-```
-User message  →  memory_recall()  →  Ranked memories injected into context
-                                            ↓
-Agent response  →  memory_capture()  →  New facts extracted and persisted
-```
-
-The recall orchestrator searches, ranks, deduplicates, and formats memories within a configurable token budget (default 2000 tokens).
-
-### Scoring
-
-Search results are ranked by four weighted signals:
-
-| Signal | Weight | Source |
-|--------|--------|--------|
-| Relevance | 40% | BM25 full-text match |
-| Confidence | 30% | Decayed confidence score |
-| Recency | 15% | Time since last update |
-| Frequency | 15% | Access count |
-
-### Federation
-
-Share memories across projects:
-
-```
-Project A  --publish-->  Hub  --subscribe-->  Project B
-```
-
-The hub lives at `~/.tapps-brain/memory/federated.db`. Tag filters and confidence thresholds control what flows between projects.
-
----
-
-## Per-agent configuration
-
-To scope tapps-brain to a specific OpenClaw agent rather than globally, add the MCP config under that agent's entry in `openclaw.json`:
+To scope tapps-brain to a specific agent only:
 
 ```json
 {
@@ -543,30 +229,12 @@ To scope tapps-brain to a specific OpenClaw agent rather than globally, add the 
 }
 ```
 
----
+### With uv or virtualenvs
 
-## Using with uv (virtual environments)
-
-If you installed tapps-brain inside a virtual environment or with `uv`, use the full path to the binary:
-
-**Linux / macOS / WSL:**
+Use the full binary path:
 
 ```json
-{
-  "command": "/path/to/your/venv/bin/tapps-brain-mcp",
-  "args": ["--project-dir", "/path/to/project"],
-  "transport": "stdio"
-}
-```
-
-**Windows:**
-
-```json
-{
-  "command": "C:\\path\\to\\your\\venv\\Scripts\\tapps-brain-mcp.exe",
-  "args": ["--project-dir", "C:\\path\\to\\project"],
-  "transport": "stdio"
-}
+{ "command": "/path/to/.venv/bin/tapps-brain-mcp", "args": ["--project-dir", "/path/to/project"], "transport": "stdio" }
 ```
 
 Or use `uv run` to avoid path issues:
@@ -578,6 +246,396 @@ Or use `uv run` to avoid path issues:
   "transport": "stdio"
 }
 ```
+
+Restart OpenClaw after editing `openclaw.json` — MCP config is read at startup only.
+
+---
+
+## Mode 4: mcp-adapter (OpenClaw v2026.3.1–3.6)
+
+For OpenClaw versions that do not support the ContextEngine API (`definePluginEntry`) but
+do support the `before_agent_start` hook, the plugin automatically registers in
+hook-only mode. No configuration changes required — the version is detected at bootstrap.
+
+| OpenClaw version | Plugin behaviour |
+|-----------------|-----------------|
+| v2026.3.7+ | Full ContextEngine hooks (recommended) |
+| v2026.3.1–3.6 | `before_agent_start` hook only — memory injected at session start, no per-turn capture |
+| < v2026.3.1 | Tools registered only, no hooks — manual recall/capture via MCP tools |
+
+If you are on v2026.3.1–3.6 or older, upgrade OpenClaw when possible to get per-turn
+recall and auto-capture.
+
+---
+
+## Configuration Reference
+
+All settings are configured in the plugin `config` block (Modes 1/2) or via MCP command
+args (Mode 3).
+
+### Plugin config settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `mcpCommand` | `"tapps-brain-mcp"` | Command used to spawn the MCP server process |
+| `profilePath` | `".tapps-brain/profile.yaml"` | Path to custom memory profile YAML |
+| `tokenBudget` | `2000` | Max tokens for memories injected via `assemble()` |
+| `captureRateLimit` | `3` | Capture facts every N `ingest()` calls; `0` = every call |
+| `agentId` | `""` | Unique agent ID for Hive multi-agent sharing |
+| `hiveEnabled` | `false` | Enable Hive cross-agent memory sharing |
+| `citations` | `"auto"` | Citation footers in `assemble()` output: `"auto"` / `"on"` appends `Source: memory/<tier>/<key>.md`, `"off"` disables |
+
+### MCP server CLI args
+
+| Arg | Description |
+|-----|-------------|
+| `--project-dir PATH` | Directory where `.tapps-brain/memory/` is stored (default: cwd) |
+| `--agent-id ID` | Agent ID for Hive identification |
+| `--enable-hive` | Enable Hive at server level |
+| `--profile PATH` | Path to profile YAML |
+
+### Custom memory profile
+
+Create `.tapps-brain/profile.yaml` in your project to override scoring and decay:
+
+```yaml
+name: my-project
+tier_weights:
+  architectural: 1.0
+  pattern: 0.8
+  procedural: 0.6
+  context: 0.4
+scoring:
+  relevance_weight: 0.4
+  confidence_weight: 0.3
+  recency_weight: 0.15
+  frequency_weight: 0.15
+```
+
+Set `profilePath` in your plugin config to use it. Built-in profiles:
+`repo-brain`, `customer-support`, `home-automation`, `personal-assistant`,
+`project-management`, `research-knowledge`.
+
+---
+
+## Feature Matrix
+
+| Feature | ContextEngine | Memory Slot | MCP Sidecar | mcp-adapter |
+|---------|:---:|:---:|:---:|:---:|
+| Auto-recall before model call | ✅ | — | — | ✅ (session start) |
+| Auto-capture from messages | ✅ | — | — | — |
+| Pre-compaction flush | ✅ | — | — | — |
+| Replaces memory-core tools | — | ✅ | — | — |
+| Direct tool access (41 tools) | ✅ | ✅ | ✅ | ✅ |
+| Hive multi-agent sharing | ✅ | ✅ | ✅ | — |
+| Cross-project federation | ✅ | ✅ | ✅ | — |
+| Custom profiles | ✅ | ✅ | ✅ | — |
+| Citation footers in recall | ✅ | — | — | — |
+| Session memory search | ✅ | — | ✅ | — |
+| MCP resources (health, stats) | ✅ | ✅ | ✅ | — |
+| MCP prompts | — | — | ✅ | — |
+| Minimum OpenClaw version | v2026.3.7 | v2026.3.1 | Any | v2026.3.1 |
+
+---
+
+## All 41 MCP Tools
+
+### Core Memory (CRUD)
+
+| Tool | Description |
+|------|-------------|
+| `memory_save` | Save or update a memory entry |
+| `memory_get` | Retrieve a single entry by key |
+| `memory_delete` | Delete an entry |
+| `memory_search` | Full-text search with BM25 ranking and filters |
+| `memory_list` | List entries with optional tier/tag filters |
+
+### Lifecycle
+
+| Tool | Description |
+|------|-------------|
+| `memory_recall` | Auto-rank and inject memories for a message |
+| `memory_reinforce` | Boost confidence and reset decay clock |
+| `memory_ingest` | Extract and save facts from context text |
+| `memory_supersede` | Create new version, mark old as invalid |
+| `memory_history` | Show full version chain for a key |
+| `memory_capture` | Extract durable facts from an agent response |
+
+### Sessions
+
+| Tool | Description |
+|------|-------------|
+| `memory_index_session` | Index session chunks for future search |
+| `memory_search_sessions` | Full-text search past session summaries |
+
+### Hive (Multi-Agent Sharing)
+
+| Tool | Description |
+|------|-------------|
+| `hive_status` | Show namespaces, entry counts, registered agents |
+| `hive_search` | Search shared Hive memories from other agents |
+| `hive_propagate` | Manually share an existing local memory to the Hive |
+| `agent_register` | Register this agent in the Hive registry |
+| `agent_list` | List all registered agents and their profiles |
+| `agent_create` | Create and register a new agent programmatically |
+| `agent_delete` | Remove an agent registration |
+
+### Federation (Cross-Project)
+
+| Tool | Description |
+|------|-------------|
+| `federation_status` | Hub status, subscribed projects, and subscription list |
+| `federation_subscribe` | Subscribe this project to receive memories from another |
+| `federation_unsubscribe` | Remove a subscription |
+| `federation_publish` | Publish shared-scope memories to the federation hub |
+
+### Tags & Audit
+
+| Tool | Description |
+|------|-------------|
+| `memory_list_tags` | List all tags in use |
+| `memory_update_tags` | Add or remove tags from an entry |
+| `memory_entries_by_tag` | List entries matching a tag |
+| `memory_audit` | View JSONL audit log entries |
+
+### Maintenance
+
+| Tool | Description |
+|------|-------------|
+| `maintenance_consolidate` | Merge similar memories (Jaccard + TF-IDF, no LLM) |
+| `maintenance_gc` | Archive stale memories (never deleted) |
+| `memory_export` | Export entries as JSON |
+| `memory_import` | Import from JSON or markdown |
+
+### Config
+
+| Tool | Description |
+|------|-------------|
+| `memory_gc_config` | Show GC configuration |
+| `memory_gc_config_set` | Update GC thresholds |
+| `memory_consolidation_config` | Show consolidation configuration |
+| `memory_consolidation_config_set` | Update consolidation thresholds |
+| `profile_info` | Show active profile name, layers, scoring config |
+| `profile_switch` | Switch to a different built-in profile |
+
+### MCP Resources
+
+| URI | Description |
+|-----|-------------|
+| `memory://stats` | Entry count, tier distribution, schema version |
+| `memory://health` | Store health report with diagnostics |
+| `memory://entries/{key}` | Full detail view of a single entry |
+| `memory://metrics` | Operation counters and latency histograms |
+
+### MCP Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `recall(topic)` | "What do you remember about {topic}?" |
+| `store_summary()` | Overview of what is in the memory store |
+| `remember(fact)` | Guides the agent to save a fact with appropriate tier/tags |
+
+---
+
+## Memory Tiers and Scoring
+
+### Tiers and decay half-lives
+
+| Tier | Half-life | Use for |
+|------|-----------|---------|
+| `architectural` | 180 days | System decisions, tech stack, infrastructure |
+| `pattern` | 90 days | Coding conventions, API patterns, recurring approaches |
+| `procedural` | 30 days | Workflows, deployment steps, one-time procedures |
+| `context` | 14 days | Session-specific facts, current task details |
+
+Decay is exponential and lazy — computed on read, no background processes.
+
+### Composite scoring
+
+Search results are ranked by four weighted signals:
+
+| Signal | Default weight | Source |
+|--------|---------------|--------|
+| Relevance | 40% | BM25 full-text match |
+| Confidence | 30% | Decayed confidence score |
+| Recency | 15% | Time since last update |
+| Frequency | 15% | Access count |
+
+Weights are overridable per profile.
+
+---
+
+## Hive: Multi-Agent Memory Sharing
+
+When multiple OpenClaw agents share a workspace, the Hive enables cross-agent knowledge
+sharing. Each agent runs its own `tapps-brain-mcp` process; memories flow between agents
+based on `agent_scope`.
+
+### Agent scope
+
+| Scope | Visible to | Use when |
+|-------|-----------|----------|
+| `private` | Saving agent only (default) | Scratch notes, intermediate reasoning |
+| `domain` | Agents sharing the same profile | Conventions relevant to a role (e.g., all `repo-brain` agents) |
+| `hive` | All registered agents | Cross-cutting facts: tech stack, API contracts, project decisions |
+
+### Example: planner + coder workflow
+
+```yaml
+# openclaw.yaml — orchestrator
+config:
+  agentId: orchestrator
+  hiveEnabled: true
+```
+
+1. Orchestrator calls `agent_create(agent_id="planner", profile="repo-brain")`.
+2. Orchestrator calls `agent_create(agent_id="coder", profile="repo-brain")`.
+3. Planner saves architectural decisions with `agent_scope: "hive"`.
+4. Coder recalls and automatically sees the planner's memories merged (0.8 local / 0.2 Hive weight).
+5. Each agent's `private` memories remain isolated.
+
+### Conflict resolution
+
+When two agents write to the same key in the Hive:
+
+| Policy | Behavior |
+|--------|----------|
+| `confidence_max` | Highest confidence wins (default) |
+| `last_write_wins` | Most recent write wins |
+| `source_authority` | Original author's version wins |
+| `supersede` | New version always replaces old |
+
+---
+
+## Migration Guide
+
+### From memory-core (built-in OpenClaw memory)
+
+If you have existing memories in OpenClaw's built-in `memory-core`:
+
+```bash
+# Import your MEMORY.md into tapps-brain
+tapps-brain import --source MEMORY.md --project-dir /path/to/project
+
+# Or use the MCP migration tool (planned, EPIC-026)
+# tapps-brain openclaw migrate --workspace /path/to/project --dry-run
+```
+
+The import infers tier from heading level:
+- `## Heading` → `architectural`
+- `### Heading` → `pattern`
+- `#### Heading` → `procedural`
+- Body text → `context`
+
+### Upgrading from tapps-brain v0.x (28-tool API)
+
+v1.x expanded from 28 to 41 MCP tools. The original 28 tools are unchanged — no
+breaking changes. New tools are additive. See CHANGELOG for the full list.
+
+### Migrating from MCP sidecar to ContextEngine plugin
+
+1. Keep your `mcp` config as-is in `openclaw.json` (the plugin spawns its own MCP
+   process, so conflicts are possible — remove the sidecar entry after verifying the
+   plugin works).
+2. Add the plugin config under `plugins:` in `openclaw.yaml`.
+3. Restart OpenClaw.
+4. Verify recall is working (Quick Start test above).
+
+---
+
+## Version Compatibility
+
+| tapps-brain version | OpenClaw version | Plugin mode |
+|--------------------|-----------------|-------------|
+| 1.2.x | v2026.3.7+ | Full ContextEngine (recommended) |
+| 1.2.x | v2026.3.1–3.6 | `before_agent_start` hook only |
+| 1.2.x | < v2026.3.1 | Tools only (no hooks) |
+| 1.1.x | Any | MCP sidecar only |
+
+**`minimumVersion` in `openclaw.plugin.json` is set to `"2026.3.1"`** — OpenClaw will
+warn on older versions. The plugin still registers tools as a fallback, but automatic
+recall and capture will not work without hook support.
+
+To check your OpenClaw version:
+
+```bash
+openclaw --version
+```
+
+---
+
+## Troubleshooting
+
+### `memory_search returns 0` results
+
+**Cause:** Most common cause is the `_MIN_SCORE` threshold (0.3) combined with source
+trust scoring. Short queries like `"v1"` or single words can produce composite scores below
+the cutoff.
+
+**Fixes:**
+1. Use a longer, more descriptive query — `"PostgreSQL database config"` scores higher than `"db"`.
+2. Verify the store is not empty: `tapps-brain list --project-dir /path/to/project`.
+3. Check `--project-dir` points to the right directory. The store lives at
+   `{project-dir}/.tapps-brain/memory/memory.db`. If omitted, defaults to the MCP
+   server's working directory, which may differ from your project root.
+4. Try `memory_list` to confirm entries exist, then `memory_search` with a term that
+   appears verbatim in a saved entry.
+
+### `MCP process crashes` / plugin stops responding
+
+**Cause:** The MCP child process (`tapps-brain-mcp`) exited unexpectedly.
+
+**Fixes:**
+1. The plugin (v1.2+) includes automatic reconnection logic: up to 3 retries with
+   exponential backoff (100/200/400ms). If the process recovers, tool calls resume
+   automatically.
+2. If the process does not recover after retries, check the logs:
+   ```bash
+   # Show recent MCP server output
+   tapps-brain-mcp --project-dir /path/to/project 2>&1 | head -50
+   ```
+3. Verify disk space — SQLite writes fail silently on full disk.
+4. On WSL with Windows drives, check mount options for `/mnt/c/` — WAL mode requires
+   `metadata=full` or equivalent for reliable writes.
+5. Restart the OpenClaw gateway. The plugin's `dispose` hook stops the process cleanly.
+
+### `mcp package required` error
+
+```bash
+pip install tapps-brain[mcp]
+```
+
+### OpenClaw does not see tools after config change
+
+Restart the OpenClaw gateway — MCP config is read at startup only.
+
+### No memories returned after saving
+
+Check that `--project-dir` in your MCP sidecar config matches the directory where
+memories were saved. Each project has an isolated store at `{project-dir}/.tapps-brain/`.
+
+### Permission errors on Windows / WSL
+
+Ensure `.tapps-brain/memory/` is writable. On WSL with `/mnt/c/` paths, mount with
+`metadata` option in `/etc/wsl.conf`:
+
+```ini
+[automount]
+options = "metadata"
+```
+
+### Inspect the server manually
+
+Use the MCP Inspector to verify tool discovery without OpenClaw:
+
+```bash
+npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/project
+```
+
+### Check store health
+
+Ask your agent: *"read the memory://health resource"* — returns a health report with
+entry counts, tier distribution, schema version, and last GC run.
 
 ---
 
@@ -596,37 +654,13 @@ Global federation hub:
 
 ```
 ~/.tapps-brain/
-└── memory/
-    └── federated.db
+├── memory/
+│   └── federated.db              # Cross-project federation hub
+└── hive/
+    └── hive.db                   # Multi-agent Hive store
 ```
 
 Max 500 entries per project. Lowest-confidence entries are evicted when the cap is hit.
-
----
-
-## Troubleshooting
-
-**"mcp package required" error**
-The MCP extra wasn't installed. Run `pip install tapps-brain[mcp]`.
-
-**OpenClaw doesn't see the tools**
-Restart the gateway after editing `openclaw.json`. OpenClaw only reads MCP config at startup.
-
-**No memories returned**
-Check that `--project-dir` points to the right directory. The store lives at `{project-dir}/.tapps-brain/memory/`. If omitted, it defaults to the directory where the `tapps-brain-mcp` process starts (which may not be your project).
-
-**Permission errors on Windows / WSL**
-Ensure the store directory is writable. On WSL with Windows drives, check mount options for `/mnt/c/`.
-
-**Test the server manually**
-Use the MCP Inspector to connect and verify tool discovery:
-
-```bash
-npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/project
-```
-
-**Check server health from OpenClaw**
-Ask your agent: *"read the memory://health resource"* — it returns a health report with diagnostics.
 
 ---
 
