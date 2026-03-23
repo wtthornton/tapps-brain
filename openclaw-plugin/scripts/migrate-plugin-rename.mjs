@@ -7,6 +7,9 @@
  * settings to the new "tapps-brain-memory" entry, removes the old entry,
  * and cleans up the orphaned extension directory.
  *
+ * Supports both the current OpenClaw config format (config.plugins.entries / installs)
+ * and older flat formats (config.plugins[name]) for backward compatibility.
+ *
  * Usage:
  *   node openclaw-plugin/scripts/migrate-plugin-rename.mjs [--dry-run]
  */
@@ -44,33 +47,94 @@ try {
 }
 
 const plugins = config.plugins ?? {};
-const oldEntry = plugins[OLD_NAME];
-const newEntry = plugins[NEW_NAME];
+
+// --- Step 2: Detect config format and locate the old entry ---
+//
+// Current OpenClaw format: config.plugins.entries[name] + config.plugins.installs[name]
+// Older flat format:        config.plugins[name]
+
+const hasEntriesFormat = plugins.entries !== undefined && typeof plugins.entries === "object";
+
+let oldEntry;
+let oldInstall;
+let configFormat;
+
+if (hasEntriesFormat) {
+  // Current format: nested entries + installs
+  oldEntry = plugins.entries[OLD_NAME];
+  oldInstall = (plugins.installs ?? {})[OLD_NAME];
+  configFormat = "entries/installs";
+} else {
+  // Backward-compatible: flat config.plugins[name]
+  oldEntry = plugins[OLD_NAME];
+  oldInstall = undefined;
+  configFormat = "flat (legacy)";
+}
 
 if (!oldEntry) {
   console.log(
-    `No "${OLD_NAME}" plugin entry found in openclaw.json — nothing to migrate.`
+    `No "${OLD_NAME}" plugin entry found in openclaw.json (checked ${configFormat} format) — nothing to migrate.`
   );
   process.exit(0);
 }
 
-// --- Step 2: Merge settings into the new entry ---
+log(`Detected config format: ${configFormat}`);
 
-const merged = { ...oldEntry, ...newEntry };
-// Remove fields that are identity-level (name, id) — the new plugin owns those.
-delete merged.name;
-delete merged.id;
+// --- Step 3: Merge settings into the new entry ---
 
-log(`Migrating settings from "${OLD_NAME}" → "${NEW_NAME}":`);
-for (const [key, value] of Object.entries(merged)) {
-  log(`  ${key}: ${JSON.stringify(value)}`);
+if (hasEntriesFormat) {
+  const existingNewEntry = (plugins.entries ?? {})[NEW_NAME];
+  const merged = { ...oldEntry, ...existingNewEntry };
+  // Remove fields that are identity-level (name, id) — the new plugin owns those.
+  delete merged.name;
+  delete merged.id;
+
+  log(`Migrating entries["${OLD_NAME}"] → entries["${NEW_NAME}"]:`);
+  for (const [key, value] of Object.entries(merged)) {
+    log(`  ${key}: ${JSON.stringify(value)}`);
+  }
+
+  if (!plugins.entries) plugins.entries = {};
+  plugins.entries[NEW_NAME] = merged;
+  delete plugins.entries[OLD_NAME];
+
+  // Migrate installs section if the old entry exists there
+  if (oldInstall !== undefined) {
+    if (!plugins.installs) plugins.installs = {};
+    const existingNewInstall = plugins.installs[NEW_NAME];
+    const mergedInstall = { ...oldInstall, ...existingNewInstall };
+    delete mergedInstall.name;
+    delete mergedInstall.id;
+
+    log(`Migrating installs["${OLD_NAME}"] → installs["${NEW_NAME}"]:`);
+    for (const [key, value] of Object.entries(mergedInstall)) {
+      log(`  ${key}: ${JSON.stringify(value)}`);
+    }
+
+    plugins.installs[NEW_NAME] = mergedInstall;
+    delete plugins.installs[OLD_NAME];
+  } else {
+    log(`No installs["${OLD_NAME}"] entry found — skipping installs migration.`);
+  }
+} else {
+  // Legacy flat format: migrate config.plugins[OLD_NAME] → config.plugins[NEW_NAME]
+  const existingNewEntry = plugins[NEW_NAME];
+  const merged = { ...oldEntry, ...existingNewEntry };
+  delete merged.name;
+  delete merged.id;
+
+  log(`Migrating plugins["${OLD_NAME}"] → plugins["${NEW_NAME}"] (legacy flat format):`);
+  for (const [key, value] of Object.entries(merged)) {
+    log(`  ${key}: ${JSON.stringify(value)}`);
+  }
+
+  plugins[NEW_NAME] = merged;
+  delete plugins[OLD_NAME];
 }
 
-plugins[NEW_NAME] = merged;
-delete plugins[OLD_NAME];
 config.plugins = plugins;
 
-// --- Step 3: Write updated config ---
+// --- Step 4: Write updated config ---
 
 if (!dryRun) {
   // Back up before writing
@@ -84,7 +148,7 @@ if (!dryRun) {
   log(`Would update ${configPath}`);
 }
 
-// --- Step 4: Remove orphaned extension directory ---
+// --- Step 5: Remove orphaned extension directory ---
 
 if (existsSync(oldExtDir)) {
   if (!dryRun) {
