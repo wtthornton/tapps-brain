@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tapps_brain.embeddings import EmbeddingProvider
+    from tapps_brain.feedback import FeedbackEvent, FeedbackStore
     from tapps_brain.hive import HiveStore
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
@@ -165,6 +166,9 @@ class MemoryStore:
         for rel in all_relations:
             for src_key in rel["source_entry_keys"]:
                 self._relations.setdefault(src_key, []).append(rel)
+
+        # EPIC-029: Lazy-initialized feedback store.
+        self._feedback_store_instance: "FeedbackStore | None" = None
 
         logger.info(
             "memory_store_initialized",
@@ -1528,8 +1532,226 @@ class MemoryStore:
             "tampered_details": tampered_details,
         }
 
+    # ------------------------------------------------------------------
+    # Feedback API (EPIC-029)
+    # ------------------------------------------------------------------
+
+    def _get_feedback_store(self) -> "FeedbackStore":
+        """Return the lazily-initialized FeedbackStore.
+
+        The store shares the project's ``memory.db`` and audit log.
+        FeedbackConfig is resolved from the active profile when available.
+        """
+        if self._feedback_store_instance is None:
+            from tapps_brain.feedback import FeedbackConfig, FeedbackStore
+
+            config: FeedbackConfig | None = None
+            if self._profile is not None:
+                config = getattr(self._profile, "feedback", None)
+
+            self._feedback_store_instance = FeedbackStore(
+                db_path=self._persistence.db_path,
+                audit_path=self._persistence.audit_path,
+                config=config,
+            )
+        return self._feedback_store_instance
+
+    def rate_recall(
+        self,
+        entry_key: str,
+        *,
+        rating: str = "helpful",
+        session_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> "FeedbackEvent":
+        """Record a user rating for a recalled memory entry.
+
+        Convenience wrapper that creates a ``recall_rated`` feedback event.
+
+        Args:
+            entry_key: The memory entry key that was recalled.
+            rating: Quality rating — ``"helpful"`` (1.0), ``"partial"`` (0.5),
+                ``"irrelevant"`` (0.0), or ``"outdated"`` (0.0).
+            session_id: Optional calling session identifier.
+            details: Optional additional metadata.
+
+        Returns:
+            The persisted ``FeedbackEvent``.
+
+        Raises:
+            ValueError: If *rating* is not a recognised value.
+        """
+        from tapps_brain.feedback import FeedbackEvent
+
+        _RATING_SCORES: dict[str, float] = {
+            "helpful": 1.0,
+            "partial": 0.5,
+            "irrelevant": 0.0,
+            "outdated": 0.0,
+        }
+        if rating not in _RATING_SCORES:
+            raise ValueError(
+                f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}"
+            )
+
+        event = FeedbackEvent(
+            event_type="recall_rated",
+            entry_key=entry_key,
+            session_id=session_id,
+            utility_score=_RATING_SCORES[rating],
+            details={"rating": rating, **(details or {})},
+        )
+        self._get_feedback_store().record(event)
+        self._metrics.increment("store.feedback.recall_rated")
+        return event
+
+    def report_gap(
+        self,
+        query: str,
+        *,
+        session_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> "FeedbackEvent":
+        """Report a knowledge gap — a query that returned insufficient results.
+
+        Creates a ``gap_reported`` feedback event.  The *query* string is
+        stored in ``details["query"]`` for later clustering and analysis.
+
+        Args:
+            query: The query or topic that was not well served.
+            session_id: Optional calling session identifier.
+            details: Optional additional metadata.
+
+        Returns:
+            The persisted ``FeedbackEvent``.
+        """
+        from tapps_brain.feedback import FeedbackEvent
+
+        event = FeedbackEvent(
+            event_type="gap_reported",
+            session_id=session_id,
+            details={"query": query, **(details or {})},
+        )
+        self._get_feedback_store().record(event)
+        self._metrics.increment("store.feedback.gap_reported")
+        return event
+
+    def report_issue(
+        self,
+        entry_key: str,
+        issue: str,
+        *,
+        session_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> "FeedbackEvent":
+        """Flag a quality issue with a specific memory entry.
+
+        Creates an ``issue_flagged`` feedback event.  The *issue* description
+        is stored in ``details["issue"]``.
+
+        Args:
+            entry_key: The memory entry key that has the quality issue.
+            issue: Human-readable description of the issue.
+            session_id: Optional calling session identifier.
+            details: Optional additional metadata.
+
+        Returns:
+            The persisted ``FeedbackEvent``.
+        """
+        from tapps_brain.feedback import FeedbackEvent
+
+        event = FeedbackEvent(
+            event_type="issue_flagged",
+            entry_key=entry_key,
+            session_id=session_id,
+            details={"issue": issue, **(details or {})},
+        )
+        self._get_feedback_store().record(event)
+        self._metrics.increment("store.feedback.issue_flagged")
+        return event
+
+    def record_feedback(
+        self,
+        event_type: str,
+        *,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        utility_score: float | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> "FeedbackEvent":
+        """Record a generic feedback event (built-in or custom event type).
+
+        This is the low-level API that accepts any valid Object-Action
+        snake_case ``event_type``.  Use the typed convenience methods
+        (``rate_recall``, ``report_gap``, ``report_issue``) for standard
+        events, and this method for custom event types registered via
+        ``FeedbackConfig.custom_event_types``.
+
+        Args:
+            event_type: Object-Action snake_case event name (open enum).
+            entry_key: Optional memory entry key this event relates to.
+            session_id: Optional calling session identifier.
+            utility_score: Numeric utility signal in [-1.0, 1.0].
+            details: Optional additional metadata.
+
+        Returns:
+            The persisted ``FeedbackEvent``.
+
+        Raises:
+            ValueError: If *event_type* fails pattern validation, or if
+                strict event types are enabled and the type is unknown.
+        """
+        from tapps_brain.feedback import FeedbackEvent
+
+        event = FeedbackEvent(
+            event_type=event_type,
+            entry_key=entry_key,
+            session_id=session_id,
+            utility_score=utility_score,
+            details=details or {},
+        )
+        self._get_feedback_store().record(event)
+        self._metrics.increment("store.feedback.recorded")
+        return event
+
+    def query_feedback(
+        self,
+        *,
+        event_type: str | None = None,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> "list[FeedbackEvent]":
+        """Query recorded feedback events with optional filters.
+
+        Convenience wrapper around ``FeedbackStore.query()``.
+
+        Args:
+            event_type: Filter by exact event type (or None for all).
+            entry_key: Filter by related memory entry key.
+            session_id: Filter by session identifier.
+            since: ISO-8601 lower bound (inclusive) on timestamp.
+            until: ISO-8601 upper bound (inclusive) on timestamp.
+            limit: Maximum number of results (default 100).
+
+        Returns:
+            Matching ``FeedbackEvent`` objects ordered by timestamp ascending.
+        """
+        return self._get_feedback_store().query(
+            event_type=event_type,
+            entry_key=entry_key,
+            session_id=session_id,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+
     def close(self) -> None:
         """Close the underlying persistence layer."""
+        if self._feedback_store_instance is not None:
+            self._feedback_store_instance.close()
         self._persistence.close()
 
     # ------------------------------------------------------------------

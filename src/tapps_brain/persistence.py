@@ -89,6 +89,11 @@ class MemoryPersistence:
         return self._store_dir
 
     @property
+    def db_path(self) -> Path:
+        """Return the path to the SQLite database file."""
+        return self._db_path
+
+    @property
     def audit_path(self) -> Path:
         """Return the path to the JSONL audit log."""
         return self._audit_path
