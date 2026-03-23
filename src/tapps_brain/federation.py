@@ -1,7 +1,7 @@
 """Cross-project memory federation.
 
 Enables memory sharing across projects via a central hub store
-at ``~/.tapps-mcp/memory/federated.db``.  Projects explicitly publish
+at ``~/.tapps-brain/memory/federated.db``.  Projects explicitly publish
 shared-scope memories to the hub and subscribe to memories from
 other projects.
 
@@ -73,13 +73,17 @@ class FederationSubscription(BaseModel):
 
 
 class FederationConfig(BaseModel):
-    """Root config for federation stored at ~/.tapps-mcp/memory/federation.yaml."""
+    """Root config for federation stored at ~/.tapps-brain/memory/federation.yaml."""
 
     model_config = ConfigDict(extra="forbid")
 
     hub_path: str = Field(
         default="",
-        description="Path to federated.db (default: ~/.tapps-mcp/memory/federated.db).",
+        description=(
+            "Path to federated.db (default: ~/.tapps-brain/memory/federated.db). "
+            "Note: stored for reference but not currently used to override the hub path — "
+            "FederatedStore always uses the default location unless db_path is passed directly."
+        ),
     )
     projects: list[FederationProject] = Field(default_factory=list)
     subscriptions: list[FederationSubscription] = Field(default_factory=list)
@@ -161,10 +165,19 @@ def register_project(
 
 
 def unregister_project(project_id: str) -> FederationConfig:
-    """Remove a project from the federation hub."""
+    """Remove a project from the federation hub.
+
+    Removes the project registration, all subscriptions where it is the
+    subscriber, and removes it from the ``sources`` list of any remaining
+    subscriptions (stale source references).
+    """
     config = load_federation_config()
     config.projects = [p for p in config.projects if p.project_id != project_id]
+    # Remove subscriptions where this project is the subscriber
     config.subscriptions = [s for s in config.subscriptions if s.subscriber != project_id]
+    # Remove project from sources lists in remaining subscriptions (stale references)
+    for sub in config.subscriptions:
+        sub.sources = [src for src in sub.sources if src != project_id]
     save_federation_config(config)
     logger.info("federation.project_unregistered", project_id=project_id)
     return config
@@ -224,7 +237,7 @@ def add_subscription(
 class FederatedStore:
     """Central hub for cross-project memory federation.
 
-    Uses a SQLite database at ``~/.tapps-mcp/memory/federated.db`` with
+    Uses a SQLite database at ``~/.tapps-brain/memory/federated.db`` with
     composite primary key ``(project_id, key)`` and FTS5 for search.
     """
 
@@ -292,6 +305,14 @@ class FederatedStore:
         """Close the database connection."""
         with self._lock:
             self._conn.close()
+
+    def __enter__(self) -> FederatedStore:
+        """Support use as a context manager."""
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Close the connection on context manager exit."""
+        self.close()
 
     # ------------------------------------------------------------------
     # Publish / Unpublish
@@ -423,32 +444,56 @@ class FederatedStore:
         Returns:
             List of matching entries as dicts with project attribution.
         """
+        # Build dynamic project_id IN clause pushed into SQL for correctness —
+        # applying it in Python after LIMIT would return fewer than `limit` results.
+        project_filter = ""
+        project_params: list[Any] = []
+        if project_ids:
+            placeholders = ",".join("?" * len(project_ids))
+            project_filter = f" AND fm.project_id IN ({placeholders})"
+            project_params = list(project_ids)
+
+        # Fetch more rows than limit when tag filtering is active (Python-side),
+        # since tags are stored as JSON arrays and can't be filtered in SQL cheaply.
+        sql_limit = limit * 3 if tags else limit
+
         with self._lock:
             # Try FTS5 first
             try:
+                fts_params: list[Any] = [query, min_confidence, *project_params, sql_limit]
                 rows = self._conn.execute(
-                    """
+                    f"""
                     SELECT fm.*, rank
                     FROM federated_fts fts
                     JOIN federated_memories fm ON fts.rowid = fm.rowid
                     WHERE fts MATCH ?
                     AND fm.confidence >= ?
+                    {project_filter}
                     ORDER BY rank
                     LIMIT ?
                     """,
-                    (query, min_confidence, limit),
+                    fts_params,
                 ).fetchall()
             except sqlite3.OperationalError:
                 # FTS5 fallback: simple LIKE search
+                like_filter = project_filter.replace("fm.project_id", "project_id")
+                fallback_params: list[Any] = [
+                    f"%{query}%",
+                    f"%{query}%",
+                    min_confidence,
+                    *project_params,
+                    sql_limit,
+                ]
                 rows = self._conn.execute(
-                    """
+                    f"""
                     SELECT *, 0.0 as rank
                     FROM federated_memories
                     WHERE (key LIKE ? OR value LIKE ?)
                     AND confidence >= ?
+                    {like_filter}
                     LIMIT ?
                     """,
-                    (f"%{query}%", f"%{query}%", min_confidence, limit),
+                    fallback_params,
                 ).fetchall()
 
         results: list[dict[str, Any]] = []
@@ -456,11 +501,7 @@ class FederatedStore:
             row_dict = dict(row)
             row_tags = json.loads(row_dict.get("tags", "[]"))
 
-            # Filter by project_ids
-            if project_ids and row_dict["project_id"] not in project_ids:
-                continue
-
-            # Filter by tags
+            # Filter by tags (JSON array — kept in Python)
             if tags and not set(tags) & set(row_tags):
                 continue
 

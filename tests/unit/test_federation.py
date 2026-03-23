@@ -680,6 +680,104 @@ class TestMemoryScopeShared:
     def test_shared_scope_exists(self) -> None:
         assert MemoryScope.shared == "shared"
 
+
+# ===========================================================================
+# 7. FederatedStore context manager
+# ===========================================================================
+
+
+class TestFederatedStoreContextManager:
+    """FederatedStore must implement __enter__/__exit__ to prevent connection leaks."""
+
+    def test_context_manager_returns_self(self, tmp_path: Any) -> None:
+        db_path = tmp_path / "ctx_test.db"
+        with FederatedStore(db_path=db_path) as store:
+            assert isinstance(store, FederatedStore)
+
+    def test_context_manager_closes_on_exit(self, tmp_path: Any) -> None:
+        """Verify close() is called when context manager exits normally."""
+        db_path = tmp_path / "ctx_close.db"
+        store = FederatedStore(db_path=db_path)
+        close_calls: list[bool] = []
+        original_close = store.close
+
+        def tracking_close() -> None:
+            close_calls.append(True)
+            original_close()
+
+        store.close = tracking_close  # type: ignore[method-assign]
+
+        with store:
+            pass
+
+        assert close_calls == [True]
+
+    def test_context_manager_closes_on_exception(self, tmp_path: Any) -> None:
+        """Verify close() is called even when an exception is raised inside the block."""
+        db_path = tmp_path / "ctx_exc.db"
+        store = FederatedStore(db_path=db_path)
+        close_calls: list[bool] = []
+        original_close = store.close
+
+        def tracking_close() -> None:
+            close_calls.append(True)
+            original_close()
+
+        store.close = tracking_close  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="test error"):
+            with store:
+                raise RuntimeError("test error")
+
+        assert close_calls == [True], "close() must be called even when an exception occurs"
+
+
+# ===========================================================================
+# 8. unregister_project stale source cleanup
+# ===========================================================================
+
+
+class TestUnregisterStaleSourceCleanup:
+    """unregister_project must also remove the project from sources lists."""
+
+    def test_unregister_removes_project_from_sources(self) -> None:
+        """After unregistering proj-b, subscriptions that listed proj-b as a source
+        should have proj-b removed from their sources list."""
+        register_project("proj-a", "/tmp/a")
+        register_project("proj-b", "/tmp/b")
+        register_project("proj-c", "/tmp/c")
+        add_subscription("proj-a", sources=["proj-b", "proj-c"])
+
+        config = unregister_project("proj-b")
+
+        # proj-a's subscription should still exist but without proj-b in sources
+        assert len(config.subscriptions) == 1
+        assert config.subscriptions[0].subscriber == "proj-a"
+        assert "proj-b" not in config.subscriptions[0].sources
+        assert "proj-c" in config.subscriptions[0].sources
+
+    def test_unregister_removes_self_as_subscriber(self) -> None:
+        """Existing coverage: unregistering a subscriber removes its subscription."""
+        register_project("proj-a", "/tmp/a")
+        register_project("proj-b", "/tmp/b")
+        add_subscription("proj-a", sources=["proj-b"])
+
+        config = unregister_project("proj-a")
+        assert len(config.subscriptions) == 0
+
+    def test_unregister_cleans_multiple_subscriptions(self) -> None:
+        """Multiple subscriptions referencing the unregistered project as source are all cleaned."""
+        register_project("proj-a", "/tmp/a")
+        register_project("proj-b", "/tmp/b")
+        register_project("proj-c", "/tmp/c")
+        add_subscription("proj-a", sources=["proj-b"])
+        add_subscription("proj-c", sources=["proj-b"])
+
+        config = unregister_project("proj-b")
+
+        for sub in config.subscriptions:
+            assert "proj-b" not in sub.sources
+
     def test_shared_scope_in_entry(self) -> None:
         entry = _make_entry(scope=MemoryScope.shared)
         assert entry.scope == MemoryScope.shared

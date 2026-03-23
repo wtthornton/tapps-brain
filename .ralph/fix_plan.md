@@ -201,7 +201,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Federation (sequential)
 
 #### 021-A: Review `federation.py` — cross-project sharing
-- [ ] Review `src/tapps_brain/federation.py` (747 lines). Focus on: hub DB at `~/.tapps-brain/memory/federated.db` lifecycle, subscription management correctness, publish/subscribe conflict resolution, stale subscription cleanup, path traversal risk in project dirs. Fix all issues. Commit: `review(story-021.1): federation.py cross-project review`
+- [x] Review `src/tapps_brain/federation.py` (747 lines). Focus on: hub DB at `~/.tapps-brain/memory/federated.db` lifecycle, subscription management correctness, publish/subscribe conflict resolution, stale subscription cleanup, path traversal risk in project dirs. Fix all issues. Commit: `review(story-021.1): federation.py cross-project review`
 
 ### Phase 2: Hive (sequential)
 
