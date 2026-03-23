@@ -151,7 +151,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/consolidation.py` (486 lines). Focus on: Jaccard + TF-IDF similarity threshold correctness, merge conflict resolution, metadata preservation during merge, no-LLM invariant, idempotency of repeated consolidation. Fix all issues. Commit: `review(story-019.2): consolidation.py merging review`
 
 #### 019-C: Review `auto_consolidation.py` — automatic lifecycle
-- [ ] Review `src/tapps_brain/auto_consolidation.py` (376 lines). Focus on: trigger conditions, threshold tuning, interaction with manual consolidation, thread safety, config update correctness, performance under large entry counts. Fix all issues. Commit: `review(story-019.3): auto_consolidation.py lifecycle review`
+- [x] Review `src/tapps_brain/auto_consolidation.py` (376 lines). Focus on: trigger conditions, threshold tuning, interaction with manual consolidation, thread safety, config update correctness, performance under large entry counts. Fix all issues. Commit: `review(story-019.3): auto_consolidation.py lifecycle review`
 
 ### Phase 2: GC, Promotion, Reinforcement (all independent)
 

@@ -195,7 +195,9 @@ def _persist_consolidated_entry(
         batch_context="consolidate",
     )
 
-    # Merge relations from all source entries onto the consolidated entry
+    # Merge relations from all source entries onto the consolidated entry.
+    # TODO: MemoryStore should expose a public save_relations() method so this
+    #       function does not need to reach into private _persistence/_lock/_relations.
     relation_lists = [store.get_relations(k) for k in source_keys]
     merged_relations = merge_entry_relations(relation_lists, consolidated.key)
     if merged_relations:
@@ -253,8 +255,12 @@ def run_periodic_consolidation_scan(
 
     all_entries = store.list_all()
 
+    # Use isinstance for type-safe consolidated-entry detection. Note: entries
+    # saved via store.save() are always MemoryEntry instances (not ConsolidatedEntry
+    # subclass), so the isinstance check is a forward-compat guard only — filtering
+    # on ``contradicted`` is what actually excludes processed source entries.
     active_entries = [
-        e for e in all_entries if not getattr(e, "is_consolidated", False) and not e.contradicted
+        e for e in all_entries if not isinstance(e, ConsolidatedEntry) and not e.contradicted
     ]
 
     if len(active_entries) < min_group_size:
@@ -294,6 +300,11 @@ def run_periodic_consolidation_scan(
         try:
             consolidated = consolidate(group_entries, reason=reason)
         except ValueError:
+            logger.debug(
+                "periodic_consolidation_group_failed",
+                group_keys=group_keys,
+                exc_info=True,
+            )
             continue
 
         _persist_consolidated_entry(store, consolidated, group_keys)
@@ -334,7 +345,11 @@ def _get_last_scan_time(project_root: Path) -> datetime | None:
         data = json.loads(state_path.read_text(encoding="utf-8"))
         last_scan_str = data.get("last_scan")
         if last_scan_str:
-            return datetime.fromisoformat(last_scan_str)
+            dt = datetime.fromisoformat(last_scan_str)
+            # Guard against naive datetimes written by older versions of this code.
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
 
     return None
 
@@ -358,7 +373,7 @@ def _update_last_scan_time(project_root: Path) -> None:
 
 
 def should_run_auto_consolidation(
-    project_root: Path,
+    project_root: Path,  # noqa: ARG001 - reserved for future per-project config file lookup
     *,
     auto_consolidate: bool = True,
 ) -> bool:
@@ -367,7 +382,7 @@ def should_run_auto_consolidation(
     Helper to check configuration before running consolidation.
 
     Args:
-        project_root: Project root for configuration.
+        project_root: Reserved for future per-project config file lookup. Currently unused.
         auto_consolidate: Whether auto-consolidation is enabled.
 
     Returns:
