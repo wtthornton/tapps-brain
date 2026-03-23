@@ -15,24 +15,24 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Correctness Bugs (sequential — highest impact)
 
 #### BUG-001-B: `decay_config_from_profile` uses `dict[str, Any]` — type safety regression
-- [ ] In `decay.py:decay_config_from_profile()`, `legacy: dict[str, Any]` was widened from `dict[str, int]` to silence a type error. The actual values are always `int` (from `layer.half_life_days`). The real issue is that `DecayConfig(**legacy)` splats into a constructor with mixed field types. Fix: keep `dict[str, int]` and use explicit kwargs instead of `**legacy` splat: `DecayConfig(architectural_half_life_days=legacy.get("architectural_half_life_days", 180), ...)`. This restores type safety. Add a unit test verifying `decay_config_from_profile` returns correct types for all fields. Commit: `fix: restore type safety in decay_config_from_profile`
+- [x] In `decay.py:decay_config_from_profile()`, `legacy: dict[str, Any]` was widened from `dict[str, int]` to silence a type error. The actual values are always `int` (from `layer.half_life_days`). The real issue is that `DecayConfig(**legacy)` splats into a constructor with mixed field types. Fix: keep `dict[str, int]` and use explicit kwargs instead of `**legacy` splat: `DecayConfig(architectural_half_life_days=legacy.get("architectural_half_life_days", 180), ...)`. This restores type safety. Add a unit test verifying `decay_config_from_profile` returns correct types for all fields. Commit: `fix: restore type safety in decay_config_from_profile`
 
 #### BUG-001-C: HiveStore connection leak on exception in MCP handlers
-- [ ] In `mcp_server.py`, MCP tool handlers `hive_status`, `hive_search`, `hive_propagate` create `HiveStore()` instances and call `.close()` but without `try/finally`. If the operation raises, the SQLite connection leaks. Fix: wrap all `HiveStore()` usage in `try/finally` blocks that call `.close()` in the `finally` clause. Better: add `__enter__`/`__exit__` to `HiveStore` so it can be used as a context manager, then use `with HiveStore() as hive:` in MCP handlers. Add a unit test that mocks HiveStore.search to raise, verify .close() is still called. Commit: `fix: prevent HiveStore connection leak on MCP handler exceptions`
+- [x] In `mcp_server.py`, MCP tool handlers `hive_status`, `hive_search`, `hive_propagate` create `HiveStore()` instances and call `.close()` but without `try/finally`. If the operation raises, the SQLite connection leaks. Fix: wrap all `HiveStore()` usage in `try/finally` blocks that call `.close()` in the `finally` clause. Better: add `__enter__`/`__exit__` to `HiveStore` so it can be used as a context manager, then use `with HiveStore() as hive:` in MCP handlers. Add a unit test that mocks HiveStore.search to raise, verify .close() is still called. Commit: `fix: prevent HiveStore connection leak on MCP handler exceptions`
 
 ### Phase 2: Type Safety & Robustness (independent — all can run parallel)
 
 #### BUG-001-D: Add structlog warning for silent tier fallback in `_get_half_life`
-- [ ] In `decay.py:_get_half_life()`, unknown tier strings silently fall back to `context_half_life_days` (14 days). Add `logger.warning("unknown_tier_fallback", tier=tier_str, fallback_days=config.context_half_life_days)` before the fallback return. This makes misconfigured profiles debuggable. Add a unit test that triggers the fallback and verifies the log message. Commit: `fix: log warning on unknown tier fallback in decay`
+- [x] In `decay.py:_get_half_life()`, unknown tier strings silently fall back to `context_half_life_days` (14 days). Add `logger.warning("unknown_tier_fallback", tier=tier_str, fallback_days=config.context_half_life_days)` before the fallback return. This makes misconfigured profiles debuggable. Add a unit test that triggers the fallback and verifies the log message. Commit: `fix: log warning on unknown tier fallback in decay`
 
 #### BUG-001-E: Add `server.json` to version consistency test
-- [ ] `tests/unit/test_version_consistency.py` checks `pyproject.toml` vs `__init__.py` but not `server.json` (which has a hardcoded `"version": "1.1.0"`). Add `server.json` to the consistency check. Verify it matches current version. Fix the version if it has drifted. Commit: `fix: include server.json in version consistency check`
+- [x] `tests/unit/test_version_consistency.py` checks `pyproject.toml` vs `__init__.py` but not `server.json` (which has a hardcoded `"version": "1.1.0"`). Add `server.json` to the consistency check. Verify it matches current version. Fix the version if it has drifted. Commit: `fix: include server.json in version consistency check`
 
 #### BUG-001-F: Narrow bare `except Exception` in MCP Hive tools
 - [x] In `mcp_server.py`, MCP hive/registry tool handlers catch bare `except Exception` which swallows unexpected errors silently. Narrow to `except (ValueError, OSError, sqlite3.Error)` and add `logger.exception("hive_tool_error", tool=...)` for observability. Keep the JSON error response format. Add a unit test with a mocked unexpected exception to verify it's not swallowed. Commit: `fix: narrow exception handling in MCP Hive tools`
 
 #### BUG-001-G: Migrate remaining `timezone.utc` to `UTC`
-- [ ] Search all Python files for `timezone.utc` usage. The test suite partially migrated to `from datetime import UTC` but some files may still use the old pattern. Standardize on `datetime.UTC` (Python 3.11+). If no remaining instances, mark as done. Commit: `chore: standardize on datetime.UTC across codebase`
+- [x] Search all Python files for `timezone.utc` usage. The test suite partially migrated to `from datetime import UTC` but some files may still use the old pattern. Standardize on `datetime.UTC` (Python 3.11+). If no remaining instances, mark as done. Commit: `chore: standardize on datetime.UTC across codebase`
 
 ---
 
