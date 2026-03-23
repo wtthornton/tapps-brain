@@ -1115,6 +1115,7 @@ class MemoryStore:
             rate_limit_session_anomalies=rl_stats.session_anomalies,
             rate_limit_total_writes=rl_stats.total_writes,
             rate_limit_exempt_writes=rl_stats.exempt_writes,
+            relation_count=self.count_relations(),
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -1196,6 +1197,10 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Relations (EPIC-006)
     # ------------------------------------------------------------------
+
+    def count_relations(self) -> int:
+        """Return the total number of stored relation triples."""
+        return self._persistence.count_relations()
 
     def get_relations(self, key: str) -> list[dict[str, Any]]:
         """Return all relations associated with a memory entry key.

@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
-from tapps_brain.models import MemoryEntry  # noqa: TC001
+from tapps_brain.models import MemoryEntry, MemorySource  # noqa: TC001
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
 if TYPE_CHECKING:
@@ -61,6 +61,15 @@ _W_RECENCY = 0.15
 _W_FREQUENCY = 0.15
 
 _FREQUENCY_CAP = 20.0
+
+# Per-source trust multipliers applied to composite score (M2).
+# These are post-composite multipliers, not additive weights.
+_DEFAULT_SOURCE_TRUST: dict[str, float] = {
+    "human": 1.0,
+    "system": 0.9,
+    "agent": 0.7,
+    "inferred": 0.5,
+}
 
 # Marker text for consolidated source entries
 _CONSOLIDATED_MARKER = "consolidated into"
@@ -127,6 +136,10 @@ class MemoryRetriever:
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
             self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
             self._bm25_norm_k = float(getattr(scoring_config, "bm25_norm_k", _BM25_NORM_K))
+            raw_trust = getattr(scoring_config, "source_trust", None)
+            self._source_trust: dict[str, float] = (
+                dict(raw_trust) if isinstance(raw_trust, dict) else dict(_DEFAULT_SOURCE_TRUST)
+            )
         else:
             self._w_relevance = _W_RELEVANCE
             self._w_confidence = _W_CONFIDENCE
@@ -134,6 +147,7 @@ class MemoryRetriever:
             self._w_frequency = _W_FREQUENCY
             self._frequency_cap = _FREQUENCY_CAP
             self._bm25_norm_k = _BM25_NORM_K
+            self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
 
     def search(
         self,
@@ -228,6 +242,15 @@ class MemoryRetriever:
                 + self._w_recency * recency
                 + self._w_frequency * frequency
             )
+
+            # M2: Apply per-source trust multiplier
+            source_key = (
+                entry.source.value
+                if isinstance(entry.source, MemorySource)
+                else str(entry.source)
+            )
+            trust = self._source_trust.get(source_key, 1.0)
+            composite *= trust
 
             # Penalty for superseded entries included via include_superseded
             if not temporally_valid:

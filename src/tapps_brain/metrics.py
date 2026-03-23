@@ -67,6 +67,8 @@ class StoreHealthReport(BaseModel):
     rate_limit_session_anomalies: int = 0
     rate_limit_total_writes: int = 0
     rate_limit_exempt_writes: int = 0
+    # Relation graph (M3)
+    relation_count: int = 0
 
 
 # ---------------------------------------------------------------------------

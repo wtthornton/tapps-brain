@@ -45,6 +45,14 @@ class LayerDefinition(BaseModel):
     demotion_to: str | None = None
 
 
+_DEFAULT_SOURCE_TRUST: dict[str, float] = {
+    "human": 1.0,
+    "system": 0.9,
+    "agent": 0.7,
+    "inferred": 0.5,
+}
+
+
 class ScoringConfig(BaseModel):
     """Composite scoring weight configuration."""
 
@@ -54,6 +62,14 @@ class ScoringConfig(BaseModel):
     frequency: float = Field(default=0.15, ge=0.0, le=1.0)
     bm25_norm_k: float = Field(default=5.0, ge=0.1)
     frequency_cap: int = Field(default=20, ge=1)
+    source_trust: dict[str, float] = Field(
+        default_factory=lambda: dict(_DEFAULT_SOURCE_TRUST),
+        description=(
+            "Per-source trust multipliers applied to composite scores. "
+            "Values > 1.0 boost, < 1.0 penalise. Default: human=1.0, "
+            "system=0.9, agent=0.7, inferred=0.5."
+        ),
+    )
 
     _WEIGHT_SUM_LO: float = 0.95
     _WEIGHT_SUM_HI: float = 1.05
