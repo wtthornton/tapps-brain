@@ -61,6 +61,8 @@ class MemoryPersistence:
         self._db_path = self._store_dir / "memory.db"
         self._audit_path = self._store_dir / "memory_log.jsonl"
         self._lock = threading.Lock()
+        # Cached after _ensure_schema() — schema never changes after startup.
+        self._schema_version: int = 0
 
         try:
             self._conn = self._connect()
@@ -103,6 +105,8 @@ class MemoryPersistence:
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        # NORMAL synchronous is safe with WAL and gives better write throughput.
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -141,6 +145,10 @@ class MemoryPersistence:
                 self._migrate_v7_to_v8(cur)
 
             self._conn.commit()
+
+            # Cache the final schema version so save() avoids repeated DB lookups.
+            row2 = cur.execute("SELECT MAX(version) FROM schema_version").fetchone()
+            self._schema_version = int(row2[0]) if row2[0] is not None else 0
 
     def _create_v1_schema(self, cur: sqlite3.Cursor) -> None:
         """Create the initial v1 schema."""
@@ -452,7 +460,6 @@ class MemoryPersistence:
             "contradiction_reason",
             "seeded_from",
         ]
-        placeholders = ", ".join("?" * len(columns))
         values: tuple[Any, ...] = (
             entry.key,
             entry.value,
@@ -474,9 +481,9 @@ class MemoryPersistence:
             entry.seeded_from,
         )
 
-        # Include embedding if schema supports it (v2+)
+        # Include embedding if schema supports it (v2+, column added in _migrate_v1_to_v2)
         schema_ver = self.get_schema_version()
-        if schema_ver >= _SCHEMA_V4:
+        if schema_ver >= _SCHEMA_V2:
             columns.append("embedding")
             values = (*values, embedding_json)
 
@@ -597,10 +604,8 @@ class MemoryPersistence:
         return int(row[0]) if row else 0
 
     def get_schema_version(self) -> int:
-        """Return the current schema version."""
-        with self._lock:
-            row = self._conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
-        return int(row[0]) if row and row[0] is not None else 0
+        """Return the current schema version (cached after startup)."""
+        return self._schema_version
 
     def close(self) -> None:
         """Close the database connection."""
@@ -640,7 +645,11 @@ class MemoryPersistence:
                     )
                     stored += 1
                 except sqlite3.IntegrityError:
-                    pass
+                    logger.debug(
+                        "session_chunk_integrity_error",
+                        session_id=session_id,
+                        chunk_index=i,
+                    )
             self._conn.commit()
         return stored
 
@@ -895,11 +904,12 @@ class MemoryPersistence:
         """Escape an FTS5 query string for safe matching.
 
         Wraps each token in double quotes to treat them as literals.
+        Inner double-quote characters are escaped by doubling them (FTS5 syntax).
         """
         tokens = query.strip().split()
         if not tokens:
             return ""
-        return " ".join(f'"{t}"' for t in tokens)
+        return " ".join(f'"{t.replace(chr(34), chr(34) + chr(34))}"' for t in tokens)
 
     def append_audit(
         self,
@@ -923,18 +933,8 @@ class MemoryPersistence:
             logger.debug("audit_log_write_failed", key=key, action=action)
 
     def _audit_log(self, action: str, key: str) -> None:
-        """Append an entry to the JSONL audit log."""
-        record = {
-            "action": action,
-            "key": key,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        }
-        try:
-            with self._audit_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            self._maybe_truncate_audit()
-        except OSError:
-            logger.debug("audit_log_write_failed", key=key, action=action)
+        """Append a simple entry to the JSONL audit log (delegates to append_audit)."""
+        self.append_audit(action, key)
 
     def _maybe_truncate_audit(self) -> None:
         """Truncate audit log if it exceeds the max line count."""

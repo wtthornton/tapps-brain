@@ -86,7 +86,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/store.py` lines 751–end. Focus on: `reinforce()`, `ingest_context()`, `index_session()`, `search_sessions()`, `cleanup_sessions()`, `validate_entries()`, `health()`, `get_metrics()`, Hive propagation, MCP integration points. Fix all issues. Commit: `review(story-017.2): store.py advanced features review`
 
 #### 017-C: Review `persistence.py` — SQLite layer
-- [ ] Review `src/tapps_brain/persistence.py` (936 lines). Focus on: WAL mode correctness, FTS5 index updates, schema migrations v1→v7, SQL injection risk in any string formatting, connection lifecycle, error handling on disk full / locked DB. Fix all issues. Commit: `review(story-017.3): persistence.py SQLite layer review`
+- [x] Review `src/tapps_brain/persistence.py` (936 lines). Focus on: WAL mode correctness, FTS5 index updates, schema migrations v1→v7, SQL injection risk in any string formatting, connection lifecycle, error handling on disk full / locked DB. Fix all issues. Commit: `review(story-017.3): persistence.py SQLite layer review`
 
 #### 017-D: Review `models.py` — Pydantic data models
 - [ ] Review `src/tapps_brain/models.py` (327 lines). Focus on: Pydantic v2 validators, field defaults, serialization round-trip correctness, `MemoryEntry` / `ConsolidatedEntry` / `RecallResult` consistency, `MemoryTier` enum completeness, `agent_scope` validation. Fix all issues. Commit: `review(story-017.4): models.py data model review`
