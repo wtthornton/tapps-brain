@@ -36,7 +36,12 @@ docs/planning/
     ├── EPIC-025.md      ← Code review — Integration Tests, Benchmarks & TypeScript (planned)
     ├── EPIC-026.md      ← OpenClaw Memory Replacement — replace memory-core with tapps-brain (planned)
     ├── EPIC-027.md      ← OpenClaw Full Feature Surface — expose all 41 MCP tools (planned)
-    └── EPIC-028.md      ← OpenClaw Plugin Hardening — stability, tests, compatibility (planned)
+    ├── EPIC-028.md      ← OpenClaw Plugin Hardening — stability, tests, compatibility (planned)
+    ├── EPIC-029.md      ← Feedback Collection — LLM and project quality signals (planned)
+    ├── EPIC-030.md      ← Diagnostics & Self-Monitoring — quality scorecard and anomaly detection (planned)
+    ├── EPIC-031.md      ← Continuous Improvement Flywheel — feedback-driven quality loop (planned)
+    ├── EPIC-032.md      ← OTel GenAI Semantic Conventions — standardized telemetry export (planned)
+    └── EPIC-033.md      ← OpenClaw Plugin SDK Alignment — fix API type drift and runtime bugs (planned)
 ```
 
 ## Why This Structure
