@@ -74,9 +74,15 @@ export interface PluginConfig {
   hiveEnabled?: boolean;
 }
 
+/** Logger interface matching OpenClaw's api.logger shape. */
+export interface PluginLogger {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+}
+
 /** OpenClaw plugin API passed to the register() callback. */
 interface OpenClawPluginApi {
-  logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  logger: PluginLogger;
   config: PluginConfig;
   runtime: { workspaceDir: string; sessionId: string };
   registerContextEngine(
@@ -135,6 +141,7 @@ export class TappsBrainEngine {
   private readonly tokenBudget: number;
   private readonly hiveEnabled: boolean;
   private readonly agentId: string;
+  private readonly logger: PluginLogger;
 
   readonly info: ContextEngineInfo = {
     id: "tapps-brain-memory",
@@ -143,7 +150,7 @@ export class TappsBrainEngine {
     ownsCompaction: false,
   };
 
-  constructor(config: PluginConfig, workspaceDir: string) {
+  constructor(config: PluginConfig, workspaceDir: string, logger?: PluginLogger) {
     this.config = config;
     this.workspaceDir = workspaceDir;
     this.captureRateLimit = config.captureRateLimit ?? 3;
@@ -151,6 +158,8 @@ export class TappsBrainEngine {
     this.hiveEnabled = config.hiveEnabled ?? false;
     this.agentId = config.agentId ?? "";
     this.mcpClient = new McpClient(workspaceDir);
+    // Default to no-op logger if none provided (e.g. in tests)
+    this.logger = logger ?? { info: () => {}, warn: () => {} };
 
     // Deferred promise: resolved by bootstrap(), rejected on bootstrap failure.
     // All hooks await this.ready so they never call MCP before the client is ready.
@@ -260,14 +269,17 @@ export class TappsBrainEngine {
       return { ingested: true };
     }
 
+    const t0 = Date.now();
     try {
       await this.mcpClient.callTool("memory_capture", {
         response: message.content,
         source: message.role === "user" ? "human" : "agent",
         agent_scope: this.hiveEnabled ? "hive" : "private",
       });
-    } catch {
+      this.logger.info("[tapps-brain] ingest:", { elapsed_ms: Date.now() - t0 });
+    } catch (err) {
       // Fail gracefully — never block the conversation
+      this.logger.warn("[tapps-brain] ingest:", err);
     }
 
     return { ingested: true };
@@ -296,6 +308,7 @@ export class TappsBrainEngine {
 
     const budget = Math.min(this.tokenBudget, (tokenBudget.soft ?? 2000) * 4);
 
+    const t0 = Date.now();
     try {
       // Build a query from recent user messages
       const recentUserMessages = messages
@@ -325,12 +338,14 @@ export class TappsBrainEngine {
 
       const memories = recall.memories ?? [];
       if (memories.length === 0) {
+        this.logger.info("[tapps-brain] assemble:", { elapsed_ms: Date.now() - t0, memories: 0 });
         return { messages, estimatedTokens: 0 };
       }
 
       // Filter out keys already injected in this session
       const newMemories = memories.filter((m) => !this.injectedKeys.has(m.key));
       if (newMemories.length === 0) {
+        this.logger.info("[tapps-brain] assemble:", { elapsed_ms: Date.now() - t0, memories: 0 });
         return { messages, estimatedTokens: 0 };
       }
 
@@ -357,9 +372,14 @@ export class TappsBrainEngine {
         ? Math.ceil(charCount / 4)
         : 0;
 
+      this.logger.info("[tapps-brain] assemble:", {
+        elapsed_ms: Date.now() - t0,
+        memories: newMemories.length,
+      });
       return { messages, estimatedTokens, systemPromptAddition };
-    } catch {
+    } catch (err) {
       // Fail gracefully — return messages unchanged
+      this.logger.warn("[tapps-brain] assemble:", err);
       return { messages, estimatedTokens: 0 };
     }
   }
@@ -408,8 +428,9 @@ export class TappsBrainEngine {
 
       // Clear — these messages are now persisted
       this.recentMessages = [];
-    } catch {
+    } catch (err) {
       // Fail gracefully — never block compaction
+      this.logger.warn("[tapps-brain] compact:", err);
     }
 
     return { ok: true, compacted: true };
@@ -434,7 +455,7 @@ export default definePluginEntry({
   register(api) {
     api.registerContextEngine("tapps-brain-memory", (config: PluginConfig) => {
       const workspaceDir = api.runtime.workspaceDir;
-      const engine = new TappsBrainEngine(config, workspaceDir);
+      const engine = new TappsBrainEngine(config, workspaceDir, api.logger);
 
       // Bootstrap asynchronously — don't block registration
       engine.bootstrap().catch((err) => {

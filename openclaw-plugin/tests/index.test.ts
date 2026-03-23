@@ -1,9 +1,12 @@
 /**
- * Tests for TappsBrainEngine — bootstrap race condition fix (028-A)
+ * Tests for TappsBrainEngine
  *
- * Verifies that concurrent calls to ingest/assemble/compact before
+ * 028-A: Verifies that concurrent calls to ingest/assemble/compact before
  * bootstrap completes are correctly queued (await this.ready) and
  * return graceful fallbacks when bootstrap fails.
+ *
+ * 028-B: Verifies structured error logging — silent catch blocks replaced
+ * with logger.warn() calls. Also verifies elapsed_ms timing in ingest/assemble.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -15,7 +18,7 @@ vi.mock("../src/mcp_client.js", () => ({
   isFirstRun: vi.fn().mockReturnValue(false),
 }));
 
-import { TappsBrainEngine } from "../src/index.js";
+import { TappsBrainEngine, type PluginLogger } from "../src/index.js";
 import { McpClient } from "../src/mcp_client.js";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +39,14 @@ function makeMockClient(overrides: {
     stop: vi.fn(),
     ...overrides,
   } as unknown as InstanceType<typeof McpClient>;
+}
+
+/** Minimal logger mock for testing warning calls. */
+function makeMockLogger(): PluginLogger & {
+  info: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+} {
+  return { info: vi.fn(), warn: vi.fn() };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,5 +230,165 @@ describe("TappsBrainEngine — bootstrap race condition (028-A)", () => {
       message: { role: "user", content: "important thing" },
     });
     expect(result).toEqual({ ingested: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-B: Structured error logging
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — structured error logging (028-B)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  // -------------------------------------------------------------------------
+  // ingest() — logger.warn on MCP error
+  // -------------------------------------------------------------------------
+
+  it("ingest calls logger.warn when memory_capture throws", async () => {
+    const mcpError = new Error("capture failed");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockRejectedValue(mcpError),
+      }),
+    );
+
+    const logger = makeMockLogger();
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace", logger);
+    await engine.bootstrap();
+
+    // captureRateLimit=1 ensures every call triggers MCP
+    const result = await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "something important" },
+    });
+
+    // Graceful fallback — never throws
+    expect(result).toEqual({ ingested: true });
+    // logger.warn must be called with hook name and error
+    expect(logger.warn).toHaveBeenCalledWith("[tapps-brain] ingest:", mcpError);
+  });
+
+  it("ingest calls logger.info with elapsed_ms on success", async () => {
+    const logger = makeMockLogger();
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace", logger);
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "another message" },
+    });
+
+    // logger.info should have been called with elapsed_ms
+    expect(logger.info).toHaveBeenCalledWith(
+      "[tapps-brain] ingest:",
+      expect.objectContaining({ elapsed_ms: expect.any(Number) }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // assemble() — logger.warn on MCP error
+  // -------------------------------------------------------------------------
+
+  it("assemble calls logger.warn when memory_recall throws", async () => {
+    const mcpError = new Error("recall failed");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockRejectedValue(mcpError),
+      }),
+    );
+
+    const logger = makeMockLogger();
+    const engine = new TappsBrainEngine({}, "/tmp/workspace", logger);
+    await engine.bootstrap();
+
+    const messages = [{ role: "user" as const, content: "what do you know?" }];
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages,
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    // Graceful fallback — never throws, returns messages unchanged
+    expect(result).toEqual({ messages, estimatedTokens: 0 });
+    expect(logger.warn).toHaveBeenCalledWith("[tapps-brain] assemble:", mcpError);
+  });
+
+  it("assemble calls logger.info with elapsed_ms on success", async () => {
+    const logger = makeMockLogger();
+    const engine = new TappsBrainEngine({}, "/tmp/workspace", logger);
+    await engine.bootstrap();
+
+    const messages = [{ role: "user" as const, content: "hello" }];
+    await engine.assemble({
+      sessionId: "s1",
+      messages,
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "[tapps-brain] assemble:",
+      expect.objectContaining({ elapsed_ms: expect.any(Number) }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // compact() — logger.warn on MCP error
+  // -------------------------------------------------------------------------
+
+  it("compact calls logger.warn when memory_ingest throws", async () => {
+    const mcpError = new Error("ingest failed");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockRejectedValue(mcpError),
+      }),
+    );
+
+    const logger = makeMockLogger();
+    const engine = new TappsBrainEngine({}, "/tmp/workspace", logger);
+    await engine.bootstrap();
+
+    // Push a message so compact() has something to flush
+    await engine.ingest({
+      sessionId: "s1",
+      // captureRateLimit defaults to 3 so this won't try MCP during ingest
+      message: { role: "user", content: "message to compact" },
+      isHeartbeat: false,
+    });
+
+    const result = await engine.compact({ sessionId: "s1" });
+
+    // Graceful fallback — never throws
+    expect(result).toEqual({ ok: true, compacted: true });
+    expect(logger.warn).toHaveBeenCalledWith("[tapps-brain] compact:", mcpError);
+  });
+
+  // -------------------------------------------------------------------------
+  // Default no-op logger (no logger provided)
+  // -------------------------------------------------------------------------
+
+  it("uses no-op logger when no logger is provided (does not throw)", async () => {
+    const mcpError = new Error("silent failure");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockRejectedValue(mcpError),
+      }),
+    );
+
+    // No logger passed — should not throw even when MCP fails
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await expect(
+      engine.ingest({
+        sessionId: "s1",
+        message: { role: "user", content: "test message" },
+      }),
+    ).resolves.toEqual({ ingested: true });
   });
 });

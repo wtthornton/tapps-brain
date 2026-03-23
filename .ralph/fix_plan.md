@@ -382,7 +382,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] In `openclaw-plugin/src/index.ts:379-384`, `engine.bootstrap()` runs async with `.catch()` (fire-and-forget). If `ingest()` or `assemble()` is called before bootstrap completes, the MCP client is uninitialized. Fix: add a `ready` promise to `TappsBrainEngine`. Set it in `bootstrap()`. All hooks (`ingest`, `assemble`, `compact`) must `await this.ready` before calling MCP. If bootstrap fails, hooks return graceful fallbacks (empty results). Add TypeScript test: simulate concurrent bootstrap + ingest. Commit: `fix(story-028.2): resolve bootstrap race condition in OpenClaw plugin`
 
 #### 028-B: Replace silent catch blocks with structured error logging
-- [ ] In `openclaw-plugin/src/index.ts`, lines 228-230, 311-313, 351-353 have empty `catch {}` blocks that silently swallow errors. Replace all with `catch (err) { this.logger.warn("[tapps-brain] <hook>:", err) }`. Store `api.logger` reference in the engine constructor. Add elapsed_ms timing to assemble() and ingest() hooks. Add TypeScript test: trigger error, verify logger.warn is called. Commit: `fix(story-028.7): add structured error logging to OpenClaw plugin`
+- [x] In `openclaw-plugin/src/index.ts`, lines 228-230, 311-313, 351-353 have empty `catch {}` blocks that silently swallow errors. Replace all with `catch (err) { this.logger.warn("[tapps-brain] <hook>:", err) }`. Store `api.logger` reference in the engine constructor. Add elapsed_ms timing to assemble() and ingest() hooks. Add TypeScript test: trigger error, verify logger.warn is called. Commit: `fix(story-028.7): add structured error logging to OpenClaw plugin`
 
 ### Phase 2: MCP Client Reliability (sequential)
 
