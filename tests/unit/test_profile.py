@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from tapps_brain.profile import (
     GCConfig,
@@ -70,11 +71,11 @@ class TestLayerDefinition:
 
     def test_half_life_days_minimum(self) -> None:
         """half_life_days must be >= 1."""
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(ValidationError):
             LayerDefinition(name="bad", half_life_days=0)
 
     def test_half_life_days_negative(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(ValidationError):
             LayerDefinition(name="bad", half_life_days=-5)
 
     def test_valid_half_life_days_one(self) -> None:
@@ -150,6 +151,21 @@ class TestScoringConfig:
     def test_default_frequency_cap(self) -> None:
         sc = ScoringConfig()
         assert sc.frequency_cap == 20
+
+    def test_default_source_trust_values(self) -> None:
+        """source_trust defaults match _DEFAULT_SOURCE_TRUST."""
+        sc = ScoringConfig()
+        assert sc.source_trust["human"] == 1.0
+        assert sc.source_trust["system"] == 0.9
+        assert sc.source_trust["agent"] == pytest.approx(0.7)
+        assert sc.source_trust["inferred"] == pytest.approx(0.5)
+
+    def test_source_trust_is_mutable_copy(self) -> None:
+        """Mutating one ScoringConfig's source_trust must not affect another."""
+        sc1 = ScoringConfig()
+        sc2 = ScoringConfig()
+        sc1.source_trust["human"] = 0.5
+        assert sc2.source_trust["human"] == 1.0
 
 
 class TestGCConfig:
@@ -537,6 +553,16 @@ class TestInheritance:
         result = _resolve_inheritance(profile)
         assert result.name == "standalone"
         assert len(result.layers) == 1
+
+    def test_resolve_inheritance_invalid_extends_raises(self) -> None:
+        """A profile with extends pointing to a non-existent built-in raises FileNotFoundError."""
+        profile = MemoryProfile(
+            name="bad-extends",
+            extends="no-such-profile",
+            layers=[LayerDefinition(name="x", half_life_days=5)],
+        )
+        with pytest.raises(FileNotFoundError, match="no-such-profile"):
+            _resolve_inheritance(profile)
 
     def test_source_confidence_merged(self) -> None:
         parent = MemoryProfile(

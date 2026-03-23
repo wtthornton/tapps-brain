@@ -195,7 +195,7 @@ class TestMemoryRetriever:
         store = _make_store(entries)
 
         results = retriever.search("matching value", store, limit=5)
-        assert len(results) <= 5
+        assert 1 <= len(results) <= 5
 
     def test_max_limit_capped(self) -> None:
         entries = [_make_entry(f"key-{i}", f"value {i}") for i in range(60)]
@@ -703,7 +703,12 @@ class TestScoringCorrectnessReview:
         with caplog.at_level(logging.WARNING):
             MemoryRetriever(scoring_config=scoring_cfg)
 
-        assert any("scoring_weights_do_not_sum_to_one" in r.message for r in caplog.records)
+        # Use caplog.messages (list of getMessage() strings) for reliable access
+        # regardless of structlog's renderer; also fall back to checking raw r.msg.
+        all_msgs = caplog.messages + [r.getMessage() for r in caplog.records]
+        assert any(
+            "scoring_weights_do_not_sum_to_one" in m for m in all_msgs
+        ), f"Expected warning not found. Captured: {caplog.messages}"
 
     def test_apply_reranker_returns_scored_when_reranker_is_none(self) -> None:
         """_apply_reranker should not crash when reranker is None (guard replaces assert)."""
