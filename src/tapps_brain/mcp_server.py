@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,8 @@ import structlog
 structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
 )
+
+logger = structlog.get_logger(__name__)
 
 
 def _lazy_import_mcp() -> Any:  # noqa: ANN401
@@ -1128,7 +1131,8 @@ def create_server(  # noqa: PLR0915
                     "agents": agents,
                 }
             )
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="hive_status")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1159,7 +1163,8 @@ def create_server(  # noqa: PLR0915
                 if _hive_ctx is not None:
                     _hive_ctx.close()
             return json.dumps({"results": results, "count": len(results)})
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="hive_search")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1211,7 +1216,8 @@ def create_server(  # noqa: PLR0915
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
             return json.dumps({"propagated": True, **result})
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="hive_propagate")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1242,7 +1248,8 @@ def create_server(  # noqa: PLR0915
                     "skills": skill_list,
                 }
             )
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="agent_register")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1307,7 +1314,8 @@ def create_server(  # noqa: PLR0915
                     "profile_summary": profile_summary,
                 }
             )
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="agent_create")
             return json.dumps({"error": "agent_create_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1319,7 +1327,8 @@ def create_server(  # noqa: PLR0915
             registry = AgentRegistry()
             agents = [a.model_dump(mode="json") for a in registry.list_agents()]
             return json.dumps({"agents": agents, "count": len(agents)})
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="agent_list")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1343,7 +1352,8 @@ def create_server(  # noqa: PLR0915
                     "message": f"Agent '{agent_id}' not found.",
                 }
             )
-        except Exception as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            logger.exception("hive_tool_error", tool="agent_delete")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
     # ------------------------------------------------------------------

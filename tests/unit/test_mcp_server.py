@@ -1359,7 +1359,7 @@ class TestHiveToolsReuseSharedStore:
                 original_close()
 
             self.close = close_wrapper
-            self.search = MagicMock(side_effect=RuntimeError("search exploded"))
+            self.search = MagicMock(side_effect=ValueError("search exploded"))
 
         import tapps_brain.hive as hive_module
 
@@ -1369,7 +1369,7 @@ class TestHiveToolsReuseSharedStore:
             search_fn = _tool_fn(server, "hive_search")
             result = json.loads(search_fn(query="test"))
 
-        # The error is caught and returned as JSON
+        # The error is caught (ValueError is in the narrow list) and returned as JSON
         assert "error" in result
         # close() must have been called even though search raised
         assert len(close_called) >= 1, "HiveStore.close() was not called after exception"
@@ -1397,7 +1397,7 @@ class TestHiveToolsReuseSharedStore:
                 original_close()
 
             self.close = close_wrapper
-            self.list_namespaces = MagicMock(side_effect=RuntimeError("namespaces exploded"))
+            self.list_namespaces = MagicMock(side_effect=ValueError("namespaces exploded"))
 
         import tapps_brain.hive as hive_module
 
@@ -1424,6 +1424,32 @@ class TestHiveToolsReuseSharedStore:
 
         # After __exit__, the wrapped close was invoked
         assert len(closed) >= 1
+
+    def test_hive_search_unexpected_exception_propagates(self, store_dir):
+        """Unexpected exceptions (outside ValueError/OSError/sqlite3.Error) propagate from hive_search."""
+        import pytest
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        original_init = None
+
+        def patched_hive_store_init(self, db_path=None):
+            original_init(self, db_path)
+            self.search = MagicMock(side_effect=RuntimeError("unexpected bug"))
+
+        import tapps_brain.hive as hive_module
+
+        original_init = hive_module.HiveStore.__init__
+
+        with patch.object(hive_module.HiveStore, "__init__", patched_hive_store_init):
+            search_fn = _tool_fn(server, "hive_search")
+            # RuntimeError is NOT in the narrow exception list — it must propagate
+            with pytest.raises(RuntimeError, match="unexpected bug"):
+                search_fn(query="test")
+
+        server._tapps_store.close()
 
 
 class TestMCPAdditionalCoverage:
