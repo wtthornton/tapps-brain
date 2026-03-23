@@ -15,6 +15,7 @@ import contextlib
 import json
 import sqlite3
 import threading
+import types
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -206,6 +207,17 @@ class HiveStore:
         """Close the database connection."""
         with self._lock:
             self._conn.close()
+
+    def __enter__(self) -> "HiveStore":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
+        self.close()
 
     # ------------------------------------------------------------------
     # Helpers

@@ -1095,28 +1095,32 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import AgentRegistry, HiveStore
 
             shared = getattr(store, "_hive_store", None)
-            hive = shared if shared is not None else HiveStore()
-            namespaces = hive.list_namespaces()
-            ns_counts: dict[str, int] = {}
-            for ns in namespaces:
-                rows = hive._conn.execute(
-                    "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
-                    (ns,),
-                ).fetchone()
-                ns_counts[ns] = rows[0] if rows else 0
+            _hive_ctx = HiveStore() if shared is None else None
+            hive = shared if shared is not None else _hive_ctx
+            assert hive is not None
+            try:
+                namespaces = hive.list_namespaces()
+                ns_counts: dict[str, int] = {}
+                for ns in namespaces:
+                    rows = hive._conn.execute(
+                        "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
+                        (ns,),
+                    ).fetchone()
+                    ns_counts[ns] = rows[0] if rows else 0
 
-            registry = AgentRegistry()
-            agents = [
-                {
-                    "id": a.id,
-                    "profile": a.profile,
-                    "skills": a.skills,
-                    "namespace_entries": ns_counts.get(a.profile, 0),
-                }
-                for a in registry.list_agents()
-            ]
-            if shared is None:
-                hive.close()
+                registry = AgentRegistry()
+                agents = [
+                    {
+                        "id": a.id,
+                        "profile": a.profile,
+                        "skills": a.skills,
+                        "namespace_entries": ns_counts.get(a.profile, 0),
+                    }
+                    for a in registry.list_agents()
+                ]
+            finally:
+                if _hive_ctx is not None:
+                    _hive_ctx.close()
             return json.dumps(
                 {
                     "namespaces": ns_counts,
@@ -1145,11 +1149,15 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import HiveStore
 
             shared = getattr(store, "_hive_store", None)
-            hive = shared if shared is not None else HiveStore()
-            ns_list = [namespace] if namespace else None
-            results = hive.search(query, namespaces=ns_list, limit=20)
-            if shared is None:
-                hive.close()
+            _hive_ctx = HiveStore() if shared is None else None
+            hive = shared if shared is not None else _hive_ctx
+            assert hive is not None
+            try:
+                ns_list = [namespace] if namespace else None
+                results = hive.search(query, namespaces=ns_list, limit=20)
+            finally:
+                if _hive_ctx is not None:
+                    _hive_ctx.close()
             return json.dumps({"results": results, "count": len(results)})
         except Exception as exc:
             return json.dumps({"error": "hive_error", "message": str(exc)})
@@ -1175,27 +1183,31 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import HiveStore, PropagationEngine
 
             shared = getattr(store, "_hive_store", None)
-            hive = shared if shared is not None else HiveStore()
+            _hive_ctx = HiveStore() if shared is None else None
+            hive = shared if shared is not None else _hive_ctx
+            assert hive is not None
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
             if store.profile is not None:
                 profile_name = getattr(store.profile, "name", "repo-brain")
 
             tier_val = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            result = PropagationEngine.propagate(
-                key=entry.key,
-                value=entry.value,
-                agent_scope=agent_scope,
-                agent_id=agent_id,
-                agent_profile=profile_name,
-                tier=tier_val,
-                confidence=entry.confidence,
-                source=entry.source.value,
-                tags=entry.tags,
-                hive_store=hive,
-            )
-            if shared is None:
-                hive.close()
+            try:
+                result = PropagationEngine.propagate(
+                    key=entry.key,
+                    value=entry.value,
+                    agent_scope=agent_scope,
+                    agent_id=agent_id,
+                    agent_profile=profile_name,
+                    tier=tier_val,
+                    confidence=entry.confidence,
+                    source=entry.source.value,
+                    tags=entry.tags,
+                    hive_store=hive,
+                )
+            finally:
+                if _hive_ctx is not None:
+                    _hive_ctx.close()
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
             return json.dumps({"propagated": True, **result})

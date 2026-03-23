@@ -1332,6 +1332,99 @@ class TestHiveToolsReuseSharedStore:
         server._tapps_store._hive_store.close()
         server._tapps_store.close()
 
+    # ------------------------------------------------------------------
+    # BUG-001-C: HiveStore connection leak on exception in MCP handlers
+    # ------------------------------------------------------------------
+
+    def test_hive_search_closes_temp_hive_on_exception(self, store_dir, monkeypatch):
+        """hive_search calls .close() on a temp HiveStore even when search raises."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)  # no --enable-hive → uses temp HiveStore
+        assert server._tapps_store._hive_store is None
+
+        close_called = []
+
+        original_init = None
+
+        def patched_hive_store_init(self, db_path=None):
+            original_init(self, db_path)
+            original_close = self.close
+            close_calls = close_called
+
+            def close_wrapper():
+                close_calls.append(True)
+                original_close()
+
+            self.close = close_wrapper
+            self.search = MagicMock(side_effect=RuntimeError("search exploded"))
+
+        import tapps_brain.hive as hive_module
+
+        original_init = hive_module.HiveStore.__init__
+
+        with patch.object(hive_module.HiveStore, "__init__", patched_hive_store_init):
+            search_fn = _tool_fn(server, "hive_search")
+            result = json.loads(search_fn(query="test"))
+
+        # The error is caught and returned as JSON
+        assert "error" in result
+        # close() must have been called even though search raised
+        assert len(close_called) >= 1, "HiveStore.close() was not called after exception"
+        server._tapps_store.close()
+
+    def test_hive_status_closes_temp_hive_on_exception(self, store_dir, monkeypatch):
+        """hive_status calls .close() on a temp HiveStore even when list_namespaces raises."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)  # no --enable-hive → uses temp HiveStore
+        assert server._tapps_store._hive_store is None
+
+        close_called = []
+        original_init = None
+
+        def patched_hive_store_init(self, db_path=None):
+            original_init(self, db_path)
+            original_close = self.close
+            close_calls = close_called
+
+            def close_wrapper():
+                close_calls.append(True)
+                original_close()
+
+            self.close = close_wrapper
+            self.list_namespaces = MagicMock(side_effect=RuntimeError("namespaces exploded"))
+
+        import tapps_brain.hive as hive_module
+
+        original_init = hive_module.HiveStore.__init__
+
+        with patch.object(hive_module.HiveStore, "__init__", patched_hive_store_init):
+            status_fn = _tool_fn(server, "hive_status")
+            result = json.loads(status_fn())
+
+        assert "error" in result
+        assert len(close_called) >= 1, "HiveStore.close() was not called after exception"
+        server._tapps_store.close()
+
+    def test_hive_context_manager(self, tmp_path):
+        """HiveStore supports context manager protocol — close() called on __exit__."""
+        from tapps_brain.hive import HiveStore
+
+        db_path = tmp_path / "test_cm_hive.db"
+        closed = []
+        with HiveStore(db_path=db_path) as hive:
+            original_close = hive.close
+            hive.close = lambda: (closed.append(True), original_close())  # type: ignore[assignment]
+            assert hive._conn is not None  # still open inside the block
+
+        # After __exit__, the wrapped close was invoked
+        assert len(closed) >= 1
+
 
 class TestMCPAdditionalCoverage:
     """Additional tests to cover error paths and EPIC-013 tool functions."""
