@@ -11,7 +11,7 @@ import math
 from datetime import UTC, datetime
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 
@@ -64,6 +64,19 @@ class DecayConfig(BaseModel):
 
     # Per-layer importance tags (EPIC-010)
     layer_importance_tags: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+    @field_validator("layer_half_lives")
+    @classmethod
+    def _validate_layer_half_lives(cls, v: dict[str, int]) -> dict[str, int]:
+        """Ensure all layer half-life values are at least 1 day.
+
+        Prevents ZeroDivisionError in the exponential/power-law decay formulas
+        when a custom layer_half_lives entry is provided with a zero or negative value.
+        """
+        for name, days in v.items():
+            if days < 1:
+                raise ValueError(f"layer_half_lives[{name!r}] must be >= 1, got {days}")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +159,11 @@ def _get_ceiling(source: MemorySource | str, config: DecayConfig) -> float:
         attr = _SOURCE_CEILING_ATTR.get(source_enum, "agent_confidence_ceiling")
         return float(getattr(config, attr))
     except ValueError:
+        logger.warning(
+            "unknown_source_fallback",
+            source=source_str,
+            fallback_ceiling=config.agent_confidence_ceiling,
+        )
         return config.agent_confidence_ceiling
 
 

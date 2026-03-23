@@ -370,3 +370,80 @@ class TestUnknownTierFallbackWarning:
 
         assert result == 45
         mock_logger.warning.assert_not_called()
+
+
+class TestUnknownSourceFallbackWarning:
+    """Tests for unknown source fallback warning in _get_ceiling (review 019-A)."""
+
+    def test_unknown_source_returns_agent_ceiling(self) -> None:
+        """Unknown source string falls back to agent_confidence_ceiling."""
+        from tapps_brain.decay import _get_ceiling
+
+        config = DecayConfig()
+        result = _get_ceiling("totally_unknown_source", config)
+        assert result == config.agent_confidence_ceiling
+
+    def test_unknown_source_logs_warning(self) -> None:
+        """Unknown source string triggers a structlog warning with source and fallback_ceiling."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_ceiling
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            result = _get_ceiling("totally_unknown_source", config)
+
+        assert result == config.agent_confidence_ceiling
+        mock_logger.warning.assert_called_once_with(
+            "unknown_source_fallback",
+            source="totally_unknown_source",
+            fallback_ceiling=config.agent_confidence_ceiling,
+        )
+
+    def test_known_enum_source_does_not_log_warning(self) -> None:
+        """Known MemorySource enum values do not trigger the fallback warning."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_ceiling
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            _get_ceiling(MemorySource.human, config)
+
+        mock_logger.warning.assert_not_called()
+
+    def test_known_string_source_does_not_log_warning(self) -> None:
+        """Known source name as string (e.g. 'human') does not trigger warning."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_ceiling
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            result = _get_ceiling("human", config)
+
+        assert result == config.human_confidence_ceiling
+        mock_logger.warning.assert_not_called()
+
+
+class TestLayerHalfLivesValidation:
+    """Tests for layer_half_lives dict value validation (review 019-A)."""
+
+    def test_valid_layer_half_lives_accepted(self) -> None:
+        """Dict with valid ge=1 values is accepted."""
+        config = DecayConfig(layer_half_lives={"custom": 7, "other": 1})
+        assert config.layer_half_lives["custom"] == 7
+        assert config.layer_half_lives["other"] == 1
+
+    def test_zero_layer_half_life_raises(self) -> None:
+        """A value of 0 in layer_half_lives raises ValueError to prevent ZeroDivisionError."""
+        with pytest.raises(Exception):  # pydantic ValidationError
+            DecayConfig(layer_half_lives={"bad_layer": 0})
+
+    def test_negative_layer_half_life_raises(self) -> None:
+        """A negative value in layer_half_lives raises ValueError."""
+        with pytest.raises(Exception):  # pydantic ValidationError
+            DecayConfig(layer_half_lives={"bad_layer": -5})
