@@ -91,9 +91,6 @@ _QUERY_PATTERNS: list[tuple[re.Pattern[str], str | None]] = [
     (re.compile(r"(?:who|what)\s+depends\s+on\s+(.+)", re.I), "depends on"),
 ]
 
-# Max hops for relationship traversal
-_MAX_HOPS: int = 2
-
 
 # ---------------------------------------------------------------------------
 # Extraction helpers

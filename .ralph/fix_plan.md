@@ -214,7 +214,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 3: Relations (independent)
 
 #### 021-D: Review `relations.py` — knowledge graph
-- [ ] Review `src/tapps_brain/relations.py` (305 lines). Focus on: graph traversal correctness (BFS/DFS), max_hops boundary, cycle detection, relation type validation, query performance on large graphs. Fix all issues. Commit: `review(story-021.4): relations.py knowledge graph review`
+- [x] Review `src/tapps_brain/relations.py` (305 lines). Focus on: graph traversal correctness (BFS/DFS), max_hops boundary, cycle detection, relation type validation, query performance on large graphs. Fix all issues. Commit: `review(story-021.4): relations.py knowledge graph review`
 
 ## Active — EPIC-022: Code Review — Interfaces (MCP, CLI, IO)
 
