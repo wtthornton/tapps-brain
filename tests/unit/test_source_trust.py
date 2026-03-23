@@ -7,9 +7,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
-from tapps_brain.profile import ScoringConfig, _DEFAULT_SOURCE_TRUST
-from tapps_brain.retrieval import MemoryRetriever, _DEFAULT_SOURCE_TRUST as _RET_DEFAULT_TRUST
+from tapps_brain.models import MemoryEntry, MemorySource
+from tapps_brain.profile import _DEFAULT_SOURCE_TRUST, ScoringConfig
+from tapps_brain.retrieval import _DEFAULT_SOURCE_TRUST as _RET_DEFAULT_TRUST
+from tapps_brain.retrieval import MemoryRetriever
 from tests.factories import make_entry
 
 # ---------------------------------------------------------------------------
@@ -71,7 +72,8 @@ class TestScoringConfigSourceTrust:
     def test_weight_sum_unaffected_by_source_trust(self) -> None:
         """source_trust is a multiplier, not a weight — weight sum check ignores it."""
         config = ScoringConfig(source_trust={"human": 2.0, "agent": 0.1})
-        assert config.relevance + config.confidence + config.recency + config.frequency == pytest.approx(1.0)
+        total = config.relevance + config.confidence + config.recency + config.frequency
+        assert total == pytest.approx(1.0)
 
     def test_defaults_match_retrieval_module(self) -> None:
         """Profile defaults and retrieval module defaults must agree."""

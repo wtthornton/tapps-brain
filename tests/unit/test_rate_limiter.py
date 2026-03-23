@@ -5,8 +5,6 @@ from __future__ import annotations
 import time
 from unittest.mock import patch
 
-import pytest
-
 from tapps_brain.rate_limiter import (
     BATCH_EXEMPT_CONTEXTS,
     RateLimiterConfig,
@@ -102,9 +100,7 @@ class TestSlidingWindowRateLimiter:
 
     def test_disabled_limiter(self) -> None:
         """Disabled limiter should always return default result."""
-        limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(enabled=False, writes_per_minute=1)
-        )
+        limiter = SlidingWindowRateLimiter(RateLimiterConfig(enabled=False, writes_per_minute=1))
         for _ in range(10):
             result = limiter.check()
             assert result.allowed is True

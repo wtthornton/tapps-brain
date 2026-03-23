@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-22 (America/Chicago) — EPIC-016 done
+**Last updated:** 2026-03-22 (America/Chicago) — BUG-001 + BUG-002 queued, EPIC-017–025 planned
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -63,10 +63,24 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-014 | Hardening — Validation, Parity, Resilience, Docs | done | 2026-03-22 |
 | EPIC-015 | Analytics & Operational Surface | done | 2026-03-22 |
 | EPIC-016 | Test Suite Hardening — CLI gaps, concurrency, cleanup | done | 2026-03-22 |
+| EPIC-017 | Code Review — Storage & Data Model | planned | — |
+| EPIC-018 | Code Review — Retrieval & Scoring | planned | — |
+| EPIC-019 | Code Review — Memory Lifecycle | planned | — |
+| EPIC-020 | Code Review — Safety & Validation | planned | — |
+| EPIC-021 | Code Review — Federation, Hive & Relations | planned | — |
+| EPIC-022 | Code Review — Interfaces (MCP, CLI, IO) | planned | — |
+| EPIC-023 | Code Review — Config, Profiles & Observability | planned | — |
+| EPIC-024 | Code Review — Unit Tests Part 1 | planned | — |
+| EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | planned | — |
 
 ## Current focus
 
-**All 16 epics complete.** v1.2.0 released with 1683 passing tests, 96.48% coverage, 41 MCP tools, 36 CLI commands, zero ResourceWarnings, clean lint and mypy. No active work streams.
+**All 16 feature epics complete.** v1.2.0 released with 1683 passing tests, 96.48% coverage, 41 MCP tools, 36 CLI commands.
+
+**Active work:**
+- **BUG-001** (7 tasks): Pre-review critical fixes — tier priority, type safety, HiveStore leak, exception narrowing, version consistency, timezone standardization
+- **BUG-002** (4 tasks): Source trust regression — uncommitted M2 feature breaks recall for agent-sourced memories via 0.7x multiplier pushing scores below `_MIN_SCORE=0.3` cutoff. Must fix before committing the feature.
+- **EPIC-017–025** (planned): Comprehensive code review cycle — storage, retrieval, lifecycle, safety, federation, interfaces, config, unit tests, integration tests
 
 ## WSL / Windows
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import structlog
 
@@ -20,12 +20,14 @@ _DEFAULT_WRITES_PER_MINUTE = 20
 _DEFAULT_WRITES_PER_SESSION = 100
 
 # Batch contexts exempt from rate limiting (H6b)
-BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset({
-    "import_markdown",
-    "seed",
-    "federation_sync",
-    "consolidate",
-})
+BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
+    {
+        "import_markdown",
+        "seed",
+        "federation_sync",
+        "consolidate",
+    }
+)
 
 
 @dataclass

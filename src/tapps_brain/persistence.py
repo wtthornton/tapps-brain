@@ -7,6 +7,7 @@ A JSONL audit log is maintained for debugging/compliance (append-only).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -480,9 +481,7 @@ class MemoryPersistence:
 
             tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
             source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            integrity_hash = compute_integrity_hash(
-                entry.key, entry.value, tier_str, source_str
-            )
+            integrity_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
             columns.append("integrity_hash")
             values = (*values, integrity_hash)
 
@@ -846,10 +845,8 @@ class MemoryPersistence:
 
         # Read integrity_hash (v8+), gracefully handle missing column
         integrity_hash: str | None = None
-        try:
+        with contextlib.suppress(KeyError, IndexError):
             integrity_hash = row["integrity_hash"]
-        except (KeyError, IndexError):
-            pass
 
         return MemoryEntry(
             key=row["key"],

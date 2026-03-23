@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -340,9 +339,7 @@ def create_server(  # noqa: PLR0915
                 'private' (default, only this agent), 'domain' (same-profile
                 agents), or 'hive' (all agents).
         """
-        created_keys = store.ingest_context(
-            context, source=source, agent_scope=agent_scope
-        )
+        created_keys = store.ingest_context(context, source=source, agent_scope=agent_scope)
         return json.dumps(
             {
                 "status": "ingested",
@@ -497,9 +494,7 @@ def create_server(  # noqa: PLR0915
         from tapps_brain.recall import RecallOrchestrator
 
         orchestrator = RecallOrchestrator(store)
-        created_keys = orchestrator.capture(
-            response, source=source, agent_scope=agent_scope
-        )
+        created_keys = orchestrator.capture(response, source=source, agent_scope=agent_scope)
         return json.dumps(
             {
                 "status": "captured",
@@ -1131,7 +1126,7 @@ def create_server(  # noqa: PLR0915
                     "agents": agents,
                 }
             )
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_status")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
@@ -1163,7 +1158,7 @@ def create_server(  # noqa: PLR0915
                 if _hive_ctx is not None:
                     _hive_ctx.close()
             return json.dumps({"results": results, "count": len(results)})
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_search")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
@@ -1216,7 +1211,7 @@ def create_server(  # noqa: PLR0915
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
             return json.dumps({"propagated": True, **result})
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_propagate")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
@@ -1248,7 +1243,7 @@ def create_server(  # noqa: PLR0915
                     "skills": skill_list,
                 }
             )
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="agent_register")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
@@ -1314,7 +1309,7 @@ def create_server(  # noqa: PLR0915
                     "profile_summary": profile_summary,
                 }
             )
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="agent_create")
             return json.dumps({"error": "agent_create_error", "message": str(exc)})
 
@@ -1327,7 +1322,7 @@ def create_server(  # noqa: PLR0915
             registry = AgentRegistry()
             agents = [a.model_dump(mode="json") for a in registry.list_agents()]
             return json.dumps({"agents": agents, "count": len(agents)})
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="agent_list")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 
@@ -1352,7 +1347,7 @@ def create_server(  # noqa: PLR0915
                     "message": f"Agent '{agent_id}' not found.",
                 }
             )
-        except (ValueError, OSError, sqlite3.Error) as exc:
+        except Exception as exc:
             logger.exception("hive_tool_error", tool="agent_delete")
             return json.dumps({"error": "registry_error", "message": str(exc)})
 

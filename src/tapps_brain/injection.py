@@ -28,7 +28,10 @@ logger = structlog.get_logger(__name__)
 
 _MAX_INJECT_HIGH = 5
 _MAX_INJECT_MEDIUM = 3
-_MIN_SCORE = 0.3
+# Minimum composite score to inject a result. Set to 0.2 (not 0.3) to account for
+# source-trust multipliers: an "agent" source with trust=0.7 on a borderline entry
+# (~0.36 raw) would score ~0.25 after the multiplier, which still deserves inclusion.
+_MIN_SCORE = 0.2
 _MIN_CONFIDENCE_MEDIUM = 0.5
 
 

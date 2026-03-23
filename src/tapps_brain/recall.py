@@ -186,9 +186,7 @@ class RecallOrchestrator:
         if not response or not response.strip():
             return []
 
-        return self._store.ingest_context(
-            response, source=source, agent_scope=agent_scope
-        )
+        return self._store.ingest_context(response, source=source, agent_scope=agent_scope)
 
     # ------------------------------------------------------------------
     # Internal helpers

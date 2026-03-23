@@ -71,7 +71,7 @@ def get_signing_key(key_path: Path | None = None) -> bytes:
     Returns:
         The raw HMAC key bytes.
     """
-    global _cached_key  # noqa: PLW0603
+    global _cached_key
     if _cached_key is None:
         _cached_key = _ensure_key(key_path)
     return _cached_key
@@ -79,7 +79,7 @@ def get_signing_key(key_path: Path | None = None) -> bytes:
 
 def reset_key_cache() -> None:
     """Clear the cached signing key (useful for testing)."""
-    global _cached_key  # noqa: PLW0603
+    global _cached_key
     _cached_key = None
 
 
@@ -109,7 +109,7 @@ def compute_integrity_hash(
         Hex-encoded HMAC-SHA256 digest.
     """
     hmac_key = signing_key or get_signing_key()
-    canonical = f"{key}|{value}|{tier}|{source}".encode("utf-8")
+    canonical = f"{key}|{value}|{tier}|{source}".encode()
     return hmac.new(hmac_key, canonical, hashlib.sha256).hexdigest()
 
 
@@ -135,7 +135,5 @@ def verify_integrity_hash(
     Returns:
         ``True`` if the hash matches, ``False`` if tampered or missing.
     """
-    expected = compute_integrity_hash(
-        key, value, tier, source, signing_key=signing_key
-    )
+    expected = compute_integrity_hash(key, value, tier, source, signing_key=signing_key)
     return hmac.compare_digest(expected, stored_hash)

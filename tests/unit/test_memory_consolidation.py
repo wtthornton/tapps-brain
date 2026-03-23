@@ -293,7 +293,7 @@ class TestSelectTier:
         assert result == "my_custom_layer"
 
     def test_procedural_beats_custom_tier(self) -> None:
-        """Built-in procedural (priority 2) ties with custom tier (priority 2); architectural always wins."""
+        """Built-in procedural (priority 2) ties with custom tier; architectural always wins."""
         entries = [
             _make_entry("a", "v", tier="my_custom_layer"),
             _make_entry("b", "v", tier=MemoryTier.architectural),

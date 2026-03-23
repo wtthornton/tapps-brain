@@ -487,7 +487,7 @@ class TestSchemaMigrations:
         self._create_v1_db(db_path)
         conn = sqlite3.connect(db_path)
         now = datetime.now(tz=UTC).isoformat()
-        # Apply v2–v7 columns manually so the schema is in a real v7 state.
+        # Apply v2-v7 columns manually so the schema is in a real v7 state.
         conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
         conn.execute("ALTER TABLE memories ADD COLUMN valid_at TEXT")
         conn.execute("ALTER TABLE memories ADD COLUMN invalid_at TEXT")

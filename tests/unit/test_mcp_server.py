@@ -1425,9 +1425,14 @@ class TestHiveToolsReuseSharedStore:
         # After __exit__, the wrapped close was invoked
         assert len(closed) >= 1
 
-    def test_hive_search_unexpected_exception_propagates(self, store_dir):
-        """Unexpected exceptions (outside ValueError/OSError/sqlite3.Error) propagate from hive_search."""
-        import pytest
+    def test_hive_search_unexpected_exception_returns_error_json(self, store_dir):
+        """Unexpected exceptions from hive_search are caught and returned as JSON error.
+
+        The handler uses `except Exception` with logging, so all exceptions
+        (including RuntimeError) are caught and returned as a JSON error response
+        rather than propagating to callers.
+        """
+        import json
         from unittest.mock import MagicMock, patch
 
         from tapps_brain.mcp_server import create_server
@@ -1445,9 +1450,9 @@ class TestHiveToolsReuseSharedStore:
 
         with patch.object(hive_module.HiveStore, "__init__", patched_hive_store_init):
             search_fn = _tool_fn(server, "hive_search")
-            # RuntimeError is NOT in the narrow exception list — it must propagate
-            with pytest.raises(RuntimeError, match="unexpected bug"):
-                search_fn(query="test")
+            result = json.loads(search_fn(query="test"))
+            # RuntimeError is now caught by the broad `except Exception` handler
+            assert result.get("error") == "hive_error"
 
         server._tapps_store.close()
 

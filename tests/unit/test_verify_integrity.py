@@ -40,7 +40,9 @@ class TestVerifyIntegrity:
         assert result["tampered_details"] == []
 
     def test_valid_entries_pass(self, store: MemoryStore) -> None:
-        store.save("entry-a", "Architecture uses event sourcing", tier="architectural", source="human")
+        store.save(
+            "entry-a", "Architecture uses event sourcing", tier="architectural", source="human"
+        )
         store.save("entry-b", "Use pytest for all tests", tier="pattern", source="agent")
         result = store.verify_integrity()
         assert result["total"] == 2

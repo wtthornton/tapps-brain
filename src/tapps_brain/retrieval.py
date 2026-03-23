@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
-from tapps_brain.models import MemoryEntry, MemorySource  # noqa: TC001
+from tapps_brain.models import MemoryEntry, MemorySource
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
 if TYPE_CHECKING:
@@ -245,9 +245,7 @@ class MemoryRetriever:
 
             # M2: Apply per-source trust multiplier
             source_key = (
-                entry.source.value
-                if isinstance(entry.source, MemorySource)
-                else str(entry.source)
+                entry.source.value if isinstance(entry.source, MemorySource) else str(entry.source)
             )
             trust = self._source_trust.get(source_key, 1.0)
             composite *= trust

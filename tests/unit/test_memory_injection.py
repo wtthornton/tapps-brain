@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
-
-import pytest
 
 from tapps_brain.injection import (
     _MAX_INJECT_HIGH,
@@ -19,6 +16,8 @@ from tapps_brain.injection import (
 from tests.factories import make_entry
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tapps_brain.models import MemoryEntry
 
 _RECENT = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
@@ -224,7 +223,7 @@ class TestSourceTrustRegression:
 
     Before the fix, inject_memories always created MemoryRetriever() without
     scoring_config, so it used _DEFAULT_SOURCE_TRUST with agent=0.7. For
-    marginal composite scores, the 0.7× multiplier pushed scores below
+    marginal composite scores, the 0.7x multiplier pushed scores below
     _MIN_SCORE=0.3, causing zero results for agent-sourced memories.
     """
 
@@ -262,15 +261,19 @@ class TestSourceTrustRegression:
         from tapps_brain.profile import ScoringConfig
 
         # Trust all sources equally (1.0) — no penalty
-        cfg = ScoringConfig(source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0})
+        cfg = ScoringConfig(
+            source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0}
+        )
         entries = [_make_entry("trust-key", "framework configuration pattern")]
         store = _make_store(entries)
 
-        result_with_cfg = inject_memories("framework configuration", store, "high", scoring_config=cfg)
+        result_with_cfg = inject_memories(
+            "framework configuration", store, "high", scoring_config=cfg
+        )
 
         # Reset mock so list_all / search return the same entries
         store = _make_store(entries)
-        result_default = inject_memories("framework configuration", store, "high")
+        inject_memories("framework configuration", store, "high")
 
         # Both paths should return results; explicit config path must also work
         if result_with_cfg["memory_injected"] > 0:

@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tapps_brain.decay import DecayConfig, decay_config_from_profile
+from tapps_brain.decay import decay_config_from_profile
 from tapps_brain.profile import get_builtin_profile
 from tapps_brain.promotion import PromotionEngine
 from tests.factories import make_entry
@@ -134,13 +134,9 @@ class TestContextToProceduralBoundary:
         """access_count=3 but only 3 days old (< min_age_days=7) → no promotion."""
         entry = self._context_entry(access_count=3, days_old=3)
         result = engine.check_promotion(entry, repo_brain, now=_NOW)
-        assert result is None, (
-            f"Entry too young (3d < 7d min) should not promote, got '{result}'"
-        )
+        assert result is None, f"Entry too young (3d < 7d min) should not promote, got '{result}'"
 
-    def test_confidence_gate_prevents_premature_promotion(
-        self, engine, repo_brain
-    ) -> None:
+    def test_confidence_gate_prevents_premature_promotion(self, engine, repo_brain) -> None:
         """access_count=3 and old enough, but confidence=0.3 (< min_confidence=0.5)."""
         created = (_NOW - timedelta(days=10)).isoformat()
         entry = make_entry(
@@ -155,9 +151,7 @@ class TestContextToProceduralBoundary:
             access_count=3,
         )
         result = engine.check_promotion(entry, repo_brain, now=_NOW)
-        assert result is None, (
-            f"Low confidence (0.3 < 0.5 min) should not promote, got '{result}'"
-        )
+        assert result is None, f"Low confidence (0.3 < 0.5 min) should not promote, got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -203,9 +197,7 @@ class TestProceduralToPatternBoundary:
         """access_count=5 but only 10 days old (< min_age_days=14) → no promotion."""
         entry = self._procedural_entry(access_count=5, days_old=10)
         result = engine.check_promotion(entry, repo_brain, now=_NOW)
-        assert result is None, (
-            f"Entry too young (10d < 14d min) should not promote, got '{result}'"
-        )
+        assert result is None, f"Entry too young (10d < 14d min) should not promote, got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -251,13 +243,9 @@ class TestPatternToArchitecturalBoundary:
         """access_count=10 but only 25 days old (< min_age_days=30) → no promotion."""
         entry = self._pattern_entry(access_count=10, days_old=25)
         result = engine.check_promotion(entry, repo_brain, now=_NOW)
-        assert result is None, (
-            f"Entry too young (25d < 30d min) should not promote, got '{result}'"
-        )
+        assert result is None, f"Entry too young (25d < 30d min) should not promote, got '{result}'"
 
-    def test_confidence_gate_prevents_premature_promotion(
-        self, engine, repo_brain
-    ) -> None:
+    def test_confidence_gate_prevents_premature_promotion(self, engine, repo_brain) -> None:
         """access_count=10, old enough, but confidence=0.6 (< min_confidence=0.7)."""
         created = (_NOW - timedelta(days=35)).isoformat()
         entry = make_entry(
@@ -272,6 +260,4 @@ class TestPatternToArchitecturalBoundary:
             access_count=10,
         )
         result = engine.check_promotion(entry, repo_brain, now=_NOW)
-        assert result is None, (
-            f"Low confidence (0.6 < 0.7 min) should not promote, got '{result}'"
-        )
+        assert result is None, f"Low confidence (0.6 < 0.7 min) should not promote, got '{result}'"

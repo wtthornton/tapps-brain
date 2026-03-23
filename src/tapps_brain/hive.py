@@ -15,11 +15,13 @@ import contextlib
 import json
 import sqlite3
 import threading
-import types
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import types
 
 import structlog
 import yaml
@@ -208,7 +210,7 @@ class HiveStore:
         with self._lock:
             self._conn.close()
 
-    def __enter__(self) -> "HiveStore":
+    def __enter__(self) -> HiveStore:
         return self
 
     def __exit__(

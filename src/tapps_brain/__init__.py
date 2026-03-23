@@ -32,6 +32,10 @@ from tapps_brain.gc import MemoryGarbageCollector as MemoryGarbageCollector
 from tapps_brain.injection import InjectionConfig as InjectionConfig
 from tapps_brain.injection import inject_memories as inject_memories
 
+# Integrity (H4a)
+from tapps_brain.integrity import compute_integrity_hash as compute_integrity_hash
+from tapps_brain.integrity import verify_integrity_hash as verify_integrity_hash
+
 # I/O
 from tapps_brain.io import export_memories as export_memories
 from tapps_brain.io import export_to_markdown as export_to_markdown
@@ -65,6 +69,10 @@ from tapps_brain.models import (
     RecallResult as RecallResult,
 )
 
+# Rate Limiting (H6a)
+from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
+from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
+
 # Recall (EPIC-003)
 from tapps_brain.recall import RecallConfig as RecallConfig
 from tapps_brain.recall import RecallOrchestrator as RecallOrchestrator
@@ -76,14 +84,6 @@ from tapps_brain.relations import extract_relations as extract_relations
 # Retrieval
 from tapps_brain.retrieval import MemoryRetriever as MemoryRetriever
 from tapps_brain.retrieval import ScoredMemory as ScoredMemory
-
-# Integrity (H4a)
-from tapps_brain.integrity import compute_integrity_hash as compute_integrity_hash
-from tapps_brain.integrity import verify_integrity_hash as verify_integrity_hash
-
-# Rate Limiting (H6a)
-from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
-from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
 
 # Safety
 from tapps_brain.safety import SafetyCheckResult as SafetyCheckResult

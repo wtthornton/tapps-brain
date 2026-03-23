@@ -24,7 +24,16 @@ docs/planning/
     ├── EPIC-013.md      ← Hive-aware MCP surface (done)
     ├── EPIC-014.md      ← Hardening — validation, parity, resilience, docs (done)
     ├── EPIC-015.md      ← Analytics & operational surface (done)
-    └── EPIC-016.md      ← Test suite hardening — CLI gaps, concurrency, resource cleanup (done)
+    ├── EPIC-016.md      ← Test suite hardening — CLI gaps, concurrency, resource cleanup (done)
+    ├── EPIC-017.md      ← Code review — Storage & Data Model (planned)
+    ├── EPIC-018.md      ← Code review — Retrieval & Scoring (planned)
+    ├── EPIC-019.md      ← Code review — Memory Lifecycle (planned)
+    ├── EPIC-020.md      ← Code review — Safety & Validation (planned)
+    ├── EPIC-021.md      ← Code review — Federation, Hive & Relations (planned)
+    ├── EPIC-022.md      ← Code review — Interfaces (MCP, CLI, IO) (planned)
+    ├── EPIC-023.md      ← Code review — Config, Profiles & Observability (planned)
+    ├── EPIC-024.md      ← Code review — Unit Tests Part 1 (planned)
+    └── EPIC-025.md      ← Code review — Integration Tests, Benchmarks & TypeScript (planned)
 ```
 
 ## Why This Structure
