@@ -240,7 +240,7 @@ class MemoryStore:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(
+    def save(  # noqa: PLR0915
         self,
         key: str,
         value: str,
@@ -324,99 +324,118 @@ class MemoryStore:
             value = safety.sanitised_content
 
         self._metrics.increment("store.save")
-        _timer = MetricsTimer(self._metrics, "store.save_ms")
-        _timer.__enter__()
+        with MetricsTimer(self._metrics, "store.save_ms"):
+            now = _utc_now_iso()
+            with self._lock:
+                existing = self._entries.get(key)
 
-        now = _utc_now_iso()
-        with self._lock:
-            existing = self._entries.get(key)
+                # EPIC-010: Accept profile layer names as tier values.
+                # Try MemoryTier enum first; if it fails, accept the raw
+                # string when the active profile defines a layer with that name.
+                try:
+                    tier_val: MemoryTier | str = MemoryTier(tier)
+                except ValueError:
+                    if self._profile is not None and tier in self._profile.layer_names:
+                        tier_val = tier
+                    else:
+                        tier_val = MemoryTier(tier)  # Raise original error
 
-            # EPIC-010: Accept profile layer names as tier values.
-            # Try MemoryTier enum first; if it fails, accept the raw
-            # string when the active profile defines a layer with that name.
+                entry = MemoryEntry(
+                    key=key,
+                    value=value,
+                    tier=tier_val,
+                    confidence=confidence,
+                    source=MemorySource(source),
+                    source_agent=source_agent,
+                    scope=MemoryScope(scope),
+                    agent_scope=agent_scope,
+                    tags=tags or [],
+                    created_at=existing.created_at if existing else now,
+                    updated_at=now,
+                    last_accessed=now,
+                    access_count=existing.access_count if existing else 1,
+                    branch=branch,
+                    # Preserve reserved fields on update
+                    last_reinforced=existing.last_reinforced if existing else None,
+                    reinforce_count=existing.reinforce_count if existing else 0,
+                    contradicted=existing.contradicted if existing else False,
+                    contradiction_reason=(
+                        existing.contradiction_reason if existing else None
+                    ),
+                    seeded_from=existing.seeded_from if existing else None,
+                    # Preserve temporal fields on update (EPIC-004)
+                    valid_at=existing.valid_at if existing else None,
+                    invalid_at=existing.invalid_at if existing else None,
+                    superseded_by=existing.superseded_by if existing else None,
+                )
+
+                # Compute integrity hash (H4a)
+                from tapps_brain.integrity import compute_integrity_hash as _compute_hash
+
+                _tier_str = (
+                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                )
+                _source_str = (
+                    entry.source.value
+                    if hasattr(entry.source, "value")
+                    else str(entry.source)
+                )
+                _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
+                entry = entry.model_copy(update={"integrity_hash": _hash})
+
+                # Max entries enforcement: evict lowest-confidence entry
+                if key not in self._entries and len(self._entries) >= _MAX_ENTRIES:
+                    self._evict_lowest_confidence()
+
+                self._entries[key] = entry
+
+            # Compute embedding when semantic search is enabled (Epic 65.7)
+            if self._embedding_provider is not None:
+                try:
+                    emb = self._embedding_provider.embed(value)
+                    entry = entry.model_copy(update={"embedding": emb})
+                    with self._lock:
+                        # Re-read current entry to avoid overwriting concurrent
+                        # updates (e.g. another save/update_fields in between).
+                        current = self._entries.get(key)
+                        if current is not None and current.key == entry.key:
+                            entry = current.model_copy(update={"embedding": emb})
+                        self._entries[key] = entry
+                except Exception:
+                    logger.debug("embedding_compute_failed", key=key, exc_info=True)
+
+            # Persist to SQLite — rollback in-memory cache on failure to
+            # maintain write-through consistency.
             try:
-                tier_val: MemoryTier | str = MemoryTier(tier)
-            except ValueError:
-                if self._profile is not None and tier in self._profile.layer_names:
-                    tier_val = tier
-                else:
-                    tier_val = MemoryTier(tier)  # Raise original error
-
-            entry = MemoryEntry(
-                key=key,
-                value=value,
-                tier=tier_val,
-                confidence=confidence,
-                source=MemorySource(source),
-                source_agent=source_agent,
-                scope=MemoryScope(scope),
-                agent_scope=agent_scope,
-                tags=tags or [],
-                created_at=existing.created_at if existing else now,
-                updated_at=now,
-                last_accessed=now,
-                access_count=existing.access_count if existing else 1,
-                branch=branch,
-                # Preserve reserved fields on update
-                last_reinforced=existing.last_reinforced if existing else None,
-                reinforce_count=existing.reinforce_count if existing else 0,
-                contradicted=existing.contradicted if existing else False,
-                contradiction_reason=(existing.contradiction_reason if existing else None),
-                seeded_from=existing.seeded_from if existing else None,
-                # Preserve temporal fields on update (EPIC-004)
-                valid_at=existing.valid_at if existing else None,
-                invalid_at=existing.invalid_at if existing else None,
-                superseded_by=existing.superseded_by if existing else None,
-            )
-
-            # Compute integrity hash (H4a) — keep in-memory entry in sync with SQLite
-            from tapps_brain.integrity import compute_integrity_hash as _compute_hash
-
-            _tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            _source_str = (
-                entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            )
-            _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
-            entry = entry.model_copy(update={"integrity_hash": _hash})
-
-            # Max entries enforcement: evict lowest-confidence entry
-            if key not in self._entries and len(self._entries) >= _MAX_ENTRIES:
-                self._evict_lowest_confidence()
-
-            self._entries[key] = entry
-
-        # Compute embedding when semantic search is enabled (Epic 65.7)
-        if self._embedding_provider is not None:
-            try:
-                emb = self._embedding_provider.embed(value)
-                entry = entry.model_copy(update={"embedding": emb})
-                with self._lock:
-                    self._entries[key] = entry
+                self._persistence.save(entry)
             except Exception:
-                logger.debug("embedding_compute_failed", key=key, exc_info=True)
+                with self._lock:
+                    if existing is not None:
+                        self._entries[key] = existing
+                    else:
+                        self._entries.pop(key, None)
+                raise
 
-        self._persistence.save(entry)
+            # Hive propagation (EPIC-011)
+            if self._hive_store is not None:
+                self._propagate_to_hive(entry)
 
-        # Hive propagation (EPIC-011)
-        if self._hive_store is not None:
-            self._propagate_to_hive(entry)
+            # Extract and persist relations (EPIC-006)
+            relations = extract_relations(key, value)
+            if relations:
+                self._persistence.save_relations(key, relations)
+                # Reload from persistence to keep timestamps consistent
+                with self._lock:
+                    self._relations[key] = self._persistence.load_relations(key)
 
-        # Extract and persist relations (EPIC-006)
-        relations = extract_relations(key, value)
-        if relations:
-            self._persistence.save_relations(key, relations)
-            # Reload from persistence to keep timestamps consistent
-            self._relations[key] = self._persistence.load_relations(key)
+            # Auto-consolidation check (Epic 58)
+            if (
+                self._consolidation_config.enabled
+                and not skip_consolidation
+                and not self._consolidation_in_progress
+            ):
+                self._maybe_consolidate(entry)
 
-        # Auto-consolidation check (Epic 58)
-        if (
-            self._consolidation_config.enabled
-            and not skip_consolidation
-            and not self._consolidation_in_progress
-        ):
-            self._maybe_consolidate(entry)
-
-        _timer.__exit__(None, None, None)
         return entry
 
     def _maybe_consolidate(self, entry: MemoryEntry) -> None:
@@ -528,7 +547,13 @@ class MemoryStore:
                 self._entries[updated.key] = updated
 
             self._metrics.increment("store.get.hit")
-            self._persistence.save(updated)
+            # Persist access metadata — rollback on failure.
+            try:
+                self._persistence.save(updated)
+            except Exception:
+                with self._lock:
+                    self._entries[updated.key] = entry
+                raise
             return updated
 
     def list_all(
@@ -568,9 +593,16 @@ class MemoryStore:
         with self._lock:
             if key not in self._entries:
                 return False
-            del self._entries[key]
+            removed = self._entries.pop(key)
 
-        self._persistence.delete(key)
+        # Persist deletion — rollback in-memory cache on failure to
+        # maintain write-through consistency.
+        try:
+            self._persistence.delete(key)
+        except Exception:
+            with self._lock:
+                self._entries[key] = removed
+            raise
         return True
 
     def search(
@@ -626,7 +658,13 @@ class MemoryStore:
             updated = entry.model_copy(update=fields)
             self._entries[key] = updated
 
-        self._persistence.save(updated)
+        # Persist — rollback in-memory cache on failure.
+        try:
+            self._persistence.save(updated)
+        except Exception:
+            with self._lock:
+                self._entries[key] = entry
+            raise
         return updated
 
     def count(self) -> int:
@@ -1446,12 +1484,8 @@ class MemoryStore:
                 continue
 
             tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = (
-                entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            )
-            if verify_integrity_hash(
-                entry.key, entry.value, tier_str, source_str, stored_hash
-            ):
+            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            if verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
                 verified += 1
             else:
                 tampered.append(entry.key)

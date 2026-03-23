@@ -80,7 +80,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Core Storage (sequential — store.py is largest)
 
 #### 017-A: Review `store.py` — core CRUD and state management (lines 1–750)
-- [ ] Review `src/tapps_brain/store.py` lines 1–750. Focus on: `__init__`, `save()`, `recall()`, `delete()`, `get()`, `list_entries()`, thread-safety of Lock usage, write-through cache consistency. Fix all issues. Commit: `review(story-017.1): store.py core CRUD review`
+- [x] Review `src/tapps_brain/store.py` lines 1–750. Focus on: `__init__`, `save()`, `recall()`, `delete()`, `get()`, `list_entries()`, thread-safety of Lock usage, write-through cache consistency. Fix all issues. Commit: `review(story-017.1): store.py core CRUD review`
 
 #### 017-B: Review `store.py` — advanced features (lines 751–end)
 - [ ] Review `src/tapps_brain/store.py` lines 751–end. Focus on: `reinforce()`, `ingest_context()`, `index_session()`, `search_sessions()`, `cleanup_sessions()`, `validate_entries()`, `health()`, `get_metrics()`, Hive propagation, MCP integration points. Fix all issues. Commit: `review(story-017.2): store.py advanced features review`
