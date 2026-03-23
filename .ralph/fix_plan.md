@@ -242,7 +242,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/cli.py` lines 1–750. Focus on: Click group setup, `save`, `recall`, `delete`, `get`, `list`, `search`, `import/export` commands. Check argument validation, output formatting, error messages. Fix all issues. Commit: `review(story-022.4): cli.py core commands review`
 
 #### 022-E: Review `cli.py` — advanced commands (lines 751–end)
-- [ ] Review `src/tapps_brain/cli.py` lines 751–end. Focus on: `federation`, `maintenance`, `agent`, `profile`, `relations`, `audit`, `tags` command groups. Check subcommand consistency, help text accuracy, error paths. Fix all issues. Commit: `review(story-022.5): cli.py advanced commands review`
+- [x] Review `src/tapps_brain/cli.py` lines 751–end. Focus on: `federation`, `maintenance`, `agent`, `profile`, `relations`, `audit`, `tags` command groups. Check subcommand consistency, help text accuracy, error paths. Fix all issues. Commit: `review(story-022.5): cli.py advanced commands review`
 
 ### Phase 3: IO and Import (all independent)
 

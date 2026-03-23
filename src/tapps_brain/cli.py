@@ -904,11 +904,12 @@ def maintenance_gc(
                 store.delete(entry.key)
                 archived += 1
 
-        data = {"archived": archived, "remaining": store.count()}
+        remaining = store.count()
+        data = {"archived": archived, "remaining": remaining}
         if as_json:
             _output(data, as_json=True)
         else:
-            typer.echo(f"Archived {archived} entries, {store.count()} remaining")
+            typer.echo(f"Archived {archived} entries, {remaining} remaining")
     finally:
         store.close()
 
@@ -1029,7 +1030,7 @@ def maintenance_migrate(
     """Run schema migrations."""
     store = _get_store(project_dir)
     try:
-        version = store._persistence.get_schema_version()
+        version = store.get_schema_version()
         if dry_run:
             data = {"current_version": version}
             if as_json:
@@ -1309,15 +1310,11 @@ def hive_status(as_json: JsonFlag = False) -> None:
     from tapps_brain.hive import AgentRegistry, HiveStore
 
     hive = HiveStore()
-    namespaces = hive.list_namespaces()
-    ns_counts: dict[str, int] = {}
-    for ns in namespaces:
-        rows = hive._conn.execute(
-            "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
-            (ns,),
-        ).fetchone()
-        ns_counts[ns] = rows[0] if rows else 0
-    total = sum(ns_counts.values())
+    try:
+        ns_counts = hive.count_by_namespace()
+        total = sum(ns_counts.values())
+    finally:
+        hive.close()
 
     registry = AgentRegistry()
     agents = [
@@ -1329,7 +1326,6 @@ def hive_status(as_json: JsonFlag = False) -> None:
         }
         for a in registry.list_agents()
     ]
-    hive.close()
 
     data: dict[str, Any] = {
         "namespaces": ns_counts,
@@ -1339,7 +1335,7 @@ def hive_status(as_json: JsonFlag = False) -> None:
     if as_json:
         _output(data, as_json=True)
     else:
-        typer.echo(f"Hive: {total} entries across {len(namespaces)} namespaces")
+        typer.echo(f"Hive: {total} entries across {len(ns_counts)} namespaces")
         for ns, count in ns_counts.items():
             typer.echo(f"  {ns}: {count}")
         if agents:
@@ -1363,9 +1359,11 @@ def hive_search(
     from tapps_brain.hive import HiveStore
 
     hive = HiveStore()
-    ns_list = [namespace] if namespace else None
-    results = hive.search(query, namespaces=ns_list, limit=20)
-    hive.close()
+    try:
+        ns_list = [namespace] if namespace else None
+        results = hive.search(query, namespaces=ns_list, limit=20)
+    finally:
+        hive.close()
 
     if as_json:
         _output({"results": results, "count": len(results)}, as_json=True)
