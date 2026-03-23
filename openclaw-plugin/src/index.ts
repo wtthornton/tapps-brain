@@ -410,8 +410,11 @@ function parseMemoryMdForImport(
   const flush = (): void => {
     if (currentKey && currentBody.length > 0) {
       const value = currentBody.join("\n").trim();
-      if (value) {
-        entries.push({ key: slugify(currentKey), value, tier: currentTier });
+      const key = slugify(currentKey);
+      // Skip entries where value is empty or the heading produced an empty slug
+      // (e.g. a heading consisting entirely of non-alphanumeric characters).
+      if (value && key) {
+        entries.push({ key, value, tier: currentTier });
       }
     }
     currentBody = [];

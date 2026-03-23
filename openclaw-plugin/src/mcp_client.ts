@@ -12,6 +12,16 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** MCP protocol version this client implements. */
+const MCP_PROTOCOL_VERSION = "2024-11-05";
+
+/** Request timeout in milliseconds (30 s). */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -46,6 +56,13 @@ interface PendingRequest {
  *
  * Uses Content-Length framed JSON-RPC 2.0 messages, which is the standard
  * MCP stdio transport format.
+ *
+ * Note: Content-Length values are UTF-8 byte counts. The internal buffer
+ * stores decoded JavaScript strings (UTF-16 internally). For ASCII-only JSON
+ * (the common case for MCP messages) byte count equals character count. For
+ * messages containing non-ASCII characters the comparison in processBuffer()
+ * may be incorrect; full correctness would require working with raw Buffers
+ * throughout, which is left as a future improvement.
  */
 export class McpClient {
   private process: ChildProcess | null = null;
@@ -64,7 +81,8 @@ export class McpClient {
   }
 
   /**
-   * Spawn the `tapps-brain-mcp` child process.
+   * Spawn the `tapps-brain-mcp` child process and perform the MCP
+   * initialization handshake.
    *
    * @param command - Override for the MCP command (default: "tapps-brain-mcp").
    * @param extraArgs - Additional CLI arguments (e.g., "--agent-id", "--enable-hive").
@@ -103,8 +121,16 @@ export class McpClient {
     // Wait briefly for the process to be ready
     await new Promise<void>((res) => setTimeout(res, 100));
 
-    // Initialize the MCP session
-    await this.callTool("initialize", {});
+    // MCP initialization handshake (protocol-level, not a tool call).
+    // See: https://spec.modelcontextprotocol.io/specification/basic/lifecycle/
+    await this.sendRpc("initialize", {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: "tapps-brain-openclaw", version: "1.0.0" },
+    });
+
+    // Notify server that initialization is complete (no response expected).
+    this.sendNotification("notifications/initialized");
   }
 
   /** Stop the MCP child process. */
@@ -127,6 +153,19 @@ export class McpClient {
    * @returns The parsed result from the tool response.
    */
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.sendRpc("tools/call", { name, arguments: args });
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal: protocol helpers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Send a JSON-RPC request and await its response.
+   *
+   * Rejects after REQUEST_TIMEOUT_MS if no response is received.
+   */
+  private async sendRpc(method: string, params?: Record<string, unknown>): Promise<unknown> {
     if (!this.process?.stdin) {
       throw new Error("MCP process not running");
     }
@@ -135,17 +174,42 @@ export class McpClient {
     const request: JsonRpcRequest = {
       jsonrpc: "2.0",
       id,
-      method: "tools/call",
-      params: { name, arguments: args },
+      method,
+      ...(params !== undefined ? { params } : {}),
     };
 
     const body = JSON.stringify(request);
     const message = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
 
     return new Promise<unknown>((res, rej) => {
-      this.pending.set(id, { resolve: res, reject: rej });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        rej(new Error(`MCP request timeout after ${REQUEST_TIMEOUT_MS}ms: ${method}`));
+      }, REQUEST_TIMEOUT_MS);
+
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          res(value);
+        },
+        reject: (reason) => {
+          clearTimeout(timer);
+          rej(reason);
+        },
+      });
+
       this.process!.stdin!.write(message, "utf-8");
     });
+  }
+
+  /**
+   * Send a JSON-RPC notification (no `id`, no response expected).
+   */
+  private sendNotification(method: string): void {
+    if (!this.process?.stdin) return;
+    const body = JSON.stringify({ jsonrpc: "2.0", method });
+    const message = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
+    this.process.stdin.write(message, "utf-8");
   }
 
   // -----------------------------------------------------------------------
