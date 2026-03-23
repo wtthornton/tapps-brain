@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any
 
 # Minimum chars for a chunk to be considered (skip tiny fragments)
 _MIN_CHUNK_CHARS = 20
@@ -47,7 +46,7 @@ def _slugify(text: str, max_len: int = 64) -> str:
     # Ensure starts with alphanumeric
     if text and text[0] not in "abcdefghijklmnopqrstuvwxyz0123456789":
         text = "x-" + text
-    return text[:max_len] if len(text) > max_len else text or "fact"
+    return text[:max_len] if len(text) > max_len else text
 
 
 def _truncate(value: str, max_chars: int) -> str:
@@ -65,7 +64,7 @@ def extract_durable_facts(
     *,
     max_facts: int = 10,
     max_value_chars: int = 4096,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, str]]:
     """Extract durable fact candidates from context using rule-based patterns.
 
     Looks for decision-like phrases: "we decided", "key decision", "architecture
@@ -87,35 +86,33 @@ def extract_durable_facts(
     if not context or not context.strip():
         return []
 
-    facts: list[dict[str, Any]] = []
+    facts: list[dict[str, str]] = []
     seen_values: set[str] = set()
 
-    # Split into candidate sentences/paragraphs
+    # Split into candidate sentences/paragraphs.
+    # _SENTENCE_BOUNDARY matches both sentence-ending whitespace and newlines
+    # (including double-newlines), so a single split covers all boundaries.
     chunks = _SENTENCE_BOUNDARY.split(context.strip())
-    # Also try double-newline as paragraph boundary
-    for c in chunks:
-        for para in c.split("\n\n"):
-            text = para.strip()
-            if len(text) < _MIN_CHUNK_CHARS:
-                continue
-            for pattern, tier in _DECISION_PATTERNS:
-                if pattern.search(text):
-                    value = _truncate(text, max_value_chars)
-                    if value in seen_values:
-                        continue
-                    seen_values.add(value)
-                    key = _slugify(value[:80])
-                    # Ensure unique key
-                    base_key = key
-                    idx = 1
-                    existing_keys = {f["key"] for f in facts}
-                    while key in existing_keys:
-                        key = f"{base_key}.{idx}"
-                        idx += 1
-                    facts.append({"key": key, "value": value, "tier": tier})
-                    break  # One match per chunk
-            if len(facts) >= max_facts:
-                break
+    for chunk in chunks:
+        text = chunk.strip()
+        if len(text) < _MIN_CHUNK_CHARS:
+            continue
+        for pattern, tier in _DECISION_PATTERNS:
+            if pattern.search(text):
+                value = _truncate(text, max_value_chars)
+                if value in seen_values:
+                    continue
+                seen_values.add(value)
+                key = _slugify(value[:80])
+                # Ensure unique key
+                base_key = key
+                idx = 1
+                existing_keys = {f["key"] for f in facts}
+                while key in existing_keys:
+                    key = f"{base_key}.{idx}"
+                    idx += 1
+                facts.append({"key": key, "value": value, "tier": tier})
+                break  # One match per chunk
         if len(facts) >= max_facts:
             break
 

@@ -159,7 +159,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/gc.py` (202 lines) and `src/tapps_brain/promotion.py` (161 lines). Focus on: archive-not-delete semantics, GC threshold correctness, promotion criteria accuracy, interaction between GC and promotion (promote before GC?). Fix all issues. Commit: `review(story-019.4): GC and promotion review`
 
 #### 019-E: Review `reinforcement.py` + `extraction.py` — memory strengthening and extraction
-- [ ] Review `src/tapps_brain/reinforcement.py` (61 lines) and `src/tapps_brain/extraction.py` (122 lines). Focus on: reinforcement score capping, extraction accuracy, edge cases (empty context, very long input). Fix all issues. Commit: `review(story-019.5): reinforcement and extraction review`
+- [x] Review `src/tapps_brain/reinforcement.py` (61 lines) and `src/tapps_brain/extraction.py` (122 lines). Focus on: reinforcement score capping, extraction accuracy, edge cases (empty context, very long input). Fix all issues. Commit: `review(story-019.5): reinforcement and extraction review`
 
 ## Active — EPIC-020: Code Review — Safety & Validation
 

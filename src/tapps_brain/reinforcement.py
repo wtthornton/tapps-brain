@@ -39,6 +39,8 @@ def reinforce(
 
     Returns:
         Dict of field names to new values for ``update_fields()``.
+        Keys: ``last_reinforced``, ``reinforce_count``, ``confidence``,
+        ``updated_at``, ``access_count``.
     """
     if now is None:
         now = datetime.now(tz=UTC)
