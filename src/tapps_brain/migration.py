@@ -133,6 +133,10 @@ def _import_memory_core_sqlite(  # noqa: PLR0915
     skipped = 0
     errors = 0
 
+    if not db_path.is_file():
+        logger.warning("migration.sqlite_not_found", path=str(db_path))
+        return {"imported": 0, "skipped": 0, "errors": 1}
+
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row

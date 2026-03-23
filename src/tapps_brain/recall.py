@@ -217,6 +217,14 @@ class RecallOrchestrator:
         if self._hive_store is None:
             return [], 0
 
+        eff_weight = self._hive_recall_weight
+        _getter = getattr(self._store, "get_hive_recall_weight", None)
+        if callable(_getter):
+            try:
+                eff_weight = float(_getter())
+            except (TypeError, ValueError):
+                eff_weight = self._hive_recall_weight
+
         local_keys = {str(m.get("key", "")) for m in local_memories}
 
         # Search universal + agent's domain namespace
@@ -244,9 +252,9 @@ class RecallOrchestrator:
             hive_memories.append(
                 {
                     "key": key,
-                    "confidence": round(conf * self._hive_recall_weight, 4),
+                    "confidence": round(conf * eff_weight, 4),
                     "tier": entry.get("tier", "pattern"),
-                    "score": round(conf * self._hive_recall_weight, 4),
+                    "score": round(conf * eff_weight, 4),
                     "source": "hive",
                     "namespace": entry.get("namespace", "universal"),
                     "value": entry.get("value", ""),

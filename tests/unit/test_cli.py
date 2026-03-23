@@ -71,6 +71,7 @@ class TestVersionHelp:
             "agent",
             "openclaw",
             "feedback",
+            "diagnostics",
         ]:
             result = runner.invoke(app, [subgroup, "--help"])
             assert result.exit_code == 0, f"{subgroup} --help failed"
@@ -87,14 +88,14 @@ class TestStoreCommands:
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "Entries: 3 / 500" in result.stdout
-        assert "Schema: v9" in result.stdout
+        assert "Schema: v10" in result.stdout
 
     def test_stats_json(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["total_entries"] == 3
-        assert data["schema_version"] == 9
+        assert data["schema_version"] == 10
 
     def test_list(self, project_dir):
         result = runner.invoke(app, ["store", "list", "--project-dir", project_dir])
@@ -636,14 +637,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v9" in result.stdout
+        assert "v10" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v9" in result.stdout
+        assert "v10" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
@@ -651,7 +652,7 @@ class TestMaintenanceCommands:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["schema_version"] == 9
+        assert data["schema_version"] == 10
 
 
 class TestMaintenanceGcConfigCommand:
@@ -995,14 +996,17 @@ class TestAgentCreateCommand:
         assert data["skills"] == ["coding", "review"]
 
     def test_agent_create_invalid_profile(self):
-        result = runner.invoke(
+        # Typer may write errors to stderr; capture separately (Click default mixes).
+        r = CliRunner(mix_stderr=False)
+        result = r.invoke(
             app,
             ["agent", "create", "bad-agent", "--profile", "nonexistent-profile-xyz"],
         )
         assert result.exit_code == 1
-        assert "not found" in result.stderr or "not found" in result.output
+        combined = f"{result.stdout}\n{result.stderr}"
+        assert "not found" in combined
         # 016-B: error message must list available profiles
-        assert "Available profiles" in result.stderr or "Available profiles" in result.output
+        assert "Available profiles" in combined
 
     def test_agent_create_invalid_profile_json(self):
         result = runner.invoke(
@@ -1444,6 +1448,46 @@ class TestMemoryTagCommand:
         assert result.exit_code != 0
         data = json.loads(result.stdout)
         assert data.get("error") == "not_found"
+
+
+# ===================================================================
+# Diagnostics commands (EPIC-030)
+# ===================================================================
+
+
+class TestDiagnosticsCommands:
+    def test_diagnostics_report_json(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["diagnostics", "report", "--json", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert "composite_score" in data
+        assert "circuit_state" in data
+        assert "dimensions" in data
+
+    def test_diagnostics_report_human(self, project_dir):
+        r = runner.invoke(app, ["diagnostics", "report", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert "Operational" in r.stdout or "Degraded" in r.stdout
+        assert "Composite score:" in r.stdout
+
+    def test_diagnostics_history_after_report(self, project_dir):
+        r1 = runner.invoke(
+            app,
+            ["diagnostics", "report", "--project-dir", project_dir],
+        )
+        assert r1.exit_code == 0
+        r2 = runner.invoke(
+            app,
+            ["diagnostics", "history", "--json", "--project-dir", project_dir, "--limit", "5"],
+        )
+        assert r2.exit_code == 0
+        hist = json.loads(r2.stdout)
+        assert isinstance(hist, list)
+        assert len(hist) >= 1
+        assert "composite_score" in hist[0]
 
 
 # ===================================================================

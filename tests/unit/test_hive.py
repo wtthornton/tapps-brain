@@ -1000,27 +1000,31 @@ class TestPropagationEngineUnknownScope:
     """PropagationEngine.propagate() should warn on unknown effective_scope values."""
 
     def test_unknown_scope_emits_warning_and_uses_domain(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: Path,
     ) -> None:
         """Unknown scope falls back to domain (agent_profile) with a warning."""
+        from unittest.mock import MagicMock, patch
+
         hive = HiveStore(db_path=tmp_path / "hive.db")
-        result = PropagationEngine.propagate(
-            key="scope-test",
-            value="value",
-            agent_scope="custom_unknown",
-            agent_id="agent-1",
-            agent_profile="test-profile",
-            tier="pattern",
-            confidence=0.7,
-            source="agent",
-            tags=None,
-            hive_store=hive,
-        )
+        mock_logger = MagicMock()
+        with patch("tapps_brain.hive.logger", mock_logger):
+            result = PropagationEngine.propagate(
+                key="scope-test",
+                value="value",
+                agent_scope="custom_unknown",
+                agent_id="agent-1",
+                agent_profile="test-profile",
+                tier="pattern",
+                confidence=0.7,
+                source="agent",
+                tags=None,
+                hive_store=hive,
+            )
 
         # Should NOT return None — falls back to domain (agent_profile)
         assert result is not None
         assert result["namespace"] == "test-profile"
-        # Warning logged via structlog to stdout — event key contains "unknown_scope"
-        captured = capsys.readouterr()
-        assert "unknown_scope" in captured.out
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args[0][0] == "hive.propagate.unknown_scope"
+        assert mock_logger.warning.call_args[1].get("fallback") == "domain"
         hive.close()

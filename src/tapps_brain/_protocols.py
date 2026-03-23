@@ -17,6 +17,23 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
+class HealthDimension(Protocol):
+    """Pluggable diagnostics dimension (EPIC-030).
+
+    Implementations expose a stable ``name``, a ``default_weight`` for
+    composite scoring, and a ``check`` that inspects the store.
+    """
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def default_weight(self) -> float: ...
+
+    def check(self, store: Any) -> Any: ...
+
+
+@runtime_checkable
 class ProjectProfileLike(Protocol):
     """Minimal interface for project profile data.
 

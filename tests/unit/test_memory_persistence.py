@@ -140,7 +140,7 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 9  # v9 feedback_events table
+        assert persistence.get_schema_version() == 10  # v10 diagnostics_history
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -315,14 +315,14 @@ class TestSchemaMigrations:
         conn.close()
 
     def test_migrate_v1_to_current(self, tmp_path: Path) -> None:
-        """Opening a v1 DB should migrate it all the way to v9."""
+        """Opening a v1 DB should migrate it all the way to v10."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 9
+        assert p.get_schema_version() == 10
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -349,6 +349,8 @@ class TestSchemaMigrations:
 
         # Verify v9 migration: feedback_events table exists
         assert "feedback_events" in tables
+        # Verify v10 migration: diagnostics_history table exists
+        assert "diagnostics_history" in tables
         p.close()
 
     def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
@@ -370,7 +372,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 9
+        assert p.get_schema_version() == 10
 
         tables = [
             r[0]
@@ -412,7 +414,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 9
+        assert p.get_schema_version() == 10
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -435,7 +437,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 9
+        assert p.get_schema_version() == 10
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -480,7 +482,7 @@ class TestSchemaMigrations:
         p.close()
 
     def test_migrate_v7_to_v8(self, tmp_path: Path) -> None:
-        """A v7 DB should gain integrity_hash (v8) then feedback_events (v9)."""
+        """A v7 DB should migrate through v8–v10 (integrity, feedback, diagnostics)."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
@@ -504,7 +506,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 9
+        assert p.get_schema_version() == 10
 
         # Verify the integrity_hash column was added by the v7→v8 migration.
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -515,6 +517,7 @@ class TestSchemaMigrations:
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
         assert "feedback_events" in tables
+        assert "diagnostics_history" in tables
         p.close()
 
 

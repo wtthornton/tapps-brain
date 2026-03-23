@@ -289,7 +289,8 @@ def test_find_memory_core_db_wrong_agent_falls_back(tmp_path: Path) -> None:
 
 def test_migrate_dry_run_no_files(tmp_workspace: Path) -> None:
     tmp_workspace.mkdir(parents=True)
-    result = migrate_from_workspace(None, tmp_workspace, dry_run=True)
+    with patch("tapps_brain.migration.find_memory_core_db", return_value=None):
+        result = migrate_from_workspace(None, tmp_workspace, dry_run=True)
     assert result["imported"] == 0
     assert result["dry_run"] is True
     assert result["memory_md"] == 0

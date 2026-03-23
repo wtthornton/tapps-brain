@@ -150,6 +150,9 @@ class TestCoreTools:
             "feedback_issue",
             "feedback_record",
             "feedback_query",
+            # Diagnostics (EPIC-030)
+            "diagnostics_report",
+            "diagnostics_history",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
@@ -482,6 +485,29 @@ class TestMcpToolHandlerExecution:
         )
         snap = json.loads(fb_res.fn())
         assert "events" in snap and snap["count"] >= 1
+
+    def test_diagnostics_mcp_tools_and_resource(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="diag-mcp", value="diagnostics mcp content", tier="pattern")
+
+        dr = _tool_fn(mcp_server, "diagnostics_report")
+        raw = json.loads(dr(record_history=True))
+        assert "composite_score" in raw
+        assert "circuit_state" in raw
+        assert "dimensions" in raw
+
+        dh = _tool_fn(mcp_server, "diagnostics_history")
+        hist = json.loads(dh(limit=10))
+        assert "records" in hist
+        assert hist["count"] >= 1
+
+        res = next(
+            r
+            for r in mcp_server._resource_manager.list_resources()
+            if str(r.uri) == "memory://diagnostics"
+        )
+        body = json.loads(res.fn())
+        assert "composite_score" in body
 
 
 class TestMcpMain:

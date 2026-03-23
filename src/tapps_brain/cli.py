@@ -35,6 +35,12 @@ structlog.configure(
 
 _PREVIEW_LEN = 80  # Max chars shown for a memory value preview in table output
 
+# Diagnostics CLI letter-grade cutoffs (composite dimension score 0-1).
+_DIAG_GRADE_A_MIN = 0.85
+_DIAG_GRADE_B_MIN = 0.70
+_DIAG_GRADE_C_MIN = 0.55
+_DIAG_GRADE_D_MIN = 0.40
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
@@ -55,6 +61,10 @@ agent_app = typer.Typer(help="Manage Hive agent registrations.", no_args_is_help
 
 openclaw_app = typer.Typer(help="OpenClaw integration tools.", no_args_is_help=True)
 feedback_app = typer.Typer(help="Record and query feedback events.", no_args_is_help=True)
+diagnostics_app = typer.Typer(
+    help="Quality diagnostics scorecard (EPIC-030).",
+    no_args_is_help=True,
+)
 
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
@@ -65,6 +75,7 @@ app.add_typer(hive_app, name="hive")
 app.add_typer(agent_app, name="agent")
 app.add_typer(openclaw_app, name="openclaw")
 app.add_typer(feedback_app, name="feedback")
+app.add_typer(diagnostics_app, name="diagnostics")
 
 # ---------------------------------------------------------------------------
 # Global options
@@ -1787,6 +1798,119 @@ def feedback_list_cmd(
                 columns=["event_type", "entry_key", "session_id", "utility", "timestamp", "id"],
             )
             typer.echo(f"\n{len(events)} event(s)")
+    finally:
+        store.close()
+
+
+def _diagnostics_sre_status(circuit_state: str) -> str:
+    return {
+        "closed": "Operational",
+        "degraded": "Degraded",
+        "half_open": "Partial Outage",
+        "open": "Major Outage",
+    }.get(circuit_state, circuit_state)
+
+
+def _dimension_grade_letter(score: float) -> str:
+    if score >= _DIAG_GRADE_A_MIN:
+        return "A"
+    if score >= _DIAG_GRADE_B_MIN:
+        return "B"
+    if score >= _DIAG_GRADE_C_MIN:
+        return "C"
+    if score >= _DIAG_GRADE_D_MIN:
+        return "D"
+    return "F"
+
+
+def _circuit_status_color(circuit_state: str) -> str:
+    if circuit_state == "closed":
+        return typer.colors.GREEN
+    if circuit_state in ("degraded", "half_open"):
+        return typer.colors.YELLOW
+    return typer.colors.RED
+
+
+@diagnostics_app.command("report")
+def diagnostics_report_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    record_history: Annotated[
+        bool,
+        typer.Option(help="Persist this snapshot to diagnostics_history."),
+    ] = True,
+) -> None:
+    """Run quality diagnostics: composite score, dimensions, circuit breaker state."""
+    store = _get_store(project_dir)
+    try:
+        rep = store.diagnostics(record_history=record_history)
+        if as_json:
+            _output(rep.model_dump(mode="json"), as_json=True)
+            return
+        status = _diagnostics_sre_status(rep.circuit_state)
+        typer.secho(
+            f"Status: {status} (circuit={rep.circuit_state})",
+            fg=_circuit_status_color(rep.circuit_state),
+        )
+        typer.echo(f"Composite score: {rep.composite_score:.4f}")
+        if rep.hive_composite_score is not None:
+            typer.echo(f"Hive composite (worst-of): {rep.hive_composite_score:.4f}")
+        typer.echo(f"Gap signals (feedback): {rep.gap_count}")
+        typer.echo(f"Correlation-adjusted weights: {rep.correlation_adjusted}")
+        typer.echo("")
+        typer.echo("Dimensions (grade):")
+        rows: list[dict[str, Any]] = []
+        for name, ds in sorted(rep.dimensions.items()):
+            rows.append(
+                {
+                    "dimension": name,
+                    "score": f"{ds.score:.4f}",
+                    "grade": _dimension_grade_letter(ds.score),
+                },
+            )
+        if rows:
+            _print_table(rows, columns=["dimension", "score", "grade"])
+        if rep.recommendations:
+            typer.echo("")
+            typer.echo("Recommendations:")
+            for line in rep.recommendations:
+                typer.echo(f"  - {line}")
+        if rep.anomalies:
+            typer.echo("")
+            typer.echo("Anomalies:")
+            for a in rep.anomalies:
+                typer.echo(f"  - {a}")
+    finally:
+        store.close()
+
+
+@diagnostics_app.command("history")
+def diagnostics_history_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    limit: Annotated[int, typer.Option(help="Max rows.", min=1, max=500)] = 50,
+) -> None:
+    """List recent persisted diagnostics snapshots."""
+    store = _get_store(project_dir)
+    try:
+        hist = store.diagnostics_history(limit=limit)
+        if as_json:
+            _output(hist, as_json=True)
+            return
+        if not hist:
+            typer.echo("No diagnostics history yet.")
+            return
+        slim = [
+            {
+                "recorded_at": r.get("recorded_at", ""),
+                "composite": f"{float(r.get('composite_score', 0.0)):.4f}",
+                "circuit": r.get("circuit_state", ""),
+                "id": str(r.get("id", ""))[:8],
+            }
+            for r in hist
+        ]
+        _print_table(slim, columns=["recorded_at", "composite", "circuit", "id"])
+        typer.echo(f"\n{len(hist)} row(s)")
     finally:
         store.close()
 

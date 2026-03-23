@@ -116,6 +116,20 @@ class LimitsConfig(BaseModel):
     max_tags: int = Field(default=10, ge=1)
 
 
+class DiagnosticsProfileConfig(BaseModel):
+    """Diagnostics / quality scorecard settings (EPIC-030)."""
+
+    retention_days: int = Field(default=90, ge=1, le=3650)
+    custom_dimension_paths: list[str] = Field(
+        default_factory=list,
+        description="Dotted paths to HealthDimension factories or classes.",
+    )
+    dimension_weights: dict[str, float] = Field(
+        default_factory=dict,
+        description="Optional per-dimension weight overrides.",
+    )
+
+
 class HiveConfig(BaseModel):
     """Hive propagation configuration (EPIC-011).
 
@@ -194,6 +208,10 @@ class MemoryProfile(BaseModel):
             "Feedback collection configuration.  Allows registering custom event "
             "types and enabling strict event-type validation."
         ),
+    )
+    diagnostics: DiagnosticsProfileConfig = Field(
+        default_factory=DiagnosticsProfileConfig,
+        description="Diagnostics history retention and custom dimension paths.",
     )
 
     @model_validator(mode="after")
@@ -336,6 +354,8 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         recall=child.recall,
         limits=child.limits,
         hive=child.hive,
+        feedback=child.feedback,
+        diagnostics=child.diagnostics,
     )
 
 

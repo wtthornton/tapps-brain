@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 10
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -38,6 +38,7 @@ _SCHEMA_V6 = 6
 _SCHEMA_V7 = 7
 _SCHEMA_V8 = 8
 _SCHEMA_V9 = 9
+_SCHEMA_V10 = 10
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -150,6 +151,8 @@ class MemoryPersistence:
                 self._migrate_v7_to_v8(cur)
             if current_version < _SCHEMA_V9:
                 self._migrate_v8_to_v9(cur)
+            if current_version < _SCHEMA_V10:
+                self._migrate_v9_to_v10(cur)
 
             self._conn.commit()
 
@@ -433,6 +436,27 @@ class MemoryPersistence:
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
             (9, datetime.now(tz=UTC).isoformat()),
+        )
+
+    def _migrate_v9_to_v10(self, cur: sqlite3.Cursor) -> None:
+        """Add diagnostics_history for EPIC-030 quality scorecard."""
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS diagnostics_history (
+                id                TEXT NOT NULL PRIMARY KEY,
+                recorded_at       TEXT NOT NULL,
+                composite_score   REAL NOT NULL,
+                dimension_scores  TEXT NOT NULL,
+                circuit_state     TEXT NOT NULL DEFAULT 'closed',
+                full_report_json  TEXT NOT NULL DEFAULT '{}'
+            )
+        """)
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_diag_hist_recorded "
+            "ON diagnostics_history(recorded_at)"
+        )
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (10, datetime.now(tz=UTC).isoformat()),
         )
 
     def migrate_contradicted_to_temporal(self) -> int:

@@ -288,6 +288,10 @@ class RecallResult(BaseModel):
         ge=0,
         description="Number of memories from the Hive (EPIC-011).",
     )
+    quality_warning: str | None = Field(
+        default=None,
+        description="Set when diagnostics circuit breaker is not CLOSED (EPIC-030).",
+    )
 
 
 class MemorySnapshot(BaseModel):

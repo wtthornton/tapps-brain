@@ -225,6 +225,14 @@ class MemoryStore:
         # EPIC-029 story 029-7: session → hive memory key → namespace for feedback propagation.
         self._hive_feedback_key_index: dict[str, dict[str, str]] = {}
 
+        # EPIC-030: diagnostics circuit breaker + history (lazy SQLite).
+        from tapps_brain.diagnostics import AnomalyDetector, CircuitBreaker
+
+        self._circuit_breaker = CircuitBreaker()
+        self._anomaly_detector = AnomalyDetector()
+        self._diagnostics_history_store: Any = None
+        self._hive_recall_weight_multiplier: float = 1.0
+
         logger.info(
             "memory_store_initialized",
             project_root=str(project_root),
@@ -1278,6 +1286,18 @@ class MemoryStore:
                     details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
                 )
 
+        from tapps_brain.diagnostics import CircuitState
+
+        qw: str | None = None
+        st = self._circuit_breaker.state
+        if st == CircuitState.DEGRADED:
+            qw = "Memory quality degraded — results may be reduced in quality."
+        elif st == CircuitState.OPEN:
+            qw = "Memory quality critical — Hive recall limited until recovery."
+        elif st == CircuitState.HALF_OPEN:
+            qw = "Memory quality recovering — diagnostic probes in progress."
+        if qw is not None:
+            result = result.model_copy(update={"quality_warning": qw})
         return result
 
     def health(self) -> StoreHealthReport:
@@ -1426,6 +1446,86 @@ class MemoryStore:
     def get_metrics(self) -> MetricsSnapshot:
         """Return a snapshot of in-process operation metrics."""
         return self._metrics.snapshot()
+
+    def get_hive_recall_weight(self) -> float:
+        """Effective Hive recall weight including diagnostics circuit multiplier."""
+        base = 0.8
+        if self._profile is not None:
+            hc = getattr(self._profile, "hive", None)
+            if hc is not None:
+                base = float(getattr(hc, "recall_weight", base))
+        return max(0.0, min(1.0, base * float(self._hive_recall_weight_multiplier)))
+
+    def _ensure_diagnostics_history(self) -> None:
+        if self._diagnostics_history_store is not None:
+            return
+        from tapps_brain.diagnostics import DiagnosticsHistoryStore
+
+        if self._persistence.get_schema_version() < 10:
+            return
+        self._diagnostics_history_store = DiagnosticsHistoryStore(self._persistence.db_path)
+        self._anomaly_detector.reset_from_history(self._diagnostics_history_store.history(limit=500))
+
+    def diagnostics(
+        self,
+        *,
+        record_history: bool = True,
+        run_remediation: bool = True,
+    ) -> Any:  # noqa: ANN401
+        """Run quality diagnostics, update circuit breaker, optional history (EPIC-030)."""
+        from tapps_brain.diagnostics import (
+            CircuitState,
+            DiagnosticsConfig,
+            hive_recall_multiplier,
+            maybe_remediate,
+            run_diagnostics,
+        )
+
+        self._ensure_diagnostics_history()
+        hist_rows: list[dict[str, Any]] = []
+        if self._diagnostics_history_store is not None:
+            hist_rows = self._diagnostics_history_store.history(limit=500)
+        dcfg = DiagnosticsConfig()
+        if self._profile is not None and getattr(self._profile, "diagnostics", None) is not None:
+            dcfg = DiagnosticsConfig.model_validate(self._profile.diagnostics.model_dump())
+        report = run_diagnostics(self, config=dcfg, history_for_correlation=hist_rows)
+        if self._circuit_breaker.state == CircuitState.HALF_OPEN:
+            self._circuit_breaker.record_probe(report.composite_score)
+        st = self._circuit_breaker.transition(report.composite_score)
+        nowm = time.monotonic()
+        if st == CircuitState.OPEN and run_remediation:
+            maybe_remediate(self, report, self._circuit_breaker, now_mono=nowm)
+        if st == CircuitState.OPEN:
+            self._circuit_breaker.enter_half_open_if_cooled(nowm)
+            st = self._circuit_breaker.state
+        alerts = self._anomaly_detector.detect(report)
+        self._hive_recall_weight_multiplier = hive_recall_multiplier(st)
+        report = report.model_copy(
+            update={"anomalies": alerts, "circuit_state": st.value},
+        )
+        if record_history and self._diagnostics_history_store is not None:
+            self._diagnostics_history_store.record(report, circuit_state=st.value)
+            self._diagnostics_history_store.prune_older_than(dcfg.retention_days)
+        try:
+            self._persistence.append_audit(
+                "diagnostics_record",
+                "",
+                {
+                    "composite_score": report.composite_score,
+                    "circuit_state": st.value,
+                },
+            )
+        except Exception:
+            logger.debug("diagnostics_audit_failed", exc_info=True)
+        self._metrics.increment("store.diagnostics")
+        return report
+
+    def diagnostics_history(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return recent diagnostics snapshots from SQLite (EPIC-030)."""
+        self._ensure_diagnostics_history()
+        if self._diagnostics_history_store is None:
+            return []
+        return self._diagnostics_history_store.history(limit=limit)
 
     # ------------------------------------------------------------------
     # Relations (EPIC-006)
@@ -1971,6 +2071,9 @@ class MemoryStore:
         """Close the underlying persistence layer."""
         if self._feedback_store_instance is not None:
             self._feedback_store_instance.close()
+        if self._diagnostics_history_store is not None:
+            self._diagnostics_history_store.close()
+            self._diagnostics_history_store = None
         self._persistence.close()
 
     # ------------------------------------------------------------------

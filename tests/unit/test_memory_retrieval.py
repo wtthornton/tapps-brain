@@ -687,9 +687,9 @@ class TestScoringCorrectnessReview:
         assert results
         assert results[0].score <= 1.0, f"score {results[0].score} exceeds 1.0"
 
-    def test_scoring_weight_mismatch_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_scoring_weight_mismatch_logs_warning(self) -> None:
         """A warning is emitted when profile scoring weights don't sum to 1.0."""
-        import logging
+        from unittest.mock import patch
 
         scoring_cfg = MagicMock()
         scoring_cfg.relevance = 0.5
@@ -700,15 +700,12 @@ class TestScoringCorrectnessReview:
         scoring_cfg.bm25_norm_k = 5.0
         scoring_cfg.source_trust = None
 
-        with caplog.at_level(logging.WARNING):
+        mock_logger = MagicMock()
+        with patch("tapps_brain.retrieval.logger", mock_logger):
             MemoryRetriever(scoring_config=scoring_cfg)
 
-        # Use caplog.messages (list of getMessage() strings) for reliable access
-        # regardless of structlog's renderer; also fall back to checking raw r.msg.
-        all_msgs = caplog.messages + [r.getMessage() for r in caplog.records]
-        assert any("scoring_weights_do_not_sum_to_one" in m for m in all_msgs), (
-            f"Expected warning not found. Captured: {caplog.messages}"
-        )
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args[0][0] == "scoring_weights_do_not_sum_to_one"
 
     def test_apply_reranker_returns_scored_when_reranker_is_none(self) -> None:
         """_apply_reranker should not crash when reranker is None (guard replaces assert)."""

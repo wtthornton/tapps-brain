@@ -710,6 +710,22 @@ def create_server(  # noqa: PLR0915
             }
         )
 
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def diagnostics_report(
+        record_history: bool = True,
+    ) -> str:
+        """Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."""
+        rep = store.diagnostics(record_history=record_history)
+        return json.dumps(rep.model_dump(mode="json"))
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def diagnostics_history(
+        limit: int = 50,
+    ) -> str:
+        """Return recent persisted diagnostics snapshots."""
+        rows = store.diagnostics_history(limit=limit)
+        return json.dumps({"records": rows, "count": len(rows)})
+
     # ------------------------------------------------------------------
     # Resources — read-only store views
     # ------------------------------------------------------------------
@@ -759,6 +775,12 @@ def create_server(  # noqa: PLR0915
                 "count": len(events),
             }
         )
+
+    @mcp.resource("memory://diagnostics")  # type: ignore[untyped-decorator]
+    def diagnostics_resource() -> str:
+        """Latest diagnostics report (does not append history by default)."""
+        rep = store.diagnostics(record_history=False)
+        return json.dumps(rep.model_dump(mode="json"))
 
     # ------------------------------------------------------------------
     # Prompts — user-invoked workflow templates (STORY-008.6)

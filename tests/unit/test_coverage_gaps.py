@@ -63,6 +63,7 @@ def _entry(
 
 def _mock_store(entries=None):
     store = MagicMock()
+    store.profile = None  # else MagicMock chaining sets fake "scoring" and breaks MemoryRetriever
     entries = entries or []
     store.list_all.return_value = entries
     store.search.return_value = entries
@@ -826,7 +827,7 @@ class TestIOImportEdges:
         store = _mock_store()
         validator = _make_validator(tmp_path)
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(ValueError, match="not valid JSON"):
             import_memories(store, input_file, validator)
 
     def test_import_invalid_format_defaults_to_json(self, tmp_path):

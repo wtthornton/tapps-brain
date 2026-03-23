@@ -423,7 +423,8 @@ class TestRecallMergingAcrossAgents:
         )
 
         store = make_store("proj")
-        result = store.recall("Redis caching layer message queue RabbitMQ")
+        # Hive FTS5 ANDs space-separated tokens; match a single distinctive term.
+        result = store.recall("Redis")
         assert result.hive_memory_count >= 1, (
             f"Expected at least 1 Hive memory in results, got {result.hive_memory_count}"
         )

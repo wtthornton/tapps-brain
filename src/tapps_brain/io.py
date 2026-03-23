@@ -190,7 +190,9 @@ def export_memories(
 
     validated_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if export_format == "markdown":
+    eff_format = export_format if export_format in ("json", "markdown") else "json"
+
+    if eff_format == "markdown":
         content = export_to_markdown(
             entries,
             include_frontmatter=include_frontmatter,
@@ -212,14 +214,14 @@ def export_memories(
         "memories_exported",
         count=len(entries),
         path=str(validated_path),
-        format=export_format,
+        format=eff_format,
     )
 
     return {
         "exported_count": len(entries),
         "file_path": str(validated_path),
         "exported_at": exported_at,
-        "format": export_format,
+        "format": eff_format,
     }
 
 
