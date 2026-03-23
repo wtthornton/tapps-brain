@@ -261,8 +261,7 @@ class TestRetrievalRelationExpansion:
 
         retriever = MemoryRetriever(relations_enabled=True, expand_queries=True)
         store = _mock_store([_entry("k", "v")])
-        # No _persistence attribute
-        del store._persistence
+        # Explicitly set _persistence to None to simulate missing persistence layer
         store._persistence = None
 
         results = retriever.search("some query", store)

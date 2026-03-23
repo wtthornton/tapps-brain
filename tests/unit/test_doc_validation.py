@@ -386,8 +386,10 @@ class TestMemoryDocValidator:
             tags=[f"doc-validated:{old_date}"],
         )
         result = await validator.validate_entry(entry)
-        # Should NOT be skipped since validation is old
-        assert result.overall_status != ValidationStatus.skipped or "Recently" not in result.reason
+        # Should NOT be skipped with "Recently validated" — the old date must not trigger the fast-path
+        # (If skipped for another reason, that's acceptable; only the "recently validated" skip is wrong.)
+        if result.overall_status == ValidationStatus.skipped:
+            assert "Recently" not in result.reason
 
     @pytest.mark.asyncio()
     async def test_validate_entry_lookup_fails(self) -> None:
@@ -445,9 +447,10 @@ class TestMemoryDocValidator:
             confidence_threshold=0.5,
             max_entries=10,
         )
-        # Only low-confidence entries should be validated
+        # Only low-confidence entries should be validated; high-confidence are excluded
         validated_keys = {e.entry_key for e in report.entries}
         assert "stale1" in validated_keys
+        assert "fresh1" not in validated_keys
 
     @pytest.mark.asyncio()
     async def test_recently_validated_does_not_consume_budget(
@@ -573,7 +576,7 @@ class TestApplyResults:
         )
         result = await validator.apply_results(report, store)
         assert result.penalised == 1
-        call_kwargs = store.update_fields.call_args[1]
+        call_kwargs = store.update_fields.call_args.kwargs
         assert call_kwargs["contradicted"] is True
 
     @pytest.mark.asyncio()
@@ -639,7 +642,7 @@ class TestApplyResults:
         )
         result = await validator.apply_results(report, store)
         assert result.boosted == 1
-        call_kwargs = store.update_fields.call_args[1]
+        call_kwargs = store.update_fields.call_args.kwargs
         assert call_kwargs["contradicted"] is False
 
     @pytest.mark.asyncio()
@@ -660,7 +663,7 @@ class TestApplyResults:
             ],
         )
         await validator.apply_results(report, store)
-        call_kwargs = store.update_fields.call_args[1]
+        call_kwargs = store.update_fields.call_args.kwargs
         # agent ceiling is 0.85
         assert call_kwargs["confidence"] <= 0.85
 
@@ -683,7 +686,7 @@ class TestApplyResults:
             ],
         )
         await validator.apply_results(report, store)
-        call_kwargs = store.update_fields.call_args[1]
+        call_kwargs = store.update_fields.call_args.kwargs
         assert call_kwargs["confidence"] >= 0.1
 
 
