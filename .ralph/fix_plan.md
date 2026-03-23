@@ -267,7 +267,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/profile.py` (366 lines). Focus on: YAML loading safety (yaml.safe_load), profile inheritance (base + extends), validation completeness, default profile correctness, path traversal in profile loading. Fix all issues. Commit: `review(story-023.1): profile.py review`
 
 #### 023-B: Review all profile YAML files
-- [ ] Review all 6 files in `src/tapps_brain/profiles/`: `repo-brain.yaml`, `customer-support.yaml`, `home-automation.yaml`, `personal-assistant.yaml`, `project-management.yaml`, `research-knowledge.yaml`. Focus on: tier weight consistency, decay half-life reasonableness, missing required fields, cross-profile consistency. Fix all issues. Commit: `review(story-023.2): profile YAML files review`
+- [x] Review all 6 files in `src/tapps_brain/profiles/`: `repo-brain.yaml`, `customer-support.yaml`, `home-automation.yaml`, `personal-assistant.yaml`, `project-management.yaml`, `research-knowledge.yaml`. Focus on: tier weight consistency, decay half-life reasonableness, missing required fields, cross-profile consistency. Fix all issues. Commit: `review(story-023.2): profile YAML files review`
 
 ### Phase 2: Observability (all independent)
 
