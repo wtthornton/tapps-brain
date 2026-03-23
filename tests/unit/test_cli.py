@@ -262,6 +262,15 @@ class TestImportExport:
         )
         assert result.exit_code == 1
 
+    def test_import_invalid_json(self, tmp_path: Path):
+        bad_file = tmp_path / "bad.json"
+        bad_file.write_text("not valid json {{{{", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["import", str(bad_file), "--project-dir", str(tmp_path)],
+        )
+        assert result.exit_code == 1
+
     def test_import_skip_duplicates(self, project_dir, tmp_path: Path):
         export_file = tmp_path / "data.json"
         export_file.write_text(

@@ -336,7 +336,8 @@ def memory_history(
             for i, entry in enumerate(chain):
                 marker = " (current)" if not entry.superseded_by else " (superseded)"
                 typer.echo(f"  [{i + 1}] {entry.key}{marker}")
-                typer.echo(f"      Value: {entry.value[:80]}...")
+                val_preview = entry.value[:80] + ("..." if len(entry.value) > 80 else "")
+                typer.echo(f"      Value: {val_preview}")
                 if entry.valid_at:
                     typer.echo(f"      Valid: {entry.valid_at}")
                 if entry.invalid_at:
@@ -618,7 +619,11 @@ def import_cmd(
     store = _get_store(project_dir)
     try:
         raw = input_file.read_text(encoding="utf-8")
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            typer.echo(f"Invalid JSON in {input_file}: {exc}", err=True)
+            raise typer.Exit(code=1) from None
         if not isinstance(data, list):
             typer.echo("Expected a JSON array of entries.", err=True)
             raise typer.Exit(code=1)
