@@ -108,7 +108,7 @@ def export_to_markdown(
         for e in entries:
             t = str(e.tier)
             by_tier.setdefault(t, []).append(e)
-        for tier_name in ("architectural", "pattern", "context"):
+        for tier_name in ("architectural", "pattern", "procedural", "context"):
             tier_entries = by_tier.get(tier_name, [])
             if not tier_entries:
                 continue
@@ -190,22 +190,15 @@ def export_memories(
 
     validated_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fmt = (export_format or "json").lower() if isinstance(export_format, str) else "json"
-    if fmt not in ("json", "markdown"):
-        fmt = "json"
-    grp: Literal["tier", "tag", "none"] = "tier"
-    if isinstance(group_by, str) and group_by.lower() in ("tier", "tag", "none"):
-        grp = group_by.lower()  # type: ignore[assignment]
-
-    if fmt == "markdown":
+    if export_format == "markdown":
         content = export_to_markdown(
             entries,
             include_frontmatter=include_frontmatter,
-            group_by=grp,
+            group_by=group_by,
             include_metadata=include_metadata,
         )
         validated_path.write_text(content, encoding="utf-8")
-    elif fmt == "json":
+    else:  # "json" (default)
         payload: dict[str, Any] = {
             "memories": [e.model_dump(mode="json") for e in entries],
             "exported_at": exported_at,
@@ -219,14 +212,14 @@ def export_memories(
         "memories_exported",
         count=len(entries),
         path=str(validated_path),
-        format=fmt,
+        format=export_format,
     )
 
     return {
         "exported_count": len(entries),
         "file_path": str(validated_path),
         "exported_at": exported_at,
-        "format": fmt,
+        "format": export_format,
     }
 
 
@@ -256,7 +249,11 @@ def _validate_import_payload(data: object) -> list[dict[str, Any]]:
         msg = f"Import exceeds max entries ({len(memories)} > {_MAX_IMPORT_ENTRIES})."
         raise ValueError(msg)
 
-    return [m for m in memories if isinstance(m, dict)]
+    valid = [m for m in memories if isinstance(m, dict)]
+    dropped = len(memories) - len(valid)
+    if dropped:
+        logger.warning("memory_import_non_dict_entries_dropped", count=dropped)
+    return valid
 
 
 def import_memories(
@@ -280,7 +277,11 @@ def import_memories(
     validated_path = validator.validate_path(input_path, must_exist=True)
 
     raw = validated_path.read_text(encoding="utf-8")
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        msg = f"Import file is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
     memory_dicts = _validate_import_payload(data)
 
     imported = 0
@@ -290,9 +291,9 @@ def import_memories(
     for raw_entry in memory_dicts:
         try:
             entry = MemoryEntry.model_validate(raw_entry)
-        except Exception:
+        except Exception as exc:
             errors += 1
-            logger.warning("memory_import_entry_invalid", entry=raw_entry)
+            logger.warning("memory_import_entry_invalid", entry=raw_entry, error=str(exc))
             continue
 
         # Check for existing key

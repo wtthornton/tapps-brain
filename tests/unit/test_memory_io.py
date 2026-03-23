@@ -382,3 +382,73 @@ class TestImport:
         import_memories(store, input_file, validator)
 
         validator.validate_path.assert_called_once()
+
+    def test_import_malformed_json_raises_value_error(self, tmp_path: Path) -> None:
+        input_file = tmp_path / "bad.json"
+        input_file.write_text("not valid json {{{")
+
+        store = _make_store()
+        validator = _make_validator(tmp_path)
+
+        with pytest.raises(ValueError, match="not valid JSON"):
+            import_memories(store, input_file, validator)
+
+    def test_import_non_dict_items_are_dropped_with_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        entry = _make_entry("valid-key", "valid value")
+        payload = {"memories": [entry.model_dump(mode="json"), "not-a-dict", 42]}
+
+        input_file = tmp_path / "import.json"
+        input_file.write_text(json.dumps(payload))
+
+        store = _make_store()
+        validator = _make_validator(tmp_path)
+
+        result = import_memories(store, input_file, validator)
+
+        # Valid dict entry is imported; non-dict items are dropped silently
+        assert result["imported_count"] == 1
+
+
+class TestExportMarkdownProcedural:
+    """Regression tests for the procedural tier data-loss bug."""
+
+    def test_export_markdown_includes_procedural_tier(self, tmp_path: Path) -> None:
+        entries = [
+            _make_entry("proc-key", "Procedural content"),
+        ]
+        entries[0] = entries[0].model_copy(update={"tier": MemoryTier.procedural})
+        store = _make_store(entries)
+        validator = _make_validator(tmp_path)
+        output = tmp_path / "export.md"
+
+        export_memories(store, output, validator, export_format="markdown", group_by="tier")
+
+        text = output.read_text()
+        assert "# Procedural" in text
+        assert "proc-key" in text
+        assert "Procedural content" in text
+
+    def test_export_to_markdown_all_four_tiers_rendered(self) -> None:
+        entries = [
+            _make_entry("arch-key", "arch content"),
+            _make_entry("pattern-key", "pattern content"),
+            _make_entry("proc-key", "procedural content"),
+            _make_entry("ctx-key", "context content"),
+        ]
+        entries[0] = entries[0].model_copy(update={"tier": MemoryTier.architectural})
+        entries[1] = entries[1].model_copy(update={"tier": MemoryTier.pattern})
+        entries[2] = entries[2].model_copy(update={"tier": MemoryTier.procedural})
+        entries[3] = entries[3].model_copy(update={"tier": MemoryTier.context})
+
+        result = export_to_markdown(entries, group_by="tier")
+
+        assert "# Architectural" in result
+        assert "# Pattern" in result
+        assert "# Procedural" in result
+        assert "# Context" in result
+        assert "arch-key" in result
+        assert "pattern-key" in result
+        assert "proc-key" in result
+        assert "ctx-key" in result
