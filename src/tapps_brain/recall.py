@@ -107,16 +107,21 @@ class RecallOrchestrator:
         start = time.perf_counter()
         cfg = self._effective_config(kwargs)
 
-        # Delegate to inject_memories for search + format + safety + budget
+        # Delegate to inject_memories for search + format + safety + budget.
+        # Thread the profile's scoring_config so source_trust multipliers and
+        # weight overrides from the active profile are applied consistently.
         injection_config = InjectionConfig(
             injection_max_tokens=cfg.max_tokens,
         )
+        profile = getattr(self._store, "profile", None)
+        scoring_config = getattr(profile, "scoring", None) if profile is not None else None
         result = inject_memories(
             message,
             self._store,
             engagement_level=cfg.engagement_level,
             decay_config=self._decay_config,
             config=injection_config,
+            scoring_config=scoring_config,
         )
 
         # Graph boost: boost scores of entries connected via relation graph

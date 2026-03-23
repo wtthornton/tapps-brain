@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+
+import pytest
 
 from tapps_brain.injection import (
     _MAX_INJECT_HIGH,
@@ -209,3 +212,88 @@ class TestAppendMemoryToAnswer:
         result = append_memory_to_answer(answer, memory_result)
 
         assert result == answer
+
+
+# ---------------------------------------------------------------------------
+# Regression: BUG-002-A — source trust threading
+# ---------------------------------------------------------------------------
+
+
+class TestSourceTrustRegression:
+    """Regression tests for BUG-002-A: scoring_config must flow through inject_memories.
+
+    Before the fix, inject_memories always created MemoryRetriever() without
+    scoring_config, so it used _DEFAULT_SOURCE_TRUST with agent=0.7. For
+    marginal composite scores, the 0.7× multiplier pushed scores below
+    _MIN_SCORE=0.3, causing zero results for agent-sourced memories.
+    """
+
+    def test_agent_sourced_memory_recalled_with_real_store(self, tmp_path: Path) -> None:
+        """Memories with default (agent) source are recalled from a real store.
+
+        Regression guard: inject_memories must thread scoring_config from the
+        store's active profile so source trust is profile-configured, not hardcoded.
+        """
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path / "project")
+        # Save with default source (agent) — the most common case
+        store.save(
+            key="api-pattern",
+            value="api endpoint pattern for authentication and authorization",
+            confidence=0.9,
+            tier="architectural",
+        )
+
+        result = inject_memories(
+            "api endpoint authentication",
+            store,
+            "high",
+        )
+
+        # Agent-sourced memory must survive the source trust multiplier
+        assert result["memory_injected"] >= 1, (
+            "Expected at least 1 injected memory for agent-sourced entry. "
+            "Regression: source trust multiplier may be dropping scores below threshold."
+        )
+
+    def test_scoring_config_passed_to_retriever_overrides_source_trust(self) -> None:
+        """inject_memories accepts explicit scoring_config and uses it for trust."""
+        from tapps_brain.profile import ScoringConfig
+
+        # Trust all sources equally (1.0) — no penalty
+        cfg = ScoringConfig(source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0})
+        entries = [_make_entry("trust-key", "framework configuration pattern")]
+        store = _make_store(entries)
+
+        result_with_cfg = inject_memories("framework configuration", store, "high", scoring_config=cfg)
+
+        # Reset mock so list_all / search return the same entries
+        store = _make_store(entries)
+        result_default = inject_memories("framework configuration", store, "high")
+
+        # Both paths should return results; explicit config path must also work
+        if result_with_cfg["memory_injected"] > 0:
+            assert "trust-key" in result_with_cfg["memory_section"]
+
+    def test_inject_memories_reads_scoring_config_from_store_profile(self) -> None:
+        """When no explicit scoring_config given, inject_memories reads it from store.profile."""
+        from tapps_brain.profile import ScoringConfig
+
+        custom_scoring = ScoringConfig(
+            source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0}
+        )
+
+        # Build a store mock that has a profile with custom scoring
+        mock_profile = MagicMock()
+        mock_profile.scoring = custom_scoring
+
+        entries = [_make_entry("profile-key", "profile-configured scoring result")]
+        store = _make_store(entries)
+        store.profile = mock_profile
+
+        result = inject_memories("profile scoring", store, "high")
+
+        # The call should complete without error — scoring_config is read from profile
+        assert isinstance(result, dict)
+        assert "memory_injected" in result

@@ -17,6 +17,7 @@ from tapps_brain.safety import check_content_safety
 
 if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
+    from tapps_brain.profile import ScoringConfig
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
@@ -63,6 +64,7 @@ def inject_memories(
     *,
     decay_config: DecayConfig | None = None,
     config: InjectionConfig | None = None,
+    scoring_config: ScoringConfig | None = None,
 ) -> dict[str, Any]:
     """Search for and format relevant memories for injection.
 
@@ -72,6 +74,9 @@ def inject_memories(
         engagement_level: "high", "medium", or "low".
         decay_config: Optional decay configuration.
         config: Optional injection configuration. Defaults to InjectionConfig().
+        scoring_config: Optional scoring configuration (weights + source_trust
+            multipliers). When ``None``, the store's active profile scoring
+            config is used if available, otherwise module defaults apply.
 
     Returns:
         Dict with:
@@ -84,6 +89,14 @@ def inject_memories(
         return {"memory_section": "", "memory_injected": 0, "memories": []}
 
     config = config or InjectionConfig()
+
+    # Resolve scoring_config: prefer explicit arg, fall back to store profile.
+    # This ensures source_trust multipliers and scoring weights from the active
+    # profile are respected rather than always using module-level defaults.
+    if scoring_config is None:
+        profile = getattr(store, "profile", None)
+        if profile is not None:
+            scoring_config = getattr(profile, "scoring", None)
 
     from tapps_brain.reranker import get_reranker
 
@@ -101,6 +114,7 @@ def inject_memories(
         config=decay_config,
         reranker=reranker,
         reranker_enabled=config.reranker_enabled,
+        scoring_config=scoring_config,
     )
 
     # Determine limits based on engagement level
