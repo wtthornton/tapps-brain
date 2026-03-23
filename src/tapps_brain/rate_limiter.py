@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 
 import structlog
@@ -38,6 +39,12 @@ class RateLimiterConfig:
     writes_per_session: int = _DEFAULT_WRITES_PER_SESSION
     enabled: bool = True
 
+    def __post_init__(self) -> None:
+        if self.writes_per_minute < 1:
+            raise ValueError(f"writes_per_minute must be >= 1, got {self.writes_per_minute}")
+        if self.writes_per_session < 1:
+            raise ValueError(f"writes_per_session must be >= 1, got {self.writes_per_session}")
+
 
 @dataclass
 class RateLimitResult:
@@ -64,7 +71,8 @@ class RateLimiterStats:
 class SlidingWindowRateLimiter:
     """Sliding window rate limiter for memory writes.
 
-    Uses a deque-like list of timestamps for the per-minute window.
+    Uses a ``collections.deque`` of timestamps for the per-minute window.
+    Pruning is O(k) via ``popleft()`` where k = number of expired entries.
     Thread-safe via ``threading.Lock``.
 
     In warn-only mode (default), writes are never blocked — the limiter
@@ -74,7 +82,7 @@ class SlidingWindowRateLimiter:
     def __init__(self, config: RateLimiterConfig | None = None) -> None:
         self._config = config or RateLimiterConfig()
         self._lock = threading.Lock()
-        self._timestamps: list[float] = []
+        self._timestamps: deque[float] = deque()
         self._session_count: int = 0
         self._stats = RateLimiterStats()
 
@@ -119,8 +127,9 @@ class SlidingWindowRateLimiter:
         window_start = now - 60.0
 
         with self._lock:
-            # Prune timestamps older than 1 minute
-            self._timestamps = [t for t in self._timestamps if t > window_start]
+            # Prune timestamps older than 1 minute (O(k) popleft, k = expired entries)
+            while self._timestamps and self._timestamps[0] <= window_start:
+                self._timestamps.popleft()
 
             # Record this write
             self._timestamps.append(now)

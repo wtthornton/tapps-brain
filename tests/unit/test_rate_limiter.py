@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from unittest.mock import patch
+
+import pytest
 
 from tapps_brain.rate_limiter import (
     BATCH_EXEMPT_CONTEXTS,
@@ -27,6 +30,20 @@ class TestRateLimiterConfig:
         assert cfg.writes_per_minute == 5
         assert cfg.writes_per_session == 50
         assert cfg.enabled is False
+
+    def test_invalid_writes_per_minute_raises(self) -> None:
+        """writes_per_minute < 1 must raise ValueError."""
+        with pytest.raises(ValueError, match="writes_per_minute"):
+            RateLimiterConfig(writes_per_minute=0)
+        with pytest.raises(ValueError, match="writes_per_minute"):
+            RateLimiterConfig(writes_per_minute=-5)
+
+    def test_invalid_writes_per_session_raises(self) -> None:
+        """writes_per_session < 1 must raise ValueError."""
+        with pytest.raises(ValueError, match="writes_per_session"):
+            RateLimiterConfig(writes_per_session=0)
+        with pytest.raises(ValueError, match="writes_per_session"):
+            RateLimiterConfig(writes_per_session=-1)
 
 
 class TestRateLimitResult:
@@ -203,6 +220,28 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter(cfg)
         assert limiter.config is cfg
         assert limiter.config.writes_per_minute == 42
+
+    def test_timestamps_stored_as_deque(self) -> None:
+        """Internal timestamp store must be a deque for O(1) popleft pruning."""
+        limiter = SlidingWindowRateLimiter()
+        limiter.check()
+        assert isinstance(limiter._timestamps, deque)
+
+    def test_sliding_window_prunes_only_expired(self) -> None:
+        """Pruning should only remove entries older than 60 s, not newer ones."""
+        limiter = SlidingWindowRateLimiter(
+            RateLimiterConfig(writes_per_minute=10, writes_per_session=100)
+        )
+        now = time.monotonic()
+        # Inject one old and one recent timestamp directly
+        limiter._timestamps.append(now - 120.0)  # 2 minutes ago — will be pruned
+        limiter._timestamps.append(now - 30.0)  # 30 s ago — kept
+        limiter._session_count += 2
+
+        result = limiter.check()
+        # Old entry pruned; recent entry + this write = 2 in window
+        assert result.current_minute_count == 2
+        assert result.minute_exceeded is False
 
 
 class TestBatchExemptContexts:
