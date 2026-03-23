@@ -395,7 +395,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Add `vitest` to `openclaw-plugin/package.json` devDependencies. Create `openclaw-plugin/tests/mcp_client.test.ts`. Tests: JSON-RPC message framing (Content-Length parsing), request/response ID matching, error response handling, process spawn/stop lifecycle, reconnection logic, request timeout. >80% coverage of `mcp_client.ts`. Commit: `test(story-028.3): add TypeScript tests for MCP client`
 
 #### 028-E: Create TypeScript test suite for TappsBrainEngine
-- [ ] Create `openclaw-plugin/tests/index.test.ts`. Mock McpClient. Tests: bootstrap (first-run import, Hive registration), ingest (rate limiting, heartbeat skip), assemble (recall injection, token budget, deduplication), compact (context flush, session indexing), parseMemoryMdForImport (heading→tier mapping, slugify, empty content). >80% coverage of `index.ts`. Commit: `test(story-028.3): add TypeScript tests for ContextEngine`
+- [x] Create `openclaw-plugin/tests/index.test.ts`. Mock McpClient. Tests: bootstrap (first-run import, Hive registration), ingest (rate limiting, heartbeat skip), assemble (recall injection, token budget, deduplication), compact (context flush, session indexing), parseMemoryMdForImport (heading→tier mapping, slugify, empty content). >80% coverage of `index.ts`. Commit: `test(story-028.3): add TypeScript tests for ContextEngine`
 
 ### Phase 4: Feature Parity (all independent)
 

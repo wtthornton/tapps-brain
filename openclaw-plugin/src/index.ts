@@ -478,8 +478,10 @@ export default definePluginEntry({
  * - H1/H2 → architectural
  * - H3 → pattern
  * - H4+ → procedural
+ *
+ * Exported for testing.
  */
-function parseMemoryMdForImport(
+export function parseMemoryMdForImport(
   content: string,
 ): Array<{ key: string; value: string; tier: string }> {
   const lines = content.split("\n");

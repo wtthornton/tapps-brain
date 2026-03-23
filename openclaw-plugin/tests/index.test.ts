@@ -18,8 +18,18 @@ vi.mock("../src/mcp_client.js", () => ({
   isFirstRun: vi.fn().mockReturnValue(false),
 }));
 
-import { TappsBrainEngine, type PluginLogger } from "../src/index.js";
-import { McpClient } from "../src/mcp_client.js";
+vi.mock("node:fs", () => ({
+  readFileSync: vi.fn().mockReturnValue(""),
+}));
+
+// node:path is used by bootstrap() to resolve MEMORY.md path
+vi.mock("node:path", () => ({
+  resolve: vi.fn((...args: string[]) => args.filter(Boolean).join("/")),
+}));
+
+import { readFileSync } from "node:fs";
+import { TappsBrainEngine, type PluginLogger, parseMemoryMdForImport } from "../src/index.js";
+import { McpClient, hasMemoryMd, isFirstRun } from "../src/mcp_client.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -390,5 +400,819 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
         message: { role: "user", content: "test message" },
       }),
     ).resolves.toEqual({ ingested: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: bootstrap — first-run import and Hive registration
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — bootstrap first-run import (028-E)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+    vi.mocked(readFileSync).mockReturnValue("");
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("calls memory_import when isFirstRun and hasMemoryMd are both true", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+    vi.mocked(isFirstRun).mockReturnValue(true);
+    vi.mocked(hasMemoryMd).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("# Architecture\nsome content\n");
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_import",
+      expect.objectContaining({ overwrite: false }),
+    );
+  });
+
+  it("does NOT call memory_import when hasMemoryMd is false", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+    vi.mocked(isFirstRun).mockReturnValue(true);
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_import", expect.anything());
+  });
+
+  it("does NOT call memory_import when isFirstRun is false", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+    vi.mocked(isFirstRun).mockReturnValue(false);
+    vi.mocked(hasMemoryMd).mockReturnValue(true);
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_import", expect.anything());
+  });
+
+  it("does NOT call memory_import when MEMORY.md has no parseable entries", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+    vi.mocked(isFirstRun).mockReturnValue(true);
+    vi.mocked(hasMemoryMd).mockReturnValue(true);
+    // Content with only a heading and no body → no entries parsed
+    vi.mocked(readFileSync).mockReturnValue("# Empty Heading\n");
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_import", expect.anything());
+  });
+
+  it("calls agent_register when hiveEnabled and agentId are set", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({}));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { hiveEnabled: true, agentId: "test-agent", profilePath: "repo-brain" },
+      "/tmp/workspace",
+    );
+    await engine.bootstrap();
+
+    expect(mockCallTool).toHaveBeenCalledWith("agent_register", {
+      agent_id: "test-agent",
+      profile: "repo-brain",
+    });
+  });
+
+  it("does NOT call agent_register when hiveEnabled is false", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({}));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { hiveEnabled: false, agentId: "test-agent" },
+      "/tmp/workspace",
+    );
+    await engine.bootstrap();
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("agent_register", expect.anything());
+  });
+
+  it("does NOT call agent_register when agentId is empty", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({}));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { hiveEnabled: true, agentId: "" },
+      "/tmp/workspace",
+    );
+    await engine.bootstrap();
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("agent_register", expect.anything());
+  });
+
+  it("bootstrap succeeds even when agent_register throws (non-fatal)", async () => {
+    const mockCallTool = vi
+      .fn()
+      .mockRejectedValue(new Error("already registered"));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { hiveEnabled: true, agentId: "duplicate-agent" },
+      "/tmp/workspace",
+    );
+    // Should NOT throw — agent_register error is swallowed intentionally
+    await expect(engine.bootstrap()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: ingest — rate limiting and heartbeat skip
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — ingest rate limiting and heartbeat (028-E)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("skips MCP call when isHeartbeat is true", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "heartbeat message" },
+      isHeartbeat: true,
+    });
+
+    expect(result).toEqual({ ingested: true });
+    expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  it("skips MCP call when message content is empty", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "   " },
+    });
+
+    expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  it("calls MCP every 3rd call with default captureRateLimit=3", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace"); // default captureRateLimit=3
+    await engine.bootstrap();
+
+    const msg = { role: "user" as const, content: "content" };
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=1 — skip
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=2 — skip
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=3 — capture
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=4 — skip
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=5 — skip
+    await engine.ingest({ sessionId: "s1", message: msg }); // count=6 — capture
+
+    expect(mockCallTool).toHaveBeenCalledTimes(2);
+    expect(mockCallTool).toHaveBeenCalledWith("memory_capture", expect.any(Object));
+  });
+
+  it("calls MCP on every call when captureRateLimit=1", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const msg = { role: "user" as const, content: "data" };
+    await engine.ingest({ sessionId: "s1", message: msg });
+    await engine.ingest({ sessionId: "s1", message: msg });
+    await engine.ingest({ sessionId: "s1", message: msg });
+
+    expect(mockCallTool).toHaveBeenCalledTimes(3);
+  });
+
+  it("calls MCP on every call when captureRateLimit=0 (no rate limit)", async () => {
+    // captureRateLimit=0 means the condition `captureRateLimit > 0 && ...` is false,
+    // so the rate-limit skip never fires — every ingest call captures.
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 0 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const msg = { role: "user" as const, content: "data" };
+    for (let i = 0; i < 5; i++) {
+      await engine.ingest({ sessionId: "s1", message: msg });
+    }
+
+    expect(mockCallTool).toHaveBeenCalledTimes(5);
+  });
+
+  it("maps user role to source=human", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "user message" },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_capture",
+      expect.objectContaining({ source: "human" }),
+    );
+  });
+
+  it("maps assistant role to source=agent", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ captureRateLimit: 1 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "assistant", content: "assistant response" },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_capture",
+      expect.objectContaining({ source: "agent" }),
+    );
+  });
+
+  it("uses agent_scope=hive when hiveEnabled=true", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { captureRateLimit: 1, hiveEnabled: true },
+      "/tmp/workspace",
+    );
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "shared memory" },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_capture",
+      expect.objectContaining({ agent_scope: "hive" }),
+    );
+  });
+
+  it("uses agent_scope=private when hiveEnabled=false", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine(
+      { captureRateLimit: 1, hiveEnabled: false },
+      "/tmp/workspace",
+    );
+    await engine.bootstrap();
+
+    await engine.ingest({
+      sessionId: "s1",
+      message: { role: "user", content: "private memory" },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_capture",
+      expect.objectContaining({ agent_scope: "private" }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: assemble — recall injection, token budget, deduplication
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — assemble recall injection (028-E)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns systemPromptAddition with recalled memories", async () => {
+    const recallResponse = JSON.stringify({
+      memories: [
+        { key: "fact-1", value: "The sky is blue", tier: "architectural", confidence: 0.9 },
+        { key: "fact-2", value: "Water is wet", tier: "pattern", confidence: 0.8 },
+      ],
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: vi.fn().mockResolvedValue(recallResponse) }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "what do you know?" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toBeDefined();
+    expect(result.systemPromptAddition).toContain("## Relevant Memories");
+    expect(result.systemPromptAddition).toContain("fact-1");
+    expect(result.systemPromptAddition).toContain("The sky is blue");
+    expect(result.estimatedTokens).toBeGreaterThan(0);
+  });
+
+  it("returns no systemPromptAddition when recall returns empty memories", async () => {
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockResolvedValue(JSON.stringify({ memories: [] })),
+      }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const messages = [{ role: "user" as const, content: "test" }];
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages,
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toBeUndefined();
+    expect(result.estimatedTokens).toBe(0);
+    expect(result.messages).toEqual(messages);
+  });
+
+  it("passes last 3 user messages as query to memory_recall", async () => {
+    const mockCallTool = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.assemble({
+      sessionId: "s1",
+      messages: [
+        { role: "user", content: "first query" },
+        { role: "assistant", content: "ignored response" },
+        { role: "user", content: "second query" },
+        { role: "user", content: "third query" },
+        { role: "user", content: "fourth query" }, // only last 3 used
+      ],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_recall",
+      expect.objectContaining({
+        message: expect.stringContaining("second query"),
+      }),
+    );
+    // "first query" should NOT be in the query (only last 3 user messages)
+    const callArgs = mockCallTool.mock.calls[0][1] as { message: string };
+    expect(callArgs.message).not.toContain("first query");
+  });
+
+  it("uses 'session context' fallback when no user messages", async () => {
+    const mockCallTool = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ memories: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "assistant", content: "no user messages here" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_recall", {
+      message: "session context",
+    });
+  });
+
+  it("enforces token budget — truncates memories that exceed budget", async () => {
+    // Create a large memory entry that would exceed a small budget
+    const longValue = "x".repeat(500);
+    const recallResponse = JSON.stringify({
+      memories: [
+        { key: "big-1", value: longValue, tier: "architectural", confidence: 0.9 },
+        { key: "big-2", value: longValue, tier: "architectural", confidence: 0.9 },
+        { key: "big-3", value: longValue, tier: "architectural", confidence: 0.9 },
+        { key: "big-4", value: longValue, tier: "architectural", confidence: 0.9 },
+      ],
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: vi.fn().mockResolvedValue(recallResponse) }),
+    );
+
+    // tokenBudget=200 means char budget = 200*4 = 800
+    const engine = new TappsBrainEngine({ tokenBudget: 200 }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "test" }],
+      tokenBudget: { soft: 200, hard: 400 },
+    });
+
+    // Should not include all 4 entries due to budget
+    if (result.systemPromptAddition) {
+      // At most 1-2 entries should fit given the small budget
+      const entryCount = (result.systemPromptAddition.match(/- \*\*/g) ?? []).length;
+      expect(entryCount).toBeLessThan(4);
+    }
+  });
+
+  it("deduplicates: does not re-inject memories already seen this session", async () => {
+    const recallResponse = JSON.stringify({
+      memories: [
+        { key: "shared-fact", value: "Known fact", tier: "architectural" },
+      ],
+    });
+    const mockCallTool = vi
+      .fn()
+      .mockResolvedValue(recallResponse);
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const messages = [{ role: "user" as const, content: "query" }];
+    const params = { sessionId: "s1", messages, tokenBudget: { soft: 2000, hard: 4000 } };
+
+    // First assemble — should inject the memory
+    const first = await engine.assemble(params);
+    expect(first.systemPromptAddition).toContain("shared-fact");
+
+    // Second assemble — same key already in injectedKeys, should be filtered out
+    const second = await engine.assemble(params);
+    expect(second.systemPromptAddition).toBeUndefined();
+    expect(second.estimatedTokens).toBe(0);
+  });
+
+  it("returns messages unchanged in all result shapes", async () => {
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockResolvedValue(JSON.stringify({ memories: [] })),
+      }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const messages = [
+      { role: "user" as const, content: "a" },
+      { role: "assistant" as const, content: "b" },
+    ];
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages,
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    // Messages must be passed through unchanged
+    expect(result.messages).toEqual(messages);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: compact — context flush and session indexing
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — compact context flush (028-E)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns ok immediately when no recent messages to flush", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    // No ingest calls — recentMessages is empty
+    const result = await engine.compact({ sessionId: "s1" });
+    expect(result).toEqual({ ok: true, compacted: true });
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_ingest", expect.anything());
+  });
+
+  it("calls memory_ingest with joined recent messages", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    // Ingest messages (captureRateLimit=3 default; just push to recentMessages)
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "msg one" } });
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "msg two" } });
+
+    const result = await engine.compact({ sessionId: "s1" });
+    expect(result).toEqual({ ok: true, compacted: true });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_ingest",
+      expect.objectContaining({
+        context: expect.stringContaining("msg one"),
+        source: "compaction",
+      }),
+    );
+  });
+
+  it("calls memory_index_session with sessionId and message chunks", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "chunk a" } });
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "chunk b" } });
+
+    await engine.compact({ sessionId: "session-xyz" });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_index_session",
+      expect.objectContaining({
+        session_id: "session-xyz",
+        chunks: expect.arrayContaining(["chunk a", "chunk b"]),
+      }),
+    );
+  });
+
+  it("clears recentMessages after successful compact", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "remember this" } });
+
+    // First compact — should flush
+    await engine.compact({ sessionId: "s1" });
+    const firstIngestCalls = mockCallTool.mock.calls.filter(
+      (call) => call[0] === "memory_ingest",
+    ).length;
+    expect(firstIngestCalls).toBe(1);
+
+    // Second compact — recentMessages is empty, should not flush again
+    await engine.compact({ sessionId: "s1" });
+    const secondIngestCalls = mockCallTool.mock.calls.filter(
+      (call) => call[0] === "memory_ingest",
+    ).length;
+    expect(secondIngestCalls).toBe(1); // unchanged
+  });
+
+  it("skips memory_index_session when sessionId is empty", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({ sessionId: "", message: { role: "user", content: "data" } });
+
+    // compact with no sessionId (empty string is falsy)
+    await engine.compact({ sessionId: "" });
+
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_index_session", expect.anything());
+    expect(mockCallTool).toHaveBeenCalledWith("memory_ingest", expect.anything());
+  });
+
+  it("uses agent_scope=hive in compact when hiveEnabled=true", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue("{}");
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ hiveEnabled: true }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.ingest({ sessionId: "s1", message: { role: "user", content: "shared" } });
+    await engine.compact({ sessionId: "s1" });
+
+    expect(mockCallTool).toHaveBeenCalledWith(
+      "memory_ingest",
+      expect.objectContaining({ agent_scope: "hive" }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: parseMemoryMdForImport — heading→tier mapping, slugify, edge cases
+// ---------------------------------------------------------------------------
+
+describe("parseMemoryMdForImport — heading tier mapping (028-E)", () => {
+  it("maps H1 to architectural tier", () => {
+    const entries = parseMemoryMdForImport("# System Design\nContent about architecture\n");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ tier: "architectural", key: "system-design" });
+  });
+
+  it("maps H2 to architectural tier", () => {
+    const entries = parseMemoryMdForImport("## Database Schema\nSchema content\n");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ tier: "architectural", key: "database-schema" });
+  });
+
+  it("maps H3 to pattern tier", () => {
+    const entries = parseMemoryMdForImport("### Authentication Flow\nAuth flow description\n");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ tier: "pattern", key: "authentication-flow" });
+  });
+
+  it("maps H4 to procedural tier", () => {
+    const entries = parseMemoryMdForImport("#### Deploy Steps\nStep 1: build\n");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ tier: "procedural", key: "deploy-steps" });
+  });
+
+  it("maps H5 and H6 to procedural tier", () => {
+    const content = "##### Sub Step\nbody\n\n###### Deep Step\nbody2\n";
+    const entries = parseMemoryMdForImport(content);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].tier).toBe("procedural");
+    expect(entries[1].tier).toBe("procedural");
+  });
+
+  it("returns empty array for empty content", () => {
+    expect(parseMemoryMdForImport("")).toHaveLength(0);
+  });
+
+  it("returns empty array when content has no headings", () => {
+    expect(parseMemoryMdForImport("Just some plain text\nno headings here")).toHaveLength(0);
+  });
+
+  it("skips entries with no body content", () => {
+    // Heading immediately followed by another heading — no body for first
+    const content = "# First Heading\n# Second Heading\nActual content\n";
+    const entries = parseMemoryMdForImport(content);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe("second-heading");
+  });
+
+  it("slugifies heading text correctly", () => {
+    const entries = parseMemoryMdForImport("## My Component Name\nsome content\n");
+    expect(entries[0].key).toBe("my-component-name");
+  });
+
+  it("strips leading/trailing hyphens from slug", () => {
+    const entries = parseMemoryMdForImport("## --- Heading ---\nsome content\n");
+    expect(entries[0].key).not.toMatch(/^-|-$/);
+  });
+
+  it("skips entries where slug is empty (all non-alphanumeric heading)", () => {
+    const entries = parseMemoryMdForImport("## !!! ###\nsome content\n");
+    expect(entries).toHaveLength(0);
+  });
+
+  it("parses multiple headings into separate entries", () => {
+    const content = [
+      "# Architecture",
+      "System uses SQLite",
+      "## Patterns",
+      "BM25 for search",
+      "### Procedures",
+      "Run pytest to test",
+    ].join("\n");
+
+    const entries = parseMemoryMdForImport(content);
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({ key: "architecture", tier: "architectural" });
+    expect(entries[1]).toMatchObject({ key: "patterns", tier: "architectural" });
+    expect(entries[2]).toMatchObject({ key: "procedures", tier: "pattern" });
+  });
+
+  it("trims whitespace from entry values", () => {
+    const entries = parseMemoryMdForImport("# Key\n\n  padded content  \n\n");
+    expect(entries[0].value).toBe("padded content");
+  });
+
+  it("preserves multi-line body content", () => {
+    const content = "# Multi\nLine 1\nLine 2\nLine 3\n";
+    const entries = parseMemoryMdForImport(content);
+    expect(entries[0].value).toContain("Line 1");
+    expect(entries[0].value).toContain("Line 2");
+    expect(entries[0].value).toContain("Line 3");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 028-E: dispose — cleanup
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — dispose (028-E)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("calls mcpClient.stop() on dispose", async () => {
+    const mockStop = vi.fn();
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ stop: mockStop }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    engine.dispose();
+    expect(mockStop).toHaveBeenCalledOnce();
   });
 });
