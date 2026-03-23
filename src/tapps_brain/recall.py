@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from tapps_brain.injection import InjectionConfig, inject_memories
-from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
+from tapps_brain.injection import InjectionConfig, estimate_tokens, inject_memories
+from tapps_brain.models import MemoryEntry, MemoryScope, MemoryTier, RecallResult
 
 if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
@@ -144,13 +144,22 @@ class RecallOrchestrator:
 
         if memories and self._needs_post_filter(cfg):
             memories, memory_section = self._apply_post_filters(memories, cfg, message)
+            # Recount Hive memories after post-filtering — some may have been removed.
+            hive_count = sum(1 for m in memories if m.get("source") == "hive")
+
+        # Recompute token count from the final section so Hive additions are reflected.
+        # inject_memories() token count only covers local results; _rebuild_section()
+        # changes the section text, so we re-estimate to keep the count accurate.
+        token_count = (
+            estimate_tokens(memory_section) if memory_section else result.get("injected_tokens", 0)
+        )
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
         return RecallResult(
             memory_section=memory_section,
             memories=memories,
-            token_count=result.get("injected_tokens", 0),
+            token_count=token_count,
             recall_time_ms=round(elapsed_ms, 2),
             truncated=result.get("truncated", False),
             memory_count=len(memories),
@@ -371,6 +380,8 @@ class RecallOrchestrator:
         """
         dedupe_set = set(cfg.dedupe_window)
         filtered: list[dict[str, object]] = []
+        # Cache entries fetched during filtering so the section rebuild can reuse them.
+        entry_cache: dict[str, MemoryEntry | None] = {}
 
         for mem in memories:
             key = str(mem.get("key", ""))
@@ -379,9 +390,11 @@ class RecallOrchestrator:
             if key in dedupe_set:
                 continue
 
-            # Scope filter: look up entry in store
+            # Scope / tier / branch filter: look up entry in store
             if cfg.scope_filter or cfg.tier_filter or cfg.branch:
                 entry = self._store.get(key) if key else None
+                if key:
+                    entry_cache[key] = entry  # cache for section rebuild below
                 if entry is None:
                     # Entry not found — keep the memory (defensive)
                     filtered.append(mem)
@@ -404,11 +417,15 @@ class RecallOrchestrator:
         for mem in filtered:
             key = str(mem.get("key", ""))
             raw_conf = mem.get("confidence", 0.0)
-            conf = float(raw_conf) if isinstance(raw_conf, (int, float, str)) else 0.0
+            # Only accept numeric types — strings could raise ValueError in float()
+            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
             tier = str(mem.get("tier", "pattern"))
-            # Look up value from store for the section
-            entry = self._store.get(str(key)) if key else None
-            value = entry.value if entry else str(key)
+            # Reuse cached entry when available; fall back to a fresh lookup.
+            cached = entry_cache.get(key)
+            store_entry: MemoryEntry | None = (
+                cached if key in entry_cache else (self._store.get(key) if key else None)
+            )
+            value = store_entry.value if store_entry else str(key)
             lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}")
 
         return filtered, "\n".join(lines)

@@ -120,7 +120,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/retrieval.py` (672 lines). Focus on: scoring weight correctness (40/30/15/15), edge cases in score normalization, BM25 integration, vector search fallback, result ordering stability. Fix all issues. Commit: `review(story-018.1): retrieval.py scoring engine review`
 
 #### 018-B: Review `recall.py` — recall orchestration
-- [ ] Review `src/tapps_brain/recall.py` (411 lines). Focus on: Hive-aware merging logic, configurable weight (0.8 default), deduplication across local + Hive results, `hive_memory_count` accuracy, token budget enforcement. Fix all issues. Commit: `review(story-018.2): recall.py orchestration review`
+- [x] Review `src/tapps_brain/recall.py` (411 lines). Focus on: Hive-aware merging logic, configurable weight (0.8 default), deduplication across local + Hive results, `hive_memory_count` accuracy, token budget enforcement. Fix all issues. Commit: `review(story-018.2): recall.py orchestration review`
 
 ### Phase 2: Scoring Components (all independent)
 

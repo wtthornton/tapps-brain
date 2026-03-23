@@ -442,3 +442,111 @@ class TestGraphBoost:
         result = orch.recall("ServiceA ServiceB", use_graph_boost=True)
         # Should not raise; graph boost applied via override
         assert isinstance(result, RecallResult)
+
+
+# ---------------------------------------------------------------------------
+# Review 018-B: Hive count accuracy, token count, and filter robustness
+# ---------------------------------------------------------------------------
+
+
+class TestHiveCountAccuracy:
+    """hive_memory_count must stay accurate when post-filters remove Hive entries."""
+
+    def test_hive_count_zero_without_hive_store(self, store):
+        """Without a hive_store, hive_memory_count must always be 0."""
+        orch = RecallOrchestrator(store)
+        result = orch.recall("python tech stack")
+        assert result.hive_memory_count == 0
+
+    def test_hive_count_decremented_by_dedupe_filter(self, store):
+        """Hive entries removed by dedupe_window should not count in hive_memory_count."""
+        # Manually invoke _search_hive result via merge: inject synthetic hive memories
+        # into the orchestrator's result pipeline by patching _search_hive.
+        from unittest.mock import patch
+
+        orch = RecallOrchestrator(store)
+
+        fake_hive_memories = [
+            {"key": "hive-alpha", "confidence": 0.7, "tier": "pattern",
+             "score": 0.7, "source": "hive", "namespace": "universal", "value": "Hive alpha fact"},
+            {"key": "hive-beta", "confidence": 0.6, "tier": "context",
+             "score": 0.6, "source": "hive", "namespace": "universal", "value": "Hive beta fact"},
+        ]
+
+        with patch.object(orch, "_search_hive", return_value=(fake_hive_memories, 2)):
+            with patch.object(orch, "_hive_store", object()):  # non-None triggers hive path
+                # Apply a dedupe_window that removes one hive entry
+                result = orch.recall(
+                    "python tech stack",
+                    dedupe_window=["hive-alpha"],
+                )
+
+        # hive-alpha was deduped → only hive-beta remains with source=="hive"
+        hive_keys = [m.get("key") for m in result.memories if m.get("source") == "hive"]
+        assert "hive-alpha" not in hive_keys
+        # hive_memory_count must reflect post-filter reality
+        assert result.hive_memory_count == result.memory_count - sum(
+            1 for m in result.memories if m.get("source") != "hive"
+        )
+
+
+class TestTokenCountAfterHiveMerge:
+    """token_count must reflect the final memory_section, including Hive additions."""
+
+    def test_token_count_nonzero_when_memories_found(self, store):
+        """When memories are found, token_count must be > 0."""
+        orch = RecallOrchestrator(store)
+        result = orch.recall("python tech stack")
+        if result.memory_count > 0:
+            assert result.token_count > 0
+
+    def test_token_count_zero_when_empty(self, store):
+        """When no memories match, token_count must be 0."""
+        orch = RecallOrchestrator(store)
+        result = orch.recall("quantum computing blockchain")
+        assert result.token_count == 0
+
+    def test_token_count_consistent_with_section_length(self, store):
+        """token_count should be ~ len(memory_section) // 4 (estimate_tokens formula)."""
+        orch = RecallOrchestrator(store)
+        result = orch.recall("python tech stack testing")
+        if result.memory_section:
+            expected = max(1, len(result.memory_section) // 4)
+            assert result.token_count == expected
+
+
+class TestApplyPostFiltersRobustness:
+    """_apply_post_filters must handle edge cases without raising."""
+
+    def test_non_numeric_confidence_does_not_raise(self, store):
+        """A non-numeric confidence value in a memory dict must not raise ValueError."""
+        orch = RecallOrchestrator(store)
+        # Inject a memory with non-numeric confidence via dedupe_window path
+        # (so scope/tier filters don't call store.get — bypassing the lookup).
+        memories: list[dict[str, object]] = [
+            {
+                "key": "tech-stack",
+                "confidence": "not-a-number",  # bad value
+                "tier": "architectural",
+                "score": 0.9,
+                "value": "Python 3.12",
+            }
+        ]
+        from tapps_brain.recall import RecallConfig
+
+        cfg = RecallConfig(dedupe_window=["other-key"])  # no scope/tier/branch filter
+        # Should NOT raise ValueError
+        filtered, section = orch._apply_post_filters(memories, cfg, "query")
+        assert len(filtered) == 1
+        # confidence should default to 0.0 for non-numeric input
+        assert "0.00" in section
+
+    def test_empty_memories_returns_empty_section(self, store):
+        """Empty input to _apply_post_filters returns ([], '')."""
+        orch = RecallOrchestrator(store)
+        from tapps_brain.recall import RecallConfig
+
+        cfg = RecallConfig(dedupe_window=["x"])
+        filtered, section = orch._apply_post_filters([], cfg, "query")
+        assert filtered == []
+        assert section == ""
