@@ -1237,7 +1237,7 @@ function registerKnowledgeGraphTools(
       return { error: "unavailable", message: "tapps-brain MCP not ready" };
     }
     try {
-      return JSON.parse(raw) as unknown;
+      return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw)) as unknown;
     } catch {
       return { raw };
     }
@@ -1788,6 +1788,162 @@ function registerMaintenanceConfigTools(
 }
 
 // ---------------------------------------------------------------------------
+// Federation tools — federation_status, federation_subscribe,
+//                   federation_unsubscribe, federation_publish
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Proxy directly to the MCP server; the server handles missing
+// federation config gracefully and returns a JSON error object.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register federation tools: status, subscribe, unsubscribe, publish.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerFederationTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  /** Shared helper: proxy MCP call, handle unavailable/parse errors. */
+  const proxy = async (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const raw = await engine.callMcpTool(toolName, args);
+    if (raw === null) {
+      return { error: "unavailable", message: "tapps-brain MCP not ready" };
+    }
+    try {
+      return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    } catch {
+      return { error: "parse_error" };
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // federation_status — hub status, projects, and subscriptions
+  // ------------------------------------------------------------------
+  api.registerTool("federation_status", {
+    description:
+      "Show the federation hub status: registered projects and active subscriptions. " +
+      "Returns hub statistics, project list, and subscription config. " +
+      "Returns an error object if the federation hub is unavailable.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("federation_status", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // federation_subscribe — subscribe a project to receive memories
+  // ------------------------------------------------------------------
+  api.registerTool("federation_subscribe", {
+    description:
+      "Subscribe a project to receive memories from other federated projects. " +
+      "The project is auto-registered if not already known. " +
+      "If sources is omitted, subscribes to all other projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID to subscribe (e.g. 'my-project')",
+        },
+        sources: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional list of source project IDs to subscribe to. " +
+            "Omit or pass empty list to subscribe to all federated projects.",
+        },
+        tag_filter: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional tag filter — only import memories carrying these tags.",
+        },
+        min_confidence: {
+          type: "number",
+          description:
+            "Minimum confidence threshold for imported memories (range 0–1, default 0.5).",
+        },
+      },
+      required: ["project_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const project_id = args.project_id as string;
+      const mcpArgs: Record<string, unknown> = { project_id };
+      if (args.sources !== undefined) mcpArgs.sources = args.sources;
+      if (args.tag_filter !== undefined) mcpArgs.tag_filter = args.tag_filter;
+      if (args.min_confidence !== undefined) mcpArgs.min_confidence = args.min_confidence;
+      return proxy("federation_subscribe", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // federation_unsubscribe — remove a project subscription
+  // ------------------------------------------------------------------
+  api.registerTool("federation_unsubscribe", {
+    description:
+      "Remove a project's federation subscription. " +
+      "After unsubscribing, the project will no longer receive memories from the hub. " +
+      "Returns subscriptions_removed: 0 (not an error) if no subscription existed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID to unsubscribe",
+        },
+      },
+      required: ["project_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const project_id = args.project_id as string;
+      return proxy("federation_unsubscribe", { project_id });
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // federation_publish — publish shared-scope memories to hub
+  // ------------------------------------------------------------------
+  api.registerTool("federation_publish", {
+    description:
+      "Publish shared-scope memories from this project to the federation hub. " +
+      "Only entries with scope='shared' are published. " +
+      "Pass keys to publish only specific entries; omit to publish all shared entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: {
+          type: "string",
+          description: "This project's federation identifier",
+        },
+        keys: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional list of specific memory entry keys to publish. " +
+            "Omit to publish all entries with scope='shared'.",
+        },
+      },
+      required: ["project_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const project_id = args.project_id as string;
+      const mcpArgs: Record<string, unknown> = { project_id };
+      if (args.keys !== undefined) mcpArgs.keys = args.keys;
+      return proxy("federation_publish", mcpArgs);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1830,6 +1986,9 @@ export default definePluginEntry({
       // memory_gc_config_set, memory_consolidation_config,
       // memory_consolidation_config_set, memory_export, memory_import).
       registerMaintenanceConfigTools(api, engine);
+      // Register federation tools (federation_status, federation_subscribe,
+      // federation_unsubscribe, federation_publish). Proxy directly to MCP.
+      registerFederationTools(api, engine);
     }
 
     if (mode === "context-engine") {
