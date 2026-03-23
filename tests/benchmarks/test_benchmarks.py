@@ -33,22 +33,30 @@ pytestmark = pytest.mark.benchmark
 
 class TestStoreSaveBenchmark:
     def test_save_500_entries(self, benchmark, tmp_path: Path) -> None:
-        """Benchmark: 500 sequential saves to a fresh store."""
+        """Benchmark: 500 sequential saves to a fresh store.
+
+        Note: pytest-benchmark invokes the benchmarked function multiple rounds
+        for statistical accuracy.  The first round performs inserts; subsequent
+        rounds perform updates (same deterministic keys already exist).  Both
+        write paths exercise the WAL/FTS5 pipeline and are valid benchmarks.
+        """
         store = MemoryStore(tmp_path)
+        try:
 
-        def do_saves():
-            for i in range(500):
-                store.save(
-                    key=f"key-{i:04d}",
-                    value=f"Value for entry {i} with enough content for indexing",
-                    tier="pattern",
-                    source="agent",
-                    tags=[f"tag-{i % 10}"],
-                    confidence=0.7,
-                )
+            def do_saves() -> None:
+                for i in range(500):
+                    store.save(
+                        key=f"key-{i:04d}",
+                        value=f"Value for entry {i} with enough content for indexing",
+                        tier="pattern",
+                        source="agent",
+                        tags=[f"tag-{i % 10}"],
+                        confidence=0.7,
+                    )
 
-        benchmark(do_saves)
-        store.close()
+            benchmark(do_saves)
+        finally:
+            store.close()
 
 
 class TestStoreGetBenchmark:

@@ -37,11 +37,3 @@ def populated_store(tmp_path: Path) -> MemoryStore:
         )
     yield store
     store.close()
-
-
-@pytest.fixture()
-def empty_store(tmp_path: Path) -> MemoryStore:
-    """Create an empty MemoryStore for write benchmarks."""
-    store = MemoryStore(tmp_path)
-    yield store
-    store.close()

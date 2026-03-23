@@ -359,7 +359,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Test Infrastructure & Benchmarks
 
 #### 025-E: Review test infrastructure and benchmarks
-- [ ] Review `tests/conftest.py` (40 lines), `tests/factories.py` (80 lines), and `tests/benchmarks/test_benchmarks.py` (166 lines) + `tests/benchmarks/conftest.py` (47 lines). Check: fixture reusability, factory correctness, benchmark methodology, realistic workloads. Fix all issues. Commit: `review(story-025.5): test infrastructure and benchmarks review`
+- [x] Review `tests/conftest.py` (40 lines), `tests/factories.py` (80 lines), and `tests/benchmarks/test_benchmarks.py` (166 lines) + `tests/benchmarks/conftest.py` (47 lines). Check: fixture reusability, factory correctness, benchmark methodology, realistic workloads. Fix all issues. Commit: `review(story-025.5): test infrastructure and benchmarks review`
 
 ### Phase 3: TypeScript & Config
 

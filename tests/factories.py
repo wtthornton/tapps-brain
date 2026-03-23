@@ -7,6 +7,7 @@ variants previously scattered across per-file ``_make_entry`` helpers.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from tapps_brain.models import (
     MemoryEntry,
@@ -51,7 +52,7 @@ def make_entry(
     """
     now_iso = datetime.now(tz=UTC).isoformat()
 
-    kwargs: dict[str, object] = {
+    kwargs: dict[str, Any] = {
         "key": key,
         "value": value,
         "tier": tier,
@@ -77,4 +78,4 @@ def make_entry(
     if confidence != -1.0:
         kwargs["confidence"] = confidence
 
-    return MemoryEntry(**kwargs)  # type: ignore[arg-type]
+    return MemoryEntry(**kwargs)

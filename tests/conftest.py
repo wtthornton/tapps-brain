@@ -33,8 +33,15 @@ def tmp_project(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def tmp_project_with_git(tmp_path: Path) -> Path:
-    """Provide a temporary project root with a git repo."""
+    """Provide a temporary project root with a git repo.
+
+    Skips the test if ``git`` is not available on the system.
+    """
+    import shutil
     import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git not available on this system")
 
     subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True, check=True)
     return tmp_path
