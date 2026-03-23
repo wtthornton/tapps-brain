@@ -138,12 +138,15 @@ class CohereReranker:
             )
             return _noop_fallback(candidates, top_k)
 
-        # Cohere returns results with index and relevance_score
+        # Cohere returns results with index and relevance_score.
+        # Clamp scores to [0.0, 1.0] — Cohere scores are nominally in this range
+        # but clamping guards against unexpected values from future API changes.
         result: list[tuple[str, float]] = []
         for item in response.results:
             idx = item.index
             if 0 <= idx < len(keys):
-                score = float(getattr(item, "relevance_score", 1.0))
+                raw_score = float(getattr(item, "relevance_score", 1.0))
+                score = max(0.0, min(1.0, raw_score))
                 result.append((keys[idx], round(score, 4)))
         return result
 
@@ -159,7 +162,6 @@ def _noop_fallback(
 def get_reranker(
     enabled: bool,
     provider: str,
-    top_k: int = 10,
     api_key: str | None = None,
 ) -> Reranker:
     """Create a Reranker from config.
@@ -167,7 +169,6 @@ def get_reranker(
     Args:
         enabled: Whether reranking is enabled.
         provider: "noop" or "cohere".
-        top_k: Default top_k for reranking.
         api_key: API key for Cohere (required when provider=cohere).
 
     Returns:

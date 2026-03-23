@@ -131,7 +131,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/similarity.py` (318 lines). Focus on: Jaccard + TF-IDF correctness, threshold calibration, edge cases (empty strings, identical entries), performance on large sets. Fix all issues. Commit: `review(story-018.4): similarity computation review`
 
 #### 018-E: Review `embeddings.py` + `reranker.py` — optional ML components
-- [ ] Review `src/tapps_brain/embeddings.py` (148 lines) and `src/tapps_brain/reranker.py` (186 lines). Focus on: lazy import safety, graceful fallback when deps missing, embedding dimension consistency, reranker score normalization, batch processing correctness. Fix all issues. Commit: `review(story-018.5): embeddings and reranker review`
+- [x] Review `src/tapps_brain/embeddings.py` (148 lines) and `src/tapps_brain/reranker.py` (186 lines). Focus on: lazy import safety, graceful fallback when deps missing, embedding dimension consistency, reranker score normalization, batch processing correctness. Fix all issues. Commit: `review(story-018.5): embeddings and reranker review`
 
 ## Active — EPIC-019: Code Review — Memory Lifecycle
 

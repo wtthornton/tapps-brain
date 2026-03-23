@@ -69,7 +69,7 @@ class TestGetReranker:
         assert isinstance(r, NoopReranker)
 
     def test_provider_noop_returns_noop(self) -> None:
-        r = get_reranker(enabled=True, provider="noop", top_k=10)
+        r = get_reranker(enabled=True, provider="noop")
         assert isinstance(r, NoopReranker)
 
     def test_provider_cohere_no_key_returns_noop(self) -> None:
@@ -256,6 +256,34 @@ class TestCohereReranker:
         # Verify top_n was set to min(top_k, len(candidates)) = 1
         call_kwargs = mock_client.rerank.call_args
         assert call_kwargs.kwargs["top_n"] == 1
+
+    def test_scores_clamped_to_unit_interval(self) -> None:
+        """Cohere scores outside [0.0, 1.0] are clamped."""
+        reranker = CohereReranker(api_key="sk-test")
+        candidates = [("a", "val a"), ("b", "val b")]
+
+        mock_result_high = MagicMock()
+        mock_result_high.index = 0
+        mock_result_high.relevance_score = 1.5  # above 1.0
+
+        mock_result_low = MagicMock()
+        mock_result_low.index = 1
+        mock_result_low.relevance_score = -0.3  # below 0.0
+
+        mock_response = MagicMock()
+        mock_response.results = [mock_result_high, mock_result_low]
+
+        mock_client = MagicMock()
+        mock_client.rerank.return_value = mock_response
+
+        mock_cohere = MagicMock()
+        mock_cohere.ClientV2.return_value = mock_client
+
+        with patch.dict("sys.modules", {"cohere": mock_cohere}):
+            result = reranker.rerank("query", candidates, top_k=2)
+
+        assert result[0] == ("a", 1.0)
+        assert result[1] == ("b", 0.0)
 
     def test_out_of_range_index_skipped(self) -> None:
         """If cohere returns an index out of range, it is skipped."""

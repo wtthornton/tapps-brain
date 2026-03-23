@@ -9,7 +9,7 @@ Used by Epic 65.8 hybrid search (BM25 + vector).
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import structlog
 
@@ -91,7 +91,8 @@ class SentenceTransformerProvider:
 
         self._model_name = model_name
         self._model = SentenceTransformer(model_name)
-        self._dim: int = self._model.get_sentence_embedding_dimension()
+        raw_dim = self._model.get_sentence_embedding_dimension()
+        self._dim: int = int(raw_dim) if raw_dim is not None else 384
 
     @property
     def dimension(self) -> int:
@@ -107,14 +108,13 @@ class SentenceTransformerProvider:
         if not texts:
             return []
         embeddings = self._model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-        return [e.tolist() for e in embeddings]
+        return [cast("list[float]", e.tolist()) for e in embeddings]
 
 
 def get_embedding_provider(
     semantic_search_enabled: bool,
     provider: str = "sentence_transformers",
     model: str = _DEFAULT_MODEL,
-    dimension: int = 384,
 ) -> EmbeddingProvider | None:
     """Return an EmbeddingProvider when semantic search is enabled, else None.
 
@@ -122,7 +122,6 @@ def get_embedding_provider(
         semantic_search_enabled: Whether semantic search is turned on (config).
         provider: Provider name; only "sentence_transformers" supported.
         model: Model name for sentence-transformers (e.g. all-MiniLM-L6-v2).
-        dimension: Dimension for NoopProvider when used as fallback (ignored for ST).
 
     Returns:
         EmbeddingProvider when enabled and provider available, else None.

@@ -122,6 +122,14 @@ class TestSentenceTransformerProvider:
             provider = SentenceTransformerProvider(model_name="test-model")
         assert provider.dimension == 384
 
+    def test_init_falls_back_to_384_when_dimension_none(self) -> None:
+        """When get_sentence_embedding_dimension() returns None, fall back to 384."""
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = None
+        with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
+            provider = SentenceTransformerProvider(model_name="test-model")
+        assert provider.dimension == 384
+
     def test_embed_returns_float_list(self) -> None:
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 4

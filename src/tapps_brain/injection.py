@@ -107,7 +107,6 @@ def inject_memories(
         get_reranker(
             enabled=config.reranker_enabled,
             provider=config.reranker_provider,
-            top_k=config.reranker_top_k,
             api_key=config.reranker_api_key,
         )
         if config.reranker_enabled
