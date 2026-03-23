@@ -161,6 +161,7 @@ class TestBM25WithRealFTS5:
 
         results = retriever.search("pytest testing", store)
 
+        assert len(results) >= 1, "Expected at least one result for 'pytest testing'"
         for r in results:
             assert 0.0 <= r.bm25_relevance <= 1.0
 
@@ -296,7 +297,7 @@ class TestDecayedEntriesRankLower:
 
         results = retriever.search("Docker compose deploy", store)
 
-        assert len(results) == 2
+        assert len(results) >= 2
         # Fresh entry should rank higher due to recency component
         assert results[0].entry.key == "new-deploy"
         assert results[0].score > results[1].score

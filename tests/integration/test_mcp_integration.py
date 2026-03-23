@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-pytestmark = pytest.mark.requires_mcp
+pytest.importorskip("mcp")
 
-from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
-from pydantic import AnyUrl  # noqa: E402
+from mcp.shared.memory import create_connected_server_and_client_session
+from pydantic import AnyUrl
+
+pytestmark = pytest.mark.requires_mcp
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,26 +52,65 @@ class TestToolsDiscovery:
             result = await session.list_tools()
             tool_names = {t.name for t in result.tools}
             expected = {
+                # Core CRUD
                 "memory_save",
                 "memory_get",
                 "memory_delete",
                 "memory_search",
                 "memory_list",
+                # Lifecycle
                 "memory_recall",
                 "memory_reinforce",
                 "memory_ingest",
                 "memory_supersede",
                 "memory_history",
+                # Session
+                "memory_index_session",
+                "memory_search_sessions",
+                "memory_capture",
+                # Federation
                 "federation_status",
                 "federation_subscribe",
                 "federation_unsubscribe",
                 "federation_publish",
+                # Maintenance
                 "maintenance_consolidate",
                 "maintenance_gc",
+                # Config tools
+                "memory_gc_config",
+                "memory_gc_config_set",
+                "memory_consolidation_config",
+                "memory_consolidation_config_set",
+                # Import / export
                 "memory_export",
                 "memory_import",
+                # Profile
+                "profile_info",
+                "profile_switch",
+                # Hive
+                "hive_status",
+                "hive_search",
+                "hive_propagate",
+                # Agent
+                "agent_register",
+                "agent_create",
+                "agent_list",
+                "agent_delete",
+                # Relations / knowledge graph
+                "memory_relations",
+                "memory_find_related",
+                "memory_query_relations",
+                # Audit
+                "memory_audit",
+                # Tags
+                "memory_list_tags",
+                "memory_update_tags",
+                "memory_entries_by_tag",
             }
             assert expected.issubset(tool_names)
+            assert len(tool_names) >= len(expected), (
+                f"Expected at least {len(expected)} tools, got {len(tool_names)}"
+            )
 
     async def test_tools_have_descriptions(self, mcp_server):
         async with create_connected_server_and_client_session(mcp_server) as session:
