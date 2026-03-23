@@ -57,6 +57,11 @@ class TestNoopReranker:
         scores = [r[1] for r in result]
         assert scores[0] > scores[1] > scores[2]
 
+    def test_protocol_compliance(self) -> None:
+        """NoopReranker satisfies Reranker protocol."""
+        reranker = NoopReranker()
+        assert isinstance(reranker, Reranker)
+
 
 # ---------------------------------------------------------------------------
 # get_reranker
@@ -74,6 +79,10 @@ class TestGetReranker:
 
     def test_provider_cohere_no_key_returns_noop(self) -> None:
         r = get_reranker(enabled=True, provider="cohere", api_key=None)
+        assert isinstance(r, NoopReranker)
+
+    def test_unknown_provider_returns_noop(self) -> None:
+        r = get_reranker(enabled=True, provider="bert", api_key=None)
         assert isinstance(r, NoopReranker)
 
     def test_provider_cohere_unavailable_returns_noop(self) -> None:

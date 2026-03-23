@@ -191,6 +191,22 @@ class TestImportMemoryMd:
         count = import_memory_md(md_path, store)
         assert count == 0
 
+    def test_duplicate_slug_second_heading_skipped(self, tmp_path: Path):
+        """Two headings that slugify to the same key: second is skipped."""
+        md_path = tmp_path / "MEMORY.md"
+        # Both "API Keys" and "API Keys!" slugify to "api-keys"
+        md_path.write_text(
+            "# API Keys\nFirst section.\n\n# API Keys!\nSecond section.\n",
+            encoding="utf-8",
+        )
+        store = MemoryStore(tmp_path / "store")
+        count = import_memory_md(md_path, store)
+        # Only the first occurrence is imported; the second has the same key
+        assert count == 1
+        entry = store.get("api-keys")
+        assert entry is not None
+        assert "First section." in entry.value
+
     def test_value_truncation(self, tmp_path: Path):
         long_body = "x" * (MAX_VALUE_LENGTH + 500)
         md_path = tmp_path / "MEMORY.md"

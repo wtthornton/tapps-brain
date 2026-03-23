@@ -322,7 +322,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_memory_foundation_integration.py` (416 lines), `tests/unit/test_promotion.py` (391 lines), and `tests/unit/test_memory_io.py` (384 lines). Check: foundation test relevance, promotion criteria tests, IO round-trip assertions. Fix all issues. Commit: `review(story-024.10): foundation, promotion, IO tests review`
 
 #### 024-K: Review `test_markdown_import.py` + `test_reranker.py` + `test_memory_embeddings.py`
-- [ ] Review `tests/unit/test_markdown_import.py` (321 lines), `tests/unit/test_reranker.py` (315 lines), and `tests/unit/test_memory_embeddings.py` (308 lines). Check: markdown edge cases, reranker score tests, embedding dimension tests. Fix all issues. Commit: `review(story-024.11): markdown, reranker, embeddings tests review`
+- [x] Review `tests/unit/test_markdown_import.py` (321 lines), `tests/unit/test_reranker.py` (315 lines), and `tests/unit/test_memory_embeddings.py` (308 lines). Check: markdown edge cases, reranker score tests, embedding dimension tests. Fix all issues. Commit: `review(story-024.11): markdown, reranker, embeddings tests review`
 
 #### 024-L: Review `test_contradictions.py` + `test_memory_models.py` + `test_gc_config.py` + `test_relations.py`
 - [ ] Review `tests/unit/test_contradictions.py` (296 lines), `tests/unit/test_memory_models.py` (267 lines), `tests/unit/test_gc_config.py` (262 lines), and `tests/unit/test_relations.py` (254 lines). Fix all issues. Commit: `review(story-024.12): contradictions, models, GC, relations tests review`
