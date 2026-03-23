@@ -137,7 +137,7 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 7  # v7 agent_scope (EPIC-011)
+        assert persistence.get_schema_version() == 8  # v8 integrity_hash column
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -315,15 +315,15 @@ class TestSchemaMigrations:
         conn.commit()
         conn.close()
 
-    def test_migrate_v1_to_v6(self, tmp_path: Path) -> None:
-        """Opening a v1 DB should migrate it all the way to v6."""
+    def test_migrate_v1_to_current(self, tmp_path: Path) -> None:
+        """Opening a v1 DB should migrate it all the way to v8."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 7
+        assert p.get_schema_version() == 8
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -344,10 +344,13 @@ class TestSchemaMigrations:
 
         # Verify v4 migration: relations table exists
         assert "relations" in tables
+
+        # Verify v8 migration: integrity_hash column exists
+        assert "integrity_hash" in columns
         p.close()
 
     def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
-        """A v2 DB (with embedding column) should migrate to v4."""
+        """A v2 DB (with embedding column) should migrate to current version."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
@@ -365,7 +368,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 7
+        assert p.get_schema_version() == 8
 
         tables = [
             r[0]
@@ -376,7 +379,7 @@ class TestSchemaMigrations:
         p.close()
 
     def test_migrate_v3_to_v4(self, tmp_path: Path) -> None:
-        """A v3 DB should migrate to v4 (adds relations table)."""
+        """A v3 DB should migrate to current version (adds relations table and beyond)."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
@@ -407,7 +410,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 7
+        assert p.get_schema_version() == 8
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -430,7 +433,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 7
+        assert p.get_schema_version() == 8
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -472,6 +475,39 @@ class TestSchemaMigrations:
         assert loaded is not None
         assert loaded.value == "old value"
         assert loaded.embedding is None
+        p.close()
+
+    def test_migrate_v7_to_v8(self, tmp_path: Path) -> None:
+        """A v7 DB should gain the integrity_hash column after migration to v8."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        # Build a v7 DB by creating from v1 and recording version 7 directly.
+        self._create_v1_db(db_path)
+        conn = sqlite3.connect(db_path)
+        now = datetime.now(tz=UTC).isoformat()
+        # Apply v2–v7 columns manually so the schema is in a real v7 state.
+        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+        conn.execute("ALTER TABLE memories ADD COLUMN valid_at TEXT")
+        conn.execute("ALTER TABLE memories ADD COLUMN invalid_at TEXT")
+        conn.execute("ALTER TABLE memories ADD COLUMN superseded_by TEXT")
+        conn.execute("ALTER TABLE memories ADD COLUMN agent_scope TEXT DEFAULT 'private'")
+        for ver in range(2, 8):
+            conn.execute(
+                "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+                (ver, now),
+            )
+        conn.commit()
+        conn.close()
+
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 8
+
+        # Verify the integrity_hash column was added by the v7→v8 migration.
+        row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
+        columns = [r[1] for r in row]
+        assert "integrity_hash" in columns
         p.close()
 
 
