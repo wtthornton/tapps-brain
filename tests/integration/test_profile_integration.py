@@ -129,7 +129,7 @@ class TestExplicitProfileCustomTiers:
 class TestDecayUsesProfileHalfLives:
     """With personal-assistant profile, identity (365d) vs ephemeral (1d)."""
 
-    def test_identity_decays_slower_than_ephemeral(self, tmp_project):
+    def test_identity_decays_slower_than_ephemeral(self):
         profile = _personal_assistant_profile()
         config = decay_config_from_profile(profile)
 
@@ -190,7 +190,7 @@ class TestPowerLawDecay:
     the confidence should be higher than exponential would give.
     """
 
-    def test_power_law_higher_than_exponential_at_100_days(self, tmp_project):
+    def test_power_law_higher_than_exponential_at_100_days(self):
         profile = _personal_assistant_profile()
         config = decay_config_from_profile(profile)
 
@@ -223,7 +223,7 @@ class TestPowerLawDecay:
         assert config.layer_decay_models.get("identity") == "power_law"
         assert config.layer_decay_exponents.get("identity") == 0.5
 
-    def test_power_law_formula_matches_expected(self, tmp_project):
+    def test_power_law_formula_matches_expected(self):
         """Verify the power-law formula: C0 * (1 + t/(k*H))^(-beta)."""
         profile = _personal_assistant_profile()
         config = decay_config_from_profile(profile)
@@ -264,7 +264,7 @@ class TestPowerLawDecay:
 class TestRepoBrainBackwardCompat:
     """repo-brain profile should behave identically to no-profile defaults."""
 
-    def test_repo_brain_decay_matches_default_config(self, tmp_project):
+    def test_repo_brain_decay_matches_default_config(self):
         profile = _repo_brain_profile()
         profile_config = decay_config_from_profile(profile)
         default_config = DecayConfig()
@@ -303,7 +303,7 @@ class TestRepoBrainBackwardCompat:
         finally:
             store.close()
 
-    def test_repo_brain_same_behavior_as_no_profile_store(self, tmp_project):
+    def test_repo_brain_same_behavior_as_no_profile_store(self):
         """Entries saved with repo-brain profile should decay the same as default."""
         profile = _repo_brain_profile()
         profile_config = decay_config_from_profile(profile)
@@ -407,7 +407,7 @@ class TestCustomTierPersistAcrossRestart:
 class TestGCUsesProfileThresholds:
     """GC should use profile-driven session_expiry_days."""
 
-    def test_gc_archives_session_entry_with_profile_threshold(self, tmp_project):
+    def test_gc_archives_session_entry_with_profile_threshold(self):
         """A profile with session_expiry_days=1 should archive after 1 day."""
         # Create a profile with aggressive GC (1-day session expiry)
         profile = MemoryProfile(
@@ -451,7 +451,7 @@ class TestGCUsesProfileThresholds:
         )
         assert candidates[0].key == "session-old"
 
-    def test_default_gc_does_not_archive_2day_old_session(self, tmp_project):
+    def test_default_gc_does_not_archive_2day_old_session(self):
         """With default session_expiry_days=7, a 2-day-old session should NOT be archived."""
         config = DecayConfig()
 
@@ -477,7 +477,7 @@ class TestGCUsesProfileThresholds:
             "2-day-old session entry should NOT be archived with default 7-day threshold"
         )
 
-    def test_gc_profile_vs_default_threshold_contrast(self, tmp_project):
+    def test_gc_profile_vs_default_threshold_contrast(self):
         """Same entry: archived by profile GC (1d), kept by default GC (7d)."""
         profile = MemoryProfile(
             name="fast-gc",

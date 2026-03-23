@@ -33,7 +33,10 @@ docs/planning/
     ├── EPIC-022.md      ← Code review — Interfaces (MCP, CLI, IO) (planned)
     ├── EPIC-023.md      ← Code review — Config, Profiles & Observability (planned)
     ├── EPIC-024.md      ← Code review — Unit Tests Part 1 (planned)
-    └── EPIC-025.md      ← Code review — Integration Tests, Benchmarks & TypeScript (planned)
+    ├── EPIC-025.md      ← Code review — Integration Tests, Benchmarks & TypeScript (planned)
+    ├── EPIC-026.md      ← OpenClaw Memory Replacement — replace memory-core with tapps-brain (planned)
+    ├── EPIC-027.md      ← OpenClaw Full Feature Surface — expose all 41 MCP tools (planned)
+    └── EPIC-028.md      ← OpenClaw Plugin Hardening — stability, tests, compatibility (planned)
 ```
 
 ## Why This Structure

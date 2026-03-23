@@ -348,7 +348,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/integration/test_mcp_integration.py` (735 lines) and `tests/integration/test_retrieval_integration.py` (548 lines). Check: real SQLite usage, cleanup, end-to-end tool coverage, retrieval accuracy assertions. Fix all issues. Commit: `review(story-025.1): MCP and retrieval integration tests review`
 
 #### 025-B: Review `test_openclaw_integration.py` + `test_profile_integration.py` + `test_hive_mcp_roundtrip.py`
-- [ ] Review `tests/integration/test_openclaw_integration.py` (536 lines), `test_profile_integration.py` (516 lines), and `test_hive_mcp_roundtrip.py` (508 lines). Check: OpenClaw import correctness, profile lifecycle, Hive round-trip assertions. Fix all issues. Commit: `review(story-025.2): OpenClaw, profile, Hive integration tests review`
+- [x] Review `tests/integration/test_openclaw_integration.py` (536 lines), `test_profile_integration.py` (516 lines), and `test_hive_mcp_roundtrip.py` (508 lines). Check: OpenClaw import correctness, profile lifecycle, Hive round-trip assertions. Fix all issues. Commit: `review(story-025.2): OpenClaw, profile, Hive integration tests review`
 
 #### 025-C: Review `test_federation_integration.py` + `test_cross_profile_integration.py` + `test_doc_validation_integration.py`
 - [ ] Review `tests/integration/test_federation_integration.py` (472 lines), `test_cross_profile_integration.py` (453 lines), and `test_doc_validation_integration.py` (442 lines). Check: federation hub lifecycle, cross-profile isolation, validation with real DB. Fix all issues. Commit: `review(story-025.3): federation, cross-profile, validation integration tests review`

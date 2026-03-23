@@ -31,21 +31,31 @@ from tapps_brain.store import MemoryStore
 @pytest.fixture()
 def hive(tmp_path: Path) -> HiveStore:
     """Shared Hive database for all agents."""
-    return HiveStore(db_path=tmp_path / "hive.db")
+    h = HiveStore(db_path=tmp_path / "hive.db")
+    yield h  # type: ignore[misc]
+    h.close()
 
 
-def _make_store(
-    tmp_path: Path,
-    name: str,
-    hive: HiveStore,
-    agent_id: str = "agent",
-) -> MemoryStore:
-    """Create a MemoryStore wired to the shared Hive."""
-    return MemoryStore(
-        tmp_path / name,
-        hive_store=hive,
-        hive_agent_id=agent_id,
-    )
+@pytest.fixture()
+def make_store(tmp_path: Path, hive: HiveStore):
+    """Factory fixture that creates MemoryStores wired to the shared Hive.
+
+    All created stores are closed automatically at teardown.
+    """
+    stores: list[MemoryStore] = []
+
+    def _factory(name: str, agent_id: str = "agent") -> MemoryStore:
+        s = MemoryStore(
+            tmp_path / name,
+            hive_store=hive,
+            hive_agent_id=agent_id,
+        )
+        stores.append(s)
+        return s
+
+    yield _factory
+    for s in stores:
+        s.close()
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +70,9 @@ class TestMultiAgentHiveRoundTrip:
     Agent B: profile "personal-assistant"
     """
 
-    def test_hive_scope_visible_to_all_agents(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_hive_scope_visible_to_all_agents(self, make_store, hive: HiveStore) -> None:
         """Agent A saves with hive scope → Agent B (different profile) recalls."""
-        store_a = _make_store(tmp_path, "project-a", hive, agent_id="agent-a")
+        store_a = make_store("project-a", agent_id="agent-a")
         store_a.save(
             key="shared-arch",
             value="We use PostgreSQL 17 for all services",
@@ -72,15 +82,15 @@ class TestMultiAgentHiveRoundTrip:
             confidence=0.95,
         )
 
-        store_b = _make_store(tmp_path, "project-b", hive, agent_id="agent-b")
+        store_b = make_store("project-b", agent_id="agent-b")
         result = store_b.recall("PostgreSQL")
         hive_keys = [m.get("key") for m in result.memories if m.get("source") == "hive"]
         assert "shared-arch" in hive_keys
         assert result.hive_memory_count >= 1
 
-    def test_private_scope_invisible_to_other_agents(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_private_scope_invisible_to_other_agents(self, make_store, hive: HiveStore) -> None:
         """Agent A saves with private scope → Agent B cannot see it."""
-        store_a = _make_store(tmp_path, "project-a", hive, agent_id="agent-a")
+        store_a = make_store("project-a", agent_id="agent-a")
         store_a.save(
             key="private-note",
             value="Debug session scratch notes for auth module",
@@ -97,12 +107,12 @@ class TestMultiAgentHiveRoundTrip:
         assert not any(r["key"] == "private-note" for r in domain)
 
         # Agent B cannot recall it
-        store_b = _make_store(tmp_path, "project-b", hive, agent_id="agent-b")
+        store_b = make_store("project-b", agent_id="agent-b")
         result = store_b.recall("debug session scratch notes")
         hive_keys = [m.get("key") for m in result.memories if m.get("source") == "hive"]
         assert "private-note" not in hive_keys
 
-    def test_domain_scope_same_profile_visible(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_domain_scope_same_profile_visible(self, hive: HiveStore) -> None:
         """Agent A domain scope → Agent B with same profile can recall."""
         # Propagate directly to domain namespace (simulating profile="repo-brain")
         PropagationEngine.propagate(
@@ -122,9 +132,7 @@ class TestMultiAgentHiveRoundTrip:
         results = hive.search("dependency injection", namespaces=["repo-brain"])
         assert any(r["key"] == "domain-pattern" for r in results)
 
-    def test_domain_scope_different_profile_invisible(
-        self, tmp_path: Path, hive: HiveStore
-    ) -> None:
+    def test_domain_scope_different_profile_invisible(self, hive: HiveStore) -> None:
         """Agent A domain scope (repo-brain) → Agent B (personal-assistant) cannot see."""
         PropagationEngine.propagate(
             key="repo-secret",
@@ -152,10 +160,10 @@ class TestScopeValuePropagation:
     """Verify correct propagation behavior for each agent_scope value."""
 
     def test_save_with_hive_scope_appears_in_universal(
-        self, tmp_path: Path, hive: HiveStore
+        self, make_store, hive: HiveStore
     ) -> None:
         """Hive scope → universal namespace."""
-        store = _make_store(tmp_path, "proj", hive, agent_id="dev-agent")
+        store = make_store("proj", agent_id="dev-agent")
         store.save(
             key="global-standard",
             value="All services must use OpenTelemetry for tracing",
@@ -167,10 +175,10 @@ class TestScopeValuePropagation:
         assert any(r["key"] == "global-standard" for r in results)
 
     def test_save_with_domain_scope_appears_in_profile_namespace(
-        self, tmp_path: Path, hive: HiveStore
+        self, make_store, hive: HiveStore
     ) -> None:
         """Domain scope → profile namespace (defaults to repo-brain)."""
-        store = _make_store(tmp_path, "proj", hive, agent_id="dev-agent")
+        store = make_store("proj", agent_id="dev-agent")
         store.save(
             key="domain-fact",
             value="Use pydantic v2 for all data models",
@@ -181,9 +189,9 @@ class TestScopeValuePropagation:
         results = hive.search("pydantic", namespaces=["repo-brain"])
         assert any(r["key"] == "domain-fact" for r in results)
 
-    def test_save_with_private_scope_not_in_hive(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_save_with_private_scope_not_in_hive(self, make_store, hive: HiveStore) -> None:
         """Private scope → nothing in Hive."""
-        store = _make_store(tmp_path, "proj", hive, agent_id="dev-agent")
+        store = make_store("proj", agent_id="dev-agent")
         store.save(
             key="local-only",
             value="Temporary debug config for auth endpoint",
@@ -324,7 +332,7 @@ class TestConflictResolutionAcrossAgents:
 class TestRecallMergingAcrossAgents:
     """Verify that recall correctly merges local + Hive results."""
 
-    def test_recall_includes_both_local_and_hive(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_recall_includes_both_local_and_hive(self, make_store, hive: HiveStore) -> None:
         """Recall merges local entries with Hive entries."""
         # Hive entry from agent-a
         hive.save(
@@ -336,7 +344,7 @@ class TestRecallMergingAcrossAgents:
         )
 
         # Agent B has a local entry
-        store_b = _make_store(tmp_path, "project-b", hive, agent_id="agent-b")
+        store_b = make_store("project-b", agent_id="agent-b")
         store_b.save(
             key="local-convention",
             value="Use snake_case for Python variable names",
@@ -352,7 +360,7 @@ class TestRecallMergingAcrossAgents:
         assert "hive-convention" in hive_keys
 
     def test_local_entry_takes_priority_over_hive_duplicate(
-        self, tmp_path: Path, hive: HiveStore
+        self, make_store, hive: HiveStore
     ) -> None:
         """When same key exists locally and in Hive, local wins."""
         # Hive has a version
@@ -365,7 +373,7 @@ class TestRecallMergingAcrossAgents:
         )
 
         # Agent B has the same key locally
-        store_b = _make_store(tmp_path, "project-b", hive, agent_id="agent-b")
+        store_b = make_store("project-b", agent_id="agent-b")
         store_b.save(
             key="api-version",
             value="API v3 is the current standard (updated)",
@@ -381,7 +389,7 @@ class TestRecallMergingAcrossAgents:
             # Local version should take priority
             assert api_entries[0].get("source") != "hive"
 
-    def test_hive_recall_weight_reduces_hive_scores(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_hive_recall_weight_reduces_hive_scores(self, make_store, hive: HiveStore) -> None:
         """Hive results are weighted by hive_recall_weight (default 0.8)."""
         hive.save(
             key="weighted-fact",
@@ -390,15 +398,18 @@ class TestRecallMergingAcrossAgents:
             confidence=1.0,
         )
 
-        store = _make_store(tmp_path, "proj", hive)
+        store = make_store("proj")
         result = store.recall("Kubernetes cluster")
         hive_entries = [m for m in result.memories if m.get("source") == "hive"]
-        if hive_entries:
-            # Hive entries should have confidence < 1.0 due to weight
-            for entry in hive_entries:
-                assert entry.get("confidence", 1.0) <= 1.0
+        assert len(hive_entries) >= 1, "Hive entry should appear in recall results"
+        for entry in hive_entries:
+            # Hive weight (0.8) should reduce the effective confidence below original
+            assert entry.get("confidence", 1.0) < 1.0, (
+                f"Hive entry confidence should be reduced by hive_recall_weight, "
+                f"got {entry.get('confidence')}"
+            )
 
-    def test_hive_memory_count_tracked(self, tmp_path: Path, hive: HiveStore) -> None:
+    def test_hive_memory_count_tracked(self, make_store, hive: HiveStore) -> None:
         """RecallResult.hive_memory_count reflects Hive contributions."""
         hive.save(
             key="hive-only-1",
@@ -413,9 +424,11 @@ class TestRecallMergingAcrossAgents:
             confidence=0.8,
         )
 
-        store = _make_store(tmp_path, "proj", hive)
-        result = store.recall("caching layer")
-        assert result.hive_memory_count >= 0  # May be 0 if query doesn't match
+        store = make_store("proj")
+        result = store.recall("Redis caching layer message queue RabbitMQ")
+        assert result.hive_memory_count >= 1, (
+            f"Expected at least 1 Hive memory in results, got {result.hive_memory_count}"
+        )
 
 
 class TestMultiAgentPropagationEngine:
