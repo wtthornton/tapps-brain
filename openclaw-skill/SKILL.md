@@ -102,6 +102,10 @@ tools:
     description: Register this agent in the Hive registry
   - name: agent_list
     description: List all registered agents and their profiles
+  - name: agent_create
+    description: Register with profile validation and namespace assignment
+  - name: agent_delete
+    description: Remove a registered agent from the Hive registry
 ---
 
 # tapps-brain — Persistent Memory for OpenClaw

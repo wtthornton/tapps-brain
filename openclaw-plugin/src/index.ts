@@ -1000,6 +1000,216 @@ function registerLifecycleTools(
 }
 
 // ---------------------------------------------------------------------------
+// Hive tools — hive_status, hive_search, hive_propagate, agent_register,
+//              agent_create, agent_list, agent_delete
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Each tool degrades gracefully if the Hive is disabled on the
+// MCP server side — the server returns a JSON error object which is passed
+// through rather than throwing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register all 7 Hive/agent tools as native OpenClaw tools.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerHiveTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  /** Shared helper: proxy MCP call, handle unavailable/parse errors. */
+  const proxy = async (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const raw = await engine.callMcpTool(toolName, args);
+    if (raw === null) {
+      return { error: "unavailable", message: "tapps-brain MCP not ready" };
+    }
+    try {
+      return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    } catch {
+      return { error: "parse_error" };
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // hive_status — namespaces, entry counts, registered agents
+  // ------------------------------------------------------------------
+  api.registerTool("hive_status", {
+    description:
+      "Return Hive status: namespaces, entry counts, and registered agents. " +
+      "Use this to discover what other agents exist, which profiles they use, " +
+      "and how many shared memories are in each namespace. " +
+      "Returns an error object if the Hive is disabled.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("hive_status", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // hive_search — full-text search over shared Hive memories
+  // ------------------------------------------------------------------
+  api.registerTool("hive_search", {
+    description:
+      "Search the shared Hive for memories contributed by other agents. " +
+      "The Hive contains memories saved with agent_scope 'domain' or 'hive'. " +
+      "Returns an error object if the Hive is disabled.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Full-text search query" },
+        namespace: {
+          type: "string",
+          description:
+            "Optional namespace filter (e.g. 'repo-brain' for domain-scoped, 'universal' for hive-scoped)",
+        },
+      },
+      required: ["query"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const query = args.query as string;
+      const mcpArgs: Record<string, unknown> = { query };
+      if (args.namespace !== undefined) mcpArgs.namespace = args.namespace;
+      return proxy("hive_search", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // hive_propagate — manually share a local memory to the Hive
+  // ------------------------------------------------------------------
+  api.registerTool("hive_propagate", {
+    description:
+      "Manually propagate a local memory entry to the Hive shared store. " +
+      "Use this to share an existing local memory with other agents. " +
+      "'domain' scope is visible to same-profile agents; 'hive' scope is visible to all. " +
+      "Returns an error object if the Hive is disabled.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Key of the local memory entry to share" },
+        agent_scope: {
+          type: "string",
+          enum: ["domain", "hive"],
+          description: "Propagation scope: 'domain' (same-profile) or 'hive' (all agents). Defaults to 'hive'.",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      const mcpArgs: Record<string, unknown> = { key };
+      if (args.agent_scope !== undefined) mcpArgs.agent_scope = args.agent_scope;
+      return proxy("hive_propagate", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // agent_register — register an agent in the Hive registry
+  // ------------------------------------------------------------------
+  api.registerTool("agent_register", {
+    description:
+      "Register an agent in the Hive registry. " +
+      "Registration enables domain-scoped memory sharing with same-profile agents.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "Unique agent identifier" },
+        profile: {
+          type: "string",
+          description: "Memory profile name (determines domain namespace). Defaults to 'repo-brain'.",
+        },
+        skills: {
+          type: "string",
+          description: "Comma-separated list of skills (e.g. 'coding,review'). Defaults to ''.",
+        },
+      },
+      required: ["agent_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const agent_id = args.agent_id as string;
+      const mcpArgs: Record<string, unknown> = { agent_id };
+      if (args.profile !== undefined) mcpArgs.profile = args.profile;
+      if (args.skills !== undefined) mcpArgs.skills = args.skills;
+      return proxy("agent_register", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // agent_create — register with profile validation and namespace assignment
+  // ------------------------------------------------------------------
+  api.registerTool("agent_create", {
+    description:
+      "Create an agent: register in the Hive with profile validation and namespace assignment. " +
+      "Combines agent_register with profile validation — returns an error listing " +
+      "available profiles when the profile name is invalid.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "Unique agent identifier (slug)" },
+        profile: {
+          type: "string",
+          description: "Memory profile name (must be a valid built-in or project profile). Defaults to 'repo-brain'.",
+        },
+        skills: {
+          type: "string",
+          description: "Comma-separated list of skills. Defaults to ''.",
+        },
+      },
+      required: ["agent_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const agent_id = args.agent_id as string;
+      const mcpArgs: Record<string, unknown> = { agent_id };
+      if (args.profile !== undefined) mcpArgs.profile = args.profile;
+      if (args.skills !== undefined) mcpArgs.skills = args.skills;
+      return proxy("agent_create", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // agent_list — list all registered agents
+  // ------------------------------------------------------------------
+  api.registerTool("agent_list", {
+    description:
+      "List all agents registered in the Hive registry, with their profiles and skills.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("agent_list", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // agent_delete — remove an agent from the Hive registry
+  // ------------------------------------------------------------------
+  api.registerTool("agent_delete", {
+    description:
+      "Delete a registered agent from the Hive registry. " +
+      "Returns deleted: false (not an error) if the agent was not found.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: { type: "string", description: "Unique agent identifier to remove" },
+      },
+      required: ["agent_id"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const agent_id = args.agent_id as string;
+      return proxy("agent_delete", { agent_id });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1027,6 +1237,10 @@ export default definePluginEntry({
       // Register lifecycle tools (reinforce, supersede, history, search_sessions).
       // Available in all compatibility modes when registerTool is present.
       registerLifecycleTools(api, engine);
+      // Register Hive/agent tools (hive_status, hive_search, hive_propagate,
+      // agent_register, agent_create, agent_list, agent_delete).
+      // Degrade gracefully if Hive is disabled on the server side.
+      registerHiveTools(api, engine);
     }
 
     if (mode === "context-engine") {
