@@ -142,7 +142,7 @@ automatically via `openclaw.plugin.json`.
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **28 MCP tools:** Full programmatic control when you need it
+- **41 MCP tools:** Full programmatic control when you need it
 
 ## Configuration
 

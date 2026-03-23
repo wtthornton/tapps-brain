@@ -367,7 +367,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `openclaw-plugin/src/index.ts` (294 lines) and `openclaw-plugin/src/mcp_client.ts` (224 lines). Check: MCP client connection handling, hook implementations (bootstrap, ingest, afterTurn, compact), error handling, type safety, rate limiting in afterTurn. Fix all issues. Commit: `review(story-025.6): OpenClaw TypeScript plugin review`
 
 #### 025-G: Review configuration and manifest files
-- [ ] Review `pyproject.toml`, `openclaw-plugin/package.json`, `openclaw-plugin/tsconfig.json`, `openclaw-plugin/openclaw.plugin.json`, `openclaw-skill/openclaw.plugin.json`, `openclaw-skill/SKILL.md`, `server.json`. Check: version consistency, dependency pinning, metadata completeness, schema correctness. Fix all issues. Commit: `review(story-025.7): configuration and manifest files review`
+- [x] Review `pyproject.toml`, `openclaw-plugin/package.json`, `openclaw-plugin/tsconfig.json`, `openclaw-plugin/openclaw.plugin.json`, `openclaw-skill/openclaw.plugin.json`, `openclaw-skill/SKILL.md`, `server.json`. Check: version consistency, dependency pinning, metadata completeness, schema correctness. Fix all issues. Commit: `review(story-025.7): configuration and manifest files review`
 
 ## Planned — EPIC-028: OpenClaw Plugin Hardening — Stability, Tests, Compatibility
 
