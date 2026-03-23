@@ -113,6 +113,15 @@ tools:
     description: BFS traversal — find entries related within N hops
   - name: memory_query_relations
     description: Filter relations by subject, predicate, or object
+  # Audit & Tags
+  - name: memory_audit
+    description: Query the audit trail for memory events with optional filters
+  - name: memory_list_tags
+    description: List all tags in the store with usage counts
+  - name: memory_update_tags
+    description: Atomically add and/or remove tags on a memory entry
+  - name: memory_entries_by_tag
+    description: Return all entries carrying a specific tag
 ---
 
 # tapps-brain — Persistent Memory for OpenClaw

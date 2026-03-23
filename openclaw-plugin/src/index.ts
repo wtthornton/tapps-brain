@@ -1327,6 +1327,203 @@ function registerKnowledgeGraphTools(
 }
 
 // ---------------------------------------------------------------------------
+// Audit, tags, and profile tools — memory_audit, memory_list_tags,
+//   memory_update_tags, memory_entries_by_tag, profile_info, profile_switch
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Falls back gracefully if the API is absent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register audit, tags, and profile tools as native OpenClaw tools.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerAuditTagsProfileTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  /** Shared helper: proxy MCP call, handle unavailable/parse errors. */
+  const proxy = async (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const raw = await engine.callMcpTool(toolName, args);
+    if (raw === null) {
+      return { error: "unavailable", message: "tapps-brain MCP not ready" };
+    }
+    try {
+      return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    } catch {
+      return { error: "parse_error" };
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // memory_audit — query the audit trail for memory events
+  // ------------------------------------------------------------------
+  api.registerTool("memory_audit", {
+    description:
+      "Query the tapps-brain audit trail for memory events. " +
+      "Returns matching events from the append-only JSONL audit log. " +
+      "All filters are optional and combined with AND logic.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Filter by memory entry key (optional)",
+        },
+        event_type: {
+          type: "string",
+          description: "Filter by event type, e.g. 'save', 'delete' (optional)",
+        },
+        since: {
+          type: "string",
+          description: "ISO-8601 lower bound, inclusive (optional)",
+        },
+        until: {
+          type: "string",
+          description: "ISO-8601 upper bound, inclusive (optional)",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of events to return (default 50, must be >= 1)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.key !== undefined) mcpArgs.key = args.key;
+      if (args.event_type !== undefined) mcpArgs.event_type = args.event_type;
+      if (args.since !== undefined) mcpArgs.since = args.since;
+      if (args.until !== undefined) mcpArgs.until = args.until;
+      if (args.limit !== undefined) mcpArgs.limit = args.limit;
+      return proxy("memory_audit", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_list_tags — list all tags with usage counts
+  // ------------------------------------------------------------------
+  api.registerTool("memory_list_tags", {
+    description:
+      "List all tags used in the tapps-brain memory store with their usage counts. " +
+      "Returns tags sorted by count descending. Use this to discover what topics are tagged.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("memory_list_tags", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_update_tags — atomically add/remove tags on an entry
+  // ------------------------------------------------------------------
+  api.registerTool("memory_update_tags", {
+    description:
+      "Atomically add and/or remove tags on an existing tapps-brain memory entry. " +
+      "Tags are deduplicated; the 10-tag maximum is enforced. " +
+      "Removing a non-existent tag is a no-op. Adding an already-present tag is a no-op.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The memory entry key to update" },
+        add: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of tags to add (optional)",
+        },
+        remove: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of tags to remove (optional)",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      const mcpArgs: Record<string, unknown> = { key };
+      if (args.add !== undefined) mcpArgs.add = args.add;
+      if (args.remove !== undefined) mcpArgs.remove = args.remove;
+      return proxy("memory_update_tags", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_entries_by_tag — list all entries carrying a specific tag
+  // ------------------------------------------------------------------
+  api.registerTool("memory_entries_by_tag", {
+    description:
+      "Return all tapps-brain memory entries that carry a specific tag. " +
+      "Optionally filter by tier. Useful for tag-based retrieval workflows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tag: { type: "string", description: "The tag to filter by" },
+        tier: {
+          type: "string",
+          enum: ["architectural", "pattern", "procedural", "context"],
+          description: "Optional tier filter — omit to return entries across all tiers",
+        },
+      },
+      required: ["tag"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const tag = args.tag as string;
+      const mcpArgs: Record<string, unknown> = { tag };
+      if (args.tier !== undefined) mcpArgs.tier = args.tier;
+      return proxy("memory_entries_by_tag", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // profile_info — active profile name, layers, and scoring config
+  // ------------------------------------------------------------------
+  api.registerTool("profile_info", {
+    description:
+      "Return the active tapps-brain memory profile: name, description, version, " +
+      "tier layers with half-lives and decay models, and scoring weight configuration.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("profile_info", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // profile_switch — switch to a different built-in profile
+  // ------------------------------------------------------------------
+  api.registerTool("profile_switch", {
+    description:
+      "Switch the active tapps-brain memory profile for this session. " +
+      "Built-in profiles: repo-brain, personal-assistant, customer-support, " +
+      "home-automation, project-management, research-knowledge. " +
+      "For a permanent change, use the CLI: tapps-brain profile set <name>.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Name of the built-in profile to switch to (e.g. 'personal-assistant')",
+        },
+      },
+      required: ["name"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const name = args.name as string;
+      return proxy("profile_switch", { name });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1361,6 +1558,9 @@ export default definePluginEntry({
       // Register knowledge graph tools (memory_relations, memory_find_related,
       // memory_query_relations). Proxy directly to MCP; no special degradation.
       registerKnowledgeGraphTools(api, engine);
+      // Register audit, tags, and profile tools (memory_audit, memory_list_tags,
+      // memory_update_tags, memory_entries_by_tag, profile_info, profile_switch).
+      registerAuditTagsProfileTools(api, engine);
     }
 
     if (mode === "context-engine") {
