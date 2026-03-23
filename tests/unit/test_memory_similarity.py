@@ -221,9 +221,9 @@ class TestComputeSimilarity:
     def test_default_weights(
         self, security_entry: MemoryEntry, similar_security_entry: MemoryEntry
     ) -> None:
-        """Default weights are 0.4 tag, 0.6 text."""
+        """Default weights are DEFAULT_TAG_WEIGHT tag, DEFAULT_TEXT_WEIGHT text."""
         result = compute_similarity(security_entry, similar_security_entry)
-        expected = (result.tag_score * 0.4) + (result.text_score * 0.6)
+        expected = (result.tag_score * DEFAULT_TAG_WEIGHT) + (result.text_score * DEFAULT_TEXT_WEIGHT)
         assert abs(result.combined_score - expected) < 0.01
 
     def test_custom_weights(
@@ -312,8 +312,10 @@ class TestFindSimilar:
             tags=["security"],
         )
         results = find_similar(security_entry, [entry_low, entry_high], threshold=0.1)
-        if len(results) >= 2:
-            assert results[0].combined_score >= results[1].combined_score
+        assert len(results) >= 2, (
+            f"Expected at least 2 results above threshold=0.1, got {len(results)}: {results}"
+        )
+        assert results[0].combined_score >= results[1].combined_score
 
 
 # ---------------------------------------------------------------------------
