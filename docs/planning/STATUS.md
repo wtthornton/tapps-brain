@@ -69,28 +69,32 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-014 | Hardening — Validation, Parity, Resilience, Docs | done | 2026-03-22 |
 | EPIC-015 | Analytics & Operational Surface | done | 2026-03-22 |
 | EPIC-016 | Test Suite Hardening — CLI gaps, concurrency, cleanup | done | 2026-03-22 |
-| EPIC-017 | Code Review — Storage & Data Model | planned | — |
-| EPIC-018 | Code Review — Retrieval & Scoring | planned | — |
-| EPIC-019 | Code Review — Memory Lifecycle | planned | — |
-| EPIC-020 | Code Review — Safety & Validation | planned | — |
-| EPIC-021 | Code Review — Federation, Hive & Relations | planned | — |
-| EPIC-022 | Code Review — Interfaces (MCP, CLI, IO) | planned | — |
-| EPIC-023 | Code Review — Config, Profiles & Observability | planned | — |
-| EPIC-024 | Code Review — Unit Tests Part 1 | planned | — |
-| EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | planned | — |
-| EPIC-029 | Feedback collection | done | 2026-03-23 |
-| EPIC-030 | Diagnostics & self-monitoring | done | 2026-03-23 |
-| EPIC-031 | Continuous improvement flywheel | done | 2026-03-23 |
+| EPIC-017 | Code Review — Storage & Data Model | done | 2026-03-23 |
+| EPIC-018 | Code Review — Retrieval & Scoring | done | 2026-03-23 |
+| EPIC-019 | Code Review — Memory Lifecycle | done | 2026-03-23 |
+| EPIC-020 | Code Review — Safety & Validation | done | 2026-03-23 |
+| EPIC-021 | Code Review — Federation, Hive & Relations | done | 2026-03-23 |
+| EPIC-022 | Code Review — Interfaces (MCP, CLI, IO) | done | 2026-03-23 |
+| EPIC-023 | Code Review — Config, Profiles & Observability | done | 2026-03-23 |
+| EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
+| EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
+| EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
+| EPIC-027 | OpenClaw Full Feature Surface — All 41 MCP Tools | done | 2026-03-23 |
+| EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
+| EPIC-029 | Feedback Collection | done | 2026-03-23 |
+| EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
+| EPIC-031 | Continuous Improvement Flywheel | done | 2026-03-23 |
 | EPIC-032 | OTel GenAI semantic conventions | planned | — |
-| EPIC-033 | OpenClaw plugin SDK alignment | done | 2026-03-23 |
+| EPIC-033 | OpenClaw Plugin SDK Alignment | done | 2026-03-23 |
 
 ## Current focus
 
 **Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`).
 
 **Next (see fix_plan):**
-- **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export).
-- **EPIC-017–025** — code review cycle (still tracked as planned epics).
+- **HOUSEKEEPING-002** — Update stale planning docs.
+- **QUALITY-001** — Full QA gate (tests, lint, types).
+- **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 
 ## WSL / Windows
 

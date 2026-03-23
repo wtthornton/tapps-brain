@@ -34,7 +34,7 @@
 
 **Priority: MEDIUM — STATUS.md is out of date**
 
-- [ ] **HK-002.1** Update `docs/planning/STATUS.md`: mark EPIC-017 through EPIC-025 as `done`, mark EPIC-029/030/031/033 with completion dates, update epics summary table, verify current focus section reflects reality.
+- [x] **HK-002.1** Update `docs/planning/STATUS.md`: mark EPIC-017 through EPIC-025 as `done`, mark EPIC-029/030/031/033 with completion dates, update epics summary table, verify current focus section reflects reality.
 - [ ] **HK-002.2** Update `docs/planning/PLANNING.md` epic directory listing: mark EPIC-026 through EPIC-033 with correct done/planned status annotations.
 
 ---
