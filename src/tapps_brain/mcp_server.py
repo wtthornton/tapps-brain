@@ -1035,14 +1035,19 @@ def create_server(  # noqa: PLR0915
                 skipped += 1
                 continue
 
-            result = store.save(
-                key=key,
-                value=mem["value"],
-                tier=mem.get("tier", "pattern"),
-                source=mem.get("source", "system"),
-                tags=mem.get("tags"),
-                scope=mem.get("scope", "project"),
-            )
+            try:
+                result = store.save(
+                    key=key,
+                    value=mem["value"],
+                    tier=mem.get("tier", "pattern"),
+                    source=mem.get("source", "system"),
+                    tags=mem.get("tags"),
+                    scope=mem.get("scope", "project"),
+                )
+            except ValueError as exc:
+                logger.warning("memory_import_save_error", key=key, error=str(exc))
+                errors += 1
+                continue
             if isinstance(result, dict):
                 errors += 1
             else:
@@ -1122,6 +1127,9 @@ def create_server(  # noqa: PLR0915
                     "available": list_builtin_profiles(),
                 }
             )
+        except Exception as exc:
+            logger.exception("profile_switch_error", profile=name)
+            return json.dumps({"error": "profile_switch_error", "message": str(exc)})
 
     # ------------------------------------------------------------------
     # Hive tools (EPIC-011)
@@ -1263,6 +1271,10 @@ def create_server(  # noqa: PLR0915
             profile: Memory profile name (determines domain namespace).
             skills: Comma-separated list of skills.
         """
+        if not agent_id or not agent_id.strip():
+            return json.dumps(
+                {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
+            )
         try:
             from tapps_brain.hive import AgentRegistration, AgentRegistry
 
@@ -1299,6 +1311,10 @@ def create_server(  # noqa: PLR0915
             profile: Memory profile name (must be a valid built-in or project profile).
             skills: Comma-separated list of skills.
         """
+        if not agent_id or not agent_id.strip():
+            return json.dumps(
+                {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
+            )
         try:
             from tapps_brain.hive import AgentRegistration, AgentRegistry
             from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
@@ -1406,8 +1422,12 @@ def create_server(  # noqa: PLR0915
 
         Args:
             key: Starting entry key.
-            max_hops: Maximum traversal depth (default 2).
+            max_hops: Maximum traversal depth (default 2, must be >= 1).
         """
+        if max_hops < 1:
+            return json.dumps(
+                {"error": "invalid_max_hops", "message": "max_hops must be >= 1"}
+            )
         try:
             results = store.find_related(key, max_hops=max_hops)
             return json.dumps(
@@ -1466,8 +1486,12 @@ def create_server(  # noqa: PLR0915
             event_type: Filter by event type, e.g. "save", "delete" (optional).
             since: ISO-8601 lower bound, inclusive (optional).
             until: ISO-8601 upper bound, inclusive (optional).
-            limit: Maximum number of events to return (default 50).
+            limit: Maximum number of events to return (default 50, must be >= 1).
         """
+        if limit < 1:
+            return json.dumps(
+                {"error": "invalid_limit", "message": "limit must be >= 1"}
+            )
         entries = store.audit(
             key=key or None,
             event_type=event_type or None,

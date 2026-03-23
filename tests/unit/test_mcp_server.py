@@ -2329,3 +2329,136 @@ class TestTagManagementMCPTools:
             assert "tier" in entry
             assert "confidence" in entry
             assert "tags" in entry
+
+
+# ---------------------------------------------------------------------------
+# Tests for 022-C fixes: input validation and error handling (lines 1001-end)
+# ---------------------------------------------------------------------------
+
+
+class TestMcpServerInputValidation022C:
+    """Tests covering validation and error-handling fixes from review 022-C."""
+
+    @pytest.fixture
+    def server(self, tmp_path):
+        from tapps_brain.mcp_server import create_server
+
+        srv = create_server(tmp_path)
+        yield srv
+        srv._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # memory_import — invalid enum values should not crash the import loop
+    # ------------------------------------------------------------------
+
+    def test_memory_import_invalid_tier_counts_as_error(self, server):
+        """memory_import with an invalid tier counts as error without crashing."""
+        fn = _tool_fn(server, "memory_import")
+        payload = json.dumps(
+            {
+                "memories": [
+                    {"key": "good-key", "value": "valid entry"},
+                    {"key": "bad-tier", "value": "entry", "tier": "nonexistent_tier"},
+                ]
+            }
+        )
+        result = json.loads(fn(memories_json=payload))
+        assert result["imported"] == 1
+        assert result["errors"] == 1
+        assert result["status"] == "imported"
+
+    def test_memory_import_invalid_source_counts_as_error(self, server):
+        """memory_import with an invalid source counts as error without crashing."""
+        fn = _tool_fn(server, "memory_import")
+        payload = json.dumps(
+            {
+                "memories": [
+                    {"key": "bad-src", "value": "entry", "source": "invalid_source"},
+                ]
+            }
+        )
+        result = json.loads(fn(memories_json=payload))
+        assert result["errors"] == 1
+        assert result["imported"] == 0
+
+    # ------------------------------------------------------------------
+    # profile_switch — unexpected exceptions return error JSON
+    # ------------------------------------------------------------------
+
+    def test_profile_switch_unexpected_exception_returns_error(self, server, monkeypatch):
+        """profile_switch returns error JSON when an unexpected exception occurs."""
+        from tapps_brain import mcp_server as _mcp_mod
+
+        def boom(name: str):
+            raise RuntimeError("YAML parse failed")
+
+        monkeypatch.setattr(
+            "tapps_brain.profile.get_builtin_profile",
+            boom,
+        )
+        fn = _tool_fn(server, "profile_switch")
+        result = json.loads(fn(name="repo-brain"))
+        assert result["error"] == "profile_switch_error"
+        assert "YAML parse failed" in result["message"]
+
+    # ------------------------------------------------------------------
+    # memory_find_related — max_hops < 1 returns error
+    # ------------------------------------------------------------------
+
+    def test_memory_find_related_zero_hops_returns_error(self, server):
+        """memory_find_related with max_hops=0 returns invalid_max_hops error."""
+        store = server._tapps_store
+        store.save(key="hop-key", value="some value", tier="pattern")
+        fn = _tool_fn(server, "memory_find_related")
+        result = json.loads(fn(key="hop-key", max_hops=0))
+        assert result["error"] == "invalid_max_hops"
+
+    def test_memory_find_related_negative_hops_returns_error(self, server):
+        """memory_find_related with max_hops=-1 returns invalid_max_hops error."""
+        store = server._tapps_store
+        store.save(key="neg-hop-key", value="some value", tier="pattern")
+        fn = _tool_fn(server, "memory_find_related")
+        result = json.loads(fn(key="neg-hop-key", max_hops=-1))
+        assert result["error"] == "invalid_max_hops"
+
+    # ------------------------------------------------------------------
+    # memory_audit — negative limit returns error
+    # ------------------------------------------------------------------
+
+    def test_memory_audit_negative_limit_returns_error(self, server):
+        """memory_audit with limit < 1 returns invalid_limit error."""
+        fn = _tool_fn(server, "memory_audit")
+        result = json.loads(fn(limit=0))
+        assert result["error"] == "invalid_limit"
+
+    def test_memory_audit_zero_limit_returns_error(self, server):
+        """memory_audit with limit=0 returns invalid_limit error."""
+        fn = _tool_fn(server, "memory_audit")
+        result = json.loads(fn(limit=-5))
+        assert result["error"] == "invalid_limit"
+
+    # ------------------------------------------------------------------
+    # agent_register — empty agent_id returns error
+    # ------------------------------------------------------------------
+
+    def test_agent_register_empty_id_returns_error(self, server):
+        """agent_register with empty agent_id returns invalid_agent_id error."""
+        fn = _tool_fn(server, "agent_register")
+        result = json.loads(fn(agent_id=""))
+        assert result["error"] == "invalid_agent_id"
+
+    def test_agent_register_whitespace_only_id_returns_error(self, server):
+        """agent_register with whitespace-only agent_id returns error."""
+        fn = _tool_fn(server, "agent_register")
+        result = json.loads(fn(agent_id="   "))
+        assert result["error"] == "invalid_agent_id"
+
+    # ------------------------------------------------------------------
+    # agent_create — empty agent_id returns error
+    # ------------------------------------------------------------------
+
+    def test_agent_create_empty_id_returns_error(self, server):
+        """agent_create with empty agent_id returns invalid_agent_id error."""
+        fn = _tool_fn(server, "agent_create")
+        result = json.loads(fn(agent_id=""))
+        assert result["error"] == "invalid_agent_id"

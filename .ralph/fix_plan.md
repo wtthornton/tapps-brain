@@ -234,7 +234,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/mcp_server.py` lines 501–1000. Focus on: `hive_*` tools, `memory_relations`, `memory_find_related`, `memory_query_relations`, `memory_audit` tools. Check Hive fallback paths, graph query correctness. Fix all issues. Commit: `review(story-022.2): mcp_server.py Hive and graph tools review`
 
 #### 022-C: Review `mcp_server.py` — tags, config, agent, profile tools + resources (lines 1001–end)
-- [ ] Review `src/tapps_brain/mcp_server.py` lines 1001–end. Focus on: `memory_*_tags`, `memory_gc_config*`, `memory_consolidation_config*`, `agent_*`, `profile_*` tools, MCP resources, prompts. Check config validation, agent lifecycle correctness. Fix all issues. Commit: `review(story-022.3): mcp_server.py config and agent tools review`
+- [x] Review `src/tapps_brain/mcp_server.py` lines 1001–end. Focus on: `memory_*_tags`, `memory_gc_config*`, `memory_consolidation_config*`, `agent_*`, `profile_*` tools, MCP resources, prompts. Check config validation, agent lifecycle correctness. Fix all issues. Commit: `review(story-022.3): mcp_server.py config and agent tools review`
 
 ### Phase 2: CLI (sequential — second largest file)
 
