@@ -32,9 +32,9 @@ Full history archived in `fix_plan.md.bak-20260323`.
 
 **Priority: CRITICAL — plugin crashes and broken functionality**
 
-- [ ] **033-1** Import SDK types: add `openclaw` dev dep, replace custom `OpenClawPluginApi` interface with `import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"`, remove `PluginEntryDef` if SDK provides equivalent. Fix all resulting TS compilation errors. (STORY-033.1, closes #6)
-- [ ] **033-2** Fix version detection: change `getCompatibilityMode()` to receive `api.runtime.version` instead of `api.version`. Verify log output shows correct OpenClaw version and full ContextEngine mode activates on >= 2026.3.7. (STORY-033.2, closes #4)
-- [ ] **033-3** Fix workspace/session resolution: replace `api.runtime.workspaceDir` with `api.runtime.agent.resolveAgentWorkspaceDir()`, fix `sessionId` from correct `PluginRuntime` property. Add defensive fallback to `process.cwd()`. (STORY-033.3, closes #5)
+- [x] **033-1** Import SDK types: add `openclaw` dev dep, replace custom `OpenClawPluginApi` interface with `import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"`, remove `PluginEntryDef` if SDK provides equivalent. Fix all resulting TS compilation errors. (STORY-033.1, closes #6)
+- [x] **033-2** Fix version detection: change `getCompatibilityMode()` to receive `api.runtime.version` instead of `api.version`. Verify log output shows correct OpenClaw version and full ContextEngine mode activates on >= 2026.3.7. (STORY-033.2, closes #4)
+- [x] **033-3** Fix workspace/session resolution: replace `api.runtime.workspaceDir` with `api.runtime.agent.resolveAgentWorkspaceDir()`, fix `sessionId` from correct `PluginRuntime` property. Add defensive fallback to `process.cwd()`. (STORY-033.3, closes #5)
 - [ ] **033-4** Fix migration script: read `config.plugins.entries[OLD_NAME]` and `config.plugins.installs[OLD_NAME]`, write to `entries[NEW_NAME]`/`installs[NEW_NAME]`, backward-compatible fallback for older config formats. (STORY-033.4, closes #7)
 - [ ] **033-QA** Run `npm run build && npm test` for openclaw-plugin. Verify all 4 issues are resolved.
 

@@ -10,6 +10,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import type { OpenClawPluginApi, PluginEntry } from "openclaw/plugin-sdk/core";
+
 import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
 
 // ---------------------------------------------------------------------------
@@ -180,34 +182,6 @@ export interface ToolDefinition {
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** OpenClaw plugin API passed to the register() callback. */
-interface OpenClawPluginApi {
-  logger: PluginLogger;
-  config: PluginConfig;
-  runtime: { workspaceDir: string; sessionId: string };
-  /** Semver-like version string of the running OpenClaw instance (e.g. "2026.3.7"). */
-  version?: string;
-  /** Register a ContextEngine — available v2026.3.7+. */
-  registerContextEngine?: (
-    id: string,
-    factory: (config: PluginConfig) => TappsBrainEngine,
-  ) => void;
-  /** Register a lifecycle hook — available v2026.3.1+. */
-  registerHook?: (
-    event: string,
-    handler: (ctx: HookContext) => Promise<void>,
-  ) => void;
-  /** Register a native tool — available in all versions. */
-  registerTool?: (name: string, definition: ToolDefinition) => void;
-}
-
-/** Plugin entry definition. */
-interface PluginEntryDef {
-  id: string;
-  name: string;
-  register: (api: OpenClawPluginApi) => void;
-}
-
 // ---------------------------------------------------------------------------
 // Version compatibility layer
 //
@@ -303,7 +277,7 @@ export function getCompatibilityMode(
 // TypeScript compiles without the runtime dependency.
 // ---------------------------------------------------------------------------
 
-let definePluginEntry: (def: PluginEntryDef) => PluginEntryDef;
+let definePluginEntry: (def: PluginEntry) => PluginEntry;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const sdk = require("openclaw/plugin-sdk/core") as { definePluginEntry?: typeof definePluginEntry };
@@ -318,11 +292,11 @@ try {
         "Using identity shim — the plugin will still work but may lack " +
         "ContextEngine integration. Consider upgrading OpenClaw.",
     );
-    definePluginEntry = (def: PluginEntryDef) => def;
+    definePluginEntry = (def: PluginEntry) => def;
   }
 } catch {
   // Fallback: identity function (dev/test without openclaw installed)
-  definePluginEntry = (def: PluginEntryDef) => def;
+  definePluginEntry = (def: PluginEntry) => def;
 }
 
 // ---------------------------------------------------------------------------
@@ -2273,13 +2247,21 @@ export default definePluginEntry({
   id: "tapps-brain-memory",
   name: "tapps-brain — Persistent Memory",
   register(api) {
-    const mode = getCompatibilityMode(api.version, api.logger);
-    const workspaceDir = api.runtime.workspaceDir;
+    const mode = getCompatibilityMode(api.runtime.version, api.logger);
+    const resolvedDir = api.runtime.agent.resolveAgentWorkspaceDir();
+    if (!resolvedDir) {
+      api.logger.warn(
+        "[tapps-brain] Could not resolve workspace directory from runtime. " +
+          "Falling back to process.cwd(). Memory may be stored in the wrong location.",
+      );
+    }
+    const workspaceDir = resolvedDir ?? process.cwd();
 
     // Create a shared engine instance used across all registration paths.
     // Bootstrap runs asynchronously; hooks and tool handlers await readiness
     // via the internal `ready` promise — they never block or fail hard.
-    const engine = new TappsBrainEngine(api.config, workspaceDir, api.logger);
+    const config = api.config as PluginConfig;
+    const engine = new TappsBrainEngine(config, workspaceDir, api.logger);
     engine.bootstrap().catch((err: unknown) => {
       api.logger.warn("[tapps-brain] bootstrap failed:", err);
     });
@@ -2329,7 +2311,7 @@ export default definePluginEntry({
       // unused since we consumed api.config at construction time.
       api.registerContextEngine(
         "tapps-brain-memory",
-        (_config: PluginConfig) => engine,
+        (_config) => engine,
       );
     } else if (mode === "hook-only") {
       // v2026.3.1-2026.3.6: inject memories via before_agent_start hook
@@ -2342,8 +2324,8 @@ export default definePluginEntry({
 
       api.registerHook(
         "before_agent_start",
-        async (ctx: HookContext): Promise<void> => {
-          const messages = ctx.messages ?? [];
+        async (ctx): Promise<void> => {
+          const messages = (ctx.messages ?? []) as Message[];
           const sessionId = ctx.sessionId ?? "";
           try {
             const result = await engine.assemble({
