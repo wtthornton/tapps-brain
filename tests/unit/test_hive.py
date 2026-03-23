@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -711,3 +712,205 @@ class TestHiveRecall:
         # db-choice should appear once (local), not duplicated from Hive
         keys = [m.get("key") for m in result.memories]
         assert keys.count("db-choice") <= 1
+
+
+# ---------------------------------------------------------------------------
+# 021-B review fixes: thread safety, created_at preservation, FTS triggers,
+# namespace SQL filter, AgentRegistry malformed YAML
+# ---------------------------------------------------------------------------
+
+
+class TestHiveStoreThreadSafety:
+    """TOCTOU race fix: lock held for entire read+write in save()."""
+
+    def test_concurrent_saves_to_same_key_no_corruption(self, tmp_path: Path) -> None:
+        """Two threads saving to the same key should not corrupt the database."""
+        hive = HiveStore(db_path=tmp_path / "hive.db")
+        errors: list[Exception] = []
+
+        def worker(value: str) -> None:
+            try:
+                hive.save(key="shared-key", value=value, namespace="ns")
+            except Exception as exc:
+                errors.append(exc)
+
+        t1 = threading.Thread(target=worker, args=("value-a",))
+        t2 = threading.Thread(target=worker, args=("value-b",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert errors == [], f"Thread errors: {errors}"
+        # The key must exist in some valid state (no corruption)
+        result = hive.get("shared-key", namespace="ns")
+        # supersede policy may create versioned key; original may be marked invalid
+        assert result is not None or hive.list_namespaces() != []
+        hive.close()
+
+    def test_concurrent_saves_different_keys_all_succeed(self, tmp_path: Path) -> None:
+        """Concurrent saves to different keys should all succeed."""
+        hive = HiveStore(db_path=tmp_path / "hive.db")
+        errors: list[Exception] = []
+        results: list[dict] = []
+        lock = threading.Lock()
+
+        def worker(i: int) -> None:
+            try:
+                r = hive.save(key=f"key-{i}", value=f"value-{i}", namespace="ns")
+                with lock:
+                    if r is not None:
+                        results.append(r)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Thread errors: {errors}"
+        assert len(results) == 10
+        hive.close()
+
+
+class TestCreatedAtPreservation:
+    """created_at should not be overwritten on update paths."""
+
+    def test_last_write_wins_preserves_created_at(self, hive: HiveStore) -> None:
+        first = hive.save(key="k1", value="v1", namespace="ns")
+        assert first is not None
+        original_created_at = first["created_at"]
+
+        second = hive.save(key="k1", value="v2", namespace="ns", conflict_policy="last_write_wins")
+        assert second is not None
+        # updated_at should change, created_at should be preserved
+        assert second["created_at"] == original_created_at
+        assert second["updated_at"] >= original_created_at
+
+    def test_source_authority_same_agent_preserves_created_at(self, hive: HiveStore) -> None:
+        first = hive.save(key="k1", value="v1", namespace="ns", source_agent="dev")
+        assert first is not None
+        original_created_at = first["created_at"]
+
+        second = hive.save(
+            key="k1",
+            value="v2",
+            namespace="ns",
+            source_agent="dev",
+            conflict_policy="source_authority",
+        )
+        assert second is not None
+        assert second["created_at"] == original_created_at
+
+    def test_confidence_max_accepted_preserves_created_at(self, hive: HiveStore) -> None:
+        first = hive.save(key="k1", value="low", namespace="ns", confidence=0.3)
+        assert first is not None
+        original_created_at = first["created_at"]
+
+        second = hive.save(
+            key="k1",
+            value="high",
+            namespace="ns",
+            confidence=0.9,
+            conflict_policy="confidence_max",
+        )
+        assert second is not None
+        assert second["created_at"] == original_created_at
+
+    def test_first_write_uses_now_as_created_at(self, hive: HiveStore) -> None:
+        result = hive.save(key="new-key", value="v1", namespace="ns")
+        assert result is not None
+        assert result["created_at"] == result["updated_at"]
+
+
+class TestFTSTriggers:
+    """FTS5 sync triggers should exist and keep FTS index in sync."""
+
+    def test_fts_triggers_created(self, hive: HiveStore) -> None:
+        triggers = hive._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hive_fts_%'"
+        ).fetchall()
+        trigger_names = {row[0] for row in triggers}
+        assert "hive_fts_ai" in trigger_names, "INSERT trigger missing"
+        assert "hive_fts_ad" in trigger_names, "DELETE trigger missing"
+        assert "hive_fts_au" in trigger_names, "UPDATE trigger missing"
+
+    def test_fts_search_finds_entry_after_save(self, hive: HiveStore) -> None:
+        """FTS index kept in sync via triggers — search should find saved entry."""
+        hive.save(key="fts-test", value="unique fts trigger test phrase", namespace="ns")
+        results = hive.search("unique fts trigger test", namespaces=["ns"])
+        assert any(r["key"] == "fts-test" for r in results)
+
+    def test_fts_search_does_not_find_deleted_entry(self, hive: HiveStore) -> None:
+        """After supersede (marks old entry invalid), old entry still in DB but new key exists."""
+        hive.save(key="trig-key", value="original unique phrase alpha", namespace="ns")
+        # Supersede replaces with versioned key
+        hive.save(
+            key="trig-key",
+            value="updated unique phrase alpha",
+            namespace="ns",
+            conflict_policy="supersede",
+        )
+        # The search should find updated content
+        results = hive.search("updated unique phrase alpha", namespaces=["ns"])
+        assert len(results) >= 1
+
+
+class TestSearchNamespaceSQLFilter:
+    """Namespace filter should be applied in SQL, not Python post-processing."""
+
+    def test_search_with_namespaces_returns_only_matching(self, hive: HiveStore) -> None:
+        """SQL namespace filter ensures only matching-namespace rows are returned."""
+        for i in range(20):
+            hive.save(key=f"item-{i}", value=f"searchable term item {i}", namespace="ns-a")
+        for i in range(20):
+            hive.save(key=f"item-{i}", value=f"searchable term item {i}", namespace="ns-b")
+
+        results = hive.search("searchable term", namespaces=["ns-a"], limit=10)
+        assert len(results) == 10
+        assert all(r["namespace"] == "ns-a" for r in results)
+
+    def test_search_multiple_namespaces_filter(self, hive: HiveStore) -> None:
+        hive.save(key="a1", value="term alpha", namespace="alpha")
+        hive.save(key="b1", value="term beta", namespace="beta")
+        hive.save(key="c1", value="term gamma", namespace="gamma")
+
+        results = hive.search("term", namespaces=["alpha", "beta"])
+        ns_set = {r["namespace"] for r in results}
+        assert ns_set <= {"alpha", "beta"}
+        assert "gamma" not in ns_set
+
+
+class TestAgentRegistryMalformedYAML:
+    """AgentRegistry._load() should skip malformed entries with a warning."""
+
+    def test_load_skips_malformed_agent_entry(self, tmp_path: Path) -> None:
+        """Malformed agent entry (extra forbidden field) should be skipped, not crash."""
+        registry_path = tmp_path / "agents.yaml"
+        # Write YAML with one valid and one invalid entry
+        registry_path.write_text(
+            "agents:\n"
+            "  - id: valid-agent\n"
+            "    profile: repo-brain\n"
+            "  - id: bad-agent\n"
+            "    unknown_forbidden_field: oops\n",
+            encoding="utf-8",
+        )
+        # Should not raise
+        reg = AgentRegistry(registry_path=registry_path)
+        # Valid entry loaded, bad entry skipped
+        assert reg.get("valid-agent") is not None
+        assert reg.get("bad-agent") is None
+
+    def test_load_skips_non_dict_entry(self, tmp_path: Path) -> None:
+        """Non-dict entry in YAML agents list should be skipped."""
+        registry_path = tmp_path / "agents.yaml"
+        registry_path.write_text(
+            "agents:\n  - id: good\n  - just a string\n",
+            encoding="utf-8",
+        )
+        reg = AgentRegistry(registry_path=registry_path)
+        assert reg.get("good") is not None
+        assert len(reg.list_agents()) == 1

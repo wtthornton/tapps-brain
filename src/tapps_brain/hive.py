@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 import structlog
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -91,8 +91,15 @@ class AgentRegistry:
         if not isinstance(raw, dict) or "agents" not in raw:
             return
         for agent_data in raw["agents"]:
-            agent = AgentRegistration(**agent_data)
-            self._agents[agent.id] = agent
+            try:
+                agent = AgentRegistration(**agent_data)
+                self._agents[agent.id] = agent
+            except (ValidationError, TypeError) as exc:
+                logger.warning(
+                    "hive.agent_registry.load_skipped",
+                    agent_data=agent_data,
+                    error=str(exc),
+                )
 
     def _save(self) -> None:
         data = {"agents": [a.model_dump(mode="json") for a in self._agents.values()]}
@@ -203,6 +210,32 @@ class HiveStore:
                     )
                 """)
 
+            # FTS5 sync triggers — O(1) incremental updates instead of full rebuild.
+            # INSERT OR REPLACE fires DELETE then INSERT, so these triggers keep
+            # the FTS index in sync automatically on every write.
+            _fts_triggers = [
+                """CREATE TRIGGER IF NOT EXISTS hive_fts_ai
+                   AFTER INSERT ON hive_memories BEGIN
+                       INSERT INTO hive_fts(rowid, key, value, tags)
+                       VALUES (new.rowid, new.key, new.value, new.tags);
+                   END""",
+                """CREATE TRIGGER IF NOT EXISTS hive_fts_ad
+                   AFTER DELETE ON hive_memories BEGIN
+                       INSERT INTO hive_fts(hive_fts, rowid, key, value, tags)
+                       VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+                   END""",
+                """CREATE TRIGGER IF NOT EXISTS hive_fts_au
+                   AFTER UPDATE ON hive_memories BEGIN
+                       INSERT INTO hive_fts(hive_fts, rowid, key, value, tags)
+                       VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+                       INSERT INTO hive_fts(rowid, key, value, tags)
+                       VALUES (new.rowid, new.key, new.value, new.tags);
+                   END""",
+            ]
+            for trigger_sql in _fts_triggers:
+                with contextlib.suppress(sqlite3.OperationalError):
+                    self._conn.execute(trigger_sql)
+
             self._conn.commit()
 
     def close(self) -> None:
@@ -269,28 +302,44 @@ class HiveStore:
         policy = ConflictPolicy(conflict_policy)
         now = datetime.now(tz=UTC).isoformat()
 
+        # Hold the lock for the entire read-then-write sequence to prevent
+        # TOCTOU races where two concurrent saves to the same (namespace, key)
+        # could both read "no existing entry" and then both write.
         with self._lock:
             existing = self._conn.execute(
                 "SELECT * FROM hive_memories WHERE namespace = ? AND key = ?",
                 (namespace, key),
             ).fetchone()
 
-        if existing is not None:
-            resolved = self._resolve_conflict(
-                policy=policy,
-                existing=dict(existing),
-                new_value=value,
-                new_confidence=confidence,
-                source_agent=source_agent,
-                namespace=namespace,
-                key=key,
-                now=now,
-            )
-            if resolved is None:
-                return None
-            if resolved == "supersede_version":
-                return self._supersede_existing(
-                    existing=dict(existing),
+            if existing is not None:
+                existing_dict = dict(existing)
+                resolved = self._resolve_conflict(
+                    policy=policy,
+                    existing=existing_dict,
+                    new_value=value,
+                    new_confidence=confidence,
+                    source_agent=source_agent,
+                    namespace=namespace,
+                    key=key,
+                    now=now,
+                )
+                if resolved is None:
+                    return None
+                if resolved == "supersede_version":
+                    return self._supersede_existing_locked(
+                        existing=existing_dict,
+                        key=key,
+                        value=value,
+                        namespace=namespace,
+                        source_agent=source_agent,
+                        tier=tier,
+                        confidence=confidence,
+                        source=source,
+                        tags=tags,
+                        now=now,
+                    )
+                # "overwrite" path — preserve original created_at
+                return self._write_entry_locked(
                     key=key,
                     value=value,
                     namespace=namespace,
@@ -299,24 +348,29 @@ class HiveStore:
                     confidence=confidence,
                     source=source,
                     tags=tags,
+                    created_at=existing_dict.get("created_at", now),
                     now=now,
+                    valid_at=valid_at,
+                    invalid_at=invalid_at,
+                    superseded_by=superseded_by,
                 )
 
-        # Normal write (no conflict, or last_write_wins)
-        return self._write_entry(
-            key=key,
-            value=value,
-            namespace=namespace,
-            source_agent=source_agent,
-            tier=tier,
-            confidence=confidence,
-            source=source,
-            tags=tags,
-            valid_at=valid_at,
-            invalid_at=invalid_at,
-            superseded_by=superseded_by,
-            now=now,
-        )
+            # No existing entry — normal write
+            return self._write_entry_locked(
+                key=key,
+                value=value,
+                namespace=namespace,
+                source_agent=source_agent,
+                tier=tier,
+                confidence=confidence,
+                source=source,
+                tags=tags,
+                created_at=now,
+                now=now,
+                valid_at=valid_at,
+                invalid_at=invalid_at,
+                superseded_by=superseded_by,
+            )
 
     def _resolve_conflict(
         self,
@@ -362,7 +416,7 @@ class HiveStore:
         # supersede (default)
         return "supersede_version"
 
-    def _supersede_existing(
+    def _supersede_existing_locked(
         self,
         *,
         existing: dict[str, Any],
@@ -376,19 +430,15 @@ class HiveStore:
         tags: list[str] | None,
         now: str,
     ) -> dict[str, Any]:
-        """Mark old version invalid, write new version."""
-        # Mark old entry as superseded
+        """Mark old version invalid and write new version. Caller must hold ``self._lock``."""
         new_key = f"{key}-v{now.replace(':', '').replace('-', '')[:15]}"
-        with self._lock:
-            self._conn.execute(
-                "UPDATE hive_memories SET invalid_at = ?, superseded_by = ? "
-                "WHERE namespace = ? AND key = ?",
-                (now, new_key, namespace, key),
-            )
-            self._conn.commit()
-
-        # Write new version
-        return self._write_entry(
+        self._conn.execute(
+            "UPDATE hive_memories SET invalid_at = ?, superseded_by = ? "
+            "WHERE namespace = ? AND key = ?",
+            (now, new_key, namespace, key),
+        )
+        self._conn.commit()
+        return self._write_entry_locked(
             key=new_key,
             value=value,
             namespace=namespace,
@@ -397,13 +447,14 @@ class HiveStore:
             confidence=confidence,
             source=source,
             tags=tags,
+            created_at=now,
+            now=now,
             valid_at=now,
             invalid_at=None,
             superseded_by=None,
-            now=now,
         )
 
-    def _write_entry(
+    def _write_entry_locked(
         self,
         *,
         key: str,
@@ -414,43 +465,44 @@ class HiveStore:
         confidence: float,
         source: str,
         tags: list[str] | None,
+        created_at: str,
+        now: str,
         valid_at: str | None,
         invalid_at: str | None,
         superseded_by: str | None,
-        now: str,
     ) -> dict[str, Any]:
-        """Perform the actual INSERT OR REPLACE and return the entry dict."""
-        tags_json = json.dumps(tags or [])
+        """Perform the actual INSERT OR REPLACE and return the entry dict.
 
-        with self._lock:
-            self._conn.execute(
-                """
-                INSERT OR REPLACE INTO hive_memories
-                (namespace, key, value, tier, confidence, source,
-                 source_agent, tags, created_at, updated_at,
-                 valid_at, invalid_at, superseded_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    namespace,
-                    key,
-                    value,
-                    tier,
-                    confidence,
-                    source,
-                    source_agent,
-                    tags_json,
-                    now,
-                    now,
-                    valid_at,
-                    invalid_at,
-                    superseded_by,
-                ),
-            )
-            # Rebuild FTS index
-            with contextlib.suppress(sqlite3.OperationalError):
-                self._conn.execute("INSERT INTO hive_fts(hive_fts) VALUES('rebuild')")
-            self._conn.commit()
+        Caller must hold ``self._lock``. ``created_at`` is passed explicitly so
+        that update paths (overwrite/supersede) can preserve the original
+        creation timestamp instead of resetting it to ``now``.
+        """
+        tags_json = json.dumps(tags or [])
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO hive_memories
+            (namespace, key, value, tier, confidence, source,
+             source_agent, tags, created_at, updated_at,
+             valid_at, invalid_at, superseded_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                namespace,
+                key,
+                value,
+                tier,
+                confidence,
+                source,
+                source_agent,
+                tags_json,
+                created_at,
+                now,
+                valid_at,
+                invalid_at,
+                superseded_by,
+            ),
+        )
+        self._conn.commit()
 
         logger.info(
             "hive.saved",
@@ -468,7 +520,7 @@ class HiveStore:
             "source": source,
             "source_agent": source_agent,
             "tags": tags or [],
-            "created_at": now,
+            "created_at": created_at,
             "updated_at": now,
             "valid_at": valid_at,
             "invalid_at": invalid_at,
@@ -506,39 +558,62 @@ class HiveStore:
         """
         with self._lock:
             try:
-                rows = self._conn.execute(
-                    """
-                    SELECT hm.*, rank
-                    FROM hive_fts fts
-                    JOIN hive_memories hm ON fts.rowid = hm.rowid
-                    WHERE fts MATCH ?
-                    AND hm.confidence >= ?
-                    ORDER BY rank
-                    LIMIT ?
-                    """,
-                    (query, min_confidence, limit * 2),
-                ).fetchall()
+                if namespaces:
+                    placeholders = ",".join("?" * len(namespaces))
+                    rows = self._conn.execute(
+                        f"""
+                        SELECT hm.*, rank
+                        FROM hive_fts fts
+                        JOIN hive_memories hm ON fts.rowid = hm.rowid
+                        WHERE fts MATCH ?
+                        AND hm.confidence >= ?
+                        AND hm.namespace IN ({placeholders})
+                        ORDER BY rank
+                        LIMIT ?
+                        """,
+                        (query, min_confidence, *namespaces, limit),
+                    ).fetchall()
+                else:
+                    rows = self._conn.execute(
+                        """
+                        SELECT hm.*, rank
+                        FROM hive_fts fts
+                        JOIN hive_memories hm ON fts.rowid = hm.rowid
+                        WHERE fts MATCH ?
+                        AND hm.confidence >= ?
+                        ORDER BY rank
+                        LIMIT ?
+                        """,
+                        (query, min_confidence, limit),
+                    ).fetchall()
             except sqlite3.OperationalError:
                 # FTS5 fallback: simple LIKE search
-                rows = self._conn.execute(
-                    """
-                    SELECT *, 0.0 as rank
-                    FROM hive_memories
-                    WHERE (key LIKE ? OR value LIKE ?)
-                    AND confidence >= ?
-                    LIMIT ?
-                    """,
-                    (f"%{query}%", f"%{query}%", min_confidence, limit * 2),
-                ).fetchall()
+                if namespaces:
+                    placeholders = ",".join("?" * len(namespaces))
+                    rows = self._conn.execute(
+                        f"""
+                        SELECT *, 0.0 as rank
+                        FROM hive_memories
+                        WHERE (key LIKE ? OR value LIKE ?)
+                        AND confidence >= ?
+                        AND namespace IN ({placeholders})
+                        LIMIT ?
+                        """,
+                        (f"%{query}%", f"%{query}%", min_confidence, *namespaces, limit),
+                    ).fetchall()
+                else:
+                    rows = self._conn.execute(
+                        """
+                        SELECT *, 0.0 as rank
+                        FROM hive_memories
+                        WHERE (key LIKE ? OR value LIKE ?)
+                        AND confidence >= ?
+                        LIMIT ?
+                        """,
+                        (f"%{query}%", f"%{query}%", min_confidence, limit),
+                    ).fetchall()
 
-        results: list[dict[str, Any]] = []
-        for row in rows:
-            d = self._row_to_dict(row)
-            if namespaces and d["namespace"] not in namespaces:
-                continue
-            results.append(d)
-
-        return results[:limit]
+        return [self._row_to_dict(row) for row in rows]
 
     def list_namespaces(self) -> list[str]:
         """Return distinct namespace names that have at least one entry."""

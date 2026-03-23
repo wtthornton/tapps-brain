@@ -206,7 +206,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Hive (sequential)
 
 #### 021-B: Review `hive.py` — cross-agent sharing (lines 1–300)
-- [ ] Review `src/tapps_brain/hive.py` lines 1–300. Focus on: `HiveStore` init, SQLite WAL + FTS5 setup, namespace management, `save()` / `search()` / `recall()` operations, thread safety. Fix all issues. Commit: `review(story-021.2): hive.py HiveStore core review`
+- [x] Review `src/tapps_brain/hive.py` lines 1–300. Focus on: `HiveStore` init, SQLite WAL + FTS5 setup, namespace management, `save()` / `search()` / `recall()` operations, thread safety. Fix all issues. Commit: `review(story-021.2): hive.py HiveStore core review`
 
 #### 021-C: Review `hive.py` — AgentRegistry and PropagationEngine (lines 301–end)
 - [ ] Review `src/tapps_brain/hive.py` lines 301–end. Focus on: `AgentRegistry` YAML persistence, `PropagationEngine` routing logic (private/domain/hive), `ConflictPolicy` resolution correctness, backward compatibility when Hive disabled. Fix all issues. Commit: `review(story-021.3): hive.py registry and propagation review`
