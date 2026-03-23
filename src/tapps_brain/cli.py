@@ -53,6 +53,8 @@ profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
 hive_app = typer.Typer(help="Manage the Hive shared brain.", no_args_is_help=True)
 agent_app = typer.Typer(help="Manage Hive agent registrations.", no_args_is_help=True)
 
+openclaw_app = typer.Typer(help="OpenClaw integration tools.", no_args_is_help=True)
+
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
 app.add_typer(federation_app, name="federation")
@@ -60,6 +62,7 @@ app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(profile_app, name="profile")
 app.add_typer(hive_app, name="hive")
 app.add_typer(agent_app, name="agent")
+app.add_typer(openclaw_app, name="openclaw")
 
 # ---------------------------------------------------------------------------
 # Global options
@@ -1512,6 +1515,89 @@ def agent_delete(
     else:
         typer.echo(f"Agent '{agent_id}' not found.", err=True)
         raise typer.Exit(code=1)
+
+
+# ===================================================================
+# OPENCLAW COMMANDS
+# ===================================================================
+
+
+@openclaw_app.command("migrate")
+def openclaw_migrate(
+    workspace: Annotated[
+        Path | None,
+        typer.Option(
+            "--workspace",
+            "-w",
+            help="OpenClaw workspace directory (defaults to cwd).",
+        ),
+    ] = None,
+    agent_id: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-id",
+            help="Agent ID for locating memory-core SQLite database.",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be imported without writing."),
+    ] = False,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Migrate memories from an OpenClaw workspace to tapps-brain.
+
+    Imports MEMORY.md sections, daily notes (memory/YYYY-MM-DD.md), and
+    memory-core's SQLite index if found at ~/.openclaw/memory/<agentId>.sqlite.
+
+    Existing entries are never overwritten (tapps-brain wins). Running the
+    command twice produces no duplicates.
+    """
+    from tapps_brain.migration import migrate_from_workspace
+
+    workspace_dir = (workspace or Path.cwd()).resolve()
+
+    if dry_run:
+        result = migrate_from_workspace(
+            None,
+            workspace_dir,
+            agent_id=agent_id,
+            dry_run=True,
+        )
+        if as_json:
+            _output(result, as_json=True)
+        else:
+            typer.echo(f"Would import {result['imported']} entries from {workspace_dir}")
+            typer.echo(f"  MEMORY.md sections:      {result['memory_md']}")
+            typer.echo(f"  Daily notes:             {result['daily_notes']}")
+            typer.echo(f"  memory-core SQLite:      {result['memory_core_sqlite']}")
+            if result.get("memory_core_db"):
+                typer.echo(f"  memory-core DB:          {result['memory_core_db']}")
+        return
+
+    store = _get_store(project_dir)
+    try:
+        result = migrate_from_workspace(
+            store,
+            workspace_dir,
+            agent_id=agent_id,
+            dry_run=False,
+        )
+        if as_json:
+            _output(result, as_json=True)
+        else:
+            typer.echo(
+                f"Migration complete: {result['imported']} imported, "
+                f"{result['skipped']} skipped, {result['errors']} errors"
+            )
+            typer.echo(f"  MEMORY.md sections:      {result['memory_md']}")
+            typer.echo(f"  Daily notes:             {result['daily_notes']}")
+            typer.echo(f"  memory-core SQLite:      {result['memory_core_sqlite']}")
+            if result.get("memory_core_db"):
+                typer.echo(f"  memory-core DB:          {result['memory_core_db']}")
+    finally:
+        store.close()
 
 
 # ---------------------------------------------------------------------------

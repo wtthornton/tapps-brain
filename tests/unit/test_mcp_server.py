@@ -142,6 +142,8 @@ class TestCoreTools:
             "memory_list_tags",
             "memory_update_tags",
             "memory_entries_by_tag",
+            # OpenClaw migration tool
+            "openclaw_migrate",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"

@@ -1580,6 +1580,52 @@ def create_server(  # noqa: PLR0915
         )
 
     # ------------------------------------------------------------------
+    # OpenClaw migration tool
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def openclaw_migrate(
+        workspace_dir: str,
+        agent_id: str = "",
+        dry_run: bool = False,
+    ) -> str:
+        """Migrate memories from an OpenClaw workspace to tapps-brain.
+
+        Imports MEMORY.md sections (with tier inference), daily notes
+        (memory/YYYY-MM-DD.md as context-tier), and memory-core's SQLite
+        database (~/.openclaw/memory/<agentId>.sqlite) if found.
+
+        Existing entries are never overwritten (tapps-brain wins).  The
+        operation is idempotent — running it twice produces no duplicates.
+
+        Args:
+            workspace_dir: Path to the OpenClaw workspace root.
+            agent_id: Agent ID for locating memory-core SQLite (optional).
+            dry_run: If true, count what would be imported without writing.
+
+        Returns:
+            JSON with keys: imported, skipped, errors, memory_md,
+            daily_notes, memory_core_sqlite, memory_core_db.
+            In dry-run mode the key ``dry_run`` is also present (true).
+        """
+        from tapps_brain.migration import migrate_from_workspace
+
+        resolved = Path(workspace_dir).resolve() if workspace_dir else Path.cwd().resolve()
+        aid: str | None = agent_id.strip() or None
+
+        try:
+            result = migrate_from_workspace(
+                None if dry_run else store,
+                resolved,
+                agent_id=aid,
+                dry_run=dry_run,
+            )
+            return json.dumps(result)
+        except (OSError, ValueError) as exc:
+            logger.exception("openclaw_migrate_error", workspace=workspace_dir)
+            return json.dumps({"error": str(exc), "imported": 0, "skipped": 0, "errors": 1})
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
