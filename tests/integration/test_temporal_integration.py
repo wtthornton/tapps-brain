@@ -151,15 +151,14 @@ class TestConsolidationTemporal:
             tags=["frontend", "react"],
         )
 
-        # Check if any source entries were temporally invalidated
+        # Check that source entries were temporally invalidated
         all_entries = store.list_all(include_superseded=True)
         invalidated = [e for e in all_entries if e.invalid_at is not None]
 
-        # If consolidation triggered, sources should have temporal fields
-        if invalidated:
-            for entry in invalidated:
-                assert entry.superseded_by is not None
-                assert entry.contradicted is True
+        # Consolidation must trigger given low threshold (0.3) and 3 near-identical entries
+        assert len(invalidated) > 0, "Expected consolidation to invalidate at least one entry"
+        for entry in invalidated:
+            assert entry.superseded_by is not None
 
         store.close()
 

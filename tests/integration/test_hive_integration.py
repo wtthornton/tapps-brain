@@ -28,7 +28,9 @@ from tapps_brain.store import MemoryStore
 
 @pytest.fixture()
 def hive(tmp_path: Path) -> HiveStore:
-    return HiveStore(db_path=tmp_path / "hive.db")
+    h = HiveStore(db_path=tmp_path / "hive.db")
+    yield h
+    h.close()
 
 
 @pytest.fixture()
@@ -141,7 +143,7 @@ class TestConflictResolutionIntegration:
         assert got["value"] == "Microservices"
 
 
-class TestAutoPropagatioIntegration:
+class TestAutoPropagationIntegration:
     """Auto-propagation based on tier configuration."""
 
     def test_auto_propagate_architectural_to_hive(self, tmp_path: Path, hive: HiveStore) -> None:

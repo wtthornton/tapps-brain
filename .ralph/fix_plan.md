@@ -354,7 +354,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/integration/test_federation_integration.py` (472 lines), `test_cross_profile_integration.py` (453 lines), and `test_doc_validation_integration.py` (442 lines). Check: federation hub lifecycle, cross-profile isolation, validation with real DB. Fix all issues. Commit: `review(story-025.3): federation, cross-profile, validation integration tests review`
 
 #### 025-D: Review remaining integration tests
-- [ ] Review `tests/integration/test_recall_integration.py` (275), `test_hive_integration.py` (215), `test_temporal_integration.py` (204), `test_session_index_integration.py` (191), `test_graph_integration.py` (174), `test_observability_integration.py` (153), `test_reinforcement_integration.py` (131), `test_extraction_integration.py` (108). Fix all issues. Commit: `review(story-025.4): remaining integration tests review`
+- [x] Review `tests/integration/test_recall_integration.py` (275), `test_hive_integration.py` (215), `test_temporal_integration.py` (204), `test_session_index_integration.py` (191), `test_graph_integration.py` (174), `test_observability_integration.py` (153), `test_reinforcement_integration.py` (131), `test_extraction_integration.py` (108). Fix all issues. Commit: `review(story-025.4): remaining integration tests review`
 
 ### Phase 2: Test Infrastructure & Benchmarks
 

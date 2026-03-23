@@ -152,7 +152,8 @@ def populated_store(tmp_path):
         scope="shared",
     )
 
-    return store
+    yield store
+    store.close()
 
 
 class TestRecallWithFilters:

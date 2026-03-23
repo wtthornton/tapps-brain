@@ -26,7 +26,8 @@ def graph_store(tmp_path):
     store.save(key="svc-cache", value="CacheLayer manages TokenStore", tier="pattern")
     store.save(key="svc-db", value="DatabaseLayer manages DataStore", tier="architectural")
     store.save(key="plain-note", value="Remember to update docs", tier="context")
-    return store
+    yield store
+    store.close()
 
 
 class TestGraphPersistenceRoundTrip:

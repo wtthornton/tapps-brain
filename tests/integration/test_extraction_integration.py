@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 def store(tmp_path: Path) -> MemoryStore:
     """Create a real MemoryStore backed by SQLite in a temp directory."""
     s = MemoryStore(tmp_path)
-    yield s  # type: ignore[misc]
+    yield s
     s.close()
 
 
