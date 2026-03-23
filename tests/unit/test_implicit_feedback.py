@@ -1,4 +1,4 @@
-"""Unit tests for implicit feedback (STORY-029.3 part 1 — 029-4a).
+"""Unit tests for implicit feedback (STORY-029.3 — 029-4a and 029-4b).
 
 Tests cover:
 - recall-then-reinforce within window → implicit_positive (utility_score=1.0)
@@ -10,6 +10,10 @@ Tests cover:
 - reinforce of un-recalled entry does not emit positive feedback
 - session_id parameter on save() is accepted
 - timing edge cases: reinforce exactly at window boundary
+- STORY-029-4b: _jaccard_similarity and _token_overlap_ratio helpers
+- STORY-029-4b: query reformulation detection (_detect_reformulation)
+- STORY-029-4b: recall-then-store correction detection (_detect_correction)
+- STORY-029-4b: integration — reformulation and correction events emitted
 """
 
 from __future__ import annotations
@@ -424,3 +428,432 @@ class TestConfigurableWindow:
             assert neg[0].entry_key == "k_short"
         finally:
             s.close()
+
+
+# ---------------------------------------------------------------------------
+# STORY-029-4b: pure helper functions
+# ---------------------------------------------------------------------------
+
+
+class TestJaccardSimilarity:
+    """Unit tests for store._jaccard_similarity (module-level helper)."""
+
+    def setup_method(self) -> None:
+        from tapps_brain.store import _jaccard_similarity
+
+        self.fn = _jaccard_similarity
+
+    def test_identical_strings(self) -> None:
+        assert self.fn("hello world", "hello world") == pytest.approx(1.0)
+
+    def test_no_overlap(self) -> None:
+        assert self.fn("foo bar", "baz qux") == pytest.approx(0.0)
+
+    def test_partial_overlap(self) -> None:
+        # Tokens: {a, b, c} vs {b, c, d} → |intersect|=2, |union|=4 → 0.5
+        assert self.fn("a b c", "b c d") == pytest.approx(0.5)
+
+    def test_both_empty(self) -> None:
+        assert self.fn("", "") == pytest.approx(1.0)
+
+    def test_one_empty(self) -> None:
+        assert self.fn("hello", "") == pytest.approx(0.0)
+
+    def test_case_insensitive(self) -> None:
+        assert self.fn("Hello World", "hello world") == pytest.approx(1.0)
+
+    def test_threshold_just_above_0_5(self) -> None:
+        # Tokens: {a, b, c, d} vs {a, b, c, x} → |i|=3, |u|=5 → 0.6 > 0.5
+        assert self.fn("a b c d", "a b c x") > 0.5
+
+    def test_threshold_exactly_0_5(self) -> None:
+        # {a, b, c} vs {b, c, d} → 2/4 = 0.5 (not > 0.5)
+        result = self.fn("a b c", "b c d")
+        assert result == pytest.approx(0.5)
+        assert result <= 0.5  # boundary: not > 0.5
+
+
+class TestTokenOverlapRatio:
+    """Unit tests for store._token_overlap_ratio (module-level helper)."""
+
+    def setup_method(self) -> None:
+        from tapps_brain.store import _token_overlap_ratio
+
+        self.fn = _token_overlap_ratio
+
+    def test_identical_strings(self) -> None:
+        assert self.fn("hello world", "hello world") == pytest.approx(1.0)
+
+    def test_no_overlap(self) -> None:
+        assert self.fn("foo bar", "baz qux") == pytest.approx(0.0)
+
+    def test_one_empty(self) -> None:
+        assert self.fn("hello", "") == pytest.approx(0.0)
+
+    def test_both_empty(self) -> None:
+        assert self.fn("", "") == pytest.approx(0.0)
+
+    def test_subset_overlap(self) -> None:
+        # {a, b} vs {a, b, c, d} → intersection=2, min=2 → 1.0
+        assert self.fn("a b", "a b c d") == pytest.approx(1.0)
+
+    def test_partial_overlap_above_threshold(self) -> None:
+        # {a, b, c, d, e} vs {a, b, c, x, y} → |i|=3, min=5 → 0.6 > 0.4
+        assert self.fn("a b c d e", "a b c x y") > 0.4
+
+    def test_partial_overlap_below_threshold(self) -> None:
+        # {a, b, c, d, e} vs {a, x, y, z, w} → |i|=1, min=5 → 0.2
+        assert self.fn("a b c d e", "a x y z w") < 0.4
+
+    def test_case_insensitive(self) -> None:
+        assert self.fn("Hello World", "hello world") == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# STORY-029-4b: _detect_reformulation helper (unit level)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectReformulation:
+    """Direct tests of MemoryStore._detect_reformulation (must hold lock)."""
+
+    def test_empty_query_log_returns_empty(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            result = store._detect_reformulation("sess", "some query", now)
+        assert result == []
+
+    def test_below_threshold_no_reformulation(self, store: MemoryStore) -> None:
+        # Jaccard similarity is very low
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [("completely different words here", ["k1"], now - 10)]
+            result = store._detect_reformulation("sess", "unrelated topic query", now)
+        assert result == []
+
+    def test_above_threshold_returns_keys(self, store: MemoryStore) -> None:
+        # "how to fix python error" vs "how to fix python bug" → high Jaccard
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [
+                ("how to fix python error", ["k1", "k2"], now - 20)
+            ]
+            result = store._detect_reformulation("sess", "how to fix python bug", now)
+        keys = [k for k, _ in result]
+        assert "k1" in keys
+        assert "k2" in keys
+
+    def test_similarity_scores_returned(self, store: MemoryStore) -> None:
+        # Use a pair guaranteed to have Jaccard > 0.5
+        # "how to fix python error" vs "how to fix python bug" → 4/6 ≈ 0.667
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [
+                ("how to fix python error", ["k1"], now - 10)
+            ]
+            result = store._detect_reformulation("sess", "how to fix python bug", now)
+        assert len(result) >= 1
+        for _key, sim in result:
+            assert 0.0 <= sim <= 1.0
+
+    def test_expired_query_pruned_and_not_returned(self, store: MemoryStore) -> None:
+        # Query older than 60s is expired
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [
+                ("how to fix python error", ["k1"], now - 70)  # > 60s
+            ]
+            result = store._detect_reformulation("sess", "how to fix python bug", now)
+        assert result == []
+        # Pruned from log
+        with store._lock:
+            assert store._session_query_log.get("sess", []) == []
+
+    def test_within_window_included(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [
+                ("how to fix python error", ["k1"], now - 59)  # just within 60s
+            ]
+            result = store._detect_reformulation("sess", "how to fix python bug error", now)
+        # Within window and likely similar → should be detected
+        keys = [k for k, _ in result]
+        assert "k1" in keys
+
+    def test_past_query_with_no_recalled_keys(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess"] = [("how to fix python error", [], now - 10)]
+            result = store._detect_reformulation("sess", "how to fix python bug", now)
+        # No keys to emit for
+        assert result == []
+
+    def test_multiple_sessions_independent(self, store: MemoryStore) -> None:
+        # "how to fix python error" vs "how to fix python bug" → Jaccard 4/6 ≈ 0.667 > 0.5
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess-A"] = [("how to fix python error", ["k_a"], now - 10)]
+            store._session_query_log["sess-B"] = [("completely different topic", ["k_b"], now - 10)]
+        with store._lock:
+            result_a = store._detect_reformulation("sess-A", "how to fix python bug", now)
+            result_b = store._detect_reformulation("sess-B", "how to fix python bug", now)
+        assert any(k == "k_a" for k, _ in result_a)
+        # sess-B query is unrelated — should not match
+        assert not any(k == "k_b" for k, _ in result_b)
+
+
+# ---------------------------------------------------------------------------
+# STORY-029-4b: _detect_correction helper (unit level)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectCorrection:
+    """Direct tests of MemoryStore._detect_correction (must hold lock)."""
+
+    def test_empty_recalled_values_returns_empty(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            result = store._detect_correction("sess", "some new value", now)
+        assert result == []
+
+    def test_low_overlap_no_correction(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess"] = [
+                ("k1", "completely unrelated content", now - 10)
+            ]
+            result = store._detect_correction("sess", "totally different new text", now)
+        assert result == []
+
+    def test_high_overlap_returns_correction(self, store: MemoryStore) -> None:
+        # Saved value shares many tokens with recalled value
+        now = time.monotonic()
+        recalled_val = "python memory management garbage collection heap stack"
+        saved_val = "python memory management garbage collection reference counting"
+        with store._lock:
+            store._session_recalled_values["sess"] = [("k1", recalled_val, now - 10)]
+            result = store._detect_correction("sess", saved_val, now)
+        keys = [k for k, _ in result]
+        assert "k1" in keys
+
+    def test_overlap_scores_returned(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        recalled_val = "a b c d e"
+        saved_val = "a b c x y"
+        with store._lock:
+            store._session_recalled_values["sess"] = [("k1", recalled_val, now - 10)]
+            result = store._detect_correction("sess", saved_val, now)
+        if result:
+            for _key, overlap in result:
+                assert 0.0 <= overlap <= 1.0
+
+    def test_matched_entry_consumed(self, store: MemoryStore) -> None:
+        """Corrected entries are removed to prevent double-emission."""
+        now = time.monotonic()
+        recalled_val = "python memory management garbage collection heap stack"
+        saved_val = "python memory management garbage collection reference counting"
+        with store._lock:
+            store._session_recalled_values["sess"] = [("k1", recalled_val, now - 10)]
+            store._detect_correction("sess", saved_val, now)
+        with store._lock:
+            remaining = store._session_recalled_values.get("sess", [])
+        assert not any(k == "k1" for k, _, _ in remaining)
+
+    def test_unmatched_entry_preserved(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess"] = [
+                ("k_low", "totally different content here abc", now - 10),
+                ("k_high", "python memory management heap stack allocation", now - 10),
+            ]
+            saved_val = "python memory management garbage collection heap"
+            result = store._detect_correction("sess", saved_val, now)
+        keys = [k for k, _ in result]
+        assert "k_high" in keys
+        with store._lock:
+            remaining = store._session_recalled_values.get("sess", [])
+        # k_low should still be in remaining (not matched)
+        remaining_keys = [k for k, _, _ in remaining]
+        assert "k_low" in remaining_keys
+
+    def test_expired_entry_pruned(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        # 400s old, well beyond default 300s window
+        recalled_val = "python memory management heap stack garbage"
+        saved_val = "python memory management garbage collection heap"
+        with store._lock:
+            store._session_recalled_values["sess"] = [("k1", recalled_val, now - 400)]
+            result = store._detect_correction("sess", saved_val, now)
+        assert result == []
+        with store._lock:
+            remaining = store._session_recalled_values.get("sess", [])
+        assert remaining == []
+
+    def test_exactly_at_40_percent_threshold_not_triggered(self, store: MemoryStore) -> None:
+        # min(5, 5) = 5; overlap = 2 tokens → 2/5 = 0.4 NOT > 0.4
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess"] = [
+                ("k1", "a b c d e", now - 10)
+            ]
+            result = store._detect_correction("sess", "a b x y z", now)
+        # 2/5 = 0.4 — NOT above threshold (strict >)
+        assert result == []
+
+    def test_just_above_40_percent_triggered(self, store: MemoryStore) -> None:
+        # min(5, 5)=5; overlap=3 → 3/5=0.6 > 0.4
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess"] = [
+                ("k1", "a b c d e", now - 10)
+            ]
+            result = store._detect_correction("sess", "a b c x y", now)
+        assert len(result) == 1
+        assert result[0][0] == "k1"
+
+
+# ---------------------------------------------------------------------------
+# STORY-029-4b: integration — reformulation events via recall()
+# ---------------------------------------------------------------------------
+
+
+class TestReformulationIntegration:
+    """Full integration: two recalls with similar queries emit implicit_correction."""
+
+    def test_reformulation_emits_implicit_correction(self, store: MemoryStore) -> None:
+        """Simulate Q1 recall then Q2 (reformulation) → implicit_correction for Q1 entries."""
+        store.save("arch_entry", "python memory management architecture pattern", tier="architectural")
+
+        # Manually plant the query log to simulate Q1 recall returning arch_entry
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess-r"] = [
+                ("python memory management architecture", ["arch_entry"], now - 20)
+            ]
+
+        # Q2 is similar to Q1 within 60s
+        store.recall("python memory architecture management", session_id="sess-r")
+
+        events = store.query_feedback(event_type="implicit_correction")
+        reformulation_events = [
+            e for e in events if e.details.get("type") == "reformulation"
+        ]
+        assert len(reformulation_events) >= 1
+        assert any(e.entry_key == "arch_entry" for e in reformulation_events)
+
+    def test_reformulation_utility_score(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess-u"] = [
+                ("python memory management architecture", ["k_entry"], now - 15)
+            ]
+        store.recall("python memory architecture management design", session_id="sess-u")
+        events = store.query_feedback(event_type="implicit_correction")
+        reform = [e for e in events if e.details.get("type") == "reformulation"]
+        if reform:
+            assert all(e.utility_score == pytest.approx(-0.5) for e in reform)
+
+    def test_no_reformulation_without_session_id(self, store: MemoryStore) -> None:
+        store.recall("python memory architecture")  # no session
+        store.recall("python memory architecture management")  # no session
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+    def test_reformulation_only_within_60s_window(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            # Old query (> 60s) should not trigger reformulation
+            store._session_query_log["sess-w"] = [
+                ("python memory management architecture", ["k_old"], now - 70)
+            ]
+        store.recall("python memory architecture management", session_id="sess-w")
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+    def test_dissimilar_queries_no_reformulation(self, store: MemoryStore) -> None:
+        now = time.monotonic()
+        with store._lock:
+            store._session_query_log["sess-d"] = [
+                ("database schema migration strategy", ["k_db"], now - 20)
+            ]
+        store.recall("unrelated frontend css layout styles", session_id="sess-d")
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+
+# ---------------------------------------------------------------------------
+# STORY-029-4b: integration — correction events via save()
+# ---------------------------------------------------------------------------
+
+
+class TestCorrectionIntegration:
+    """Full integration: recall then save with overlap → implicit_correction."""
+
+    def test_correction_emits_implicit_correction(self, store: MemoryStore) -> None:
+        """Recall entry then save overlapping content → correction event."""
+        recalled_val = "python memory management garbage collection heap stack allocation"
+        store.save("orig_entry", recalled_val, tier="pattern")
+
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess-c"] = [("orig_entry", recalled_val, now - 10)]
+
+        # Save similar content (correction of the recalled entry)
+        saved_val = "python memory management garbage collection reference counting heap"
+        store.save("new_entry", saved_val, tier="pattern", session_id="sess-c")
+
+        events = store.query_feedback(event_type="implicit_correction")
+        correction_events = [e for e in events if e.details.get("type") == "correction"]
+        assert len(correction_events) >= 1
+        assert any(e.entry_key == "orig_entry" for e in correction_events)
+
+    def test_correction_utility_score(self, store: MemoryStore) -> None:
+        recalled_val = "python memory management garbage collection heap stack"
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess-cu"] = [("k_orig", recalled_val, now - 5)]
+
+        saved_val = "python memory management garbage collection reference counting"
+        store.save("k_new", saved_val, tier="pattern", session_id="sess-cu")
+
+        events = store.query_feedback(event_type="implicit_correction")
+        corrections = [e for e in events if e.details.get("type") == "correction"]
+        if corrections:
+            assert all(e.utility_score == pytest.approx(-0.3) for e in corrections)
+
+    def test_no_correction_without_session_id(self, store: MemoryStore) -> None:
+        recalled_val = "python memory management garbage collection"
+        store.save("orig", recalled_val, tier="pattern")
+        store.save("new", recalled_val + " heap stack", tier="pattern")  # no session
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+    def test_no_correction_when_no_recalled_values(self, store: MemoryStore) -> None:
+        store.save("entry", "python memory management heap", tier="pattern", session_id="sess-none")
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+    def test_low_overlap_no_correction(self, store: MemoryStore) -> None:
+        recalled_val = "unrelated topic database schema migration indexing"
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess-low"] = [("k_orig", recalled_val, now - 5)]
+
+        store.save("k_new", "frontend css layout grid flexbox", tier="context", session_id="sess-low")
+        events = store.query_feedback(event_type="implicit_correction")
+        assert events == []
+
+    def test_recalled_value_consumed_after_correction(self, store: MemoryStore) -> None:
+        recalled_val = "python memory management garbage collection heap"
+        now = time.monotonic()
+        with store._lock:
+            store._session_recalled_values["sess-con"] = [("k1", recalled_val, now - 5)]
+
+        store.save("k_new", "python memory management garbage heap allocation", tier="pattern", session_id="sess-con")
+
+        # Second save with same session — should NOT emit again (k1 consumed)
+        store.save("k_new2", "python memory management garbage collection allocation", tier="pattern", session_id="sess-con")
+
+        events = store.query_feedback(event_type="implicit_correction")
+        corrections = [e for e in events if e.details.get("type") == "correction" and e.entry_key == "k1"]
+        assert len(corrections) == 1  # Only emitted once

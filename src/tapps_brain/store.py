@@ -88,6 +88,42 @@ def _validate_write_rules(
 # RAG safety match count threshold for blocking content.
 _RAG_BLOCK_THRESHOLD = 3
 
+# Reformulation detection window in seconds (STORY-029-4b).
+# Queries issued within this window with Jaccard similarity > 0.5 are
+# treated as reformulations of each other.
+_REFORMULATION_WINDOW = 60
+
+
+def _jaccard_similarity(a: str, b: str) -> float:
+    """Jaccard similarity between token sets of two strings.
+
+    Tokens are whitespace-split lowercased words.  Returns 1.0 for two
+    empty strings, 0.0 if only one is empty.
+    """
+    tokens_a = set(a.lower().split())
+    tokens_b = set(b.lower().split())
+    if not tokens_a and not tokens_b:
+        return 1.0
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = len(tokens_a & tokens_b)
+    union = len(tokens_a | tokens_b)
+    return intersection / union
+
+
+def _token_overlap_ratio(a: str, b: str) -> float:
+    """Token overlap ratio between two strings.
+
+    Returns |A ∩ B| / min(|A|, |B|).  0.0 if either string is empty.
+    Tokens are whitespace-split lowercased words.
+    """
+    tokens_a = set(a.lower().split())
+    tokens_b = set(b.lower().split())
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = len(tokens_a & tokens_b)
+    return intersection / min(len(tokens_a), len(tokens_b))
+
 
 @dataclass
 class ConsolidationConfig:
@@ -177,6 +213,14 @@ class MemoryStore:
         # All access must be protected by self._lock.
         self._session_recall_log: dict[str, list[tuple[str, float]]] = {}
         self._session_reinforced: dict[str, set[str]] = {}
+
+        # EPIC-029 story 029-4b: In-memory tracking for reformulation + correction.
+        # _session_query_log: session_id → list of (query_text, recalled_keys, mono_time)
+        #   Used to detect when a new query is a reformulation of a recent one.
+        # _session_recalled_values: session_id → list of (entry_key, entry_value, mono_time)
+        #   Used to detect when a save() corrects a recently recalled entry.
+        self._session_query_log: dict[str, list[tuple[str, list[str], float]]] = {}
+        self._session_recalled_values: dict[str, list[tuple[str, str, float]]] = {}
 
         logger.info(
             "memory_store_initialized",
@@ -444,6 +488,27 @@ class MemoryStore:
                 and not self._consolidation_in_progress
             ):
                 self._maybe_consolidate(entry)
+
+        # EPIC-029 story 029-4b: recall-then-store correction detection.
+        # If this save follows a recent recall (within the feedback window) and the
+        # saved value has > 40% token overlap with a recalled entry's value, it is
+        # treated as a correction: emit implicit_correction (utility_score=-0.3) for
+        # those recalled entries.
+        if session_id is not None:
+            _correction_targets: list[tuple[str, float]] = []
+            _now_corr = time.monotonic()
+            with self._lock:
+                _correction_targets = self._detect_correction(
+                    session_id, entry.value, _now_corr
+                )
+            for _ck, _overlap in _correction_targets:
+                self._emit_implicit_feedback(
+                    "implicit_correction",
+                    _ck,
+                    session_id,
+                    -0.3,
+                    details={"type": "correction", "token_overlap": round(_overlap, 4)},
+                )
 
         return entry
 
@@ -1147,7 +1212,7 @@ class MemoryStore:
         with MetricsTimer(self._metrics, "store.recall_ms"):
             result = self._recall_orchestrator.recall(message, **kwargs)
 
-        # EPIC-029 story 029.3: implicit feedback tracking
+        # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking
         if session_id is not None:
             # Flush entries whose window has expired (lazy negative detection)
             _expired: list[str] = []
@@ -1156,19 +1221,46 @@ class MemoryStore:
             for _k in _expired:
                 self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
 
-            # Record newly recalled entry keys for future tracking
+            # Build list of recalled entry keys from this result
             _memories: list[Any] = getattr(result, "memories", [])
             _recalled_keys: list[str] = [
                 str(m.get("key", ""))
                 for m in _memories
                 if isinstance(m, dict) and m.get("key")
             ]
-            if _recalled_keys:
-                _now_mono = time.monotonic()
-                with self._lock:
-                    _log = self._session_recall_log.setdefault(session_id, [])
+
+            # EPIC-029 story 029-4b: reformulation detection.
+            # Compare the current query against recent queries in the session log.
+            # If Jaccard similarity > 0.5 within 60s, emit implicit_correction for
+            # the entry keys recalled by the similar past query.
+            _reform_targets: list[tuple[str, float]] = []
+            _now_track = time.monotonic()
+            with self._lock:
+                _reform_targets = self._detect_reformulation(
+                    session_id, message, _now_track
+                )
+                # Update query log with current query + recalled keys (after detection
+                # so we don't match the current query against itself)
+                _q_log = self._session_query_log.setdefault(session_id, [])
+                _q_log.append((message, list(_recalled_keys), _now_track))
+                # Record recalled keys + values for positive/negative/correction tracking
+                if _recalled_keys:
+                    _r_log = self._session_recall_log.setdefault(session_id, [])
+                    _val_log = self._session_recalled_values.setdefault(session_id, [])
                     for _k in _recalled_keys:
-                        _log.append((_k, _now_mono))
+                        _r_log.append((_k, _now_track))
+                        _entry_val = self._entries.get(_k)
+                        if _entry_val is not None:
+                            _val_log.append((_k, _entry_val.value, _now_track))
+
+            for _k, _sim in _reform_targets:
+                self._emit_implicit_feedback(
+                    "implicit_correction",
+                    _k,
+                    session_id,
+                    -0.5,
+                    details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
+                )
 
         return result
 
@@ -1865,11 +1957,18 @@ class MemoryStore:
         return False
 
     def _emit_implicit_feedback(
-        self, event_type: str, entry_key: str, session_id: str | None, utility_score: float
+        self,
+        event_type: str,
+        entry_key: str,
+        session_id: str | None,
+        utility_score: float,
+        *,
+        details: dict[str, Any] | None = None,
     ) -> None:
         """Emit an implicit feedback event (best-effort, never raises).
 
         Called outside ``self._lock`` to avoid holding the lock during I/O.
+        Optional *details* dict is forwarded to ``FeedbackEvent.details``.
         """
         try:
             from tapps_brain.feedback import FeedbackEvent
@@ -1879,6 +1978,7 @@ class MemoryStore:
                 entry_key=entry_key,
                 session_id=session_id,
                 utility_score=utility_score,
+                details=details or {},
             )
             self._get_feedback_store().record(event)
             self._metrics.increment(f"store.feedback.{event_type}")
@@ -1888,6 +1988,70 @@ class MemoryStore:
                 event_type=event_type,
                 entry_key=entry_key,
             )
+
+    # ---- Implicit feedback: reformulation + correction (EPIC-029 story 029-4b) ----
+
+    def _detect_reformulation(
+        self, session_id: str, current_query: str, now_mono: float
+    ) -> list[tuple[str, float]]:
+        """Detect query reformulations and return (entry_key, jaccard_sim) pairs.
+
+        Must be called while holding ``self._lock``.
+
+        Compares *current_query* against recent queries in ``_session_query_log``
+        for *session_id*.  Any past query within ``_REFORMULATION_WINDOW`` seconds
+        whose Jaccard similarity to *current_query* exceeds 0.5 is treated as a
+        reformulation: the entry keys recalled by that past query are returned as
+        targets for an ``implicit_correction`` event (utility_score=-0.5).
+
+        Old entries (> ``_REFORMULATION_WINDOW`` seconds) are pruned lazily.
+        """
+        q_log = self._session_query_log.get(session_id, [])
+        targets: list[tuple[str, float]] = []
+        remaining: list[tuple[str, list[str], float]] = []
+        for past_query, past_keys, past_time in q_log:
+            age = now_mono - past_time
+            if age > _REFORMULATION_WINDOW:
+                continue  # prune expired, do not keep
+            remaining.append((past_query, past_keys, past_time))
+            sim = _jaccard_similarity(current_query, past_query)
+            if sim > 0.5:
+                for key in past_keys:
+                    targets.append((key, sim))
+        self._session_query_log[session_id] = remaining
+        return targets
+
+    def _detect_correction(
+        self, session_id: str, saved_value: str, now_mono: float
+    ) -> list[tuple[str, float]]:
+        """Detect recall-then-store corrections; return (entry_key, overlap) pairs.
+
+        Must be called while holding ``self._lock``.
+
+        For each recently recalled entry in ``_session_recalled_values`` for
+        *session_id* that is still within the implicit feedback window and whose
+        value has > 40% token overlap with *saved_value*, an
+        ``implicit_correction`` event (utility_score=-0.3) is warranted.
+
+        Matched entries are consumed (removed) to prevent double-emission.
+        Expired entries are pruned lazily.
+        """
+        window = self._get_implicit_feedback_window()
+        val_log = self._session_recalled_values.get(session_id, [])
+        targets: list[tuple[str, float]] = []
+        remaining: list[tuple[str, str, float]] = []
+        for key, recalled_value, recall_time in val_log:
+            age = now_mono - recall_time
+            if age > window:
+                continue  # expired: prune
+            overlap = _token_overlap_ratio(saved_value, recalled_value)
+            if overlap > 0.4:
+                targets.append((key, overlap))
+                # Consumed: don't re-add to remaining
+            else:
+                remaining.append((key, recalled_value, recall_time))
+        self._session_recalled_values[session_id] = remaining
+        return targets
 
     # ---- End implicit feedback helpers ----
 
