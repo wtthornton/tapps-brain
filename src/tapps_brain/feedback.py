@@ -101,6 +101,17 @@ class FeedbackConfig(BaseModel):
             "Default False preserves open-enum behaviour."
         ),
     )
+    implicit_feedback_window_seconds: int = Field(
+        default=300,
+        gt=0,
+        description=(
+            "Window in seconds for implicit feedback tracking (STORY-029.3).  "
+            "If a recalled entry is not reinforced within this window it emits an "
+            "``implicit_negative`` event (utility_score=-0.1).  "
+            "If it is reinforced within the window an ``implicit_positive`` event "
+            "(utility_score=1.0) is emitted.  Default 300 s (5 minutes)."
+        ),
+    )
 
     @field_validator("custom_event_types")
     @classmethod

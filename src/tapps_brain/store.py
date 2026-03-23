@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -170,6 +171,13 @@ class MemoryStore:
         # EPIC-029: Lazy-initialized feedback store.
         self._feedback_store_instance: "FeedbackStore | None" = None
 
+        # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
+        # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
+        # Maps session_id → set of entry_keys that were reinforced in the session.
+        # All access must be protected by self._lock.
+        self._session_recall_log: dict[str, list[tuple[str, float]]] = {}
+        self._session_reinforced: dict[str, set[str]] = {}
+
         logger.info(
             "memory_store_initialized",
             project_root=str(project_root),
@@ -259,6 +267,7 @@ class MemoryStore:
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
+        session_id: str | None = None,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -279,6 +288,8 @@ class MemoryStore:
             skip_consolidation: If True, skip auto-consolidation check.
             batch_context: Operation context for rate limit exemption
                 (e.g. "import_markdown", "seed", "federation_sync", "consolidate").
+            session_id: Optional session identifier for implicit feedback tracking
+                (STORY-029.3).  Used by 029-4b correction detection.
         """
         # agent_scope enum validation
         if agent_scope not in VALID_AGENT_SCOPES:
@@ -695,12 +706,18 @@ class MemoryStore:
     # Reinforcement (Story 002.2)
     # ------------------------------------------------------------------
 
-    def reinforce(self, key: str, *, confidence_boost: float = 0.0) -> MemoryEntry:
+    def reinforce(
+        self, key: str, *, confidence_boost: float = 0.0, session_id: str | None = None
+    ) -> MemoryEntry:
         """Reinforce a memory entry, resetting its decay clock atomically.
 
         Args:
             key: The memory entry key to reinforce.
             confidence_boost: Optional confidence increase (0.0-0.2).
+            session_id: Optional session identifier for implicit feedback tracking
+                (STORY-029.3).  When provided and the entry was recalled in the same
+                session within the feedback window, an ``implicit_positive`` event
+                (utility_score=1.0) is emitted.
 
         Returns:
             The updated ``MemoryEntry``.
@@ -725,6 +742,7 @@ class MemoryStore:
         self._persistence.save(updated)
 
         # EPIC-010: Check promotion after reinforcement
+        final: MemoryEntry = updated
         if self._profile is not None:
             try:
                 from tapps_brain.promotion import PromotionEngine
@@ -755,11 +773,19 @@ class MemoryStore:
                         from_tier=old_tier,
                         to_tier=target_tier,
                     )
-                    return promoted
+                    final = promoted
             except Exception:
                 logger.debug("promotion_check_failed", key=key, exc_info=True)
 
-        return updated
+        # EPIC-029 story 029.3: implicit positive feedback
+        if session_id is not None:
+            _should_emit = False
+            with self._lock:
+                _should_emit = self._check_and_mark_reinforced(session_id, key)
+            if _should_emit:
+                self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
+
+        return final
 
     # ------------------------------------------------------------------
     # Extraction ingestion (Story 002.3)
@@ -1086,12 +1112,19 @@ class MemoryStore:
         Args:
             message: The user's incoming message to match against.
             **kwargs: Override ``RecallConfig`` fields for this call.
+                ``session_id`` (str | None) is extracted here for implicit
+                feedback tracking (STORY-029.3) and is NOT forwarded to
+                ``RecallOrchestrator``.
 
         Returns:
             ``RecallResult`` with formatted memory section, metadata,
             and timing information.
         """
         from tapps_brain.recall import RecallOrchestrator
+
+        # EPIC-029 story 029.3: extract session_id before forwarding kwargs.
+        _raw_sid = kwargs.pop("session_id", None)
+        session_id: str | None = str(_raw_sid) if _raw_sid is not None else None
 
         self._metrics.increment("store.recall")
         with self._lock:
@@ -1112,7 +1145,32 @@ class MemoryStore:
                 )
 
         with MetricsTimer(self._metrics, "store.recall_ms"):
-            return self._recall_orchestrator.recall(message, **kwargs)
+            result = self._recall_orchestrator.recall(message, **kwargs)
+
+        # EPIC-029 story 029.3: implicit feedback tracking
+        if session_id is not None:
+            # Flush entries whose window has expired (lazy negative detection)
+            _expired: list[str] = []
+            with self._lock:
+                _expired = self._consume_expired_recalls(session_id)
+            for _k in _expired:
+                self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
+
+            # Record newly recalled entry keys for future tracking
+            _memories: list[Any] = getattr(result, "memories", [])
+            _recalled_keys: list[str] = [
+                str(m.get("key", ""))
+                for m in _memories
+                if isinstance(m, dict) and m.get("key")
+            ]
+            if _recalled_keys:
+                _now_mono = time.monotonic()
+                with self._lock:
+                    _log = self._session_recall_log.setdefault(session_id, [])
+                    for _k in _recalled_keys:
+                        _log.append((_k, _now_mono))
+
+        return result
 
     def health(self) -> StoreHealthReport:
         """Return a structured health report for this store."""
@@ -1757,6 +1815,81 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    # ---- Implicit feedback helpers (EPIC-029 story 029.3) ----
+
+    def _get_implicit_feedback_window(self) -> int:
+        """Return the implicit feedback window in seconds from FeedbackConfig."""
+        if self._profile is not None:
+            cfg = getattr(self._profile, "feedback", None)
+            if cfg is not None:
+                return int(getattr(cfg, "implicit_feedback_window_seconds", 300))
+        return 300
+
+    def _consume_expired_recalls(self, session_id: str) -> list[str]:
+        """Return keys of expired unreinforced recalls and remove them from the log.
+
+        Must be called while holding ``self._lock``.
+        Expired = recall_time < now - window AND not yet reinforced.
+        """
+        window = self._get_implicit_feedback_window()
+        now_mono = time.monotonic()
+        log = self._session_recall_log.get(session_id, [])
+        reinforced = self._session_reinforced.get(session_id, set())
+        expired: list[str] = []
+        remaining: list[tuple[str, float]] = []
+        for entry_key, recall_time in log:
+            if now_mono - recall_time > window:
+                if entry_key not in reinforced:
+                    expired.append(entry_key)
+                # Expired entries are removed regardless of reinforced state
+            else:
+                remaining.append((entry_key, recall_time))
+        if len(remaining) != len(log):
+            self._session_recall_log[session_id] = remaining
+        return expired
+
+    def _check_and_mark_reinforced(self, session_id: str, key: str) -> bool:
+        """Check if *key* was recalled in *session_id* within the feedback window.
+
+        If so, marks it as reinforced and returns True.
+        Must be called while holding ``self._lock``.
+        """
+        window = self._get_implicit_feedback_window()
+        now_mono = time.monotonic()
+        log = self._session_recall_log.get(session_id, [])
+        for recall_key, recall_time in log:
+            if recall_key == key and now_mono - recall_time <= window:
+                self._session_reinforced.setdefault(session_id, set()).add(key)
+                return True
+        return False
+
+    def _emit_implicit_feedback(
+        self, event_type: str, entry_key: str, session_id: str | None, utility_score: float
+    ) -> None:
+        """Emit an implicit feedback event (best-effort, never raises).
+
+        Called outside ``self._lock`` to avoid holding the lock during I/O.
+        """
+        try:
+            from tapps_brain.feedback import FeedbackEvent
+
+            event = FeedbackEvent(
+                event_type=event_type,
+                entry_key=entry_key,
+                session_id=session_id,
+                utility_score=utility_score,
+            )
+            self._get_feedback_store().record(event)
+            self._metrics.increment(f"store.feedback.{event_type}")
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "implicit_feedback_emit_failed",
+                event_type=event_type,
+                entry_key=entry_key,
+            )
+
+    # ---- End implicit feedback helpers ----
 
     def _evict_lowest_confidence(self) -> None:
         """Evict the entry with the lowest confidence to make room.
