@@ -284,6 +284,61 @@ args (Mode 3).
 | `agentId` | `""` | Unique agent ID for Hive multi-agent sharing |
 | `hiveEnabled` | `false` | Enable Hive cross-agent memory sharing |
 | `citations` | `"auto"` | Citation footers in `assemble()` output: `"auto"` / `"on"` appends `Source: memory/<tier>/<key>.md`, `"off"` disables |
+| `toolGroups` | `"all"` | Tool groups to register as native OpenClaw tools (see [Per-Agent Tool Routing](#per-agent-tool-routing)) |
+
+---
+
+### Per-Agent Tool Routing
+
+Use `toolGroups` to restrict which tool groups are exposed to a specific agent.
+This is useful when you run multiple agents with different roles and want to
+prevent low-privilege agents from triggering maintenance operations.
+
+**Available groups:**
+
+| Group | Tools |
+|-------|-------|
+| `core` | `memory_search`, `memory_get` |
+| `lifecycle` | `memory_reinforce`, `memory_supersede`, `memory_history`, `memory_search_sessions` |
+| `search` | `memory_stats`, `memory_health`, `memory_metrics`, `memory_entry_detail`, `memory_recall_prompt`, `memory_store_summary_prompt`, `memory_remember_prompt` |
+| `admin` | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
+| `hive` | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_create`, `agent_list`, `agent_delete` |
+| `federation` | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
+| `graph` | `memory_relations`, `memory_find_related`, `memory_query_relations` |
+
+**Example — coder agent (recall and capture only):**
+
+```yaml
+plugins:
+  entries:
+    tapps-brain-memory:
+      config:
+        toolGroups: [core, lifecycle, search]
+```
+
+**Example — admin agent (full access):**
+
+```yaml
+plugins:
+  entries:
+    tapps-brain-memory:
+      config:
+        toolGroups: "all"
+```
+
+**Example — researcher agent (recall + graph traversal):**
+
+```yaml
+plugins:
+  entries:
+    tapps-brain-memory:
+      config:
+        toolGroups: [core, lifecycle, search, graph]
+```
+
+When `toolGroups` is omitted or set to `"all"`, all 7 groups are registered.
+Tools in disabled groups are never registered — they are not visible to the
+agent and cannot be called.
 
 ### MCP server CLI args
 

@@ -202,6 +202,45 @@ Settings are configured in `openclaw.plugin.json` (auto-installed):
 | `captureRateLimit` | `3`                  | Capture every N ingest() calls     |
 | `agentId`          | `""`                 | Agent ID for Hive sharing          |
 | `hiveEnabled`      | `false`              | Enable multi-agent Hive            |
+| `toolGroups`       | `"all"`              | Tool groups to expose (see below)  |
+
+### Per-Agent Tool Routing
+
+Use `toolGroups` to control which tool groups are registered for a specific agent
+role. This lets you give different agents different levels of access without running
+multiple MCP servers.
+
+Available groups:
+
+| Group        | Tools included                                                                 |
+|--------------|--------------------------------------------------------------------------------|
+| `core`       | `memory_search`, `memory_get`                                                  |
+| `lifecycle`  | `memory_reinforce`, `memory_supersede`, `memory_history`, `memory_search_sessions` |
+| `search`     | `memory_stats`, `memory_health`, `memory_metrics`, `memory_entry_detail`, `memory_recall_prompt`, `memory_store_summary_prompt`, `memory_remember_prompt` |
+| `admin`      | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
+| `hive`       | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_create`, `agent_list`, `agent_delete` |
+| `federation` | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
+| `graph`      | `memory_relations`, `memory_find_related`, `memory_query_relations`            |
+
+**Example — coder agent (recall and capture only):**
+
+```yaml
+plugins:
+  entries:
+    tapps-brain-memory:
+      config:
+        toolGroups: [core, lifecycle, search]
+```
+
+**Example — admin agent (full access):**
+
+```yaml
+plugins:
+  entries:
+    tapps-brain-memory:
+      config:
+        toolGroups: "all"
+```
 
 ## Permissions
 

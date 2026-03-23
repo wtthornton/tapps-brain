@@ -74,6 +74,62 @@ export interface PluginConfig {
   hiveEnabled?: boolean;
   /** Controls citation footers in assemble() output. Defaults to "auto". */
   citations?: "auto" | "on" | "off";
+  /**
+   * Tool groups to register as native OpenClaw tools.
+   *
+   * Use this to restrict which tool groups are exposed to a specific agent.
+   * Accepted values: `"all"` (default) or an array of group names:
+   *
+   * - `"core"`        — memory_search, memory_get (CRUD memory slot tools)
+   * - `"lifecycle"`   — memory_reinforce, memory_supersede, memory_history, memory_search_sessions
+   * - `"search"`      — memory_stats, memory_health, memory_metrics, memory_entry_detail,
+   *                     memory_recall_prompt, memory_store_summary_prompt, memory_remember_prompt
+   * - `"admin"`       — audit, tags, profile, maintenance, GC, consolidation config, export, import
+   * - `"hive"`        — hive_status, hive_search, hive_propagate, agent_register/create/list/delete
+   * - `"federation"`  — federation_status/subscribe/unsubscribe/publish
+   * - `"graph"`       — memory_relations, memory_find_related, memory_query_relations
+   *
+   * @example
+   * // Coder agent: recall + capture only
+   * toolGroups: ["core", "lifecycle", "search"]
+   *
+   * @example
+   * // Admin agent: full access
+   * toolGroups: "all"
+   *
+   * @default "all"
+   */
+  toolGroups?: string[] | "all";
+}
+
+/**
+ * Names of all supported tool groups.
+ *
+ * Exported so tests and downstream consumers can reference them without
+ * hard-coding strings.
+ */
+export const TOOL_GROUPS = [
+  "core",
+  "lifecycle",
+  "search",
+  "admin",
+  "hive",
+  "federation",
+  "graph",
+] as const;
+
+/** Union of all valid tool group names. */
+export type ToolGroup = (typeof TOOL_GROUPS)[number];
+
+/**
+ * Return true if the given tool group should be registered based on the plugin
+ * config.  When `toolGroups` is absent or `"all"`, every group is enabled.
+ * When it is an array, only listed groups are enabled.
+ */
+export function isGroupEnabled(config: PluginConfig, group: string): boolean {
+  const { toolGroups } = config;
+  if (!toolGroups || toolGroups === "all") return true;
+  return (toolGroups as string[]).includes(group);
 }
 
 /**
@@ -2221,33 +2277,31 @@ export default definePluginEntry({
     // config, these tools replace the built-in memory-core tools. Falls back
     // gracefully if registerTool is unavailable (older OpenClaw builds).
     if (api.registerTool) {
-      registerMemorySlotTools(api, engine);
-      // Register lifecycle tools (reinforce, supersede, history, search_sessions).
-      // Available in all compatibility modes when registerTool is present.
-      registerLifecycleTools(api, engine);
-      // Register Hive/agent tools (hive_status, hive_search, hive_propagate,
-      // agent_register, agent_create, agent_list, agent_delete).
+      const cfg = api.config;
+      // core — memory_search, memory_get (memory slot replacement tools).
+      // Always check per toolGroups config; defaults to "all" (enabled).
+      if (isGroupEnabled(cfg, "core")) registerMemorySlotTools(api, engine);
+      // lifecycle — memory_reinforce, memory_supersede, memory_history,
+      // memory_search_sessions. Available in all compatibility modes.
+      if (isGroupEnabled(cfg, "lifecycle")) registerLifecycleTools(api, engine);
+      // hive — hive_status, hive_search, hive_propagate, agent_register,
+      // agent_create, agent_list, agent_delete.
       // Degrade gracefully if Hive is disabled on the server side.
-      registerHiveTools(api, engine);
-      // Register knowledge graph tools (memory_relations, memory_find_related,
-      // memory_query_relations). Proxy directly to MCP; no special degradation.
-      registerKnowledgeGraphTools(api, engine);
-      // Register audit, tags, and profile tools (memory_audit, memory_list_tags,
-      // memory_update_tags, memory_entries_by_tag, profile_info, profile_switch).
-      registerAuditTagsProfileTools(api, engine);
-      // Register maintenance, config, export, and import tools
-      // (maintenance_consolidate, maintenance_gc, memory_gc_config,
-      // memory_gc_config_set, memory_consolidation_config,
-      // memory_consolidation_config_set, memory_export, memory_import).
-      registerMaintenanceConfigTools(api, engine);
-      // Register federation tools (federation_status, federation_subscribe,
-      // federation_unsubscribe, federation_publish). Proxy directly to MCP.
-      registerFederationTools(api, engine);
-      // Register resource-backed tools (memory_stats, memory_health,
-      // memory_metrics, memory_entry_detail) and prompt-backed tools
-      // (memory_recall_prompt, memory_store_summary_prompt,
-      // memory_remember_prompt). Uses resources/read and prompts/get MCP methods.
-      registerResourceAndPromptTools(api, engine);
+      if (isGroupEnabled(cfg, "hive")) registerHiveTools(api, engine);
+      // graph — memory_relations, memory_find_related, memory_query_relations.
+      if (isGroupEnabled(cfg, "graph")) registerKnowledgeGraphTools(api, engine);
+      // admin — memory_audit, tags, profile, maintenance, GC config,
+      // consolidation config, memory_export, memory_import.
+      if (isGroupEnabled(cfg, "admin")) {
+        registerAuditTagsProfileTools(api, engine);
+        registerMaintenanceConfigTools(api, engine);
+      }
+      // federation — federation_status/subscribe/unsubscribe/publish.
+      if (isGroupEnabled(cfg, "federation")) registerFederationTools(api, engine);
+      // search — memory_stats, memory_health, memory_metrics,
+      // memory_entry_detail, memory_recall_prompt, memory_store_summary_prompt,
+      // memory_remember_prompt. Uses resources/read and prompts/get MCP methods.
+      if (isGroupEnabled(cfg, "search")) registerResourceAndPromptTools(api, engine);
     }
 
     if (mode === "context-engine") {

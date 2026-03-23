@@ -483,7 +483,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Expose `memory://stats`, `memory://health`, `memory://metrics`, `memory://entries/{key}` as registered tools. Register `recall`, `store_summary`, `remember` prompts as OpenClaw commands or tools. Update SKILL.md. Commit: `feat(story-027.7): expose MCP resources and prompts`
 
 #### 027-H: Per-agent tool routing and permissions
-- [ ] Organize tools into groups: `core`, `lifecycle`, `search`, `admin`, `hive`, `federation`, `graph`. Update `openclaw.plugin.json` with `toolGroups`. Document per-agent config. Example: "coder" gets core+lifecycle+search; "admin" gets all. Commit: `feat(story-027.8): per-agent tool routing and permissions`
+- [x] Organize tools into groups: `core`, `lifecycle`, `search`, `admin`, `hive`, `federation`, `graph`. Update `openclaw.plugin.json` with `toolGroups`. Document per-agent config. Example: "coder" gets core+lifecycle+search; "admin" gets all. Commit: `feat(story-027.8): per-agent tool routing and permissions`
 
 #### 027-I: Update SKILL.md and documentation for all 41 tools
 - [ ] SKILL.md declares all 41 tools, 4 resources, 3 prompts. `docs/guides/openclaw.md` updated with four integration modes. Config examples for each mode. Troubleshooting guide. Commit: `docs(story-027.9): complete tool reference and integration guide`
