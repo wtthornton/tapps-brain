@@ -12,6 +12,7 @@ behaviour and persistence round-trips.
 from __future__ import annotations
 
 import threading
+from collections.abc import Generator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> MemoryStore:
+def store(tmp_path: Path) -> Generator[MemoryStore, None, None]:
     """Create a fresh MemoryStore backed by a temp directory."""
     s = MemoryStore(tmp_path)
     yield s

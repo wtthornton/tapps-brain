@@ -393,9 +393,7 @@ class TestImport:
         with pytest.raises(ValueError, match="not valid JSON"):
             import_memories(store, input_file, validator)
 
-    def test_import_non_dict_items_are_dropped_with_warning(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_import_non_dict_items_are_dropped(self, tmp_path: Path) -> None:
         entry = _make_entry("valid-key", "valid value")
         payload = {"memories": [entry.model_dump(mode="json"), "not-a-dict", 42]}
 
@@ -407,8 +405,9 @@ class TestImport:
 
         result = import_memories(store, input_file, validator)
 
-        # Valid dict entry is imported; non-dict items are dropped silently
+        # Valid dict entry is imported; non-dict items are silently dropped
         assert result["imported_count"] == 1
+        assert result["error_count"] == 0
 
 
 class TestExportMarkdownProcedural:

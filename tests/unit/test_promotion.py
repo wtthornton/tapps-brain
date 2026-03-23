@@ -181,6 +181,90 @@ class TestCheckPromotion:
         result = engine.check_promotion(entry, {"not": "a profile"}, now=_JAN_15)
         assert result is None
 
+    def test_no_promotion_when_tier_not_in_profile(self) -> None:
+        """Entry whose tier has no matching layer in the profile is not promoted."""
+        # Profile only defines 'architectural' — entry is 'context' which isn't listed
+        layers = [
+            LayerDefinition(
+                name="architectural",
+                half_life_days=180,
+            ),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="test-unknown-tier",
+            tier=MemoryTier.context,
+            confidence=0.9,
+            access_count=20,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+        )
+        engine = PromotionEngine()
+        result = engine.check_promotion(entry, profile, now=_JAN_15)
+        assert result is None
+
+    def test_no_promotion_below_min_age(self) -> None:
+        """Entry that hasn't been alive long enough is not promoted."""
+        layers = [
+            LayerDefinition(
+                name="context",
+                half_life_days=14,
+                promotion_to="procedural",
+                promotion_threshold=PromotionThreshold(
+                    min_access_count=1,
+                    min_age_days=30,  # requires 30 days
+                    min_confidence=0.1,
+                ),
+            ),
+            LayerDefinition(name="procedural", half_life_days=30),
+        ]
+        profile = _make_profile(layers)
+        # Entry is only 14 days old — below the 30-day threshold
+        entry = make_entry(
+            key="test-young",
+            tier=MemoryTier.context,
+            confidence=0.9,
+            access_count=10,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+        )
+        engine = PromotionEngine()
+        result = engine.check_promotion(entry, profile, now=_JAN_15)
+        assert result is None
+
+    def test_no_promotion_below_min_confidence(self) -> None:
+        """Entry with decayed confidence below threshold is not promoted."""
+        layers = [
+            LayerDefinition(
+                name="context",
+                half_life_days=1,  # very short half-life — decays fast
+                promotion_to="procedural",
+                promotion_threshold=PromotionThreshold(
+                    min_access_count=1,
+                    min_age_days=1,
+                    min_confidence=0.8,  # high confidence required
+                ),
+            ),
+            LayerDefinition(name="procedural", half_life_days=30),
+        ]
+        profile = _make_profile(layers)
+        # Entry was created Jan 1, now is Jan 15: 14 days with 1-day half-life
+        # decayed_confidence = 0.9 * 0.5^14 ~ 0.000055 << 0.8
+        entry = make_entry(
+            key="test-decayed",
+            tier=MemoryTier.context,
+            confidence=0.9,
+            access_count=10,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+        )
+        engine = PromotionEngine()
+        result = engine.check_promotion(entry, profile, now=_JAN_15)
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # Demotion tests
@@ -309,6 +393,30 @@ class TestCheckDemotion:
         )
         engine = PromotionEngine()
         result = engine.check_demotion(entry, "not-a-profile", now=_JAN_15)
+        assert result is None
+
+    def test_no_demotion_when_tier_not_in_profile(self) -> None:
+        """Entry whose tier has no matching layer in the profile is not demoted."""
+        # Profile only defines 'architectural' — entry is 'pattern' which isn't listed
+        layers = [
+            LayerDefinition(
+                name="architectural",
+                half_life_days=180,
+            ),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="test-demote-unknown-tier",
+            tier=MemoryTier.pattern,
+            confidence=0.1,
+            access_count=0,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+        )
+        engine = PromotionEngine()
+        now = datetime(2025, 7, 20, tzinfo=UTC)
+        result = engine.check_demotion(entry, profile, now=now)
         assert result is None
 
 
