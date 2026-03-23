@@ -444,7 +444,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] CLI command: `tapps-brain openclaw migrate [--workspace DIR] [--dry-run]`. Imports MEMORY.md with tier inference. Imports daily notes as context-tier. Imports memory-core's SQLite index if exists. Dry-run mode. Idempotent. Reports counts. MCP tool `openclaw_migrate` for programmatic migration. Commit: `feat(story-026.5): memory-core migration tool`
 
 #### 026-F: Integration tests for memory replacement
-- [ ] Create `tests/integration/test_openclaw_memory_replacement.py`. Tests: register plugin + call memory_search → results from tapps-brain; memory_get → entry from tapps-brain; save → search → get round-trip; bidirectional sync; migration from mock data; memory slot active → memory-core not invoked. Coverage 95%+. Commit: `test(story-026.6): integration tests for OpenClaw memory replacement`
+- [x] Create `tests/integration/test_openclaw_memory_replacement.py`. Tests: register plugin + call memory_search → results from tapps-brain; memory_get → entry from tapps-brain; save → search → get round-trip; bidirectional sync; migration from mock data; memory slot active → memory-core not invoked. Coverage 95%+. Commit: `test(story-026.6): integration tests for OpenClaw memory replacement`
 
 ---
 
