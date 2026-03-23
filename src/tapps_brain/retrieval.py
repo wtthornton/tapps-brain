@@ -107,7 +107,7 @@ class MemoryRetriever:
         *,
         scoring_config: object | None = None,  # ScoringConfig from profile (EPIC-010)
         semantic_enabled: bool = False,
-        hybrid_config: object = None,
+        hybrid_config: object | None = None,
         reranker: Reranker | None = None,
         reranker_enabled: bool = False,
         retrieval_policy: object | None = None,
@@ -140,6 +140,22 @@ class MemoryRetriever:
             self._source_trust: dict[str, float] = (
                 dict(raw_trust) if isinstance(raw_trust, dict) else dict(_DEFAULT_SOURCE_TRUST)
             )
+            # Warn if profile weights don't sum to ~1.0 (would make scores inconsistent)
+            weight_sum = (
+                self._w_relevance
+                + self._w_confidence
+                + self._w_recency
+                + self._w_frequency
+            )
+            if abs(weight_sum - 1.0) > 0.01:
+                logger.warning(
+                    "scoring_weights_do_not_sum_to_one",
+                    weight_sum=round(weight_sum, 4),
+                    relevance=self._w_relevance,
+                    confidence=self._w_confidence,
+                    recency=self._w_recency,
+                    frequency=self._w_frequency,
+                )
         else:
             self._w_relevance = _W_RELEVANCE
             self._w_confidence = _W_CONFIDENCE
@@ -254,9 +270,9 @@ class MemoryRetriever:
             if not temporally_valid:
                 composite *= 0.5
 
-            # Bonus for exact key match
+            # Bonus for exact key match (capped at 1.0 to keep score in valid range)
             if entry.key == query.lower().replace(" ", "-"):
-                composite += 0.1
+                composite = min(composite + 0.1, 1.0)
 
             scored.append(
                 ScoredMemory(
@@ -290,7 +306,8 @@ class MemoryRetriever:
         limit: int,
     ) -> list[ScoredMemory]:
         """Apply reranker to top candidates; fallback to original order on failure."""
-        assert self._reranker is not None  # caller checks before calling
+        if self._reranker is None:  # pragma: no cover — caller guards but assert is unsafe with -O
+            return scored
         top_candidates = scored[:RERANKER_TOP_CANDIDATES]
         candidates = [(sm.entry.key, sm.entry.value) for sm in top_candidates]
         effective_top_k = min(limit, len(candidates))

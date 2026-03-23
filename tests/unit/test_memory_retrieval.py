@@ -660,3 +660,66 @@ class TestTemporalFiltering:
         assert active is not None
         assert superseded is not None
         assert active.score > superseded.score
+
+
+# ---------------------------------------------------------------------------
+# review(story-018.1): new tests for scoring correctness fixes
+# ---------------------------------------------------------------------------
+
+
+class TestScoringCorrectnessReview:
+    """Tests covering issues found in story-018.1 code review."""
+
+    def test_exact_key_match_score_capped_at_one(self) -> None:
+        """Exact key match bonus must not push composite score above 1.0."""
+        # High-confidence, recent, frequently accessed entry whose composite
+        # would be close to 1.0 before the bonus.
+        entry = _make_entry(
+            "exact-query",
+            "exact query value",
+            confidence=1.0,
+            updated_at=_RECENT,
+            access_count=20,  # frequency at cap
+        )
+        retriever = MemoryRetriever()
+        store = _make_store([entry])
+        results = retriever.search("exact-query", store)
+        assert results
+        assert results[0].score <= 1.0, f"score {results[0].score} exceeds 1.0"
+
+    def test_scoring_weight_mismatch_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A warning is emitted when profile scoring weights don't sum to 1.0."""
+        import logging
+
+        scoring_cfg = MagicMock()
+        scoring_cfg.relevance = 0.5
+        scoring_cfg.confidence = 0.5
+        scoring_cfg.recency = 0.5  # sum = 1.5, clearly off
+        scoring_cfg.frequency = 0.5
+        scoring_cfg.frequency_cap = 20.0
+        scoring_cfg.bm25_norm_k = 5.0
+        scoring_cfg.source_trust = None
+
+        with caplog.at_level(logging.WARNING):
+            MemoryRetriever(scoring_config=scoring_cfg)
+
+        assert any("scoring_weights_do_not_sum_to_one" in r.message for r in caplog.records)
+
+    def test_apply_reranker_returns_scored_when_reranker_is_none(self) -> None:
+        """_apply_reranker should not crash when reranker is None (guard replaces assert)."""
+        retriever = MemoryRetriever(reranker=None, reranker_enabled=False)
+        entry = _make_entry("k", "v")
+        sm = ScoredMemory(
+            entry=entry, score=0.5, effective_confidence=0.8, bm25_relevance=0.3, stale=False
+        )
+        # Directly call the internal method; should return scored unchanged (not raise)
+        result = retriever._apply_reranker("query", [sm], 10)
+        assert result == [sm]
+
+    def test_hybrid_config_none_does_not_raise(self) -> None:
+        """MemoryRetriever accepts hybrid_config=None without type errors."""
+        # This validates the type annotation fix: hybrid_config: object | None = None
+        retriever = MemoryRetriever(hybrid_config=None)
+        store = _make_store([_make_entry("k", "v")])
+        results = retriever.search("v", store)
+        assert isinstance(results, list)
