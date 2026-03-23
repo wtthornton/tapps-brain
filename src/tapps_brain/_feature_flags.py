@@ -55,14 +55,22 @@ class FeatureFlags:
     @property
     def memory_semantic_search(self) -> bool:
         """True when optional deps for semantic search are available."""
-        return self.sentence_transformers
+        if "memory_semantic_search" not in self._cache:
+            self._cache["memory_semantic_search"] = self.sentence_transformers
+        return self._cache["memory_semantic_search"]
 
     def reset(self) -> None:
         """Clear the cached detection results (for test isolation)."""
         self._cache.clear()
 
     def as_dict(self) -> dict[str, bool]:
-        """Return all evaluated flags as a plain dict."""
+        """Return all flags (including derived) as a plain dict.
+
+        All flags are evaluated and cached before returning, so the result
+        always contains entries for: faiss, numpy, sentence_transformers,
+        memory_semantic_search, and otel.
+        """
+        # Trigger evaluation so every flag is cached.
         _ = (
             self.faiss,
             self.numpy,

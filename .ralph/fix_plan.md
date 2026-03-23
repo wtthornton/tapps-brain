@@ -97,7 +97,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/__init__.py` (147 lines). Focus on: exported symbols match actual public API, no internal modules leaked, `__all__` completeness, version string consistency. Fix all issues. Commit: `review(story-017.5): __init__.py public API review`
 
 #### 017-F: Review `_protocols.py` + `_feature_flags.py` — extension interfaces
-- [ ] Review `src/tapps_brain/_protocols.py` (106 lines) and `src/tapps_brain/_feature_flags.py` (77 lines). Focus on: Protocol definitions match implementations, lazy import correctness, feature flag detection reliability, fallback behavior when optional deps missing. Fix all issues. Commit: `review(story-017.6): protocols and feature flags review`
+- [x] Review `src/tapps_brain/_protocols.py` (106 lines) and `src/tapps_brain/_feature_flags.py` (77 lines). Focus on: Protocol definitions match implementations, lazy import correctness, feature flag detection reliability, fallback behavior when optional deps missing. Fix all issues. Commit: `review(story-017.6): protocols and feature flags review`
 
 #### 017-G: Review `audit.py` + `session_index.py` — logging and sessions
 - [ ] Review `src/tapps_brain/audit.py` (152 lines) and `src/tapps_brain/session_index.py` (97 lines). Focus on: JSONL write atomicity, log rotation / size limits, session cleanup correctness, file handle leaks. Fix all issues. Commit: `review(story-017.7): audit and session index review`

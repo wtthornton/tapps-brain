@@ -136,6 +136,26 @@ class TestProtocols:
 
         assert isinstance(FakeLookup(), LookupEngineLike)
 
+    def test_recall_hook_like_isinstance(self):
+        from tapps_brain._protocols import RecallHookLike
+
+        class FakeRecallHook:
+            def recall(self, message: str, **kwargs: object):
+                from tapps_brain.models import RecallResult
+
+                return RecallResult(memories=[], memory_count=0, query=message)
+
+        assert isinstance(FakeRecallHook(), RecallHookLike)
+
+    def test_capture_hook_like_isinstance(self):
+        from tapps_brain._protocols import CaptureHookLike
+
+        class FakeCaptureHook:
+            def capture(self, response: str, **kwargs: object) -> list[str]:
+                return []
+
+        assert isinstance(FakeCaptureHook(), CaptureHookLike)
+
 
 # ===========================================================================
 # _feature_flags.py
@@ -172,6 +192,21 @@ class TestFeatureFlags:
         ff = FeatureFlags()
         assert ff.memory_semantic_search == ff.sentence_transformers
 
+    def test_otel_flag(self):
+        from tapps_brain._feature_flags import FeatureFlags
+
+        ff = FeatureFlags()
+        result = ff.otel
+        assert isinstance(result, bool)
+
+    def test_memory_semantic_search_cached(self):
+        """memory_semantic_search must be stored in _cache under its own key."""
+        from tapps_brain._feature_flags import FeatureFlags
+
+        ff = FeatureFlags()
+        _ = ff.memory_semantic_search
+        assert "memory_semantic_search" in ff._cache
+
     def test_as_dict_returns_all(self):
         from tapps_brain._feature_flags import FeatureFlags
 
@@ -180,6 +215,8 @@ class TestFeatureFlags:
         assert "faiss" in d
         assert "numpy" in d
         assert "sentence_transformers" in d
+        assert "otel" in d
+        assert "memory_semantic_search" in d
 
     def test_reset_clears_cache(self):
         from tapps_brain._feature_flags import FeatureFlags
