@@ -27,11 +27,11 @@ def _read_skill_md_version() -> str:
     """Read version from openclaw-skill/SKILL.md YAML frontmatter."""
     skill_md = PROJECT_ROOT / "openclaw-skill" / "SKILL.md"
     text = skill_md.read_text(encoding="utf-8")
-    # YAML frontmatter is between --- delimiters
-    match = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+    # YAML frontmatter is between --- delimiters; \r? handles CRLF line endings
+    match = re.search(r"^---\s*\r?\n(.*?)\r?\n---", text, re.DOTALL)
     assert match, "SKILL.md must have YAML frontmatter"
     frontmatter = match.group(1)
-    ver_match = re.search(r'^version:\s*["\']?([^"\'"\n]+)["\']?', frontmatter, re.MULTILINE)
+    ver_match = re.search(r'^version:\s*["\']?([^"\'"\r\n]+)["\']?', frontmatter, re.MULTILINE)
     assert ver_match, "SKILL.md frontmatter must contain a version field"
     return ver_match.group(1).strip()
 

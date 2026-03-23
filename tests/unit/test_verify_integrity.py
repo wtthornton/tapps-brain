@@ -11,19 +11,24 @@ from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
-def _reset_integrity_key() -> None:
-    """Reset the cached signing key between tests."""
+def _reset_integrity_key() -> Generator[None, None, None]:
+    """Reset the cached signing key before and after each test."""
+    reset_key_cache()
+    yield
     reset_key_cache()
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> MemoryStore:
-    """Create a MemoryStore backed by a temp directory."""
-    return MemoryStore(tmp_path)
+def store(tmp_path: Path) -> Generator[MemoryStore, None, None]:
+    """Create a MemoryStore backed by a temp directory; close on teardown."""
+    s = MemoryStore(tmp_path)
+    yield s
+    s.close()
 
 
 class TestVerifyIntegrity:

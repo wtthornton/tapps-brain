@@ -14,13 +14,16 @@ from tapps_brain.models import (
 from tapps_brain.persistence import MemoryPersistence
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 
 @pytest.fixture()
-def persistence(tmp_path: Path) -> MemoryPersistence:
-    """Create a MemoryPersistence instance backed by a temp directory."""
-    return MemoryPersistence(tmp_path)
+def persistence(tmp_path: Path) -> Generator[MemoryPersistence, None, None]:
+    """Create a MemoryPersistence instance backed by a temp directory; close on teardown."""
+    p = MemoryPersistence(tmp_path)
+    yield p
+    p.close()
 
 
 class TestEmbeddingPersistence:
@@ -54,7 +57,8 @@ class TestEmbeddingPersistence:
         assert loaded.embedding is None
 
     def test_schema_version_2_after_init(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() >= 2  # v3 adds session_index (Epic 65.10)
+        # Schema v2+ has embedding column; v3+ adds session_index (Epic 65.10)
+        assert persistence.get_schema_version() >= 2
 
     def test_existing_entries_null_embedding(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)

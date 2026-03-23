@@ -13,12 +13,17 @@ from tapps_brain.injection import (
     estimate_tokens,
     inject_memories,
 )
+from tapps_brain.profile import ScoringConfig
 from tests.factories import make_entry
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from tapps_brain.models import MemoryEntry
+
+
+# Default scoring config used by mock stores — weights sum to 1.0 as required.
+_DEFAULT_SCORING = ScoringConfig()
 
 _RECENT = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
 
@@ -46,13 +51,20 @@ def _make_entry(
     )
 
 
-def _make_store(entries: list[MemoryEntry] | None = None) -> MagicMock:
+def _make_store(
+    entries: list[MemoryEntry] | None = None,
+    scoring_config: ScoringConfig | None = None,
+) -> MagicMock:
     store = MagicMock()
     entries = entries or []
     store.search.return_value = entries
     store.list_all.return_value = entries
     entry_map = {e.key: e for e in entries}
     store.get.side_effect = lambda k, **kw: entry_map.get(k)
+    # Provide a real ScoringConfig so MemoryRetriever weight-sum validation passes.
+    mock_profile = MagicMock()
+    mock_profile.scoring = scoring_config or _DEFAULT_SCORING
+    store.profile = mock_profile
     return store
 
 
@@ -287,13 +299,8 @@ class TestSourceTrustRegression:
             source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0}
         )
 
-        # Build a store mock that has a profile with custom scoring
-        mock_profile = MagicMock()
-        mock_profile.scoring = custom_scoring
-
         entries = [_make_entry("profile-key", "profile-configured scoring result")]
-        store = _make_store(entries)
-        store.profile = mock_profile
+        store = _make_store(entries, scoring_config=custom_scoring)
 
         result = inject_memories("profile scoring", store, "high")
 
