@@ -17,6 +17,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from tapps_brain.feedback import FeedbackConfig
+
 # ---------------------------------------------------------------------------
 # Sub-models
 # ---------------------------------------------------------------------------
@@ -186,6 +188,13 @@ class MemoryProfile(BaseModel):
     recall: RecallProfileConfig = Field(default_factory=RecallProfileConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     hive: HiveConfig = Field(default_factory=HiveConfig)
+    feedback: FeedbackConfig = Field(
+        default_factory=FeedbackConfig,
+        description=(
+            "Feedback collection configuration.  Allows registering custom event "
+            "types and enabling strict event-type validation."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_layers(self) -> MemoryProfile:

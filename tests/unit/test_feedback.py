@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tapps_brain.feedback import FeedbackEvent, FeedbackStore
+from tapps_brain.feedback import BUILTIN_EVENT_TYPES, FeedbackConfig, FeedbackEvent, FeedbackStore
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +362,211 @@ class TestFeedbackStoreAudit:
             s.record(FeedbackEvent(event_type="recall_rated"))
         finally:
             s.close()
+
+
+# ---------------------------------------------------------------------------
+# FeedbackConfig — custom event types and strict validation
+# ---------------------------------------------------------------------------
+
+
+class TestFeedbackConfig:
+    """FeedbackConfig validates custom event types and drives strict mode."""
+
+    # -- BUILTIN_EVENT_TYPES constant
+
+    def test_builtin_event_types_non_empty(self) -> None:
+        assert len(BUILTIN_EVENT_TYPES) > 0
+        assert "recall_rated" in BUILTIN_EVENT_TYPES
+        assert "gap_reported" in BUILTIN_EVENT_TYPES
+        assert "issue_flagged" in BUILTIN_EVENT_TYPES
+
+    # -- Default config
+
+    def test_default_config(self) -> None:
+        cfg = FeedbackConfig()
+        assert cfg.custom_event_types == []
+        assert cfg.strict_event_types is False
+
+    def test_default_known_types_equals_builtins(self) -> None:
+        cfg = FeedbackConfig()
+        assert cfg.known_event_types == BUILTIN_EVENT_TYPES
+
+    # -- Custom event type validation
+
+    def test_valid_custom_event_types(self) -> None:
+        cfg = FeedbackConfig(custom_event_types=["deploy_completed", "pr_review_requested"])
+        assert "deploy_completed" in cfg.custom_event_types
+        assert "pr_review_requested" in cfg.custom_event_types
+
+    def test_multi_segment_custom_type(self) -> None:
+        cfg = FeedbackConfig(custom_event_types=["user_preference_updated"])
+        assert "user_preference_updated" in cfg.custom_event_types
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "single",       # no underscore
+            "CamelCase",    # uppercase
+            "_leading",     # starts with underscore
+            "trailing_",    # ends with underscore
+            "has space",    # space
+            "has-dash",     # dash
+            "",             # empty
+            "1starts_digit",  # starts with digit
+        ],
+    )
+    def test_invalid_custom_event_type_rejected(self, bad_name: str) -> None:
+        with pytest.raises(ValidationError):
+            FeedbackConfig(custom_event_types=[bad_name])
+
+    def test_known_event_types_includes_custom(self) -> None:
+        cfg = FeedbackConfig(custom_event_types=["deploy_completed"])
+        assert "deploy_completed" in cfg.known_event_types
+        # Built-ins are still present
+        assert "recall_rated" in cfg.known_event_types
+
+    def test_known_event_types_is_frozenset(self) -> None:
+        cfg = FeedbackConfig(custom_event_types=["deploy_completed"])
+        assert isinstance(cfg.known_event_types, frozenset)
+
+    # -- Strict mode in FeedbackStore
+
+    def test_strict_mode_rejects_unknown_event_type(self, db_path: Path) -> None:
+        cfg = FeedbackConfig(strict_event_types=True)
+        store = FeedbackStore(db_path=db_path, config=cfg)
+        try:
+            with pytest.raises(ValueError, match="Unknown event_type"):
+                store.record(FeedbackEvent(event_type="custom_unknown"))
+        finally:
+            store.close()
+
+    def test_strict_mode_allows_builtin_types(self, db_path: Path) -> None:
+        cfg = FeedbackConfig(strict_event_types=True)
+        store = FeedbackStore(db_path=db_path, config=cfg)
+        try:
+            # All built-in types should pass strict validation
+            store.record(FeedbackEvent(event_type="recall_rated"))
+            store.record(FeedbackEvent(event_type="gap_reported"))
+            assert len(store.query()) == 2
+        finally:
+            store.close()
+
+    def test_strict_mode_allows_registered_custom_type(self, db_path: Path) -> None:
+        cfg = FeedbackConfig(
+            custom_event_types=["deploy_completed"],
+            strict_event_types=True,
+        )
+        store = FeedbackStore(db_path=db_path, config=cfg)
+        try:
+            store.record(FeedbackEvent(event_type="deploy_completed"))
+            results = store.query()
+            assert len(results) == 1
+            assert results[0].event_type == "deploy_completed"
+        finally:
+            store.close()
+
+    def test_non_strict_mode_allows_any_valid_event_type(self, db_path: Path) -> None:
+        """Without strict mode, any Object-Action snake_case type is accepted."""
+        cfg = FeedbackConfig(strict_event_types=False)
+        store = FeedbackStore(db_path=db_path, config=cfg)
+        try:
+            store.record(FeedbackEvent(event_type="anything_goes"))
+            assert len(store.query()) == 1
+        finally:
+            store.close()
+
+    def test_default_store_without_config_is_non_strict(self, db_path: Path) -> None:
+        """Store with no config defaults to non-strict (open enum behaviour)."""
+        store = FeedbackStore(db_path=db_path)
+        try:
+            store.record(FeedbackEvent(event_type="any_valid_type"))
+            assert len(store.query()) == 1
+        finally:
+            store.close()
+
+    def test_strict_mode_error_lists_known_types(self, db_path: Path) -> None:
+        """Error message should include the list of known types."""
+        cfg = FeedbackConfig(
+            custom_event_types=["my_custom_event"],
+            strict_event_types=True,
+        )
+        store = FeedbackStore(db_path=db_path, config=cfg)
+        try:
+            with pytest.raises(ValueError) as exc_info:
+                store.record(FeedbackEvent(event_type="unknown_type"))
+            assert "my_custom_event" in str(exc_info.value)
+        finally:
+            store.close()
+
+
+# ---------------------------------------------------------------------------
+# FeedbackConfig — profile YAML integration
+# ---------------------------------------------------------------------------
+
+
+class TestFeedbackConfigProfileYaml:
+    """FeedbackConfig round-trips through MemoryProfile YAML loading."""
+
+    def test_profile_includes_default_feedback_config(self) -> None:
+        """MemoryProfile should have a feedback field with defaults."""
+        from tapps_brain.profile import MemoryProfile
+
+        # Load the built-in repo-brain profile (already has all required fields)
+        from tapps_brain.profile import get_builtin_profile
+
+        profile = get_builtin_profile("repo-brain")
+        assert hasattr(profile, "feedback")
+        assert isinstance(profile.feedback, FeedbackConfig)
+        assert profile.feedback.custom_event_types == []
+        assert profile.feedback.strict_event_types is False
+
+    def test_profile_yaml_with_custom_feedback_section(self, tmp_path: Path) -> None:
+        """A profile YAML with feedback.custom_event_types loads correctly."""
+        import yaml
+
+        profile_yaml = tmp_path / "test_profile.yaml"
+        data = {
+            "profile": {
+                "name": "test-profile",
+                "layers": [
+                    {
+                        "name": "context",
+                        "half_life_days": 14,
+                    }
+                ],
+                "feedback": {
+                    "custom_event_types": ["deploy_completed", "pr_merged"],
+                    "strict_event_types": True,
+                },
+            }
+        }
+        profile_yaml.write_text(yaml.dump(data), encoding="utf-8")
+
+        from tapps_brain.profile import load_profile
+
+        profile = load_profile(profile_yaml)
+        assert "deploy_completed" in profile.feedback.custom_event_types
+        assert "pr_merged" in profile.feedback.custom_event_types
+        assert profile.feedback.strict_event_types is True
+
+    def test_profile_yaml_without_feedback_section_uses_defaults(self, tmp_path: Path) -> None:
+        """A profile YAML without a feedback section uses FeedbackConfig defaults."""
+        import yaml
+
+        profile_yaml = tmp_path / "test_profile.yaml"
+        data = {
+            "profile": {
+                "name": "test-profile",
+                "layers": [{"name": "context", "half_life_days": 14}],
+            }
+        }
+        profile_yaml.write_text(yaml.dump(data), encoding="utf-8")
+
+        from tapps_brain.profile import load_profile
+
+        profile = load_profile(profile_yaml)
+        assert profile.feedback.custom_event_types == []
+        assert profile.feedback.strict_event_types is False
 
 
 # ---------------------------------------------------------------------------

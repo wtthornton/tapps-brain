@@ -3,6 +3,9 @@
 ``FeedbackEvent`` is a Pydantic model with an *open* ``event_type`` field —
 any Object-Action snake_case string is accepted, not a closed Literal enum.
 
+``FeedbackConfig`` allows host projects to register custom event types and
+optionally enable strict validation (reject unknown types at record time).
+
 ``FeedbackStore`` is a SQLite-backed store for feedback events, sharing the
 project's ``memory.db`` via a write-through connection.  Thread-safe via
 ``threading.Lock``.  Audit log emission is handled by the store's
@@ -38,6 +41,85 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 # Object-Action snake_case: at least two segments separated by underscores.
 # Segments: [a-z][a-z0-9]* (lower-case, starts with a letter).
 _EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)+$")
+
+# Built-in event types shipped with tapps-brain.  Custom event types
+# registered via ``FeedbackConfig.custom_event_types`` extend this set.
+BUILTIN_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "recall_rated",
+        "gap_reported",
+        "issue_flagged",
+        "implicit_positive",
+        "implicit_negative",
+        "implicit_correction",
+    }
+)
+
+# ---------------------------------------------------------------------------
+# FeedbackConfig
+# ---------------------------------------------------------------------------
+
+
+class FeedbackConfig(BaseModel):
+    """Configuration for feedback collection.
+
+    Allows host projects to:
+
+    * Register additional event type names beyond the standard built-ins via
+      ``custom_event_types``.  Each name is validated as Object-Action
+      snake_case (same pattern as ``FeedbackEvent.event_type``).
+    * Enable strict validation via ``strict_event_types=True``, which makes
+      ``FeedbackStore.record()`` reject any event type not in the known set
+      (built-ins + custom).
+
+    Profile YAML example
+    --------------------
+    .. code-block:: yaml
+
+       profile:
+         ...
+         feedback:
+           custom_event_types:
+             - deploy_completed
+             - pr_review_requested
+           strict_event_types: true
+    """
+
+    custom_event_types: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Additional event type names registered by the host project.  "
+            "Each must match Object-Action snake_case pattern: "
+            "``[a-z][a-z0-9]*(_[a-z][a-z0-9]*)+``."
+        ),
+    )
+    strict_event_types: bool = Field(
+        default=False,
+        description=(
+            "When True, ``FeedbackStore.record()`` rejects event types that are "
+            "not in the built-in or registered custom set.  "
+            "Default False preserves open-enum behaviour."
+        ),
+    )
+
+    @field_validator("custom_event_types")
+    @classmethod
+    def _validate_custom_event_types(cls, v: list[str]) -> list[str]:
+        """Validate that each custom event type matches the naming pattern."""
+        for name in v:
+            if not _EVENT_TYPE_RE.match(name):
+                raise ValueError(
+                    f"Custom event type {name!r} does not match Object-Action "
+                    f"snake_case pattern (e.g. 'deploy_completed').  "
+                    f"Must match: {_EVENT_TYPE_RE.pattern}"
+                )
+        return v
+
+    @property
+    def known_event_types(self) -> frozenset[str]:
+        """Return the full set of known event types (built-ins + custom)."""
+        return BUILTIN_EVENT_TYPES | frozenset(self.custom_event_types)
+
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -161,9 +243,15 @@ class FeedbackStore:
         audit_path: Path to the JSONL audit log (for audit emission).
     """
 
-    def __init__(self, db_path: "Path", audit_path: "Path | None" = None) -> None:
+    def __init__(
+        self,
+        db_path: "Path",
+        audit_path: "Path | None" = None,
+        config: "FeedbackConfig | None" = None,
+    ) -> None:
         self._db_path = db_path
         self._audit_path = audit_path
+        self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
         self._lock = threading.Lock()
         self._conn = self._connect()
         self._ensure_table()
@@ -214,8 +302,20 @@ class FeedbackStore:
     def record(self, event: FeedbackEvent) -> None:
         """Persist a feedback event and emit an audit log entry.
 
-        Implemented in story 029-1b.
+        If ``FeedbackConfig.strict_event_types`` is True, the event's
+        ``event_type`` must be in the known set (built-ins + custom); otherwise
+        a ``ValueError`` is raised before any write occurs.
+
+        Implemented in story 029-1b (base) + 029-2 (strict validation).
         """
+        if self._config.strict_event_types and event.event_type not in self._config.known_event_types:
+            known = sorted(self._config.known_event_types)
+            raise ValueError(
+                f"Unknown event_type {event.event_type!r}. "
+                f"With strict_event_types=True only known types are allowed. "
+                f"Register it via FeedbackConfig.custom_event_types or disable strict mode. "
+                f"Known types: {known}"
+            )
         with self._lock:
             self._conn.execute(
                 """
