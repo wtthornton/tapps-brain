@@ -144,6 +144,12 @@ class TestCoreTools:
             "memory_entries_by_tag",
             # OpenClaw migration tool
             "openclaw_migrate",
+            # Feedback tools (EPIC-029)
+            "feedback_rate",
+            "feedback_gap",
+            "feedback_issue",
+            "feedback_record",
+            "feedback_query",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
@@ -258,6 +264,11 @@ class TestResources:
         templates = mcp_server._resource_manager.list_resources()
         uris = [str(r.uri) for r in templates]
         assert "memory://metrics" in uris
+
+    def test_feedback_resource_registered(self, mcp_server):
+        templates = mcp_server._resource_manager.list_resources()
+        uris = [str(r.uri) for r in templates]
+        assert "memory://feedback" in uris
 
     def test_entry_resource_template_registered(self, mcp_server):
         templates = mcp_server._resource_manager.list_templates()
@@ -428,6 +439,49 @@ class TestMcpToolHandlerExecution:
             raw = tpl.fn("res-1")
             body = json.loads(raw)
             assert body.get("key") == "res-1"
+
+    def test_feedback_mcp_tools(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="fb-mcp-1", value="feedback mcp target", tier="pattern")
+
+        rate = _tool_fn(mcp_server, "feedback_rate")
+        r1 = json.loads(rate(entry_key="fb-mcp-1", rating="partial", session_id="s1"))
+        assert r1["status"] == "recorded"
+        assert r1["event"]["event_type"] == "recall_rated"
+
+        gap = _tool_fn(mcp_server, "feedback_gap")
+        r2 = json.loads(gap(query="missing topic", session_id="s1"))
+        assert r2["event"]["event_type"] == "gap_reported"
+
+        issue = _tool_fn(mcp_server, "feedback_issue")
+        r3 = json.loads(issue(entry_key="fb-mcp-1", issue="stale", details_json='{"x": 1}'))
+        assert r3["event"]["event_type"] == "issue_flagged"
+        assert r3["event"]["details"]["x"] == 1
+
+        rec = _tool_fn(mcp_server, "feedback_record")
+        r4 = json.loads(
+            rec(
+                event_type="deploy_completed",
+                entry_key="fb-mcp-1",
+                utility_score=0.5,
+                details_json="{}",
+            ),
+        )
+        assert r4["event"]["event_type"] == "deploy_completed"
+
+        bad = json.loads(rec(event_type="not-valid-type"))
+        assert bad.get("error") == "validation_error"
+
+        q = _tool_fn(mcp_server, "feedback_query")
+        out = json.loads(q(event_type="recall_rated", limit=10))
+        assert out["count"] >= 1
+        assert all(e["event_type"] == "recall_rated" for e in out["events"])
+
+        fb_res = next(
+            r for r in mcp_server._resource_manager.list_resources() if str(r.uri) == "memory://feedback"
+        )
+        snap = json.loads(fb_res.fn())
+        assert "events" in snap and snap["count"] >= 1
 
 
 class TestMcpMain:

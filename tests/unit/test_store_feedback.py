@@ -385,3 +385,72 @@ class TestFeedbackConfigFromProfile:
             assert ev.event_type == "deploy_completed"
         finally:
             s.close()
+
+
+# ---------------------------------------------------------------------------
+# Hive feedback propagation (STORY-029.7)
+# ---------------------------------------------------------------------------
+
+
+class TestHiveFeedbackPropagation:
+    def test_propagate_after_hive_recall_session_index(self, tmp_path: Path) -> None:
+        from tapps_brain.hive import HiveStore
+
+        hive_db = tmp_path / "hive.db"
+        hs = HiveStore(db_path=hive_db)
+        try:
+            hs.save(
+                key="hive-only-key",
+                value="unique propagation marker qqww1122",
+                namespace="universal",
+                source_agent="tester",
+                conflict_policy="last_write_wins",
+            )
+            store = MemoryStore(tmp_path, hive_store=hs, hive_agent_id="tester")
+            try:
+                res = store.recall("qqww1122", session_id="sess-hive-fb")
+                assert any(
+                    m.get("key") == "hive-only-key" and m.get("source") == "hive"
+                    for m in res.memories
+                )
+                store.rate_recall("hive-only-key", session_id="sess-hive-fb", rating="helpful")
+                rows = hs.query_feedback_events(namespace="universal", limit=20)
+                assert any(
+                    r["entry_key"] == "hive-only-key" and r["event_type"] == "recall_rated"
+                    for r in rows
+                )
+            finally:
+                store.close()
+        finally:
+            hs.close()
+
+    def test_propagate_via_details_hive_namespace(self, tmp_path: Path) -> None:
+        from tapps_brain.hive import HiveStore
+
+        hs = HiveStore(db_path=tmp_path / "h.db")
+        try:
+            store = MemoryStore(tmp_path, hive_store=hs)
+            try:
+                store.save("local-k", "v", tier="pattern")
+                store.rate_recall("local-k", details={"hive_namespace": "universal"})
+                rows = hs.query_feedback_events(entry_key="local-k", limit=5)
+                assert len(rows) == 1
+            finally:
+                store.close()
+        finally:
+            hs.close()
+
+    def test_no_propagate_without_namespace(self, tmp_path: Path) -> None:
+        from tapps_brain.hive import HiveStore
+
+        hs = HiveStore(db_path=tmp_path / "h2.db")
+        try:
+            store = MemoryStore(tmp_path, hive_store=hs)
+            try:
+                store.save("lk", "v", tier="pattern")
+                store.rate_recall("lk")
+                assert hs.query_feedback_events(limit=10) == []
+            finally:
+                store.close()
+        finally:
+            hs.close()

@@ -197,6 +197,27 @@ class HiveStore:
                     ON hive_memories(tier);
                 CREATE INDEX IF NOT EXISTS idx_hive_source_agent
                     ON hive_memories(source_agent);
+
+                CREATE TABLE IF NOT EXISTS hive_feedback_events (
+                    id              TEXT    NOT NULL PRIMARY KEY,
+                    namespace       TEXT    NOT NULL,
+                    entry_key       TEXT,
+                    event_type      TEXT    NOT NULL,
+                    session_id      TEXT,
+                    utility_score   REAL,
+                    details         TEXT    NOT NULL DEFAULT '{}',
+                    timestamp       TEXT    NOT NULL,
+                    source_project  TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_hive_fb_namespace
+                    ON hive_feedback_events(namespace);
+                CREATE INDEX IF NOT EXISTS idx_hive_fb_entry_key
+                    ON hive_feedback_events(entry_key);
+                CREATE INDEX IF NOT EXISTS idx_hive_fb_event_type
+                    ON hive_feedback_events(event_type);
+                CREATE INDEX IF NOT EXISTS idx_hive_fb_timestamp
+                    ON hive_feedback_events(timestamp);
             """)
 
             # FTS5 table — created separately (can't use executescript reliably)
@@ -237,6 +258,79 @@ class HiveStore:
                     self._conn.execute(trigger_sql)
 
             self._conn.commit()
+
+    def record_feedback_event(
+        self,
+        *,
+        event_id: str,
+        namespace: str,
+        entry_key: str | None,
+        event_type: str,
+        session_id: str | None,
+        utility_score: float | None,
+        details: dict[str, Any],
+        timestamp: str,
+        source_project: str | None = None,
+    ) -> None:
+        """Persist a feedback event mirrored from a project store (EPIC-029).
+
+        Thread-safe.  Raises ``sqlite3.Error`` on database failure — callers
+        that need failure tolerance should catch and log.
+        """
+        payload = json.dumps(details, default=str)
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO hive_feedback_events (
+                    id, namespace, entry_key, event_type, session_id,
+                    utility_score, details, timestamp, source_project
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    namespace,
+                    entry_key,
+                    event_type,
+                    session_id,
+                    utility_score,
+                    payload,
+                    timestamp,
+                    source_project,
+                ),
+            )
+            self._conn.commit()
+
+    def query_feedback_events(
+        self,
+        *,
+        namespace: str | None = None,
+        entry_key: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return recent hive feedback rows (newest first)."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if namespace is not None:
+            clauses.append("namespace = ?")
+            params.append(namespace)
+        if entry_key is not None:
+            clauses.append("entry_key = ?")
+            params.append(entry_key)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM hive_feedback_events {where} ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(row)
+            raw_details = d.get("details", "{}")
+            try:
+                d["details"] = json.loads(raw_details) if isinstance(raw_details, str) else {}
+            except json.JSONDecodeError:
+                d["details"] = {}
+            out.append(d)
+        return out
 
     def close(self) -> None:
         """Close the database connection."""

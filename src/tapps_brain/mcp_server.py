@@ -27,6 +27,23 @@ logger = structlog.get_logger(__name__)
 _MAX_CONFIDENCE_BOOST: float = 0.2  # Maximum allowed confidence_boost for memory_reinforce
 
 
+def _mcp_parse_details_json(details_json: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse optional JSON object for MCP *details_json* parameters.
+
+    Returns:
+        ``(dict, None)`` on success, or ``(None, error_message)`` on failure.
+    """
+    if details_json is None or not str(details_json).strip():
+        return {}, None
+    try:
+        data = json.loads(details_json)
+    except json.JSONDecodeError as exc:
+        return None, f"invalid_details_json: {exc}"
+    if not isinstance(data, dict):
+        return None, "details_json must be a JSON object"
+    return data, None
+
+
 def _lazy_import_mcp() -> Any:  # noqa: ANN401
     """Import ``mcp`` lazily so the module can be imported without the extra."""
     try:
@@ -546,6 +563,154 @@ def create_server(  # noqa: PLR0915
         )
 
     # ------------------------------------------------------------------
+    # Feedback tools (EPIC-029 / STORY-029.4)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def feedback_rate(
+        entry_key: str,
+        rating: str = "helpful",
+        session_id: str = "",
+        details_json: str = "",
+    ) -> str:
+        """Rate a recalled memory entry (creates ``recall_rated`` event).
+
+        Args:
+            entry_key: Memory key that was recalled.
+            rating: One of: helpful, partial, irrelevant, outdated.
+            session_id: Optional session identifier.
+            details_json: Optional JSON object string with extra metadata.
+        """
+        details, err = _mcp_parse_details_json(details_json)
+        if err is not None:
+            return json.dumps({"error": "parse_error", "message": err})
+        try:
+            event = store.rate_recall(
+                entry_key,
+                rating=rating,
+                session_id=session_id.strip() or None,
+                details=details if details else None,
+            )
+        except ValueError as exc:
+            return json.dumps({"error": "validation_error", "message": str(exc)})
+        return json.dumps({"status": "recorded", "event": event.model_dump(mode="json")})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def feedback_gap(
+        query: str,
+        session_id: str = "",
+        details_json: str = "",
+    ) -> str:
+        """Report a knowledge gap (``gap_reported`` event).
+
+        Args:
+            query: Query or topic that was not well served.
+            session_id: Optional session identifier.
+            details_json: Optional JSON object merged into event details.
+        """
+        details, err = _mcp_parse_details_json(details_json)
+        if err is not None:
+            return json.dumps({"error": "parse_error", "message": err})
+        event = store.report_gap(
+            query,
+            session_id=session_id.strip() or None,
+            details=details if details else None,
+        )
+        return json.dumps({"status": "recorded", "event": event.model_dump(mode="json")})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def feedback_issue(
+        entry_key: str,
+        issue: str,
+        session_id: str = "",
+        details_json: str = "",
+    ) -> str:
+        """Flag a quality issue with a memory entry (``issue_flagged``).
+
+        Args:
+            entry_key: Affected memory key.
+            issue: Human-readable issue description.
+            session_id: Optional session identifier.
+            details_json: Optional JSON object merged into event details.
+        """
+        details, err = _mcp_parse_details_json(details_json)
+        if err is not None:
+            return json.dumps({"error": "parse_error", "message": err})
+        event = store.report_issue(
+            entry_key,
+            issue,
+            session_id=session_id.strip() or None,
+            details=details if details else None,
+        )
+        return json.dumps({"status": "recorded", "event": event.model_dump(mode="json")})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def feedback_record(
+        event_type: str,
+        entry_key: str = "",
+        session_id: str = "",
+        utility_score: float | None = None,
+        details_json: str = "",
+    ) -> str:
+        """Record a generic feedback event (built-in or custom type).
+
+        Args:
+            event_type: Object-Action snake_case name (e.g. ``deploy_completed``).
+            entry_key: Optional related memory key.
+            session_id: Optional session identifier.
+            utility_score: Optional score in [-1.0, 1.0].
+            details_json: Optional JSON object for extra metadata.
+        """
+        details, err = _mcp_parse_details_json(details_json)
+        if err is not None:
+            return json.dumps({"error": "parse_error", "message": err})
+        try:
+            event = store.record_feedback(
+                event_type,
+                entry_key=entry_key.strip() or None,
+                session_id=session_id.strip() or None,
+                utility_score=utility_score,
+                details=details if details else None,
+            )
+        except ValueError as exc:
+            return json.dumps({"error": "validation_error", "message": str(exc)})
+        return json.dumps({"status": "recorded", "event": event.model_dump(mode="json")})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def feedback_query(
+        event_type: str = "",
+        entry_key: str = "",
+        session_id: str = "",
+        since: str = "",
+        until: str = "",
+        limit: int = 100,
+    ) -> str:
+        """Query recorded feedback events with optional filters.
+
+        Args:
+            event_type: Filter by exact type, or empty for all.
+            entry_key: Filter by memory key, or empty for any.
+            session_id: Filter by session, or empty for any.
+            since: ISO-8601 inclusive lower bound, or empty.
+            until: ISO-8601 inclusive upper bound, or empty.
+            limit: Max rows (default 100).
+        """
+        events = store.query_feedback(
+            event_type=event_type.strip() or None,
+            entry_key=entry_key.strip() or None,
+            session_id=session_id.strip() or None,
+            since=since.strip() or None,
+            until=until.strip() or None,
+            limit=limit,
+        )
+        return json.dumps(
+            {
+                "events": [e.model_dump(mode="json") for e in events],
+                "count": len(events),
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Resources — read-only store views
     # ------------------------------------------------------------------
 
@@ -583,6 +748,17 @@ def create_server(  # noqa: PLR0915
         """Operation metrics: counters and latency histograms."""
         snapshot = store.get_metrics()
         return json.dumps(snapshot.to_dict())
+
+    @mcp.resource("memory://feedback")  # type: ignore[untyped-decorator]
+    def feedback_resource() -> str:
+        """Recent feedback events (up to 500), newest-friendly order by query default."""
+        events = store.query_feedback(limit=500)
+        return json.dumps(
+            {
+                "events": [e.model_dump(mode="json") for e in events],
+                "count": len(events),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Prompts — user-invoked workflow templates (STORY-008.6)

@@ -78,6 +78,12 @@ class TestHiveStoreSchema:
         }
         assert expected <= col_names
 
+    def test_hive_feedback_events_table_exists(self, hive: HiveStore) -> None:
+        tables = hive._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='hive_feedback_events'"
+        ).fetchall()
+        assert len(tables) == 1
+
     def test_primary_key_is_namespace_key(self, hive: HiveStore) -> None:
         """Composite PK (namespace, key) should reject duplicates."""
         hive._conn.execute(

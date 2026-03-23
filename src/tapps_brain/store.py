@@ -222,6 +222,9 @@ class MemoryStore:
         self._session_query_log: dict[str, list[tuple[str, list[str], float]]] = {}
         self._session_recalled_values: dict[str, list[tuple[str, str, float]]] = {}
 
+        # EPIC-029 story 029-7: session → hive memory key → namespace for feedback propagation.
+        self._hive_feedback_key_index: dict[str, dict[str, str]] = {}
+
         logger.info(
             "memory_store_initialized",
             project_root=str(project_root),
@@ -1229,6 +1232,19 @@ class MemoryStore:
                 if isinstance(m, dict) and m.get("key")
             ]
 
+            # EPIC-029 story 029-7: remember which keys came from Hive (per session).
+            with self._lock:
+                _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
+                for _m in _memories:
+                    if not isinstance(_m, dict):
+                        continue
+                    if str(_m.get("source", "")) != "hive":
+                        continue
+                    _hk = str(_m.get("key", ""))
+                    if not _hk:
+                        continue
+                    _hive_idx[_hk] = str(_m.get("namespace", "universal"))
+
             # EPIC-029 story 029-4b: reformulation detection.
             # Compare the current query against recent queries in the session log.
             # If Jaccard similarity > 0.5 within 60s, emit implicit_correction for
@@ -1706,6 +1722,56 @@ class MemoryStore:
             )
         return self._feedback_store_instance
 
+    def _propagate_feedback_to_hive(
+        self, event: "FeedbackEvent", session_id: str | None
+    ) -> None:
+        """Mirror feedback to the Hive when the entry was Hive-sourced (STORY-029.7).
+
+        Resolves namespace from the per-session hive recall index, or from
+        ``event.details[\"hive_namespace\"]`` when set explicitly.
+
+        Failure-tolerant: Hive write errors are logged and do not affect local
+        feedback persistence.
+        """
+        if self._hive_store is None:
+            return
+        ek = event.entry_key
+        if not ek:
+            return
+        ns: str | None = None
+        if session_id:
+            with self._lock:
+                ns = self._hive_feedback_key_index.get(session_id, {}).get(ek)
+        if ns is None:
+            d = event.details if isinstance(event.details, dict) else {}
+            hn = d.get("hive_namespace")
+            if isinstance(hn, str) and hn.strip():
+                ns = hn.strip()
+        if ns is None:
+            return
+        try:
+            details_out: dict[str, Any] = (
+                dict(event.details) if isinstance(event.details, dict) else {}
+            )
+            self._hive_store.record_feedback_event(
+                event_id=event.id,
+                namespace=ns,
+                entry_key=ek,
+                event_type=event.event_type,
+                session_id=event.session_id,
+                utility_score=event.utility_score,
+                details=details_out,
+                timestamp=event.timestamp,
+                source_project=str(self._project_root.resolve()),
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "hive_feedback_propagate_failed",
+                entry_key=ek,
+                namespace=ns,
+                exc_info=True,
+            )
+
     def rate_recall(
         self,
         entry_key: str,
@@ -1753,6 +1819,7 @@ class MemoryStore:
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.recall_rated")
+        self._propagate_feedback_to_hive(event, session_id)
         return event
 
     def report_gap(
@@ -1818,6 +1885,7 @@ class MemoryStore:
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.issue_flagged")
+        self._propagate_feedback_to_hive(event, session_id)
         return event
 
     def record_feedback(
@@ -1862,6 +1930,7 @@ class MemoryStore:
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.recorded")
+        self._propagate_feedback_to_hive(event, session_id)
         return event
 
     def query_feedback(
@@ -1982,6 +2051,7 @@ class MemoryStore:
             )
             self._get_feedback_store().record(event)
             self._metrics.increment(f"store.feedback.{event_type}")
+            self._propagate_feedback_to_hive(event, session_id)
         except Exception:  # noqa: BLE001
             logger.debug(
                 "implicit_feedback_emit_failed",

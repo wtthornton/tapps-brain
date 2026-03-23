@@ -69,6 +69,8 @@ class TestVersionHelp:
             "profile",
             "hive",
             "agent",
+            "openclaw",
+            "feedback",
         ]:
             result = runner.invoke(app, [subgroup, "--help"])
             assert result.exit_code == 0, f"{subgroup} --help failed"
@@ -85,14 +87,14 @@ class TestStoreCommands:
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "Entries: 3 / 500" in result.stdout
-        assert "Schema: v8" in result.stdout
+        assert "Schema: v9" in result.stdout
 
     def test_stats_json(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["total_entries"] == 3
-        assert data["schema_version"] == 8
+        assert data["schema_version"] == 9
 
     def test_list(self, project_dir):
         result = runner.invoke(app, ["store", "list", "--project-dir", project_dir])
@@ -634,14 +636,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v8" in result.stdout
+        assert "v9" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v8" in result.stdout
+        assert "v9" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
@@ -649,7 +651,7 @@ class TestMaintenanceCommands:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["schema_version"] == 8
+        assert data["schema_version"] == 9
 
 
 class TestMaintenanceGcConfigCommand:
@@ -1442,3 +1444,102 @@ class TestMemoryTagCommand:
         assert result.exit_code != 0
         data = json.loads(result.stdout)
         assert data.get("error") == "not_found"
+
+
+# ===================================================================
+# Feedback commands (EPIC-029)
+# ===================================================================
+
+
+class TestFeedbackCommands:
+    def test_feedback_rate_gap_issue_record_list(self, project_dir):
+        r1 = runner.invoke(
+            app,
+            ["feedback", "rate", "tech-stack", "--rating", "helpful", "--project-dir", project_dir],
+        )
+        assert r1.exit_code == 0
+        assert "recall_rated" in r1.stdout
+
+        r2 = runner.invoke(
+            app,
+            ["feedback", "gap", "how do we deploy?", "--project-dir", project_dir],
+        )
+        assert r2.exit_code == 0
+        assert "gap_reported" in r2.stdout
+
+        r3 = runner.invoke(
+            app,
+            ["feedback", "issue", "tech-stack", "outdated stack", "--project-dir", project_dir],
+        )
+        assert r3.exit_code == 0
+        assert "issue_flagged" in r3.stdout
+
+        r4 = runner.invoke(
+            app,
+            [
+                "feedback",
+                "record",
+                "pr_merged",
+                "--entry-key",
+                "api-pattern",
+                "--utility-score",
+                "0.25",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert r4.exit_code == 0
+        assert "pr_merged" in r4.stdout
+
+        lst = runner.invoke(
+            app,
+            ["feedback", "list", "--event-type", "gap_reported", "--project-dir", project_dir],
+        )
+        assert lst.exit_code == 0
+        assert "gap_reported" in lst.stdout
+        assert "1 event" in lst.stdout
+
+    def test_feedback_json_output(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["feedback", "rate", "tech-stack", "--json", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert data["status"] == "recorded"
+        assert data["event"]["event_type"] == "recall_rated"
+
+        lst = runner.invoke(app, ["feedback", "list", "--json", "--project-dir", project_dir])
+        assert lst.exit_code == 0
+        rows = json.loads(lst.stdout)
+        assert isinstance(rows, list)
+        assert len(rows) >= 1
+
+    def test_feedback_invalid_rating_exit_code(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["feedback", "rate", "tech-stack", "--rating", "nope", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 1
+
+    def test_feedback_invalid_event_type_exit_code(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["feedback", "record", "bad", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 1
+
+    def test_feedback_invalid_details_json_exit_code(self, project_dir):
+        r = runner.invoke(
+            app,
+            [
+                "feedback",
+                "rate",
+                "tech-stack",
+                "--details-json",
+                "not-json",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert r.exit_code == 1
