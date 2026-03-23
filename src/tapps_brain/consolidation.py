@@ -37,7 +37,7 @@ logger = structlog.get_logger(__name__)
 DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE = 2
 MAX_CONSOLIDATED_VALUE_LENGTH = 4096
 _MIN_PREFIX_LENGTH = 3
-_MIN_ENTRIES_FOR_CONSOLIDATION = 2
+_MIN_ENTRIES_FOR_CONSOLIDATION = DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE
 
 
 # ---------------------------------------------------------------------------
@@ -346,20 +346,6 @@ def consolidate(
         consolidated_at=now,
         consolidation_reason=reason,
     )
-
-    # Epic 65.12: extract relations from consolidated value (optional)
-    try:
-        from tapps_brain.relations import extract_relations as _extract_rels
-
-        relations = _extract_rels(key, value)
-        if relations:
-            logger.debug(
-                "consolidation_relations_extracted",
-                key=key,
-                relation_count=len(relations),
-            )
-    except ImportError:
-        pass
 
     logger.debug(
         "memory_consolidated",
