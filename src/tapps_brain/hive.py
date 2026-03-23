@@ -384,12 +384,21 @@ class HiveStore:
         key: str,
         now: str,
     ) -> str | None:
-        """Apply conflict policy. Returns action or None (reject)."""
+        """Apply conflict policy.
+
+        Returns:
+            ``"overwrite"``: caller should update in-place (preserves ``created_at``).
+            ``"supersede_version"``: caller should mark old version invalid and write
+                a new versioned key.
+            ``None``: write rejected — caller should return ``None`` to the caller.
+        """
         if policy == ConflictPolicy.last_write_wins:
             return "overwrite"
 
         if policy == ConflictPolicy.source_authority:
-            # Reject if the source agent doesn't match namespace
+            # Reject if the new writer differs from the agent that made the original
+            # write.  The semantics are "only the original author may update this
+            # entry"; comparing source_agent IDs is the correct check here.
             if source_agent != existing.get("source_agent", ""):
                 logger.warning(
                     "hive.conflict.source_authority_rejected",
@@ -431,7 +440,10 @@ class HiveStore:
         now: str,
     ) -> dict[str, Any]:
         """Mark old version invalid and write new version. Caller must hold ``self._lock``."""
-        new_key = f"{key}-v{now.replace(':', '').replace('-', '')[:15]}"
+        # Include microseconds (22 chars) so that two rapid supersedes on the
+        # same key within the same second produce distinct versioned keys.
+        # Pattern: "20260323T123456.123456" from "2026-03-23T12:34:56.123456+00:00".
+        new_key = f"{key}-v{now.replace(':', '').replace('-', '').replace('+', '')[:22]}"
         self._conn.execute(
             "UPDATE hive_memories SET invalid_at = ?, superseded_by = ? "
             "WHERE namespace = ? AND key = ?",
@@ -672,6 +684,15 @@ class PropagationEngine:
 
         if effective_scope == "private":
             return None
+
+        if effective_scope not in ("domain", "hive"):
+            logger.warning(
+                "hive.propagate.unknown_scope",
+                effective_scope=effective_scope,
+                agent_id=agent_id,
+                key=key,
+                fallback="domain",
+            )
 
         namespace = "universal" if effective_scope == "hive" else agent_profile
 

@@ -914,3 +914,80 @@ class TestAgentRegistryMalformedYAML:
         reg = AgentRegistry(registry_path=registry_path)
         assert reg.get("good") is not None
         assert len(reg.list_agents()) == 1
+
+
+# ---------------------------------------------------------------------------
+# 021-C review fixes: ConflictPolicy docstrings, supersede key uniqueness,
+# PropagationEngine unknown-scope warning
+# ---------------------------------------------------------------------------
+
+
+class TestSupersedeMicrosecondKey:
+    """_supersede_existing_locked should generate microsecond-precision versioned keys."""
+
+    def test_two_rapid_supersedes_produce_distinct_keys(self, tmp_path: Path) -> None:
+        """Keys versioned with microseconds — two rapid supersedes don't collide."""
+        hive = HiveStore(db_path=tmp_path / "hive.db")
+        hive.save(key="base", value="v1", namespace="ns")
+        hive.save(key="base", value="v2", namespace="ns", conflict_policy="supersede")
+        hive.save(key="base", value="v3", namespace="ns", conflict_policy="supersede")
+
+        # Check that we have two versioned (superseded) entries plus the current one
+        rows = hive._conn.execute(
+            "SELECT key FROM hive_memories WHERE namespace = 'ns'"
+        ).fetchall()
+        keys = [r[0] for r in rows]
+        # The versioned keys both start with "base-v"
+        versioned = [k for k in keys if k.startswith("base-v")]
+        assert len(versioned) >= 1, f"Expected versioned keys, got: {keys}"
+        # All versioned keys must be distinct (no collision)
+        assert len(set(versioned)) == len(versioned), f"Duplicate versioned keys: {versioned}"
+        hive.close()
+
+    def test_versioned_key_uses_microsecond_precision(self, tmp_path: Path) -> None:
+        """Versioned key timestamp suffix has more than second-level precision."""
+        hive = HiveStore(db_path=tmp_path / "hive.db")
+        hive.save(key="mykey", value="v1", namespace="ns")
+        hive.save(key="mykey", value="v2", namespace="ns", conflict_policy="supersede")
+
+        rows = hive._conn.execute(
+            "SELECT key FROM hive_memories WHERE namespace = 'ns' AND key != 'mykey'"
+        ).fetchall()
+        assert len(rows) == 1
+        versioned_key = rows[0][0]
+        # Should have more than 15-char suffix (second-granular would be exactly 15)
+        suffix = versioned_key.split("-v", 1)[-1]
+        assert len(suffix) > 15, f"Suffix too short (only second-granular?): {suffix!r}"
+        hive.close()
+
+
+class TestPropagationEngineUnknownScope:
+    """PropagationEngine.propagate() should warn on unknown effective_scope values."""
+
+    def test_unknown_scope_emits_warning_and_uses_domain(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Unknown scope falls back to domain (agent_profile) with a warning."""
+        import logging
+
+        hive = HiveStore(db_path=tmp_path / "hive.db")
+        with caplog.at_level(logging.WARNING):
+            result = PropagationEngine.propagate(
+                key="scope-test",
+                value="value",
+                agent_scope="custom_unknown",
+                agent_id="agent-1",
+                agent_profile="test-profile",
+                tier="pattern",
+                confidence=0.7,
+                source="agent",
+                tags=None,
+                hive_store=hive,
+            )
+
+        # Should NOT return None — falls back to domain (agent_profile)
+        assert result is not None
+        assert result["namespace"] == "test-profile"
+        # Warning logged — event key contains "unknown_scope"
+        assert any("unknown_scope" in r.message for r in caplog.records)
+        hive.close()
