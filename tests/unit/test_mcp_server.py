@@ -868,6 +868,26 @@ class TestFederationErrorPaths:
         result = json.loads(fn())
         assert result["hub_stats"]["error"] == "hub_unavailable"
 
+    def test_federation_status_closes_hub_on_get_stats_exception(
+        self, mcp_server, tmp_path, monkeypatch
+    ):
+        """hub.close() is called even when get_stats() raises (connection not leaked)."""
+        closed_calls: list[str] = []
+
+        class FakeHub:
+            def get_stats(self) -> dict[str, int]:
+                raise RuntimeError("stats unavailable")
+
+            def close(self) -> None:
+                closed_calls.append("closed")
+
+        monkeypatch.setattr("tapps_brain.federation.FederatedStore", lambda: FakeHub())
+
+        fn = _tool_fn(mcp_server, "federation_status")
+        result = json.loads(fn())
+        assert result["hub_stats"]["error"] == "hub_unavailable"
+        assert closed_calls == ["closed"], "hub.close() must be called even when get_stats raises"
+
     def test_federation_subscribe_value_error(self, mcp_server, tmp_path, monkeypatch):
         """Force add_subscription to raise ValueError."""
         monkeypatch.setattr(
@@ -1481,7 +1501,7 @@ class TestHiveToolsReuseSharedStore:
         server._tapps_store.close()
 
     def test_hive_status_closes_temp_hive_on_exception(self, store_dir, monkeypatch):
-        """hive_status calls .close() on a temp HiveStore even when list_namespaces raises."""
+        """hive_status calls .close() on a temp HiveStore even when count_by_namespace raises."""
         from unittest.mock import MagicMock, patch
 
         from tapps_brain.mcp_server import create_server
@@ -1502,7 +1522,7 @@ class TestHiveToolsReuseSharedStore:
                 original_close()
 
             self.close = close_wrapper
-            self.list_namespaces = MagicMock(side_effect=ValueError("namespaces exploded"))
+            self.count_by_namespace = MagicMock(side_effect=ValueError("count exploded"))
 
         import tapps_brain.hive as hive_module
 

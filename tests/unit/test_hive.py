@@ -274,6 +274,32 @@ class TestHiveStoreListNamespaces:
         assert "universal" in hive.list_namespaces()
 
 
+class TestHiveStoreCountByNamespace:
+    """count_by_namespace() method."""
+
+    def test_empty_store_returns_empty_dict(self, hive: HiveStore) -> None:
+        assert hive.count_by_namespace() == {}
+
+    def test_single_namespace(self, hive: HiveStore) -> None:
+        hive.save(key="k1", value="v1", namespace="alpha")
+        hive.save(key="k2", value="v2", namespace="alpha")
+        counts = hive.count_by_namespace()
+        assert counts == {"alpha": 2}
+
+    def test_multiple_namespaces(self, hive: HiveStore) -> None:
+        hive.save(key="k1", value="v1", namespace="alpha")
+        hive.save(key="k2", value="v2", namespace="beta")
+        hive.save(key="k3", value="v3", namespace="alpha")
+        counts = hive.count_by_namespace()
+        assert counts == {"alpha": 2, "beta": 1}
+
+    def test_respects_lock(self, hive: HiveStore) -> None:
+        """count_by_namespace runs inside the lock (no deadlock for single caller)."""
+        hive.save(key="k1", value="v1", namespace="universal")
+        counts = hive.count_by_namespace()
+        assert "universal" in counts
+
+
 class TestNamespaceIsolation:
     """Cross-cutting: namespace isolation guarantees."""
 

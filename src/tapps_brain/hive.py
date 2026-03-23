@@ -635,6 +635,14 @@ class HiveStore:
             ).fetchall()
         return [row[0] for row in rows]
 
+    def count_by_namespace(self) -> dict[str, int]:
+        """Return a mapping of namespace → entry count for all namespaces."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT namespace, COUNT(*) FROM hive_memories GROUP BY namespace"
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
 
 # ---------------------------------------------------------------------------
 # Propagation Engine (011-E)

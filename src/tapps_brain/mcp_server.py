@@ -24,6 +24,8 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
+_MAX_CONFIDENCE_BOOST: float = 0.2  # Maximum allowed confidence_boost for memory_reinforce
+
 
 def _lazy_import_mcp() -> Any:  # noqa: ANN401
     """Import ``mcp`` lazily so the module can be imported without the extra."""
@@ -338,11 +340,14 @@ def create_server(  # noqa: PLR0915
             key: The memory entry key to reinforce.
             confidence_boost: Confidence increase (0.0-0.2). Defaults to 0.0.
         """
-        if not (0.0 <= confidence_boost <= 0.2):
+        if not (0.0 <= confidence_boost <= _MAX_CONFIDENCE_BOOST):
             return json.dumps(
                 {
                     "error": "invalid_confidence_boost",
-                    "message": f"confidence_boost must be in [0.0, 0.2], got {confidence_boost}",
+                    "message": (
+                        f"confidence_boost must be in [0.0, {_MAX_CONFIDENCE_BOOST}],"
+                        f" got {confidence_boost}"
+                    ),
                 }
             )
         try:
@@ -677,9 +682,12 @@ def create_server(  # noqa: PLR0915
         config = load_federation_config()
         try:
             hub = FederatedStore()
-            stats = hub.get_stats()
-            hub.close()
+            try:
+                stats = hub.get_stats()
+            finally:
+                hub.close()
         except Exception:
+            logger.warning("federation_hub_unavailable")
             stats = {"error": "hub_unavailable"}
 
         return json.dumps(
@@ -1130,18 +1138,10 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import AgentRegistry, HiveStore
 
             shared = getattr(store, "_hive_store", None)
-            _hive_ctx = HiveStore() if shared is None else None
-            hive = shared if shared is not None else _hive_ctx
-            assert hive is not None
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
             try:
-                namespaces = hive.list_namespaces()
-                ns_counts: dict[str, int] = {}
-                for ns in namespaces:
-                    rows = hive._conn.execute(
-                        "SELECT COUNT(*) FROM hive_memories WHERE namespace = ?",
-                        (ns,),
-                    ).fetchone()
-                    ns_counts[ns] = rows[0] if rows else 0
+                ns_counts = hive.count_by_namespace()
 
                 registry = AgentRegistry()
                 agents = [
@@ -1154,8 +1154,8 @@ def create_server(  # noqa: PLR0915
                     for a in registry.list_agents()
                 ]
             finally:
-                if _hive_ctx is not None:
-                    _hive_ctx.close()
+                if _should_close:
+                    hive.close()
             return json.dumps(
                 {
                     "namespaces": ns_counts,
@@ -1185,15 +1185,14 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import HiveStore
 
             shared = getattr(store, "_hive_store", None)
-            _hive_ctx = HiveStore() if shared is None else None
-            hive = shared if shared is not None else _hive_ctx
-            assert hive is not None
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
             try:
                 ns_list = [namespace] if namespace else None
                 results = hive.search(query, namespaces=ns_list, limit=20)
             finally:
-                if _hive_ctx is not None:
-                    _hive_ctx.close()
+                if _should_close:
+                    hive.close()
             return json.dumps({"results": results, "count": len(results)})
         except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_search")
@@ -1220,9 +1219,8 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.hive import HiveStore, PropagationEngine
 
             shared = getattr(store, "_hive_store", None)
-            _hive_ctx = HiveStore() if shared is None else None
-            hive = shared if shared is not None else _hive_ctx
-            assert hive is not None
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
             if store.profile is not None:
@@ -1243,8 +1241,8 @@ def create_server(  # noqa: PLR0915
                     hive_store=hive,
                 )
             finally:
-                if _hive_ctx is not None:
-                    _hive_ctx.close()
+                if _should_close:
+                    hive.close()
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
             return json.dumps({"propagated": True, **result})
@@ -1479,7 +1477,7 @@ def create_server(  # noqa: PLR0915
         )
         return json.dumps(
             {
-                "events": [e.model_dump() for e in entries],
+                "events": [e.model_dump(mode="json") for e in entries],
                 "count": len(entries),
             }
         )
