@@ -272,7 +272,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Observability (all independent)
 
 #### 023-C: Review `metrics.py` + `otel_exporter.py` — observability stack
-- [ ] Review `src/tapps_brain/metrics.py` (208 lines) and `src/tapps_brain/otel_exporter.py` (88 lines). Focus on: metric naming conventions, counter overflow handling, OpenTelemetry integration correctness, missing metrics for key operations. Fix all issues. Commit: `review(story-023.3): metrics and OTel review`
+- [x] Review `src/tapps_brain/metrics.py` (208 lines) and `src/tapps_brain/otel_exporter.py` (88 lines). Focus on: metric naming conventions, counter overflow handling, OpenTelemetry integration correctness, missing metrics for key operations. Fix all issues. Commit: `review(story-023.3): metrics and OTel review`
 
 ## Active — EPIC-024: Code Review — Unit Tests (Part 1)
 

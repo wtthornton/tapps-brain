@@ -81,9 +81,64 @@ class TestOTelExporter:
         exporter.export(snapshot)
         assert mock_meter.create_counter.call_count == 2
 
-        # Second export reuses existing counters
+        # Second export reuses existing counters (no new create_counter calls)
         exporter.export(snapshot)
         assert mock_meter.create_counter.call_count == 2
+
+    def test_export_counter_delta_tracking(self) -> None:
+        """Second export sends only the delta, not the cumulative total."""
+        mock_meter = MagicMock()
+        mock_counter = MagicMock()
+        mock_meter.create_counter.return_value = mock_counter
+
+        from tapps_brain.otel_exporter import OTelExporter
+
+        exporter = OTelExporter(meter=mock_meter)
+
+        # First snapshot: count=5
+        snap1 = MetricsSnapshot(counters={"saves": 5})
+        exporter.export(snap1)
+        mock_counter.add.assert_called_once_with(5)
+
+        mock_counter.reset_mock()
+
+        # Second snapshot: count=8 — only the delta (3) should be sent
+        snap2 = MetricsSnapshot(counters={"saves": 8})
+        exporter.export(snap2)
+        mock_counter.add.assert_called_once_with(3)
+
+    def test_export_counter_no_delta_skips_add(self) -> None:
+        """If counter value has not changed, add() is not called."""
+        mock_meter = MagicMock()
+        mock_counter = MagicMock()
+        mock_meter.create_counter.return_value = mock_counter
+
+        from tapps_brain.otel_exporter import OTelExporter
+
+        exporter = OTelExporter(meter=mock_meter)
+
+        snap = MetricsSnapshot(counters={"saves": 5})
+        exporter.export(snap)
+        mock_counter.reset_mock()
+
+        # Same snapshot again — delta is 0, add() must not be called
+        exporter.export(snap)
+        mock_counter.add.assert_not_called()
+
+    def test_export_suppresses_sdk_errors(self) -> None:
+        """OTel SDK failures must not propagate to the caller."""
+        mock_meter = MagicMock()
+        mock_counter = MagicMock()
+        mock_counter.add.side_effect = RuntimeError("OTel unavailable")
+        mock_meter.create_counter.return_value = mock_counter
+
+        from tapps_brain.otel_exporter import OTelExporter
+
+        exporter = OTelExporter(meter=mock_meter)
+
+        snap = MetricsSnapshot(counters={"saves": 1})
+        # Must not raise even though counter.add() raises
+        exporter.export(snap)
 
 
 class TestCreateExporter:
