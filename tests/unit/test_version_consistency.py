@@ -52,18 +52,28 @@ def _read_plugin_json_version() -> str:
     return version
 
 
+def _read_server_json_version() -> str:
+    """Read version from server.json (MCP server manifest)."""
+    server = PROJECT_ROOT / "server.json"
+    data = json.loads(server.read_text(encoding="utf-8"))
+    version: str = data["version"]
+    return version
+
+
 def test_all_versions_match() -> None:
     """All distribution files must declare the same version string."""
     pyproject_ver = _read_pyproject_version()
     skill_md_ver = _read_skill_md_version()
     package_json_ver = _read_package_json_version()
     plugin_json_ver = _read_plugin_json_version()
+    server_json_ver = _read_server_json_version()
 
     versions = {
         "pyproject.toml": pyproject_ver,
         "openclaw-skill/SKILL.md": skill_md_ver,
         "openclaw-plugin/package.json": package_json_ver,
         "openclaw-skill/openclaw.plugin.json": plugin_json_ver,
+        "server.json": server_json_ver,
     }
 
     # All must be non-empty

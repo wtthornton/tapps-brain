@@ -288,7 +288,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] In `decay.py:_get_half_life()`, unknown tier strings silently fall back to `context_half_life_days` (14 days). Add `logger.warning("unknown_tier_fallback", tier=tier_str, fallback_days=config.context_half_life_days)` before the fallback return. This makes misconfigured profiles debuggable. Add a unit test that triggers the fallback and verifies the log message. Commit: `fix: log warning on unknown tier fallback in decay`
 
 #### BUG-001-E: Add `server.json` to version consistency test
-- [ ] `tests/unit/test_version_consistency.py` checks `pyproject.toml` vs `__init__.py` but not `server.json` (which has a hardcoded `"version": "1.1.0"`). Add `server.json` to the consistency check. Verify it matches current version. Fix the version if it has drifted. Commit: `fix: include server.json in version consistency check`
+- [x] `tests/unit/test_version_consistency.py` checks `pyproject.toml` vs `__init__.py` but not `server.json` (which has a hardcoded `"version": "1.1.0"`). Add `server.json` to the consistency check. Verify it matches current version. Fix the version if it has drifted. Commit: `fix: include server.json in version consistency check`
 
 #### BUG-001-F: Narrow bare `except Exception` in MCP Hive tools
 - [ ] In `mcp_server.py`, MCP hive/registry tool handlers catch bare `except Exception` which swallows unexpected errors silently. Narrow to `except (ValueError, OSError, sqlite3.Error)` and add `logger.exception("hive_tool_error", tool=...)` for observability. Keep the JSON error response format. Add a unit test with a mocked unexpected exception to verify it's not swallowed. Commit: `fix: narrow exception handling in MCP Hive tools`
