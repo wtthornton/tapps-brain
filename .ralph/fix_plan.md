@@ -472,7 +472,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Register `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.5): register audit, tags, profile tools`
 
 #### 027-E: Register maintenance and config tools
-- [ ] Register `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.4): register maintenance and config tools`
+- [x] Register `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.4): register maintenance and config tools`
 
 #### 027-F: Register federation tools
 - [ ] Register `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.2): register federation tools`

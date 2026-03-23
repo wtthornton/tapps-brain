@@ -75,6 +75,16 @@ tools:
     description: Merge similar memories
   - name: maintenance_gc
     description: Archive stale memories
+  # GC Config
+  - name: memory_gc_config
+    description: Return current garbage collection configuration
+  - name: memory_gc_config_set
+    description: Update garbage collection thresholds
+  # Consolidation Config
+  - name: memory_consolidation_config
+    description: Return current auto-consolidation configuration
+  - name: memory_consolidation_config_set
+    description: Update auto-consolidation settings
   # Export/Import
   - name: memory_export
     description: Export entries as JSON

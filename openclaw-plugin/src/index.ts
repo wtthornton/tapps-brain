@@ -1524,6 +1524,270 @@ function registerAuditTagsProfileTools(
 }
 
 // ---------------------------------------------------------------------------
+// Maintenance, config, export/import tools — maintenance_consolidate,
+//   maintenance_gc, memory_gc_config, memory_gc_config_set,
+//   memory_consolidation_config, memory_consolidation_config_set,
+//   memory_export, memory_import
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Falls back gracefully if the API is absent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register maintenance, config, export, and import tools as native OpenClaw tools.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerMaintenanceConfigTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  /** Shared helper: proxy MCP call, handle unavailable/parse errors. */
+  const proxy = async (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const raw = await engine.callMcpTool(toolName, args);
+    if (raw === null) {
+      return { error: "unavailable", message: "tapps-brain MCP not ready" };
+    }
+    try {
+      return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    } catch {
+      return { error: "parse_error" };
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // maintenance_consolidate — merge similar memories
+  // ------------------------------------------------------------------
+  api.registerTool("maintenance_consolidate", {
+    description:
+      "Trigger tapps-brain memory consolidation to merge similar entries. " +
+      "Entries with Jaccard + TF-IDF similarity above `threshold` are merged " +
+      "deterministically (no LLM). Returns consolidated count and merged keys.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threshold: {
+          type: "number",
+          description: "Similarity threshold for merging (default 0.7, range 0–1)",
+        },
+        min_group_size: {
+          type: "number",
+          description: "Minimum number of similar entries to form a consolidation group (default 3)",
+        },
+        force: {
+          type: "boolean",
+          description: "Force consolidation even if below auto-trigger threshold (default true)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.threshold !== undefined) mcpArgs.threshold = args.threshold;
+      if (args.min_group_size !== undefined) mcpArgs.min_group_size = args.min_group_size;
+      if (args.force !== undefined) mcpArgs.force = args.force;
+      return proxy("maintenance_consolidate", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // maintenance_gc — archive stale memories
+  // ------------------------------------------------------------------
+  api.registerTool("maintenance_gc", {
+    description:
+      "Run tapps-brain garbage collection to archive stale memories. " +
+      "Entries that have decayed below the GC floor or exceeded the retention " +
+      "window are moved to the archive JSONL (not deleted). " +
+      "Use dry_run=true to preview which entries would be archived.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "If true, preview archived entries without actually archiving (default false)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.dry_run !== undefined) mcpArgs.dry_run = args.dry_run;
+      return proxy("maintenance_gc", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_gc_config — return current GC configuration
+  // ------------------------------------------------------------------
+  api.registerTool("memory_gc_config", {
+    description:
+      "Return the current tapps-brain garbage collection configuration. " +
+      "Shows floor_retention_days, session_expiry_days, and contradicted_threshold.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("memory_gc_config", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_gc_config_set — update GC configuration thresholds
+  // ------------------------------------------------------------------
+  api.registerTool("memory_gc_config_set", {
+    description:
+      "Update tapps-brain garbage collection configuration thresholds. " +
+      "All fields are optional; omitted fields retain their current values. " +
+      "Changes take effect immediately for subsequent GC runs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        floor_retention_days: {
+          type: "number",
+          description: "Minimum days to retain any memory regardless of decay (must be >= 1)",
+        },
+        session_expiry_days: {
+          type: "number",
+          description: "Days after which inactive session indexes are purged (must be >= 1)",
+        },
+        contradicted_threshold: {
+          type: "number",
+          description: "Confidence below which contradicted entries are archived (range 0–1)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.floor_retention_days !== undefined)
+        mcpArgs.floor_retention_days = args.floor_retention_days;
+      if (args.session_expiry_days !== undefined)
+        mcpArgs.session_expiry_days = args.session_expiry_days;
+      if (args.contradicted_threshold !== undefined)
+        mcpArgs.contradicted_threshold = args.contradicted_threshold;
+      return proxy("memory_gc_config_set", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_consolidation_config — return current auto-consolidation config
+  // ------------------------------------------------------------------
+  api.registerTool("memory_consolidation_config", {
+    description:
+      "Return the current tapps-brain auto-consolidation configuration. " +
+      "Shows enabled, threshold (similarity cutoff), and min_entries (trigger count).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    handler: async (_args: Record<string, unknown>) => {
+      return proxy("memory_consolidation_config", {});
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_consolidation_config_set — update auto-consolidation config
+  // ------------------------------------------------------------------
+  api.registerTool("memory_consolidation_config_set", {
+    description:
+      "Update tapps-brain auto-consolidation configuration. " +
+      "All fields are optional; omitted fields retain their current values.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: {
+          type: "boolean",
+          description: "Enable or disable automatic consolidation",
+        },
+        threshold: {
+          type: "number",
+          description: "Similarity threshold for auto-consolidation (range 0–1, default 0.7)",
+        },
+        min_entries: {
+          type: "number",
+          description: "Minimum entry count before auto-consolidation is triggered",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.enabled !== undefined) mcpArgs.enabled = args.enabled;
+      if (args.threshold !== undefined) mcpArgs.threshold = args.threshold;
+      if (args.min_entries !== undefined) mcpArgs.min_entries = args.min_entries;
+      return proxy("memory_consolidation_config_set", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_export — export entries as JSON
+  // ------------------------------------------------------------------
+  api.registerTool("memory_export", {
+    description:
+      "Export tapps-brain memory entries as a JSON string. " +
+      "Optionally filter by tier, scope, or minimum confidence. " +
+      "The output can be passed to memory_import to restore entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tier: {
+          type: "string",
+          description:
+            "Filter by tier: architectural, pattern, procedural, or context (optional)",
+        },
+        scope: {
+          type: "string",
+          description: "Filter by scope: project or global (optional)",
+        },
+        min_confidence: {
+          type: "number",
+          description: "Minimum confidence threshold for exported entries (optional, range 0–1)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.tier !== undefined) mcpArgs.tier = args.tier;
+      if (args.scope !== undefined) mcpArgs.scope = args.scope;
+      if (args.min_confidence !== undefined) mcpArgs.min_confidence = args.min_confidence;
+      return proxy("memory_export", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_import — import entries from JSON
+  // ------------------------------------------------------------------
+  api.registerTool("memory_import", {
+    description:
+      "Import tapps-brain memory entries from a JSON string. " +
+      "The JSON should be the output of memory_export (an array of entry objects). " +
+      "Set overwrite=true to replace existing entries with matching keys.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memories_json: {
+          type: "string",
+          description: "JSON string containing an array of memory entry objects to import",
+        },
+        overwrite: {
+          type: "boolean",
+          description:
+            "If true, overwrite existing entries with matching keys (default false — skip duplicates)",
+        },
+      },
+      required: ["memories_json"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const memories_json = args.memories_json as string;
+      const mcpArgs: Record<string, unknown> = { memories_json };
+      if (args.overwrite !== undefined) mcpArgs.overwrite = args.overwrite;
+      return proxy("memory_import", mcpArgs);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1561,6 +1825,11 @@ export default definePluginEntry({
       // Register audit, tags, and profile tools (memory_audit, memory_list_tags,
       // memory_update_tags, memory_entries_by_tag, profile_info, profile_switch).
       registerAuditTagsProfileTools(api, engine);
+      // Register maintenance, config, export, and import tools
+      // (maintenance_consolidate, maintenance_gc, memory_gc_config,
+      // memory_gc_config_set, memory_consolidation_config,
+      // memory_consolidation_config_set, memory_export, memory_import).
+      registerMaintenanceConfigTools(api, engine);
     }
 
     if (mode === "context-engine") {
