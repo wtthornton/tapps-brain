@@ -306,8 +306,20 @@ export function getCompatibilityMode(
 let definePluginEntry: (def: PluginEntryDef) => PluginEntryDef;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const sdk = require("openclaw/plugin-sdk/core") as { definePluginEntry: typeof definePluginEntry };
-  definePluginEntry = sdk.definePluginEntry;
+  const sdk = require("openclaw/plugin-sdk/core") as { definePluginEntry?: typeof definePluginEntry };
+  if (typeof sdk.definePluginEntry === "function") {
+    definePluginEntry = sdk.definePluginEntry;
+  } else {
+    // Module resolved but definePluginEntry is not exported (older OpenClaw).
+    // This happens on OpenClaw versions that ship the plugin-sdk module but
+    // predate the definePluginEntry API (e.g. 2026.3.13 stable).
+    console.warn(
+      "[tapps-brain] openclaw/plugin-sdk/core does not export definePluginEntry. " +
+        "Using identity shim — the plugin will still work but may lack " +
+        "ContextEngine integration. Consider upgrading OpenClaw.",
+    );
+    definePluginEntry = (def: PluginEntryDef) => def;
+  }
 } catch {
   // Fallback: identity function (dev/test without openclaw installed)
   definePluginEntry = (def: PluginEntryDef) => def;

@@ -4,6 +4,9 @@
   "description": "OpenClaw ContextEngine plugin for tapps-brain persistent memory",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
