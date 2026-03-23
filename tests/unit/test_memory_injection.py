@@ -300,3 +300,40 @@ class TestSourceTrustRegression:
         # The call should complete without error — scoring_config is read from profile
         assert isinstance(result, dict)
         assert "memory_injected" in result
+
+
+# ---------------------------------------------------------------------------
+# Return-key consistency (020-A: all paths return the same keys)
+# ---------------------------------------------------------------------------
+
+_EXPECTED_KEYS = {"memory_section", "memory_injected", "memories", "truncated", "injected_tokens"}
+
+
+class TestReturnKeyConsistency:
+    """All early-return and success paths of inject_memories must return the same keys."""
+
+    def test_low_engagement_has_all_keys(self) -> None:
+        store = _make_store([])
+        result = inject_memories("any query", store, "low")
+        assert _EXPECTED_KEYS.issubset(result.keys()), (
+            f"Missing keys in low-engagement return: {_EXPECTED_KEYS - result.keys()}"
+        )
+        assert result["truncated"] is False
+        assert result["injected_tokens"] == 0
+
+    def test_no_results_has_all_keys(self) -> None:
+        store = _make_store([])
+        result = inject_memories("completely unrelated query xyz", store, "high")
+        assert _EXPECTED_KEYS.issubset(result.keys()), (
+            f"Missing keys in no-results return: {_EXPECTED_KEYS - result.keys()}"
+        )
+        assert result["truncated"] is False
+        assert result["injected_tokens"] == 0
+
+    def test_successful_injection_has_all_keys(self) -> None:
+        entries = [_make_entry("k", "matching search text here")]
+        store = _make_store(entries)
+        result = inject_memories("matching search text", store, "high")
+        assert _EXPECTED_KEYS.issubset(result.keys()), (
+            f"Missing keys in success return: {_EXPECTED_KEYS - result.keys()}"
+        )

@@ -173,7 +173,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Security-Critical (sequential)
 
 #### 020-A: Review `safety.py` + `injection.py` — prompt injection defense
-- [ ] Review `src/tapps_brain/safety.py` (171 lines) and `src/tapps_brain/injection.py` (200 lines). Focus on: pattern completeness (OWASP prompt injection patterns), false positive/negative rates, bypass vectors (unicode normalization, encoding tricks), sanitization vs blocking decisions. Fix all issues. Commit: `review(story-020.1): safety and injection defense review`
+- [x] Review `src/tapps_brain/safety.py` (171 lines) and `src/tapps_brain/injection.py` (200 lines). Focus on: pattern completeness (OWASP prompt injection patterns), false positive/negative rates, bypass vectors (unicode normalization, encoding tricks), sanitization vs blocking decisions. Fix all issues. Commit: `review(story-020.1): safety and injection defense review`
 
 #### 020-B: Review `doc_validation.py` — document validation
 - [ ] Review `src/tapps_brain/doc_validation.py` (927 lines). Focus on: validation rule completeness, pluggable `LookupEngineLike` contract adherence, error message clarity, edge cases (empty docs, malformed input), performance on large documents. Fix all issues. Commit: `review(story-020.2): doc_validation.py review`

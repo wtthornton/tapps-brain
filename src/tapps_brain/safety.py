@@ -9,6 +9,7 @@ Extracted from tapps_core.security.content_safety for standalone use.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 import structlog
@@ -38,11 +39,16 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
             re.IGNORECASE,
         ),
     ),
-    # Role manipulation
+    # Role manipulation — covers "you are now", "act as", "pretend to be", "roleplay as"
     (
         "role_manipulation",
         re.compile(
-            r"you\s+are\s+now\s+(?:an?\s+)?(?:new|different|evil|unrestricted|malicious|jailbroken)",
+            r"(?:"
+            r"you\s+are\s+now"
+            r"|act\s+as"
+            r"|pretend\s+(?:you\s+are|to\s+be)"
+            r"|roleplay\s+as"
+            r")\s+(?:an?\s+)?(?:new|different|evil|unrestricted|malicious|jailbroken|unfiltered|uncensored|DAN)",
             re.IGNORECASE,
         ),
     ),
@@ -104,17 +110,25 @@ def check_content_safety(content: str) -> SafetyCheckResult:
     if not content or not content.strip():
         return SafetyCheckResult(safe=True)
 
+    # Normalise unicode (NFKC) to defeat homograph/lookalike bypass attempts
+    # e.g. "Ɨgnore" → "Ignore", "ｉgnore" → "ignore"
+    normalised = unicodedata.normalize("NFKC", content)
+
     flagged: list[str] = []
     total_matches = 0
 
     for pattern_name, pattern in _INJECTION_PATTERNS:
-        matches = pattern.findall(content)
+        matches = pattern.findall(normalised)
         if matches:
             flagged.append(pattern_name)
             total_matches += len(matches)
 
+    # Short-circuit before the more expensive per-line density scan
+    if total_matches == 0:
+        return SafetyCheckResult(safe=True)
+
     # Check density of suspicious patterns
-    lines = content.splitlines()
+    lines = normalised.splitlines()
     suspicious_lines = 0
     for line in lines:
         for _, pattern in _INJECTION_PATTERNS:
@@ -125,9 +139,6 @@ def check_content_safety(content: str) -> SafetyCheckResult:
     high_density = (
         len(lines) > 0 and (suspicious_lines / len(lines)) > _SUSPICIOUS_DENSITY_THRESHOLD
     )
-
-    if total_matches == 0:
-        return SafetyCheckResult(safe=True)
 
     if total_matches > _MAX_PATTERN_MATCHES or high_density:
         # Too many matches - reject entirely
@@ -147,8 +158,9 @@ def check_content_safety(content: str) -> SafetyCheckResult:
             ),
         )
 
-    # Low match count - sanitise and warn
-    sanitised = _sanitise_content(content)
+    # Low match count - sanitise and warn (sanitise the normalised form so
+    # patterns that were detected after NFKC normalisation are also removed)
+    sanitised = _sanitise_content(normalised)
     logger.info(
         "rag_safety_warning",
         match_count=total_matches,

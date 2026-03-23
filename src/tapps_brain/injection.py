@@ -89,7 +89,13 @@ def inject_memories(
     """
     # Low engagement: never inject
     if engagement_level == "low":
-        return {"memory_section": "", "memory_injected": 0, "memories": []}
+        return {
+            "memory_section": "",
+            "memory_injected": 0,
+            "memories": [],
+            "truncated": False,
+            "injected_tokens": 0,
+        }
 
     config = config or InjectionConfig()
 
@@ -135,14 +141,30 @@ def inject_memories(
             min_confidence=min_confidence,
         )
     except Exception:
-        logger.debug("memory_injection_search_failed", question=question[:80])
-        return {"memory_section": "", "memory_injected": 0, "memories": []}
+        logger.warning(
+            "memory_injection_search_failed",
+            question=question[:80],
+            exc_info=True,
+        )
+        return {
+            "memory_section": "",
+            "memory_injected": 0,
+            "memories": [],
+            "truncated": False,
+            "injected_tokens": 0,
+        }
 
     # Filter by minimum score
     results = [r for r in results if r.score >= _MIN_SCORE]
 
     if not results:
-        return {"memory_section": "", "memory_injected": 0, "memories": []}
+        return {
+            "memory_section": "",
+            "memory_injected": 0,
+            "memories": [],
+            "truncated": False,
+            "injected_tokens": 0,
+        }
 
     # RAG safety check on values before injection (defense-in-depth)
     safe_results = []
@@ -158,7 +180,13 @@ def inject_memories(
             )
 
     if not safe_results:
-        return {"memory_section": "", "memory_injected": 0, "memories": []}
+        return {
+            "memory_section": "",
+            "memory_injected": 0,
+            "memories": [],
+            "truncated": False,
+            "injected_tokens": 0,
+        }
 
     # Context budget enforcement
     max_tokens = config.injection_max_tokens
