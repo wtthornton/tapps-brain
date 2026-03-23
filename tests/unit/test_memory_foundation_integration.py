@@ -12,8 +12,10 @@ behaviour and persistence round-trips.
 from __future__ import annotations
 
 import threading
-from collections.abc import Generator
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import pytest
 

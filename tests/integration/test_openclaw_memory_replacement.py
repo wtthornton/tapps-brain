@@ -20,8 +20,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from tapps_brain.markdown_sync import get_sync_state, sync_from_markdown, sync_to_markdown
-from tapps_brain.migration import find_memory_core_db, migrate_from_workspace
-from tapps_brain.models import MemorySource, MemoryTier
+from tapps_brain.migration import migrate_from_workspace
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ def workspace(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _make_memory_core_sqlite(path: "Path", rows: list[tuple[str, str]]) -> "Path":
+def _make_memory_core_sqlite(path: Path, rows: list[tuple[str, str]]) -> Path:
     """Create a minimal memory-core SQLite database at *path* with *rows*.
 
     The table schema mirrors the most common memory-core layout:
@@ -88,7 +87,9 @@ class TestMemorySearchBackedByTappsBrain:
     def test_search_multiple_entries_ranked(self, store: MemoryStore) -> None:
         store.save("bm25-ranking", "BM25 ranks results by term frequency.", tier="pattern")
         store.save("decay-scoring", "Exponential decay applies to old entries.", tier="pattern")
-        store.save("vector-search", "Optional FAISS embeddings for vector similarity.", tier="pattern")
+        store.save(
+            "vector-search", "Optional FAISS embeddings for vector similarity.", tier="pattern"
+        )
 
         results = store.search("BM25 ranking frequency")
         assert len(results) >= 1
@@ -367,7 +368,9 @@ class TestBidirectionalSync:
         dt = datetime.fromisoformat(state["last_sync_from"])
         assert dt.tzinfo is not None
 
-    def test_daily_notes_imported_as_context_tier(self, store: MemoryStore, workspace: Path) -> None:
+    def test_daily_notes_imported_as_context_tier(
+        self, store: MemoryStore, workspace: Path
+    ) -> None:
         memory_dir = workspace / "memory"
         memory_dir.mkdir()
         (memory_dir / "2026-03-20.md").write_text(
@@ -405,10 +408,11 @@ class TestMigrationFromMockData:
     """migrate_from_workspace imports MEMORY.md, daily notes, and memory-core SQLite."""
 
     def test_migrate_memory_md_only(self, store: MemoryStore, workspace: Path) -> None:
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## arch-decision\n\nUse WAL mode.\n\n### naming-convention\n\nCamelCase for TS.\n",
-            encoding="utf-8",
+        memory_md_content = (
+            "# Memory\n\n## arch-decision\n\nUse WAL mode.\n\n"
+            "### naming-convention\n\nCamelCase for TS.\n"
         )
+        (workspace / "MEMORY.md").write_text(memory_md_content, encoding="utf-8")
 
         result = migrate_from_workspace(store, workspace)
 
@@ -423,12 +427,8 @@ class TestMigrationFromMockData:
     def test_migrate_daily_notes(self, store: MemoryStore, workspace: Path) -> None:
         memory_dir = workspace / "memory"
         memory_dir.mkdir()
-        (memory_dir / "2026-03-22.md").write_text(
-            "Today: reviewed code.\n", encoding="utf-8"
-        )
-        (memory_dir / "2026-03-21.md").write_text(
-            "Yesterday: wrote tests.\n", encoding="utf-8"
-        )
+        (memory_dir / "2026-03-22.md").write_text("Today: reviewed code.\n", encoding="utf-8")
+        (memory_dir / "2026-03-21.md").write_text("Yesterday: wrote tests.\n", encoding="utf-8")
 
         result = migrate_from_workspace(store, workspace)
 
@@ -576,9 +576,7 @@ class TestMemorySlotFromTappsBrain:
         # Simulate a subsequent import attempt (should be skipped)
         from tapps_brain.markdown_sync import _parse_memory_md_sections
 
-        sections = _parse_memory_md_sections(
-            "# Memory\n\n### agent-key\n\nIMPORT OVERWRITE.\n"
-        )
+        sections = _parse_memory_md_sections("# Memory\n\n### agent-key\n\nIMPORT OVERWRITE.\n")
         assert len(sections) == 1
         key, value, tier = sections[0]
         assert key == "agent-key"
@@ -595,9 +593,7 @@ class TestMemorySlotFromTappsBrain:
         """memory_get graceful degradation: returns None for missing keys."""
         assert store.get("missing-key") is None
 
-    def test_memory_slot_list_shows_all_sources(
-        self, store: MemoryStore, workspace: Path
-    ) -> None:
+    def test_memory_slot_list_shows_all_sources(self, store: MemoryStore, workspace: Path) -> None:
         """After migration + agent save, list_all returns entries from both sources."""
         # Agent-saved entry
         store.save("agent-entry", "Agent saved this.", tier="pattern", source="agent")
@@ -621,9 +617,7 @@ class TestMemorySlotFromTappsBrain:
 # ---------------------------------------------------------------------------
 
 
-def _import_memory_core_sqlite_direct(
-    store: MemoryStore, db_path: "Path"
-) -> dict[str, Any]:
+def _import_memory_core_sqlite_direct(store: MemoryStore, db_path: Path) -> dict[str, Any]:
     """Thin wrapper to call the internal migration helper for testing."""
     from tapps_brain.migration import _import_memory_core_sqlite
 

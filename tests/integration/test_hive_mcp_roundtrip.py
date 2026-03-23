@@ -159,9 +159,7 @@ class TestMultiAgentHiveRoundTrip:
 class TestScopeValuePropagation:
     """Verify correct propagation behavior for each agent_scope value."""
 
-    def test_save_with_hive_scope_appears_in_universal(
-        self, make_store, hive: HiveStore
-    ) -> None:
+    def test_save_with_hive_scope_appears_in_universal(self, make_store, hive: HiveStore) -> None:
         """Hive scope → universal namespace."""
         store = make_store("proj", agent_id="dev-agent")
         store.save(

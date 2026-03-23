@@ -386,8 +386,9 @@ class TestMemoryDocValidator:
             tags=[f"doc-validated:{old_date}"],
         )
         result = await validator.validate_entry(entry)
-        # Should NOT be skipped with "Recently validated" — the old date must not trigger the fast-path
-        # (If skipped for another reason, that's acceptable; only the "recently validated" skip is wrong.)
+        # Should NOT be skipped with "Recently validated" — the old date must not
+        # trigger the fast-path. (If skipped for another reason, that's acceptable;
+        # only the "recently validated" skip is wrong.)
         if result.overall_status == ValidationStatus.skipped:
             assert "Recently" not in result.reason
 

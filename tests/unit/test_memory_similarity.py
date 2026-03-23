@@ -223,7 +223,9 @@ class TestComputeSimilarity:
     ) -> None:
         """Default weights are DEFAULT_TAG_WEIGHT tag, DEFAULT_TEXT_WEIGHT text."""
         result = compute_similarity(security_entry, similar_security_entry)
-        expected = (result.tag_score * DEFAULT_TAG_WEIGHT) + (result.text_score * DEFAULT_TEXT_WEIGHT)
+        expected = (result.tag_score * DEFAULT_TAG_WEIGHT) + (
+            result.text_score * DEFAULT_TEXT_WEIGHT
+        )
         assert abs(result.combined_score - expected) < 0.01
 
     def test_custom_weights(

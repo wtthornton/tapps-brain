@@ -49,7 +49,7 @@ _KEY_COLUMNS = ("key", "id", "slug", "title", "name")
 # Value column candidates
 _VALUE_COLUMNS = ("value", "content", "text", "body", "description")
 
-# H2–H6 headings in MEMORY.md — each is one importable entry
+# H2-H6 headings in MEMORY.md - each is one importable entry
 _HEADING_RE = re.compile(r"^#{2,6}\s+\S", re.MULTILINE)
 
 # Daily-note filename pattern: YYYY-MM-DD.md
@@ -87,7 +87,7 @@ def _count_workspace_entries(workspace_dir: Path) -> tuple[int, int]:
     Returns:
         ``(memory_md_count, daily_notes_count)`` as a tuple.
     """
-    # Count H2–H6 headings in MEMORY.md
+    # Count H2-H6 headings in MEMORY.md
     md_count = 0
     memory_md_path = workspace_dir / "MEMORY.md"
     if memory_md_path.is_file():
@@ -106,7 +106,7 @@ def _count_workspace_entries(workspace_dir: Path) -> tuple[int, int]:
     return md_count, daily_count
 
 
-def _import_memory_core_sqlite(
+def _import_memory_core_sqlite(  # noqa: PLR0915
     store: MemoryStore | None,
     db_path: Path,
     *,
@@ -149,7 +149,7 @@ def _import_memory_core_sqlite(
                 continue
 
             # Discover columns available in this table
-            cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608
+            cursor = conn.execute(f"PRAGMA table_info({table_name})")
             col_names = {row[1] for row in cursor.fetchall()}
 
             key_col: str | None = next((c for c in _KEY_COLUMNS if c in col_names), None)
@@ -164,9 +164,7 @@ def _import_memory_core_sqlite(
                 continue
 
             select_key = key_col if key_col else "rowid"
-            cursor = conn.execute(
-                f"SELECT {select_key}, {val_col} FROM {table_name}"  # noqa: S608
-            )
+            cursor = conn.execute(f"SELECT {select_key}, {val_col} FROM {table_name}")
             rows = list(cursor.fetchall())
 
             for idx, row in enumerate(rows):
@@ -185,7 +183,7 @@ def _import_memory_core_sqlite(
                     continue
 
                 # store is always non-None when dry_run is False (enforced by caller)
-                assert store is not None  # noqa: S101
+                assert store is not None
                 if store.get(key) is not None:
                     skipped += 1
                     continue
@@ -199,7 +197,7 @@ def _import_memory_core_sqlite(
                         tags=["migrated-from-memory-core"],
                     )
                     imported += 1
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning("migration.save_error", key=key, error=str(exc))
                     errors += 1
 

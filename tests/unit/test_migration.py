@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -26,7 +28,6 @@ from tapps_brain.migration import (
     find_memory_core_db,
     migrate_from_workspace,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -70,9 +71,7 @@ def memory_core_sqlite(tmp_path: Path) -> Path:
     """Create a minimal memory-core SQLite DB at tmp_path/agent.sqlite."""
     db_path = tmp_path / "agent.sqlite"
     conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "CREATE TABLE memories (id TEXT PRIMARY KEY, value TEXT NOT NULL)"
-    )
+    conn.execute("CREATE TABLE memories (id TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.executemany(
         "INSERT INTO memories VALUES (?, ?)",
         [
@@ -402,9 +401,7 @@ def test_mcp_openclaw_migrate_dry_run(tmp_workspace: Path) -> None:
         server = create_server(store_path)
         # Access the underlying function through the server's tool registry
         tool_fn = next(
-            t.fn
-            for t in server._tool_manager.list_tools()
-            if t.name == "openclaw_migrate"
+            t.fn for t in server._tool_manager.list_tools() if t.name == "openclaw_migrate"
         )
         raw = tool_fn(workspace_dir=str(tmp_workspace), dry_run=True)
         data = json.loads(raw)
@@ -426,11 +423,7 @@ def test_mcp_openclaw_migrate_live(tmp_workspace: Path, tmp_path: Path) -> None:
 
     store_path = tmp_path / "mcp_store"
     server = create_server(store_path)
-    tool_fn = next(
-        t.fn
-        for t in server._tool_manager.list_tools()
-        if t.name == "openclaw_migrate"
-    )
+    tool_fn = next(t.fn for t in server._tool_manager.list_tools() if t.name == "openclaw_migrate")
     raw = tool_fn(workspace_dir=str(tmp_workspace), dry_run=False)
     data = json.loads(raw)
     assert data["imported"] >= 1
@@ -443,11 +436,7 @@ def test_mcp_openclaw_migrate_error_handling(tmp_path: Path) -> None:
 
     store_path = tmp_path / "store"
     server = create_server(store_path)
-    tool_fn = next(
-        t.fn
-        for t in server._tool_manager.list_tools()
-        if t.name == "openclaw_migrate"
-    )
+    tool_fn = next(t.fn for t in server._tool_manager.list_tools() if t.name == "openclaw_migrate")
     # Pass a file path as workspace (will cause OSError or graceful empty result)
     bad_ws = str(tmp_path / "nonexistent_file.txt")
     raw = tool_fn(workspace_dir=bad_ws, dry_run=False)

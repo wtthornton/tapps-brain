@@ -130,6 +130,7 @@ class TestMemoryStoreGCConfig:
 # MCP tools: memory_gc_config and memory_gc_config_set
 # ---------------------------------------------------------------------------
 
+
 def _tool_fn(mcp_server, name: str):
     for tool in mcp_server._tool_manager.list_tools():
         if tool.name == name:

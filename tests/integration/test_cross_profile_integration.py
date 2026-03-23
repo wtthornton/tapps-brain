@@ -437,4 +437,3 @@ class TestRepoBrainBackwardCompat:
         finally:
             store_with.close()
             store_without.close()
-

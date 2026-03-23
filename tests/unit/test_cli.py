@@ -61,7 +61,15 @@ class TestVersionHelp:
 
     def test_subgroup_help(self):
         """All CLI subgroups respond to --help."""
-        for subgroup in ["store", "memory", "federation", "maintenance", "profile", "hive", "agent"]:
+        for subgroup in [
+            "store",
+            "memory",
+            "federation",
+            "maintenance",
+            "profile",
+            "hive",
+            "agent",
+        ]:
             result = runner.invoke(app, [subgroup, "--help"])
             assert result.exit_code == 0, f"{subgroup} --help failed"
             assert "Usage" in result.stdout, f"{subgroup} --help missing Usage"
@@ -648,9 +656,7 @@ class TestMaintenanceGcConfigCommand:
     """Tests for maintenance gc-config CLI command."""
 
     def test_gc_config_show(self, project_dir):
-        result = runner.invoke(
-            app, ["maintenance", "gc-config", "--project-dir", project_dir]
-        )
+        result = runner.invoke(app, ["maintenance", "gc-config", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "floor_retention_days" in result.stdout
         assert "session_expiry_days" in result.stdout

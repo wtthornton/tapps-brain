@@ -706,9 +706,9 @@ class TestScoringCorrectnessReview:
         # Use caplog.messages (list of getMessage() strings) for reliable access
         # regardless of structlog's renderer; also fall back to checking raw r.msg.
         all_msgs = caplog.messages + [r.getMessage() for r in caplog.records]
-        assert any(
-            "scoring_weights_do_not_sum_to_one" in m for m in all_msgs
-        ), f"Expected warning not found. Captured: {caplog.messages}"
+        assert any("scoring_weights_do_not_sum_to_one" in m for m in all_msgs), (
+            f"Expected warning not found. Captured: {caplog.messages}"
+        )
 
     def test_apply_reranker_returns_scored_when_reranker_is_none(self) -> None:
         """_apply_reranker should not crash when reranker is None (guard replaces assert)."""
