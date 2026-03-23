@@ -1,8 +1,21 @@
 # Ralph Fix Plan — tapps-brain
 
-All tasks complete as of **2026-03-23**. For full story text, see `docs/planning/epics/EPIC-*.md`.
+**Open through EPIC-032** (see *Next Tasks* and *Implementation roadmap* below). For full story text, see `docs/planning/epics/EPIC-*.md`.
 
 **Task sizing:** Each item is scoped to ONE Ralph loop (~15 min). Do one, check it off, commit.
+
+## Implementation roadmap (open items)
+
+Execute in order unless noted. Check off each `- [ ]` in *Next Tasks* as it ships (same commit as code).
+
+| Phase | Scope | Order / notes |
+|-------|--------|----------------|
+| **0** | **029-QA** | Full `pytest` + coverage gate + `ruff` + `mypy`. Use `-m "not benchmark"` if `pytest-benchmark` unavailable. **Prereqs:** package installed editable (`uv sync` / `pip install -e .`) so metadata tests pass; no host `~/.openclaw` artifacts if migration tests assume absence; Typer `CliRunner(mix_stderr=False)` where stderr is asserted. |
+| **1** | **EPIC-030** | **030-1a** foundation (`diagnostics.py`, Protocol, models) → **030-1b** six dimensions → **030-1c** correlation weights → **030-2** history table + `store.diagnostics()` wiring (migration **v10** if v9 taken by feedback; align with `persistence.py`) → **030-3** custom dims + profile → **030-4** EWMA `AnomalyDetector` → **030-5a** circuit breaker states + `RecallResult.quality_warning` → **030-5b** auto-remediation → **030-6** feedback-aware retrieval dimension (needs `feedback_events`) → **030-7** Hive diagnostics + dynamic recall weight → **030-8** MCP/CLI/`memory://diagnostics` → **030-9** integration → **030-QA**. |
+| **2** | **EPIC-031** | Depends on **029** (feedback) and **030** (diagnostics/report hooks). **031-1a→1c** `evaluation.py` + golden `tests/eval/` → **031-2a→2b** `flywheel.py` + `store.process_feedback()` → **031-3a→3b** `GapTracker` (+ optional HDBSCAN) → **031-4a→4b** report scaffold + sections → **031-5a→5b** LLM judge (optional extras) → **031-6** `ReportRegistry` → **031-7** Hive aggregation → **031-8** MCP/CLI flywheel → **031-9** integration → **031-QA**. |
+| **3** | **EPIC-032** | After **030** (and ideally **031**) for metrics/events: **032-1a→1b** spans + retrieval events → **032-2** metrics map → **032-3** privacy env → **032-4** named events → **032-5** integration → **032-QA**. |
+
+**Risk / alignment:** Reconcile fix_plan migration notes with code: feedback is already **v9** in `persistence.py`; new diagnostics history should be **v10** (update this roadmap row in fix_plan when migration number is chosen).
 
 ## Completed Epics
 
