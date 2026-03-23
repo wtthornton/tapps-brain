@@ -110,15 +110,39 @@ export interface PluginLogger {
   warn: (...args: unknown[]) => void;
 }
 
+/** Context passed to before_agent_start hooks (v2026.3.1-3.6). */
+export interface HookContext {
+  sessionId: string;
+  messages?: Message[];
+  [key: string]: unknown;
+}
+
+/** Tool definition shape for registerTool() (all versions). */
+export interface ToolDefinition {
+  description: string;
+  inputSchema?: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => Promise<unknown>;
+}
+
 /** OpenClaw plugin API passed to the register() callback. */
 interface OpenClawPluginApi {
   logger: PluginLogger;
   config: PluginConfig;
   runtime: { workspaceDir: string; sessionId: string };
-  registerContextEngine(
+  /** Semver-like version string of the running OpenClaw instance (e.g. "2026.3.7"). */
+  version?: string;
+  /** Register a ContextEngine — available v2026.3.7+. */
+  registerContextEngine?: (
     id: string,
     factory: (config: PluginConfig) => TappsBrainEngine,
-  ): void;
+  ) => void;
+  /** Register a lifecycle hook — available v2026.3.1+. */
+  registerHook?: (
+    event: string,
+    handler: (ctx: HookContext) => Promise<void>,
+  ) => void;
+  /** Register a native tool — available in all versions. */
+  registerTool?: (name: string, definition: ToolDefinition) => void;
 }
 
 /** Plugin entry definition. */
@@ -126,6 +150,93 @@ interface PluginEntryDef {
   id: string;
   name: string;
   register: (api: OpenClawPluginApi) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Version compatibility layer
+//
+// OpenClaw ships distinct APIs across versions. This layer detects which
+// API surface is available and selects the appropriate registration path.
+//
+//   v2026.3.7+         → ContextEngine API (ingest/assemble/compact)
+//   v2026.3.1-2026.3.6 → hook-only via before_agent_start
+//   <v2026.3.1         → tools-only; memory injection is unavailable
+// ---------------------------------------------------------------------------
+
+/** Parsed OpenClaw version as a [year, month, day] tuple for ordering. */
+export type OpenClawVersionTuple = [year: number, month: number, day: number];
+
+/** Compatibility mode derived from the detected OpenClaw version. */
+export type CompatibilityMode = "context-engine" | "hook-only" | "tools-only";
+
+// Version milestones --------------------------------------------------------
+
+/** First version with the full ContextEngine API. */
+const V_CONTEXT_ENGINE: OpenClawVersionTuple = [2026, 3, 7];
+
+/** First version with before_agent_start hook support. */
+const V_HOOK_ONLY: OpenClawVersionTuple = [2026, 3, 1];
+
+/**
+ * Parse an OpenClaw version string (e.g. "2026.3.7") into a comparable
+ * tuple. Returns [0, 0, 0] if the string is absent or malformed.
+ */
+export function parseOpenClawVersion(
+  version: string | undefined,
+): OpenClawVersionTuple {
+  if (!version) return [0, 0, 0];
+  const parts = version.split(".").map((s) => parseInt(s, 10));
+  const year = Number.isFinite(parts[0]) ? (parts[0] as number) : 0;
+  const month = Number.isFinite(parts[1]) ? (parts[1] as number) : 0;
+  const day = Number.isFinite(parts[2]) ? (parts[2] as number) : 0;
+  return [year, month, day];
+}
+
+/**
+ * Compare two version tuples lexicographically.
+ * Returns a positive number when a > b, negative when a < b, 0 when equal.
+ */
+export function compareVersionTuples(
+  a: OpenClawVersionTuple,
+  b: OpenClawVersionTuple,
+): number {
+  for (let i = 0; i < 3; i++) {
+    const diff = (a[i] as number) - (b[i] as number);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Determine the compatibility mode for the given OpenClaw version string.
+ * Logs a warning when falling back from the full ContextEngine mode.
+ */
+export function getCompatibilityMode(
+  version: string | undefined,
+  logger: PluginLogger,
+): CompatibilityMode {
+  const parsed = parseOpenClawVersion(version);
+  const label = version ?? "unknown";
+
+  if (compareVersionTuples(parsed, V_CONTEXT_ENGINE) >= 0) {
+    return "context-engine";
+  }
+
+  if (compareVersionTuples(parsed, V_HOOK_ONLY) >= 0) {
+    logger.warn(
+      `[tapps-brain] OpenClaw ${label} detected. ` +
+        `ContextEngine API requires v2026.3.7+. ` +
+        `Falling back to hook-only mode (before_agent_start).`,
+    );
+    return "hook-only";
+  }
+
+  logger.warn(
+    `[tapps-brain] OpenClaw ${label} detected (minimum supported: v2026.3.1). ` +
+      `Falling back to tools-only mode — memory injection is unavailable. ` +
+      `Upgrade to v2026.3.7+ for full ContextEngine support.`,
+  );
+  return "tools-only";
 }
 
 // ---------------------------------------------------------------------------
@@ -580,17 +691,79 @@ export default definePluginEntry({
   id: "tapps-brain-memory",
   name: "tapps-brain — Persistent Memory",
   register(api) {
-    api.registerContextEngine("tapps-brain-memory", (config: PluginConfig) => {
-      const workspaceDir = api.runtime.workspaceDir;
-      const engine = new TappsBrainEngine(config, workspaceDir, api.logger);
+    const mode = getCompatibilityMode(api.version, api.logger);
 
-      // Bootstrap asynchronously — don't block registration
-      engine.bootstrap().catch((err) => {
+    if (mode === "context-engine") {
+      // v2026.3.7+: full ContextEngine lifecycle (ingest/assemble/compact)
+      if (!api.registerContextEngine) {
+        api.logger.warn(
+          "[tapps-brain] context-engine mode selected but registerContextEngine is unavailable.",
+        );
+        return;
+      }
+      api.registerContextEngine(
+        "tapps-brain-memory",
+        (config: PluginConfig) => {
+          const workspaceDir = api.runtime.workspaceDir;
+          const engine = new TappsBrainEngine(config, workspaceDir, api.logger);
+
+          // Bootstrap asynchronously — don't block registration
+          engine.bootstrap().catch((err: unknown) => {
+            api.logger.warn("[tapps-brain] bootstrap failed:", err);
+          });
+
+          return engine;
+        },
+      );
+    } else if (mode === "hook-only") {
+      // v2026.3.1-2026.3.6: inject memories via before_agent_start hook
+      if (!api.registerHook) {
+        api.logger.warn(
+          "[tapps-brain] hook-only mode selected but registerHook is unavailable.",
+        );
+        return;
+      }
+      const workspaceDir = api.runtime.workspaceDir;
+      const engine = new TappsBrainEngine(
+        api.config,
+        workspaceDir,
+        api.logger,
+      );
+
+      // Bootstrap once at plugin load — hook calls will await this.ready
+      engine.bootstrap().catch((err: unknown) => {
         api.logger.warn("[tapps-brain] bootstrap failed:", err);
       });
 
-      return engine;
-    });
+      api.registerHook(
+        "before_agent_start",
+        async (ctx: HookContext): Promise<void> => {
+          const messages = ctx.messages ?? [];
+          const sessionId = ctx.sessionId ?? "";
+          try {
+            const result = await engine.assemble({
+              sessionId,
+              messages,
+              tokenBudget: { soft: 2000, hard: 4000 },
+            });
+            if (result.systemPromptAddition) {
+              // Prepend memory context to the messages array in-place
+              messages.unshift({
+                role: "system",
+                content: result.systemPromptAddition,
+              });
+            }
+          } catch (err) {
+            api.logger.warn("[tapps-brain] before_agent_start hook:", err);
+          }
+        },
+      );
+    } else {
+      // <v2026.3.1: tools-only — warning already logged in getCompatibilityMode
+      // No memory injection is possible without at least registerHook.
+      // If registerTool is available, we could expose MCP tools in future work.
+      // For now, the warning is the only action (memory injection unavailable).
+    }
   },
 });
 

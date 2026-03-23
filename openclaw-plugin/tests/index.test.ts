@@ -28,7 +28,18 @@ vi.mock("node:path", () => ({
 }));
 
 import { readFileSync } from "node:fs";
-import { TappsBrainEngine, type PluginLogger, parseMemoryMdForImport } from "../src/index.js";
+import {
+  TappsBrainEngine,
+  type PluginLogger,
+  type HookContext,
+  type ToolDefinition,
+  parseMemoryMdForImport,
+  parseOpenClawVersion,
+  compareVersionTuples,
+  getCompatibilityMode,
+  type OpenClawVersionTuple,
+  type CompatibilityMode,
+} from "../src/index.js";
 import { McpClient, hasMemoryMd, isFirstRun } from "../src/mcp_client.js";
 
 // ---------------------------------------------------------------------------
@@ -1600,5 +1611,281 @@ describe("TappsBrainEngine — searchWithSessionMemory (028-G)", () => {
     // Memory results still returned despite session failure
     expect(results).toHaveLength(1);
     expect(results[0].source).toBe("memory");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Version compatibility layer (028-H)
+// ---------------------------------------------------------------------------
+
+describe("parseOpenClawVersion", () => {
+  it("parses a well-formed version string", () => {
+    expect(parseOpenClawVersion("2026.3.7")).toEqual([2026, 3, 7]);
+    expect(parseOpenClawVersion("2026.3.1")).toEqual([2026, 3, 1]);
+    expect(parseOpenClawVersion("2025.12.31")).toEqual([2025, 12, 31]);
+  });
+
+  it("returns [0,0,0] for undefined or empty string", () => {
+    expect(parseOpenClawVersion(undefined)).toEqual([0, 0, 0]);
+    expect(parseOpenClawVersion("")).toEqual([0, 0, 0]);
+  });
+
+  it("returns partial parse for malformed strings", () => {
+    expect(parseOpenClawVersion("2026")).toEqual([2026, 0, 0]);
+    expect(parseOpenClawVersion("2026.3")).toEqual([2026, 3, 0]);
+    expect(parseOpenClawVersion("abc.x.y")).toEqual([0, 0, 0]);
+  });
+});
+
+describe("compareVersionTuples", () => {
+  it("returns 0 for equal tuples", () => {
+    const v: OpenClawVersionTuple = [2026, 3, 7];
+    expect(compareVersionTuples(v, v)).toBe(0);
+    expect(compareVersionTuples([2026, 3, 7], [2026, 3, 7])).toBe(0);
+  });
+
+  it("returns positive when first tuple is greater", () => {
+    expect(compareVersionTuples([2026, 3, 7], [2026, 3, 1])).toBeGreaterThan(0);
+    expect(compareVersionTuples([2026, 4, 0], [2026, 3, 7])).toBeGreaterThan(0);
+    expect(compareVersionTuples([2027, 1, 1], [2026, 3, 7])).toBeGreaterThan(0);
+  });
+
+  it("returns negative when first tuple is less", () => {
+    expect(compareVersionTuples([2026, 3, 1], [2026, 3, 7])).toBeLessThan(0);
+    expect(compareVersionTuples([2026, 3, 6], [2026, 3, 7])).toBeLessThan(0);
+    expect(compareVersionTuples([2025, 12, 31], [2026, 3, 1])).toBeLessThan(0);
+  });
+});
+
+describe("getCompatibilityMode", () => {
+  let mockLogger: PluginLogger & {
+    info: ReturnType<typeof vi.fn>;
+    warn: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    mockLogger = { info: vi.fn(), warn: vi.fn() };
+  });
+
+  it("returns context-engine for v2026.3.7+", () => {
+    expect(getCompatibilityMode("2026.3.7", mockLogger)).toBe("context-engine");
+    expect(getCompatibilityMode("2026.3.8", mockLogger)).toBe("context-engine");
+    expect(getCompatibilityMode("2026.4.0", mockLogger)).toBe("context-engine");
+    expect(getCompatibilityMode("2027.1.1", mockLogger)).toBe("context-engine");
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it("returns hook-only for v2026.3.1-v2026.3.6 and logs a warning", () => {
+    const mode = getCompatibilityMode("2026.3.1", mockLogger);
+    expect(mode).toBe("hook-only");
+    expect(mockLogger.warn).toHaveBeenCalledOnce();
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("hook-only mode"),
+    );
+  });
+
+  it("returns hook-only for v2026.3.6 and logs a warning", () => {
+    const mode = getCompatibilityMode("2026.3.6", mockLogger);
+    expect(mode).toBe("hook-only");
+    expect(mockLogger.warn).toHaveBeenCalledOnce();
+  });
+
+  it("returns tools-only for versions below v2026.3.1 and logs a warning", () => {
+    const mode = getCompatibilityMode("2026.3.0", mockLogger);
+    expect(mode).toBe("tools-only");
+    expect(mockLogger.warn).toHaveBeenCalledOnce();
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("tools-only mode"),
+    );
+  });
+
+  it("returns tools-only for very old versions", () => {
+    expect(getCompatibilityMode("2025.1.1", mockLogger)).toBe("tools-only");
+    expect(getCompatibilityMode("1.0.0", mockLogger)).toBe("tools-only");
+  });
+
+  it("returns tools-only when version is undefined and logs a warning", () => {
+    const mode = getCompatibilityMode(undefined, mockLogger);
+    expect(mode).toBe("tools-only");
+    expect(mockLogger.warn).toHaveBeenCalledOnce();
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("unknown"),
+    );
+  });
+});
+
+describe("plugin register() — version compatibility dispatch (028-H)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  /** Build a minimal mock PluginApi with overrideable version and registration methods. */
+  function makeApi(overrides: {
+    version?: string;
+    registerContextEngine?: ReturnType<typeof vi.fn>;
+    registerHook?: ReturnType<typeof vi.fn>;
+    registerTool?: ReturnType<typeof vi.fn>;
+  } = {}) {
+    const mockLogger = makeMockLogger();
+    return {
+      logger: mockLogger,
+      config: {} as Record<string, unknown>,
+      runtime: { workspaceDir: "/tmp/ws", sessionId: "s1" },
+      version: overrides.version,
+      registerContextEngine: overrides.registerContextEngine ?? vi.fn(),
+      registerHook: overrides.registerHook,
+      registerTool: overrides.registerTool,
+      _logger: mockLogger,
+    };
+  }
+
+  it("uses registerContextEngine on v2026.3.7+", async () => {
+    const registerCE = vi.fn();
+    const api = makeApi({ version: "2026.3.7", registerContextEngine: registerCE });
+
+    // Import the plugin default export dynamically after module is loaded
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(registerCE).toHaveBeenCalledOnce();
+    expect(registerCE).toHaveBeenCalledWith(
+      "tapps-brain-memory",
+      expect.any(Function),
+    );
+    expect(api._logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("uses registerHook on v2026.3.1-3.6", async () => {
+    const registerHook = vi.fn();
+    const api = makeApi({ version: "2026.3.4", registerHook });
+
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(registerHook).toHaveBeenCalledOnce();
+    expect(registerHook).toHaveBeenCalledWith(
+      "before_agent_start",
+      expect.any(Function),
+    );
+    // Warning about falling back to hook-only
+    expect(api._logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("hook-only mode"),
+    );
+  });
+
+  it("hook-only: before_agent_start injects memories into messages", async () => {
+    let capturedHandler: ((ctx: HookContext) => Promise<void>) | undefined;
+    const registerHook = vi.fn().mockImplementation(
+      (_event: string, handler: (ctx: HookContext) => Promise<void>) => {
+        capturedHandler = handler;
+      },
+    );
+
+    const mockMemories = [{ key: "test-key", value: "test value", tier: "pattern", confidence: 0.9 }];
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: mockMemories }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const api = makeApi({ version: "2026.3.2", registerHook });
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(capturedHandler).toBeDefined();
+
+    const messages: HookContext["messages"] = [
+      { role: "user", content: "hello" },
+    ];
+    const ctx: HookContext = { sessionId: "s1", messages };
+
+    // Allow bootstrap to settle
+    await new Promise<void>((r) => setTimeout(r, 10));
+
+    await capturedHandler!(ctx);
+
+    // Memory injection should have prepended a system message
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).toContain("Relevant Memories");
+    expect(messages[0].content).toContain("test-key");
+  });
+
+  it("hook-only: before_agent_start handles assemble failure gracefully", async () => {
+    let capturedHandler: ((ctx: HookContext) => Promise<void>) | undefined;
+    const registerHook = vi.fn().mockImplementation(
+      (_event: string, handler: (ctx: HookContext) => Promise<void>) => {
+        capturedHandler = handler;
+      },
+    );
+
+    const mockCallTool = vi.fn().mockRejectedValue(new Error("MCP error"));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const api = makeApi({ version: "2026.3.2", registerHook });
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    await new Promise<void>((r) => setTimeout(r, 10));
+
+    const messages: HookContext["messages"] = [{ role: "user", content: "hi" }];
+    // Should not throw
+    await capturedHandler!({ sessionId: "s1", messages });
+
+    // Messages unchanged (no injection on error)
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
+  });
+
+  it("logs warning and does nothing for versions below v2026.3.1", async () => {
+    const registerHook = vi.fn();
+    const registerCE = vi.fn();
+    const api = makeApi({ version: "2025.12.1", registerHook, registerContextEngine: registerCE });
+
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(registerCE).not.toHaveBeenCalled();
+    expect(registerHook).not.toHaveBeenCalled();
+    expect(api._logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("tools-only mode"),
+    );
+  });
+
+  it("logs warning when context-engine mode is selected but registerContextEngine is absent", async () => {
+    // Build api manually — omitting registerContextEngine entirely
+    const mockLogger = makeMockLogger();
+    const api = {
+      logger: mockLogger,
+      config: {},
+      runtime: { workspaceDir: "/tmp/ws", sessionId: "s1" },
+      version: "2026.3.7",
+      // registerContextEngine intentionally absent
+      _logger: mockLogger,
+    };
+
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("registerContextEngine is unavailable"),
+    );
+  });
+
+  it("logs warning when hook-only mode is selected but registerHook is absent", async () => {
+    const api = makeApi({ version: "2026.3.3" }); // no registerHook
+
+    const { default: plugin } = await import("../src/index.js");
+    plugin.register(api as Parameters<typeof plugin.register>[0]);
+
+    expect(api._logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("registerHook is unavailable"),
+    );
   });
 });
