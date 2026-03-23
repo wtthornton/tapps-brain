@@ -254,7 +254,8 @@ class TestFederatedSearch:
         local_results = [r for r in results if r.source == "local"]
         hub_results = [r for r in results if r.source == "federated"]
 
-        assert len(local_results) >= 1
+        assert len(local_results) >= 1, "Expected at least one local result"
+        assert len(hub_results) >= 1, "Expected at least one hub result"
         # Local score = 0.8 * 1.2 = 0.96; hub score = 0.8
         for lr in local_results:
             assert lr.relevance_score == pytest.approx(0.8 * 1.2, abs=0.01)
@@ -262,8 +263,7 @@ class TestFederatedSearch:
             assert hr.relevance_score == pytest.approx(0.8, abs=0.01)
 
         # Local should rank first
-        if local_results and hub_results:
-            assert results[0].source == "local"
+        assert results[0].source == "local"
 
     def test_dedup_local_wins_on_same_key(
         self,

@@ -438,16 +438,3 @@ class TestRepoBrainBackwardCompat:
             store_with.close()
             store_without.close()
 
-
-# ---------------------------------------------------------------------------
-# 7. TestCoverageStaysAbove95
-# ---------------------------------------------------------------------------
-
-
-class TestCoverageStaysAbove95:
-    """Placeholder for CI coverage gate."""
-
-    def test_coverage_check_placeholder(self):
-        """Real coverage check is done by the CI command:
-        pytest --cov=tapps_brain --cov-fail-under=95"""
-        assert True

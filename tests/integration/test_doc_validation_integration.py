@@ -158,9 +158,10 @@ class TestValidatedEntry:
             report = s.validate_entries()
 
             assert isinstance(report, ValidationReport)
-            assert report.validated >= 1
+            assert report.validated == 1
             # Find the entry validation for our key
-            ev = next(e for e in report.entries if e.entry_key == "fastapi-usage")
+            ev = next((e for e in report.entries if e.entry_key == "fastapi-usage"), None)
+            assert ev is not None, "fastapi-usage not found in validation report"
             assert ev.overall_status == ValidationStatus.validated
             assert ev.confidence_adjustment > 0.0
             assert len(ev.claims) >= 1
@@ -193,7 +194,8 @@ class TestNoDocsResult:
             report = s.validate_entries()
 
             assert isinstance(report, ValidationReport)
-            ev = next(e for e in report.entries if e.entry_key == "obscure-lib")
+            ev = next((e for e in report.entries if e.entry_key == "obscure-lib"), None)
+            assert ev is not None, "obscure-lib not found in validation report"
             # With no docs returned, the result should be inconclusive
             assert ev.overall_status in {
                 ValidationStatus.inconclusive,
@@ -316,10 +318,17 @@ class TestRoundTrip:
 
             report = s.validate_entries()
 
-            ev = next(e for e in report.entries if e.entry_key == "roundtrip-entry")
+            ev = next((e for e in report.entries if e.entry_key == "roundtrip-entry"), None)
+            assert ev is not None, "roundtrip-entry not found in validation report"
 
             updated_entry = s.get("roundtrip-entry")
             assert updated_entry is not None
+
+            assert ev.overall_status in {
+                ValidationStatus.validated,
+                ValidationStatus.flagged,
+                ValidationStatus.inconclusive,
+            }, f"Unexpected status: {ev.overall_status}"
 
             if ev.overall_status == ValidationStatus.validated:
                 # Confidence should have been boosted
@@ -383,7 +392,8 @@ class TestRoundTrip:
 
             report = s.validate_entries()
 
-            ev = next(e for e in report.entries if e.entry_key == "bad-entry")
+            ev = next((e for e in report.entries if e.entry_key == "bad-entry"), None)
+            assert ev is not None, "bad-entry not found in validation report"
             if ev.overall_status == ValidationStatus.flagged:
                 updated = s.get("bad-entry")
                 assert updated is not None
