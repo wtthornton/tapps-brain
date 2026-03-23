@@ -44,6 +44,11 @@ from tapps_brain.io import import_memories as import_memories
 from tapps_brain.markdown_import import import_memory_md as import_memory_md
 from tapps_brain.markdown_import import import_openclaw_workspace as import_openclaw_workspace
 
+# Markdown Sync — bidirectional MEMORY.md sync (EPIC-026)
+from tapps_brain.markdown_sync import get_sync_state as get_sync_state
+from tapps_brain.markdown_sync import sync_from_markdown as sync_from_markdown
+from tapps_brain.markdown_sync import sync_to_markdown as sync_to_markdown
+
 # Metrics / observability (return types for store.health() and store.get_metrics())
 from tapps_brain.metrics import MetricsSnapshot as MetricsSnapshot
 from tapps_brain.metrics import StoreHealthReport as StoreHealthReport
@@ -152,9 +157,12 @@ __all__ = [
     "find_similar",
     "get_effective_confidence",
     "import_memories",
+    "get_sync_state",
     "import_memory_md",
     "import_openclaw_workspace",
     "inject_memories",
+    "sync_from_markdown",
+    "sync_to_markdown",
     "is_stale",
     "verify_integrity_hash",
 ]

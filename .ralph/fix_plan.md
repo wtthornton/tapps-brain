@@ -438,7 +438,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 3: Sync and Migration (independent)
 
 #### 026-D: Bidirectional MEMORY.md sync module
-- [ ] Create `src/tapps_brain/markdown_sync.py`. `sync_to_markdown(store, workspace_dir)` exports entries to `MEMORY.md` organized by tier. `sync_from_markdown(store, workspace_dir)` imports `MEMORY.md` + `memory/*.md`, updating changed entries. Dedup by key. Conflict: tapps-brain wins. Track sync timestamp in `.tapps-brain/sync_state.json`. ContextEngine plugin calls sync_from during bootstrap, sync_to during compact. Integration test: round-trip save→export→edit→import. Commit: `feat(story-026.4): bidirectional MEMORY.md sync`
+- [x] Create `src/tapps_brain/markdown_sync.py`. `sync_to_markdown(store, workspace_dir)` exports entries to `MEMORY.md` organized by tier. `sync_from_markdown(store, workspace_dir)` imports `MEMORY.md` + `memory/*.md`, updating changed entries. Dedup by key. Conflict: tapps-brain wins. Track sync timestamp in `.tapps-brain/sync_state.json`. ContextEngine plugin calls sync_from during bootstrap, sync_to during compact. Integration test: round-trip save→export→edit→import. Commit: `feat(story-026.4): bidirectional MEMORY.md sync`
 
 #### 026-E: Migration tool for memory-core users
 - [ ] CLI command: `tapps-brain openclaw migrate [--workspace DIR] [--dry-run]`. Imports MEMORY.md with tier inference. Imports daily notes as context-tier. Imports memory-core's SQLite index if exists. Dry-run mode. Idempotent. Reports counts. MCP tool `openclaw_migrate` for programmatic migration. Commit: `feat(story-026.5): memory-core migration tool`
