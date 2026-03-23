@@ -200,6 +200,26 @@ openclaw skill install tapps-brain-memory
 This installs `tapps-brain[mcp]` from PyPI and configures the MCP server
 automatically via `openclaw.plugin.json`.
 
+## Install from GitHub only (no PyPI)
+
+Use the dedicated guide (same commands an OpenClaw operator or agent can follow):
+
+**[openclaw-install-from-git.md](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw-install-from-git.md)**
+
+Short version:
+
+```bash
+pip install "git+https://github.com/wtthornton/tapps-brain.git@main#egg=tapps-brain[mcp]"
+cd openclaw-plugin && npm install && npm run build && openclaw plugin install ./openclaw-plugin
+```
+
+Then enable `tapps-brain-memory` in your OpenClaw config as in the main
+[OpenClaw guide](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw.md).
+
+**Upgrade (Git):** re-run `pip install --upgrade …` with the same `git+https://…` URL,
+or `git pull` + `pip install -e ".[mcp]"` if you use a clone; rebuild `openclaw-plugin`
+and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw-install-from-git.md#upgrade-git-only).
+
 ## How It Works
 
 | Hook        | What happens                                                  |

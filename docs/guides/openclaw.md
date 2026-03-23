@@ -4,6 +4,10 @@ Persistent cross-session memory for your OpenClaw agents. **54** MCP tools and
 **7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
 OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
+**Install or upgrade the Python package from GitHub only (no PyPI):** see
+[openclaw-install-from-git.md](./openclaw-install-from-git.md) — install, upgrade,
+and plugin rebuild steps for operators or OpenClaw/agents.
+
 ---
 
 ## Quick Start
