@@ -275,6 +275,32 @@ class TestSelectTier:
         result = select_tier(entries)
         assert result == MemoryTier.pattern
 
+    def test_custom_tier_only(self) -> None:
+        """Custom tier string is returned when it's the only tier present."""
+        entries = [
+            _make_entry("a", "v", tier="my_custom_layer"),
+        ]
+        result = select_tier(entries)
+        assert result == "my_custom_layer"
+
+    def test_custom_tier_beats_context(self) -> None:
+        """Custom tier string (priority 2) beats context tier (priority 1)."""
+        entries = [
+            _make_entry("a", "v", tier=MemoryTier.context),
+            _make_entry("b", "v", tier="my_custom_layer"),
+        ]
+        result = select_tier(entries)
+        assert result == "my_custom_layer"
+
+    def test_procedural_beats_custom_tier(self) -> None:
+        """Built-in procedural (priority 2) ties with custom tier (priority 2); architectural always wins."""
+        entries = [
+            _make_entry("a", "v", tier="my_custom_layer"),
+            _make_entry("b", "v", tier=MemoryTier.architectural),
+        ]
+        result = select_tier(entries)
+        assert result == MemoryTier.architectural
+
 
 # ---------------------------------------------------------------------------
 # Main consolidation tests

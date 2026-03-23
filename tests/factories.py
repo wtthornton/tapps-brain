@@ -20,7 +20,7 @@ def make_entry(
     key: str = "test-key",
     value: str = "test value",
     *,
-    tier: MemoryTier = MemoryTier.pattern,
+    tier: MemoryTier | str = MemoryTier.pattern,
     confidence: float = -1.0,
     source: MemorySource | str = MemorySource.agent,
     source_agent: str = "test",

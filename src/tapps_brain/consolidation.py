@@ -273,8 +273,10 @@ def select_tier(entries: list[MemoryEntry]) -> MemoryTier | str:
         MemoryTier.context: 1,
     }
 
-    # Find highest priority tier
-    best_entry = max(entries, key=lambda e: tier_priority.get(e.tier, 0))
+    # Find highest priority tier.
+    # Unknown custom tier strings (from profile layers) get priority 2,
+    # same as procedural — prevents custom tiers from always losing to context.
+    best_entry = max(entries, key=lambda e: tier_priority.get(e.tier, 2))
     return best_entry.tier
 
 
