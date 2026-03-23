@@ -1210,6 +1210,123 @@ function registerHiveTools(
 }
 
 // ---------------------------------------------------------------------------
+// Knowledge graph tools — memory_relations, memory_find_related,
+//                         memory_query_relations
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Falls back gracefully if the API is absent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register knowledge graph tools: relations, find_related, query_relations.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerKnowledgeGraphTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  /** Shared helper: proxy MCP call, handle unavailable/parse errors. */
+  const proxy = async (
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const raw = await engine.callMcpTool(tool, args);
+    if (raw === null) {
+      return { error: "unavailable", message: "tapps-brain MCP not ready" };
+    }
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return { raw };
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // memory_relations — all relations for a memory entry key
+  // ------------------------------------------------------------------
+  api.registerTool("memory_relations", {
+    description:
+      "Return all relations associated with a tapps-brain memory entry. " +
+      "Relations are triples (subject, predicate, object) linking memory entries " +
+      "in the knowledge graph.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Memory entry key to look up relations for" },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      return proxy("memory_relations", { key });
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_find_related — BFS traversal of the relation graph
+  // ------------------------------------------------------------------
+  api.registerTool("memory_find_related", {
+    description:
+      "Find memory entries related to a given key via BFS traversal of the relation graph. " +
+      "Returns keys and their hop distance from the starting entry. " +
+      "Use max_hops to control traversal depth (default 2).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Starting entry key" },
+        max_hops: {
+          type: "number",
+          description: "Maximum traversal depth, must be >= 1 (default 2)",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      const mcpArgs: Record<string, unknown> = { key };
+      if (args.max_hops !== undefined) mcpArgs.max_hops = args.max_hops;
+      return proxy("memory_find_related", mcpArgs);
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_query_relations — filter relations by subject/predicate/object
+  // ------------------------------------------------------------------
+  api.registerTool("memory_query_relations", {
+    description:
+      "Filter tapps-brain knowledge graph relations by subject, predicate, and/or object. " +
+      "All filters use case-insensitive matching combined with AND logic. " +
+      "Omit any filter field (or pass empty string) to skip that filter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subject: {
+          type: "string",
+          description: "Filter by subject entity (optional — omit to skip)",
+        },
+        predicate: {
+          type: "string",
+          description: "Filter by predicate/relationship type (optional — omit to skip)",
+        },
+        object_entity: {
+          type: "string",
+          description: "Filter by object entity (optional — omit to skip)",
+        },
+      },
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const mcpArgs: Record<string, unknown> = {};
+      if (args.subject !== undefined) mcpArgs.subject = args.subject;
+      if (args.predicate !== undefined) mcpArgs.predicate = args.predicate;
+      if (args.object_entity !== undefined) mcpArgs.object_entity = args.object_entity;
+      return proxy("memory_query_relations", mcpArgs);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1241,6 +1358,9 @@ export default definePluginEntry({
       // agent_register, agent_create, agent_list, agent_delete).
       // Degrade gracefully if Hive is disabled on the server side.
       registerHiveTools(api, engine);
+      // Register knowledge graph tools (memory_relations, memory_find_related,
+      // memory_query_relations). Proxy directly to MCP; no special degradation.
+      registerKnowledgeGraphTools(api, engine);
     }
 
     if (mode === "context-engine") {

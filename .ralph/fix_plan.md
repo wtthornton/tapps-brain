@@ -464,7 +464,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Register all 7 Hive/agent tools via `api.registerTool()`. Proxy to MCP client. Graceful degradation if Hive disabled (return error JSON, don't crash). Update SKILL.md. Commit: `feat(story-027.1): register Hive tools as OpenClaw native tools`
 
 #### 027-C: Register knowledge graph tools (relations, find_related, query_relations)
-- [ ] Register `memory_relations`, `memory_find_related`, `memory_query_relations`. Proxy to MCP client. Return correct JSON. Update SKILL.md. Commit: `feat(story-027.3): register knowledge graph tools as OpenClaw native tools`
+- [x] Register `memory_relations`, `memory_find_related`, `memory_query_relations`. Proxy to MCP client. Return correct JSON. Update SKILL.md. Commit: `feat(story-027.3): register knowledge graph tools as OpenClaw native tools`
 
 ### Phase 2: Management Tools (all independent)
 

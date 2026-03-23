@@ -106,6 +106,13 @@ tools:
     description: Register with profile validation and namespace assignment
   - name: agent_delete
     description: Remove a registered agent from the Hive registry
+  # Knowledge Graph
+  - name: memory_relations
+    description: Return all relations for a memory entry key
+  - name: memory_find_related
+    description: BFS traversal — find entries related within N hops
+  - name: memory_query_relations
+    description: Filter relations by subject, predicate, or object
 ---
 
 # tapps-brain — Persistent Memory for OpenClaw
