@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from tapps_brain.models import (
     MAX_KEY_LENGTH,
+    MAX_TAG_LENGTH,
     MAX_TAGS,
     MAX_VALUE_LENGTH,
     MemoryEntry,
@@ -139,6 +140,27 @@ class TestMemoryEntry:
         # One over limit
         with pytest.raises(ValidationError, match="Too many tags"):
             MemoryEntry(key="k", value="v", tags=["t"] * (MAX_TAGS + 1))
+
+    def test_tag_max_length(self) -> None:
+        # Exactly at limit is fine
+        MemoryEntry(key="k", value="v", tags=["x" * MAX_TAG_LENGTH])
+
+        # One over limit fails
+        with pytest.raises(ValidationError, match="exceeds max length"):
+            MemoryEntry(key="k", value="v", tags=["x" * (MAX_TAG_LENGTH + 1)])
+
+    def test_tag_empty_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="empty or whitespace"):
+            MemoryEntry(key="k", value="v", tags=["   "])
+
+    def test_agent_scope_valid_values(self) -> None:
+        for scope in ("private", "domain", "hive"):
+            entry = MemoryEntry(key="k", value="v", agent_scope=scope)
+            assert entry.agent_scope == scope
+
+    def test_agent_scope_invalid_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="agent_scope must be one of"):
+            MemoryEntry(key="k", value="v", agent_scope="public")
 
     def test_branch_required_for_branch_scope(self) -> None:
         with pytest.raises(ValidationError, match="Branch name is required"):

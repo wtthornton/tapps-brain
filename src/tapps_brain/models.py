@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -67,6 +67,10 @@ _SOURCE_CONFIDENCE_DEFAULTS: dict[MemorySource, float] = {
 MAX_KEY_LENGTH: int = 128
 MAX_VALUE_LENGTH: int = 4096
 MAX_TAGS: int = 10
+MAX_TAG_LENGTH: int = 64
+
+# Valid values for the ``agent_scope`` Hive propagation field.
+_VALID_AGENT_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive"})
 
 
 def tier_str(tier: MemoryTier | str) -> str:
@@ -150,9 +154,6 @@ class MemoryEntry(BaseModel):
         description="HMAC-SHA256 hex digest computed over key|value|tier|source.",
     )
 
-    # Class-level constants (not serialised)
-    _KEY_PATTERN: ClassVar[re.Pattern[str]] = _KEY_SLUG_PATTERN
-
     @field_validator("key")
     @classmethod
     def _validate_key(cls, v: str) -> str:
@@ -182,17 +183,28 @@ class MemoryEntry(BaseModel):
         if len(v) > MAX_TAGS:
             msg = f"Too many tags ({len(v)} > {MAX_TAGS})."
             raise ValueError(msg)
+        for tag in v:
+            if not tag.strip():
+                msg = "Tags must not be empty or whitespace-only."
+                raise ValueError(msg)
+            if len(tag) > MAX_TAG_LENGTH:
+                msg = f"Tag exceeds max length ({len(tag)} > {MAX_TAG_LENGTH}): {tag!r}"
+                raise ValueError(msg)
+        return v
+
+    @field_validator("agent_scope")
+    @classmethod
+    def _validate_agent_scope(cls, v: str) -> str:
+        if v not in _VALID_AGENT_SCOPES:
+            msg = f"agent_scope must be one of {sorted(_VALID_AGENT_SCOPES)!r}. Got: {v!r}"
+            raise ValueError(msg)
         return v
 
     @model_validator(mode="after")
     def _apply_defaults_and_validate(self) -> MemoryEntry:
         # Apply source-based confidence default
         if self.confidence < 0:
-            object.__setattr__(
-                self,
-                "confidence",
-                _SOURCE_CONFIDENCE_DEFAULTS.get(self.source, 0.5),
-            )
+            self.confidence = _SOURCE_CONFIDENCE_DEFAULTS.get(self.source, 0.5)
 
         # Branch required when scope=branch
         if self.scope == MemoryScope.branch and not self.branch:
@@ -321,7 +333,7 @@ class ConsolidatedEntry(MemoryEntry):
         default=ConsolidationReason.similarity,
         description="Why the entries were consolidated.",
     )
-    is_consolidated: bool = Field(
+    is_consolidated: Literal[True] = Field(
         default=True,
         description="Always True for ConsolidatedEntry.",
     )
