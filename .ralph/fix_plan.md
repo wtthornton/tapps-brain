@@ -289,7 +289,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_mcp_server.py`. Largest test file — check for: redundant tests, missing tool coverage (all 41 tools tested?), proper mocking of store, error path coverage. Fix all issues. Commit: `review(story-024.1): test_mcp_server.py review`
 
 #### 024-B: Review `test_cli.py` (1,320 lines)
-- [ ] Review `tests/unit/test_cli.py`. Check: all commands tested, CliRunner usage, error message assertions, `--format json` coverage, help text validation. Fix all issues. Commit: `review(story-024.2): test_cli.py review`
+- [x] Review `tests/unit/test_cli.py`. Check: all commands tested, CliRunner usage, error message assertions, `--format json` coverage, help text validation. Fix all issues. Commit: `review(story-024.2): test_cli.py review`
 
 #### 024-C: Review `test_memory_store.py` + `test_memory_persistence.py`
 - [ ] Review `tests/unit/test_memory_store.py` (1,065 lines) and `tests/unit/test_memory_persistence.py` (964 lines). Check: CRUD coverage, thread-safety tests, migration tests, WAL mode tests, cache consistency tests. Fix all issues. Commit: `review(story-024.3): store and persistence tests review`

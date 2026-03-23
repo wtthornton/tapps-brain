@@ -59,6 +59,13 @@ class TestVersionHelp:
         # typer returns exit code 0 or 2 depending on version for no_args_is_help
         assert "Usage" in result.stdout
 
+    def test_subgroup_help(self):
+        """All CLI subgroups respond to --help."""
+        for subgroup in ["store", "memory", "federation", "maintenance", "profile", "hive", "agent"]:
+            result = runner.invoke(app, [subgroup, "--help"])
+            assert result.exit_code == 0, f"{subgroup} --help failed"
+            assert "Usage" in result.stdout, f"{subgroup} --help missing Usage"
+
 
 # ===================================================================
 # Store commands
@@ -101,6 +108,14 @@ class TestStoreCommands:
         data = json.loads(result.stdout)
         assert len(data) == 3
 
+    def test_list_scope_filter(self, project_dir):
+        result = runner.invoke(
+            app, ["store", "list", "--project-dir", project_dir, "--scope", "project"]
+        )
+        assert result.exit_code == 0
+        # All entries are project-scoped by default, so all 3 should appear
+        assert "3 entries" in result.stdout
+
     def test_search(self, project_dir):
         result = runner.invoke(app, ["store", "search", "PostgreSQL", "--project-dir", project_dir])
         assert result.exit_code == 0
@@ -113,6 +128,14 @@ class TestStoreCommands:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert isinstance(data, list)
+
+    def test_search_no_results(self, project_dir):
+        result = runner.invoke(
+            app,
+            ["store", "search", "xyzzy-nonexistent-term-99", "--project-dir", project_dir],
+        )
+        assert result.exit_code == 0
+        assert "0 results" in result.stdout
 
 
 # ===================================================================
@@ -140,6 +163,7 @@ class TestMemoryCommands:
     def test_show_not_found(self, project_dir):
         result = runner.invoke(app, ["memory", "show", "nonexistent", "--project-dir", project_dir])
         assert result.exit_code == 1
+        assert "not found" in result.output.lower()
 
     def test_history(self, tmp_path: Path):
         s = MemoryStore(tmp_path)
@@ -170,6 +194,7 @@ class TestMemoryCommands:
     def test_search(self, project_dir):
         result = runner.invoke(app, ["memory", "search", "deploy", "--project-dir", project_dir])
         assert result.exit_code == 0
+        assert "results" in result.stdout
 
     def test_search_json(self, project_dir):
         result = runner.invoke(
@@ -261,6 +286,7 @@ class TestImportExport:
             ["import", str(tmp_path / "nope.json"), "--project-dir", str(tmp_path)],
         )
         assert result.exit_code == 1
+        assert "not found" in result.output.lower()
 
     def test_import_invalid_json(self, tmp_path: Path):
         bad_file = tmp_path / "bad.json"
@@ -270,6 +296,7 @@ class TestImportExport:
             ["import", str(bad_file), "--project-dir", str(tmp_path)],
         )
         assert result.exit_code == 1
+        assert "invalid json" in result.output.lower()
 
     def test_import_skip_duplicates(self, project_dir, tmp_path: Path):
         export_file = tmp_path / "data.json"
@@ -617,6 +644,88 @@ class TestMaintenanceCommands:
         assert data["schema_version"] == 8
 
 
+class TestMaintenanceGcConfigCommand:
+    """Tests for maintenance gc-config CLI command."""
+
+    def test_gc_config_show(self, project_dir):
+        result = runner.invoke(
+            app, ["maintenance", "gc-config", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "floor_retention_days" in result.stdout
+        assert "session_expiry_days" in result.stdout
+        assert "contradicted_threshold" in result.stdout
+
+    def test_gc_config_json(self, project_dir):
+        result = runner.invoke(
+            app, ["maintenance", "gc-config", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "floor_retention_days" in data
+        assert "session_expiry_days" in data
+        assert "contradicted_threshold" in data
+
+    def test_gc_config_set_floor(self, project_dir):
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "gc-config",
+                "--project-dir",
+                project_dir,
+                "--floor-retention-days",
+                "60",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["floor_retention_days"] == 60
+        assert data["status"] == "updated"
+
+
+class TestMaintenanceConsolidationConfigCommand:
+    """Tests for maintenance consolidation-config CLI command."""
+
+    def test_consolidation_config_show(self, project_dir):
+        result = runner.invoke(
+            app, ["maintenance", "consolidation-config", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "enabled" in result.stdout
+        assert "threshold" in result.stdout
+
+    def test_consolidation_config_json(self, project_dir):
+        result = runner.invoke(
+            app,
+            ["maintenance", "consolidation-config", "--project-dir", project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "enabled" in data
+        assert "threshold" in data
+        assert "min_entries" in data
+
+    def test_consolidation_config_set_threshold(self, project_dir):
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "consolidation-config",
+                "--project-dir",
+                project_dir,
+                "--threshold",
+                "0.85",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["threshold"] == 0.85
+        assert data["status"] == "updated"
+
+
 # ===================================================================
 # Recall command
 # ===================================================================
@@ -912,6 +1021,7 @@ class TestAgentCreateCommand:
         """agent delete exits with code 1 for an agent that doesn't exist."""
         result = runner.invoke(app, ["agent", "delete", "no-such-agent-xyz-99999"])
         assert result.exit_code == 1
+        assert "not found" in result.output.lower()
 
     def test_agent_delete_json_output(self):
         """agent delete --json returns deleted flag."""
@@ -1001,8 +1111,6 @@ class TestMemoryRelatedCommand:
             app, ["memory", "related", "python-stack", "--project-dir", kg_project_dir]
         )
         assert result.exit_code == 0
-        # No error — exits cleanly
-        assert result.exit_code == 0
 
     def test_related_json_output(self, kg_project_dir):
         result = runner.invoke(
@@ -1037,6 +1145,7 @@ class TestMemoryRelatedCommand:
             app, ["memory", "related", "nonexistent-key", "--project-dir", project_dir]
         )
         assert result.exit_code == 1
+        assert "not found" in result.output.lower()
 
 
 # ===================================================================
