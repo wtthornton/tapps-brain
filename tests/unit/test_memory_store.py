@@ -669,6 +669,21 @@ class TestHistory:
         with pytest.raises(KeyError):
             store.history("nonexistent")
 
+    def test_history_cycle_does_not_hang(self, store: MemoryStore) -> None:
+        """history() must terminate and not loop forever when superseded_by creates a cycle."""
+        store.save(key="cycle-a", value="entry a")
+        store.save(key="cycle-b", value="entry b")
+        # Manually inject a cycle: A -> B -> A (corrupted state)
+        with store._lock:
+            entry_a = store._entries["cycle-a"]
+            entry_b = store._entries["cycle-b"]
+            store._entries["cycle-a"] = entry_a.model_copy(update={"superseded_by": "cycle-b"})
+            store._entries["cycle-b"] = entry_b.model_copy(update={"superseded_by": "cycle-a"})
+
+        # Should return without hanging; result has at most 2 entries
+        chain = store.history("cycle-a")
+        assert len(chain) <= 2
+
     def test_history_ordered_by_valid_at(self, store: MemoryStore) -> None:
         """Entries are ordered by valid_at ascending."""
         store.save(key="ts-v1", value="first")
@@ -980,6 +995,13 @@ class TestStoreMetrics:
         store.gc(dry_run=True)
         snap = store.get_metrics()
         assert snap.counters.get("store.gc", 0) == 1
+
+    def test_reinforce_increments_counter(self, store: MemoryStore) -> None:
+        store.save(key="reinforce-me", value="some durable fact")
+        store._metrics.reset()
+        store.reinforce("reinforce-me")
+        snap = store.get_metrics()
+        assert snap.counters.get("store.reinforce", 0) == 1
 
     def test_consolidation_metrics(self, tmp_path) -> None:
         """When auto-consolidation triggers, counters are incremented."""

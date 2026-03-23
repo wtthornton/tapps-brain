@@ -708,6 +708,7 @@ class MemoryStore:
         """
         from tapps_brain.reinforcement import reinforce as _reinforce
 
+        self._metrics.increment("store.reinforce")
         decay_cfg = self._get_decay_config()
 
         with self._lock:
@@ -896,11 +897,15 @@ class MemoryStore:
             else:
                 entries = list(self._entries.values())
 
-        # Run async validation synchronously (store is sync by design)
-        report = asyncio.run(validator.validate_batch(entries))
+        # Run async validation and result application in a single event loop
+        # (store is synchronous by design — two asyncio.run() calls would create
+        # two separate event loops, which is unnecessary overhead).
+        async def _run_validation() -> Any:  # noqa: ANN401
+            rep = await validator.validate_batch(entries)
+            await validator.apply_results(rep, self)
+            return rep
 
-        # Apply results back to the store
-        asyncio.run(validator.apply_results(report, self))
+        report = asyncio.run(_run_validation())
 
         return report
 
@@ -1024,18 +1029,30 @@ class MemoryStore:
                 if e.superseded_by:
                     reverse[e.superseded_by] = e.key
 
-            # Walk backward to the root
+            # Walk backward to the root.
+            # Guard against corrupted cyclic chains (e.g. A→B→A).
             root = key
+            backward_visited: set[str] = {root}
             while root in reverse:
                 root = reverse[root]
+                if root in backward_visited:
+                    logger.warning("history_backward_cycle_detected", key=key, cycle_key=root)
+                    break
+                backward_visited.add(root)
 
-            # Walk forward from root collecting the chain
+            # Walk forward from root collecting the chain.
+            # Track visited keys to guard against corrupted cyclic superseded_by chains.
             chain: list[MemoryEntry] = []
+            chain_visited: set[str] = set()
             current: str | None = root
             while current is not None:
+                if current in chain_visited:
+                    logger.warning("history_cycle_detected", key=key, cycle_key=current)
+                    break
                 entry = self._entries.get(current)
                 if entry is None:
                     break
+                chain_visited.add(current)
                 chain.append(entry)
                 current = entry.superseded_by
 
@@ -1192,7 +1209,7 @@ class MemoryStore:
             )
 
         # Archive to JSONL and delete from store
-        archive_path = self._persistence._store_dir / "gc_archive.jsonl"
+        archive_path = self._persistence.store_dir / "gc_archive.jsonl"
         MemoryGarbageCollector.append_to_archive(candidates, archive_path)
         for key in candidate_keys:
             self.delete(key)
@@ -1229,7 +1246,7 @@ class MemoryStore:
         """
         from tapps_brain.audit import AuditReader
 
-        reader = AuditReader(self._persistence._audit_path)
+        reader = AuditReader(self._persistence.audit_path)
         return reader.query(
             key=key,
             event_type=event_type,

@@ -66,6 +66,7 @@ class MemoryPersistence:
             self._conn = self._connect()
             self._ensure_schema()
         except sqlite3.DatabaseError as exc:
+
             _msg = f"Database corrupt: {self._db_path}. Back up and delete to recover."
             # Emit via stdlib logging so pytest caplog can capture it in tests
             logging.getLogger(__name__).error("database_corrupt: %s", _msg, exc_info=exc)
@@ -75,6 +76,20 @@ class MemoryPersistence:
                 message=_msg,
             )
             raise
+
+    # ------------------------------------------------------------------
+    # Public accessors
+    # ------------------------------------------------------------------
+
+    @property
+    def store_dir(self) -> Path:
+        """Return the on-disk storage directory path."""
+        return self._store_dir
+
+    @property
+    def audit_path(self) -> Path:
+        """Return the path to the JSONL audit log."""
+        return self._audit_path
 
     # ------------------------------------------------------------------
     # Connection and schema
