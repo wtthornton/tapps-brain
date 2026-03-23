@@ -26,6 +26,7 @@ from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTie
 from tests.factories import make_entry
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -40,7 +41,7 @@ def _isolate_federation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 @pytest.fixture()
-def hub_store(tmp_path: Path) -> FederatedStore:
+def hub_store(tmp_path: Path) -> Generator[FederatedStore, None, None]:
     """Create a FederatedStore backed by tmp_path."""
     store = FederatedStore(db_path=tmp_path / "federated.db")
     yield store
@@ -518,10 +519,12 @@ class TestSyncFromHub:
         mock_store = MockMemoryStore([])
         config = load_federation_config()
         result = sync_from_hub(mock_store, hub_store, "proj-a", config=config)
-        # "pattern-from-b" (api, conf 0.8) -> imported
-        # "low-conf-b" (api, conf 0.3) -> imported (min_confidence default 0.5 filters)
+        # tag_filter=["api"], default min_confidence=0.5:
+        # "pattern-from-b" (api, conf 0.8) -> imported (tag match, confidence OK)
+        # "low-conf-b" (api, conf 0.3) -> skipped (tag match but confidence < 0.5)
         # "untagged-b" (other, conf 0.8) -> skipped (tag mismatch)
-        assert result["skipped"] >= 1  # at least untagged-b skipped
+        assert result["imported"] == 1
+        assert result["skipped"] == 2
 
     def test_min_confidence_filtering(self, hub_store: FederatedStore) -> None:
         self._setup_hub(hub_store)
@@ -689,12 +692,12 @@ class TestMemoryScopeShared:
 class TestFederatedStoreContextManager:
     """FederatedStore must implement __enter__/__exit__ to prevent connection leaks."""
 
-    def test_context_manager_returns_self(self, tmp_path: Any) -> None:
+    def test_context_manager_returns_self(self, tmp_path: Path) -> None:
         db_path = tmp_path / "ctx_test.db"
         with FederatedStore(db_path=db_path) as store:
             assert isinstance(store, FederatedStore)
 
-    def test_context_manager_closes_on_exit(self, tmp_path: Any) -> None:
+    def test_context_manager_closes_on_exit(self, tmp_path: Path) -> None:
         """Verify close() is called when context manager exits normally."""
         db_path = tmp_path / "ctx_close.db"
         store = FederatedStore(db_path=db_path)
@@ -712,7 +715,7 @@ class TestFederatedStoreContextManager:
 
         assert close_calls == [True]
 
-    def test_context_manager_closes_on_exception(self, tmp_path: Any) -> None:
+    def test_context_manager_closes_on_exception(self, tmp_path: Path) -> None:
         """Verify close() is called even when an exception is raised inside the block."""
         db_path = tmp_path / "ctx_exc.db"
         store = FederatedStore(db_path=db_path)
@@ -788,7 +791,7 @@ class TestUnregisterStaleSourceCleanup:
 
 
 # ===========================================================================
-# 7. FederatedSearchResult dataclass
+# 9. FederatedSearchResult dataclass
 # ===========================================================================
 
 

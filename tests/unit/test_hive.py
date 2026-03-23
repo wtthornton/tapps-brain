@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 from tapps_brain.hive import (
@@ -26,9 +27,11 @@ from tapps_brain.store import MemoryStore
 
 
 @pytest.fixture()
-def hive(tmp_path: Path) -> HiveStore:
+def hive(tmp_path: Path) -> Generator[HiveStore, None, None]:
     """Create a HiveStore backed by a temp directory."""
-    return HiveStore(db_path=tmp_path / "hive.db")
+    store = HiveStore(db_path=tmp_path / "hive.db")
+    yield store
+    store.close()
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +123,8 @@ class TestHiveStoreSchema:
     def test_close(self, tmp_path: Path) -> None:
         store = HiveStore(db_path=tmp_path / "hive.db")
         store.close()
-        # After close, operations should fail
-        with pytest.raises(Exception):  # noqa: B017
+        # After close, operations should fail with ProgrammingError
+        with pytest.raises(sqlite3.ProgrammingError):
             store._conn.execute("SELECT 1")
 
     def test_schema_idempotent(self, tmp_path: Path) -> None:
@@ -356,7 +359,9 @@ class TestAgentRegistration:
         assert agent.skills == ["scheduling", "reminders"]
 
     def test_rejects_extra_fields(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             AgentRegistration(id="x", unknown_field="bad")  # type: ignore[call-arg]
 
 
@@ -989,29 +994,27 @@ class TestPropagationEngineUnknownScope:
     """PropagationEngine.propagate() should warn on unknown effective_scope values."""
 
     def test_unknown_scope_emits_warning_and_uses_domain(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Unknown scope falls back to domain (agent_profile) with a warning."""
-        import logging
-
         hive = HiveStore(db_path=tmp_path / "hive.db")
-        with caplog.at_level(logging.WARNING):
-            result = PropagationEngine.propagate(
-                key="scope-test",
-                value="value",
-                agent_scope="custom_unknown",
-                agent_id="agent-1",
-                agent_profile="test-profile",
-                tier="pattern",
-                confidence=0.7,
-                source="agent",
-                tags=None,
-                hive_store=hive,
-            )
+        result = PropagationEngine.propagate(
+            key="scope-test",
+            value="value",
+            agent_scope="custom_unknown",
+            agent_id="agent-1",
+            agent_profile="test-profile",
+            tier="pattern",
+            confidence=0.7,
+            source="agent",
+            tags=None,
+            hive_store=hive,
+        )
 
         # Should NOT return None — falls back to domain (agent_profile)
         assert result is not None
         assert result["namespace"] == "test-profile"
-        # Warning logged — event key contains "unknown_scope"
-        assert any("unknown_scope" in r.message for r in caplog.records)
+        # Warning logged via structlog to stdout — event key contains "unknown_scope"
+        captured = capsys.readouterr()
+        assert "unknown_scope" in captured.out
         hive.close()

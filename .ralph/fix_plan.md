@@ -300,7 +300,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_coverage_gaps.py` (877 lines) and `tests/unit/test_doc_validation.py` (776 lines). Check: are the "gaps" still gaps or already covered elsewhere? Validation test completeness. Fix all issues. Commit: `review(story-024.4): coverage gaps and validation tests review`
 
 #### 024-E: Review `test_federation.py` + `test_hive.py`
-- [ ] Review `tests/unit/test_federation.py` (720 lines) and `tests/unit/test_hive.py` (713 lines). Check: subscription lifecycle, publish/subscribe isolation, Hive propagation paths, conflict resolution coverage. Fix all issues. Commit: `review(story-024.5): federation and hive tests review`
+- [x] Review `tests/unit/test_federation.py` (720 lines) and `tests/unit/test_hive.py` (713 lines). Check: subscription lifecycle, publish/subscribe isolation, Hive propagation paths, conflict resolution coverage. Fix all issues. Commit: `review(story-024.5): federation and hive tests review`
 
 #### 024-F: Review `test_profile.py` + `test_memory_retrieval.py`
 - [ ] Review `tests/unit/test_profile.py` (695 lines) and `tests/unit/test_memory_retrieval.py` (662 lines). Check: profile inheritance tests, scoring weight tests, edge case coverage. Fix all issues. Commit: `review(story-024.6): profile and retrieval tests review`
