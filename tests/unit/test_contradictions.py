@@ -152,6 +152,15 @@ class TestFileExistenceCheck:
         result = detector.detect_contradictions([entry], _FakeProfile())
         assert result == []
 
+    def test_version_string_not_flagged_as_missing_file(self, tmp_path: Path):
+        """Version strings like '1.2.3' must not be treated as file paths."""
+        entry = _make_entry(
+            value="Requires Python 3.12.0 or newer", tags=["file"]
+        )
+        detector = ContradictionDetector(tmp_path)
+        result = detector.detect_contradictions([entry], _FakeProfile())
+        assert result == [], "Version strings should not be flagged as missing files"
+
 
 # ---------------------------------------------------------------------------
 # Tests: Test frameworks
@@ -263,6 +272,28 @@ class TestBranchCheck:
         ):
             result = detector.detect_contradictions([entry], _FakeProfile())
         assert result == []
+
+    def test_non_git_dir_no_false_positive(self, tmp_path: Path):
+        """Non-zero returncode (not a git repo) must not produce a contradiction."""
+        from unittest.mock import MagicMock
+
+        entry = _make_entry(
+            key="mem-b",
+            value="stuff",
+            tags=["branch"],
+            branch="some-branch",
+        )
+        detector = ContradictionDetector(tmp_path)
+        mock_result = MagicMock()
+        mock_result.returncode = 128
+        mock_result.stdout = ""
+        mock_result.stderr = "fatal: not a git repository"
+        with patch(
+            "tapps_brain.contradictions.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = detector.detect_contradictions([entry], _FakeProfile())
+        assert result == [], "Non-git directory should not produce a branch contradiction"
 
 
 # ---------------------------------------------------------------------------

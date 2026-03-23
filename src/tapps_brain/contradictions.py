@@ -120,7 +120,15 @@ class ContradictionDetector:
     def _check_tech_stack(
         self, entry: MemoryEntry, profile: ProjectProfileLike
     ) -> Contradiction | None:
-        """Check if a memory references a library/framework not in the project."""
+        """Check if a memory references a library/framework not in the project.
+
+        Early-return design: if any known tech appears in the memory, we treat
+        the memory as "probably correct" and skip claim extraction.  This is
+        deliberate — it trades missed detections on memories that mention both a
+        known and an unknown tech for a significant reduction in false positives
+        (e.g. "migrated from Flask to Django" where both are later added to the
+        stack).
+        """
         known = set(profile.tech_stack.libraries) | set(profile.tech_stack.frameworks)
         known_lower = {k.lower() for k in known}
 
@@ -140,7 +148,7 @@ class ContradictionDetector:
             if match:
                 claimed = match.group(1)
                 if claimed not in known_lower and len(claimed) > _MIN_CLAIMED_NAME_LENGTH:
-                    return Contradiction(
+                    contradiction = Contradiction(
                         memory_key=key,
                         reason=(
                             f"Memory claims use of '{claimed}' but it was not "
@@ -148,6 +156,13 @@ class ContradictionDetector:
                         ),
                         evidence=f"tech_stack.libraries={sorted(known_lower)}",
                     )
+                    logger.debug(
+                        "contradiction_detected",
+                        check="tech_stack",
+                        key=key,
+                        claimed=claimed,
+                    )
+                    return contradiction
         return None
 
     def _check_file_existence(self, entry: MemoryEntry) -> Contradiction | None:
@@ -157,17 +172,27 @@ class ContradictionDetector:
         for fpath in file_patterns:
             if fpath.startswith(("/", "\\")) or ".." in fpath:
                 continue
+            # Skip pure version strings like "1.2.3" or "2.0.1" — not file paths.
+            if re.match(r"^\d+(\.\d+)*$", fpath):
+                continue
             full = self._project_root / fpath
             try:
                 full.resolve().relative_to(self._project_root.resolve())
             except ValueError:
                 continue
             if not full.exists():
-                return Contradiction(
+                contradiction = Contradiction(
                     memory_key=entry.key,
                     reason=f"Memory references file '{fpath}' which no longer exists.",
                     evidence=f"Path checked: {full}",
                 )
+                logger.debug(
+                    "contradiction_detected",
+                    check="file_existence",
+                    key=entry.key,
+                    path=fpath,
+                )
+                return contradiction
 
         return None
 
@@ -182,13 +207,20 @@ class ContradictionDetector:
         value_lower = entry.value.lower()
         for fw in _TEST_FW_NAMES:
             if re.search(rf"\b{re.escape(fw)}\b", value_lower) and fw not in known:
-                return Contradiction(
+                contradiction = Contradiction(
                     memory_key=entry.key,
                     reason=(
                         f"Memory mentions test framework '{fw}' but project uses {sorted(known)}."
                     ),
                     evidence=f"test_frameworks={sorted(known)}",
                 )
+                logger.debug(
+                    "contradiction_detected",
+                    check="test_framework",
+                    key=entry.key,
+                    claimed_fw=fw,
+                )
+                return contradiction
 
         return None
 
@@ -203,13 +235,20 @@ class ContradictionDetector:
         value_lower = entry.value.lower()
         for pm in _PM_NAMES:
             if re.search(rf"\b{re.escape(pm)}\b", value_lower) and pm not in known:
-                return Contradiction(
+                contradiction = Contradiction(
                     memory_key=entry.key,
                     reason=(
                         f"Memory mentions package manager '{pm}' but project uses {sorted(known)}."
                     ),
                     evidence=f"package_managers={sorted(known)}",
                 )
+                logger.debug(
+                    "contradiction_detected",
+                    check="package_manager",
+                    key=entry.key,
+                    claimed_pm=pm,
+                )
+                return contradiction
 
         return None
 
@@ -227,15 +266,31 @@ class ContradictionDetector:
                 timeout=5,
                 check=False,
             )
+            if result.returncode != 0:
+                # Not a git repository or git error — skip check rather than false-positive.
+                logger.debug(
+                    "branch_check_skipped",
+                    branch=entry.branch,
+                    returncode=result.returncode,
+                    stderr=result.stderr.strip(),
+                )
+                return None
             branches = [
                 b.strip().removeprefix("* ").strip() for b in result.stdout.strip().splitlines()
             ]
             if entry.branch not in branches:
-                return Contradiction(
+                contradiction = Contradiction(
                     memory_key=entry.key,
                     reason=(f"Memory is scoped to branch '{entry.branch}' which no longer exists."),
                     evidence="git branch --list",
                 )
+                logger.debug(
+                    "contradiction_detected",
+                    check="branch_existence",
+                    key=entry.key,
+                    branch=entry.branch,
+                )
+                return contradiction
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
             logger.debug("branch_check_failed", branch=entry.branch, error=str(exc))
 
