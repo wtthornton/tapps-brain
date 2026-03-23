@@ -94,7 +94,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Supporting Storage (all independent)
 
 #### 017-E: Review `__init__.py` — public API surface
-- [ ] Review `src/tapps_brain/__init__.py` (147 lines). Focus on: exported symbols match actual public API, no internal modules leaked, `__all__` completeness, version string consistency. Fix all issues. Commit: `review(story-017.5): __init__.py public API review`
+- [x] Review `src/tapps_brain/__init__.py` (147 lines). Focus on: exported symbols match actual public API, no internal modules leaked, `__all__` completeness, version string consistency. Fix all issues. Commit: `review(story-017.5): __init__.py public API review`
 
 #### 017-F: Review `_protocols.py` + `_feature_flags.py` — extension interfaces
 - [ ] Review `src/tapps_brain/_protocols.py` (106 lines) and `src/tapps_brain/_feature_flags.py` (77 lines). Focus on: Protocol definitions match implementations, lazy import correctness, feature flag detection reliability, fallback behavior when optional deps missing. Fix all issues. Commit: `review(story-017.6): protocols and feature flags review`
@@ -369,6 +369,127 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 #### 025-G: Review configuration and manifest files
 - [ ] Review `pyproject.toml`, `openclaw-plugin/package.json`, `openclaw-plugin/tsconfig.json`, `openclaw-plugin/openclaw.plugin.json`, `openclaw-skill/openclaw.plugin.json`, `openclaw-skill/SKILL.md`, `server.json`. Check: version consistency, dependency pinning, metadata completeness, schema correctness. Fix all issues. Commit: `review(story-025.7): configuration and manifest files review`
 
+## Planned — EPIC-028: OpenClaw Plugin Hardening — Stability, Tests, Compatibility
+
+**Depends on:** EPIC-012 ✅
+**Target:** 2026-06-15
+
+**Goal:** Harden the OpenClaw ContextEngine plugin for production: fix bugs, add TypeScript tests, improve error handling, add citation and session memory support, ensure compatibility across OpenClaw versions.
+
+### Phase 1: Critical Bug Fixes (sequential)
+
+#### 028-A: Fix bootstrap race condition in ContextEngine plugin
+- [ ] In `openclaw-plugin/src/index.ts:379-384`, `engine.bootstrap()` runs async with `.catch()` (fire-and-forget). If `ingest()` or `assemble()` is called before bootstrap completes, the MCP client is uninitialized. Fix: add a `ready` promise to `TappsBrainEngine`. Set it in `bootstrap()`. All hooks (`ingest`, `assemble`, `compact`) must `await this.ready` before calling MCP. If bootstrap fails, hooks return graceful fallbacks (empty results). Add TypeScript test: simulate concurrent bootstrap + ingest. Commit: `fix(story-028.2): resolve bootstrap race condition in OpenClaw plugin`
+
+#### 028-B: Replace silent catch blocks with structured error logging
+- [ ] In `openclaw-plugin/src/index.ts`, lines 228-230, 311-313, 351-353 have empty `catch {}` blocks that silently swallow errors. Replace all with `catch (err) { this.logger.warn("[tapps-brain] <hook>:", err) }`. Store `api.logger` reference in the engine constructor. Add elapsed_ms timing to assemble() and ingest() hooks. Add TypeScript test: trigger error, verify logger.warn is called. Commit: `fix(story-028.7): add structured error logging to OpenClaw plugin`
+
+### Phase 2: MCP Client Reliability (sequential)
+
+#### 028-C: Add MCP client reconnection logic
+- [ ] In `openclaw-plugin/src/mcp_client.ts`, the `process.on("exit")` handler sets `this.process = null` but never restarts. Fix: add `reconnect()` method that re-spawns the process. `callTool()` should detect dead process and call `reconnect()` with exponential backoff (3 retries, 100/200/400ms). Add 10s request timeout for pending requests. Add health check: `callTool("memory_list", { limit: 0 })` every 60s. Add TypeScript test: kill child process mock, verify reconnection. Commit: `feat(story-028.1): add MCP client auto-reconnection`
+
+### Phase 3: TypeScript Test Suite (independent after 028-C)
+
+#### 028-D: Create TypeScript test suite for McpClient
+- [ ] Add `vitest` to `openclaw-plugin/package.json` devDependencies. Create `openclaw-plugin/tests/mcp_client.test.ts`. Tests: JSON-RPC message framing (Content-Length parsing), request/response ID matching, error response handling, process spawn/stop lifecycle, reconnection logic, request timeout. >80% coverage of `mcp_client.ts`. Commit: `test(story-028.3): add TypeScript tests for MCP client`
+
+#### 028-E: Create TypeScript test suite for TappsBrainEngine
+- [ ] Create `openclaw-plugin/tests/index.test.ts`. Mock McpClient. Tests: bootstrap (first-run import, Hive registration), ingest (rate limiting, heartbeat skip), assemble (recall injection, token budget, deduplication), compact (context flush, session indexing), parseMemoryMdForImport (heading→tier mapping, slugify, empty content). >80% coverage of `index.ts`. Commit: `test(story-028.3): add TypeScript tests for ContextEngine`
+
+### Phase 4: Feature Parity (all independent)
+
+#### 028-F: Add citation support to recall results
+- [ ] In `openclaw-plugin/src/index.ts` `assemble()` method, format recalled memories with citation footers matching OpenClaw's format: `Source: tapps-brain/<key>`. Add `citations` config option (`"auto" | "on" | "off"`, default `"auto"`). When `"auto"` or `"on"`, append `Source: memory/<tier>/<key>.md` to each memory snippet. Add TypeScript test. Commit: `feat(story-028.4): add citation support to recall results`
+
+#### 028-G: Wire session memory search integration
+- [ ] In `openclaw-plugin/src/index.ts`, when the memory_search replacement (EPIC-026) is called with session scope, also query tapps-brain's `memory_search_sessions` tool. Merge session results with memory results, marking session results with `source: "session"`. Add TypeScript test. Commit: `feat(story-028.5): integrate session memory search`
+
+#### 028-H: Add OpenClaw version compatibility layer
+- [ ] In `openclaw-plugin/src/index.ts`, detect OpenClaw version at bootstrap. v2026.3.7+: use ContextEngine hooks (current). v2026.3.1-3.6: register as hook-only plugin using `before_agent_start`. <2026.3.1: log warning, register tools only. Update `openclaw.plugin.json` with `"minimumVersion": "2026.3.1"`. Commit: `feat(story-028.6): add OpenClaw version compatibility layer`
+
+### Phase 5: Documentation (after all above)
+
+#### 028-I: Update documentation for all integration modes
+- [ ] Restructure `docs/guides/openclaw.md`: Quick Start, Integration Modes (ContextEngine / memory slot / MCP sidecar / mcp-adapter), Configuration Reference, Feature Matrix, Migration Guide, Troubleshooting, Version Compatibility. Add config examples for each mode. Add feature matrix table. Add troubleshooting for "memory_search returns 0" and "MCP process crashes". Commit: `docs(story-028.8): comprehensive OpenClaw integration guide`
+
+---
+
+## Planned — EPIC-026: OpenClaw Memory Replacement — Replace memory-core
+
+**Depends on:** EPIC-012 ✅, EPIC-028 (Phase 1-2 recommended)
+**Target:** 2026-05-15
+
+**Goal:** Make tapps-brain the sole memory provider in OpenClaw. Replace the built-in `memory-core` plugin so `memory_search` and `memory_get` route through tapps-brain's SQLite store.
+
+### Phase 1: Plugin Registration (sequential)
+
+#### 026-A: Register as memory slot plugin in OpenClaw
+- [ ] Update `openclaw-plugin/openclaw.plugin.json` to declare both `kind: "context-engine"` and `slots.memory`. In `register()`, call `api.registerTool("memory_search", ...)` backed by tapps-brain's MCP `memory_search`. Call `api.registerTool("memory_get", ...)` backed by tapps-brain's MCP `memory_get`. When `plugins.slots.memory = "tapps-brain-memory"`, OpenClaw's built-in tools are replaced. Fall back gracefully if memory slot is not claimed. Commit: `feat(story-026.1): register tapps-brain as OpenClaw memory slot plugin`
+
+### Phase 2: Tool Replacement (sequential — depends on 026-A)
+
+#### 026-B: Implement memory_search tool backed by tapps-brain
+- [ ] Register `memory_search` via `api.registerTool()`. Accepts same parameters as memory-core's version. Calls tapps-brain's `memory_search` MCP tool. Returns OpenClaw-format results: `{ snippets: [{ text, path, lineRange, score }] }`. Maps: `value`→`text`, `key`→`path`, `confidence`→`score`. Handles empty results gracefully. Performance <200ms for <500 entries. Commit: `feat(story-026.2): implement memory_search backed by tapps-brain`
+
+#### 026-C: Implement memory_get tool backed by tapps-brain
+- [ ] Register `memory_get` via `api.registerTool()`. Accepts key/path parameter; extracts memory key from path if needed (`memory/my-key.md`→`my-key`). Calls tapps-brain's `memory_get` MCP tool. Returns entry value as Markdown text. Returns empty string for missing keys (graceful degradation). Supports optional line-range parameters. Commit: `feat(story-026.3): implement memory_get backed by tapps-brain`
+
+### Phase 3: Sync and Migration (independent)
+
+#### 026-D: Bidirectional MEMORY.md sync module
+- [ ] Create `src/tapps_brain/markdown_sync.py`. `sync_to_markdown(store, workspace_dir)` exports entries to `MEMORY.md` organized by tier. `sync_from_markdown(store, workspace_dir)` imports `MEMORY.md` + `memory/*.md`, updating changed entries. Dedup by key. Conflict: tapps-brain wins. Track sync timestamp in `.tapps-brain/sync_state.json`. ContextEngine plugin calls sync_from during bootstrap, sync_to during compact. Integration test: round-trip save→export→edit→import. Commit: `feat(story-026.4): bidirectional MEMORY.md sync`
+
+#### 026-E: Migration tool for memory-core users
+- [ ] CLI command: `tapps-brain openclaw migrate [--workspace DIR] [--dry-run]`. Imports MEMORY.md with tier inference. Imports daily notes as context-tier. Imports memory-core's SQLite index if exists. Dry-run mode. Idempotent. Reports counts. MCP tool `openclaw_migrate` for programmatic migration. Commit: `feat(story-026.5): memory-core migration tool`
+
+#### 026-F: Integration tests for memory replacement
+- [ ] Create `tests/integration/test_openclaw_memory_replacement.py`. Tests: register plugin + call memory_search → results from tapps-brain; memory_get → entry from tapps-brain; save → search → get round-trip; bidirectional sync; migration from mock data; memory slot active → memory-core not invoked. Coverage 95%+. Commit: `test(story-026.6): integration tests for OpenClaw memory replacement`
+
+---
+
+## Planned — EPIC-027: OpenClaw Full Feature Surface — All 41 MCP Tools
+
+**Depends on:** EPIC-012 ✅
+**Target:** 2026-05-31
+
+**Goal:** Expose every tapps-brain feature as a native OpenClaw tool. Currently only ~8 of 41 tools are used by the ContextEngine. The remaining 33 (federation, Hive, graph, audit, tags, profiles, GC, etc.) should be accessible without requiring MCP sidecar config.
+
+### Phase 1: High-Value Tools (all independent)
+
+#### 027-A: Register lifecycle tools (reinforce, supersede, history, search_sessions)
+- [ ] Register `memory_reinforce`, `memory_supersede`, `memory_history`, `memory_search_sessions` via `api.registerTool()`. Proxy to MCP client. Return correct JSON format. Update SKILL.md. Commit: `feat(story-027.6): register lifecycle tools as OpenClaw native tools`
+
+#### 027-B: Register Hive tools (hive_status, hive_search, hive_propagate, agent_*)
+- [ ] Register all 7 Hive/agent tools via `api.registerTool()`. Proxy to MCP client. Graceful degradation if Hive disabled (return error JSON, don't crash). Update SKILL.md. Commit: `feat(story-027.1): register Hive tools as OpenClaw native tools`
+
+#### 027-C: Register knowledge graph tools (relations, find_related, query_relations)
+- [ ] Register `memory_relations`, `memory_find_related`, `memory_query_relations`. Proxy to MCP client. Return correct JSON. Update SKILL.md. Commit: `feat(story-027.3): register knowledge graph tools as OpenClaw native tools`
+
+### Phase 2: Management Tools (all independent)
+
+#### 027-D: Register audit, tags, and profile tools
+- [ ] Register `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.5): register audit, tags, profile tools`
+
+#### 027-E: Register maintenance and config tools
+- [ ] Register `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.4): register maintenance and config tools`
+
+#### 027-F: Register federation tools
+- [ ] Register `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish`. Proxy to MCP client. Update SKILL.md. Commit: `feat(story-027.2): register federation tools`
+
+### Phase 3: Resources, Prompts, and Config (sequential)
+
+#### 027-G: Expose MCP resources and prompts as OpenClaw tools
+- [ ] Expose `memory://stats`, `memory://health`, `memory://metrics`, `memory://entries/{key}` as registered tools. Register `recall`, `store_summary`, `remember` prompts as OpenClaw commands or tools. Update SKILL.md. Commit: `feat(story-027.7): expose MCP resources and prompts`
+
+#### 027-H: Per-agent tool routing and permissions
+- [ ] Organize tools into groups: `core`, `lifecycle`, `search`, `admin`, `hive`, `federation`, `graph`. Update `openclaw.plugin.json` with `toolGroups`. Document per-agent config. Example: "coder" gets core+lifecycle+search; "admin" gets all. Commit: `feat(story-027.8): per-agent tool routing and permissions`
+
+#### 027-I: Update SKILL.md and documentation for all 41 tools
+- [ ] SKILL.md declares all 41 tools, 4 resources, 3 prompts. `docs/guides/openclaw.md` updated with four integration modes. Config examples for each mode. Troubleshooting guide. Commit: `docs(story-027.9): complete tool reference and integration guide`
+
+---
+
 ## Notes
 
 - **One task per loop.** Each task is sized for ~15 min. If a task is too large, split it and check off the part you finished.
@@ -381,6 +502,10 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - **Dependency graph (EPIC-023):** 023-A → 023-B. 023-C independent.
 - **Dependency graph (EPIC-024):** 024-A, 024-B, 024-C form Phase 1 (independent). All Phase 2–4 tasks independent.
 - **Dependency graph (EPIC-025):** All Phase 1 tasks independent. 025-E, 025-F, 025-G all independent.
+- **Dependency graph (EPIC-028):** 028-A, 028-B (Phase 1). 028-C depends on 028-B. 028-D, 028-E depend on 028-C. 028-F, 028-G, 028-H all independent. 028-I after all.
+- **Dependency graph (EPIC-026):** 026-A first. 026-B, 026-C depend on 026-A. 026-D, 026-E, 026-F independent (but 026-F depends on 026-B/C/D).
+- **Dependency graph (EPIC-027):** 027-A through 027-F all independent. 027-G, 027-H sequential. 027-I last.
+- **Recommended execution order across epics:** EPIC-028 Phase 1-2 → EPIC-026 → EPIC-027 → EPIC-028 Phase 3-5. Rationale: hardening fixes first (the plugin must work before we extend it), then memory replacement (highest impact), then full tool surface, then tests/docs.
 - Always cross-check the relevant epic file before starting a task.
 - Maintain **95%** test coverage; run full lint / type / test suite before committing.
 - After completing a task, update this file: change `- [ ]` to `- [x]`.

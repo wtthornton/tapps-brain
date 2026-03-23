@@ -9,7 +9,6 @@ try:
 except importlib.metadata.PackageNotFoundError:  # pragma: no cover
     __version__ = "0.0.0-dev"
 
-# Core types
 # BM25
 from tapps_brain.bm25 import BM25Scorer as BM25Scorer
 from tapps_brain.consolidation import consolidate as consolidate
@@ -44,6 +43,12 @@ from tapps_brain.io import import_memories as import_memories
 # Markdown Import (EPIC-012)
 from tapps_brain.markdown_import import import_memory_md as import_memory_md
 from tapps_brain.markdown_import import import_openclaw_workspace as import_openclaw_workspace
+
+# Metrics / observability (return types for store.health() and store.get_metrics())
+from tapps_brain.metrics import MetricsSnapshot as MetricsSnapshot
+from tapps_brain.metrics import StoreHealthReport as StoreHealthReport
+
+# Models
 from tapps_brain.models import (
     ConsolidatedEntry as ConsolidatedEntry,
 )
@@ -69,6 +74,10 @@ from tapps_brain.models import (
     RecallResult as RecallResult,
 )
 
+# Profile (EPIC-010)
+from tapps_brain.profile import MemoryProfile as MemoryProfile
+from tapps_brain.profile import ScoringConfig as ScoringConfig
+
 # Rate Limiting (H6a)
 from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
 from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
@@ -93,9 +102,9 @@ from tapps_brain.safety import check_content_safety as check_content_safety
 from tapps_brain.similarity import SimilarityResult as SimilarityResult
 from tapps_brain.similarity import compute_similarity as compute_similarity
 from tapps_brain.similarity import find_similar as find_similar
-from tapps_brain.store import VALID_AGENT_SCOPES as VALID_AGENT_SCOPES
 
 # Store
+from tapps_brain.store import VALID_AGENT_SCOPES as VALID_AGENT_SCOPES
 from tapps_brain.store import ConsolidationConfig as ConsolidationConfig
 from tapps_brain.store import MemoryStore as MemoryStore
 
@@ -112,12 +121,14 @@ __all__ = [
     "InjectionConfig",
     "MemoryEntry",
     "MemoryGarbageCollector",
+    "MemoryProfile",
     "MemoryRetriever",
     "MemoryScope",
     "MemorySnapshot",
     "MemorySource",
     "MemoryStore",
     "MemoryTier",
+    "MetricsSnapshot",
     "RateLimiterConfig",
     "RecallConfig",
     "RecallOrchestrator",
@@ -125,8 +136,10 @@ __all__ = [
     "RelationEntry",
     "SafetyCheckResult",
     "ScoredMemory",
+    "ScoringConfig",
     "SimilarityResult",
     "SlidingWindowRateLimiter",
+    "StoreHealthReport",
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
