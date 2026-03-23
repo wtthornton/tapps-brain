@@ -1,7 +1,7 @@
 ---
 id: EPIC-024
 title: "Code Review — Unit Tests (Part 1)"
-status: planned
+status: done
 priority: low
 created: 2026-03-22
 target_date: 2026-05-31
@@ -16,14 +16,14 @@ Review all unit test files for: test quality, missing edge cases, flaky test pat
 
 ## Success Criteria
 
-- [ ] All major unit test files reviewed (test_mcp_server, test_cli, test_memory_store, test_memory_persistence)
-- [ ] Validation and safety tests reviewed
-- [ ] Federation and hive tests reviewed
-- [ ] Profile and retrieval tests reviewed
-- [ ] Lifecycle tests reviewed (consolidation, similarity, safety)
-- [ ] Concurrency and recall tests reviewed
-- [ ] Remaining small test files reviewed
-- [ ] All issues found are fixed
+- [x] All major unit test files reviewed (test_mcp_server, test_cli, test_memory_store, test_memory_persistence)
+- [x] Validation and safety tests reviewed
+- [x] Federation and hive tests reviewed
+- [x] Profile and retrieval tests reviewed
+- [x] Lifecycle tests reviewed (consolidation, similarity, safety)
+- [x] Concurrency and recall tests reviewed
+- [x] Remaining small test files reviewed
+- [x] All issues found are fixed
 
 ## Stories
 

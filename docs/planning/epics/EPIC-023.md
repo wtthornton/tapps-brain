@@ -1,7 +1,7 @@
 ---
 id: EPIC-023
 title: "Code Review — Config, Profiles & Observability"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-05-15
@@ -16,10 +16,10 @@ Full code review of configuration, profiles, metrics, and observability.
 
 ## Success Criteria
 
-- [ ] `profile.py` reviewed (profile loading, validation, YAML safety)
-- [ ] All 6 profile YAML files reviewed
-- [ ] `metrics.py` + `otel_exporter.py` reviewed (observability stack)
-- [ ] All issues found are fixed with tests
+- [x] `profile.py` reviewed (profile loading, validation, YAML safety)
+- [x] All 6 profile YAML files reviewed
+- [x] `metrics.py` + `otel_exporter.py` reviewed (observability stack)
+- [x] All issues found are fixed with tests
 
 ## Stories
 

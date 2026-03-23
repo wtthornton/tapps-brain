@@ -1,7 +1,7 @@
 ---
 id: EPIC-018
 title: "Code Review — Retrieval & Scoring"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-04-30
@@ -16,12 +16,12 @@ Full code review of all retrieval, scoring, ranking, and search files. The retri
 
 ## Success Criteria
 
-- [ ] `retrieval.py` reviewed (composite scoring engine, source trust)
-- [ ] `recall.py` reviewed (orchestration, Hive merging)
-- [ ] `bm25.py` + `fusion.py` reviewed (text scoring)
-- [ ] `similarity.py` reviewed (Jaccard + TF-IDF)
-- [ ] `embeddings.py` + `reranker.py` reviewed (optional ML components)
-- [ ] All issues found are fixed with tests
+- [x] `retrieval.py` reviewed (composite scoring engine, source trust)
+- [x] `recall.py` reviewed (orchestration, Hive merging)
+- [x] `bm25.py` + `fusion.py` reviewed (text scoring)
+- [x] `similarity.py` reviewed (Jaccard + TF-IDF)
+- [x] `embeddings.py` + `reranker.py` reviewed (optional ML components)
+- [x] All issues found are fixed with tests
 
 ## Stories
 

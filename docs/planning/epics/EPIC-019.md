@@ -1,7 +1,7 @@
 ---
 id: EPIC-019
 title: "Code Review — Memory Lifecycle"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-04-30
@@ -16,12 +16,12 @@ Full code review of memory lifecycle management: decay, consolidation, GC, promo
 
 ## Success Criteria
 
-- [ ] `decay.py` reviewed (exponential decay, half-life correctness)
-- [ ] `consolidation.py` reviewed (deterministic merging)
-- [ ] `auto_consolidation.py` reviewed (automatic lifecycle)
-- [ ] `gc.py` + `promotion.py` reviewed (garbage collection, tier promotion)
-- [ ] `reinforcement.py` + `extraction.py` reviewed (strengthening, extraction)
-- [ ] All issues found are fixed with tests
+- [x] `decay.py` reviewed (exponential decay, half-life correctness)
+- [x] `consolidation.py` reviewed (deterministic merging)
+- [x] `auto_consolidation.py` reviewed (automatic lifecycle)
+- [x] `gc.py` + `promotion.py` reviewed (garbage collection, tier promotion)
+- [x] `reinforcement.py` + `extraction.py` reviewed (strengthening, extraction)
+- [x] All issues found are fixed with tests
 
 ## Stories
 

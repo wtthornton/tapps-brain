@@ -1,7 +1,7 @@
 ---
 id: EPIC-026
 title: "OpenClaw Memory Replacement — replace memory-core with tapps-brain"
-status: planned
+status: done
 priority: high
 created: 2026-03-23
 target_date: 2026-05-15
@@ -29,19 +29,19 @@ Depends on EPIC-012 (done).
 
 ## Success Criteria
 
-- [ ] `plugins.slots.memory = "tapps-brain-memory"` disables memory-core and routes all memory calls through tapps-brain
-- [ ] OpenClaw's `memory_search` tool returns results from tapps-brain's BM25/FTS5 index
-- [ ] OpenClaw's `memory_get` tool returns entries from tapps-brain's SQLite store
-- [ ] MEMORY.md is kept in sync: tapps-brain writes → markdown export; markdown edits → tapps-brain import
-- [ ] Daily note files (`memory/YYYY-MM-DD.md`) are synced on session start
-- [ ] Existing memory-core users can migrate with zero data loss
-- [ ] Integration tests validate the full replacement works end-to-end
+- [x] `plugins.slots.memory = "tapps-brain-memory"` disables memory-core and routes all memory calls through tapps-brain
+- [x] OpenClaw's `memory_search` tool returns results from tapps-brain's BM25/FTS5 index
+- [x] OpenClaw's `memory_get` tool returns entries from tapps-brain's SQLite store
+- [x] MEMORY.md is kept in sync: tapps-brain writes → markdown export; markdown edits → tapps-brain import
+- [x] Daily note files (`memory/YYYY-MM-DD.md`) are synced on session start
+- [x] Existing memory-core users can migrate with zero data loss
+- [x] Integration tests validate the full replacement works end-to-end
 
 ## Stories
 
 ### STORY-026.1: Register as memory slot plugin
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2 (plugin skeleton)
 **Context refs:** `openclaw-plugin/src/index.ts`, `openclaw-plugin/openclaw.plugin.json`
@@ -55,18 +55,18 @@ The ContextEngine plugin only hooks into context assembly and compaction. OpenCl
 
 #### Acceptance Criteria
 
-- [ ] `openclaw.plugin.json` declares both `kind: "context-engine"` and `slots.memory`
-- [ ] Plugin's `register()` calls `api.registerTool("memory_search", ...)` backed by tapps-brain
-- [ ] Plugin's `register()` calls `api.registerTool("memory_get", ...)` backed by tapps-brain
-- [ ] When `plugins.slots.memory = "tapps-brain-memory"`, OpenClaw's built-in `memory_search`/`memory_get` are replaced
-- [ ] When memory slot is not claimed, falls back gracefully (plugin still works as contextEngine only)
-- [ ] Unit test: mock plugin API, verify both tools are registered
+- [x] `openclaw.plugin.json` declares both `kind: "context-engine"` and `slots.memory`
+- [x] Plugin's `register()` calls `api.registerTool("memory_search", ...)` backed by tapps-brain
+- [x] Plugin's `register()` calls `api.registerTool("memory_get", ...)` backed by tapps-brain
+- [x] When `plugins.slots.memory = "tapps-brain-memory"`, OpenClaw's built-in `memory_search`/`memory_get` are replaced
+- [x] When memory slot is not claimed, falls back gracefully (plugin still works as contextEngine only)
+- [x] Unit test: mock plugin API, verify both tools are registered
 
 ---
 
 ### STORY-026.2: Implement memory_search tool replacement
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-026.1
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py`
@@ -81,19 +81,19 @@ line range, relevance score) while actually querying tapps-brain.
 
 #### Acceptance Criteria
 
-- [ ] `memory_search` tool registered via plugin API accepts the same parameters as memory-core's version
-- [ ] Calls tapps-brain's `memory_search` MCP tool under the hood
-- [ ] Returns results formatted as OpenClaw expects: `{ snippets: [{ text, path, lineRange, score }] }`
-- [ ] Maps tapps-brain fields: `value` → `text`, `key` → synthetic `path`, `confidence` → `score`
-- [ ] Handles empty results gracefully (returns empty array, not error)
-- [ ] Respects OpenClaw's `memorySearch.query.hybrid` config when applicable
-- [ ] Performance: <200ms for typical queries against stores with <500 entries
+- [x] `memory_search` tool registered via plugin API accepts the same parameters as memory-core's version
+- [x] Calls tapps-brain's `memory_search` MCP tool under the hood
+- [x] Returns results formatted as OpenClaw expects: `{ snippets: [{ text, path, lineRange, score }] }`
+- [x] Maps tapps-brain fields: `value` → `text`, `key` → synthetic `path`, `confidence` → `score`
+- [x] Handles empty results gracefully (returns empty array, not error)
+- [x] Respects OpenClaw's `memorySearch.query.hybrid` config when applicable
+- [x] Performance: <200ms for typical queries against stores with <500 entries
 
 ---
 
 ### STORY-026.3: Implement memory_get tool replacement
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-026.1
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py`
@@ -107,18 +107,18 @@ SQLite store instead.
 
 #### Acceptance Criteria
 
-- [ ] `memory_get` tool registered via plugin API
-- [ ] Accepts a key/path parameter; extracts the memory key from path if needed (e.g., `memory/my-key.md` → `my-key`)
-- [ ] Calls tapps-brain's `memory_get` MCP tool
-- [ ] Returns the entry value as Markdown text (matching memory-core's format)
-- [ ] Returns empty string (not error) for missing keys (matching memory-core's graceful degradation)
-- [ ] Supports optional line-range parameters (returns full entry if no range specified)
+- [x] `memory_get` tool registered via plugin API
+- [x] Accepts a key/path parameter; extracts the memory key from path if needed (e.g., `memory/my-key.md` → `my-key`)
+- [x] Calls tapps-brain's `memory_get` MCP tool
+- [x] Returns the entry value as Markdown text (matching memory-core's format)
+- [x] Returns empty string (not error) for missing keys (matching memory-core's graceful degradation)
+- [x] Supports optional line-range parameters (returns full entry if no range specified)
 
 ---
 
 ### STORY-026.4: Bidirectional MEMORY.md sync
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-026.1
 **Context refs:** `src/tapps_brain/markdown_import.py`, `src/tapps_brain/io.py`
@@ -133,22 +133,22 @@ the two representations from diverging.
 
 #### Acceptance Criteria
 
-- [ ] New `src/tapps_brain/markdown_sync.py` module
-- [ ] `sync_to_markdown(store, workspace_dir)` — exports all tapps-brain entries to `MEMORY.md`, organized by tier
-- [ ] `sync_from_markdown(store, workspace_dir)` — re-imports `MEMORY.md` + `memory/*.md`, updating changed entries and adding new ones
-- [ ] Deduplication: entries with matching keys are updated, not duplicated
-- [ ] Conflict resolution: tapps-brain entry wins if both modified since last sync (tapps-brain is source of truth)
-- [ ] Sync timestamp tracked in `.tapps-brain/sync_state.json`
-- [ ] ContextEngine plugin calls `sync_from_markdown()` during `bootstrap`
-- [ ] ContextEngine plugin calls `sync_to_markdown()` during `compact` (alongside existing memory_ingest)
-- [ ] Daily notes (`memory/YYYY-MM-DD.md`) included in sync
-- [ ] Integration test: save via tapps-brain → verify in MEMORY.md; edit MEMORY.md → verify in tapps-brain
+- [x] New `src/tapps_brain/markdown_sync.py` module
+- [x] `sync_to_markdown(store, workspace_dir)` — exports all tapps-brain entries to `MEMORY.md`, organized by tier
+- [x] `sync_from_markdown(store, workspace_dir)` — re-imports `MEMORY.md` + `memory/*.md`, updating changed entries and adding new ones
+- [x] Deduplication: entries with matching keys are updated, not duplicated
+- [x] Conflict resolution: tapps-brain entry wins if both modified since last sync (tapps-brain is source of truth)
+- [x] Sync timestamp tracked in `.tapps-brain/sync_state.json`
+- [x] ContextEngine plugin calls `sync_from_markdown()` during `bootstrap`
+- [x] ContextEngine plugin calls `sync_to_markdown()` during `compact` (alongside existing memory_ingest)
+- [x] Daily notes (`memory/YYYY-MM-DD.md`) included in sync
+- [x] Integration test: save via tapps-brain → verify in MEMORY.md; edit MEMORY.md → verify in tapps-brain
 
 ---
 
 ### STORY-026.5: Migration tool for memory-core users
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-026.4
 **Context refs:** `src/tapps_brain/markdown_import.py`, `src/tapps_brain/cli.py`
@@ -162,20 +162,20 @@ tapps-brain is essential for adoption.
 
 #### Acceptance Criteria
 
-- [ ] CLI command: `tapps-brain openclaw migrate [--workspace DIR] [--dry-run]`
-- [ ] Imports all `MEMORY.md` content with tier inference (H1/H2→architectural, H3→pattern, H4+→procedural)
-- [ ] Imports all `memory/YYYY-MM-DD.md` daily notes as `context`-tier entries
-- [ ] Imports memory-core's SQLite index if it exists (`~/.openclaw/memory/<agentId>.sqlite`)
-- [ ] `--dry-run` shows what would be imported without making changes
-- [ ] Reports: entries imported, duplicates skipped, errors encountered
-- [ ] Idempotent: running twice produces no duplicates
-- [ ] MCP tool: `openclaw_migrate` exposed via MCP server for programmatic migration
+- [x] CLI command: `tapps-brain openclaw migrate [--workspace DIR] [--dry-run]`
+- [x] Imports all `MEMORY.md` content with tier inference (H1/H2→architectural, H3→pattern, H4+→procedural)
+- [x] Imports all `memory/YYYY-MM-DD.md` daily notes as `context`-tier entries
+- [x] Imports memory-core's SQLite index if it exists (`~/.openclaw/memory/<agentId>.sqlite`)
+- [x] `--dry-run` shows what would be imported without making changes
+- [x] Reports: entries imported, duplicates skipped, errors encountered
+- [x] Idempotent: running twice produces no duplicates
+- [x] MCP tool: `openclaw_migrate` exposed via MCP server for programmatic migration
 
 ---
 
 ### STORY-026.6: Integration tests for memory replacement
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-026.2, STORY-026.3, STORY-026.4
 **Context refs:** `tests/integration/test_openclaw_integration.py`
@@ -189,13 +189,13 @@ response format. Regressions here silently break all memory for all users.
 
 #### Acceptance Criteria
 
-- [ ] Integration test: register plugin, call `memory_search`, verify results from tapps-brain
-- [ ] Integration test: register plugin, call `memory_get`, verify entry from tapps-brain
-- [ ] Integration test: save via tapps-brain → `memory_search` finds it → `memory_get` retrieves it
-- [ ] Integration test: bidirectional sync round-trip (save → export to markdown → import from markdown → verify)
-- [ ] Integration test: migration from mock memory-core data → verify all entries in tapps-brain
-- [ ] Integration test: plugin with `memory` slot active, verify `memory-core` is not invoked
-- [ ] Overall coverage stays at 95%+
+- [x] Integration test: register plugin, call `memory_search`, verify results from tapps-brain
+- [x] Integration test: register plugin, call `memory_get`, verify entry from tapps-brain
+- [x] Integration test: save via tapps-brain → `memory_search` finds it → `memory_get` retrieves it
+- [x] Integration test: bidirectional sync round-trip (save → export to markdown → import from markdown → verify)
+- [x] Integration test: migration from mock memory-core data → verify all entries in tapps-brain
+- [x] Integration test: plugin with `memory` slot active, verify `memory-core` is not invoked
+- [x] Overall coverage stays at 95%+
 
 ## Priority Order
 

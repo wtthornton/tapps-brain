@@ -1,7 +1,7 @@
 ---
 id: EPIC-027
 title: "OpenClaw Full Feature Surface — expose all 41 MCP tools as native tools"
-status: planned
+status: done
 priority: high
 created: 2026-03-23
 target_date: 2026-05-31
@@ -28,19 +28,19 @@ Depends on EPIC-012 (done) and benefits from EPIC-026 (memory slot).
 
 ## Success Criteria
 
-- [ ] All 41 MCP tools are registered as native OpenClaw tools via the plugin API
-- [ ] All 4 MCP resources exposed as data sources the agent can query
-- [ ] All 3 MCP prompts registered as OpenClaw slash commands
-- [ ] Tools are grouped by category with clear descriptions for the agent
-- [ ] Per-agent routing works: admin agent gets all tools, read-only agent gets search/recall only
-- [ ] Documentation: complete tool reference and configuration guide
-- [ ] `openclaw-skill/SKILL.md` updated to declare all 41 tools (currently lists 28)
+- [x] All 41 MCP tools are registered as native OpenClaw tools via the plugin API
+- [x] All 4 MCP resources exposed as data sources the agent can query
+- [x] All 3 MCP prompts registered as OpenClaw slash commands
+- [x] Tools are grouped by category with clear descriptions for the agent
+- [x] Per-agent routing works: admin agent gets all tools, read-only agent gets search/recall only
+- [x] Documentation: complete tool reference and configuration guide
+- [x] `openclaw-skill/SKILL.md` updated to declare all 41 tools (currently lists 28)
 
 ## Stories
 
 ### STORY-027.1: Register Hive tools as native OpenClaw tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:1082-1353`
@@ -54,18 +54,18 @@ Currently, Hive tools are only available via MCP sidecar config.
 
 #### Acceptance Criteria
 
-- [ ] `hive_status`, `hive_search`, `hive_propagate` registered via `api.registerTool()`
-- [ ] `agent_register`, `agent_create`, `agent_list`, `agent_delete` registered
-- [ ] Tools proxy to `tapps-brain-mcp` child process via MCP client
-- [ ] Tools return JSON matching the MCP server's response format
-- [ ] Graceful degradation: if Hive is disabled, tools return `{ "error": "hive_disabled" }` instead of crashing
-- [ ] SKILL.md updated to declare Hive tools
+- [x] `hive_status`, `hive_search`, `hive_propagate` registered via `api.registerTool()`
+- [x] `agent_register`, `agent_create`, `agent_list`, `agent_delete` registered
+- [x] Tools proxy to `tapps-brain-mcp` child process via MCP client
+- [x] Tools return JSON matching the MCP server's response format
+- [x] Graceful degradation: if Hive is disabled, tools return `{ "error": "hive_disabled" }` instead of crashing
+- [x] SKILL.md updated to declare Hive tools
 
 ---
 
 ### STORY-027.2: Register federation tools as native OpenClaw tools
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:625-753`
@@ -79,16 +79,16 @@ flow between them.
 
 #### Acceptance Criteria
 
-- [ ] `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` registered
-- [ ] Tools proxy to MCP client
-- [ ] Returns correct JSON format
-- [ ] SKILL.md updated to declare federation tools
+- [x] `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` registered
+- [x] Tools proxy to MCP client
+- [x] Returns correct JSON format
+- [x] SKILL.md updated to declare federation tools
 
 ---
 
 ### STORY-027.3: Register knowledge graph tools as native OpenClaw tools
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:1354-1410`
@@ -102,16 +102,16 @@ but currently hidden behind MCP sidecar config.
 
 #### Acceptance Criteria
 
-- [ ] `memory_relations`, `memory_find_related`, `memory_query_relations` registered
-- [ ] Tools proxy to MCP client
-- [ ] Returns correct JSON format
-- [ ] SKILL.md updated to declare graph tools
+- [x] `memory_relations`, `memory_find_related`, `memory_query_relations` registered
+- [x] Tools proxy to MCP client
+- [x] Returns correct JSON format
+- [x] SKILL.md updated to declare graph tools
 
 ---
 
 ### STORY-027.4: Register maintenance and config tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:755-915`
@@ -125,18 +125,18 @@ health proactively.
 
 #### Acceptance Criteria
 
-- [ ] `maintenance_consolidate`, `maintenance_gc` registered
-- [ ] `memory_gc_config`, `memory_gc_config_set` registered
-- [ ] `memory_consolidation_config`, `memory_consolidation_config_set` registered
-- [ ] `memory_export`, `memory_import` registered
-- [ ] Tools proxy to MCP client
-- [ ] SKILL.md updated to declare maintenance tools
+- [x] `maintenance_consolidate`, `maintenance_gc` registered
+- [x] `memory_gc_config`, `memory_gc_config_set` registered
+- [x] `memory_consolidation_config`, `memory_consolidation_config_set` registered
+- [x] `memory_export`, `memory_import` registered
+- [x] Tools proxy to MCP client
+- [x] SKILL.md updated to declare maintenance tools
 
 ---
 
 ### STORY-027.5: Register audit, tags, and profile tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:1412-1525`
@@ -150,17 +150,17 @@ Profiles let different agents use different scoring/decay strategies.
 
 #### Acceptance Criteria
 
-- [ ] `memory_audit` registered
-- [ ] `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag` registered
-- [ ] `profile_info`, `profile_switch` registered
-- [ ] Tools proxy to MCP client
-- [ ] SKILL.md updated to declare all tools (final count: 41)
+- [x] `memory_audit` registered
+- [x] `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag` registered
+- [x] `profile_info`, `profile_switch` registered
+- [x] Tools proxy to MCP client
+- [x] SKILL.md updated to declare all tools (final count: 41)
 
 ---
 
 ### STORY-027.6: Register remaining lifecycle tools
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:300-504`
@@ -175,16 +175,16 @@ or "show me the history of this decision."
 
 #### Acceptance Criteria
 
-- [ ] `memory_reinforce`, `memory_supersede`, `memory_history` registered
-- [ ] `memory_search_sessions` registered
-- [ ] Tools proxy to MCP client
-- [ ] Returns correct JSON format
+- [x] `memory_reinforce`, `memory_supersede`, `memory_history` registered
+- [x] `memory_search_sessions` registered
+- [x] Tools proxy to MCP client
+- [x] Returns correct JSON format
 
 ---
 
 ### STORY-027.7: Expose MCP resources and prompts
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:506-623`
@@ -198,16 +198,16 @@ should be accessible in OpenClaw without requiring MCP sidecar config.
 
 #### Acceptance Criteria
 
-- [ ] Resource URIs (`memory://stats`, `memory://health`, `memory://metrics`, `memory://entries/{key}`) exposed via registered tools or data provider
-- [ ] Prompts (`recall`, `store_summary`, `remember`) registered as OpenClaw commands or tools
-- [ ] Resources return JSON matching MCP server format
-- [ ] SKILL.md updated to declare resources and prompts
+- [x] Resource URIs (`memory://stats`, `memory://health`, `memory://metrics`, `memory://entries/{key}`) exposed via registered tools or data provider
+- [x] Prompts (`recall`, `store_summary`, `remember`) registered as OpenClaw commands or tools
+- [x] Resources return JSON matching MCP server format
+- [x] SKILL.md updated to declare resources and prompts
 
 ---
 
 ### STORY-027.8: Per-agent tool routing and permissions
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-027.1 through STORY-027.7
 **Context refs:** `openclaw-plugin/openclaw.plugin.json`
@@ -222,17 +222,17 @@ for this.
 
 #### Acceptance Criteria
 
-- [ ] Tools organized into groups: `core` (CRUD), `lifecycle` (recall/reinforce/supersede), `search` (search/sessions/tags), `admin` (GC/consolidation/config/export), `hive` (Hive/agents), `federation` (federation), `graph` (relations)
-- [ ] `openclaw.plugin.json` updated with `toolGroups` configuration
-- [ ] Documentation: how to configure per-agent tool access in `openclaw.json`
-- [ ] Example config: "coder" agent gets core+lifecycle+search; "admin" agent gets all groups
-- [ ] Tool group names match OpenClaw's `tools.sandbox.tools.allow` pattern
+- [x] Tools organized into groups: `core` (CRUD), `lifecycle` (recall/reinforce/supersede), `search` (search/sessions/tags), `admin` (GC/consolidation/config/export), `hive` (Hive/agents), `federation` (federation), `graph` (relations)
+- [x] `openclaw.plugin.json` updated with `toolGroups` configuration
+- [x] Documentation: how to configure per-agent tool access in `openclaw.json`
+- [x] Example config: "coder" agent gets core+lifecycle+search; "admin" agent gets all groups
+- [x] Tool group names match OpenClaw's `tools.sandbox.tools.allow` pattern
 
 ---
 
 ### STORY-027.9: Update SKILL.md and documentation
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-027.1 through STORY-027.8
 **Context refs:** `openclaw-skill/SKILL.md`, `docs/guides/openclaw.md`
@@ -246,15 +246,15 @@ integration modes: ContextEngine, memory slot, MCP sidecar, and mcp-adapter.
 
 #### Acceptance Criteria
 
-- [ ] SKILL.md declares all 41 tools with descriptions
-- [ ] SKILL.md declares all 4 resources and 3 prompts
-- [ ] `docs/guides/openclaw.md` updated with four integration modes:
+- [x] SKILL.md declares all 41 tools with descriptions
+- [x] SKILL.md declares all 4 resources and 3 prompts
+- [x] `docs/guides/openclaw.md` updated with four integration modes:
   1. **ContextEngine only** (auto-recall/capture, minimal config)
   2. **ContextEngine + memory slot** (replaces memory-core, EPIC-026)
   3. **MCP sidecar** (full 41-tool access via mcpServers config)
   4. **mcp-adapter** (full access via openclaw-mcp-adapter plugin)
-- [ ] Configuration examples for each mode
-- [ ] Troubleshooting guide: common issues (transport mismatch, SQLite lock, etc.)
+- [x] Configuration examples for each mode
+- [x] Troubleshooting guide: common issues (transport mismatch, SQLite lock, etc.)
 
 ## Priority Order
 

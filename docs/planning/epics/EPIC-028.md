@@ -1,7 +1,7 @@
 ---
 id: EPIC-028
 title: "OpenClaw Plugin Hardening — stability, tests, and compatibility"
-status: planned
+status: done
 priority: high
 created: 2026-03-23
 target_date: 2026-06-15
@@ -34,19 +34,19 @@ Depends on EPIC-012 (done). Complements EPIC-026 and EPIC-027.
 
 ## Success Criteria
 
-- [ ] MCP client automatically reconnects on crash/timeout
-- [ ] Full TypeScript test suite with >80% coverage
-- [ ] Bootstrap completes before any hook is invoked (no race condition)
-- [ ] Citation support in recall results matches OpenClaw's expected format
-- [ ] Session memory search integrates with tapps-brain's session index
-- [ ] Plugin works correctly on OpenClaw v2026.3.1 through v2026.3.7+
-- [ ] Error handling produces actionable log messages (not silent failures)
+- [x] MCP client automatically reconnects on crash/timeout
+- [x] Full TypeScript test suite with >80% coverage
+- [x] Bootstrap completes before any hook is invoked (no race condition)
+- [x] Citation support in recall results matches OpenClaw's expected format
+- [x] Session memory search integrates with tapps-brain's session index
+- [x] Plugin works correctly on OpenClaw v2026.3.1 through v2026.3.7+
+- [x] Error handling produces actionable log messages (not silent failures)
 
 ## Stories
 
 ### STORY-028.1: MCP client reconnection and health checks
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/mcp_client.ts`
@@ -61,19 +61,19 @@ The agent loses all memory capabilities until the gateway restarts.
 
 #### Acceptance Criteria
 
-- [ ] `McpClient.callTool()` detects dead process and triggers automatic restart
-- [ ] Configurable retry count (default 3) and backoff (100ms, 200ms, 400ms)
-- [ ] Health check: periodic `callTool("memory_list", { limit: 0 })` every 60s to verify process is alive
-- [ ] `onReconnect` callback so the plugin can log the event
-- [ ] Graceful degradation: after max retries, return `{ error: "mcp_unavailable" }` instead of throwing
-- [ ] `stop()` is idempotent — calling stop on a dead process doesn't throw
-- [ ] Request timeout: pending requests fail after 10s (configurable) instead of hanging forever
+- [x] `McpClient.callTool()` detects dead process and triggers automatic restart
+- [x] Configurable retry count (default 3) and backoff (100ms, 200ms, 400ms)
+- [x] Health check: periodic `callTool("memory_list", { limit: 0 })` every 60s to verify process is alive
+- [x] `onReconnect` callback so the plugin can log the event
+- [x] Graceful degradation: after max retries, return `{ error: "mcp_unavailable" }` instead of throwing
+- [x] `stop()` is idempotent — calling stop on a dead process doesn't throw
+- [x] Request timeout: pending requests fail after 10s (configurable) instead of hanging forever
 
 ---
 
 ### STORY-028.2: Fix bootstrap race condition
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts:152-191`
@@ -88,17 +88,17 @@ plugin registration.
 
 #### Acceptance Criteria
 
-- [ ] `bootstrap()` sets a `ready` promise on the engine
-- [ ] `ingest()`, `assemble()`, `compact()` all `await this.ready` before making MCP calls
-- [ ] If `bootstrap()` fails, `ready` is rejected and hooks return graceful fallbacks (empty results, not errors)
-- [ ] Startup time measured: bootstrap should complete in <2s for typical stores
-- [ ] TypeScript test: simulate concurrent bootstrap + ingest, verify no race
+- [x] `bootstrap()` sets a `ready` promise on the engine
+- [x] `ingest()`, `assemble()`, `compact()` all `await this.ready` before making MCP calls
+- [x] If `bootstrap()` fails, `ready` is rejected and hooks return graceful fallbacks (empty results, not errors)
+- [x] Startup time measured: bootstrap should complete in <2s for typical stores
+- [x] TypeScript test: simulate concurrent bootstrap + ingest, verify no race
 
 ---
 
 ### STORY-028.3: TypeScript test suite for plugin
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-028.1, STORY-028.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `openclaw-plugin/src/mcp_client.ts`
@@ -112,16 +112,16 @@ hooks, and the MEMORY.md parser all need automated validation.
 
 #### Acceptance Criteria
 
-- [ ] Test framework: vitest (lightweight, TypeScript-native)
-- [ ] `openclaw-plugin/package.json` updated with test script and devDependencies
-- [ ] Tests for McpClient:
+- [x] Test framework: vitest (lightweight, TypeScript-native)
+- [x] `openclaw-plugin/package.json` updated with test script and devDependencies
+- [x] Tests for McpClient:
   - JSON-RPC message framing (Content-Length header parsing)
   - Request/response matching by ID
   - Error response handling
   - Process spawn and stop lifecycle
   - Reconnection logic (STORY-028.1)
   - Request timeout
-- [ ] Tests for TappsBrainEngine:
+- [x] Tests for TappsBrainEngine:
   - bootstrap() — first-run MEMORY.md import
   - bootstrap() — Hive agent registration
   - ingest() — rate limiting (capture every N calls)
@@ -129,18 +129,18 @@ hooks, and the MEMORY.md parser all need automated validation.
   - assemble() — recall injection with token budget
   - assemble() — deduplication (injectedKeys set)
   - compact() — context flush and session indexing
-- [ ] Tests for parseMemoryMdForImport:
+- [x] Tests for parseMemoryMdForImport:
   - Heading level → tier mapping
   - Slugify edge cases
   - Empty content handling
-- [ ] Coverage: >80% of `index.ts` and `mcp_client.ts`
-- [ ] CI integration: tests run in GitHub Actions
+- [x] Coverage: >80% of `index.ts` and `mcp_client.ts`
+- [x] CI integration: tests run in GitHub Actions
 
 ---
 
 ### STORY-028.4: Citation support in recall results
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts:243-314`, `src/tapps_brain/mcp_server.py:278-298`
@@ -155,18 +155,18 @@ not in OpenClaw's citation format.
 
 #### Acceptance Criteria
 
-- [ ] `assemble()` hook formats recalled memories with citation footers: `Source: tapps-brain/<key>`
-- [ ] Citation format matches OpenClaw's expected pattern: `Source: <path>#L<line>`
-- [ ] Synthetic path: `memory/<tier>/<key>.md` (matches what MEMORY.md sync would produce)
-- [ ] Citations are optional: controlled by plugin config `citations: "auto" | "on" | "off"` (default: "auto")
-- [ ] When `citations: "off"`, no footer is added
-- [ ] TypeScript test: verify citation formatting for various entry types
+- [x] `assemble()` hook formats recalled memories with citation footers: `Source: tapps-brain/<key>`
+- [x] Citation format matches OpenClaw's expected pattern: `Source: <path>#L<line>`
+- [x] Synthetic path: `memory/<tier>/<key>.md` (matches what MEMORY.md sync would produce)
+- [x] Citations are optional: controlled by plugin config `citations: "auto" | "on" | "off"` (default: "auto")
+- [x] When `citations: "off"`, no footer is added
+- [x] TypeScript test: verify citation formatting for various entry types
 
 ---
 
 ### STORY-028.5: Session memory search integration
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `src/tapps_brain/mcp_server.py:429-472`
@@ -181,17 +181,17 @@ requests session-scoped search, tapps-brain's session index should be queried.
 
 #### Acceptance Criteria
 
-- [ ] When `memory_search` is called with session scope, also query `memory_search_sessions`
-- [ ] Results from session search are merged with regular search results
-- [ ] Session results include `source: "session"` marker so the agent can distinguish them
-- [ ] `compact()` hook indexes session chunks (already done) — verify it works with session memory enabled
-- [ ] TypeScript test: verify session results are included in search
+- [x] When `memory_search` is called with session scope, also query `memory_search_sessions`
+- [x] Results from session search are merged with regular search results
+- [x] Session results include `source: "session"` marker so the agent can distinguish them
+- [x] `compact()` hook indexes session chunks (already done) — verify it works with session memory enabled
+- [x] TypeScript test: verify session results are included in search
 
 ---
 
 ### STORY-028.6: OpenClaw version compatibility layer
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-012.2
 **Context refs:** `openclaw-plugin/src/index.ts`, `openclaw-plugin/openclaw.plugin.json`
@@ -205,18 +205,18 @@ be on a specific version.
 
 #### Acceptance Criteria
 
-- [ ] Plugin detects OpenClaw version at bootstrap
-- [ ] Version >= 2026.3.7: use full ContextEngine hooks (current behavior)
-- [ ] Version >= 2026.3.1 < 2026.3.7: register as hook-only plugin with `before_agent_start` hook (legacy path)
-- [ ] Version < 2026.3.1: log warning, register MCP tools only (no hooks)
-- [ ] `openclaw.plugin.json` declares minimum version: `"minimumVersion": "2026.3.1"`
-- [ ] Documentation: version compatibility matrix
+- [x] Plugin detects OpenClaw version at bootstrap
+- [x] Version >= 2026.3.7: use full ContextEngine hooks (current behavior)
+- [x] Version >= 2026.3.1 < 2026.3.7: register as hook-only plugin with `before_agent_start` hook (legacy path)
+- [x] Version < 2026.3.1: log warning, register MCP tools only (no hooks)
+- [x] `openclaw.plugin.json` declares minimum version: `"minimumVersion": "2026.3.1"`
+- [x] Documentation: version compatibility matrix
 
 ---
 
 ### STORY-028.7: Error handling and observability
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-028.1
 **Context refs:** `openclaw-plugin/src/index.ts`, `openclaw-plugin/src/mcp_client.ts`
@@ -230,19 +230,19 @@ The current plugin catches all exceptions with empty `catch {}` blocks (lines 22
 
 #### Acceptance Criteria
 
-- [ ] All `catch {}` blocks replaced with `catch (err) { logger.warn(...) }`
-- [ ] Log format: `[tapps-brain] <hook>: <error_type> — <message>`
-- [ ] Structured fields: `{ hook, tool, errorType, message, elapsed_ms }`
-- [ ] Performance logging: `assemble()` logs recall latency; `ingest()` logs capture latency
-- [ ] MCP client logs: process spawn, exit (with code), reconnection attempts
-- [ ] `logger` obtained from `api.logger` (OpenClaw's structured logger)
-- [ ] TypeScript test: verify error handlers call logger.warn
+- [x] All `catch {}` blocks replaced with `catch (err) { logger.warn(...) }`
+- [x] Log format: `[tapps-brain] <hook>: <error_type> — <message>`
+- [x] Structured fields: `{ hook, tool, errorType, message, elapsed_ms }`
+- [x] Performance logging: `assemble()` logs recall latency; `ingest()` logs capture latency
+- [x] MCP client logs: process spawn, exit (with code), reconnection attempts
+- [x] `logger` obtained from `api.logger` (OpenClaw's structured logger)
+- [x] TypeScript test: verify error handlers call logger.warn
 
 ---
 
 ### STORY-028.8: Update documentation for all integration modes
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-028.3, STORY-028.4, STORY-028.5, STORY-028.6
 **Context refs:** `docs/guides/openclaw.md`, `openclaw-skill/SKILL.md`
@@ -257,7 +257,7 @@ or the mcp-adapter approach.
 
 #### Acceptance Criteria
 
-- [ ] `docs/guides/openclaw.md` restructured into sections:
+- [x] `docs/guides/openclaw.md` restructured into sections:
   1. Quick Start (one-command install via ClawHub)
   2. Integration Modes (ContextEngine, memory slot, MCP sidecar, mcp-adapter)
   3. Configuration Reference (all plugin config options)
@@ -265,11 +265,11 @@ or the mcp-adapter approach.
   5. Migration Guide (from memory-core)
   6. Troubleshooting
   7. Version Compatibility
-- [ ] Configuration examples for each mode with complete `openclaw.json` snippets
-- [ ] Feature matrix table: tool name × integration mode → supported/not supported
-- [ ] Troubleshooting: "memory_search returns 0 results" → check which memory plugin is active
-- [ ] Troubleshooting: "MCP process crashes" → check reconnection logs
-- [ ] Link to EPIC-026, EPIC-027, EPIC-028 for context
+- [x] Configuration examples for each mode with complete `openclaw.json` snippets
+- [x] Feature matrix table: tool name × integration mode → supported/not supported
+- [x] Troubleshooting: "memory_search returns 0 results" → check which memory plugin is active
+- [x] Troubleshooting: "MCP process crashes" → check reconnection logs
+- [x] Link to EPIC-026, EPIC-027, EPIC-028 for context
 
 ## Priority Order
 

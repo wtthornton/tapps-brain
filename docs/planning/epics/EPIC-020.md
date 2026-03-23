@@ -1,7 +1,7 @@
 ---
 id: EPIC-020
 title: "Code Review — Safety & Validation"
-status: planned
+status: done
 priority: high
 created: 2026-03-22
 target_date: 2026-04-30
@@ -16,12 +16,12 @@ Full code review of safety, injection detection, validation, and contradiction h
 
 ## Success Criteria
 
-- [ ] `safety.py` + `injection.py` reviewed (prompt injection defense)
-- [ ] `doc_validation.py` reviewed (document validation)
-- [ ] `contradictions.py` reviewed (contradiction detection)
-- [ ] `seeding.py` reviewed (initial memory bootstrap)
-- [ ] `rate_limiter.py` reviewed (rate limiting)
-- [ ] All issues found are fixed with tests
+- [x] `safety.py` + `injection.py` reviewed (prompt injection defense)
+- [x] `doc_validation.py` reviewed (document validation)
+- [x] `contradictions.py` reviewed (contradiction detection)
+- [x] `seeding.py` reviewed (initial memory bootstrap)
+- [x] `rate_limiter.py` reviewed (rate limiting)
+- [x] All issues found are fixed with tests
 
 ## Stories
 

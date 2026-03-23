@@ -1,7 +1,7 @@
 ---
 id: EPIC-025
 title: "Code Review — Integration Tests, Benchmarks & TypeScript"
-status: planned
+status: done
 priority: low
 created: 2026-03-22
 target_date: 2026-05-31
@@ -16,11 +16,11 @@ Review all integration tests, benchmarks, test infrastructure, TypeScript plugin
 
 ## Success Criteria
 
-- [ ] All integration test files reviewed
-- [ ] Test infrastructure and benchmarks reviewed
-- [ ] OpenClaw TypeScript plugin reviewed (`index.ts`, `mcp_client.ts`)
-- [ ] Configuration and manifest files reviewed (version consistency, metadata)
-- [ ] All issues found are fixed
+- [x] All integration test files reviewed
+- [x] Test infrastructure and benchmarks reviewed
+- [x] OpenClaw TypeScript plugin reviewed (`index.ts`, `mcp_client.ts`)
+- [x] Configuration and manifest files reviewed (version consistency, metadata)
+- [x] All issues found are fixed
 
 ## Stories
 

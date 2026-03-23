@@ -1,7 +1,7 @@
 ---
 id: EPIC-022
 title: "Code Review — Interfaces (MCP, CLI, IO)"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-05-15
@@ -16,11 +16,11 @@ Full code review of all user-facing interfaces: MCP server (41 tools), CLI (36 c
 
 ## Success Criteria
 
-- [ ] `mcp_server.py` reviewed (all 3 sections: core tools, Hive/graph/audit, config/agent/profile)
-- [ ] `cli.py` reviewed (both halves: core and advanced commands)
-- [ ] `io.py` reviewed (import/export)
-- [ ] `markdown_import.py` reviewed (markdown parsing)
-- [ ] All issues found are fixed with tests
+- [x] `mcp_server.py` reviewed (all 3 sections: core tools, Hive/graph/audit, config/agent/profile)
+- [x] `cli.py` reviewed (both halves: core and advanced commands)
+- [x] `io.py` reviewed (import/export)
+- [x] `markdown_import.py` reviewed (markdown parsing)
+- [x] All issues found are fixed with tests
 
 ## Stories
 

@@ -1,7 +1,7 @@
 ---
 id: EPIC-017
 title: "Code Review — Storage & Data Model"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-04-30
@@ -20,14 +20,14 @@ The storage layer is the foundation of the entire system. Bugs here affect every
 
 ## Success Criteria
 
-- [ ] `store.py` reviewed (both halves: core CRUD and advanced features)
-- [ ] `persistence.py` reviewed (SQLite layer, migrations, FTS5)
-- [ ] `models.py` reviewed (Pydantic data models)
-- [ ] `__init__.py` reviewed (public API surface)
-- [ ] `_protocols.py` + `_feature_flags.py` reviewed
-- [ ] `audit.py` + `session_index.py` reviewed
-- [ ] `integrity.py` reviewed
-- [ ] All issues found are fixed with tests
+- [x] `store.py` reviewed (both halves: core CRUD and advanced features)
+- [x] `persistence.py` reviewed (SQLite layer, migrations, FTS5)
+- [x] `models.py` reviewed (Pydantic data models)
+- [x] `__init__.py` reviewed (public API surface)
+- [x] `_protocols.py` + `_feature_flags.py` reviewed
+- [x] `audit.py` + `session_index.py` reviewed
+- [x] `integrity.py` reviewed
+- [x] All issues found are fixed with tests
 
 ## Review Checklist (per file)
 

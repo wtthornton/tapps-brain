@@ -1,7 +1,7 @@
 ---
 id: EPIC-021
 title: "Code Review — Federation, Hive & Relations"
-status: planned
+status: done
 priority: medium
 created: 2026-03-22
 target_date: 2026-04-30
@@ -16,10 +16,10 @@ Full code review of cross-project and cross-agent sharing systems. The HiveStore
 
 ## Success Criteria
 
-- [ ] `federation.py` reviewed (cross-project sharing)
-- [ ] `hive.py` reviewed (both HiveStore core and AgentRegistry/PropagationEngine)
-- [ ] `relations.py` reviewed (knowledge graph)
-- [ ] All issues found are fixed with tests
+- [x] `federation.py` reviewed (cross-project sharing)
+- [x] `hive.py` reviewed (both HiveStore core and AgentRegistry/PropagationEngine)
+- [x] `relations.py` reviewed (knowledge graph)
+- [x] All issues found are fixed with tests
 
 ## Stories
 
