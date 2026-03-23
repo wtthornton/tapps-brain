@@ -319,3 +319,49 @@ class TestImportOpenclawWorkspace:
         store = MemoryStore(tmp_path / "store")
         result = import_openclaw_workspace(workspace, store)
         assert result["memory_md"] == 0
+
+    def test_encoding_error_memory_md(self, tmp_path: Path):
+        """Non-UTF-8 MEMORY.md is skipped gracefully, returning zero."""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        # Write Latin-1 bytes that are invalid UTF-8
+        (workspace / "MEMORY.md").write_bytes(b"# Title\n\xc0\xc1 invalid utf-8\n")
+        store = MemoryStore(tmp_path / "store")
+        result = import_openclaw_workspace(workspace, store)
+        assert result["memory_md"] == 0
+
+    def test_encoding_error_daily_note(self, tmp_path: Path):
+        """Non-UTF-8 daily note is skipped gracefully."""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mem_dir = workspace / "memory"
+        mem_dir.mkdir()
+        (mem_dir / "2026-03-10.md").write_bytes(b"\xc0\xc1 invalid utf-8")
+        store = MemoryStore(tmp_path / "store")
+        result = import_openclaw_workspace(workspace, store)
+        assert result["daily_notes"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Additional edge case tests
+# ---------------------------------------------------------------------------
+
+
+class TestImportMemoryMdEncodingError:
+    def test_non_utf8_file_returns_zero(self, tmp_path: Path):
+        """import_memory_md returns 0 if file has non-UTF-8 encoding."""
+        md_path = tmp_path / "MEMORY.md"
+        md_path.write_bytes(b"# Title\n\xc0\xc1 bad bytes\n")
+        store = MemoryStore(tmp_path / "store")
+        count = import_memory_md(md_path, store)
+        assert count == 0
+
+
+class TestImportDailyNoteEncodingError:
+    def test_non_utf8_daily_note_returns_false(self, tmp_path: Path):
+        """_import_daily_note returns False if file has non-UTF-8 encoding."""
+        note = tmp_path / "2026-03-15.md"
+        note.write_bytes(b"\xc0\xc1 invalid utf-8")
+        store = MemoryStore(tmp_path / "store")
+        result = _import_daily_note(note, store)
+        assert result is False

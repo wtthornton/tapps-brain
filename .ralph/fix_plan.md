@@ -250,7 +250,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/io.py` (336 lines). Focus on: JSONL/CSV format handling, encoding correctness (UTF-8 BOM?), large file streaming, data loss risk during import, idempotency. Fix all issues. Commit: `review(story-022.6): io.py import/export review`
 
 #### 022-G: Review `markdown_import.py` — markdown parsing
-- [ ] Review `src/tapps_brain/markdown_import.py` (267 lines). Focus on: heading level → tier mapping accuracy, slug generation, deduplication logic, daily note date extraction regex, malformed markdown handling. Fix all issues. Commit: `review(story-022.7): markdown_import.py review`
+- [x] Review `src/tapps_brain/markdown_import.py` (267 lines). Focus on: heading level → tier mapping accuracy, slug generation, deduplication logic, daily note date extraction regex, malformed markdown handling. Fix all issues. Commit: `review(story-022.7): markdown_import.py review`
 
 ## Active — EPIC-023: Code Review — Config, Profiles & Observability
 

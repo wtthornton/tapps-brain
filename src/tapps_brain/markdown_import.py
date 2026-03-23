@@ -51,10 +51,9 @@ def _slugify(text: str) -> str:
     slug = _SLUG_CLEAN_RE.sub("-", slug)
     slug = _MULTI_SEP_RE.sub("-", slug)
     slug = slug.strip("-._")
-    # Ensure starts with alphanumeric
-    slug = slug.lstrip("-._")
-    if not slug or not slug[0].isalnum():
-        slug = "m-" + slug
+    # After stripping separators, if empty add a safe prefix
+    if not slug:
+        slug = "m-"
     return slug[:MAX_KEY_LENGTH]
 
 
@@ -84,7 +83,11 @@ def import_memory_md(path: Path, store: MemoryStore) -> int:
         logger.warning("markdown_import.file_not_found", path=str(path))
         return 0
 
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        logger.warning("markdown_import.encoding_error", path=str(path))
+        return 0
     return _parse_and_import(text, store)
 
 
@@ -173,7 +176,11 @@ def _import_daily_note(path: Path, store: MemoryStore) -> bool:
         logger.debug("markdown_import.skip_daily_duplicate", key=key)
         return False
 
-    text = path.read_text(encoding="utf-8").strip()
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError:
+        logger.warning("markdown_import.encoding_error", path=str(path))
+        return False
     if not text:
         logger.debug("markdown_import.skip_empty_daily", path=str(path))
         return False
@@ -216,7 +223,11 @@ def import_openclaw_workspace(
     # 1) Import MEMORY.md from workspace root
     memory_md_path = workspace_dir / "MEMORY.md"
     if memory_md_path.is_file():
-        text = memory_md_path.read_text(encoding="utf-8")
+        try:
+            text = memory_md_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logger.warning("markdown_import.encoding_error", path=str(memory_md_path))
+            text = ""
         sections = _parse_sections(text)
         for key, value, tier in sections:
             if store.get(key) is not None:
