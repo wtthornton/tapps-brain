@@ -838,6 +838,168 @@ function registerMemorySlotTools(
 }
 
 // ---------------------------------------------------------------------------
+// Lifecycle tools — memory_reinforce, memory_supersede, memory_history,
+//                   memory_search_sessions
+//
+// Registered unconditionally (all compatibility modes) if `registerTool` is
+// available. Falls back gracefully if the API is absent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register lifecycle tools: reinforce, supersede, history, search_sessions.
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerLifecycleTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  // ------------------------------------------------------------------
+  // memory_reinforce — boost confidence and reset decay
+  // ------------------------------------------------------------------
+  api.registerTool("memory_reinforce", {
+    description:
+      "Reinforce a tapps-brain memory entry, boosting its confidence and resetting decay. " +
+      "Call this when a memory proved useful during a session to keep it fresh.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The memory entry key to reinforce" },
+        confidence_boost: {
+          type: "number",
+          description: "Confidence increase in range [0.0, 0.2]. Defaults to 0.0.",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      const confidence_boost = (args.confidence_boost as number | undefined) ?? 0.0;
+      const raw = await engine.callMcpTool("memory_reinforce", { key, confidence_boost });
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+      } catch {
+        return { error: "parse_error" };
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_supersede — create a new version, mark old as invalid
+  // ------------------------------------------------------------------
+  api.registerTool("memory_supersede", {
+    description:
+      "Create a new version of a tapps-brain memory, superseding the old one. " +
+      "The old entry is marked invalid; a new entry is created with valid_at = now.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        old_key: { type: "string", description: "Key of the existing entry to supersede" },
+        new_value: { type: "string", description: "Value for the replacement entry" },
+        key: {
+          type: "string",
+          description: "Optional explicit key for the new entry (auto-generated if omitted)",
+        },
+        tier: {
+          type: "string",
+          enum: ["architectural", "pattern", "procedural", "context"],
+          description: "Optional tier override for the new entry",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tags override for the new entry",
+        },
+      },
+      required: ["old_key", "new_value"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const old_key = args.old_key as string;
+      const new_value = args.new_value as string;
+      const mcpArgs: Record<string, unknown> = { old_key, new_value };
+      if (args.key !== undefined) mcpArgs.key = args.key;
+      if (args.tier !== undefined) mcpArgs.tier = args.tier;
+      if (args.tags !== undefined) mcpArgs.tags = args.tags;
+
+      const raw = await engine.callMcpTool("memory_supersede", mcpArgs);
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+      } catch {
+        return { error: "parse_error" };
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_history — show full version chain for a key
+  // ------------------------------------------------------------------
+  api.registerTool("memory_history", {
+    description:
+      "Show the full version chain for a tapps-brain memory key. " +
+      "Follows the superseded_by chain to return all versions ordered by valid_at.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Any key in the version chain" },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = args.key as string;
+      const raw = await engine.callMcpTool("memory_history", { key });
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+      } catch {
+        return { error: "parse_error" };
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------
+  // memory_search_sessions — search past session summaries
+  // ------------------------------------------------------------------
+  api.registerTool("memory_search_sessions", {
+    description:
+      "Search past session summaries indexed by tapps-brain. " +
+      "Returns matching chunks from previously indexed sessions, ranked by relevance.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query text" },
+        limit: {
+          type: "number",
+          description: "Maximum number of results to return (default: 10)",
+        },
+      },
+      required: ["query"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const query = args.query as string;
+      const limit = (args.limit as number | undefined) ?? 10;
+      const raw = await engine.callMcpTool("memory_search_sessions", { query, limit });
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+      } catch {
+        return { error: "parse_error" };
+      }
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -862,6 +1024,9 @@ export default definePluginEntry({
     // gracefully if registerTool is unavailable (older OpenClaw builds).
     if (api.registerTool) {
       registerMemorySlotTools(api, engine);
+      // Register lifecycle tools (reinforce, supersede, history, search_sessions).
+      // Available in all compatibility modes when registerTool is present.
+      registerLifecycleTools(api, engine);
     }
 
     if (mode === "context-engine") {
