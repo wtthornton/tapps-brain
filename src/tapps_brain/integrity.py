@@ -52,6 +52,12 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
     key = secrets.token_bytes(_KEY_LENGTH)
     path.write_bytes(key)
+    # Restrict permissions so only the owner can read the signing key.
+    # This is a best-effort operation — on Windows the chmod call is a no-op.
+    try:
+        path.chmod(0o600)
+    except OSError:
+        logger.warning("integrity_key_chmod_failed", path=str(path))
     logger.info("integrity_key_generated", path=str(path))
     return key
 
@@ -63,10 +69,15 @@ _cached_key: bytes | None = None
 def get_signing_key(key_path: Path | None = None) -> bytes:
     """Return the HMAC signing key, loading or generating as needed.
 
-    The key is cached in-process after the first call.
+    The key is cached in-process after the first call to avoid repeated
+    file I/O.  The ``key_path`` parameter is **only honoured on the first
+    call** — subsequent calls with a different path return the already-cached
+    key.  Use :func:`reset_key_cache` before calling with a new path (e.g.
+    in tests).
 
     Args:
-        key_path: Override path for the key file.
+        key_path: Override path for the key file.  Only used on the first
+            call in each process (or after :func:`reset_key_cache`).
 
     Returns:
         The raw HMAC key bytes.
@@ -94,8 +105,14 @@ def compute_integrity_hash(
     """Compute HMAC-SHA256 over the canonical entry fields.
 
     The canonical form is ``key|value|tier|source`` encoded as UTF-8.
-    The pipe separator is chosen because keys are validated slugs that
-    cannot contain pipes.
+    The pipe separator works because keys are validated slugs (no pipes),
+    and ``tier``/``source`` are constrained enum strings (no pipes).
+    **Known limitation**: if ``value`` contains a literal ``|`` followed by
+    a valid ``tier|source`` suffix the hash would be identical to an entry
+    with that suffix split across fields.  In practice this is not
+    exploitable because ``tier`` and ``source`` take only a small set of
+    fixed enum values that are unlikely to appear verbatim at the end of a
+    prose memory value.
 
     Args:
         key: Memory entry key.

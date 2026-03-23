@@ -103,7 +103,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/audit.py` (152 lines) and `src/tapps_brain/session_index.py` (97 lines). Focus on: JSONL write atomicity, log rotation / size limits, session cleanup correctness, file handle leaks. Fix all issues. Commit: `review(story-017.7): audit and session index review`
 
 #### 017-H: Review `integrity.py` — hash verification
-- [ ] Review `src/tapps_brain/integrity.py` (141 lines). Focus on: hash algorithm choice, tamper detection reliability, performance of hash computation, edge cases (empty entries, None fields). Fix all issues. Commit: `review(story-017.8): integrity verification review`
+- [x] Review `src/tapps_brain/integrity.py` (141 lines). Focus on: hash algorithm choice, tamper detection reliability, performance of hash computation, edge cases (empty entries, None fields). Fix all issues. Commit: `review(story-017.8): integrity verification review`
 
 ## Active — EPIC-018: Code Review — Retrieval & Scoring
 
