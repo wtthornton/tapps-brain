@@ -184,7 +184,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `src/tapps_brain/contradictions.py` (242 lines). Focus on: detection accuracy, false positive handling, resolution strategy correctness, interaction with consolidation (contradictions block merge?). Fix all issues. Commit: `review(story-020.3): contradictions detection review`
 
 #### 020-D: Review `seeding.py` — initial memory bootstrap
-- [ ] Review `src/tapps_brain/seeding.py` (235 lines). Focus on: idempotency (seed twice = no duplicates), tier assignment correctness, interaction with existing entries, error handling on malformed seed data. Fix all issues. Commit: `review(story-020.4): seeding bootstrap review`
+- [x] Review `src/tapps_brain/seeding.py` (235 lines). Focus on: idempotency (seed twice = no duplicates), tier assignment correctness, interaction with existing entries, error handling on malformed seed data. Fix all issues. Commit: `review(story-020.4): seeding bootstrap review`
 
 #### 020-E: Review `rate_limiter.py` — rate limiting
 - [ ] Review `src/tapps_brain/rate_limiter.py` (182 lines). Focus on: rate limit algorithm correctness (token bucket? sliding window?), thread safety, clock skew handling, configuration validation, bypass vectors. Fix all issues. Commit: `review(story-020.5): rate limiter review`

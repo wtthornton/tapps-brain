@@ -147,6 +147,22 @@ class TestSeedPartialProfile:
         assert store.get("language-python") is not None
         assert store.get("language-rust") is not None
 
+    def test_empty_string_items_skipped(self, store):
+        """Empty strings in list fields should be ignored, not saved as malformed keys."""
+        profile = _FakeProfile(
+            tech_stack=_TechStack(languages=["", "Python", ""], frameworks=["", "Django"]),
+            test_frameworks=[""],
+            package_managers=[""],
+            ci_systems=[""],
+        )
+        result = seed_from_profile(store, profile)
+        # Only "Python" language + "Django" framework — all empty strings skipped
+        assert result["seeded_count"] == 2
+        assert store.get("language-") is None
+        assert store.get("language-python") is not None
+        assert store.get("framework-django") is not None
+        assert store.get("framework-") is None
+
 
 # ---------------------------------------------------------------------------
 # Tests: reseed_from_profile
