@@ -8,6 +8,7 @@ to an external JSONL file for visibility.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -15,7 +16,13 @@ from typing import TYPE_CHECKING
 import structlog
 from pydantic import BaseModel, Field
 
-from tapps_brain.decay import DecayConfig, calculate_decayed_confidence
+from tapps_brain.decay import (
+    DecayConfig,
+    _days_since,
+    _decay_reference_time,
+    _get_half_life,
+    calculate_decayed_confidence,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -146,8 +153,6 @@ class MemoryGarbageCollector:
         Uses the decay formula in reverse to find when confidence
         first reached the floor.
         """
-        from tapps_brain.decay import _days_since, _decay_reference_time, _get_half_life
-
         half_life = _get_half_life(entry.tier, self._config)
         ref_time = _decay_reference_time(entry)
         total_days = _days_since(ref_time, now)
@@ -157,8 +162,6 @@ class MemoryGarbageCollector:
 
         # Solve: floor = confidence * 0.5^(days_to_floor / half_life)
         # days_to_floor = half_life * log2(confidence / floor)
-        import math
-
         ratio = entry.confidence / self._config.confidence_floor
         if ratio <= 1.0:
             return total_days  # was already at or below floor from the start

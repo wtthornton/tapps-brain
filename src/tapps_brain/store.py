@@ -1143,7 +1143,7 @@ class MemoryStore:
             except (ValueError, TypeError, AttributeError):
                 continue
 
-        gc = MemoryGarbageCollector()
+        gc = MemoryGarbageCollector(gc_config=self._gc_config)
         gc_candidates = gc.identify_candidates(entries)
 
         groups = find_consolidation_groups(
@@ -1195,7 +1195,7 @@ class MemoryStore:
         from tapps_brain.gc import GCResult, MemoryGarbageCollector
 
         self._metrics.increment("store.gc")
-        gc_collector = MemoryGarbageCollector()
+        gc_collector = MemoryGarbageCollector(gc_config=self._gc_config)
         with self._lock:
             entries = list(self._entries.values())
         candidates = gc_collector.identify_candidates(entries)
