@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
+
+import structlog
 from pydantic import BaseModel, Field
 
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+
+logger = structlog.get_logger(__name__)
 
 # Default threshold below which a memory is considered stale.
 _DEFAULT_STALE_THRESHOLD = 0.3
@@ -112,6 +116,11 @@ def _get_half_life(tier: MemoryTier | str, config: DecayConfig) -> int:
         pass
 
     # Unknown tier: use the shortest default half-life (context=14)
+    logger.warning(
+        "unknown_tier_fallback",
+        tier=tier_str,
+        fallback_days=config.context_half_life_days,
+    )
     return config.context_half_life_days
 
 

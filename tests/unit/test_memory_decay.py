@@ -299,3 +299,74 @@ class TestDecayConfigFromProfile:
         profile = self._make_profile()
         config = decay_config_from_profile(profile)
         assert isinstance(config.confidence_floor, float)
+
+
+class TestUnknownTierFallbackWarning:
+    """Tests for unknown tier fallback warning in _get_half_life (BUG-001-D)."""
+
+    def test_unknown_tier_returns_context_half_life(self) -> None:
+        """Unknown tier string falls back to context_half_life_days."""
+        from tapps_brain.decay import _get_half_life
+
+        config = DecayConfig()
+        result = _get_half_life("totally_unknown_tier", config)
+        assert result == config.context_half_life_days
+
+    def test_unknown_tier_logs_warning(self) -> None:
+        """Unknown tier string triggers a structlog warning with tier and fallback_days."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_half_life
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            result = _get_half_life("totally_unknown_tier", config)
+
+        assert result == config.context_half_life_days
+        mock_logger.warning.assert_called_once_with(
+            "unknown_tier_fallback",
+            tier="totally_unknown_tier",
+            fallback_days=config.context_half_life_days,
+        )
+
+    def test_known_enum_tier_does_not_log_warning(self) -> None:
+        """Known MemoryTier enum values do not trigger the fallback warning."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_half_life
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            _get_half_life(MemoryTier.architectural, config)
+
+        mock_logger.warning.assert_not_called()
+
+    def test_known_string_tier_does_not_log_warning(self) -> None:
+        """Known tier name as string (e.g. 'pattern') does not trigger warning."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_half_life
+
+        config = DecayConfig()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            result = _get_half_life("pattern", config)
+
+        assert result == config.pattern_half_life_days
+        mock_logger.warning.assert_not_called()
+
+    def test_profile_custom_tier_does_not_log_warning(self) -> None:
+        """Custom tier defined in profile layer_half_lives does not trigger warning."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_half_life
+
+        config = DecayConfig(layer_half_lives={"custom_layer": 45})
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            result = _get_half_life("custom_layer", config)
+
+        assert result == 45
+        mock_logger.warning.assert_not_called()
