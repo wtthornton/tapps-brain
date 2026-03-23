@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 from tapps_brain.hive import HiveStore
@@ -303,7 +304,7 @@ class TestConcurrentGCAndSaves:
 
 
 @pytest.fixture()
-def hive_store(tmp_path: Path) -> HiveStore:  # type: ignore[misc]
+def hive_store(tmp_path: Path) -> Generator[HiveStore, None, None]:
     """Isolated HiveStore backed by a temp SQLite file."""
     hs = HiveStore(db_path=tmp_path / "hive.db")
     yield hs

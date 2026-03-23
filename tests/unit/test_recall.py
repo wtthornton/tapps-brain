@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from pathlib import Path
 
 from tapps_brain._protocols import CaptureHookLike, RecallHookLike
 from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
@@ -120,7 +124,7 @@ class TestCaptureHookProtocol:
 
 
 @pytest.fixture()
-def store(tmp_path):
+def store(tmp_path: Path) -> Generator[MemoryStore, None, None]:
     """Create a MemoryStore with sample entries."""
     s = MemoryStore(tmp_path)
     s.save(
@@ -153,7 +157,8 @@ def store(tmp_path):
         scope="branch",
         branch="feature-x",
     )
-    return s
+    yield s
+    s.close()
 
 
 class TestRecallOrchestrator:
@@ -371,7 +376,7 @@ class TestAutoRecall:
 
 
 @pytest.fixture()
-def graph_store(tmp_path):
+def graph_store(tmp_path: Path) -> Generator[MemoryStore, None, None]:
     """Create a store with relation-rich entries for graph boost tests."""
     s = MemoryStore(tmp_path)
     # These entries produce relations via "X uses/manages Y" patterns
@@ -384,7 +389,8 @@ def graph_store(tmp_path):
         tier="context",
         source="agent",
     )
-    return s
+    yield s
+    s.close()
 
 
 class TestGraphBoost:

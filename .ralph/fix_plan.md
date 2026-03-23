@@ -314,7 +314,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_memory_similarity.py` (468 lines) and `tests/unit/test_safety.py` (456 lines). Check: similarity edge cases, injection pattern coverage, bypass vector tests. Fix all issues. Commit: `review(story-024.8): similarity and safety tests review`
 
 #### 024-I: Review `test_concurrent.py` + `test_recall.py`
-- [ ] Review `tests/unit/test_concurrent.py` (446 lines) and `tests/unit/test_recall.py` (444 lines). Check: thread safety assertions, deadlock detection, recall with/without Hive coverage. Fix all issues. Commit: `review(story-024.9): concurrency and recall tests review`
+- [x] Review `tests/unit/test_concurrent.py` (446 lines) and `tests/unit/test_recall.py` (444 lines). Check: thread safety assertions, deadlock detection, recall with/without Hive coverage. Fix all issues. Commit: `review(story-024.9): concurrency and recall tests review`
 
 ### Phase 4: Remaining Unit Tests (all independent)
 
