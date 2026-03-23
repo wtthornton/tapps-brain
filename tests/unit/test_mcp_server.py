@@ -89,6 +89,7 @@ class TestCoreTools:
     def test_all_expected_tools_present(self, mcp_server):
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         expected = {
+            # Core memory tools
             "memory_save",
             "memory_get",
             "memory_delete",
@@ -99,19 +100,54 @@ class TestCoreTools:
             "memory_ingest",
             "memory_supersede",
             "memory_history",
+            # Session and capture tools
+            "memory_index_session",
+            "memory_search_sessions",
+            "memory_capture",
+            # Federation tools
             "federation_status",
             "federation_subscribe",
             "federation_unsubscribe",
             "federation_publish",
+            # Maintenance tools
             "maintenance_consolidate",
             "maintenance_gc",
+            # GC and consolidation config tools
+            "memory_gc_config",
+            "memory_gc_config_set",
+            "memory_consolidation_config",
+            "memory_consolidation_config_set",
+            # Export/import tools
             "memory_export",
             "memory_import",
-            "memory_index_session",
-            "memory_search_sessions",
-            "memory_capture",
+            # Profile tools
+            "profile_info",
+            "profile_switch",
+            # Hive tools
+            "hive_status",
+            "hive_search",
+            "hive_propagate",
+            # Agent tools
+            "agent_register",
+            "agent_create",
+            "agent_list",
+            "agent_delete",
+            # Knowledge graph tools
+            "memory_relations",
+            "memory_find_related",
+            "memory_query_relations",
+            # Audit tool
+            "memory_audit",
+            # Tag management tools
+            "memory_list_tags",
+            "memory_update_tags",
+            "memory_entries_by_tag",
         }
-        assert expected.issubset(tool_names)
+        assert expected == tool_names, (
+            f"Tool mismatch.\n"
+            f"  Missing from server: {expected - tool_names}\n"
+            f"  Extra on server (not in expected): {tool_names - expected}"
+        )
 
 
 class TestLifecycleTools:
@@ -2329,6 +2365,199 @@ class TestTagManagementMCPTools:
             assert "tier" in entry
             assert "confidence" in entry
             assert "tags" in entry
+
+
+# ---------------------------------------------------------------------------
+# Tests for memory_gc_config, memory_gc_config_set,
+# memory_consolidation_config, memory_consolidation_config_set
+# ---------------------------------------------------------------------------
+
+
+class TestGcAndConsolidationConfigTools:
+    """Tests for GC and auto-consolidation config MCP tools."""
+
+    @pytest.fixture
+    def server(self, tmp_path):
+        from tapps_brain.mcp_server import create_server
+
+        srv = create_server(tmp_path)
+        yield srv
+        srv._tapps_store.close()
+
+    # ------------------------------------------------------------------
+    # memory_gc_config — read
+    # ------------------------------------------------------------------
+
+    def test_memory_gc_config_registered(self, mcp_server):
+        """memory_gc_config is registered on the server."""
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "memory_gc_config" in tool_names
+
+    def test_memory_gc_config_returns_structure(self, server):
+        """memory_gc_config returns JSON with expected fields."""
+        fn = _tool_fn(server, "memory_gc_config")
+        result = json.loads(fn())
+        assert "floor_retention_days" in result
+        assert "session_expiry_days" in result
+        assert "contradicted_threshold" in result
+        assert isinstance(result["floor_retention_days"], int)
+        assert isinstance(result["session_expiry_days"], int)
+        assert isinstance(result["contradicted_threshold"], float)
+
+    def test_memory_gc_config_returns_defaults(self, server):
+        """memory_gc_config returns sensible default values."""
+        fn = _tool_fn(server, "memory_gc_config")
+        result = json.loads(fn())
+        # Defaults from GCConfig: floor=30, session=7, contradicted=0.2
+        assert result["floor_retention_days"] > 0
+        assert result["session_expiry_days"] > 0
+        assert 0.0 < result["contradicted_threshold"] < 1.0
+
+    # ------------------------------------------------------------------
+    # memory_gc_config_set — write
+    # ------------------------------------------------------------------
+
+    def test_memory_gc_config_set_registered(self, mcp_server):
+        """memory_gc_config_set is registered on the server."""
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "memory_gc_config_set" in tool_names
+
+    def test_memory_gc_config_set_updates_floor_retention(self, server):
+        """memory_gc_config_set updates floor_retention_days."""
+        set_fn = _tool_fn(server, "memory_gc_config_set")
+        get_fn = _tool_fn(server, "memory_gc_config")
+        result = json.loads(set_fn(floor_retention_days=60))
+        assert result["status"] == "updated"
+        assert result["floor_retention_days"] == 60
+        # Verify the read-back also reflects the change
+        current = json.loads(get_fn())
+        assert current["floor_retention_days"] == 60
+
+    def test_memory_gc_config_set_updates_session_expiry(self, server):
+        """memory_gc_config_set updates session_expiry_days."""
+        set_fn = _tool_fn(server, "memory_gc_config_set")
+        result = json.loads(set_fn(session_expiry_days=14))
+        assert result["status"] == "updated"
+        assert result["session_expiry_days"] == 14
+
+    def test_memory_gc_config_set_updates_contradicted_threshold(self, server):
+        """memory_gc_config_set updates contradicted_threshold."""
+        set_fn = _tool_fn(server, "memory_gc_config_set")
+        result = json.loads(set_fn(contradicted_threshold=0.35))
+        assert result["status"] == "updated"
+        assert abs(result["contradicted_threshold"] - 0.35) < 1e-9
+
+    def test_memory_gc_config_set_partial_update_preserves_other_fields(self, server):
+        """memory_gc_config_set with one param preserves other fields."""
+        set_fn = _tool_fn(server, "memory_gc_config_set")
+        get_fn = _tool_fn(server, "memory_gc_config")
+        # Set a known baseline
+        set_fn(floor_retention_days=45, session_expiry_days=10, contradicted_threshold=0.25)
+        # Update only floor_retention_days
+        result = json.loads(set_fn(floor_retention_days=90))
+        assert result["floor_retention_days"] == 90
+        # Other fields unchanged from baseline
+        assert result["session_expiry_days"] == 10
+        assert abs(result["contradicted_threshold"] - 0.25) < 1e-9
+        # Confirm via read-back
+        current = json.loads(get_fn())
+        assert current["session_expiry_days"] == 10
+
+    def test_memory_gc_config_set_no_args_is_noop(self, server):
+        """memory_gc_config_set with no arguments returns current config unchanged."""
+        get_fn = _tool_fn(server, "memory_gc_config")
+        set_fn = _tool_fn(server, "memory_gc_config_set")
+        before = json.loads(get_fn())
+        result = json.loads(set_fn())
+        assert result["status"] == "updated"
+        assert result["floor_retention_days"] == before["floor_retention_days"]
+        assert result["session_expiry_days"] == before["session_expiry_days"]
+        assert abs(result["contradicted_threshold"] - before["contradicted_threshold"]) < 1e-9
+
+    # ------------------------------------------------------------------
+    # memory_consolidation_config — read
+    # ------------------------------------------------------------------
+
+    def test_memory_consolidation_config_registered(self, mcp_server):
+        """memory_consolidation_config is registered on the server."""
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "memory_consolidation_config" in tool_names
+
+    def test_memory_consolidation_config_returns_structure(self, server):
+        """memory_consolidation_config returns JSON with expected fields."""
+        fn = _tool_fn(server, "memory_consolidation_config")
+        result = json.loads(fn())
+        assert "enabled" in result
+        assert "threshold" in result
+        assert "min_entries" in result
+        assert isinstance(result["enabled"], bool)
+        assert isinstance(result["threshold"], float)
+        assert isinstance(result["min_entries"], int)
+
+    def test_memory_consolidation_config_default_disabled(self, server):
+        """memory_consolidation_config shows auto-consolidation disabled by default."""
+        fn = _tool_fn(server, "memory_consolidation_config")
+        result = json.loads(fn())
+        # Auto-consolidation is off by default (ConsolidationConfig.enabled=False)
+        assert result["enabled"] is False
+
+    # ------------------------------------------------------------------
+    # memory_consolidation_config_set — write
+    # ------------------------------------------------------------------
+
+    def test_memory_consolidation_config_set_registered(self, mcp_server):
+        """memory_consolidation_config_set is registered on the server."""
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        assert "memory_consolidation_config_set" in tool_names
+
+    def test_memory_consolidation_config_set_enables(self, server):
+        """memory_consolidation_config_set can enable auto-consolidation."""
+        set_fn = _tool_fn(server, "memory_consolidation_config_set")
+        get_fn = _tool_fn(server, "memory_consolidation_config")
+        result = json.loads(set_fn(enabled=True))
+        assert result["status"] == "updated"
+        assert result["enabled"] is True
+        # Verify read-back
+        current = json.loads(get_fn())
+        assert current["enabled"] is True
+
+    def test_memory_consolidation_config_set_updates_threshold(self, server):
+        """memory_consolidation_config_set updates the similarity threshold."""
+        set_fn = _tool_fn(server, "memory_consolidation_config_set")
+        result = json.loads(set_fn(threshold=0.85))
+        assert result["status"] == "updated"
+        assert abs(result["threshold"] - 0.85) < 1e-9
+
+    def test_memory_consolidation_config_set_updates_min_entries(self, server):
+        """memory_consolidation_config_set updates the min_entries threshold."""
+        set_fn = _tool_fn(server, "memory_consolidation_config_set")
+        result = json.loads(set_fn(min_entries=5))
+        assert result["status"] == "updated"
+        assert result["min_entries"] == 5
+
+    def test_memory_consolidation_config_set_partial_update_preserves_other_fields(self, server):
+        """memory_consolidation_config_set with one param preserves other fields."""
+        set_fn = _tool_fn(server, "memory_consolidation_config_set")
+        # Set a known baseline
+        set_fn(enabled=True, threshold=0.75, min_entries=4)
+        # Update only threshold
+        result = json.loads(set_fn(threshold=0.9))
+        assert result["status"] == "updated"
+        assert abs(result["threshold"] - 0.9) < 1e-9
+        # Other fields unchanged
+        assert result["enabled"] is True
+        assert result["min_entries"] == 4
+
+    def test_memory_consolidation_config_set_no_args_is_noop(self, server):
+        """memory_consolidation_config_set with no arguments is a no-op."""
+        get_fn = _tool_fn(server, "memory_consolidation_config")
+        set_fn = _tool_fn(server, "memory_consolidation_config_set")
+        before = json.loads(get_fn())
+        result = json.loads(set_fn())
+        assert result["status"] == "updated"
+        assert result["enabled"] == before["enabled"]
+        assert abs(result["threshold"] - before["threshold"]) < 1e-9
+        assert result["min_entries"] == before["min_entries"]
 
 
 # ---------------------------------------------------------------------------

@@ -286,7 +286,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 1: Core Storage Tests (sequential)
 
 #### 024-A: Review `test_mcp_server.py` (2,082 lines)
-- [ ] Review `tests/unit/test_mcp_server.py`. Largest test file — check for: redundant tests, missing tool coverage (all 41 tools tested?), proper mocking of store, error path coverage. Fix all issues. Commit: `review(story-024.1): test_mcp_server.py review`
+- [x] Review `tests/unit/test_mcp_server.py`. Largest test file — check for: redundant tests, missing tool coverage (all 41 tools tested?), proper mocking of store, error path coverage. Fix all issues. Commit: `review(story-024.1): test_mcp_server.py review`
 
 #### 024-B: Review `test_cli.py` (1,320 lines)
 - [ ] Review `tests/unit/test_cli.py`. Check: all commands tested, CliRunner usage, error message assertions, `--format json` coverage, help text validation. Fix all issues. Commit: `review(story-024.2): test_cli.py review`
