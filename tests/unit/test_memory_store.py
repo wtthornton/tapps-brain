@@ -287,12 +287,10 @@ class TestMemoryStoreRAGSafety:
 class TestMemoryStoreClose:
     """Tests for store close behavior."""
 
-    def test_close_is_idempotent(self, tmp_path: Path) -> None:
-        """Closing the store multiple times should not raise on first close."""
+    def test_close_succeeds(self, tmp_path: Path) -> None:
+        """Closing the store should succeed without raising."""
         s = MemoryStore(tmp_path)
         s.close()
-        # Second close may raise since the underlying connection is closed,
-        # but the first close should succeed cleanly
 
     def test_close_cleans_up(self, tmp_path: Path) -> None:
         """After close, the persistence layer connection is closed."""
@@ -1003,7 +1001,7 @@ class TestStoreMetrics:
         snap = store.get_metrics()
         assert snap.counters.get("store.reinforce", 0) == 1
 
-    def test_consolidation_metrics(self, tmp_path) -> None:
+    def test_consolidation_metrics(self, tmp_path: Path) -> None:
         """When auto-consolidation triggers, counters are incremented."""
         config = ConsolidationConfig(enabled=True, threshold=0.3, min_entries=2)
         s = MemoryStore(tmp_path, consolidation_config=config)
@@ -1058,9 +1056,7 @@ class TestAgentScopeValidationInStore:
         """All valid agent_scope values are accepted by store.save()."""
         for scope in VALID_AGENT_SCOPES:
             result = store.save(key=f"scope-{scope}", value=f"value for {scope}", agent_scope=scope)
-            assert isinstance(result, object)
-            # Should return a MemoryEntry, not an error dict
-            assert not isinstance(result, dict), f"Expected MemoryEntry for scope={scope!r}"
+            assert isinstance(result, MemoryEntry), f"Expected MemoryEntry for scope={scope!r}"
 
     def test_invalid_agent_scope_returns_error_dict(self, store: MemoryStore) -> None:
         """Invalid agent_scope returns error dict with error='invalid_agent_scope'."""

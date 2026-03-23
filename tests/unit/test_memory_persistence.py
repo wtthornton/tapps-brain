@@ -18,13 +18,16 @@ from tapps_brain.models import (
 from tapps_brain.persistence import MemoryPersistence
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 
 @pytest.fixture()
-def persistence(tmp_path: Path) -> MemoryPersistence:
+def persistence(tmp_path: Path) -> Generator[MemoryPersistence, None, None]:
     """Create a MemoryPersistence instance backed by a temp directory."""
-    return MemoryPersistence(tmp_path)
+    p = MemoryPersistence(tmp_path)
+    yield p
+    p.close()
 
 
 @pytest.fixture()
@@ -153,8 +156,6 @@ class TestMemoryPersistence:
         assert audit_path.exists()
         lines = audit_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) >= 1
-        import json
-
         record = json.loads(lines[0])
         assert record["action"] == "save"
         assert record["key"] == "test-key"
@@ -164,8 +165,6 @@ class TestMemoryPersistence:
     ) -> None:
         persistence.save(sample_entry)
         persistence.delete("test-key")
-        import json
-
         lines = persistence._audit_path.read_text(encoding="utf-8").strip().splitlines()
         actions = [json.loads(line)["action"] for line in lines]
         assert "save" in actions

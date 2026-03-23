@@ -292,7 +292,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_cli.py`. Check: all commands tested, CliRunner usage, error message assertions, `--format json` coverage, help text validation. Fix all issues. Commit: `review(story-024.2): test_cli.py review`
 
 #### 024-C: Review `test_memory_store.py` + `test_memory_persistence.py`
-- [ ] Review `tests/unit/test_memory_store.py` (1,065 lines) and `tests/unit/test_memory_persistence.py` (964 lines). Check: CRUD coverage, thread-safety tests, migration tests, WAL mode tests, cache consistency tests. Fix all issues. Commit: `review(story-024.3): store and persistence tests review`
+- [x] Review `tests/unit/test_memory_store.py` (1,065 lines) and `tests/unit/test_memory_persistence.py` (964 lines). Check: CRUD coverage, thread-safety tests, migration tests, WAL mode tests, cache consistency tests. Fix all issues. Commit: `review(story-024.3): store and persistence tests review`
 
 ### Phase 2: Validation & Safety Tests (all independent)
 
