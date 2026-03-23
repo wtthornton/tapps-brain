@@ -299,6 +299,18 @@ class TestDocSimilarityScorer:
         assert alignment == AlignmentLevel.inconclusive
         assert delta == 0.0
 
+    def test_low_similarity_is_inconclusive_not_contradicted(self) -> None:
+        """Low vocabulary overlap means unrelated docs, not contradiction (review-020.2)."""
+        alignment, delta = self.scorer._classify(0.1, False, False)
+        assert alignment == AlignmentLevel.inconclusive
+        assert delta == 0.0
+
+    def test_zero_similarity_is_inconclusive(self) -> None:
+        """Zero similarity should not be penalised — docs are simply irrelevant."""
+        alignment, delta = self.scorer._classify(0.0, False, False)
+        assert alignment == AlignmentLevel.inconclusive
+        assert delta == 0.0
+
 
 # ===================================================================
 # Story 62.3 — MemoryDocValidator tests
@@ -436,6 +448,33 @@ class TestMemoryDocValidator:
         # Only low-confidence entries should be validated
         validated_keys = {e.entry_key for e in report.entries}
         assert "stale1" in validated_keys
+
+    @pytest.mark.asyncio()
+    async def test_recently_validated_does_not_consume_budget(
+        self,
+        lookup_engine: MagicMock,
+    ) -> None:
+        """Recently-validated entries must not be counted against lookup budget (review-020.2)."""
+        today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+        validator = MemoryDocValidator(lookup_engine)
+        entries = [
+            # Recently validated — must not consume budget
+            _make_entry(
+                key="recent",
+                value="from fastapi import FastAPI",
+                tags=[f"doc-validated:{today}"],
+            ),
+            # Not yet validated — should still be processed
+            _make_entry(key="fresh", value="from fastapi import FastAPI"),
+        ]
+        # Tight budget: 1 lookup allowed
+        report = await validator.validate_batch(entries, max_lookups=1)
+        keys = {e.entry_key for e in report.entries}
+        assert "recent" in keys
+        assert "fresh" in keys
+        # "fresh" must not be skipped due to budget (budget was preserved by "recent" fast-path)
+        fresh_ev = next(e for e in report.entries if e.entry_key == "fresh")
+        assert fresh_ev.reason != "Lookup budget exhausted"
 
     @pytest.mark.asyncio()
     async def test_doc_cache_avoids_duplicate_lookups(
@@ -710,6 +749,14 @@ class TestHelpers:
         _manage_doc_tags(tags, "doc-validated:2026-03-09")
         # Can't add since no doc tags to evict and at limit
         assert len(tags) <= 10
+
+    def test_manage_doc_tags_idempotent(self) -> None:
+        """Adding the same tag twice must not create duplicates (review-020.2)."""
+        tags: list[str] = ["user-tag"]
+        _manage_doc_tags(tags, "doc-validated:2026-03-09")
+        _manage_doc_tags(tags, "doc-validated:2026-03-09")
+        count = tags.count("doc-validated:2026-03-09")
+        assert count == 1
 
 
 # ===================================================================

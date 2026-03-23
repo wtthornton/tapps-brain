@@ -546,11 +546,10 @@ class DocSimilarityScorer:
             return AlignmentLevel.confirmed, min(boost, _MAX_BOOST)
 
         if similarity < _CONTRADICTED_THRESHOLD:
-            # Low similarity doesn't necessarily mean contradicted -- could just be irrelevant
-            # Only penalise if we have decent doc content (implicit: we do since no_docs is
-            # handled before this)
-            penalty = 0.1 + (_CONTRADICTED_THRESHOLD - similarity) * (0.2 / _CONTRADICTED_THRESHOLD)
-            return AlignmentLevel.contradicted, -min(penalty, _MAX_PENALTY)
+            # Low vocabulary overlap means the docs are likely irrelevant to the claim,
+            # not that they contradict it. Returning inconclusive avoids false penalties
+            # when docs for a different topic happen to be retrieved.
+            return AlignmentLevel.inconclusive, 0.0
 
         return AlignmentLevel.inconclusive, 0.0
 
@@ -668,6 +667,18 @@ class MemoryDocValidator:
         lookup_count = 0
 
         for entry in entries:
+            # Fast-path: skip recently validated entries without consuming lookup budget.
+            # validate_entry() would skip them too, but only after budget accounting.
+            if self._recently_validated(entry):
+                ev = EntryValidation(
+                    entry_key=entry.key,
+                    overall_status=ValidationStatus.skipped,
+                    reason="Recently validated",
+                )
+                report.entries.append(ev)
+                report.skipped += 1
+                continue
+
             # Check lookup budget
             claims = self._extractor.extract_claims(entry)
             new_lookups = sum(1 for c in claims if f"{c.library}:{c.topic}" not in self._doc_cache)
@@ -802,8 +813,9 @@ class MemoryDocValidator:
                 _manage_doc_tags(new_tags, f"{_CHECKED_TAG_PREFIX}{now_tag}")
                 result.unchanged += 1
             else:
+                # Unknown status — defensive guard; do not update store.
                 result.unchanged += 1
-                continue
+                continue  # skip the tag/field update below
 
             # Count new tags
             old_tag_count = len(entry.tags)
@@ -829,7 +841,7 @@ class MemoryDocValidator:
             result = await self._lookup.lookup(library, topic)
             content = result.content if result.success else None
         except Exception:
-            logger.debug("doc_validation_lookup_failed", library=library, topic=topic)
+            logger.warning("doc_validation_lookup_failed", library=library, topic=topic, exc_info=True)
             content = None
 
         self._doc_cache[cache_key] = content
@@ -882,17 +894,21 @@ def _manage_doc_tags(tags: list[str], new_tag: str) -> None:
 
     Ensures total tags never exceed MAX_TAGS (10) and doc tags
     never exceed _MAX_DOC_TAGS. Only evicts doc-* tags, never
-    user-set tags.
+    user-set tags. Idempotent — no-op if the tag is already present.
     """
     from tapps_brain.models import MAX_TAGS
 
-    # Remove duplicate if already present
     doc_prefixes = (
         _VALIDATION_TAG_PREFIX,
         _CONTRADICTION_TAG_PREFIX,
         _CHECKED_TAG_PREFIX,
         _DOC_REF_TAG_PREFIX,
     )
+
+    # Idempotency: if the exact tag is already present, nothing to do
+    if new_tag in tags:
+        return
+
     # Count current doc tags
     doc_tags = [t for t in tags if any(t.startswith(p) for p in doc_prefixes)]
 
