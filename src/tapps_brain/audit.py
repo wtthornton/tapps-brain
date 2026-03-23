@@ -8,7 +8,6 @@ does not load the entire file into memory.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -145,8 +144,3 @@ class AuditReader:
                 count += 1
 
         return count
-
-    @staticmethod
-    def _now_iso() -> str:
-        """Return the current UTC time as an ISO-8601 string."""
-        return datetime.now(tz=UTC).isoformat()
