@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -37,6 +37,7 @@ _SCHEMA_V5 = 5
 _SCHEMA_V6 = 6
 _SCHEMA_V7 = 7
 _SCHEMA_V8 = 8
+_SCHEMA_V9 = 9
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -142,6 +143,8 @@ class MemoryPersistence:
                 self._migrate_v6_to_v7(cur)
             if current_version < _SCHEMA_V8:
                 self._migrate_v7_to_v8(cur)
+            if current_version < _SCHEMA_V9:
+                self._migrate_v8_to_v9(cur)
 
             self._conn.commit()
 
@@ -385,6 +388,46 @@ class MemoryPersistence:
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
             (8, datetime.now(tz=UTC).isoformat()),
+        )
+
+    def _migrate_v8_to_v9(self, cur: sqlite3.Cursor) -> None:
+        """Add feedback_events table for EPIC-029 Feedback Collection.
+
+        Creates ``feedback_events`` with columns for event_type, entry_key,
+        session_id, utility_score, details (JSON), and timestamp.
+        Indexes on event_type, timestamp, entry_key, and session_id for
+        efficient query filtering.
+        """
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS feedback_events (
+                id            TEXT NOT NULL PRIMARY KEY,
+                event_type    TEXT NOT NULL,
+                entry_key     TEXT,
+                session_id    TEXT,
+                utility_score REAL,
+                details       TEXT NOT NULL DEFAULT '{}',
+                timestamp     TEXT NOT NULL
+            )
+        """)
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_event_type "
+            "ON feedback_events(event_type)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_timestamp "
+            "ON feedback_events(timestamp)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_entry_key "
+            "ON feedback_events(entry_key)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_session_id "
+            "ON feedback_events(session_id)"
+        )
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (9, datetime.now(tz=UTC).isoformat()),
         )
 
     def migrate_contradicted_to_temporal(self) -> int:
