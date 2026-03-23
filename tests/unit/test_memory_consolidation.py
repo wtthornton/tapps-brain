@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -108,8 +109,6 @@ class TestGenerateConsolidatedKey:
 
     def test_key_format_valid(self, jwt_entries: list[MemoryEntry]) -> None:
         """Generated key matches required format (slug)."""
-        import re
-
         key = generate_consolidated_key(jwt_entries)
         # Key should be lowercase alphanumeric with dashes
         assert re.match(r"^[a-z0-9][a-z0-9._-]+$", key)
@@ -398,7 +397,7 @@ class TestShouldConsolidate:
             is_consolidated=True,
         )
         new_entry = _make_entry("new", "content")
-        candidates = [*jwt_entries, consolidated]  # type: ignore[operator]
+        candidates: list[MemoryEntry] = [*jwt_entries, consolidated]
         matches = should_consolidate(new_entry, candidates, threshold=0.1)
         assert consolidated not in matches
 

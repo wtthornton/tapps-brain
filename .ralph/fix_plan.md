@@ -308,7 +308,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 3: Lifecycle Tests (all independent)
 
 #### 024-G: Review `test_memory_auto_consolidation.py` + `test_memory_consolidation.py`
-- [ ] Review `tests/unit/test_memory_auto_consolidation.py` (574 lines) and `tests/unit/test_memory_consolidation.py` (499 lines). Check: threshold tests, merge correctness assertions, idempotency tests. Fix all issues. Commit: `review(story-024.7): consolidation tests review`
+- [x] Review `tests/unit/test_memory_auto_consolidation.py` (574 lines) and `tests/unit/test_memory_consolidation.py` (499 lines). Check: threshold tests, merge correctness assertions, idempotency tests. Fix all issues. Commit: `review(story-024.7): consolidation tests review`
 
 #### 024-H: Review `test_memory_similarity.py` + `test_safety.py`
 - [ ] Review `tests/unit/test_memory_similarity.py` (468 lines) and `tests/unit/test_safety.py` (456 lines). Check: similarity edge cases, injection pattern coverage, bypass vector tests. Fix all issues. Commit: `review(story-024.8): similarity and safety tests review`

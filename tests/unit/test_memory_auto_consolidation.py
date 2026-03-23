@@ -402,6 +402,12 @@ class TestRunPeriodicConsolidationScan:
             force=True,
         )
         assert result.scanned is True
+        # Verify the result fields are consistent (groups_found and entries_consolidated
+        # are non-negative; if groups were found, entries_consolidated > 0)
+        assert result.groups_found >= 0
+        assert result.entries_consolidated >= 0
+        if result.groups_found > 0:
+            assert result.entries_consolidated > 0
 
     def test_not_enough_active_entries(
         self, mock_store: MemoryStore, temp_project_root: Path
