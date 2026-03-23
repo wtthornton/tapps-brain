@@ -369,6 +369,16 @@ class MemoryStore:
                 superseded_by=existing.superseded_by if existing else None,
             )
 
+            # Compute integrity hash (H4a) — keep in-memory entry in sync with SQLite
+            from tapps_brain.integrity import compute_integrity_hash as _compute_hash
+
+            _tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            _source_str = (
+                entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            )
+            _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
+            entry = entry.model_copy(update={"integrity_hash": _hash})
+
             # Max entries enforcement: evict lowest-confidence entry
             if key not in self._entries and len(self._entries) >= _MAX_ENTRIES:
                 self._evict_lowest_confidence()
