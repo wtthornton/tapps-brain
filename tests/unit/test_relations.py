@@ -195,6 +195,11 @@ class TestExpandViaRelations:
         assert "Backend" in result
 
     def test_subject_match_returns_object(self):
+        """When the queried entity appears as a subject, its related objects are returned.
+
+        'what uses Backend' contains 'Backend' which is a subject in 'Backend uses Redis'.
+        expand_via_relations treats it as an entity expansion: return objects of Backend.
+        """
         rels = [_rel("Backend", "uses", "Redis")]
         result = expand_via_relations("what uses Backend", rels)
         assert "Redis" in result

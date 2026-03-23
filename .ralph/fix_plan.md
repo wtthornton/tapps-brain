@@ -325,7 +325,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] Review `tests/unit/test_markdown_import.py` (321 lines), `tests/unit/test_reranker.py` (315 lines), and `tests/unit/test_memory_embeddings.py` (308 lines). Check: markdown edge cases, reranker score tests, embedding dimension tests. Fix all issues. Commit: `review(story-024.11): markdown, reranker, embeddings tests review`
 
 #### 024-L: Review `test_contradictions.py` + `test_memory_models.py` + `test_gc_config.py` + `test_relations.py`
-- [ ] Review `tests/unit/test_contradictions.py` (296 lines), `tests/unit/test_memory_models.py` (267 lines), `tests/unit/test_gc_config.py` (262 lines), and `tests/unit/test_relations.py` (254 lines). Fix all issues. Commit: `review(story-024.12): contradictions, models, GC, relations tests review`
+- [x] Review `tests/unit/test_contradictions.py` (296 lines), `tests/unit/test_memory_models.py` (267 lines), `tests/unit/test_gc_config.py` (262 lines), and `tests/unit/test_relations.py` (254 lines). Fix all issues. Commit: `review(story-024.12): contradictions, models, GC, relations tests review`
 
 #### 024-M: Review `test_source_trust.py` + `test_consolidation_config.py` + `test_memory_decay.py` + `test_memory_bm25.py`
 - [ ] Review `tests/unit/test_source_trust.py` (237 lines), `tests/unit/test_consolidation_config.py` (233 lines), `tests/unit/test_memory_decay.py` (227 lines), and `tests/unit/test_memory_bm25.py` (225 lines). Fix all issues. Commit: `review(story-024.13): trust, consolidation config, decay, BM25 tests review`

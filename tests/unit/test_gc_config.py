@@ -46,6 +46,19 @@ class TestGCConfig:
             "contradicted_threshold": 0.15,
         }
 
+    def test_zero_threshold_is_valid(self) -> None:
+        from tapps_brain.gc import GCConfig
+
+        cfg = GCConfig(contradicted_threshold=0.0)
+        assert cfg.contradicted_threshold == pytest.approx(0.0)
+
+    def test_zero_retention_days_is_valid(self) -> None:
+        from tapps_brain.gc import GCConfig
+
+        cfg = GCConfig(floor_retention_days=0, session_expiry_days=0)
+        assert cfg.floor_retention_days == 0
+        assert cfg.session_expiry_days == 0
+
 
 # ---------------------------------------------------------------------------
 # MemoryGarbageCollector accepts GCConfig
@@ -116,9 +129,6 @@ class TestMemoryStoreGCConfig:
 # ---------------------------------------------------------------------------
 # MCP tools: memory_gc_config and memory_gc_config_set
 # ---------------------------------------------------------------------------
-
-pytestmark_mcp = pytest.mark.requires_mcp
-
 
 def _tool_fn(mcp_server, name: str):
     for tool in mcp_server._tool_manager.list_tools():
