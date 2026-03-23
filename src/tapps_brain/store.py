@@ -359,9 +359,7 @@ class MemoryStore:
                     last_reinforced=existing.last_reinforced if existing else None,
                     reinforce_count=existing.reinforce_count if existing else 0,
                     contradicted=existing.contradicted if existing else False,
-                    contradiction_reason=(
-                        existing.contradiction_reason if existing else None
-                    ),
+                    contradiction_reason=(existing.contradiction_reason if existing else None),
                     seeded_from=existing.seeded_from if existing else None,
                     # Preserve temporal fields on update (EPIC-004)
                     valid_at=existing.valid_at if existing else None,
@@ -372,13 +370,9 @@ class MemoryStore:
                 # Compute integrity hash (H4a)
                 from tapps_brain.integrity import compute_integrity_hash as _compute_hash
 
-                _tier_str = (
-                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                )
+                _tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
                 _source_str = (
-                    entry.source.value
-                    if hasattr(entry.source, "value")
-                    else str(entry.source)
+                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
                 )
                 _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
                 entry = entry.model_copy(update={"integrity_hash": _hash})

@@ -2387,7 +2387,6 @@ class TestMcpServerInputValidation022C:
 
     def test_profile_switch_unexpected_exception_returns_error(self, server, monkeypatch):
         """profile_switch returns error JSON when an unexpected exception occurs."""
-        from tapps_brain import mcp_server as _mcp_mod
 
         def boom(name: str):
             raise RuntimeError("YAML parse failed")

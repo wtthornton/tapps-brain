@@ -373,7 +373,7 @@ def _update_last_scan_time(project_root: Path) -> None:
 
 
 def should_run_auto_consolidation(
-    project_root: Path,  # noqa: ARG001 - reserved for future per-project config file lookup
+    project_root: Path,
     *,
     auto_consolidate: bool = True,
 ) -> bool:

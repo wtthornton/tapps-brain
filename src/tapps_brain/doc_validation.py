@@ -841,7 +841,9 @@ class MemoryDocValidator:
             result = await self._lookup.lookup(library, topic)
             content = result.content if result.success else None
         except Exception:
-            logger.warning("doc_validation_lookup_failed", library=library, topic=topic, exc_info=True)
+            logger.warning(
+                "doc_validation_lookup_failed", library=library, topic=topic, exc_info=True
+            )
             content = None
 
         self._doc_cache[cache_key] = content

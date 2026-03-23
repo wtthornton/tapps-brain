@@ -725,9 +725,8 @@ class TestFederatedStoreContextManager:
 
         store.close = tracking_close  # type: ignore[method-assign]
 
-        with pytest.raises(RuntimeError, match="test error"):
-            with store:
-                raise RuntimeError("test error")
+        with pytest.raises(RuntimeError, match="test error"), store:
+            raise RuntimeError("test error")
 
         assert close_calls == [True], "close() must be called even when an exception occurs"
 

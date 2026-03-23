@@ -1425,9 +1425,7 @@ def create_server(  # noqa: PLR0915
             max_hops: Maximum traversal depth (default 2, must be >= 1).
         """
         if max_hops < 1:
-            return json.dumps(
-                {"error": "invalid_max_hops", "message": "max_hops must be >= 1"}
-            )
+            return json.dumps({"error": "invalid_max_hops", "message": "max_hops must be >= 1"})
         try:
             results = store.find_related(key, max_hops=max_hops)
             return json.dumps(
@@ -1489,9 +1487,7 @@ def create_server(  # noqa: PLR0915
             limit: Maximum number of events to return (default 50, must be >= 1).
         """
         if limit < 1:
-            return json.dumps(
-                {"error": "invalid_limit", "message": "limit must be >= 1"}
-            )
+            return json.dumps({"error": "invalid_limit", "message": "limit must be >= 1"})
         entries = store.audit(
             key=key or None,
             event_type=event_type or None,

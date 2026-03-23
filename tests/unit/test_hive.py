@@ -959,9 +959,7 @@ class TestSupersedeMicrosecondKey:
         hive.save(key="base", value="v3", namespace="ns", conflict_policy="supersede")
 
         # Check that we have two versioned (superseded) entries plus the current one
-        rows = hive._conn.execute(
-            "SELECT key FROM hive_memories WHERE namespace = 'ns'"
-        ).fetchall()
+        rows = hive._conn.execute("SELECT key FROM hive_memories WHERE namespace = 'ns'").fetchall()
         keys = [r[0] for r in rows]
         # The versioned keys both start with "base-v"
         versioned = [k for k in keys if k.startswith("base-v")]

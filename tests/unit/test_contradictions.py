@@ -154,9 +154,7 @@ class TestFileExistenceCheck:
 
     def test_version_string_not_flagged_as_missing_file(self, tmp_path: Path):
         """Version strings like '1.2.3' must not be treated as file paths."""
-        entry = _make_entry(
-            value="Requires Python 3.12.0 or newer", tags=["file"]
-        )
+        entry = _make_entry(value="Requires Python 3.12.0 or newer", tags=["file"])
         detector = ContradictionDetector(tmp_path)
         result = detector.detect_contradictions([entry], _FakeProfile())
         assert result == [], "Version strings should not be flagged as missing files"

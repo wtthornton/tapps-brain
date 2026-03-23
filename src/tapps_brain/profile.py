@@ -281,9 +281,7 @@ def get_builtin_profile(name: str) -> MemoryProfile:
     """
     # Reject path-traversal attempts before constructing the path.
     if "/" in name or "\\" in name or name.startswith("."):
-        msg = (
-            f"Invalid profile name '{name}': must not contain path separators or start with '.'"
-        )
+        msg = f"Invalid profile name '{name}': must not contain path separators or start with '.'"
         raise ValueError(msg)
     profiles_dir = _builtin_profiles_dir()
     path = profiles_dir / f"{name}.yaml"
