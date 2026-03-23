@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
@@ -293,8 +291,8 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         if layer.importance_tags:
             layer_importance_tags[layer.name] = dict(layer.importance_tags)
 
-    # Map legacy fields from matching layer names
-    legacy: dict[str, Any] = {}
+    # Map legacy fields from matching layer names (values are always int)
+    legacy: dict[str, int] = {}
     legacy_map = {
         "architectural": "architectural_half_life_days",
         "pattern": "pattern_half_life_days",
@@ -312,7 +310,10 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
     global_floor = min(layer_floors.values()) if layer_floors else 0.1
 
     return DecayConfig(
-        **legacy,
+        architectural_half_life_days=legacy.get("architectural_half_life_days", 180),
+        pattern_half_life_days=legacy.get("pattern_half_life_days", 60),
+        procedural_half_life_days=legacy.get("procedural_half_life_days", 30),
+        context_half_life_days=legacy.get("context_half_life_days", 14),
         confidence_floor=global_floor,
         human_confidence_ceiling=ceilings.get("human", 0.95),
         agent_confidence_ceiling=ceilings.get("agent", 0.85),

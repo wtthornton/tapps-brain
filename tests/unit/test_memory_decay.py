@@ -10,6 +10,7 @@ from tapps_brain.decay import (
     DecayConfig,
     _days_since,
     calculate_decayed_confidence,
+    decay_config_from_profile,
     get_effective_confidence,
     is_stale,
 )
@@ -225,3 +226,76 @@ class TestDaysSince:
         naive = now.replace(tzinfo=None) - timedelta(days=5)
         result = _days_since(naive.isoformat(), now)
         assert abs(result - 5.0) < 0.01
+
+
+class TestDecayConfigFromProfile:
+    """Tests for decay_config_from_profile type safety and correctness (BUG-001-B)."""
+
+    def _make_profile(self) -> object:
+        """Build a MemoryProfile with standard and custom layers."""
+        from tapps_brain.profile import LayerDefinition, MemoryProfile
+
+        return MemoryProfile(
+            name="test-profile",
+            layers=[
+                LayerDefinition(name="architectural", half_life_days=200, confidence_floor=0.15),
+                LayerDefinition(name="pattern", half_life_days=70, confidence_floor=0.12),
+                LayerDefinition(name="procedural", half_life_days=45, confidence_floor=0.10),
+                LayerDefinition(name="context", half_life_days=10, confidence_floor=0.05),
+                LayerDefinition(name="custom_tier", half_life_days=90, confidence_floor=0.08),
+            ],
+            source_ceilings={"human": 0.98, "agent": 0.80},
+        )
+
+    def test_returns_decay_config_instance(self) -> None:
+        profile = self._make_profile()
+        config = decay_config_from_profile(profile)
+        assert isinstance(config, DecayConfig)
+
+    def test_legacy_fields_are_int(self) -> None:
+        """BUG-001-B: legacy half_life_days fields must be int, not Any."""
+        profile = self._make_profile()
+        config = decay_config_from_profile(profile)
+        assert isinstance(config.architectural_half_life_days, int)
+        assert isinstance(config.pattern_half_life_days, int)
+        assert isinstance(config.procedural_half_life_days, int)
+        assert isinstance(config.context_half_life_days, int)
+
+    def test_legacy_fields_match_profile_layers(self) -> None:
+        """Values from profile layers are propagated to legacy fields."""
+        profile = self._make_profile()
+        config = decay_config_from_profile(profile)
+        assert config.architectural_half_life_days == 200
+        assert config.pattern_half_life_days == 70
+        assert config.procedural_half_life_days == 45
+        assert config.context_half_life_days == 10
+
+    def test_default_legacy_fields_when_layers_absent(self) -> None:
+        """When profile has no standard layers, defaults are used."""
+        from tapps_brain.profile import LayerDefinition, MemoryProfile
+
+        profile = MemoryProfile(
+            name="custom-only",
+            layers=[LayerDefinition(name="custom_tier", half_life_days=90, confidence_floor=0.08)],
+        )
+        config = decay_config_from_profile(profile)
+        assert config.architectural_half_life_days == 180
+        assert config.pattern_half_life_days == 60
+        assert config.procedural_half_life_days == 30
+        assert config.context_half_life_days == 14
+
+    def test_non_profile_returns_default_config(self) -> None:
+        """Non-MemoryProfile objects return default DecayConfig."""
+        config = decay_config_from_profile("not a profile")
+        assert config == DecayConfig()
+
+    def test_source_ceilings_propagated(self) -> None:
+        profile = self._make_profile()
+        config = decay_config_from_profile(profile)
+        assert config.human_confidence_ceiling == pytest.approx(0.98)
+        assert config.agent_confidence_ceiling == pytest.approx(0.80)
+
+    def test_confidence_floor_is_float(self) -> None:
+        profile = self._make_profile()
+        config = decay_config_from_profile(profile)
+        assert isinstance(config.confidence_floor, float)
