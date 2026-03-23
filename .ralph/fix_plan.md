@@ -403,7 +403,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 - [x] In `openclaw-plugin/src/index.ts` `assemble()` method, format recalled memories with citation footers matching OpenClaw's format: `Source: tapps-brain/<key>`. Add `citations` config option (`"auto" | "on" | "off"`, default `"auto"`). When `"auto"` or `"on"`, append `Source: memory/<tier>/<key>.md` to each memory snippet. Add TypeScript test. Commit: `feat(story-028.4): add citation support to recall results`
 
 #### 028-G: Wire session memory search integration
-- [ ] In `openclaw-plugin/src/index.ts`, when the memory_search replacement (EPIC-026) is called with session scope, also query tapps-brain's `memory_search_sessions` tool. Merge session results with memory results, marking session results with `source: "session"`. Add TypeScript test. Commit: `feat(story-028.5): integrate session memory search`
+- [x] In `openclaw-plugin/src/index.ts`, when the memory_search replacement (EPIC-026) is called with session scope, also query tapps-brain's `memory_search_sessions` tool. Merge session results with memory results, marking session results with `source: "session"`. Add TypeScript test. Commit: `feat(story-028.5): integrate session memory search`
 
 #### 028-H: Add OpenClaw version compatibility layer
 - [ ] In `openclaw-plugin/src/index.ts`, detect OpenClaw version at bootstrap. v2026.3.7+: use ContextEngine hooks (current). v2026.3.1-3.6: register as hook-only plugin using `before_agent_start`. <2026.3.1: log warning, register tools only. Update `openclaw.plugin.json` with `"minimumVersion": "2026.3.1"`. Commit: `feat(story-028.6): add OpenClaw version compatibility layer`

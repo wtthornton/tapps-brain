@@ -76,6 +76,34 @@ export interface PluginConfig {
   citations?: "auto" | "on" | "off";
 }
 
+/**
+ * A single result returned from searchWithSessionMemory().
+ *
+ * `source` distinguishes long-term memory entries (`"memory"`) from
+ * session-index chunks (`"session"`).
+ */
+export interface SearchResult {
+  key: string;
+  value: string;
+  tier?: string;
+  confidence?: number;
+  source: "memory" | "session";
+}
+
+/** Parameters accepted by searchWithSessionMemory(). */
+export interface SearchParams {
+  query: string;
+  /**
+   * Controls which stores are queried:
+   * - `"memory"` (default): long-term memory only (`memory_recall`)
+   * - `"session"`: session index only (`memory_search_sessions`)
+   * - `"all"`: both stores merged
+   */
+  scope?: "memory" | "session" | "all";
+  /** Maximum results to return per store. Defaults to 10. */
+  limit?: number;
+}
+
 /** Logger interface matching OpenClaw's api.logger shape. */
 export interface PluginLogger {
   info: (...args: unknown[]) => void;
@@ -445,6 +473,94 @@ export class TappsBrainEngine {
     }
 
     return { ok: true, compacted: true };
+  }
+
+  /**
+   * searchWithSessionMemory — hybrid search across memory and session index.
+   *
+   * Used by the EPIC-026 `memory_search` tool replacement so that queries
+   * with session scope also surface indexed conversation chunks alongside
+   * long-term memory entries.
+   *
+   * - scope `"memory"` (default): queries `memory_recall` only.
+   * - scope `"session"`: queries `memory_search_sessions` only.
+   * - scope `"all"`: queries both and merges results. Session results are
+   *   appended after memory results and are identifiable via `source: "session"`.
+   *
+   * Awaits `this.ready` to ensure the MCP client is initialised. Returns an
+   * empty array if bootstrap failed.
+   */
+  async searchWithSessionMemory(params: SearchParams): Promise<SearchResult[]> {
+    const { query, scope = "memory", limit = 10 } = params;
+
+    // Wait for bootstrap — graceful fallback if it failed
+    try {
+      await this.ready;
+    } catch {
+      return [];
+    }
+
+    const results: SearchResult[] = [];
+
+    // -----------------------------------------------------------------------
+    // Long-term memory results (scope "memory" or "all")
+    // -----------------------------------------------------------------------
+    if (scope === "memory" || scope === "all") {
+      try {
+        const raw = await this.mcpClient.callTool("memory_recall", {
+          message: query,
+          limit,
+        });
+        const parsed = JSON.parse(
+          typeof raw === "string" ? raw : JSON.stringify(raw),
+        ) as {
+          memories?: Array<{
+            key: string;
+            value: string;
+            tier?: string;
+            confidence?: number;
+          }>;
+        };
+        for (const m of parsed.memories ?? []) {
+          results.push({ ...m, source: "memory" });
+        }
+      } catch (err) {
+        this.logger.warn("[tapps-brain] searchWithSessionMemory (memory):", err);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Session index results (scope "session" or "all")
+    // -----------------------------------------------------------------------
+    if (scope === "session" || scope === "all") {
+      try {
+        const raw = await this.mcpClient.callTool("memory_search_sessions", {
+          query,
+          limit,
+        });
+        const parsed = JSON.parse(
+          typeof raw === "string" ? raw : JSON.stringify(raw),
+        ) as {
+          sessions?: Array<{
+            session_id?: string;
+            chunk?: string;
+            score?: number;
+          }>;
+        };
+        for (const s of parsed.sessions ?? []) {
+          results.push({
+            key: s.session_id ?? "session",
+            value: s.chunk ?? "",
+            confidence: s.score,
+            source: "session",
+          });
+        }
+      } catch (err) {
+        this.logger.warn("[tapps-brain] searchWithSessionMemory (session):", err);
+      }
+    }
+
+    return results;
   }
 
   /**

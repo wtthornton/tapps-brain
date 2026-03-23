@@ -1327,3 +1327,278 @@ describe("TappsBrainEngine — citations in assemble() (028-F)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// 028-G: searchWithSessionMemory — session memory search integration
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — searchWithSessionMemory (028-G)", () => {
+  beforeEach(() => {
+    vi.mocked(McpClient).mockImplementation(() => makeMockClient());
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  // -------------------------------------------------------------------------
+  // scope "memory" — default behaviour
+  // -------------------------------------------------------------------------
+
+  it('scope "memory" calls memory_recall and returns results with source "memory"', async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        memories: [
+          { key: "fact-1", value: "Important fact", tier: "architectural", confidence: 0.9 },
+        ],
+      }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({
+      query: "important",
+      scope: "memory",
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_recall", expect.objectContaining({ message: "important" }));
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_search_sessions", expect.anything());
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      key: "fact-1",
+      value: "Important fact",
+      tier: "architectural",
+      confidence: 0.9,
+      source: "memory",
+    });
+  });
+
+  it('defaults to scope "memory" when scope is not specified', async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: [{ key: "k", value: "v" }] }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.searchWithSessionMemory({ query: "test" });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_recall", expect.anything());
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_search_sessions", expect.anything());
+  });
+
+  // -------------------------------------------------------------------------
+  // scope "session" — session index only
+  // -------------------------------------------------------------------------
+
+  it('scope "session" calls memory_search_sessions and returns results with source "session"', async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          { session_id: "sess-abc", chunk: "User asked about X", score: 0.75 },
+        ],
+      }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({
+      query: "asked about X",
+      scope: "session",
+    });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_search_sessions", expect.objectContaining({ query: "asked about X" }));
+    expect(mockCallTool).not.toHaveBeenCalledWith("memory_recall", expect.anything());
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      key: "sess-abc",
+      value: "User asked about X",
+      confidence: 0.75,
+      source: "session",
+    });
+  });
+
+  it('scope "session" falls back to key "session" when session_id is missing', async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ sessions: [{ chunk: "some chunk" }] }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({ query: "q", scope: "session" });
+
+    expect(results[0]).toMatchObject({ key: "session", value: "some chunk", source: "session" });
+  });
+
+  // -------------------------------------------------------------------------
+  // scope "all" — merged results
+  // -------------------------------------------------------------------------
+
+  it('scope "all" queries both stores and merges results, memory first', async () => {
+    const mockCallTool = vi.fn().mockImplementation((tool: string) => {
+      if (tool === "memory_recall") {
+        return Promise.resolve(
+          JSON.stringify({
+            memories: [{ key: "long-term", value: "LT fact", tier: "pattern" }],
+          }),
+        );
+      }
+      if (tool === "memory_search_sessions") {
+        return Promise.resolve(
+          JSON.stringify({
+            sessions: [{ session_id: "sess-1", chunk: "Session chunk", score: 0.6 }],
+          }),
+        );
+      }
+      return Promise.resolve("{}");
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({ query: "test", scope: "all" });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_recall", expect.anything());
+    expect(mockCallTool).toHaveBeenCalledWith("memory_search_sessions", expect.anything());
+
+    // Memory results come first
+    expect(results[0]).toMatchObject({ key: "long-term", source: "memory" });
+    expect(results[1]).toMatchObject({ key: "sess-1", source: "session" });
+  });
+
+  it('scope "all" merges correctly when one store returns empty results', async () => {
+    const mockCallTool = vi.fn().mockImplementation((tool: string) => {
+      if (tool === "memory_recall") {
+        return Promise.resolve(JSON.stringify({ memories: [] }));
+      }
+      if (tool === "memory_search_sessions") {
+        return Promise.resolve(
+          JSON.stringify({ sessions: [{ session_id: "s", chunk: "only session" }] }),
+        );
+      }
+      return Promise.resolve("{}");
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({ query: "q", scope: "all" });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ source: "session" });
+  });
+
+  // -------------------------------------------------------------------------
+  // limit parameter
+  // -------------------------------------------------------------------------
+
+  it("passes limit to both MCP tools", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(JSON.stringify({ memories: [], sessions: [] }));
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    await engine.searchWithSessionMemory({ query: "q", scope: "all", limit: 5 });
+
+    expect(mockCallTool).toHaveBeenCalledWith("memory_recall", expect.objectContaining({ limit: 5 }));
+    expect(mockCallTool).toHaveBeenCalledWith("memory_search_sessions", expect.objectContaining({ limit: 5 }));
+  });
+
+  // -------------------------------------------------------------------------
+  // graceful fallbacks
+  // -------------------------------------------------------------------------
+
+  it("returns empty array when bootstrap failed", async () => {
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ start: vi.fn().mockRejectedValue(new Error("startup fail")) }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await expect(engine.bootstrap()).rejects.toThrow("startup fail");
+
+    const results = await engine.searchWithSessionMemory({ query: "test", scope: "all" });
+    expect(results).toEqual([]);
+  });
+
+  it("logs warning and returns partial results when memory_recall throws in scope all", async () => {
+    const mockLogger = makeMockLogger();
+    const mockCallTool = vi.fn().mockImplementation((tool: string) => {
+      if (tool === "memory_recall") {
+        return Promise.reject(new Error("recall error"));
+      }
+      return Promise.resolve(
+        JSON.stringify({ sessions: [{ session_id: "s", chunk: "session only" }] }),
+      );
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace", mockLogger);
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({ query: "q", scope: "all" });
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      "[tapps-brain] searchWithSessionMemory (memory):",
+      expect.any(Error),
+    );
+    // Session results still returned despite memory failure
+    expect(results).toHaveLength(1);
+    expect(results[0].source).toBe("session");
+  });
+
+  it("logs warning and returns partial results when memory_search_sessions throws in scope all", async () => {
+    const mockLogger = makeMockLogger();
+    const mockCallTool = vi.fn().mockImplementation((tool: string) => {
+      if (tool === "memory_recall") {
+        return Promise.resolve(
+          JSON.stringify({ memories: [{ key: "k", value: "v" }] }),
+        );
+      }
+      return Promise.reject(new Error("session error"));
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace", mockLogger);
+    await engine.bootstrap();
+
+    const results = await engine.searchWithSessionMemory({ query: "q", scope: "all" });
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      "[tapps-brain] searchWithSessionMemory (session):",
+      expect.any(Error),
+    );
+    // Memory results still returned despite session failure
+    expect(results).toHaveLength(1);
+    expect(results[0].source).toBe("memory");
+  });
+});
