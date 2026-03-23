@@ -1,7 +1,8 @@
 """Similarity detection for memory consolidation (Epic 58).
 
-Provides Jaccard similarity on tags and TF-IDF similarity on text content
-to identify related memory entries that can be consolidated.
+Provides Jaccard similarity on tags and TF (term-frequency) cosine similarity
+on text content to identify related memory entries that can be consolidated.
+Note: the text similarity is TF-cosine (no IDF weighting), not full TF-IDF.
 """
 
 from __future__ import annotations
@@ -87,11 +88,9 @@ def cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> float
     if not vec_a or not vec_b:
         return 0.0
 
-    # Get all terms
-    all_terms = set(vec_a.keys()) | set(vec_b.keys())
-
-    # Compute dot product
-    dot_product = sum(vec_a.get(t, 0.0) * vec_b.get(t, 0.0) for t in all_terms)
+    # Compute dot product using only shared terms (non-shared terms contribute 0)
+    common_terms = set(vec_a.keys()) & set(vec_b.keys())
+    dot_product = sum(vec_a[t] * vec_b[t] for t in common_terms)
 
     # Compute magnitudes
     mag_a = math.sqrt(sum(v * v for v in vec_a.values()))
@@ -255,8 +254,6 @@ def find_consolidation_groups(
     if len(entries) < min_group_size:
         return []
 
-    # Build lookup by key
-    {e.key: e for e in entries}
     assigned: set[str] = set()
     groups: list[list[str]] = []
 
