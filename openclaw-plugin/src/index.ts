@@ -697,6 +697,44 @@ export class TappsBrainEngine {
   }
 
   /**
+   * callMcpResource — read an MCP resource URI through the ready-gate.
+   *
+   * Uses the `resources/read` MCP JSON-RPC method. Awaits bootstrap before
+   * sending. Returns `null` if bootstrap failed.
+   *
+   * @param uri - The resource URI (e.g. "memory://stats", "memory://entries/key").
+   */
+  async callMcpResource(uri: string): Promise<unknown> {
+    try {
+      await this.ready;
+    } catch {
+      return null;
+    }
+    return this.mcpClient.readResource(uri);
+  }
+
+  /**
+   * callMcpPrompt — invoke an MCP prompt through the ready-gate.
+   *
+   * Uses the `prompts/get` MCP JSON-RPC method. Awaits bootstrap before
+   * sending. Returns `null` if bootstrap failed.
+   *
+   * @param name - The prompt name (e.g. "recall", "store_summary", "remember").
+   * @param args - Named string arguments for the prompt template.
+   */
+  async callMcpPrompt(
+    name: string,
+    args: Record<string, string>,
+  ): Promise<unknown> {
+    try {
+      await this.ready;
+    } catch {
+      return null;
+    }
+    return this.mcpClient.callPrompt(name, args);
+  }
+
+  /**
    * dispose — called on gateway shutdown.
    * Stops the MCP child process.
    */
@@ -1944,6 +1982,222 @@ function registerFederationTools(
 }
 
 // ---------------------------------------------------------------------------
+// Resource and prompt tools — memory stats, health, metrics, entry detail,
+//                             recall, store_summary, remember
+//
+// Exposes MCP resources (memory://stats, memory://health, memory://metrics,
+// memory://entries/{key}) and MCP prompts (recall, store_summary, remember)
+// as native OpenClaw tools so agents can query store state and invoke
+// guided workflows without requiring a separate MCP sidecar client.
+//
+// Resources use the `resources/read` MCP method; prompts use `prompts/get`.
+// Registered unconditionally when `registerTool` is available.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register resource-backed tools (memory_stats, memory_health,
+ * memory_metrics, memory_entry_detail) and prompt-backed tools
+ * (memory_recall_prompt, memory_store_summary_prompt,
+ * memory_remember_prompt).
+ *
+ * Safe to call in all compatibility modes; no-ops if `registerTool` is absent.
+ */
+function registerResourceAndPromptTools(
+  api: OpenClawPluginApi,
+  engine: TappsBrainEngine,
+): void {
+  if (!api.registerTool) return;
+
+  // ----------------------------------------------------------------
+  // Resource tools — wrap MCP resources/read as callable tools
+  // ----------------------------------------------------------------
+
+  // memory_stats — memory://stats resource
+  api.registerTool("memory_stats", {
+    description:
+      "Return tapps-brain store statistics: total entry count, tier distribution, " +
+      "max capacity (500), and schema version. " +
+      "Use this to understand how much memory is in use before saving new entries.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_args: Record<string, unknown>) => {
+      const raw = await engine.callMcpResource("memory://stats");
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      // resources/read returns { contents: [{ uri, text }] }
+      try {
+        const result = raw as { contents?: Array<{ text?: string }> };
+        const text = result.contents?.[0]?.text ?? JSON.stringify(raw);
+        return JSON.parse(text);
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // memory_health — memory://health resource
+  api.registerTool("memory_health", {
+    description:
+      "Return the tapps-brain store health report: database status, WAL mode, " +
+      "entry counts, decay health, and consolidation readiness. " +
+      "Use this to diagnose memory store issues.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_args: Record<string, unknown>) => {
+      const raw = await engine.callMcpResource("memory://health");
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        const result = raw as { contents?: Array<{ text?: string }> };
+        const text = result.contents?.[0]?.text ?? JSON.stringify(raw);
+        return JSON.parse(text);
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // memory_metrics — memory://metrics resource
+  api.registerTool("memory_metrics", {
+    description:
+      "Return tapps-brain operation metrics: counters and latency histograms " +
+      "for save, recall, delete, consolidation, and GC operations. " +
+      "Use this for observability and performance monitoring.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_args: Record<string, unknown>) => {
+      const raw = await engine.callMcpResource("memory://metrics");
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        const result = raw as { contents?: Array<{ text?: string }> };
+        const text = result.contents?.[0]?.text ?? JSON.stringify(raw);
+        return JSON.parse(text);
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // memory_entry_detail — memory://entries/{key} resource
+  api.registerTool("memory_entry_detail", {
+    description:
+      "Return the full detail view of a single tapps-brain memory entry by key: " +
+      "all fields including tier, confidence, source, tags, timestamps, " +
+      "access_count, and decay state. " +
+      "Use this for inspection and debugging individual entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The memory entry key to retrieve in detail",
+        },
+      },
+      required: ["key"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const key = (args.key as string) ?? "";
+      const raw = await engine.callMcpResource(`memory://entries/${key}`);
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        const result = raw as { contents?: Array<{ text?: string }> };
+        const text = result.contents?.[0]?.text ?? JSON.stringify(raw);
+        return JSON.parse(text);
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // ----------------------------------------------------------------
+  // Prompt tools — wrap MCP prompts/get as callable tools
+  // ----------------------------------------------------------------
+
+  // memory_recall_prompt — recall prompt
+  api.registerTool("memory_recall_prompt", {
+    description:
+      "Invoke the tapps-brain 'recall' prompt: automatically retrieve memories " +
+      "about a given topic from the store and return them formatted for review. " +
+      "Returns the prompt messages ready to pass to the model.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          description: "The topic or question to recall memories about",
+        },
+      },
+      required: ["topic"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const topic = (args.topic as string) ?? "";
+      const raw = await engine.callMcpPrompt("recall", { topic });
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return raw as Record<string, unknown>;
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // memory_store_summary_prompt — store_summary prompt
+  api.registerTool("memory_store_summary_prompt", {
+    description:
+      "Invoke the tapps-brain 'store_summary' prompt: generate a natural-language " +
+      "summary of what's currently in the memory store, including statistics, " +
+      "tier distribution, and a sample of recent entries.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_args: Record<string, unknown>) => {
+      const raw = await engine.callMcpPrompt("store_summary", {});
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return raw as Record<string, unknown>;
+      } catch {
+        return raw;
+      }
+    },
+  });
+
+  // memory_remember_prompt — remember prompt
+  api.registerTool("memory_remember_prompt", {
+    description:
+      "Invoke the tapps-brain 'remember' prompt: guided workflow to save a fact " +
+      "to the memory store with an appropriate key, tier, tags, and confidence. " +
+      "The prompt instructs the model to call memory_save with correct parameters.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fact: {
+          type: "string",
+          description: "The fact, decision, or piece of knowledge to remember",
+        },
+      },
+      required: ["fact"],
+    },
+    handler: async (args: Record<string, unknown>) => {
+      const fact = (args.fact as string) ?? "";
+      const raw = await engine.callMcpPrompt("remember", { fact });
+      if (raw === null) {
+        return { error: "unavailable", message: "tapps-brain MCP not ready" };
+      }
+      try {
+        return raw as Record<string, unknown>;
+      } catch {
+        return raw;
+      }
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry — the default export OpenClaw loads
 // ---------------------------------------------------------------------------
 
@@ -1989,6 +2243,11 @@ export default definePluginEntry({
       // Register federation tools (federation_status, federation_subscribe,
       // federation_unsubscribe, federation_publish). Proxy directly to MCP.
       registerFederationTools(api, engine);
+      // Register resource-backed tools (memory_stats, memory_health,
+      // memory_metrics, memory_entry_detail) and prompt-backed tools
+      // (memory_recall_prompt, memory_store_summary_prompt,
+      // memory_remember_prompt). Uses resources/read and prompts/get MCP methods.
+      registerResourceAndPromptTools(api, engine);
     }
 
     if (mode === "context-engine") {

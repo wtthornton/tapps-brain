@@ -192,6 +192,87 @@ export class McpClient {
   }
 
   /**
+   * Read an MCP resource by URI.
+   *
+   * Uses the `resources/read` JSON-RPC method from the MCP specification.
+   * Automatically reconnects on process death with the same retry logic as
+   * `callTool()`.
+   *
+   * @param uri - The resource URI (e.g. "memory://stats", "memory://entries/my-key").
+   * @returns The parsed result from the resource response.
+   */
+  async readResource(uri: string): Promise<unknown> {
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt <= RECONNECT_DELAYS_MS.length; attempt++) {
+      if (!this.isRunning) {
+        if (attempt > 0) {
+          await new Promise<void>((res) => setTimeout(res, RECONNECT_DELAYS_MS[attempt - 1]));
+        }
+        try {
+          await this.reconnect();
+        } catch (reconnErr) {
+          lastErr = reconnErr;
+          continue;
+        }
+      }
+
+      try {
+        return await this.sendRpc("resources/read", { uri });
+      } catch (err) {
+        lastErr = err;
+        if (this.isRunning) {
+          this.process!.kill("SIGTERM");
+          this.process = null;
+        }
+      }
+    }
+
+    throw lastErr ?? new Error(`MCP readResource(${uri}) failed after ${RECONNECT_DELAYS_MS.length} retries`);
+  }
+
+  /**
+   * Get an MCP prompt by name with the given arguments.
+   *
+   * Uses the `prompts/get` JSON-RPC method from the MCP specification.
+   * Automatically reconnects on process death with the same retry logic as
+   * `callTool()`.
+   *
+   * @param name - The prompt name (e.g. "recall", "store_summary", "remember").
+   * @param args - Named string arguments for the prompt template.
+   * @returns The parsed result from the prompts/get response.
+   */
+  async callPrompt(name: string, args: Record<string, string>): Promise<unknown> {
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt <= RECONNECT_DELAYS_MS.length; attempt++) {
+      if (!this.isRunning) {
+        if (attempt > 0) {
+          await new Promise<void>((res) => setTimeout(res, RECONNECT_DELAYS_MS[attempt - 1]));
+        }
+        try {
+          await this.reconnect();
+        } catch (reconnErr) {
+          lastErr = reconnErr;
+          continue;
+        }
+      }
+
+      try {
+        return await this.sendRpc("prompts/get", { name, arguments: args });
+      } catch (err) {
+        lastErr = err;
+        if (this.isRunning) {
+          this.process!.kill("SIGTERM");
+          this.process = null;
+        }
+      }
+    }
+
+    throw lastErr ?? new Error(`MCP callPrompt(${name}) failed after ${RECONNECT_DELAYS_MS.length} retries`);
+  }
+
+  /**
    * Call an MCP tool by name with the given arguments.
    *
    * Automatically reconnects the child process if it has died, retrying up to
