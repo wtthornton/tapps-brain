@@ -430,10 +430,10 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 2: Tool Replacement (sequential — depends on 026-A)
 
 #### 026-B: Implement memory_search tool backed by tapps-brain
-- [ ] Register `memory_search` via `api.registerTool()`. Accepts same parameters as memory-core's version. Calls tapps-brain's `memory_search` MCP tool. Returns OpenClaw-format results: `{ snippets: [{ text, path, lineRange, score }] }`. Maps: `value`→`text`, `key`→`path`, `confidence`→`score`. Handles empty results gracefully. Performance <200ms for <500 entries. Commit: `feat(story-026.2): implement memory_search backed by tapps-brain`
+- [x] Register `memory_search` via `api.registerTool()`. Accepts same parameters as memory-core's version. Calls tapps-brain's `memory_search` MCP tool. Returns OpenClaw-format results: `{ snippets: [{ text, path, lineRange, score }] }`. Maps: `value`→`text`, `key`→`path`, `confidence`→`score`. Handles empty results gracefully. Performance <200ms for <500 entries. Commit: `feat(story-026.2): implement memory_search backed by tapps-brain`
 
 #### 026-C: Implement memory_get tool backed by tapps-brain
-- [ ] Register `memory_get` via `api.registerTool()`. Accepts key/path parameter; extracts memory key from path if needed (`memory/my-key.md`→`my-key`). Calls tapps-brain's `memory_get` MCP tool. Returns entry value as Markdown text. Returns empty string for missing keys (graceful degradation). Supports optional line-range parameters. Commit: `feat(story-026.3): implement memory_get backed by tapps-brain`
+- [x] Register `memory_get` via `api.registerTool()`. Accepts key/path parameter; extracts memory key from path if needed (`memory/my-key.md`→`my-key`). Calls tapps-brain's `memory_get` MCP tool. Returns entry value as Markdown text. Returns empty string for missing keys (graceful degradation). Supports optional line-range parameters. Commit: `feat(story-026.3): implement memory_get backed by tapps-brain`
 
 ### Phase 3: Sync and Migration (independent)
 
