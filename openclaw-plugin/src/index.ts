@@ -114,11 +114,20 @@ try {
 // TappsBrainEngine — the ContextEngine implementation
 // ---------------------------------------------------------------------------
 
-class TappsBrainEngine {
+export class TappsBrainEngine {
   private mcpClient: McpClient;
   private injectedKeys = new Set<string>();
   private ingestCount = 0;
   private recentMessages: string[] = [];
+
+  /**
+   * Resolves when bootstrap() completes successfully.
+   * Rejects if bootstrap() fails.
+   * All hooks await this before calling MCP to prevent race conditions.
+   */
+  private ready: Promise<void>;
+  private readyResolve!: () => void;
+  private readyReject!: (err: Error) => void;
 
   private readonly config: PluginConfig;
   private readonly workspaceDir: string;
@@ -142,6 +151,13 @@ class TappsBrainEngine {
     this.hiveEnabled = config.hiveEnabled ?? false;
     this.agentId = config.agentId ?? "";
     this.mcpClient = new McpClient(workspaceDir);
+
+    // Deferred promise: resolved by bootstrap(), rejected on bootstrap failure.
+    // All hooks await this.ready so they never call MCP before the client is ready.
+    this.ready = new Promise<void>((resolve, reject) => {
+      this.readyResolve = resolve;
+      this.readyReject = reject;
+    });
   }
 
   /**
@@ -149,44 +165,58 @@ class TappsBrainEngine {
    *
    * Spawns tapps-brain-mcp, imports MEMORY.md on first run,
    * and registers the agent in the Hive if enabled.
+   *
+   * Resolves `this.ready` on success so that concurrent hook calls
+   * (ingest/assemble/compact) can proceed. Rejects `this.ready` on
+   * failure so hooks return graceful fallbacks instead of hanging.
    */
   async bootstrap(): Promise<void> {
-    const extraArgs: string[] = [];
-    if (this.agentId) {
-      extraArgs.push("--agent-id", this.agentId);
-    }
-    if (this.hiveEnabled) {
-      extraArgs.push("--enable-hive");
-    }
-
-    await this.mcpClient.start(
-      this.config.mcpCommand ?? "tapps-brain-mcp",
-      extraArgs,
-    );
-
-    // First-run: import MEMORY.md if it exists and store is fresh
-    if (isFirstRun(this.workspaceDir) && hasMemoryMd(this.workspaceDir)) {
-      const memoryMdPath = resolve(this.workspaceDir, "MEMORY.md");
-      const content = readFileSync(memoryMdPath, "utf-8");
-      const memories = parseMemoryMdForImport(content);
-      if (memories.length > 0) {
-        await this.mcpClient.callTool("memory_import", {
-          memories_json: JSON.stringify({ memories }),
-          overwrite: false,
-        });
+    try {
+      const extraArgs: string[] = [];
+      if (this.agentId) {
+        extraArgs.push("--agent-id", this.agentId);
       }
-    }
-
-    // Register agent in the Hive
-    if (this.hiveEnabled && this.agentId) {
-      try {
-        await this.mcpClient.callTool("agent_register", {
-          agent_id: this.agentId,
-          profile: this.config.profilePath ?? "default",
-        });
-      } catch {
-        // Non-fatal — agent may already be registered
+      if (this.hiveEnabled) {
+        extraArgs.push("--enable-hive");
       }
+
+      await this.mcpClient.start(
+        this.config.mcpCommand ?? "tapps-brain-mcp",
+        extraArgs,
+      );
+
+      // First-run: import MEMORY.md if it exists and store is fresh
+      if (isFirstRun(this.workspaceDir) && hasMemoryMd(this.workspaceDir)) {
+        const memoryMdPath = resolve(this.workspaceDir, "MEMORY.md");
+        const content = readFileSync(memoryMdPath, "utf-8");
+        const memories = parseMemoryMdForImport(content);
+        if (memories.length > 0) {
+          await this.mcpClient.callTool("memory_import", {
+            memories_json: JSON.stringify({ memories }),
+            overwrite: false,
+          });
+        }
+      }
+
+      // Register agent in the Hive
+      if (this.hiveEnabled && this.agentId) {
+        try {
+          await this.mcpClient.callTool("agent_register", {
+            agent_id: this.agentId,
+            profile: this.config.profilePath ?? "default",
+          });
+        } catch {
+          // Non-fatal — agent may already be registered
+        }
+      }
+
+      // Signal ready — all queued hooks can now proceed
+      this.readyResolve();
+    } catch (err) {
+      // Signal failure — queued hooks will take graceful fallback paths
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.readyReject(error);
+      throw err;
     }
   }
 
@@ -195,11 +225,21 @@ class TappsBrainEngine {
    *
    * Captures durable facts from the message text. Rate-limited:
    * captures once every `captureRateLimit` calls.
+   *
+   * Awaits `this.ready` to ensure the MCP client is initialised before
+   * any tool calls. Returns gracefully if bootstrap failed.
    */
   async ingest({
     message,
     isHeartbeat,
   }: IngestParams): Promise<{ ingested: true }> {
+    // Wait for bootstrap — graceful fallback if it failed
+    try {
+      await this.ready;
+    } catch {
+      return { ingested: true };
+    }
+
     if (isHeartbeat || !message.content?.trim()) {
       return { ingested: true };
     }
@@ -239,11 +279,21 @@ class TappsBrainEngine {
    * Recalls relevant memories and returns them as a
    * systemPromptAddition. Messages are passed through unchanged
    * since we don't own compaction.
+   *
+   * Awaits `this.ready` to ensure the MCP client is initialised before
+   * any tool calls. Returns empty result if bootstrap failed.
    */
   async assemble({
     messages,
     tokenBudget,
   }: AssembleParams): Promise<AssembleResult> {
+    // Wait for bootstrap — graceful fallback if it failed
+    try {
+      await this.ready;
+    } catch {
+      return { messages, estimatedTokens: 0 };
+    }
+
     const budget = Math.min(this.tokenBudget, (tokenBudget.soft ?? 2000) * 4);
 
     try {
@@ -320,10 +370,20 @@ class TappsBrainEngine {
    * Since ownsCompaction is false, OpenClaw handles the actual
    * compaction. We use this signal to flush recent conversation
    * context into tapps-brain before it's discarded.
+   *
+   * Awaits `this.ready` to ensure the MCP client is initialised before
+   * any tool calls. Returns ok if bootstrap failed.
    */
   async compact({
     sessionId,
   }: CompactParams): Promise<{ ok: true; compacted: true }> {
+    // Wait for bootstrap — graceful fallback if it failed
+    try {
+      await this.ready;
+    } catch {
+      return { ok: true, compacted: true };
+    }
+
     if (this.recentMessages.length === 0) {
       return { ok: true, compacted: true };
     }
