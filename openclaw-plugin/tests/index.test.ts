@@ -1216,3 +1216,114 @@ describe("TappsBrainEngine — dispose (028-E)", () => {
     expect(mockStop).toHaveBeenCalledOnce();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 028-F: citations — citation footers in assemble() output
+// ---------------------------------------------------------------------------
+
+describe("TappsBrainEngine — citations in assemble() (028-F)", () => {
+  const recallMemories = [
+    { key: "my-key", value: "some value", tier: "architectural", confidence: 0.9 },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(hasMemoryMd).mockReturnValue(false);
+    vi.mocked(isFirstRun).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("appends citation footer when citations is 'auto' (default)", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: recallMemories }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    // Default config — citations defaults to "auto"
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "test query" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toBeDefined();
+    expect(result.systemPromptAddition).toContain("my-key");
+    expect(result.systemPromptAddition).toContain(
+      "Source: memory/architectural/my-key.md",
+    );
+  });
+
+  it("appends citation footer when citations is 'on'", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: recallMemories }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ citations: "on" }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "test query" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toContain(
+      "Source: memory/architectural/my-key.md",
+    );
+  });
+
+  it("omits citation footer when citations is 'off'", async () => {
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: recallMemories }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({ citations: "off" }, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "test query" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toBeDefined();
+    expect(result.systemPromptAddition).toContain("my-key");
+    expect(result.systemPromptAddition).not.toContain("Source:");
+  });
+
+  it("uses 'procedural' as fallback tier when tier field is missing", async () => {
+    const memoriesNoTier = [{ key: "no-tier-key", value: "value without tier" }];
+    const mockCallTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ memories: memoriesNoTier }),
+    );
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({ callTool: mockCallTool }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "test query" }],
+      tokenBudget: { soft: 2000, hard: 4000 },
+    });
+
+    expect(result.systemPromptAddition).toContain(
+      "Source: memory/procedural/no-tier-key.md",
+    );
+  });
+});

@@ -400,7 +400,7 @@ Aligned with the repo as of **2026-03-22** (updated with BUG-002 from deep revie
 ### Phase 4: Feature Parity (all independent)
 
 #### 028-F: Add citation support to recall results
-- [ ] In `openclaw-plugin/src/index.ts` `assemble()` method, format recalled memories with citation footers matching OpenClaw's format: `Source: tapps-brain/<key>`. Add `citations` config option (`"auto" | "on" | "off"`, default `"auto"`). When `"auto"` or `"on"`, append `Source: memory/<tier>/<key>.md` to each memory snippet. Add TypeScript test. Commit: `feat(story-028.4): add citation support to recall results`
+- [x] In `openclaw-plugin/src/index.ts` `assemble()` method, format recalled memories with citation footers matching OpenClaw's format: `Source: tapps-brain/<key>`. Add `citations` config option (`"auto" | "on" | "off"`, default `"auto"`). When `"auto"` or `"on"`, append `Source: memory/<tier>/<key>.md` to each memory snippet. Add TypeScript test. Commit: `feat(story-028.4): add citation support to recall results`
 
 #### 028-G: Wire session memory search integration
 - [ ] In `openclaw-plugin/src/index.ts`, when the memory_search replacement (EPIC-026) is called with session scope, also query tapps-brain's `memory_search_sessions` tool. Merge session results with memory results, marking session results with `source: "session"`. Add TypeScript test. Commit: `feat(story-028.5): integrate session memory search`

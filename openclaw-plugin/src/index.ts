@@ -72,6 +72,8 @@ export interface PluginConfig {
   captureRateLimit?: number;
   agentId?: string;
   hiveEnabled?: boolean;
+  /** Controls citation footers in assemble() output. Defaults to "auto". */
+  citations?: "auto" | "on" | "off";
 }
 
 /** Logger interface matching OpenClaw's api.logger shape. */
@@ -141,6 +143,7 @@ export class TappsBrainEngine {
   private readonly tokenBudget: number;
   private readonly hiveEnabled: boolean;
   private readonly agentId: string;
+  private readonly citations: "auto" | "on" | "off";
   private readonly logger: PluginLogger;
 
   readonly info: ContextEngineInfo = {
@@ -157,6 +160,7 @@ export class TappsBrainEngine {
     this.tokenBudget = (config.tokenBudget ?? 2000) * 4; // tokens → chars
     this.hiveEnabled = config.hiveEnabled ?? false;
     this.agentId = config.agentId ?? "";
+    this.citations = config.citations ?? "auto";
     this.mcpClient = new McpClient(workspaceDir);
     // Default to no-op logger if none provided (e.g. in tests)
     this.logger = logger ?? { info: () => {}, warn: () => {} };
@@ -357,8 +361,15 @@ export class TappsBrainEngine {
       charCount += header.length;
       lines.push(header);
 
+      const citationsEnabled = this.citations !== "off";
+
       for (const mem of newMemories) {
-        const entry = `- **${mem.key}**: ${mem.value}\n`;
+        const citation = citationsEnabled
+          ? `  *Source: memory/${mem.tier ?? "procedural"}/${mem.key}.md*`
+          : "";
+        const entry = citation
+          ? `- **${mem.key}**: ${mem.value}\n${citation}\n`
+          : `- **${mem.key}**: ${mem.value}\n`;
         if (charCount + entry.length > budget) {
           break;
         }
