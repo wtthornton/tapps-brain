@@ -1,28 +1,208 @@
 /**
- * Ambient type declarations for `openclaw/plugin-sdk/core`.
+ * Ambient type declarations for the OpenClaw Plugin SDK.
  *
- * These types reflect the actual OpenClaw SDK shape as of v2026.3.7+.
- * They enable type-safe plugin development without a full openclaw install.
- * The openclaw package is an optional peer dependency — the try/catch in
- * index.ts handles the runtime case where it is not installed.
+ * These types match the real OpenClaw SDK as verified against the source at
+ * github.com/openclaw/openclaw (2026-03-23). They enable type-safe plugin
+ * development without requiring the openclaw package to be installed.
+ *
+ * Key source files in the real SDK:
+ *   - src/plugins/types.ts            — OpenClawPluginApi, tool types
+ *   - src/plugins/runtime/types-core.ts — PluginRuntime, PluginAgent
+ *   - src/context-engine/types.ts      — ContextEngine, CompactResult
+ *   - src/context-engine/registry.ts   — ContextEngineFactory
+ *   - src/plugin-sdk/plugin-entry.ts   — definePluginEntry
+ *   - src/context-engine/delegate.ts   — delegateCompactionToRuntime
+ *   - src/agents/tools/common.ts       — AnyAgentTool
  */
+
+// ---------------------------------------------------------------------------
+// openclaw/plugin-sdk/plugin-entry
+// ---------------------------------------------------------------------------
+
+declare module "openclaw/plugin-sdk/plugin-entry" {
+  import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+
+  export interface DefinedPluginEntry {
+    id: string;
+    name: string;
+    description: string;
+    kind?: "memory" | "context-engine";
+    register: (api: OpenClawPluginApi) => void;
+  }
+
+  export interface PluginEntryOptions {
+    id: string;
+    name: string;
+    description: string;
+    kind?: "memory" | "context-engine";
+    configSchema?: Record<string, unknown> | (() => Record<string, unknown>);
+    register: (api: OpenClawPluginApi) => void;
+  }
+
+  export function definePluginEntry(options: PluginEntryOptions): DefinedPluginEntry;
+}
+
+// ---------------------------------------------------------------------------
+// openclaw/plugin-sdk/core
+// ---------------------------------------------------------------------------
+
 declare module "openclaw/plugin-sdk/core" {
+  // -- Agent Tool types ---------------------------------------------------
+
+  /** Result returned from a tool's execute() method. */
+  export interface AgentToolResult {
+    content: Array<{ type: string; text: string }>;
+    details?: unknown;
+  }
+
+  /**
+   * A single agent tool. The real SDK extends AgentTool from
+   * @mariozechner/pi-agent-core; we declare the subset our plugin uses.
+   */
+  export interface AnyAgentTool {
+    name: string;
+    label?: string;
+    description: string;
+    /** JSON Schema for the tool's parameters. */
+    parameters?: Record<string, unknown>;
+    ownerOnly?: boolean;
+    execute(
+      toolCallId: string,
+      params: Record<string, unknown>,
+    ): Promise<AgentToolResult>;
+  }
+
+  /** Context passed to tool factory functions. */
+  export interface OpenClawPluginToolContext {
+    config?: Record<string, unknown>;
+    workspaceDir?: string;
+    agentDir?: string;
+    agentId?: string;
+    sessionKey?: string;
+    sessionId?: string;
+    messageChannel?: string;
+    agentAccountId?: string;
+    requesterSenderId?: string;
+    senderIsOwner?: boolean;
+    sandboxed?: boolean;
+  }
+
+  /** Factory function that creates tool(s) from context. */
+  export type OpenClawPluginToolFactory = (
+    ctx: OpenClawPluginToolContext,
+  ) => AnyAgentTool | AnyAgentTool[] | null | undefined;
+
+  /** Options for registerTool(). */
+  export interface OpenClawPluginToolOptions {
+    name?: string;
+    names?: string[];
+    optional?: boolean;
+  }
+
+  // -- Context Engine types -----------------------------------------------
+
+  /** Engine metadata descriptor. */
+  export interface ContextEngineInfo {
+    id: string;
+    name: string;
+    version: string;
+    ownsCompaction: boolean;
+  }
+
+  /** Message in the conversation context. */
+  export interface AgentMessage {
+    role: string;
+    content: string;
+    [key: string]: unknown;
+  }
+
+  export interface BootstrapResult {
+    ok: boolean;
+  }
+
+  export interface IngestResult {
+    ingested: boolean;
+  }
+
+  export interface AssembleResult {
+    messages: AgentMessage[];
+    estimatedTokens: number;
+    systemPromptAddition?: string;
+  }
+
+  export interface CompactResult {
+    ok: boolean;
+    compacted: boolean;
+    reason?: string;
+    result?: {
+      summary?: string;
+      firstKeptEntryId?: string;
+      tokensBefore: number;
+      tokensAfter?: number;
+      details?: unknown;
+    };
+  }
+
+  /** The ContextEngine lifecycle interface. */
+  export interface ContextEngine {
+    readonly info: ContextEngineInfo;
+
+    bootstrap?(params: {
+      sessionId: string;
+      sessionKey?: string;
+      sessionFile: string;
+    }): Promise<BootstrapResult>;
+
+    ingest(params: {
+      sessionId: string;
+      sessionKey?: string;
+      message: AgentMessage;
+      isHeartbeat?: boolean;
+    }): Promise<IngestResult>;
+
+    assemble(params: {
+      sessionId: string;
+      sessionKey?: string;
+      messages: AgentMessage[];
+      tokenBudget?: number;
+      model?: string;
+      prompt?: string;
+    }): Promise<AssembleResult>;
+
+    compact(params: {
+      sessionId: string;
+      sessionKey?: string;
+      sessionFile: string;
+      tokenBudget?: number;
+      force?: boolean;
+      currentTokenCount?: number;
+      compactionTarget?: "budget" | "threshold";
+      customInstructions?: string;
+    }): Promise<CompactResult>;
+
+    dispose?(): Promise<void>;
+  }
+
+  /** Factory function that creates a ContextEngine (parameterless). */
+  export type ContextEngineFactory = () => ContextEngine | Promise<ContextEngine>;
+
+  // -- Runtime types ------------------------------------------------------
+
   /** Agent-scoped runtime helpers. */
   export interface PluginAgent {
     /**
      * Resolve the workspace directory for the current agent.
-     * Returns `undefined` when no workspace can be determined (e.g. no project
-     * is open). Callers should fall back to `process.cwd()` in that case.
+     * Requires the full OpenClaw config and the agent ID.
      */
-    resolveAgentWorkspaceDir(): string | undefined;
+    resolveAgentWorkspaceDir(
+      cfg: Record<string, unknown>,
+      agentId: string,
+    ): string | undefined;
   }
 
   /** OpenClaw runtime context injected by the host application. */
   export interface PluginRuntime {
-    /**
-     * OpenClaw runtime version string (e.g. "2026.3.13").
-     * This is the *host application* version — NOT the plugin's own version.
-     */
+    /** Host application version string (e.g. "2026.3.23"). */
     version: string;
     /** Current session identifier. */
     sessionId: string;
@@ -30,80 +210,68 @@ declare module "openclaw/plugin-sdk/core" {
     agent: PluginAgent;
   }
 
-  /**
-   * Plugin configuration read from the host application's config schema.
-   * The concrete shape is defined by each plugin's `openclaw.plugin.json`
-   * `configSchema` field; the SDK treats it as an open record.
-   */
-  export interface PluginConfig {
-    [key: string]: unknown;
-  }
-
   /** Logger provided by the host application. */
   export interface PluginLogger {
     info: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;
+    debug?: (...args: unknown[]) => void;
   }
 
-  /** Tool definition passed to `registerTool()`. */
-  export interface PluginToolDefinition {
-    description: string;
-    inputSchema?: Record<string, unknown>;
-    handler: (args: Record<string, unknown>) => Promise<unknown>;
-  }
+  // -- Plugin API ---------------------------------------------------------
 
-  /**
-   * Context passed to hook handlers registered via `registerHook()`.
-   * Additional properties may be present depending on the hook event type.
-   */
-  export interface PluginHookContext {
-    sessionId: string;
-    messages?: Array<{ role: string; content: string; [key: string]: unknown }>;
-    [key: string]: unknown;
-  }
-
-  /** The full OpenClaw plugin API passed to a plugin's `register()` callback. */
+  /** The full OpenClaw plugin API passed to a plugin's register() callback. */
   export interface OpenClawPluginApi {
-    logger: PluginLogger;
-    config: PluginConfig;
-    runtime: PluginRuntime;
-    /**
-     * Register a ContextEngine — available on OpenClaw v2026.3.7+.
-     * The factory receives the plugin config and must return an engine instance.
-     */
-    registerContextEngine?: (
-      id: string,
-      factory: (config: PluginConfig) => object,
-    ) => void;
-    /**
-     * Register a lifecycle hook — available on OpenClaw v2026.3.1+.
-     * The `event` string identifies the hook point (e.g. `"before_agent_start"`).
-     */
-    registerHook?: (
-      event: string,
-      handler: (ctx: PluginHookContext) => Promise<void>,
-    ) => void;
-    /** Register a native tool — available in all versions. */
-    registerTool?: (name: string, definition: PluginToolDefinition) => void;
-  }
-
-  /**
-   * Plugin entry definition — the shape passed to `definePluginEntry()`.
-   * OpenClaw loads the default export of the plugin module and calls `register()`
-   * with the full plugin API.
-   */
-  export interface PluginEntry {
+    /** Plugin identifier from the manifest. */
     id: string;
+    /** Plugin display name. */
     name: string;
-    register: (api: OpenClawPluginApi) => void;
+    /** Plugin version (from manifest). */
+    version?: string;
+    /** Plugin description. */
+    description?: string;
+    /** Source path or identifier. */
+    source: string;
+    /** Plugin root directory. */
+    rootDir?: string;
+    /** Full OpenClaw application configuration. */
+    config: Record<string, unknown>;
+    /** Plugin-specific configuration from plugins.entries.<id>.config. */
+    pluginConfig?: Record<string, unknown>;
+    /** Runtime context. */
+    runtime: PluginRuntime;
+    /** Logger. */
+    logger: PluginLogger;
+
+    /** Register an agent tool (direct object or factory). */
+    registerTool: (
+      tool: AnyAgentTool | OpenClawPluginToolFactory,
+      opts?: OpenClawPluginToolOptions,
+    ) => void;
+
+    /** Register lifecycle event hooks. */
+    registerHook: (
+      events: string | string[],
+      handler: (...args: unknown[]) => Promise<void>,
+      opts?: Record<string, unknown>,
+    ) => void;
+
+    /** Register a ContextEngine (exclusive slot). */
+    registerContextEngine: (
+      id: string,
+      factory: ContextEngineFactory,
+    ) => void;
   }
 
-  /**
-   * Wrap a plugin entry definition.
-   *
-   * At runtime this function is provided by the openclaw/plugin-sdk/core module.
-   * The try/catch shim in index.ts provides an identity fallback when openclaw
-   * is not installed (dev/test environments).
-   */
-  export function definePluginEntry(def: PluginEntry): PluginEntry;
+  // -- Re-exports from plugin-entry ---------------------------------------
+
+  export {
+    definePluginEntry,
+    type DefinedPluginEntry,
+    type PluginEntryOptions,
+  } from "openclaw/plugin-sdk/plugin-entry";
+
+  /** Delegate compaction to the OpenClaw runtime's built-in compaction. */
+  export function delegateCompactionToRuntime(
+    params: Parameters<ContextEngine["compact"]>[0],
+  ): Promise<CompactResult>;
 }

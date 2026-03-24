@@ -44,7 +44,9 @@ docs/planning/
     ├── EPIC-033.md      ← OpenClaw Plugin SDK Alignment (done)
     ├── EPIC-034.md      ← Production readiness QA remediation (done)
     ├── EPIC-035.md      ← OpenClaw install and upgrade UX consistency (done)
-    └── EPIC-036.md      ← Release gate hardening (done; scripts/release-ready.sh, CI)
+    ├── EPIC-036.md      ← Release gate hardening (done; scripts/release-ready.sh, CI)
+    ├── EPIC-037.md      ← OpenClaw plugin SDK realignment — fix API contract to match real SDK (done)
+    └── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
 ```
 
 ## Why This Structure

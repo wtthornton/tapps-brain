@@ -83,6 +83,29 @@
 
 ---
 
+## EPIC-037: OpenClaw Plugin SDK Realignment
+
+**Priority: CRITICAL — plugin cannot load in a real OpenClaw installation**
+
+- [x] **037.1** Rewrite `openclaw-sdk.d.ts` with real SDK types verified against github.com/openclaw/openclaw source. *(2026-03-23)*
+- [x] **037.2** Fix `resolveAgentWorkspaceDir(api.config, agentId)`, switch to `api.pluginConfig`, remove compat modes/shim/tool groups. *(2026-03-23)*
+- [x] **037.3** Rewrite all tool registration functions to use `registerTool(toolObject)` with `createMcpProxyTool` DRY helper. *(2026-03-23)*
+- [x] **037.4** Fix `definePluginEntry` (description, kind), parameterless `registerContextEngine` factory, `delegateCompactionToRuntime` in compact. *(2026-03-23)*
+
+---
+
+## EPIC-038: OpenClaw Plugin Simplification
+
+**Priority: HIGH — remove ~200 lines of dead compat code after 037 lands**
+
+- [x] **038.1** Removed version detection, compat modes, 3-mode branching. `register()` calls `registerContextEngine` directly. *(2026-03-23)*
+- [x] **038.2** Removed `definePluginEntry` shim. Static import from `openclaw/plugin-sdk/plugin-entry`. *(2026-03-23)*
+- [x] **038.3** Compact delegates to `delegateCompactionToRuntime` after flushing messages. *(2026-03-23)*
+- [x] **038.4** Removed `isGroupEnabled()` and `toolGroups` config. All tools registered unconditionally. *(2026-03-23)*
+- [x] **038.5** Tests updated: removed version compat tests (30 tests), fixed compact/bootstrap assertions, added SDK mocks. 101 tests pass. *(2026-03-23)*
+
+---
+
 ## Deferred (feature work, not in scope)
 
 | Epic | Title | Priority | Notes |
