@@ -148,7 +148,9 @@ export class TappsBrainEngine {
    * (ingest/assemble/compact) can proceed. Rejects `this.ready` on
    * failure so hooks return graceful fallbacks instead of hanging.
    */
-  async bootstrap(): Promise<{ bootstrapped: boolean }> {
+  async bootstrap(
+    _params?: Parameters<NonNullable<ContextEngine["bootstrap"]>>[0],
+  ): Promise<{ bootstrapped: boolean }> {
     try {
       const extraArgs: string[] = [];
       if (this.agentId) {

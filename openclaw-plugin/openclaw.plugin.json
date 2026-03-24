@@ -3,7 +3,7 @@
   "name": "tapps-brain — Persistent Memory",
   "description": "ContextEngine plugin for tapps-brain: persistent cross-session memory with BM25 ranking, exponential decay, and multi-agent Hive sharing.",
   "version": "1.4.0",
-  "minimumVersion": "2026.3.1",
+  "minimumVersion": "2026.3.7",
   "kind": "context-engine",
   "slots": {
     "memory": "tapps-brain-memory"
@@ -46,26 +46,6 @@
         "enum": ["auto", "on", "off"],
         "default": "auto",
         "description": "Citation footers in assemble() output: 'auto'/'on' appends 'Source: memory/<tier>/<key>.md', 'off' disables"
-      },
-      "toolGroups": {
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": ["all"],
-            "description": "Register all tool groups (default)"
-          },
-          {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": ["core", "lifecycle", "search", "admin", "hive", "federation", "graph"]
-            },
-            "uniqueItems": true,
-            "description": "Register only the listed tool groups"
-          }
-        ],
-        "default": "all",
-        "description": "Tool groups to expose as native OpenClaw tools. Use an array to restrict tools for a specific agent role. Groups: core (memory_search/get), lifecycle (reinforce/supersede/history/search_sessions), search (stats/health/metrics/prompts), admin (audit/tags/profile/maintenance/config/export/import), hive (hive_*/agent_*), federation (federation_*), graph (memory_relations/find_related/query_relations). Example: [\"core\",\"lifecycle\",\"search\"] for a coder agent."
       }
     }
   }
