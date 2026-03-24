@@ -20,7 +20,7 @@ pip install "git+https://github.com/wtthornton/tapps-brain.git@main#egg=tapps-br
 **Pin a release tag (reproducible):**
 
 ```bash
-pip install "git+https://github.com/wtthornton/tapps-brain.git@v1.3.0#egg=tapps-brain[mcp]"
+pip install "git+https://github.com/wtthornton/tapps-brain.git@v1.3.1#egg=tapps-brain[mcp]"
 ```
 
 **Editable clone (development):**
@@ -82,10 +82,10 @@ Re-run the **same** install command with **`--upgrade`** so pip pulls the latest
 pip install --upgrade --force-reinstall "git+https://github.com/wtthornton/tapps-brain.git@main#egg=tapps-brain[mcp]"
 ```
 
-**Move to a newer tag** (change `v1.3.0` to the tag you want):
+**Move to a newer tag** (change `v1.3.1` to the tag you want):
 
 ```bash
-pip install --upgrade --force-reinstall "git+https://github.com/wtthornton/tapps-brain.git@v1.3.0#egg=tapps-brain[mcp]"
+pip install --upgrade --force-reinstall "git+https://github.com/wtthornton/tapps-brain.git@v1.3.1#egg=tapps-brain[mcp]"
 ```
 
 `--force-reinstall` is optional but avoids stale metadata when the version string in `pyproject.toml` did not bump on a branch.

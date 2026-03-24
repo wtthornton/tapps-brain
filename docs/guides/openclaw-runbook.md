@@ -69,7 +69,7 @@ pip install "git+https://github.com/wtthornton/tapps-brain.git@main#egg=tapps-br
 Pinning a release tag is also supported:
 
 ```bash
-pip install "git+https://github.com/wtthornton/tapps-brain.git@v1.3.0#egg=tapps-brain[mcp]"
+pip install "git+https://github.com/wtthornton/tapps-brain.git@v1.3.1#egg=tapps-brain[mcp]"
 ```
 
 ### 2) Build/install plugin, configure, restart

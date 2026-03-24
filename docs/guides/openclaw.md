@@ -31,9 +31,9 @@ pip install tapps-brain[mcp]
 
 Then choose an integration mode below based on your OpenClaw version and needs.
 
-### Diagnostics & flywheel (v1.3.0+)
+### Diagnostics & flywheel (v1.3.1+)
 
-When `tapps-brain[mcp]>=1.3.0` is installed, the MCP server exposes **diagnostics**
+When `tapps-brain[mcp]>=1.3.1` is installed, the MCP server exposes **diagnostics**
 (`diagnostics_report`, `diagnostics_history`, resource `memory://diagnostics`) and
 **flywheel** tools (`flywheel_process`, `flywheel_gaps`, `flywheel_report`,
 `flywheel_evaluate`, `flywheel_hive_feedback`) plus `memory://report`. From the CLI:

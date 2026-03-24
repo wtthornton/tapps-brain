@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-24 (America/Chicago) — release **v1.3.0**; EPIC-034/035/036 complete; docs and Cursor rules aligned with release gate
+**Last updated:** 2026-03-24 (America/Chicago) — release **v1.3.1**; EPIC-034/035/036 complete; docs and Cursor rules aligned with release gate
 
-**Package version (PyPI / `pyproject.toml`):** **1.3.0**
+**Package version (PyPI / `pyproject.toml`):** **1.3.1**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -81,7 +81,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
 | EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
-| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (54 as of v1.3.0) | done | 2026-03-23 |
+| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (54 as of v1.3.1) | done | 2026-03-23 |
 | EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |

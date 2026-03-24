@@ -1,5 +1,11 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v1.3.1 — Align with tapps-brain 1.3.1
+
+- Bumps plugin package, manifests, and `ContextEngineInfo.version` to **1.3.1**
+  alongside the Python release (release gate script, OpenClaw docs consistency
+  checker, CI integration, operator runbook hardening — no MCP surface change).
+
 ## v1.3.0 — Align with tapps-brain 1.3.0
 
 - Bumps plugin package, `openclaw.plugin.json`, and `ContextEngineInfo.version` to

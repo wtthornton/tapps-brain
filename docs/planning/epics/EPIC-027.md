@@ -12,7 +12,7 @@ tags: [openclaw, mcp, tools, native-tools, integration]
 
 ## Context
 
-**Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.0. Counts in the narrative below are historical unless otherwise stated.
+**Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.1. Counts in the narrative below are historical unless otherwise stated.
 
 EPIC-012's ContextEngine plugin uses only ~8 of tapps-brain's 41 MCP tools internally
 (recall, capture, ingest, import, session index, agent register). The remaining 33 tools
@@ -36,7 +36,7 @@ Depends on EPIC-012 (done) and benefits from EPIC-026 (memory slot).
 - [x] Tools are grouped by category with clear descriptions for the agent
 - [x] Per-agent routing works: admin agent gets all tools, read-only agent gets search/recall only
 - [x] Documentation: complete tool reference and configuration guide
-- [x] `openclaw-skill/SKILL.md` updated to declare MCP tools (54 as of v1.3.0)
+- [x] `openclaw-skill/SKILL.md` updated to declare MCP tools (54 as of v1.3.1)
 
 ## Stories
 

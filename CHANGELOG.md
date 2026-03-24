@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.3.1] — 2026-03-24
+
 ### Added
 
 - **Release gate** — `scripts/release-ready.sh`: packaging build, wheel smoke import, version consistency tests, pytest (optional `SKIP_FULL_PYTEST=1` in CI), ruff, mypy, `openclaw-plugin` npm ci/build/test.
@@ -179,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PyPI publish preparation** — `project.urls`, wheel + sdist verified,
   publish checklist at `scripts/publish-checklist.md`.
 
-[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/wtthornton/tapps-brain/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/wtthornton/tapps-brain/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/wtthornton/tapps-brain/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/wtthornton/tapps-brain/compare/v1.0.0...v1.1.0
