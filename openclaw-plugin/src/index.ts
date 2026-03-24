@@ -113,7 +113,7 @@ export class TappsBrainEngine {
   readonly info: ContextEngineInfo = {
     id: "tapps-brain-memory",
     name: "tapps-brain — Persistent Memory",
-    version: "1.3.1",
+    version: "1.4.0",
     ownsCompaction: false,
   };
 
