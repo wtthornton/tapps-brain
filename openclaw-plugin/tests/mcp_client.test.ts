@@ -1,139 +1,126 @@
 /**
- * Tests for McpClient (028-D)
+ * Tests for McpClient (039 — SDK-based transport)
  *
  * Covers:
- *  - JSON-RPC Content-Length message framing (parsing)
- *  - Request / response ID matching
- *  - Error response handling
- *  - Process spawn / stop lifecycle
- *  - Reconnection logic (auto-reconnect on dead process, 3 retries)
- *  - Request timeout
+ *  - SDK transport + client creation with correct params
+ *  - Process lifecycle (start / stop / reconnect)
+ *  - Method delegation (callTool, readResource, callPrompt)
+ *  - Session-invalidation reconnection on error
+ *  - isRunning based on transport.pid
+ *  - Helper functions (hasMemoryMd, isFirstRun)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
-import { EventEmitter } from "node:events";
+import { describe, it, expect, vi, afterEach, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mock setup — must happen before importing McpClient
+// Mock setup — vi.mock factories are hoisted, so they cannot reference
+// variables declared outside. We store mock state on globalThis so both
+// the factory and the test code can access it.
 // ---------------------------------------------------------------------------
 
-vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const _g = globalThis as any;
+
+// Reset mock state before each import.
+_g.__mcpMocks = {
+  connect: vi.fn().mockResolvedValue(undefined),
+  clientClose: vi.fn().mockResolvedValue(undefined),
+  callTool: vi.fn().mockResolvedValue({ content: [] }),
+  readResource: vi.fn().mockResolvedValue({ contents: [] }),
+  getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
+  transportClose: vi.fn().mockResolvedValue(undefined),
+  transportPid: 12345 as number | null,
+  transportStderr: null as unknown,
+  // Track constructor calls.
+  ClientCtor: vi.fn(),
+  TransportCtor: vi.fn(),
+};
+
+vi.mock("@modelcontextprotocol/sdk/client/index.js", () => {
+  const g = globalThis as any;
+  return {
+    Client: class MockClient {
+      connect: any;
+      close: any;
+      callTool: any;
+      readResource: any;
+      getPrompt: any;
+      constructor(...args: any[]) {
+        g.__mcpMocks.ClientCtor(...args);
+        this.connect = g.__mcpMocks.connect;
+        this.close = g.__mcpMocks.clientClose;
+        this.callTool = g.__mcpMocks.callTool;
+        this.readResource = g.__mcpMocks.readResource;
+        this.getPrompt = g.__mcpMocks.getPrompt;
+      }
+    },
+  };
+});
+
+vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => {
+  const g = globalThis as any;
+  return {
+    StdioClientTransport: class MockStdioClientTransport {
+      close: any;
+      constructor(...args: any[]) {
+        g.__mcpMocks.TransportCtor(...args);
+        this.close = g.__mcpMocks.transportClose;
+      }
+      get pid() {
+        return g.__mcpMocks.transportPid;
+      }
+      get stderr() {
+        return g.__mcpMocks.transportStderr;
+      }
+    },
+  };
+});
+
 vi.mock("node:fs", () => ({ existsSync: vi.fn().mockReturnValue(false) }));
 vi.mock("node:path", () => ({
   resolve: vi.fn((...args: string[]) => args.filter(Boolean).join("/")),
 }));
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
-import { spawn } from "node:child_process";
 import { McpClient, hasMemoryMd, isFirstRun } from "../src/mcp_client.js";
 
-const spawnMock = spawn as unknown as Mock;
-
-// ---------------------------------------------------------------------------
-// MockProcess — simulates a tapps-brain-mcp child process
-// ---------------------------------------------------------------------------
-
-/**
- * A fake ChildProcess that captures stdin.write() calls and can emit
- * Content-Length–framed JSON-RPC responses on stdout.
- */
-class MockProcess extends EventEmitter {
-  stdout = new EventEmitter();
-  stderr = new EventEmitter();
-  stdin: { write: Mock };
-  killed = false;
-
-  private _autoRespondDefault: unknown = {};
-
-  constructor() {
-    super();
-    const self = this;
-    this.stdin = {
-      write: vi.fn((data: string) => {
-        // Parse the framed JSON-RPC message and optionally auto-respond.
-        const headerEnd = data.indexOf("\r\n\r\n");
-        if (headerEnd === -1) return;
-        const body = data.slice(headerEnd + 4);
-        try {
-          const req = JSON.parse(body) as { id?: number };
-          if (req.id !== undefined && self._autoRespondDefault !== undefined) {
-            // Emit response asynchronously so Promise resolvers run in order.
-            setImmediate(() => self.respondWith(req.id!, self._autoRespondDefault));
-          }
-        } catch {
-          // ignore malformed JSON
-        }
-      }),
-    };
-  }
-
-  /** Disable auto-responses (client will hang until manually responded to). */
-  disableAutoRespond(): void {
-    this._autoRespondDefault = undefined;
-  }
-
-  /** Emit a well-formed JSON-RPC success response for the given request id. */
-  respondWith(id: number, result: unknown): void {
-    const payload = JSON.stringify({ jsonrpc: "2.0", id, result });
-    const framed = `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`;
-    this.stdout.emit("data", Buffer.from(framed));
-  }
-
-  /** Emit a well-formed JSON-RPC error response for the given request id. */
-  respondWithError(id: number, code: number, message: string): void {
-    const payload = JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
-    const framed = `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`;
-    this.stdout.emit("data", Buffer.from(framed));
-  }
-
-  /** Simulate the process exiting unexpectedly. */
-  simulateExit(code = 1): void {
-    setImmediate(() => {
-      this.emit("exit", code);
-    });
-  }
-
-  /** Simulate a process error event. */
-  simulateError(message: string): void {
-    setImmediate(() => {
-      this.emit("error", new Error(message));
-    });
-  }
-
-  kill(): boolean {
-    this.killed = true;
-    this.emit("exit", 0);
-    return true;
-  }
+// Shorthand accessors for the mock state.
+function mocks() {
+  return _g.__mcpMocks as {
+    connect: Mock;
+    clientClose: Mock;
+    callTool: Mock;
+    readResource: Mock;
+    getPrompt: Mock;
+    transportClose: Mock;
+    transportPid: number | null;
+    transportStderr: unknown;
+    ClientCtor: Mock;
+    TransportCtor: Mock;
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Access private sendRpc without going through callTool's retry loop. */
-function sendRpcDirect(
-  client: McpClient,
-  method: string,
-  params?: Record<string, unknown>,
-): Promise<unknown> {
-  type Internals = { sendRpc: (m: string, p?: Record<string, unknown>) => Promise<unknown> };
-  return (client as unknown as Internals).sendRpc(method, params);
-}
-
-/** Read the current nextId from the client (next request id that will be assigned). */
-function peekNextId(client: McpClient): number {
-  return (client as unknown as { nextId: number }).nextId;
-}
-
-/**
- * Start a client backed by the given mock process.
- * The mock process must auto-respond so that the initialize handshake completes.
- */
-async function startedClient(mockProcess: MockProcess): Promise<McpClient> {
-  spawnMock.mockReturnValue(mockProcess);
-  const client = new McpClient("/fake/project");
+async function startedClient(projectDir = "/fake/project"): Promise<McpClient> {
+  const client = new McpClient(projectDir);
   await client.start();
   return client;
+}
+
+function resetMockState(): void {
+  const m = mocks();
+  m.transportPid = 12345;
+  m.transportStderr = null;
+  m.connect.mockResolvedValue(undefined);
+  m.clientClose.mockResolvedValue(undefined);
+  m.callTool.mockResolvedValue({ content: [] });
+  m.readResource.mockResolvedValue({ contents: [] });
+  m.getPrompt.mockResolvedValue({ messages: [] });
+  m.transportClose.mockResolvedValue(undefined);
+  vi.clearAllMocks();
 }
 
 // ---------------------------------------------------------------------------
@@ -141,467 +128,351 @@ async function startedClient(mockProcess: MockProcess): Promise<McpClient> {
 // ---------------------------------------------------------------------------
 
 describe("McpClient — process lifecycle", () => {
-  let proc: MockProcess;
-  let client: McpClient;
+  afterEach(resetMockState);
 
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
-  });
-
-  afterEach(() => {
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("spawns the MCP process with correct arguments", () => {
-    expect(spawnMock).toHaveBeenCalledWith(
-      "tapps-brain-mcp",
-      ["--project-dir", "/fake/project"],
-      expect.objectContaining({ stdio: ["pipe", "pipe", "pipe"] }),
-    );
-  });
-
-  it("passes extraArgs to the spawned process", async () => {
-    client.stop();
-    vi.clearAllMocks();
-    const newProc = new MockProcess();
-    spawnMock.mockReturnValue(newProc);
-    const c = new McpClient("/fake/project");
-    await c.start("tapps-brain-mcp", ["--agent-id", "test-agent"]);
-    expect(spawnMock).toHaveBeenCalledWith(
-      "tapps-brain-mcp",
-      ["--project-dir", "/fake/project", "--agent-id", "test-agent"],
-      expect.anything(),
-    );
-    c.stop();
-  });
-
-  it("reports isRunning = true after start", () => {
-    expect(client.isRunning).toBe(true);
-  });
-
-  it("reports isRunning = false after stop", () => {
-    client.stop();
-    expect(client.isRunning).toBe(false);
-  });
-
-  it("does not spawn a second process if already running", async () => {
-    await client.start(); // second call — should be a no-op
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("sets isRunning = false when the process exits unexpectedly", async () => {
-    expect(client.isRunning).toBe(true);
-    await new Promise<void>((resolve) => {
-      proc.simulateExit(1);
-      setImmediate(resolve);
+  it("creates StdioClientTransport with correct params", async () => {
+    const client = await startedClient();
+    expect(mocks().TransportCtor).toHaveBeenCalledWith({
+      command: "tapps-brain-mcp",
+      args: ["--project-dir", "/fake/project"],
+      stderr: "pipe",
     });
-    // need one more tick for the exit event to propagate
-    await new Promise<void>((r) => setImmediate(r));
+    client.stop();
+  });
+
+  it("passes extraArgs to StdioClientTransport", async () => {
+    const client = new McpClient("/fake/project");
+    await client.start("tapps-brain-mcp", ["--agent-id", "test-agent"]);
+    expect(mocks().TransportCtor).toHaveBeenCalledWith({
+      command: "tapps-brain-mcp",
+      args: ["--project-dir", "/fake/project", "--agent-id", "test-agent"],
+      stderr: "pipe",
+    });
+    client.stop();
+  });
+
+  it("passes custom command to StdioClientTransport", async () => {
+    const client = new McpClient("/fake/project");
+    await client.start("custom-mcp-server");
+    expect(mocks().TransportCtor).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "custom-mcp-server" }),
+    );
+    client.stop();
+  });
+
+  it("creates Client with correct name and version", async () => {
+    const client = await startedClient();
+    expect(mocks().ClientCtor).toHaveBeenCalledWith(
+      { name: "tapps-brain-openclaw", version: "1.4.0" },
+      {},
+    );
+    client.stop();
+  });
+
+  it("calls client.connect(transport) on start", async () => {
+    const client = await startedClient();
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+
+  it("reports isRunning = true after start", async () => {
+    const client = await startedClient();
+    expect(client.isRunning).toBe(true);
+    client.stop();
+  });
+
+  it("reports isRunning = false after stop", async () => {
+    const client = await startedClient();
+    client.stop();
     expect(client.isRunning).toBe(false);
+  });
+
+  it("does not create a second transport if already running", async () => {
+    const client = await startedClient();
+    await client.start(); // second call — should be a no-op
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().ClientCtor).toHaveBeenCalledTimes(1);
+    client.stop();
   });
 
   it("exposes the projectDir getter", () => {
-    const c = new McpClient("/my/project");
-    expect(c.projectDir).toBe("/my/project");
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — MCP initialization handshake", () => {
-  let proc: MockProcess;
-  let client: McpClient;
-
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
+    const client = new McpClient("/my/project");
+    expect(client.projectDir).toBe("/my/project");
   });
 
-  afterEach(() => {
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("sends an initialize JSON-RPC request on start", () => {
-    const calls: string[] = proc.stdin.write.mock.calls.map(([data]: [string]) => data);
-    const initCall = calls.find((d) => d.includes('"initialize"'));
-    expect(initCall).toBeDefined();
-    const headerEnd = initCall!.indexOf("\r\n\r\n");
-    const body = JSON.parse(initCall!.slice(headerEnd + 4)) as {
-      method: string;
-      params: { protocolVersion: string };
-    };
-    expect(body.method).toBe("initialize");
-    expect(body.params.protocolVersion).toBe("2024-11-05");
-  });
-
-  it("sends an initialized notification after the initialize response", () => {
-    const calls: string[] = proc.stdin.write.mock.calls.map(([data]: [string]) => data);
-    const notifCall = calls.find((d) => d.includes('"notifications/initialized"'));
-    expect(notifCall).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — Content-Length framing", () => {
-  let proc: MockProcess;
-  let client: McpClient;
-
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
-  });
-
-  afterEach(() => {
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("parses a single framed response correctly", async () => {
-    const result = await client.callTool("memory_list", { limit: 5 });
-    expect(result).toEqual({});
-  });
-
-  it("handles two responses delivered in the same chunk (batched data)", async () => {
-    proc.disableAutoRespond();
-
-    const id1 = peekNextId(client);
-    const id2 = id1 + 1;
-
-    const p1 = sendRpcDirect(client, "tools/call", { name: "memory_list", arguments: {} });
-    const p2 = sendRpcDirect(client, "tools/call", { name: "memory_recall", arguments: {} });
-
-    // Build two framed responses and emit them in a single chunk.
-    const pay1 = JSON.stringify({ jsonrpc: "2.0", id: id1, result: "first" });
-    const pay2 = JSON.stringify({ jsonrpc: "2.0", id: id2, result: "second" });
-    const frame1 = `Content-Length: ${Buffer.byteLength(pay1)}\r\n\r\n${pay1}`;
-    const frame2 = `Content-Length: ${Buffer.byteLength(pay2)}\r\n\r\n${pay2}`;
-    proc.stdout.emit("data", Buffer.from(frame1 + frame2));
-
-    const [r1, r2] = await Promise.all([p1, p2]);
-    expect(r1).toBe("first");
-    expect(r2).toBe("second");
-  });
-
-  it("skips a frame with malformed JSON body and continues with the next", async () => {
-    proc.disableAutoRespond();
-
-    const validId = peekNextId(client);
-    const callPromise = sendRpcDirect(client, "tools/call", {});
-
-    const badFrame = `Content-Length: 5\r\n\r\nhello`;
-    const goodPayload = JSON.stringify({ jsonrpc: "2.0", id: validId, result: { ok: true } });
-    const goodFrame = `Content-Length: ${Buffer.byteLength(goodPayload)}\r\n\r\n${goodPayload}`;
-    proc.stdout.emit("data", Buffer.from(badFrame + goodFrame));
-
-    const result = await callPromise;
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("skips a frame with no Content-Length header and continues with the next", async () => {
-    proc.disableAutoRespond();
-
-    const validId = peekNextId(client);
-    const callPromise = sendRpcDirect(client, "tools/call", {});
-
-    // Emit bad header (no Content-Length) followed by a valid frame.
-    const badFrame = `BadHeader: 10\r\n\r\nhelloworld`;
-    const goodPayload = JSON.stringify({ jsonrpc: "2.0", id: validId, result: 42 });
-    const goodFrame = `Content-Length: ${Buffer.byteLength(goodPayload)}\r\n\r\n${goodPayload}`;
-    proc.stdout.emit("data", Buffer.from(badFrame + goodFrame));
-
-    const result = await callPromise;
-    expect(result).toBe(42);
-  });
-
-  it("handles a response split across two data chunks", async () => {
-    proc.disableAutoRespond();
-
-    const validId = peekNextId(client);
-    const callPromise = sendRpcDirect(client, "tools/call", {});
-
-    const payload = JSON.stringify({ jsonrpc: "2.0", id: validId, result: "split" });
-    const full = `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`;
-    const half = Math.floor(full.length / 2);
-
-    proc.stdout.emit("data", Buffer.from(full.slice(0, half)));
-    proc.stdout.emit("data", Buffer.from(full.slice(half)));
-
-    const result = await callPromise;
-    expect(result).toBe("split");
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — request / response ID matching", () => {
-  let proc: MockProcess;
-  let client: McpClient;
-
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
-  });
-
-  afterEach(() => {
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("routes a response to the correct pending promise by id", async () => {
-    proc.disableAutoRespond();
-
-    const id1 = peekNextId(client);
-    const id2 = id1 + 1;
-
-    const p1 = sendRpcDirect(client, "tools/call", { name: "op1" });
-    const p2 = sendRpcDirect(client, "tools/call", { name: "op2" });
-
-    // Respond out-of-order: send id2 before id1.
-    proc.respondWith(id2, { from: "second" });
-    proc.respondWith(id1, { from: "first" });
-
-    const [r1, r2] = await Promise.all([p1, p2]);
-    expect(r1).toEqual({ from: "first" });
-    expect(r2).toEqual({ from: "second" });
-  });
-
-  it("ignores a response with an unknown id", async () => {
-    proc.disableAutoRespond();
-
-    const id1 = peekNextId(client);
-    const callPromise = sendRpcDirect(client, "tools/call", {});
-
-    // Unknown id response first, then the real one.
-    proc.respondWith(9999, { garbage: true });
-    proc.respondWith(id1, { real: true });
-
-    const result = await callPromise;
-    expect(result).toEqual({ real: true });
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — error response handling", () => {
-  let proc: MockProcess;
-  let client: McpClient;
-
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
-  });
-
-  afterEach(() => {
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("rejects the pending promise on a JSON-RPC error response", async () => {
-    proc.disableAutoRespond();
-
-    const id = peekNextId(client);
-    // Use sendRpcDirect to bypass callTool's retry loop.
-    const callPromise = sendRpcDirect(client, "tools/call", {
-      name: "memory_list",
-      arguments: {},
-    });
-
-    proc.respondWithError(id, -32601, "Method not found");
-
-    await expect(callPromise).rejects.toThrow("MCP error -32601: Method not found");
-  });
-
-  it("rejects all pending requests when the process emits an error event", async () => {
-    proc.disableAutoRespond();
-
-    const p1 = sendRpcDirect(client, "tools/call", { name: "memory_list", arguments: {} });
-    const p2 = sendRpcDirect(client, "tools/call", { name: "memory_recall", arguments: {} });
-
-    proc.simulateError("ENOENT");
-
-    await expect(p1).rejects.toThrow(/MCP process error.*ENOENT/);
-    await expect(p2).rejects.toThrow(/MCP process error.*ENOENT/);
-  });
-
-  it("rejects all pending requests when the process exits unexpectedly", async () => {
-    proc.disableAutoRespond();
-
-    const p1 = sendRpcDirect(client, "tools/call", { name: "memory_list", arguments: {} });
-
-    proc.simulateExit(1);
-
-    await expect(p1).rejects.toThrow(/MCP process exited with code 1/);
-  });
-
-  it("throws immediately when sendRpc is called with no running process", async () => {
-    client.stop();
-    await expect(sendRpcDirect(client, "tools/call", {})).rejects.toThrow(
-      "MCP process not running",
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — request timeout", () => {
-  let proc: MockProcess;
-  let client: McpClient;
-
-  beforeEach(async () => {
-    proc = new MockProcess();
-    client = await startedClient(proc);
-    // Disable auto-respond AFTER start so the initialize handshake succeeds.
-    proc.disableAutoRespond();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    client.stop();
-    vi.clearAllMocks();
-  });
-
-  it("rejects with a timeout error when no response arrives within 10s", async () => {
-    vi.useFakeTimers();
-
-    const callPromise = sendRpcDirect(client, "tools/call", {});
-    const timeoutAssertion = expect(callPromise).rejects.toThrow(/timeout.*10000ms/);
-
-    // Advance past the 10 s timeout.
-    await vi.advanceTimersByTimeAsync(10_001);
-
-    await timeoutAssertion;
-  });
-
-  it("does not reject before the 10s deadline", async () => {
-    vi.useFakeTimers();
-
-    let settled = false;
-    const callPromise = sendRpcDirect(client, "tools/call", {}).then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
-
-    await vi.advanceTimersByTimeAsync(9_000);
-    expect(settled).toBe(false);
-
-    // Clean up — advance past the timeout so the promise settles.
-    await vi.advanceTimersByTimeAsync(2_000);
-    await callPromise;
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe("McpClient — reconnection logic", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("reconnects automatically when the process dies and retries the call", async () => {
-    const firstProc = new MockProcess();
-    spawnMock.mockReturnValueOnce(firstProc);
-    const client = await startedClient(firstProc);
-
-    // Kill the first process.
-    firstProc.kill();
-    await new Promise<void>((r) => setImmediate(r));
+  it("reports isRunning = false when transport.pid is null (process died)", async () => {
+    const client = await startedClient();
+    expect(client.isRunning).toBe(true);
+    mocks().transportPid = null; // Simulate process death.
     expect(client.isRunning).toBe(false);
+    client.stop();
+  });
+});
 
-    // callTool should reconnect and succeed.
-    const secondProc = new MockProcess();
-    spawnMock.mockReturnValue(secondProc);
+// ---------------------------------------------------------------------------
 
-    const result = await client.callTool("memory_list", { limit: 1 });
-    expect(result).toEqual({});
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+describe("McpClient — stop / close lifecycle", () => {
+  afterEach(resetMockState);
 
+  it("calls client.close() and transport.close() on stop", async () => {
+    const client = await startedClient();
+    client.stop();
+    expect(mocks().clientClose).toHaveBeenCalledTimes(1);
+    expect(mocks().transportClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows client.close() errors", async () => {
+    const client = await startedClient();
+    mocks().clientClose.mockRejectedValueOnce(new Error("close failed"));
+    expect(() => client.stop()).not.toThrow();
+  });
+
+  it("swallows transport.close() errors", async () => {
+    const client = await startedClient();
+    mocks().transportClose.mockRejectedValueOnce(new Error("close failed"));
+    expect(() => client.stop()).not.toThrow();
+  });
+
+  it("stop is safe to call multiple times", async () => {
+    const client = await startedClient();
+    client.stop();
+    client.stop(); // second call — should not throw
+    expect(mocks().clientClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop when never started does not throw", () => {
+    const client = new McpClient("/fake/project");
+    expect(() => client.stop()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("McpClient — callTool delegation", () => {
+  afterEach(resetMockState);
+
+  it("delegates to client.callTool with correct params", async () => {
+    const client = await startedClient();
+    mocks().callTool.mockResolvedValueOnce({ content: [{ type: "text", text: "ok" }] });
+
+    const result = await client.callTool("memory_list", { limit: 5 });
+
+    expect(mocks().callTool).toHaveBeenCalledWith({
+      name: "memory_list",
+      arguments: { limit: 5 },
+    });
+    expect(result).toEqual({ content: [{ type: "text", text: "ok" }] });
     client.stop();
   });
 
-  it("retries on failure and succeeds on a later attempt", async () => {
-    // First spawn: initial start (auto-respond).
-    const goodProc = new MockProcess();
-    spawnMock.mockReturnValueOnce(goodProc);
-    const client = new McpClient("/fake/project");
-    await client.start();
+  it("invalidates session on callTool error", async () => {
+    const client = await startedClient();
+    mocks().callTool.mockRejectedValueOnce(new Error("transport error"));
 
-    // Kill the first process.
-    goodProc.kill();
-    await new Promise<void>((r) => setImmediate(r));
+    await expect(client.callTool("memory_list", {})).rejects.toThrow("transport error");
+    expect(client.isRunning).toBe(false);
+    expect(mocks().clientClose).toHaveBeenCalledTimes(1);
+    expect(mocks().transportClose).toHaveBeenCalledTimes(1);
+  });
 
-    let reconnectCount = 0;
-    spawnMock.mockImplementation(() => {
-      reconnectCount++;
-      if (reconnectCount < 3) {
-        // First two reconnect attempts fail: process exits before initialize completes.
-        const failProc = new MockProcess();
-        failProc.disableAutoRespond();
-        setImmediate(() => failProc.emit("exit", 1));
-        return failProc;
-      }
-      // Third attempt succeeds.
-      return new MockProcess();
+  it("reconnects when called while not running", async () => {
+    const client = await startedClient();
+    client.stop();
+    vi.clearAllMocks();
+
+    mocks().callTool.mockResolvedValueOnce({ content: [] });
+    await client.callTool("memory_list", {});
+
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().ClientCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("McpClient — readResource delegation", () => {
+  afterEach(resetMockState);
+
+  it("delegates to client.readResource with correct params", async () => {
+    const client = await startedClient();
+    mocks().readResource.mockResolvedValueOnce({
+      contents: [{ uri: "memory://stats", text: "{}" }],
     });
 
-    const result = await client.callTool("memory_list", {});
-    expect(result).toEqual({});
-    expect(reconnectCount).toBe(3);
+    const result = await client.readResource("memory://stats");
 
+    expect(mocks().readResource).toHaveBeenCalledWith({ uri: "memory://stats" });
+    expect(result).toEqual({
+      contents: [{ uri: "memory://stats", text: "{}" }],
+    });
     client.stop();
   });
 
-  it("throws after exhausting all retries when every reconnect fails", async () => {
-    const firstProc = new MockProcess();
-    spawnMock.mockReturnValueOnce(firstProc);
-    const client = await startedClient(firstProc);
+  it("invalidates session on readResource error", async () => {
+    const client = await startedClient();
+    mocks().readResource.mockRejectedValueOnce(new Error("resource error"));
 
-    // Kill the initial process.
-    firstProc.kill();
-    await new Promise<void>((r) => setImmediate(r));
+    await expect(client.readResource("memory://stats")).rejects.toThrow("resource error");
+    expect(client.isRunning).toBe(false);
+  });
 
-    // ALL reconnect attempts fail: each spawned process exits immediately.
-    spawnMock.mockImplementation(() => {
-      const failProc = new MockProcess();
-      failProc.disableAutoRespond();
-      setImmediate(() => failProc.emit("exit", 1));
-      return failProc;
+  it("reconnects when called while not running", async () => {
+    const client = await startedClient();
+    client.stop();
+    vi.clearAllMocks();
+
+    mocks().readResource.mockResolvedValueOnce({ contents: [] });
+    await client.readResource("memory://stats");
+
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("McpClient — callPrompt delegation", () => {
+  afterEach(resetMockState);
+
+  it("delegates to client.getPrompt with correct params", async () => {
+    const client = await startedClient();
+    mocks().getPrompt.mockResolvedValueOnce({
+      messages: [{ role: "user", content: { type: "text", text: "hello" } }],
     });
 
-    await expect(client.callTool("memory_list", {})).rejects.toThrow();
+    const result = await client.callPrompt("recall", { query: "test" });
 
+    expect(mocks().getPrompt).toHaveBeenCalledWith({
+      name: "recall",
+      arguments: { query: "test" },
+    });
+    expect(result).toEqual({
+      messages: [{ role: "user", content: { type: "text", text: "hello" } }],
+    });
     client.stop();
   });
 
-  it("reconnect() clears the internal buffer and restarts successfully", async () => {
-    const initialProc = new MockProcess();
-    const newProc = new MockProcess();
+  it("invalidates session on callPrompt error", async () => {
+    const client = await startedClient();
+    mocks().getPrompt.mockRejectedValueOnce(new Error("prompt error"));
 
-    spawnMock
-      .mockReturnValueOnce(initialProc) // initial start
-      .mockReturnValue(newProc); // reconnect
+    await expect(client.callPrompt("recall", { query: "x" })).rejects.toThrow("prompt error");
+    expect(client.isRunning).toBe(false);
+  });
 
-    const client = new McpClient("/fake/project");
-    await client.start();
+  it("reconnects when called while not running", async () => {
+    const client = await startedClient();
+    client.stop();
+    vi.clearAllMocks();
 
-    // Inject garbage into the buffer via stdout.
-    initialProc.stdout.emit("data", Buffer.from("garbage without any header"));
+    mocks().getPrompt.mockResolvedValueOnce({ messages: [] });
+    await client.callPrompt("recall", { query: "test" });
 
-    // Reconnect should clear the buffer and re-initialize.
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("McpClient — reconnection via session invalidation", () => {
+  afterEach(resetMockState);
+
+  it("reconnect() closes existing session and starts fresh", async () => {
+    const client = await startedClient();
+    vi.clearAllMocks();
+
     await client.reconnect();
 
+    // Old session closed.
+    expect(mocks().clientClose).toHaveBeenCalledTimes(1);
+    expect(mocks().transportClose).toHaveBeenCalledTimes(1);
+    // New session created.
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().ClientCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
     expect(client.isRunning).toBe(true);
+    client.stop();
+  });
 
+  it("calling callTool after invalidation reconnects and succeeds", async () => {
+    const client = await startedClient();
+
+    // First call fails — invalidates session.
+    mocks().callTool.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(client.callTool("memory_list", {})).rejects.toThrow("connection lost");
+    expect(client.isRunning).toBe(false);
+
+    // Second call should reconnect and succeed.
+    vi.clearAllMocks();
+    mocks().callTool.mockResolvedValueOnce({ content: [] });
     const result = await client.callTool("memory_list", {});
-    expect(result).toEqual({});
 
+    expect(result).toEqual({ content: [] });
+    expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
+    expect(mocks().connect).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+
+  it("reconnect preserves stored command and extraArgs", async () => {
+    const client = new McpClient("/fake/project");
+    await client.start("custom-mcp", ["--enable-hive"]);
+    vi.clearAllMocks();
+
+    await client.reconnect();
+
+    expect(mocks().TransportCtor).toHaveBeenCalledWith({
+      command: "custom-mcp",
+      args: ["--project-dir", "/fake/project", "--enable-hive"],
+      stderr: "pipe",
+    });
+    client.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("McpClient — stderr logging", () => {
+  afterEach(resetMockState);
+
+  it("attaches stderr listener when transport provides stderr stream", async () => {
+    const stderrOn = vi.fn();
+    mocks().transportStderr = { on: stderrOn };
+
+    const client = await startedClient();
+
+    expect(stderrOn).toHaveBeenCalledWith("data", expect.any(Function));
+    client.stop();
+  });
+
+  it("logs stderr output to console.error", async () => {
+    let capturedHandler: ((chunk: Buffer | string) => void) | null = null;
+    mocks().transportStderr = {
+      on: vi.fn((_event: string, handler: (chunk: Buffer | string) => void) => {
+        capturedHandler = handler;
+      }),
+    };
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = await startedClient();
+
+    expect(capturedHandler).not.toBeNull();
+    capturedHandler!(Buffer.from("test error message\n"));
+
+    expect(spy).toHaveBeenCalledWith("[tapps-brain-mcp] test error message");
+    spy.mockRestore();
+    client.stop();
+  });
+
+  it("does not fail when stderr is null", async () => {
+    mocks().transportStderr = null;
+
+    const client = await startedClient();
+    expect(client.isRunning).toBe(true);
     client.stop();
   });
 });

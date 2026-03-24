@@ -46,7 +46,8 @@ docs/planning/
     ├── EPIC-035.md      ← OpenClaw install and upgrade UX consistency (done)
     ├── EPIC-036.md      ← Release gate hardening (done; scripts/release-ready.sh, CI)
     ├── EPIC-037.md      ← OpenClaw plugin SDK realignment — fix API contract to match real SDK (done)
-    └── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
+    ├── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
+    └── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
 ```
 
 ## Why This Structure

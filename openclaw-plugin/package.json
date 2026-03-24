@@ -21,6 +21,9 @@
     "tapps-brain"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0"
+  },
   "peerDependencies": {
     "openclaw": ">=2026.3.7"
   },
