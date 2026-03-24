@@ -117,7 +117,12 @@ declare module "openclaw/plugin-sdk/core" {
   }
 
   export interface BootstrapResult {
-    ok: boolean;
+    /** Whether bootstrap ran and initialized the engine's store. */
+    bootstrapped: boolean;
+    /** Number of historical messages imported (if applicable). */
+    importedMessages?: number;
+    /** Optional reason when bootstrap was skipped. */
+    reason?: string;
   }
 
   export interface IngestResult {
@@ -142,6 +147,9 @@ declare module "openclaw/plugin-sdk/core" {
       details?: unknown;
     };
   }
+
+  /** Runtime-owned context passed to engines that need caller state. */
+  export type ContextEngineRuntimeContext = Record<string, unknown>;
 
   /** The ContextEngine lifecycle interface. */
   export interface ContextEngine {
@@ -178,6 +186,7 @@ declare module "openclaw/plugin-sdk/core" {
       currentTokenCount?: number;
       compactionTarget?: "budget" | "threshold";
       customInstructions?: string;
+      runtimeContext?: ContextEngineRuntimeContext;
     }): Promise<CompactResult>;
 
     dispose?(): Promise<void>;

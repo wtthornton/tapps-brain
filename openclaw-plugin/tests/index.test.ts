@@ -555,7 +555,7 @@ describe("TappsBrainEngine — bootstrap first-run import (028-E)", () => {
       "/tmp/workspace",
     );
     // Should NOT throw — agent_register error is swallowed intentionally
-    await expect(engine.bootstrap()).resolves.toEqual({ ok: true });
+    await expect(engine.bootstrap()).resolves.toEqual({ bootstrapped: true });
   });
 });
 

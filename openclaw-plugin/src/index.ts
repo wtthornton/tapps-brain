@@ -20,6 +20,7 @@ import type {
   ContextEngineInfo,
   AgentMessage,
   AssembleResult,
+  BootstrapResult,
   CompactResult,
   IngestResult,
 } from "openclaw/plugin-sdk/core";
@@ -147,7 +148,7 @@ export class TappsBrainEngine {
    * (ingest/assemble/compact) can proceed. Rejects `this.ready` on
    * failure so hooks return graceful fallbacks instead of hanging.
    */
-  async bootstrap(): Promise<{ ok: boolean }> {
+  async bootstrap(): Promise<{ bootstrapped: boolean }> {
     try {
       const extraArgs: string[] = [];
       if (this.agentId) {
@@ -189,7 +190,7 @@ export class TappsBrainEngine {
 
       // Signal ready — all queued hooks can now proceed
       this.readyResolve();
-      return { ok: true };
+      return { bootstrapped: true };
     } catch (err) {
       // Signal failure — queued hooks will take graceful fallback paths
       const error = err instanceof Error ? err : new Error(String(err));
@@ -370,13 +371,9 @@ export class TappsBrainEngine {
    * Awaits `this.ready` to ensure the MCP client is initialised before
    * any tool calls.
    */
-  async compact(params: {
-    sessionId: string;
-    sessionKey?: string;
-    sessionFile: string;
-    tokenBudget?: number;
-    force?: boolean;
-  }): Promise<CompactResult> {
+  async compact(
+    params: Parameters<ContextEngine["compact"]>[0],
+  ): Promise<CompactResult> {
     // Wait for bootstrap — graceful fallback if it failed
     try {
       await this.ready;
