@@ -206,7 +206,7 @@ class MemoryStore:
                 self._relations.setdefault(src_key, []).append(rel)
 
         # EPIC-029: Lazy-initialized feedback store.
-        self._feedback_store_instance: "FeedbackStore | None" = None
+        self._feedback_store_instance: FeedbackStore | None = None
 
         # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
         # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
@@ -312,7 +312,7 @@ class MemoryStore:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(  # noqa: PLR0915
+    def save(
         self,
         key: str,
         value: str,
@@ -514,9 +514,7 @@ class MemoryStore:
             _correction_targets: list[tuple[str, float]] = []
             _now_corr = time.monotonic()
             with self._lock:
-                _correction_targets = self._detect_correction(
-                    session_id, entry.value, _now_corr
-                )
+                _correction_targets = self._detect_correction(session_id, entry.value, _now_corr)
             for _ck, _overlap in _correction_targets:
                 self._emit_implicit_feedback(
                     "implicit_correction",
@@ -1240,9 +1238,7 @@ class MemoryStore:
             # Build list of recalled entry keys from this result
             _memories: list[Any] = getattr(result, "memories", [])
             _recalled_keys: list[str] = [
-                str(m.get("key", ""))
-                for m in _memories
-                if isinstance(m, dict) and m.get("key")
+                str(m.get("key", "")) for m in _memories if isinstance(m, dict) and m.get("key")
             ]
 
             # EPIC-029 story 029-7: remember which keys came from Hive (per session).
@@ -1265,9 +1261,7 @@ class MemoryStore:
             _reform_targets: list[tuple[str, float]] = []
             _now_track = time.monotonic()
             with self._lock:
-                _reform_targets = self._detect_reformulation(
-                    session_id, message, _now_track
-                )
+                _reform_targets = self._detect_reformulation(session_id, message, _now_track)
                 # Update query log with current query + recalled keys (after detection
                 # so we don't match the current query against itself)
                 _q_log = self._session_query_log.setdefault(session_id, [])
@@ -1474,7 +1468,9 @@ class MemoryStore:
         if self._persistence.get_schema_version() < 10:
             return
         self._diagnostics_history_store = DiagnosticsHistoryStore(self._persistence.db_path)
-        self._anomaly_detector.reset_from_history(self._diagnostics_history_store.history(limit=500))
+        self._anomaly_detector.reset_from_history(
+            self._diagnostics_history_store.history(limit=500)
+        )
 
     def diagnostics(
         self,
@@ -1536,7 +1532,7 @@ class MemoryStore:
         if self._diagnostics_history_store is None:
             return []
         return cast(
-            list[dict[str, Any]],
+            "list[dict[str, Any]]",
             self._diagnostics_history_store.history(limit=limit),
         )
 
@@ -1837,7 +1833,7 @@ class MemoryStore:
         limit: int = 10,
         *,
         semantic: bool = False,
-    ) -> list[Any]:  # noqa: ANN401
+    ) -> list[Any]:
         """Ranked knowledge gaps (explicit reports + zero-result recall)."""
         from tapps_brain.flywheel import GapTracker
 
@@ -1862,7 +1858,7 @@ class MemoryStore:
     # Feedback API (EPIC-029)
     # ------------------------------------------------------------------
 
-    def _get_feedback_store(self) -> "FeedbackStore":
+    def _get_feedback_store(self) -> FeedbackStore:
         """Return the lazily-initialized FeedbackStore.
 
         The store shares the project's ``memory.db`` and audit log.
@@ -1882,9 +1878,7 @@ class MemoryStore:
             )
         return self._feedback_store_instance
 
-    def _propagate_feedback_to_hive(
-        self, event: "FeedbackEvent", session_id: str | None
-    ) -> None:
+    def _propagate_feedback_to_hive(self, event: FeedbackEvent, session_id: str | None) -> None:
         """Mirror feedback to the Hive when the entry was Hive-sourced (STORY-029.7).
 
         Resolves namespace from the per-session hive recall index, or from
@@ -1924,7 +1918,7 @@ class MemoryStore:
                 timestamp=event.timestamp,
                 source_project=str(self._project_root.resolve()),
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug(
                 "hive_feedback_propagate_failed",
                 entry_key=ek,
@@ -1939,7 +1933,7 @@ class MemoryStore:
         rating: str = "helpful",
         session_id: str | None = None,
         details: dict[str, Any] | None = None,
-    ) -> "FeedbackEvent":
+    ) -> FeedbackEvent:
         """Record a user rating for a recalled memory entry.
 
         Convenience wrapper that creates a ``recall_rated`` feedback event.
@@ -1966,9 +1960,7 @@ class MemoryStore:
             "outdated": 0.0,
         }
         if rating not in _RATING_SCORES:
-            raise ValueError(
-                f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}"
-            )
+            raise ValueError(f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}")
 
         event = FeedbackEvent(
             event_type="recall_rated",
@@ -1988,7 +1980,7 @@ class MemoryStore:
         *,
         session_id: str | None = None,
         details: dict[str, Any] | None = None,
-    ) -> "FeedbackEvent":
+    ) -> FeedbackEvent:
         """Report a knowledge gap — a query that returned insufficient results.
 
         Creates a ``gap_reported`` feedback event.  The *query* string is
@@ -2020,7 +2012,7 @@ class MemoryStore:
         *,
         session_id: str | None = None,
         details: dict[str, Any] | None = None,
-    ) -> "FeedbackEvent":
+    ) -> FeedbackEvent:
         """Flag a quality issue with a specific memory entry.
 
         Creates an ``issue_flagged`` feedback event.  The *issue* description
@@ -2056,7 +2048,7 @@ class MemoryStore:
         session_id: str | None = None,
         utility_score: float | None = None,
         details: dict[str, Any] | None = None,
-    ) -> "FeedbackEvent":
+    ) -> FeedbackEvent:
         """Record a generic feedback event (built-in or custom event type).
 
         This is the low-level API that accepts any valid Object-Action
@@ -2102,7 +2094,7 @@ class MemoryStore:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
-    ) -> "list[FeedbackEvent]":
+    ) -> list[FeedbackEvent]:
         """Query recorded feedback events with optional filters.
 
         Convenience wrapper around ``FeedbackStore.query()``.
@@ -2215,7 +2207,7 @@ class MemoryStore:
             self._get_feedback_store().record(event)
             self._metrics.increment(f"store.feedback.{event_type}")
             self._propagate_feedback_to_hive(event, session_id)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug(
                 "implicit_feedback_emit_failed",
                 event_type=event_type,

@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-23 (America/Chicago) — release **v1.3.0**; feedback, diagnostics, flywheel (v9–v11 schema); EPIC-033 done
+**Last updated:** 2026-03-24 (America/Chicago) — release **v1.3.0**; EPIC-034/035/036 complete; docs and Cursor rules aligned with release gate
 
 **Package version (PyPI / `pyproject.toml`):** **1.3.0**
 
@@ -14,6 +14,8 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 | Coverage | ≥ 95% | `tapps_brain` package (`--cov-fail-under=95`) |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
+| Release gate | green before publish | `bash scripts/release-ready.sh` (WSL/Git Bash on Windows); CI job `release-ready` |
+| OpenClaw docs | no install/count drift | `python scripts/check_openclaw_docs_consistency.py` |
 
 ## Storage / schema
 
@@ -86,15 +88,53 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-031 | Continuous Improvement Flywheel | done | 2026-03-23 |
 | EPIC-032 | OTel GenAI semantic conventions | planned | — |
 | EPIC-033 | OpenClaw Plugin SDK Alignment | done | 2026-03-23 |
+| EPIC-034 | Production readiness QA remediation | done | 2026-03-24 |
+| EPIC-035 | OpenClaw install and upgrade UX consistency | done | 2026-03-24 |
+| EPIC-036 | Release gate hardening for OpenClaw distribution | done | 2026-03-24 |
 
 ## Current focus
 
 **Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`).
 
 **Next (see fix_plan):**
-- **HOUSEKEEPING-002** — Update stale planning docs.
-- **QUALITY-001** — Full QA gate (tests, lint, types).
+- **HOUSEKEEPING-002** / **QUALITY-001** — remaining fix_plan items as applicable.
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
+
+## READY-036 release gate (2026-03-24)
+
+- **Script:** `scripts/release-ready.sh` — fail-fast packaging, version tests, pytest (optional skip via `SKIP_FULL_PYTEST=1`), ruff, mypy, `openclaw-plugin` npm ci/build/test.
+- **Docs checker:** `scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
+- **CI:** `.github/workflows/ci.yml` — `lint` runs docs checker; `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
+- **Remediation on failure:** `scripts/publish-checklist.md`, `docs/guides/openclaw-runbook.md`, `docs/planning/epics/EPIC-036.md`.
+- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` ([Unreleased]).
+
+## READY-035 docs consistency evidence (2026-03-24)
+
+- Canonical runbook added: `docs/guides/openclaw-runbook.md` (PyPI + Git-only paths).
+- OpenClaw command usage normalized to `openclaw plugin install` across:
+  - `docs/guides/openclaw.md`
+  - `docs/guides/openclaw-install-from-git.md`
+  - `openclaw-plugin/README.md`
+  - `openclaw-plugin/UPGRADING.md`
+  - `openclaw-skill/SKILL.md` (cross-link to canonical runbook)
+- Capability/status claims reconciled:
+  - stale `41 MCP tools` references removed from OpenClaw guide
+  - resource list aligned to 7 URIs (`stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`)
+  - stale planned wording removed for shipped OpenClaw migration/tooling references
+
+## READY-034 QA evidence (2026-03-24)
+
+- `ruff check src/ tests/` -> pass.
+- `ruff format --check src/ tests/` -> pass.
+- `mypy --strict src/tapps_brain/` -> pass.
+- `cd openclaw-plugin && npm test` -> pass; timeout-path unhandled rejection eliminated.
+- Full release-candidate runbook executed in one command:
+  - `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
+  - `ruff check src/ tests/`
+  - `ruff format --check src/ tests/`
+  - `mypy --strict src/tapps_brain/`
+  - `cd openclaw-plugin && npm test`
+- Outcome: pass (`2341 passed, 3 skipped, 7 deselected`, coverage `95.16%`).
 
 ## WSL / Windows
 

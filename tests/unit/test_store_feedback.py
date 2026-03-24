@@ -16,14 +16,13 @@ Covers:
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 
 from tapps_brain.feedback import FeedbackConfig, FeedbackEvent
 from tapps_brain.store import MemoryStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -30,8 +30,11 @@ npm install
 npm run build
 
 # Install into OpenClaw
-openclaw plugin install ./openclaw-plugin
+openclaw plugin install .
 ```
+
+Canonical operator runbook (install + upgrade, PyPI + Git-only):
+`docs/guides/openclaw-runbook.md`
 
 ## Activate
 

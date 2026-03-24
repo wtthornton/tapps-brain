@@ -742,9 +742,7 @@ def create_server(  # noqa: PLR0915
     def flywheel_gaps(limit: int = 10, semantic: bool = False) -> str:
         """Return top knowledge gaps as JSON."""
         gaps = store.knowledge_gaps(limit=limit, semantic=semantic)
-        return json.dumps(
-            {"gaps": [g.model_dump(mode="json") for g in gaps], "count": len(gaps)}
-        )
+        return json.dumps({"gaps": [g.model_dump(mode="json") for g in gaps], "count": len(gaps)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def flywheel_report(period_days: int = 7) -> str:

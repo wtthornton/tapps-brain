@@ -15,8 +15,8 @@ uv sync --extra dev
 # Install with optional vector search support
 uv sync --extra dev --extra vector
 
-# Run all tests (~2300+ tests, coverage gate ≥95%)
-pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+# Run all tests (~2300+ tests, coverage gate ≥95%; exclude benchmarks in CI-style runs)
+pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Run a single test file
 pytest tests/unit/test_memory_store.py -v
@@ -42,6 +42,11 @@ pytest tests/benchmarks/ -v --benchmark-only
 
 # Build package
 uv build
+
+# Production release gate (packaging, version tests, pytest, ruff, mypy, plugin tests)
+# Linux / macOS / WSL: bash scripts/release-ready.sh
+# CI uses SKIP_FULL_PYTEST=1 when the test matrix already ran pytest.
+# OpenClaw doc drift only: python scripts/check_openclaw_docs_consistency.py
 ```
 
 ## Architecture
@@ -81,6 +86,17 @@ uv build
 - Tests ignore ANN (annotations) and PLR (pylint refactor) rules
 - Coverage minimum: 95%
 - LF line endings enforced via `.gitattributes`
+
+## Pre-release and publishing
+
+Before tagging or publishing PyPI / OpenClaw artifacts:
+
+- **Full gate (recommended):** `bash scripts/release-ready.sh` — packaging build, wheel smoke import, version consistency tests, pytest (skip in CI with `SKIP_FULL_PYTEST=1` when the matrix already ran tests), ruff, mypy, `openclaw-plugin` `npm ci` / build / test.
+- **OpenClaw docs only:** `python scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
+- **Checklist:** `scripts/publish-checklist.md`
+- **OpenClaw operators:** `docs/guides/openclaw-runbook.md` (PyPI + Git paths), `docs/guides/openclaw.md`
+
+On **Windows**, run the shell gate from **WSL** or **Git Bash** (see `docs/planning/STATUS.md`).
 
 ## Planning
 

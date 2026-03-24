@@ -13,7 +13,7 @@
 
 A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 ranking, dual decay models, automatic consolidation,<br>cross-project federation, and pluggable vector search.
 
-[Getting Started](docs/guides/getting-started.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md)
+[Getting Started](docs/guides/getting-started.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md) · [OpenClaw](docs/guides/openclaw.md) · [OpenClaw runbook](docs/guides/openclaw-runbook.md)
 
 </div>
 
@@ -117,6 +117,8 @@ pip install tapps-brain[all]            # everything above (except otel)
 ```
 
 > **Contributors:** `uv sync --extra dev` installs the full dev stack (pytest, ruff, mypy, mcp, typer).
+
+> **Pre-release / CI parity:** `bash scripts/release-ready.sh` (Linux, macOS, WSL, or Git Bash on Windows) runs packaging, tests, lint, types, and the OpenClaw plugin build. OpenClaw-facing doc drift: `python scripts/check_openclaw_docs_consistency.py`. Details: [`scripts/publish-checklist.md`](scripts/publish-checklist.md), [`docs/planning/STATUS.md`](docs/planning/STATUS.md).
 
 ---
 
@@ -517,8 +519,8 @@ All writes pass through prompt injection detection and content sanitization. The
 # Requires Python 3.12+ and uv
 uv sync --extra dev
 
-# Tests (~2300+ collected; coverage gate ≥95%)
-pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+# Tests (~2300+ collected; coverage gate ≥95%; benchmarks excluded like CI release gate)
+pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Lint + format
 ruff check src/ tests/ && ruff format --check src/ tests/
@@ -528,6 +530,9 @@ mypy --strict src/tapps_brain/
 
 # Benchmarks
 pytest tests/benchmarks/ -v --benchmark-only
+
+# Production release gate (also what CI job `release-ready` runs, with SKIP_FULL_PYTEST=1 there)
+bash scripts/release-ready.sh
 ```
 
 <details>
@@ -552,6 +557,8 @@ tests/
 | Format | 100 char lines | ruff format |
 | Types | strict | mypy |
 | Line endings | LF | .gitattributes |
+| Release gate | green before publish | `scripts/release-ready.sh` |
+| OpenClaw docs | no install/count drift | `scripts/check_openclaw_docs_consistency.py` |
 
 ---
 
@@ -565,7 +572,9 @@ tests/
 | [Hive Guide](docs/guides/hive.md) | Cross-agent memory sharing: namespaces, propagation, conflict resolution |
 | [MCP Server Guide](docs/guides/mcp.md) | Client setup for Claude Code, Cursor, VS Code Copilot; full tool reference |
 | [OpenClaw Guide](docs/guides/openclaw.md) | Install, configure, and test with OpenClaw |
+| [OpenClaw runbook](docs/guides/openclaw-runbook.md) | Canonical PyPI + Git install, upgrade, verify, restart |
 | [Auto-Recall Guide](docs/guides/auto-recall.md) | Recall orchestrator usage and integration patterns |
+| [Publish checklist](scripts/publish-checklist.md) | PyPI pre-flight (includes release gate command) |
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup |
 | [Changelog](CHANGELOG.md) | Version history |
 
@@ -581,6 +590,7 @@ tests/
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |
 | [EPIC-032](docs/planning/epics/EPIC-032.md) | OTel GenAI conventions | Planned |
 | [EPIC-033](docs/planning/epics/EPIC-033.md) | OpenClaw plugin SDK alignment | Done |
+| [EPIC-034](docs/planning/epics/EPIC-034.md)–[036](docs/planning/epics/EPIC-036.md) | Production QA, OpenClaw doc consistency, release gate | Done |
 
 See [`docs/planning/STATUS.md`](docs/planning/STATUS.md) and [`docs/planning/epics/`](docs/planning/epics/) for the full list (including code-review epics 017–025).
 

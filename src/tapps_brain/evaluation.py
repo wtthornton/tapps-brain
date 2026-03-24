@@ -148,7 +148,12 @@ class EvalSuite(BaseModel):
         for qid, m in qrels_raw.items():
             if isinstance(m, dict):
                 qrels[str(qid)] = {str(d): int(g) for d, g in m.items()}
-        return cls(name=name, corpus=EvalCorpus(docs=docs), queries=EvalQueries(queries=queries), qrels=EvalQrels(qrels=qrels))
+        return cls(
+            name=name,
+            corpus=EvalCorpus(docs=docs),
+            queries=EvalQueries(queries=queries),
+            qrels=EvalQrels(qrels=qrels),
+        )
 
     @classmethod
     def load_yaml(cls, path: Path) -> EvalSuite:
@@ -401,7 +406,7 @@ class AnthropicJudge:
             )
         import anthropic  # type: ignore[import-not-found]
 
-        self._client = anthropic.Anthropic()  # noqa: TC002
+        self._client = anthropic.Anthropic()
         self._model = model
 
     def judge_relevance(self, query: str, memory_value: str) -> JudgeResult:

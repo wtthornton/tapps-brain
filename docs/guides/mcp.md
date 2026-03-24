@@ -386,3 +386,12 @@ Use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) to
 ```bash
 npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/project
 ```
+
+## Maintainers: release gate and doc consistency
+
+Before a release, the repo runs an automated gate that includes this MCP surface (54 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
+
+- **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
+- **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`
+
+If you add or rename MCP tools/resources, update `openclaw-skill/SKILL.md` frontmatter and the `EXPECTED_*` constants in `scripts/check_openclaw_docs_consistency.py`.

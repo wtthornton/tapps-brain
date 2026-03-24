@@ -49,6 +49,37 @@
 
 ---
 
+### READY-034: Production readiness QA remediation (EPIC-034)
+
+**Priority: CRITICAL — hard blockers found in readiness review**
+
+- [x] **R34-001.1** Ruff baseline cleanup: fix current lint violations and formatting drift in touched files until `ruff check src/ tests/` and `ruff format --check src/ tests/` pass.
+- [x] **R34-001.2** Stabilize OpenClaw plugin test runner: fix unhandled rejection / timeout cleanup path so `cd openclaw-plugin && npm test` exits 0 without unhandled errors.
+- [x] **R34-001.3** Strict typing pass path: make `mypy --strict src/tapps_brain/` reliably pass in the supported environment; document environment nuance if needed.
+- [x] **R34-001.4** Full QA evidence run: execute tests + lint/format + mypy + plugin tests in one release-candidate runbook, fix any failures, and record outcome in status docs.
+
+---
+
+### READY-035: OpenClaw install/upgrade UX consistency (EPIC-035)
+
+**Priority: HIGH — operator-facing docs currently inconsistent**
+
+- [x] **R35-001.1** Normalize OpenClaw install command docs: choose and apply one canonical install command form across `docs/guides/openclaw*.md`, `openclaw-plugin/README.md`, `openclaw-plugin/UPGRADING.md`, and `openclaw-skill/SKILL.md`.
+- [x] **R35-001.2** Reconcile capability/status claims: remove planned-vs-shipped contradictions and align tool/resource counts + compatibility messaging across OpenClaw docs.
+- [x] **R35-001.3** Publish canonical OpenClaw runbook: create/refresh one source-of-truth install + upgrade flow (PyPI and Git-only), with explicit verify + restart steps and cross-links.
+
+---
+
+### READY-036: Release gate hardening (EPIC-036)
+
+**Priority: HIGH — enforce production readiness continuously**
+
+- [x] **R36-001.1** Add release-ready gate script: create a single command/script that runs packaging build, version-consistency test, full QA checks, and OpenClaw plugin build/test with fail-fast behavior.
+- [x] **R36-001.2** Add docs consistency checker: implement a script to detect OpenClaw command/status/tool-count drift in docs and fail on inconsistency.
+- [x] **R36-001.3** Wire gate into CI + checklist: integrate the release-ready gate and docs checker into CI workflow(s), `scripts/publish-checklist.md`, and `docs/planning/STATUS.md` references.
+
+---
+
 ## Deferred (feature work, not in scope)
 
 | Epic | Title | Priority | Notes |

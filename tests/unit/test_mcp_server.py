@@ -487,7 +487,9 @@ class TestMcpToolHandlerExecution:
         assert all(e["event_type"] == "recall_rated" for e in out["events"])
 
         fb_res = next(
-            r for r in mcp_server._resource_manager.list_resources() if str(r.uri) == "memory://feedback"
+            r
+            for r in mcp_server._resource_manager.list_resources()
+            if str(r.uri) == "memory://feedback"
         )
         snap = json.loads(fb_res.fn())
         assert "events" in snap and snap["count"] >= 1
@@ -547,7 +549,8 @@ class TestMcpToolHandlerExecution:
 
 class TestMcpMain:
     def test_main_version_exits_zero(self, monkeypatch, capsys):
-        from tapps_brain import __version__, mcp_server as ms
+        from tapps_brain import __version__
+        from tapps_brain import mcp_server as ms
 
         monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--version"])
         with pytest.raises(SystemExit) as exc:

@@ -45,7 +45,7 @@ Use this interface for ad-hoc inspection, scripted imports, or one-off memory op
 Start the server and point your editor at it:
 
 ```bash
-tapps-brain-mcp --store-dir /path/to/project --profile repo-brain
+tapps-brain-mcp --project-dir /path/to/project
 ```
 
 Add it to your editor's MCP config (e.g. `.mcp.json` for Claude Code):
@@ -55,7 +55,7 @@ Add it to your editor's MCP config (e.g. `.mcp.json` for Claude Code):
   "mcpServers": {
     "tapps-brain": {
       "command": "tapps-brain-mcp",
-      "args": ["--store-dir", "/path/to/project"]
+      "args": ["--project-dir", "/path/to/project"]
     }
   }
 }
@@ -87,5 +87,6 @@ See the [Profile Catalog](profile-catalog.md) for full details and the [Profile 
 - **Hive (multi-agent):** Share memories across agents → [Hive Guide](hive.md)
 - **MCP setup:** Full client configuration → [MCP Server Guide](mcp.md)
 - **OpenClaw plugin:** ContextEngine integration → [OpenClaw Guide](openclaw.md)
+- **OpenClaw install/upgrade (operators):** Canonical steps → [OpenClaw runbook](openclaw-runbook.md)
 - **Auto-recall:** Prompt injection and capture → [Auto-Recall Guide](auto-recall.md)
 - **Federation:** Cross-project memory → [Federation Guide](federation.md)

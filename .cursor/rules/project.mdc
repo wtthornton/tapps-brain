@@ -17,8 +17,12 @@ uv sync --extra dev
 # Install with optional vector search support
 uv sync --extra dev --extra vector
 
-# Run all tests
-pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+# Run all tests (CI-style: exclude benchmarks)
+pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+
+# Production release gate (packaging, version tests, pytest, ruff, mypy, openclaw-plugin)
+# Linux / macOS / WSL or Git Bash: bash scripts/release-ready.sh
+# OpenClaw doc drift only: python scripts/check_openclaw_docs_consistency.py
 
 # Run a single test file
 pytest tests/unit/test_memory_store.py -v
@@ -41,7 +45,7 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v6). See `docs/planning/STATUS.md` for a current snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v11: feedback v9, diagnostics history v10, flywheel v11). MCP server (`mcp_server.py`) exposes **54** tools and **7** resources. See `docs/planning/STATUS.md` for a current snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 
@@ -69,9 +73,15 @@ mypy --strict src/tapps_brain/
 - Coverage minimum: 95%
 - LF line endings enforced via `.gitattributes`
 
+## OpenClaw (operators)
+
+- Canonical install/upgrade: `docs/guides/openclaw-runbook.md`
+- Full integration guide: `docs/guides/openclaw.md`
+- Pre-publish checklist: `scripts/publish-checklist.md` (uses `bash scripts/release-ready.sh`)
+
 ## Planning
 
-Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`.
+Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`. Task order for Ralph: `.ralph/fix_plan.md`.
 
 ## Ralph (Autonomous Dev Loop)
 

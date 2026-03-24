@@ -1,5 +1,8 @@
 # Install and upgrade tapps-brain for OpenClaw from GitHub (no PyPI)
 
+> Canonical source-of-truth for all install/upgrade paths is
+> [openclaw-runbook.md](./openclaw-runbook.md). This file remains the Git-focused variant.
+
 Use this guide when you want the **Python** package and **`tapps-brain-mcp`** installed or upgraded from the Git repository instead of PyPI. Point an OpenClaw agent or operator at this file (or at `openclaw-skill/SKILL.md`, which links the same steps in prose).
 
 **Repository:** `https://github.com/wtthornton/tapps-brain`
@@ -43,7 +46,7 @@ OpenClaw still needs the **plugin** package built from this repo (not from PyPI)
 cd tapps-brain/openclaw-plugin
 npm install
 npm run build
-openclaw plugin install ./openclaw-plugin
+openclaw plugin install .
 ```
 
 ## 3. OpenClaw config
@@ -105,7 +108,7 @@ pip install -e ".[mcp]"    # pick up pyproject / entry-point changes
 cd openclaw-plugin
 npm install
 npm run build
-openclaw plugin install ./openclaw-plugin
+openclaw plugin install .
 ```
 
 ### C. Restart OpenClaw

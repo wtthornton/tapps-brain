@@ -48,7 +48,9 @@ class FlywheelConfig(BaseModel):
     """Tunable flywheel behaviour."""
 
     base_K: float = Field(default=1.0, gt=0.0)
-    tier_volatility: dict[str, float] = Field(default_factory=lambda: dict(_DEFAULT_TIER_VOLATILITY))
+    tier_volatility: dict[str, float] = Field(
+        default_factory=lambda: dict(_DEFAULT_TIER_VOLATILITY)
+    )
     min_confidence: float = Field(default=0.05, ge=0.0, le=1.0)
     store_self_report_memory: bool = Field(
         default=False,
@@ -320,11 +322,7 @@ class GapTracker:
                         seen.add(d)
                         descs.append(d)
             recent = sum(1 for g in group if _parse_iso(g[1]) >= window_recent)
-            prev = sum(
-                1
-                for g in group
-                if window_prev <= _parse_iso(g[1]) < window_recent
-            )
+            prev = sum(1 for g in group if window_prev <= _parse_iso(g[1]) < window_recent)
             if recent > prev:
                 trend = 1.5
             elif recent < prev:
@@ -552,9 +550,7 @@ class _KnowledgeGapsSection:
     def render(self, data: ReportData) -> str:
         lines = ["## Knowledge gaps"]
         for g in data.knowledge_gaps[:5]:
-            lines.append(
-                f"- {g.query_pattern!r} (priority {g.priority_score}, count {g.count})"
-            )
+            lines.append(f"- {g.query_pattern!r} (priority {g.priority_score}, count {g.count})")
         return "\n".join(lines) + "\n"
 
 
@@ -737,9 +733,7 @@ def aggregate_hive_feedback(
     )
 
     hotspots = [
-        {"entry_key": k, "project_count": len(v)}
-        for k, v in issue_projects.items()
-        if len(v) >= 2
+        {"entry_key": k, "project_count": len(v)} for k, v in issue_projects.items() if len(v) >= 2
     ]
 
     return HiveFeedbackReport(

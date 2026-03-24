@@ -1944,7 +1944,9 @@ def flywheel_gaps_cmd(
     project_dir: ProjectDir = None,
     as_json: JsonFlag = False,
     limit: Annotated[int, typer.Option(min=1, max=100)] = 10,
-    semantic: Annotated[bool, typer.Option(help="Use optional embedding+HDBSCAN clustering.")] = False,
+    semantic: Annotated[
+        bool, typer.Option(help="Use optional embedding+HDBSCAN clustering.")
+    ] = False,
 ) -> None:
     """List prioritized knowledge gaps."""
     store = _get_store(project_dir)
@@ -1974,13 +1976,13 @@ def flywheel_gaps_cmd(
 def flywheel_report_cmd(
     project_dir: ProjectDir = None,
     period: Annotated[int, typer.Option("--period", help="Days of history window.")] = 7,
-    format: Annotated[str, typer.Option("--format", help="json or markdown.")] = "markdown",
+    output_format: Annotated[str, typer.Option("--format", help="json or markdown.")] = "markdown",
 ) -> None:
     """Generate a quality self-report."""
     store = _get_store(project_dir)
     try:
         rep = store.generate_report(period_days=period)
-        fmt = format.strip().lower()
+        fmt = output_format.strip().lower()
         if fmt == "json":
             _output(rep.model_dump(mode="json"), as_json=True)
         else:
@@ -1994,7 +1996,7 @@ def flywheel_evaluate_cmd(
     suite_path: Annotated[str, typer.Argument(help="BEIR directory or YAML suite file.")],
     project_dir: ProjectDir = None,
     k: Annotated[int, typer.Option(min=1, max=50)] = 5,
-    format: Annotated[str, typer.Option("--format", help="json or table.")] = "json",
+    output_format: Annotated[str, typer.Option("--format", help="json or table.")] = "json",
 ) -> None:
     """Run offline retrieval evaluation against the store."""
     from tapps_brain.evaluation import EvalSuite, evaluate
@@ -2013,7 +2015,7 @@ def flywheel_evaluate_cmd(
             typer.secho("Expected a BEIR directory or .yaml suite.", fg=typer.colors.RED)
             raise typer.Exit(code=1)
         report = evaluate(store, suite, k=k)
-        fmt = format.strip().lower()
+        fmt = output_format.strip().lower()
         if fmt == "table":
             typer.echo(f"Suite: {report.suite_name}  k={report.k}  passed={report.passed}")
             typer.echo(f"MRR={report.mrr:.4f}  NDCG@k={report.mean_ndcg_at_k:.4f}")

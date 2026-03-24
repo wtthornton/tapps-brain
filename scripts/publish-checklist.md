@@ -4,9 +4,21 @@ Manual steps to publish a new release of `tapps-brain` to PyPI.
 
 ## Pre-flight
 
-- [ ] All tests pass: `pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
+**Recommended single gate (same checks as CI `release-ready` job, full pytest locally):**
+
+```bash
+bash scripts/release-ready.sh
+```
+
+On Windows, run the script from **WSL** or **Git Bash** (see `docs/planning/STATUS.md`).
+
+That script runs, in order: OpenClaw docs consistency (`scripts/check_openclaw_docs_consistency.py`), `uv build`, wheel smoke import, version consistency tests, full pytest (unless `SKIP_FULL_PYTEST=1`), ruff + format + mypy, and `openclaw-plugin` `npm ci` / build / test.
+
+- [ ] Release gate green: `bash scripts/release-ready.sh` (or equivalent stages below if you must run piecemeal)
+- [ ] All tests pass: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
 - [ ] Lint clean: `ruff check src/ tests/ && ruff format --check src/ tests/`
 - [ ] Type check clean: `mypy --strict src/tapps_brain/`
+- [ ] OpenClaw docs consistency: `python scripts/check_openclaw_docs_consistency.py` (also inside release gate)
 - [ ] Version bump in `pyproject.toml` (`version = "X.Y.Z"`)
 - [ ] Version strings consistent across:
   - `pyproject.toml`

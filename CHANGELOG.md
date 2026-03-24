@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Release gate** — `scripts/release-ready.sh`: packaging build, wheel smoke import, version consistency tests, pytest (optional `SKIP_FULL_PYTEST=1` in CI), ruff, mypy, `openclaw-plugin` npm ci/build/test.
+- **OpenClaw docs checker** — `scripts/check_openclaw_docs_consistency.py` (canonical install command, SKILL tool/resource counts vs baseline, runbook presence).
+- **CI** — `.github/workflows/ci.yml`: lint runs docs checker; `release-ready` job runs the shell gate after the test matrix.
+- **Operator docs** — `docs/guides/openclaw-runbook.md` (canonical PyPI + Git install/upgrade); cross-links from OpenClaw guide, plugin README, skill docs, and `scripts/publish-checklist.md`.
+
 ---
 
 ## [1.3.0] — 2026-03-23

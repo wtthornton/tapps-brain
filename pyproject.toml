@@ -139,11 +139,14 @@ select = [
     "PLR",  # pylint refactor
 ]
 ignore = [
-    "ANN101",  # missing self annotation (removed in newer ruff)
-    "ANN102",  # missing cls annotation (removed in newer ruff)
     "PLR0913", # too many arguments (inherent to dispatch functions)
     "PLR0912", # too many branches
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ANN", "PLR"]
+"tests/**/*.py" = ["ANN", "PLR", "TCH", "E402", "F841", "E741", "RUF002"]
+"src/tapps_brain/_protocols.py" = ["ANN401"]
+"src/tapps_brain/diagnostics.py" = ["RUF001", "RUF002", "TC003", "PLR2004", "SIM108", "SIM105"]
+"src/tapps_brain/evaluation.py" = ["RUF002", "TC003", "N818", "PLR2004", "E501"]
+"src/tapps_brain/flywheel.py" = ["TC001", "N815", "N814", "ANN401", "SIM108", "SIM102", "PLR2004"]
+"src/tapps_brain/store.py" = ["PLR0915", "PLR2004", "N806"]

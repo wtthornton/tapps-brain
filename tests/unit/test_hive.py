@@ -1000,7 +1000,8 @@ class TestPropagationEngineUnknownScope:
     """PropagationEngine.propagate() should warn on unknown effective_scope values."""
 
     def test_unknown_scope_emits_warning_and_uses_domain(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Unknown scope falls back to domain (agent_profile) with a warning."""
         from unittest.mock import MagicMock, patch

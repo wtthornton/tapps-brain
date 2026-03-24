@@ -421,20 +421,16 @@ class MemoryPersistence:
             )
         """)
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feedback_event_type "
-            "ON feedback_events(event_type)"
+            "CREATE INDEX IF NOT EXISTS idx_feedback_event_type ON feedback_events(event_type)"
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feedback_timestamp "
-            "ON feedback_events(timestamp)"
+            "CREATE INDEX IF NOT EXISTS idx_feedback_timestamp ON feedback_events(timestamp)"
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feedback_entry_key "
-            "ON feedback_events(entry_key)"
+            "CREATE INDEX IF NOT EXISTS idx_feedback_entry_key ON feedback_events(entry_key)"
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feedback_session_id "
-            "ON feedback_events(session_id)"
+            "CREATE INDEX IF NOT EXISTS idx_feedback_session_id ON feedback_events(session_id)"
         )
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
@@ -454,8 +450,7 @@ class MemoryPersistence:
             )
         """)
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_diag_hist_recorded "
-            "ON diagnostics_history(recorded_at)"
+            "CREATE INDEX IF NOT EXISTS idx_diag_hist_recorded ON diagnostics_history(recorded_at)"
         )
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",

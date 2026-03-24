@@ -353,7 +353,7 @@ export class McpClient {
     const body = JSON.stringify(request);
     const message = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
 
-    return new Promise<unknown>((res, rej) => {
+    const rpcPromise = new Promise<unknown>((res, rej) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         rej(new Error(`MCP request timeout after ${REQUEST_TIMEOUT_MS}ms: ${method}`));
@@ -372,6 +372,11 @@ export class McpClient {
 
       this.process!.stdin!.write(message, "utf-8");
     });
+
+    // Prevent transient unhandled-rejection noise when fake timers trigger a
+    // timeout before the caller attaches their rejection assertion/handler.
+    void rpcPromise.catch(() => {});
+    return rpcPromise;
   }
 
   /**

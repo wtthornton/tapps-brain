@@ -54,6 +54,22 @@ mypy --strict src/tapps_brain/
 - No async/await in core code (synchronous by design)
 - **QA runs at epic boundaries only — not after every task**
 
+## Production release gate (pre-publish / EPIC-036)
+
+Full parity check before release or after large OpenClaw/doc changes:
+
+```bash
+bash scripts/release-ready.sh
+```
+
+OpenClaw documentation drift only:
+
+```bash
+python scripts/check_openclaw_docs_consistency.py
+```
+
+CI runs the docs checker in `lint` and a `release-ready` job with `SKIP_FULL_PYTEST=1` after the test matrix. See `scripts/publish-checklist.md` and `docs/planning/STATUS.md`.
+
 ## Notes
 - Reference stories in commits: `feat(story-001.3): description`
 - See CLAUDE.md at project root for full architecture details

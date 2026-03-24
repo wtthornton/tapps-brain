@@ -20,14 +20,11 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 
-from tapps_brain.feedback import FeedbackConfig, FeedbackEvent
+from tapps_brain.feedback import FeedbackConfig
 from tapps_brain.store import MemoryStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -194,9 +191,7 @@ class TestReinforceWithSessionId:
         events = store.query_feedback(event_type="implicit_positive")
         assert events == []
 
-    def test_reinforce_after_manual_recall_log_emits_positive(
-        self, store: MemoryStore
-    ) -> None:
+    def test_reinforce_after_manual_recall_log_emits_positive(self, store: MemoryStore) -> None:
         """Manually inject a recall log entry to simulate a prior recall."""
         _populate(store)
         with store._lock:
@@ -279,9 +274,7 @@ class TestRecallWithSessionId:
         assert ev.session_id == "sess-neg"
         assert ev.utility_score == pytest.approx(-0.1)
 
-    def test_no_negative_when_reinforced_before_window_expires(
-        self, store: MemoryStore
-    ) -> None:
+    def test_no_negative_when_reinforced_before_window_expires(self, store: MemoryStore) -> None:
         """If the entry was reinforced, no negative event on expiry."""
         _populate(store, "key_pos", "value")
         old_time = time.monotonic() - 400
@@ -527,7 +520,9 @@ class TestDetectReformulation:
         # Jaccard similarity is very low
         now = time.monotonic()
         with store._lock:
-            store._session_query_log["sess"] = [("completely different words here", ["k1"], now - 10)]
+            store._session_query_log["sess"] = [
+                ("completely different words here", ["k1"], now - 10)
+            ]
             result = store._detect_reformulation("sess", "unrelated topic query", now)
         assert result == []
 
@@ -535,9 +530,7 @@ class TestDetectReformulation:
         # "how to fix python error" vs "how to fix python bug" → high Jaccard
         now = time.monotonic()
         with store._lock:
-            store._session_query_log["sess"] = [
-                ("how to fix python error", ["k1", "k2"], now - 20)
-            ]
+            store._session_query_log["sess"] = [("how to fix python error", ["k1", "k2"], now - 20)]
             result = store._detect_reformulation("sess", "how to fix python bug", now)
         keys = [k for k, _ in result]
         assert "k1" in keys
@@ -548,9 +541,7 @@ class TestDetectReformulation:
         # "how to fix python error" vs "how to fix python bug" → 4/6 ≈ 0.667
         now = time.monotonic()
         with store._lock:
-            store._session_query_log["sess"] = [
-                ("how to fix python error", ["k1"], now - 10)
-            ]
+            store._session_query_log["sess"] = [("how to fix python error", ["k1"], now - 10)]
             result = store._detect_reformulation("sess", "how to fix python bug", now)
         assert len(result) >= 1
         for _key, sim in result:
@@ -693,9 +684,7 @@ class TestDetectCorrection:
         # min(5, 5) = 5; overlap = 2 tokens → 2/5 = 0.4 NOT > 0.4
         now = time.monotonic()
         with store._lock:
-            store._session_recalled_values["sess"] = [
-                ("k1", "a b c d e", now - 10)
-            ]
+            store._session_recalled_values["sess"] = [("k1", "a b c d e", now - 10)]
             result = store._detect_correction("sess", "a b x y z", now)
         # 2/5 = 0.4 — NOT above threshold (strict >)
         assert result == []
@@ -704,9 +693,7 @@ class TestDetectCorrection:
         # min(5, 5)=5; overlap=3 → 3/5=0.6 > 0.4
         now = time.monotonic()
         with store._lock:
-            store._session_recalled_values["sess"] = [
-                ("k1", "a b c d e", now - 10)
-            ]
+            store._session_recalled_values["sess"] = [("k1", "a b c d e", now - 10)]
             result = store._detect_correction("sess", "a b c x y", now)
         assert len(result) == 1
         assert result[0][0] == "k1"
@@ -722,7 +709,9 @@ class TestReformulationIntegration:
 
     def test_reformulation_emits_implicit_correction(self, store: MemoryStore) -> None:
         """Simulate Q1 recall then Q2 (reformulation) → implicit_correction for Q1 entries."""
-        store.save("arch_entry", "python memory management architecture pattern", tier="architectural")
+        store.save(
+            "arch_entry", "python memory management architecture pattern", tier="architectural"
+        )
 
         # Manually plant the query log to simulate Q1 recall returning arch_entry
         now = time.monotonic()
@@ -735,9 +724,7 @@ class TestReformulationIntegration:
         store.recall("python memory architecture management", session_id="sess-r")
 
         events = store.query_feedback(event_type="implicit_correction")
-        reformulation_events = [
-            e for e in events if e.details.get("type") == "reformulation"
-        ]
+        reformulation_events = [e for e in events if e.details.get("type") == "reformulation"]
         assert len(reformulation_events) >= 1
         assert any(e.entry_key == "arch_entry" for e in reformulation_events)
 
@@ -839,7 +826,9 @@ class TestCorrectionIntegration:
         with store._lock:
             store._session_recalled_values["sess-low"] = [("k_orig", recalled_val, now - 5)]
 
-        store.save("k_new", "frontend css layout grid flexbox", tier="context", session_id="sess-low")
+        store.save(
+            "k_new", "frontend css layout grid flexbox", tier="context", session_id="sess-low"
+        )
         events = store.query_feedback(event_type="implicit_correction")
         assert events == []
 
@@ -849,11 +838,23 @@ class TestCorrectionIntegration:
         with store._lock:
             store._session_recalled_values["sess-con"] = [("k1", recalled_val, now - 5)]
 
-        store.save("k_new", "python memory management garbage heap allocation", tier="pattern", session_id="sess-con")
+        store.save(
+            "k_new",
+            "python memory management garbage heap allocation",
+            tier="pattern",
+            session_id="sess-con",
+        )
 
         # Second save with same session — should NOT emit again (k1 consumed)
-        store.save("k_new2", "python memory management garbage collection allocation", tier="pattern", session_id="sess-con")
+        store.save(
+            "k_new2",
+            "python memory management garbage collection allocation",
+            tier="pattern",
+            session_id="sess-con",
+        )
 
         events = store.query_feedback(event_type="implicit_correction")
-        corrections = [e for e in events if e.details.get("type") == "correction" and e.entry_key == "k1"]
+        corrections = [
+            e for e in events if e.details.get("type") == "correction" and e.entry_key == "k1"
+        ]
         assert len(corrections) == 1  # Only emitted once

@@ -256,9 +256,9 @@ class FeedbackStore:
 
     def __init__(
         self,
-        db_path: "Path",
-        audit_path: "Path | None" = None,
-        config: "FeedbackConfig | None" = None,
+        db_path: Path,
+        audit_path: Path | None = None,
+        config: FeedbackConfig | None = None,
     ) -> None:
         self._db_path = db_path
         self._audit_path = audit_path
@@ -319,7 +319,10 @@ class FeedbackStore:
 
         Implemented in story 029-1b (base) + 029-2 (strict validation).
         """
-        if self._config.strict_event_types and event.event_type not in self._config.known_event_types:
+        if (
+            self._config.strict_event_types
+            and event.event_type not in self._config.known_event_types
+        ):
             known = sorted(self._config.known_event_types)
             raise ValueError(
                 f"Unknown event_type {event.event_type!r}. "
@@ -423,7 +426,7 @@ class FeedbackStore:
                         timestamp=row["timestamp"],
                     )
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("feedback.query_row_skipped", row_id=row["id"])
         return results
 

@@ -10,10 +10,10 @@ import pytest
 
 pytestmark = pytest.mark.requires_cli
 
-from typer.testing import CliRunner  # noqa: E402
+from typer.testing import CliRunner
 
-from tapps_brain.cli import app  # noqa: E402
-from tapps_brain.store import MemoryStore  # noqa: E402
+from tapps_brain.cli import app
+from tapps_brain.store import MemoryStore
 
 runner = CliRunner()
 
@@ -659,9 +659,7 @@ class TestFlywheelCli:
     """EPIC-031 flywheel commands."""
 
     def test_flywheel_process_json(self, project_dir: str) -> None:
-        result = runner.invoke(
-            app, ["flywheel", "process", "--project-dir", project_dir, "--json"]
-        )
+        result = runner.invoke(app, ["flywheel", "process", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert "processed_events" in data

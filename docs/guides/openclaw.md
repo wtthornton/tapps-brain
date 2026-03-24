@@ -4,9 +4,11 @@ Persistent cross-session memory for your OpenClaw agents. **54** MCP tools and
 **7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
 OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
-**Install or upgrade the Python package from GitHub only (no PyPI):** see
-[openclaw-install-from-git.md](./openclaw-install-from-git.md) — install, upgrade,
-and plugin rebuild steps for operators or OpenClaw/agents.
+**Canonical install/upgrade runbook (PyPI + Git-only):**
+[openclaw-runbook.md](./openclaw-runbook.md)
+
+**Single source of truth for compatibility + install matrix:** this guide's
+`Version Compatibility` section and `openclaw-runbook.md`.
 
 ---
 
@@ -79,7 +81,7 @@ npm install
 npm run build
 
 # Register with OpenClaw
-openclaw plugin install ./openclaw-plugin
+openclaw plugin install .
 ```
 
 ### Configure
@@ -145,9 +147,8 @@ tapps-brain search "PostgreSQL" --project-dir /path/to/your/project
 When enabled, this mode replaces OpenClaw's built-in `memory-core` — so `memory_search`
 and `memory_get` route through tapps-brain's SQLite store instead of the default plugin.
 
-> **Status:** Planned (EPIC-026). This mode is declared in `openclaw.plugin.json` but
-> the backing tool implementations are not yet complete. Use Mode 1 or Mode 3 in the
-> meantime.
+> **Status:** Shipped. This mode can replace `memory-core` when `slots.memory` is set
+> to `tapps-brain-memory`.
 
 ### Configure (once available)
 
@@ -406,7 +407,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 
 ---
 
-## All 41 MCP Tools
+## All 54 MCP Tools
 
 ### Core Memory (CRUD)
 
@@ -494,6 +495,9 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | `memory://health` | Store health report with diagnostics |
 | `memory://entries/{key}` | Full detail view of a single entry |
 | `memory://metrics` | Operation counters and latency histograms |
+| `memory://feedback` | Recent feedback events summary |
+| `memory://diagnostics` | Latest diagnostics scorecard and circuit state |
+| `memory://report` | Latest rendered flywheel quality report |
 
 ### MCP Prompts
 
@@ -585,7 +589,7 @@ If you have existing memories in OpenClaw's built-in `memory-core`:
 # Import your MEMORY.md into tapps-brain
 tapps-brain import --source MEMORY.md --project-dir /path/to/project
 
-# Or use the MCP migration tool (planned, EPIC-026)
+# Or use the MCP migration tool:
 # tapps-brain openclaw migrate --workspace /path/to/project --dry-run
 ```
 
@@ -597,7 +601,7 @@ The import infers tier from heading level:
 
 ### Upgrading from tapps-brain v0.x (28-tool API)
 
-v1.x expanded from 28 to 41 MCP tools. The original 28 tools are unchanged — no
+v1.x expanded from 28 to 54 MCP tools. The original 28 tools are unchanged - no
 breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 ### Migrating from MCP sidecar to ContextEngine plugin
@@ -615,10 +619,10 @@ breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 | tapps-brain version | OpenClaw version | Plugin mode |
 |--------------------|-----------------|-------------|
-| 1.2.x | v2026.3.7+ | Full ContextEngine (recommended) |
-| 1.2.x | v2026.3.1–3.6 | `before_agent_start` hook only |
-| 1.2.x | < v2026.3.1 | Tools only (no hooks) |
-| 1.1.x | Any | MCP sidecar only |
+| 1.3.x | v2026.3.7+ | Full ContextEngine (recommended) |
+| 1.3.x | v2026.3.1-3.6 | `before_agent_start` hook only |
+| 1.3.x | < v2026.3.1 | Tools only (no hooks) |
+| 1.2.x | Any | Sidecar + plugin compatibility baseline |
 
 **`minimumVersion` in `openclaw.plugin.json` is set to `"2026.3.1"`** — OpenClaw will
 warn on older versions. The plugin still registers tools as a fallback, but automatic
@@ -735,7 +739,10 @@ Max 500 entries per project. Lowest-confidence entries are evicted when the cap 
 ## Links
 
 - [Main README](../../README.md) — full project overview
+- [OpenClaw runbook](openclaw-runbook.md) — canonical install, upgrade, verify, restart (PyPI + Git)
+- [Install from Git only](openclaw-install-from-git.md) — explicit `git+https` pip flows
 - [MCP Server Guide](mcp.md) — detailed tool/resource/prompt reference
 - [Auto-Recall Guide](auto-recall.md) — recall orchestrator configuration
 - [Federation Guide](federation.md) — cross-project memory sharing
 - [OpenClaw Plugin README](../../openclaw-plugin/README.md) — plugin development guide
+- [Publish checklist](../../scripts/publish-checklist.md) — pre-release gate (`bash scripts/release-ready.sh`)

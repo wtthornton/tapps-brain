@@ -95,7 +95,7 @@ def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
     s = sum(pos.values())
     if s <= 0:
         n = len(pos)
-        return {k: 1.0 / n for k in pos} if n else {}
+        return dict.fromkeys(pos, 1.0 / n) if n else {}
     return {k: v / s for k, v in pos.items()}
 
 
@@ -186,7 +186,7 @@ class _Dim:
         return self._weight
 
     def check(self, store: MemoryStore) -> DimensionScore:
-        return cast(DimensionScore, self._fn(store))
+        return cast("DimensionScore", self._fn(store))
 
 
 def _retrieval_effectiveness(store: MemoryStore) -> DimensionScore:
@@ -251,12 +251,7 @@ def _completeness(store: MemoryStore) -> DimensionScore:
         return DimensionScore(name="completeness", score=1.0, raw_details={})
     ok = 0
     for e in entries:
-        if (
-            e.value
-            and str(e.value).strip()
-            and e.source_agent
-            and str(e.source_agent).strip()
-        ):
+        if e.value and str(e.value).strip() and e.source_agent and str(e.source_agent).strip():
             ok += 1
     ratio = ok / len(entries)
     return DimensionScore(name="completeness", score=ratio, raw_details={"filled": ok})
@@ -266,14 +261,22 @@ def _duplication(store: MemoryStore) -> DimensionScore:
     rep = store.health()
     n = max(1, rep.entry_count)
     ratio = min(1.0, rep.consolidation_candidates / n)
-    return DimensionScore(name="duplication", score=clamp01(1.0 - ratio), raw_details={"candidates": rep.consolidation_candidates})
+    return DimensionScore(
+        name="duplication",
+        score=clamp01(1.0 - ratio),
+        raw_details={"candidates": rep.consolidation_candidates},
+    )
 
 
 def _staleness(store: MemoryStore) -> DimensionScore:
     rep = store.health()
     n = max(1, rep.entry_count)
     ratio = min(1.0, rep.gc_candidates / n)
-    return DimensionScore(name="staleness", score=clamp01(1.0 - ratio), raw_details={"gc_candidates": rep.gc_candidates})
+    return DimensionScore(
+        name="staleness",
+        score=clamp01(1.0 - ratio),
+        raw_details={"gc_candidates": rep.gc_candidates},
+    )
 
 
 def _integrity_dim(store: MemoryStore) -> DimensionScore:
@@ -331,7 +334,9 @@ def load_custom_dimensions(paths: list[str]) -> list[HealthDimension]:
     return out
 
 
-def _hive_namespace_scores(store: MemoryStore) -> tuple[dict[str, dict[str, DimensionScore]], float | None]:
+def _hive_namespace_scores(
+    store: MemoryStore,
+) -> tuple[dict[str, dict[str, DimensionScore]], float | None]:
     hs = getattr(store, "_hive_store", None)
     if hs is None:
         return {}, None
@@ -376,7 +381,9 @@ def run_diagnostics(
     weights = normalize_weights(weights)
     corr_adj = False
     if history_for_correlation is not None:
-        weights, corr_adj = adjust_weights_for_correlation(dim_names, weights, history_for_correlation)
+        weights, corr_adj = adjust_weights_for_correlation(
+            dim_names, weights, history_for_correlation
+        )
     scores: dict[str, DimensionScore] = {}
     for d in dims:
         try:
@@ -647,6 +654,7 @@ def maybe_remediate(
     dup = report.dimensions.get("duplication")
     st = report.dimensions.get("staleness")
     inte = report.dimensions.get("integrity")
+
     def _cool_ok(key: str) -> bool:
         return now_mono - breaker._last_remediation_mono.get(key, 0.0) >= breaker.cooldown_seconds
 
@@ -686,4 +694,3 @@ def hive_recall_multiplier(state: CircuitState) -> float:
     if state == CircuitState.HALF_OPEN:
         return 0.5
     return 0.0
-

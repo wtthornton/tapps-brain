@@ -19,7 +19,6 @@ from pydantic import ValidationError
 
 from tapps_brain.feedback import BUILTIN_EVENT_TYPES, FeedbackConfig, FeedbackEvent, FeedbackStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -106,13 +105,13 @@ class TestFeedbackEventModel:
     @pytest.mark.parametrize(
         "bad_type",
         [
-            "single",       # no underscore
-            "CamelCase",    # uppercase
-            "_leading",     # starts with underscore
-            "trailing_",    # ends with underscore
-            "has space",    # space
-            "has-dash",     # dash
-            "",             # empty
+            "single",  # no underscore
+            "CamelCase",  # uppercase
+            "_leading",  # starts with underscore
+            "trailing_",  # ends with underscore
+            "has space",  # space
+            "has-dash",  # dash
+            "",  # empty
             "1starts_digit",  # starts with digit
         ],
     )
@@ -405,13 +404,13 @@ class TestFeedbackConfig:
     @pytest.mark.parametrize(
         "bad_name",
         [
-            "single",       # no underscore
-            "CamelCase",    # uppercase
-            "_leading",     # starts with underscore
-            "trailing_",    # ends with underscore
-            "has space",    # space
-            "has-dash",     # dash
-            "",             # empty
+            "single",  # no underscore
+            "CamelCase",  # uppercase
+            "_leading",  # starts with underscore
+            "trailing_",  # ends with underscore
+            "has space",  # space
+            "has-dash",  # dash
+            "",  # empty
             "1starts_digit",  # starts with digit
         ],
     )
@@ -509,7 +508,6 @@ class TestFeedbackConfigProfileYaml:
 
     def test_profile_includes_default_feedback_config(self) -> None:
         """MemoryProfile should have a feedback field with defaults."""
-        from tapps_brain.profile import MemoryProfile
 
         # Load the built-in repo-brain profile (already has all required fields)
         from tapps_brain.profile import get_builtin_profile
@@ -582,7 +580,7 @@ class TestFeedbackStoreThreadSafety:
         def _worker() -> None:
             try:
                 store.record(FeedbackEvent(event_type="recall_rated"))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
 
         threads = [threading.Thread(target=_worker) for _ in range(20)]

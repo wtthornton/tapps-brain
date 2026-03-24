@@ -40,7 +40,7 @@ Open `~/.openclaw/openclaw.json` and delete (or comment out) the old
 ```bash
 cd openclaw-plugin
 npm install && npm run build
-openclaw plugins install ./openclaw-plugin
+openclaw plugin install .
 ```
 
 This registers the new `tapps-brain-memory` entry automatically.
@@ -104,3 +104,6 @@ The script will:
 The plugin detects your OpenClaw version at startup and selects the best
 available mode automatically. If `definePluginEntry` is not available in your
 OpenClaw version, the plugin uses an identity shim and logs a warning.
+
+Canonical install/upgrade runbook:
+`docs/guides/openclaw-runbook.md`

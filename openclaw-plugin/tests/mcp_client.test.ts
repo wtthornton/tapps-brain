@@ -468,11 +468,12 @@ describe("McpClient — request timeout", () => {
     vi.useFakeTimers();
 
     const callPromise = sendRpcDirect(client, "tools/call", {});
+    const timeoutAssertion = expect(callPromise).rejects.toThrow(/timeout.*10000ms/);
 
     // Advance past the 10 s timeout.
     await vi.advanceTimersByTimeAsync(10_001);
 
-    await expect(callPromise).rejects.toThrow(/timeout.*10000ms/);
+    await timeoutAssertion;
   });
 
   it("does not reject before the 10s deadline", async () => {

@@ -210,11 +210,14 @@ Short version:
 
 ```bash
 pip install "git+https://github.com/wtthornton/tapps-brain.git@main#egg=tapps-brain[mcp]"
-cd openclaw-plugin && npm install && npm run build && openclaw plugin install ./openclaw-plugin
+cd openclaw-plugin && npm install && npm run build && openclaw plugin install .
 ```
 
 Then enable `tapps-brain-memory` in your OpenClaw config as in the main
 [OpenClaw guide](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw.md).
+
+Canonical install + upgrade runbook (PyPI + Git-only):
+[openclaw-runbook.md](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/openclaw-runbook.md)
 
 **Upgrade (Git):** re-run `pip install --upgrade …` with the same `git+https://…` URL,
 or `git pull` + `pip install -e ".[mcp]"` if you use a clone; rebuild `openclaw-plugin`

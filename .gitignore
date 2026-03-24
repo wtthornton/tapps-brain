@@ -15,6 +15,9 @@ build/
 .tapps-brain/
 
 # Ralph loop ephemeral state (do not commit)
+.ralph/.audit.jsonl
+.ralph/.circuit_breaker_events
+.ralph/.invocation_latencies
 .ralph/.call_count
 .ralph/.circuit_breaker_history
 .ralph/.circuit_breaker_state
