@@ -36,7 +36,7 @@ Issue #6 (the custom interface) is the root cause of #4 and #5. Fixing the type 
 
 ### STORY-033.1: Import SDK types and remove custom interface
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `openclaw-plugin/src/index.ts` (lines 184-209), `openclaw-plugin/package.json`
@@ -59,7 +59,7 @@ The custom `OpenClawPluginApi` interface is the root cause of issues #4 and #5. 
 
 ### STORY-033.2: Fix version detection to read api.runtime.version
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-033.1
 **Context refs:** `openclaw-plugin/src/index.ts` (version compatibility layer, ~line 212+)
@@ -82,7 +82,7 @@ The custom `OpenClawPluginApi` interface is the root cause of issues #4 and #5. 
 
 ### STORY-033.3: Fix workspace and session resolution
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-033.1
 **Context refs:** `openclaw-plugin/src/index.ts` (register function, ~line 2270+), `openclaw-plugin/src/mcp_client.ts`
@@ -104,7 +104,7 @@ The custom `OpenClawPluginApi` interface is the root cause of issues #4 and #5. 
 
 ### STORY-033.4: Fix migration script config path
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** none
 **Context refs:** `openclaw-plugin/scripts/migrate-plugin-rename.mjs`

@@ -40,7 +40,7 @@ This epic adds a diagnostics layer that continuously assesses retrieval quality,
 
 ### STORY-030.1: Quality dimensions and scoring model
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/metrics.py`, `src/tapps_brain/models.py`, `src/tapps_brain/store.py`, `src/tapps_brain/_protocols.py`
@@ -72,7 +72,7 @@ The quality scorecard is the core abstraction. Each dimension measures a distinc
 
 ### STORY-030.2: Anomaly detection
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.1
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/metrics.py`
@@ -105,7 +105,7 @@ Quality scores are point-in-time snapshots. Anomaly detection identifies *change
 
 ### STORY-030.3: Quality history and trend tracking
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.1
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/persistence.py`
@@ -130,7 +130,7 @@ A single scorecard is useful; a trend over time is powerful. Storing scorecard s
 
 ### STORY-030.4: Circuit breakers
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.2
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/recall.py`, `src/tapps_brain/models.py`
@@ -161,7 +161,7 @@ When quality degrades critically, the system should degrade gracefully rather th
 
 ### STORY-030.5: Feedback-aware scoring (optional enhancement)
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-030.1, EPIC-029 (STORY-029.1)
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/feedback.py`
@@ -183,7 +183,7 @@ When EPIC-029 feedback data is available, the retrieval effectiveness dimension 
 
 ### STORY-030.6: MCP and CLI exposure
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.2, STORY-030.3
 **Context refs:** `src/tapps_brain/mcp_server.py`, `src/tapps_brain/cli.py`
@@ -208,7 +208,7 @@ Diagnostics must be accessible from all three interfaces. MCP tools let LLMs che
 
 ### STORY-030.7: Integration tests
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.4, STORY-030.6
 **Context refs:** `tests/integration/`
@@ -232,7 +232,7 @@ Validates the full diagnostics pipeline against a real store: scoring with actua
 
 ### STORY-030.8: Custom quality dimensions
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.1
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/_protocols.py`
@@ -257,7 +257,7 @@ Host projects embedding tapps-brain need to monitor their own quality dimensions
 
 ### STORY-030.9: Per-namespace Hive diagnostics
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-030.1, EPIC-011 (Hive)
 **Context refs:** `src/tapps_brain/diagnostics.py`, `src/tapps_brain/hive.py`

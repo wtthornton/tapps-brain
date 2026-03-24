@@ -38,7 +38,7 @@ All 15 feature epics are complete. The suite is healthy but these gaps represent
 
 ### STORY-016.1: CLI federation command tests
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/cli.py:743-819`, `tests/unit/test_cli.py`
@@ -57,7 +57,7 @@ Three user-facing CLI commands — `federation subscribe`, `federation unsubscri
 
 ### STORY-016.2: CLI untested command paths
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** none
 **Context refs:** `src/tapps_brain/cli.py:896-900`, `src/tapps_brain/cli.py:1395-1407`, `tests/unit/test_cli.py`
@@ -75,7 +75,7 @@ The `maintenance gc` archive path (lines 896-900) exercises the actual deletion 
 
 ### STORY-016.3: Concurrent save stress test
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/hive.py`
@@ -95,7 +95,7 @@ The `maintenance gc` archive path (lines 896-900) exercises the actual deletion 
 
 ### STORY-016.4: Concurrent GC and Hive stress tests
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-016.3
 **Context refs:** `src/tapps_brain/gc.py`, `src/tapps_brain/hive.py`, `tests/unit/test_concurrent.py`
@@ -114,7 +114,7 @@ GC running concurrently with saves is a realistic production scenario. Hive prop
 
 ### STORY-016.5: Fix unclosed SQLite connections
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `tests/unit/test_mcp_server.py`, `tests/unit/test_hive.py`, `tests/conftest.py`
@@ -133,7 +133,7 @@ GC running concurrently with saves is a realistic production scenario. Hive prop
 
 ### STORY-016.6: Unicode and boundary value tests
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** none
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/models.py`, `tests/unit/test_memory_store.py`
@@ -157,7 +157,7 @@ FTS5 special characters are tested, but real-world memory values contain emoji, 
 
 ### STORY-016.7: Final validation and status update
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-016.1, STORY-016.2, STORY-016.3, STORY-016.4, STORY-016.5, STORY-016.6
 **Context refs:** `docs/planning/STATUS.md`, `.ralph/fix_plan.md`

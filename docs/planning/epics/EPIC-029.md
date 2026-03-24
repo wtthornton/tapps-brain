@@ -39,7 +39,7 @@ tapps-brain already has one implicit positive signal — `reinforce()` — but n
 
 ### STORY-029.1: Feedback data model and storage
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/models.py`, `src/tapps_brain/persistence.py`
@@ -65,7 +65,7 @@ All feedback — explicit and implicit — needs a consistent data model and dur
 
 ### STORY-029.2: Explicit feedback API
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-029.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/feedback.py`
@@ -89,7 +89,7 @@ LLMs and projects need a clean API to report retrieval quality. Three distinct a
 
 ### STORY-029.3: Implicit feedback tracking
 
-**Status:** planned
+**Status:** done
 **Effort:** L
 **Depends on:** STORY-029.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/recall.py`, `src/tapps_brain/feedback.py`
@@ -115,7 +115,7 @@ Explicit feedback covers <10% of interactions. Research from GitHub Copilot (CUP
 
 ### STORY-029.4: MCP feedback tools
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-029.2
 **Context refs:** `src/tapps_brain/mcp_server.py`, `src/tapps_brain/feedback.py`
@@ -140,7 +140,7 @@ MCP is a first-class interface. LLMs interacting via MCP need tools to provide f
 
 ### STORY-029.5: CLI feedback commands
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-029.2
 **Context refs:** `src/tapps_brain/cli.py`, `src/tapps_brain/feedback.py`
@@ -164,7 +164,7 @@ CLI is a first-class interface. Human operators and scripts need to submit and q
 
 ### STORY-029.6: Integration tests
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-029.2, STORY-029.3, STORY-029.4
 **Context refs:** `tests/integration/`
@@ -189,7 +189,7 @@ Validates the full feedback pipeline: explicit + implicit collection, storage, q
 
 ### STORY-029.7: Federated feedback propagation
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-029.2, EPIC-011 (Hive)
 **Context refs:** `src/tapps_brain/hive.py`, `src/tapps_brain/feedback.py`
@@ -214,7 +214,7 @@ When feedback targets a Hive-sourced memory, it should propagate to the Hive so 
 
 ### STORY-029.8: Custom feedback event types
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-029.1
 **Context refs:** `src/tapps_brain/feedback.py`, `src/tapps_brain/_protocols.py`

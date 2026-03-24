@@ -11,12 +11,15 @@
 - BUG-002: Source trust regression & uncommitted WIP (6 tasks)
 - EPIC-017 through EPIC-025: Code review cycle (53 tasks)
 - EPIC-026: OpenClaw Memory Replacement (6 tasks)
-- EPIC-027: OpenClaw Full Feature Surface — All 41 MCP Tools (9 tasks)
+- EPIC-027: OpenClaw Full Feature Surface — 54 MCP tools (9 tasks; surface grew post-027)
 - EPIC-028: OpenClaw Plugin Hardening (9 tasks)
 - EPIC-029: Feedback Collection (explicit + implicit signals, MCP/CLI, Hive propagation)
 - EPIC-030: Diagnostics & Self-Monitoring (scorecard, EWMA, circuit breaker, MCP/CLI)
 - EPIC-031: Continuous Improvement Flywheel (evaluation harness, Bayesian confidence, gaps, reports, MCP/CLI)
 - EPIC-033: OpenClaw Plugin SDK Alignment (GitHub #4–#7)
+- EPIC-034: Production readiness QA remediation (lint, format, mypy, plugin tests)
+- EPIC-035: OpenClaw install/upgrade UX consistency (docs + runbook)
+- EPIC-036: Release gate hardening (`release-ready.sh`, docs checker, CI)
 
 ## Next Tasks
 
@@ -32,10 +35,10 @@
 
 ### HOUSEKEEPING-002: Update stale planning docs
 
-**Priority: MEDIUM — STATUS.md is out of date**
+**Priority: MEDIUM — keep planning artifacts aligned with shipped work**
 
 - [x] **HK-002.1** Update `docs/planning/STATUS.md`: mark EPIC-017 through EPIC-025 as `done`, mark EPIC-029/030/031/033 with completion dates, update epics summary table, verify current focus section reflects reality.
-- [ ] **HK-002.2** Update `docs/planning/PLANNING.md` epic directory listing: mark EPIC-026 through EPIC-033 with correct done/planned status annotations.
+- [x] **HK-002.2** Update `docs/planning/PLANNING.md` epic directory listing: EPIC-026 through EPIC-036 marked with correct done/planned annotations (verified 2026-03-24).
 
 ---
 
@@ -43,9 +46,9 @@
 
 **Priority: MEDIUM — verify project health after all recent changes**
 
-- [ ] **QA-001.1** Run full test suite: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`. Fix any failures.
-- [ ] **QA-001.2** Run lint + format: `ruff check src/ tests/ && ruff format --check src/ tests/`. Fix any violations.
-- [ ] **QA-001.3** Run type check: `mypy --strict src/tapps_brain/`. Fix any errors.
+- [x] **QA-001.1** Run full test suite: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`. Fix any failures. *(2026-03-24: 2341 passed, 3 skipped, 7 deselected; coverage 95.16%; Windows / Python 3.13.)*
+- [x] **QA-001.2** Run lint + format: `ruff check src/ tests/ && ruff format --check src/ tests/`. Fix any violations. *(2026-03-24: pass.)*
+- [x] **QA-001.3** Run type check: `mypy --strict src/tapps_brain/`. Fix any errors. *(2026-03-24: pass.)*
 
 ---
 

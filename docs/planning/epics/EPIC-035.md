@@ -1,7 +1,8 @@
 ---
 id: EPIC-035
 title: "OpenClaw install and upgrade UX consistency"
-status: planned
+status: done
+completed: 2026-03-24
 priority: high
 created: 2026-03-24
 target_date: 2026-03-27
@@ -16,16 +17,16 @@ The readiness review found documentation and command inconsistencies that can ca
 
 ## Success Criteria
 
-- [ ] All OpenClaw install/upgrade docs use one validated command form
-- [ ] No contradictions in feature status (planned vs shipped) across docs
-- [ ] Tool/resource counts and compatibility statements are consistent where stated
-- [ ] A single "source of truth" section exists for OpenClaw compatibility and install matrix
+- [x] All OpenClaw install/upgrade docs use one validated command form
+- [x] No contradictions in feature status (planned vs shipped) across docs
+- [x] Tool/resource counts and compatibility statements are consistent where stated
+- [x] A single "source of truth" section exists for OpenClaw compatibility and install matrix
 
 ## Stories
 
 ### STORY-035.1: Normalize OpenClaw CLI command usage in docs
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** none
 **Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/README.md`, `openclaw-plugin/UPGRADING.md`, `openclaw-skill/SKILL.md`
@@ -37,15 +38,15 @@ Install command drift is a direct production risk: users copy/paste docs and fai
 
 #### Acceptance Criteria
 
-- [ ] One canonical install command is chosen and used everywhere
-- [ ] Any version-specific alternate command (if required) is explicitly scoped and explained
-- [ ] Upgrade docs match install docs terminology and examples
+- [x] One canonical install command is chosen and used everywhere
+- [x] Any version-specific alternate command (if required) is explicitly scoped and explained
+- [x] Upgrade docs match install docs terminology and examples
 
 ---
 
 ### STORY-035.2: Reconcile OpenClaw feature status and capability claims
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `docs/guides/openclaw.md`, `README.md`, `openclaw-skill/SKILL.md`, `openclaw-plugin/src/index.ts`, `docs/planning/epics/EPIC-026.md`, `docs/planning/epics/EPIC-027.md`
@@ -57,16 +58,16 @@ Conflicting status text erodes trust and causes incorrect operational assumption
 
 #### Acceptance Criteria
 
-- [ ] OpenClaw guide no longer marks shipped behavior as planned
-- [ ] Tool and resource counts align with current implementation or are clearly version-scoped
-- [ ] Version compatibility matrix matches plugin/runtime behavior
-- [ ] Claims are tied to concrete references (code or released epic)
+- [x] OpenClaw guide no longer marks shipped behavior as planned
+- [x] Tool and resource counts align with current implementation or are clearly version-scoped
+- [x] Version compatibility matrix matches plugin/runtime behavior
+- [x] Claims are tied to concrete references (code or released epic)
 
 ---
 
 ### STORY-035.3: Create a canonical OpenClaw install/upgrade runbook
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-035.1, STORY-035.2
 **Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/UPGRADING.md`
@@ -78,10 +79,10 @@ Operators need a single, deterministic sequence for install, upgrade, validation
 
 #### Acceptance Criteria
 
-- [ ] Canonical runbook includes PyPI path and Git-only path with explicit verification steps
-- [ ] Upgrade flow includes plugin rebuild/reinstall and restart requirements
-- [ ] Includes quick post-upgrade smoke checks (`--version`, recall/capture sanity)
-- [ ] Cross-links replace duplicated contradictory instructions
+- [x] Canonical runbook includes PyPI path and Git-only path with explicit verification steps
+- [x] Upgrade flow includes plugin rebuild/reinstall and restart requirements
+- [x] Includes quick post-upgrade smoke checks (`--version`, recall/capture sanity)
+- [x] Cross-links replace duplicated contradictory instructions
 
 ## Priority Order
 

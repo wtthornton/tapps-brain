@@ -21,7 +21,7 @@ EPIC-007 added an optional OpenTelemetry exporter (`otel_exporter.py`) that conv
 
 3. **Privacy controls**: The `opentelemetry-util-genai` package defines `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` env var with values `NO_CONTENT` (default), `SPAN_ONLY`, `EVENT_ONLY`, `SPAN_AND_EVENT`. All content attributes are `opt_in` requirement level.
 
-tapps-brain's MCP server already handles 41+ tool invocations. By adopting both GenAI and MCP semantic conventions, tapps-brain becomes plug-and-play compatible with Grafana, Datadog, New Relic, Honeycomb, or self-hosted Jaeger/Tempo stacks. Custom metrics use the `tapps_brain.*` namespace prefix per OTel naming conventions.
+tapps-brain's MCP server already handles 54 tool invocations (current surface). By adopting both GenAI and MCP semantic conventions, tapps-brain becomes plug-and-play compatible with Grafana, Datadog, New Relic, Honeycomb, or self-hosted Jaeger/Tempo stacks. Custom metrics use the `tapps_brain.*` namespace prefix per OTel naming conventions.
 
 This epic is intentionally small and optional. It upgrades the existing OTel exporter to convention-aware traces and metrics. It does not add required dependencies. All GenAI semconv attributes are "Development" stability — use requires `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`.
 

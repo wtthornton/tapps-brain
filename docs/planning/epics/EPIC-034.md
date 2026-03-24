@@ -1,7 +1,8 @@
 ---
 id: EPIC-034
 title: "Production readiness QA remediation - lint, format, typing, test stability"
-status: planned
+status: done
+completed: 2026-03-24
 priority: critical
 created: 2026-03-24
 target_date: 2026-03-28
@@ -16,17 +17,17 @@ The production-readiness review found hard blockers: failing Ruff checks, format
 
 ## Success Criteria
 
-- [ ] `ruff check src/ tests/` passes cleanly on a fresh environment
-- [ ] `ruff format --check src/ tests/` passes with zero files to reformat
-- [ ] `mypy --strict src/tapps_brain/` completes and passes on the supported CI/dev path
-- [ ] `cd openclaw-plugin && npm test` exits zero with no unhandled errors
-- [ ] Full QA gate runs green from documented commands in `CLAUDE.md` / `STATUS.md`
+- [x] `ruff check src/ tests/` passes cleanly on a fresh environment
+- [x] `ruff format --check src/ tests/` passes with zero files to reformat
+- [x] `mypy --strict src/tapps_brain/` completes and passes on the supported CI/dev path
+- [x] `cd openclaw-plugin && npm test` exits zero with no unhandled errors
+- [x] Full QA gate runs green from documented commands in `CLAUDE.md` / `STATUS.md`
 
 ## Stories
 
 ### STORY-034.1: Eliminate current Ruff violations and lock formatting baseline
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/`, `tests/`, `pyproject.toml`
@@ -38,16 +39,16 @@ A clean lint/format baseline is the minimum bar for predictable release behavior
 
 #### Acceptance Criteria
 
-- [ ] Existing Ruff violations are fixed or justified with narrow, documented ignores
-- [ ] Formatting check passes without local-only drift
-- [ ] Any changed linter policy is documented in `pyproject.toml` comments or planning notes
-- [ ] No new warnings are introduced in touched modules
+- [x] Existing Ruff violations are fixed or justified with narrow, documented ignores
+- [x] Formatting check passes without local-only drift
+- [x] Any changed linter policy is documented in `pyproject.toml` comments or planning notes
+- [x] No new warnings are introduced in touched modules
 
 ---
 
 ### STORY-034.2: Stabilize openclaw-plugin test runner exit behavior
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** none
 **Context refs:** `openclaw-plugin/src/mcp_client.ts`, `openclaw-plugin/tests/mcp_client.test.ts`, `openclaw-plugin/package.json`
@@ -59,16 +60,16 @@ A non-zero test command with "all tests passed" masks real reliability issues an
 
 #### Acceptance Criteria
 
-- [ ] Reproduce and fix the unhandled timeout rejection in Vitest runs
-- [ ] `npm test` exits 0 with no unhandled rejection/error output
-- [ ] Regression test added/updated for timeout path cleanup
-- [ ] Plugin test output is deterministic across at least two consecutive runs
+- [x] Reproduce and fix the unhandled timeout rejection in Vitest runs
+- [x] `npm test` exits 0 with no unhandled rejection/error output
+- [x] Regression test added/updated for timeout path cleanup
+- [x] Plugin test output is deterministic across at least two consecutive runs
 
 ---
 
 ### STORY-034.3: Resolve strict mypy pass path for release gating
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** STORY-034.1
 **Context refs:** `src/tapps_brain/`, `pyproject.toml`, `CLAUDE.md`
@@ -80,16 +81,16 @@ Strict typing is part of the documented quality contract and must be runnable wi
 
 #### Acceptance Criteria
 
-- [ ] `mypy --strict src/tapps_brain/` finishes successfully in the supported execution environment
-- [ ] Any environment-specific constraints (Windows vs WSL) are documented with explicit command guidance
-- [ ] Type issues found during this pass are fixed without reducing strictness globally
-- [ ] Verification command in docs matches the actually reliable workflow
+- [x] `mypy --strict src/tapps_brain/` finishes successfully in the supported execution environment
+- [x] Any environment-specific constraints (Windows vs WSL) are documented with explicit command guidance
+- [x] Type issues found during this pass are fixed without reducing strictness globally
+- [x] Verification command in docs matches the actually reliable workflow
 
 ---
 
 ### STORY-034.4: Re-run and record full QA evidence for release candidate
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-034.1, STORY-034.2, STORY-034.3
 **Context refs:** `CLAUDE.md`, `docs/planning/STATUS.md`, `scripts/publish-checklist.md`
@@ -101,9 +102,9 @@ Production readiness must be proven by one end-to-end green gate, not inferred f
 
 #### Acceptance Criteria
 
-- [ ] Full QA command set executes successfully in one runbook
-- [ ] Results are reflected in planning/status docs for release decisioning
-- [ ] Any remaining non-blocking risks are explicitly listed
+- [x] Full QA command set executes successfully in one runbook
+- [x] Results are reflected in planning/status docs for release decisioning
+- [x] Any remaining non-blocking risks are explicitly listed
 
 ## Priority Order
 

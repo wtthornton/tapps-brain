@@ -2,6 +2,7 @@
 id: EPIC-036
 title: "Release gate hardening for production-ready OpenClaw distribution"
 status: done
+completed: 2026-03-24
 priority: high
 created: 2026-03-24
 target_date: 2026-03-31
@@ -16,16 +17,16 @@ Readiness is currently assessed manually and can regress between releases. To ke
 
 ## Success Criteria
 
-- [ ] One automated "release-ready" gate exists and is runnable locally and in CI
-- [ ] Gate fails on lint/format/type/test failures and plugin test runner instability
-- [ ] Gate checks version consistency and packaging build/install sanity
-- [ ] Publish checklist and status docs reference the same gate command
+- [x] One automated "release-ready" gate exists and is runnable locally and in CI
+- [x] Gate fails on lint/format/type/test failures and plugin test runner instability
+- [x] Gate checks version consistency and packaging build/install sanity
+- [x] Publish checklist and status docs reference the same gate command
 
 ## Stories
 
 ### STORY-036.1: Add production-release gate script
 
-**Status:** planned
+**Status:** done
 **Effort:** M
 **Depends on:** EPIC-034
 **Context refs:** `scripts/publish-checklist.md`, `pyproject.toml`, `openclaw-plugin/package.json`
@@ -37,16 +38,16 @@ A single executable gate reduces human error and makes go/no-go decisions object
 
 #### Acceptance Criteria
 
-- [ ] New script/run target executes ordered checks for Python + OpenClaw plugin
-- [ ] Script exits non-zero on first failing gate and reports failing stage clearly
-- [ ] Includes: build, version consistency test, lint, format check, strict mypy, integration sanity, plugin build/test
-- [ ] Script is documented for Windows + WSL usage
+- [x] New script/run target executes ordered checks for Python + OpenClaw plugin
+- [x] Script exits non-zero on first failing gate and reports failing stage clearly
+- [x] Includes: build, version consistency test, lint, format check, strict mypy, integration sanity, plugin build/test
+- [x] Script is documented for Windows + WSL usage
 
 ---
 
 ### STORY-036.2: Add docs consistency check for OpenClaw command/status drift
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** EPIC-035
 **Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/UPGRADING.md`, `README.md`
@@ -58,15 +59,15 @@ Known doc drift caused conflicting install and capability guidance; automated ch
 
 #### Acceptance Criteria
 
-- [ ] Script validates canonical install command usage across OpenClaw docs
-- [ ] Script flags contradictory tool-count/version claims against declared baseline
-- [ ] Script is included in release gate and fails with actionable diagnostics
+- [x] Script validates canonical install command usage across OpenClaw docs
+- [x] Script flags contradictory tool-count/version claims against declared baseline
+- [x] Script is included in release gate and fails with actionable diagnostics
 
 ---
 
 ### STORY-036.3: Wire release gate into CI and publish checklist
 
-**Status:** planned
+**Status:** done
 **Effort:** S
 **Depends on:** STORY-036.1, STORY-036.2
 **Context refs:** `.github/workflows/`, `scripts/publish-checklist.md`, `docs/planning/STATUS.md`
@@ -78,10 +79,10 @@ A local-only gate is insufficient; CI must enforce the same readiness criteria b
 
 #### Acceptance Criteria
 
-- [ ] CI workflow includes the release-ready command
-- [ ] Publish checklist references the exact same gate command
-- [ ] Status snapshot references the gate as production-readiness criterion
-- [ ] Failure output links directly to remediation docs/epics
+- [x] CI workflow includes the release-ready command
+- [x] Publish checklist references the exact same gate command
+- [x] Status snapshot references the gate as production-readiness criterion
+- [x] Failure output links directly to remediation docs/epics
 
 ## Priority Order
 
