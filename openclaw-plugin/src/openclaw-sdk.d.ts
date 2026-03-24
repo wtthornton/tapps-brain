@@ -151,16 +151,47 @@ declare module "openclaw/plugin-sdk/core" {
   /** Runtime-owned context passed to engines that need caller state. */
   export type ContextEngineRuntimeContext = Record<string, unknown>;
 
+  /** Result from maintain(). */
+  export interface ContextEngineMaintenanceResult {
+    maintained: boolean;
+    reason?: string;
+  }
+
+  /** Result from ingestBatch(). */
+  export interface IngestBatchResult {
+    ingested: boolean;
+    count?: number;
+  }
+
+  /** Subagent spawn preparation result. */
+  export interface SubagentSpawnPreparation {
+    childSessionFile?: string;
+    [key: string]: unknown;
+  }
+
+  /** Reason a subagent ended. */
+  export type SubagentEndReason = "completed" | "cancelled" | "error" | "timeout";
+
   /** The ContextEngine lifecycle interface. */
   export interface ContextEngine {
     readonly info: ContextEngineInfo;
 
+    /** Called once at session start to initialize the engine. */
     bootstrap?(params: {
       sessionId: string;
       sessionKey?: string;
       sessionFile: string;
     }): Promise<BootstrapResult>;
 
+    /** Called periodically for background maintenance tasks. */
+    maintain?(params: {
+      sessionId: string;
+      sessionKey?: string;
+      sessionFile: string;
+      runtimeContext?: ContextEngineRuntimeContext;
+    }): Promise<ContextEngineMaintenanceResult>;
+
+    /** Called when a new message enters the context window. */
     ingest(params: {
       sessionId: string;
       sessionKey?: string;
@@ -168,6 +199,28 @@ declare module "openclaw/plugin-sdk/core" {
       isHeartbeat?: boolean;
     }): Promise<IngestResult>;
 
+    /** Called to ingest a batch of messages at once. */
+    ingestBatch?(params: {
+      sessionId: string;
+      sessionKey?: string;
+      messages: AgentMessage[];
+      isHeartbeat?: boolean;
+    }): Promise<IngestBatchResult>;
+
+    /** Called after each agent turn completes. */
+    afterTurn?(params: {
+      sessionId: string;
+      sessionKey?: string;
+      sessionFile: string;
+      messages: AgentMessage[];
+      prePromptMessageCount: number;
+      autoCompactionSummary?: string;
+      isHeartbeat?: boolean;
+      tokenBudget?: number;
+      runtimeContext?: ContextEngineRuntimeContext;
+    }): Promise<void>;
+
+    /** Called before the agent responds to assemble context. */
     assemble(params: {
       sessionId: string;
       sessionKey?: string;
@@ -177,6 +230,7 @@ declare module "openclaw/plugin-sdk/core" {
       prompt?: string;
     }): Promise<AssembleResult>;
 
+    /** Called when OpenClaw compresses the context window. */
     compact(params: {
       sessionId: string;
       sessionKey?: string;
@@ -189,6 +243,20 @@ declare module "openclaw/plugin-sdk/core" {
       runtimeContext?: ContextEngineRuntimeContext;
     }): Promise<CompactResult>;
 
+    /** Called before a subagent is spawned. */
+    prepareSubagentSpawn?(params: {
+      parentSessionKey: string;
+      childSessionKey: string;
+      ttlMs?: number;
+    }): Promise<SubagentSpawnPreparation | undefined>;
+
+    /** Called when a subagent ends. */
+    onSubagentEnded?(params: {
+      childSessionKey: string;
+      reason: SubagentEndReason;
+    }): Promise<void>;
+
+    /** Called on gateway shutdown. */
     dispose?(): Promise<void>;
   }
 
