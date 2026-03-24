@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import structlog
 from pydantic import BaseModel, Field
@@ -295,11 +296,12 @@ class GapTracker:
         instances: list[tuple[str, str, float, list[str]]],
     ) -> list[tuple[list[tuple[str, str, float, list[str]]], str]] | None:
         try:
-            import hdbscan  # type: ignore[import-not-found]
-            from sentence_transformers import SentenceTransformer
+            hdbscan_mod = importlib.import_module("hdbscan")
+            st_mod = cast("Any", importlib.import_module("sentence_transformers"))
+            sentence_transformer_cls = st_mod.SentenceTransformer
         except ImportError:
             return None
-        return _run_hdbscan_clustering(instances, SentenceTransformer, hdbscan)
+        return _run_hdbscan_clustering(instances, sentence_transformer_cls, hdbscan_mod)
 
     def _prioritize_gaps(
         self,

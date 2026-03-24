@@ -6,12 +6,13 @@ LLM-as-judge evaluation behind optional SDK dependencies.
 
 from __future__ import annotations
 
+import importlib
 import json
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 import structlog
 import yaml
@@ -437,9 +438,8 @@ class OpenAIJudge:
             raise FeatureNotAvailable(
                 "openai package is not installed; install optional extra or `pip install openai`"
             )
-        from openai import OpenAI
-
-        self._client = OpenAI()
+        openai_mod = cast("Any", importlib.import_module("openai"))
+        self._client = openai_mod.OpenAI()
         self._model = model
 
     def judge_relevance(self, query: str, memory_value: str) -> JudgeResult:

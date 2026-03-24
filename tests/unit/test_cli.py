@@ -1121,8 +1121,8 @@ class TestAgentCreateCommand:
         assert data["skills"] == ["coding", "review"]
 
     def test_agent_create_invalid_profile(self):
-        # Typer may write errors to stderr; capture separately (Click default mixes).
-        r = CliRunner(mix_stderr=False)
+        # Click 8.2+ Typer CliRunner keeps stdout/stderr separate by default (no mix_stderr kwarg).
+        r = CliRunner()
         result = r.invoke(
             app,
             ["agent", "create", "bad-agent", "--profile", "nonexistent-profile-xyz"],

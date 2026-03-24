@@ -141,3 +141,4 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 - Ralph and full test runs are **WSL-first** (bash, Linux `.venv`). See **`CLAUDE.md`** → *Ralph on Windows (use WSL)*.
 - In WSL, activate with `source .venv/bin/activate` (not `Scripts/activate`).
+- **One checkout, one OS for `.venv`:** alternating `uv sync` on the same tree between WSL (Linux layout) and native Windows can leave `.venv` in a state where `uv` fails to replace `lib64` (access denied). Remove `.venv` and run `uv sync --extra dev` on the platform you are using, or keep separate clones per OS.
