@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.2] — 2026-03-24
+
+### Changed — Profile limits recalibrated (research-backed)
+
+- **`max_entries` raised from 500 to 5,000** (default) / 10,000 (research-knowledge).
+  Old default was the most conservative of any comparable system (Mem0: 10K,
+  Obsidian: 10K-12K comfortable, MemGPT/Letta: unbounded). Pure-Python BM25
+  at 5K entries runs in ~5-10 ms on desktop, ~15-30 ms on Pi 5. GC and
+  auto-consolidation keep the active set well below the limit.
+- **`default_token_budget` raised**: repo-brain/customer-support/project-management
+  2,000→3,000; personal-assistant 3,000→4,000; research-knowledge 2,000→4,000.
+- **Source trust/confidence/ceilings differentiated per profile**:
+  customer-support boosts agent trust (0.7→0.8); home-automation boosts system
+  trust (0.9→0.95); personal-assistant raises human ceiling (0.95→0.98);
+  research-knowledge lowers inferred ceiling (0.70→0.55).
+- **GC thresholds differentiated per profile**: personal-assistant/research
+  floor 30→60 days; customer-support floor 30→14 days, session 7→3 days;
+  home-automation floor 30→7 days; personal-assistant session 7→14 days.
+- **Recall thresholds differentiated**: research-knowledge stricter
+  (min_score 0.35, min_confidence 0.25); personal-assistant/home-automation
+  looser (min_score 0.2).
+- **`max_entries` is now profile-aware**: `MemoryStore._max_entries` reads
+  from the active profile, falling back to the module default. CLI and MCP
+  stats/health endpoints reflect the actual configured limit.
+- OpenClaw skill version synced to 1.4.2 (was stale at 1.3.1).
+
+### Added
+
+- `docs/guides/profile-limits-rationale.md` — full research document with
+  hardware benchmarks, comparable system analysis, and per-parameter rationale.
+
+---
+
 ## [1.4.1] — 2026-03-24
 
 ### Fixed

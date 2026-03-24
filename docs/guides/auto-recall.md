@@ -78,7 +78,7 @@ from tapps_brain.recall import RecallConfig, RecallOrchestrator
 
 config = RecallConfig(
     engagement_level="high",     # "high", "medium", or "low"
-    max_tokens=2000,             # Token budget for injected context
+    max_tokens=3000,             # Token budget for injected context
     min_score=0.3,               # Minimum composite score threshold
     min_confidence=0.1,          # Minimum confidence threshold
     scope_filter=MemoryScope.project,  # Only project-scoped memories
@@ -98,7 +98,7 @@ result = orch.recall("What is our tech stack?")
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `engagement_level` | `str` | `"high"` | Controls how many memories to inject. `"high"` = up to 5, `"medium"` = up to 3, `"low"` = none |
-| `max_tokens` | `int` | `2000` | Maximum token budget for the injected memory section |
+| `max_tokens` | `int` | `3000` | Maximum token budget for the injected memory section |
 | `min_score` | `float` | `0.3` | Minimum composite retrieval score to include a memory |
 | `min_confidence` | `float` | `0.1` | Minimum confidence (after decay) to include a memory |
 | `scope_filter` | `MemoryScope \| None` | `None` | Only include memories with this scope |

@@ -41,7 +41,7 @@ from tapps_brain.safety import check_content_safety
 logger = structlog.get_logger(__name__)
 
 # Maximum number of memories per project.
-_MAX_ENTRIES = 500
+_MAX_ENTRIES = 5000
 
 # Valid Hive propagation scope values.
 VALID_AGENT_SCOPES: tuple[str, ...] = ("private", "domain", "hive")
@@ -308,6 +308,16 @@ class MemoryStore:
 
         return DecayConfig()
 
+    @property
+    def _max_entries(self) -> int:
+        """Return the max-entries limit from the active profile, or the module default."""
+        if self._profile is not None:
+            try:
+                return int(self._profile.limits.max_entries)
+            except Exception:
+                pass
+        return _MAX_ENTRIES
+
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
@@ -453,7 +463,7 @@ class MemoryStore:
                 entry = entry.model_copy(update={"integrity_hash": _hash})
 
                 # Max entries enforcement: evict lowest-confidence entry
-                if key not in self._entries and len(self._entries) >= _MAX_ENTRIES:
+                if key not in self._entries and len(self._entries) >= self._max_entries:
                     self._evict_lowest_confidence()
 
                 self._entries[key] = entry
@@ -1356,7 +1366,7 @@ class MemoryStore:
         return StoreHealthReport(
             store_path=str(self._project_root),
             entry_count=len(entries),
-            max_entries=_MAX_ENTRIES,
+            max_entries=self._max_entries,
             schema_version=schema_ver,
             tier_distribution=tier_counts,
             oldest_entry_age_days=oldest_age,

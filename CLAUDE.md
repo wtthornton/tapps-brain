@@ -77,7 +77,7 @@ uv build
 - **Write-through cache** — all mutations update both in-memory dict and SQLite
 - **Lazy decay** — exponential decay computed on read, not via background tasks
 - **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls
-- **Max 500 entries per project** — enforced in MemoryStore
+- **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore
 
 ## Code Quality
 

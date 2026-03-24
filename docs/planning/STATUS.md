@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-24 (America/Chicago) — hotfix **v1.4.1**; f-string SQL hardening, silent-exception logging
+**Last updated:** 2026-03-24 (America/Chicago) — **v1.4.2**; profile limits recalibrated (research-backed), max_entries 500→5000
 
-**Package version (PyPI / `pyproject.toml`):** **1.4.1**
+**Package version (PyPI / `pyproject.toml`):** **1.4.2**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 

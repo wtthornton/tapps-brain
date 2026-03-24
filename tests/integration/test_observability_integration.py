@@ -131,7 +131,7 @@ class TestHealthReportIntegration:
         health = store.health()
 
         assert health.entry_count == 50
-        assert health.max_entries == 500
+        assert health.max_entries == 5000
         assert health.schema_version >= 1
         assert health.store_path == str(tmp_path)
 

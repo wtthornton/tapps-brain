@@ -228,7 +228,7 @@ def store_stats(
         data = {
             "project_root": str(snap.project_root),
             "total_entries": snap.total_count,
-            "max_entries": 500,
+            "max_entries": store._max_entries,
             "schema_version": schema_ver,
             "tier_distribution": snap.tier_counts,
             "exported_at": snap.exported_at,
@@ -237,7 +237,7 @@ def store_stats(
             _output(data, as_json=True)
         else:
             typer.echo(f"Store: {snap.project_root}")
-            typer.echo(f"Entries: {snap.total_count} / 500")
+            typer.echo(f"Entries: {snap.total_count} / {store._max_entries}")
             typer.echo(f"Schema: v{schema_ver}")
             typer.echo("Tiers:")
             for tier, count in snap.tier_counts.items():

@@ -390,13 +390,13 @@ Controls how the recall orchestrator builds context for prompt injection:
 
 ```yaml
 recall:
-  default_token_budget: 2000   # Max tokens in recalled memory block
+  default_token_budget: 3000   # Max tokens in recalled memory block
   default_engagement: "high"   # low/medium/high — controls how aggressively memories are injected
   min_score: 0.3               # Minimum composite score to include in recall
   min_confidence: 0.1          # Minimum effective confidence to include
 ```
 
-Increase `default_token_budget` for domains with long-form content (research: 3000+, code repos: 2000, chatbots: 1500).
+Increase `default_token_budget` for domains with long-form content (research: 4000, personal assistants: 4000, code repos: 3000). See [Profile Limits Rationale](profile-limits-rationale.md) for benchmarks.
 
 ---
 
@@ -404,7 +404,7 @@ Increase `default_token_budget` for domains with long-form content (research: 30
 
 ```yaml
 limits:
-  max_entries: 500         # Hard cap per store (lowest-confidence evicted)
+  max_entries: 5000        # Hard cap per store (lowest-confidence evicted)
   max_key_length: 128      # Max characters for memory keys
   max_value_length: 4096   # Max characters for memory values
   max_tags: 10             # Max tags per entry
@@ -414,11 +414,14 @@ limits:
 
 | Use case | max_entries | max_value_length | Rationale |
 |----------|-------------|------------------|-----------|
-| Personal assistant | 500 | 4096 | Moderate volume, standard values |
-| Code repository | 500 | 4096 | Default — well tested |
-| Research / knowledge base | 1000 | 8192 | Large corpus, long-form content |
-| IoT / home automation | 750 | 4096 | More entries for sensor patterns |
-| Delivery pipeline | 1500 | 8192 | High volume, intent specs can be verbose |
+| Code repository | 5,000 | 4096 | Default — well tested on Pi 5 through server |
+| Personal assistant | 5,000 | 4096 | Identity + preferences accumulate over years |
+| Research / knowledge base | 10,000 | 8192 | Knowledge accumulation is the purpose |
+| IoT / home automation | 5,000 | 4096 | Sensor events + learned patterns across devices |
+| Customer support | 5,000 | 4096 | Product knowledge + interaction history |
+| Delivery pipeline | 10,000 | 8192 | High volume, intent specs can be verbose |
+
+GC and auto-consolidation keep the active set lean — the limit is a safety net, not a target. For details on hardware performance at various entry counts, see [Profile Limits Rationale](profile-limits-rationale.md).
 
 ---
 
@@ -570,8 +573,8 @@ profile:
 
 ### Giant max_entries without matching GC
 
-**Problem**: Setting `max_entries: 5000` but keeping 30-day floor retention. Store fills up, eviction kicks in based on confidence, and you lose memories unpredictably.
-**Fix**: If you increase max_entries, decrease floor_retention_days proportionally, or ensure your layer design produces enough natural decay.
+**Problem**: Setting `max_entries: 25000` but keeping 30-day floor retention. Store fills up, eviction kicks in based on confidence, and you lose memories unpredictably.
+**Fix**: If you increase max_entries well above the default (5,000), decrease floor_retention_days proportionally, or ensure your layer design produces enough natural decay. At 25,000+ entries, enable vector search for sub-linear retrieval.
 
 ---
 
@@ -628,13 +631,13 @@ profile:
     stale_threshold: 0.3            # 0.0–1.0
 
   recall:                           # Optional (defaults shown).
-    default_token_budget: 2000      # >= 100
+    default_token_budget: 3000      # >= 100
     default_engagement: "high"      # "low", "medium", "high"
     min_score: 0.3                  # 0.0–1.0
     min_confidence: 0.1             # 0.0–1.0
 
   limits:                           # Optional (defaults shown).
-    max_entries: 500                # >= 1
+    max_entries: 5000               # >= 1
     max_key_length: 128             # >= 1
     max_value_length: 4096          # >= 1
     max_tags: 10                    # >= 1

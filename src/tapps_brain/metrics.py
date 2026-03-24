@@ -49,7 +49,7 @@ class StoreHealthReport(BaseModel):
 
     store_path: str = Field(description="Project root path backing the store.")
     entry_count: int = 0
-    max_entries: int = 500
+    max_entries: int = 5000
     schema_version: int = 0
     tier_distribution: dict[str, int] = Field(default_factory=dict)
     oldest_entry_age_days: float = 0.0

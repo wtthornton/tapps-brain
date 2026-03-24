@@ -101,7 +101,7 @@ class GCConfig(BaseModel):
 class RecallProfileConfig(BaseModel):
     """Recall / injection defaults."""
 
-    default_token_budget: int = Field(default=2000, ge=100)
+    default_token_budget: int = Field(default=3000, ge=100)
     default_engagement: Literal["low", "medium", "high"] = "high"
     min_score: float = Field(default=0.3, ge=0.0, le=1.0)
     min_confidence: float = Field(default=0.1, ge=0.0, le=1.0)
@@ -110,7 +110,7 @@ class RecallProfileConfig(BaseModel):
 class LimitsConfig(BaseModel):
     """Store limits configuration."""
 
-    max_entries: int = Field(default=500, ge=1)
+    max_entries: int = Field(default=5000, ge=1)
     max_key_length: int = Field(default=128, ge=1)
     max_value_length: int = Field(default=4096, ge=1)
     max_tags: int = Field(default=10, ge=1)

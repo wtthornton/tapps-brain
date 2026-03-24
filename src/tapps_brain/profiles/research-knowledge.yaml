@@ -81,23 +81,23 @@ profile:
   source_ceilings:
     human: 0.95
     agent: 0.85
-    inferred: 0.70
+    inferred: 0.55
     system: 0.95
 
   gc:
-    floor_retention_days: 30
+    floor_retention_days: 60
     session_expiry_days: 7
     contradicted_threshold: 0.2
     stale_threshold: 0.3
 
   recall:
-    default_token_budget: 2000
+    default_token_budget: 4000
     default_engagement: "high"
-    min_score: 0.3
-    min_confidence: 0.1
+    min_score: 0.35
+    min_confidence: 0.25
 
   limits:
-    max_entries: 1000
+    max_entries: 10000
     max_key_length: 128
     max_value_length: 8192
     max_tags: 10

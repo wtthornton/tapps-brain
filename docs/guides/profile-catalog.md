@@ -6,12 +6,12 @@ tapps-brain ships with 6 built-in profiles covering common AI agent use cases. E
 
 | Profile | Layers | Longest half-life | Decay model | Max entries | Token budget | Best for |
 |---------|--------|-------------------|-------------|-------------|-------------|----------|
-| [repo-brain](#repo-brain) | 4 | 180d | exponential | 500 | 2000 | Code repos, coding assistants |
-| [personal-assistant](#personal-assistant) | 4 | 365d | power_law | 500 | 3000 | Personal AI assistants |
-| [customer-support](#customer-support) | 4 | 120d | exponential | 500 | 2000 | Support agents, ticketing |
-| [research-knowledge](#research-knowledge) | 4 | 365d | power_law | 1000 | 2000 | Research, knowledge management |
-| [project-management](#project-management) | 4 | 180d | exponential | 500 | 2000 | PM tools, sprint planning |
-| [home-automation](#home-automation) | 5 | 365d | power_law | 750 | 2000 | IoT, smart home agents |
+| [repo-brain](#repo-brain) | 4 | 180d | exponential | 5,000 | 3,000 | Code repos, coding assistants |
+| [personal-assistant](#personal-assistant) | 4 | 365d | power_law | 5,000 | 4,000 | Personal AI assistants |
+| [customer-support](#customer-support) | 4 | 120d | exponential | 5,000 | 3,000 | Support agents, ticketing |
+| [research-knowledge](#research-knowledge) | 4 | 365d | power_law | 10,000 | 4,000 | Research, knowledge management |
+| [project-management](#project-management) | 4 | 180d | exponential | 5,000 | 3,000 | PM tools, sprint planning |
+| [home-automation](#home-automation) | 5 | 365d | power_law | 5,000 | 2,000 | IoT, smart home agents |
 
 ## Choosing a Profile
 
@@ -99,7 +99,7 @@ Recency-heavy — what the user said recently matters as much as keyword relevan
 ### Key design decisions
 
 - **Power-law on `identity`**: Core user preferences (name, role, allergies, communication style) decay negligibly. After 2 years, confidence drops only ~11% vs. 75% with exponential.
-- **Higher token budget (3000)**: Personal assistants need more context for nuanced responses.
+- **Highest token budget (4000)**: Personal assistants need more context for nuanced responses.
 - **Low promotion bar for `ephemeral` → `short-term`**: Just 2 accesses and 1 day. If you mention something twice, it persists.
 - **High promotion bar for `long-term` → `identity`**: 20 accesses, 60 days, 0.8 confidence. Only truly core information reaches identity.
 
@@ -170,7 +170,7 @@ Relevance-dominant (50%) — in research, finding the right content by keyword/t
 
 ### Key design decisions
 
-- **Largest limits**: 1000 max entries, 8192 max value length. Research corpora are larger and individual entries are longer than other domains.
+- **Largest limits**: 10,000 max entries, 8192 max value length. Research corpora are larger and individual entries are longer than other domains.
 - **Power-law on `established-facts`**: Verified research should persist indefinitely. Exponent 0.7 (vs. 0.5 for personal-assistant identity) means slightly faster initial decay but still very persistent.
 - **High promotion threshold to `established-facts`**: 12 accesses, 30 days, 0.8 confidence. Only well-validated findings get promoted.
 
@@ -247,7 +247,7 @@ Recency-dominant (35%) — "the front door opened 2 minutes ago" must outrank "t
 - **5 layers** (unique among built-in profiles): The `future-events` layer has a 90-day half-life for scheduled maintenance, upcoming events, and reminders. It doesn't fit into the standard past-focused hierarchy.
 - **Highest importance multipliers**: `safety: 3.0`, `allergy: 3.0`, `medical: 3.0`. Forgetting someone's peanut allergy is dangerous. These tags give a 3x half-life multiplier.
 - **1-day session expiry**: IoT generates many session-scoped events; aggressive cleanup prevents store bloat.
-- **750 max entries**: Higher than default to accommodate sensor patterns across many devices.
+- **7-day GC floor retention**: Transient sensor data clears aggressively; household-profile and learned-patterns persist via their long half-lives and importance tags.
 
 ### Importance tags
 

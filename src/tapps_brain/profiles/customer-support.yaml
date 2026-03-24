@@ -72,35 +72,35 @@ profile:
     source_trust:
       human: 1.0
       system: 0.9
-      agent: 0.7
+      agent: 0.80
       inferred: 0.5
 
   source_confidence:
     human: 0.95
-    agent: 0.60
+    agent: 0.70
     inferred: 0.40
     system: 0.90
 
   source_ceilings:
     human: 0.95
-    agent: 0.85
+    agent: 0.90
     inferred: 0.70
     system: 0.95
 
   gc:
-    floor_retention_days: 30
-    session_expiry_days: 7
+    floor_retention_days: 14
+    session_expiry_days: 3
     contradicted_threshold: 0.2
     stale_threshold: 0.3
 
   recall:
-    default_token_budget: 2000
+    default_token_budget: 3000
     default_engagement: "high"
-    min_score: 0.3
-    min_confidence: 0.1
+    min_score: 0.25
+    min_confidence: 0.15
 
   limits:
-    max_entries: 500
+    max_entries: 5000
     max_key_length: 128
     max_value_length: 4096
     max_tags: 10

@@ -318,7 +318,7 @@ class TestResources:
             body = json.loads(result.contents[0].text)
             assert "total_entries" in body
             assert "tier_distribution" in body
-            assert body["max_entries"] == 500
+            assert body["max_entries"] == 5000
 
     async def test_read_health_resource(self, mcp_server):
         async with create_connected_server_and_client_session(mcp_server) as session:

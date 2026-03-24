@@ -184,7 +184,7 @@ class TestRecallProfileConfig:
 
     def test_defaults(self) -> None:
         rc = RecallProfileConfig()
-        assert rc.default_token_budget == 2000
+        assert rc.default_token_budget == 3000
         assert rc.default_engagement == "high"
         assert rc.min_score == 0.3
         assert rc.min_confidence == 0.1
@@ -195,7 +195,7 @@ class TestLimitsConfig:
 
     def test_defaults(self) -> None:
         lc = LimitsConfig()
-        assert lc.max_entries == 500
+        assert lc.max_entries == 5000
         assert lc.max_key_length == 128
         assert lc.max_value_length == 4096
         assert lc.max_tags == 10
@@ -278,7 +278,7 @@ class TestMemoryProfileValidation:
             name="l",
             layers=[LayerDefinition(name="x", half_life_days=10)],
         )
-        assert mp.limits.max_entries == 500
+        assert mp.limits.max_entries == 5000
 
 
 # ---------------------------------------------------------------------------
@@ -416,12 +416,12 @@ class TestBuiltinProfiles:
 
     def test_repo_brain_recall_defaults(self) -> None:
         profile = get_builtin_profile("repo-brain")
-        assert profile.recall.default_token_budget == 2000
+        assert profile.recall.default_token_budget == 3000
         assert profile.recall.default_engagement == "high"
 
     def test_repo_brain_limits_defaults(self) -> None:
         profile = get_builtin_profile("repo-brain")
-        assert profile.limits.max_entries == 500
+        assert profile.limits.max_entries == 5000
 
 
 # ---------------------------------------------------------------------------

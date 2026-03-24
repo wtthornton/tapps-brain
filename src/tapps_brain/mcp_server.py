@@ -800,7 +800,7 @@ def create_server(  # noqa: PLR0915
             {
                 "project_root": str(snap.project_root),
                 "total_entries": snap.total_count,
-                "max_entries": 500,
+                "max_entries": store._max_entries,
                 "schema_version": schema_ver,
                 "tier_distribution": snap.tier_counts,
             }

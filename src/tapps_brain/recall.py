@@ -44,7 +44,7 @@ class RecallConfig:
     """Configuration for the recall orchestrator."""
 
     engagement_level: str = "high"
-    max_tokens: int = 2000
+    max_tokens: int = 3000
     min_score: float = 0.3
     min_confidence: float = 0.1
     scope_filter: MemoryScope | None = None

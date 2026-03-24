@@ -290,7 +290,7 @@ class TestResources:
 
         report = store.health()
         assert report.entry_count >= 1
-        assert report.max_entries == 500
+        assert report.max_entries == 5000
         assert report.schema_version >= 1
         assert "pattern" in report.tier_distribution
 
@@ -364,7 +364,7 @@ class TestToolExecution:
         store = mcp_server._tapps_store
 
         report = store.health()
-        assert report.max_entries == 500
+        assert report.max_entries == 5000
         assert report.schema_version >= 1
 
 

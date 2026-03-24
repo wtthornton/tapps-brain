@@ -152,17 +152,23 @@ class TestConcurrentSaveAndRecall:
 
 
 class TestConcurrentSaveAtCapacity:
-    """Concurrent saves at max capacity (500) — eviction correct under contention."""
+    """Concurrent saves at max capacity — eviction correct under contention."""
+
+    _TEST_LIMIT = 100  # Small limit for fast tests
 
     def test_concurrent_save_at_max_capacity(self, tmp_path: Path) -> None:
-        """Saving beyond 500 entries concurrently never leaves store in corrupt state."""
+        """Saving beyond max_entries concurrently never leaves store in corrupt state."""
+        limit = self._TEST_LIMIT
         s = MemoryStore(tmp_path)
+        if s._profile is not None:
+            s._profile.limits.max_entries = limit
         try:
-            # Pre-fill to 490 entries
-            for i in range(490):
+            # Pre-fill to near-capacity
+            prefill = limit - 10
+            for i in range(prefill):
                 s.save(key=f"pre-{i}", value=f"pre-value {i}", tier="context")
 
-            assert s.count() == 490
+            assert s.count() == prefill
 
             errors: list[Exception] = []
 
@@ -182,9 +188,9 @@ class TestConcurrentSaveAtCapacity:
 
             assert not errors, f"Threads raised exceptions: {errors}"
 
-            # Store must not exceed 500 entries
+            # Store must not exceed the configured limit
             count = s.count()
-            assert count <= 500, f"Store exceeded max capacity: {count}"
+            assert count <= limit, f"Store exceeded max capacity: {count}"
             assert count > 0, "Store must not be empty after concurrent saves"
         finally:
             s.close()

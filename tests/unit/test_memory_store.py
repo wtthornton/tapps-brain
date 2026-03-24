@@ -10,7 +10,6 @@ import pytest
 
 from tapps_brain.models import MemoryEntry
 from tapps_brain.store import (
-    _MAX_ENTRIES,
     VALID_AGENT_SCOPES,
     ConsolidationConfig,
     MemoryStore,
@@ -177,8 +176,24 @@ class TestMemoryStoreSnapshot:
 class TestMemoryStoreEviction:
     """Tests for max entries eviction."""
 
-    def test_evicts_lowest_confidence_at_max(self, tmp_path: Path) -> None:
+    _TEST_LIMIT = 50  # Small limit for fast tests (real default is 5000)
+
+    @staticmethod
+    def _make_store_with_limit(tmp_path: Path, limit: int) -> MemoryStore:
+        """Create a MemoryStore with an overridden max_entries limit."""
         store = MemoryStore(tmp_path)
+        if store._profile is not None:
+            store._profile.limits.max_entries = limit
+        else:
+            # No profile resolved — patch the module-level fallback
+            import tapps_brain.store as _sm
+
+            _sm._MAX_ENTRIES = limit
+        return store
+
+    def test_evicts_lowest_confidence_at_max(self, tmp_path: Path) -> None:
+        limit = self._TEST_LIMIT
+        store = self._make_store_with_limit(tmp_path, limit)
         try:
             # Insert one entry with distinctly low confidence
             store.save(
@@ -188,25 +203,25 @@ class TestMemoryStoreEviction:
                 confidence=0.1,
             )
             # Fill remaining slots with higher confidence
-            for i in range(_MAX_ENTRIES - 1):
+            for i in range(limit - 1):
                 store.save(
                     key=f"entry-{i:04d}",
                     value=f"value {i}",
                     source="agent",
                     confidence=0.8,
                 )
-            assert store.count() == _MAX_ENTRIES
+            assert store.count() == limit
             # "lowest" still present before overflow
             assert store.get("lowest") is not None
 
-            # 501st entry triggers eviction of the lowest-confidence entry
+            # (limit+1)th entry triggers eviction of lowest-confidence
             store.save(
                 key="overflow",
                 value="triggers eviction",
                 source="agent",
                 confidence=0.9,
             )
-            assert store.count() == _MAX_ENTRIES
+            assert store.count() == limit
             # The lowest-confidence entry (0.1) should have been evicted
             assert store.get("lowest") is None
             # The new entry and a sample high-confidence entry survive
@@ -217,17 +232,18 @@ class TestMemoryStoreEviction:
 
     def test_eviction_tie_removes_first_inserted(self, tmp_path: Path) -> None:
         """When entries tie on confidence, min() picks the first by key iteration order."""
-        store = MemoryStore(tmp_path)
+        limit = self._TEST_LIMIT
+        store = self._make_store_with_limit(tmp_path, limit)
         try:
             # Fill to max, all with identical confidence
-            for i in range(_MAX_ENTRIES):
+            for i in range(limit):
                 store.save(
                     key=f"entry-{i:04d}",
                     value=f"value {i}",
                     source="agent",
                     confidence=0.5,
                 )
-            assert store.count() == _MAX_ENTRIES
+            assert store.count() == limit
 
             # Overflow triggers eviction; with equal confidence the first
             # key returned by min() over the dict (insertion-order) is evicted.
@@ -237,7 +253,7 @@ class TestMemoryStoreEviction:
                 source="agent",
                 confidence=0.5,
             )
-            assert store.count() == _MAX_ENTRIES
+            assert store.count() == limit
             # entry-0000 was inserted first and should be the eviction victim
             assert store.get("entry-0000") is None
             # The new entry and later entries survive

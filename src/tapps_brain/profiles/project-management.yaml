@@ -95,13 +95,13 @@ profile:
     stale_threshold: 0.3
 
   recall:
-    default_token_budget: 2000
+    default_token_budget: 3000
     default_engagement: "high"
     min_score: 0.3
     min_confidence: 0.1
 
   limits:
-    max_entries: 500
+    max_entries: 5000
     max_key_length: 128
     max_value_length: 4096
     max_tags: 10
