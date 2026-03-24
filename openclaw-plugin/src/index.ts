@@ -10,7 +10,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+// ---------------------------------------------------------------------------
+// OpenClaw SDK — inlined / lazy-resolved to avoid top-level require crash.
+//
+// The gateway loads plugins via require(). If "openclaw" isn't in the
+// plugin's node_modules (it's a peerDep), a top-level require crashes
+// before register() is ever called. We inline the trivial helpers and
+// lazy-resolve the rest so the module always loads cleanly.
+// ---------------------------------------------------------------------------
 import type {
   OpenClawPluginApi,
   PluginLogger,
@@ -24,7 +31,46 @@ import type {
   CompactResult,
   IngestResult,
 } from "openclaw/plugin-sdk/core";
-import { delegateCompactionToRuntime } from "openclaw/plugin-sdk/core";
+
+/**
+ * Inlined from openclaw/plugin-sdk/plugin-entry — pure function, no deps.
+ * Original: returns { id, name, description, kind?, configSchema, register }.
+ */
+interface PluginEntryOptions {
+  id: string;
+  name: string;
+  description: string;
+  kind?: "memory" | "context-engine";
+  configSchema?: Record<string, unknown>;
+  register: (api: OpenClawPluginApi) => void;
+}
+
+function definePluginEntry(opts: PluginEntryOptions) {
+  return {
+    id: opts.id,
+    name: opts.name,
+    description: opts.description,
+    ...(opts.kind ? { kind: opts.kind } : {}),
+    configSchema: opts.configSchema ?? {},
+    register: opts.register,
+  };
+}
+
+/**
+ * Lazy-resolve delegateCompactionToRuntime from openclaw at call time.
+ * Falls back gracefully if openclaw isn't on the module path.
+ */
+async function delegateCompactionToRuntime(
+  params: Parameters<ContextEngine["compact"]>[0],
+): Promise<CompactResult> {
+  try {
+    const core = await import("openclaw/plugin-sdk/core");
+    return core.delegateCompactionToRuntime(params);
+  } catch {
+    // openclaw not resolvable — tell the runtime we didn't compact
+    return { ok: true, compacted: false, reason: "openclaw_sdk_unavailable" };
+  }
+}
 
 import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
 
@@ -76,12 +122,12 @@ export interface SearchParams {
 }
 
 /** Re-export PluginLogger for test compatibility. */
-export type { PluginLogger } from "openclaw/plugin-sdk/core";
+export type { PluginLogger };
 
-// Version compatibility layers, definePluginEntry shim, and tool group
-// filtering were removed in EPIC-037/038. We target OpenClaw >= 2026.3.7
-// exclusively and use the ContextEngine API directly. definePluginEntry
-// is imported statically from "openclaw/plugin-sdk/plugin-entry".
+// Version compatibility layers and tool group filtering were removed in
+// EPIC-037/038. We target OpenClaw >= 2026.3.7 exclusively and use the
+// ContextEngine API directly. definePluginEntry is inlined (see above)
+// to avoid the top-level require crash on peer-dep resolution failure.
 
 // ---------------------------------------------------------------------------
 // TappsBrainEngine — the ContextEngine implementation
@@ -114,7 +160,7 @@ export class TappsBrainEngine {
   readonly info: ContextEngineInfo = {
     id: "tapps-brain-memory",
     name: "tapps-brain — Persistent Memory",
-    version: "1.4.0",
+    version: "1.4.2",
     ownsCompaction: false,
   };
 
@@ -122,7 +168,7 @@ export class TappsBrainEngine {
     this.config = config;
     this.workspaceDir = workspaceDir;
     this.captureRateLimit = config.captureRateLimit ?? 3;
-    this.tokenBudget = (config.tokenBudget ?? 2000) * 4; // tokens → chars
+    this.tokenBudget = (config.tokenBudget ?? 3000) * 4; // tokens → chars
     this.hiveEnabled = config.hiveEnabled ?? false;
     this.agentId = config.agentId ?? "";
     this.citations = config.citations ?? "auto";
@@ -278,7 +324,7 @@ export class TappsBrainEngine {
       return { messages, estimatedTokens: 0 };
     }
 
-    const budget = Math.min(this.tokenBudget, ((tokenBudget ?? 2000) as number) * 4);
+    const budget = Math.min(this.tokenBudget, ((tokenBudget ?? 3000) as number) * 4);
 
     const t0 = Date.now();
     try {
