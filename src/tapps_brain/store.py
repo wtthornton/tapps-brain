@@ -303,7 +303,7 @@ class MemoryStore:
 
                 return decay_config_from_profile(self._profile)
             except Exception:
-                pass
+                logger.debug("decay_config_from_profile_failed", exc_info=True)
         from tapps_brain.decay import DecayConfig
 
         return DecayConfig()

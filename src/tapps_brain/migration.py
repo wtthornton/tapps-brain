@@ -153,7 +153,13 @@ def _import_memory_core_sqlite(  # noqa: PLR0915
                 continue
 
             # Discover columns available in this table
-            cursor = conn.execute(f"PRAGMA table_info({table_name})")
+            # table_name comes from _MEMORY_CORE_TABLES (hardcoded), but we
+            # allowlist-validate anyway so static-analysis scanners stay quiet.
+            if table_name not in _MEMORY_CORE_TABLES:  # pragma: no cover – defensive
+                continue
+            cursor = conn.execute(  # noqa: S608 – table_name is allowlisted above
+                f"PRAGMA table_info({table_name})"
+            )
             col_names = {row[1] for row in cursor.fetchall()}
 
             key_col: str | None = next((c for c in _KEY_COLUMNS if c in col_names), None)
@@ -167,8 +173,16 @@ def _import_memory_core_sqlite(  # noqa: PLR0915
                 )
                 continue
 
+            # select_key / val_col come from _KEY_COLUMNS / _VALUE_COLUMNS
+            # (hardcoded tuples) – safe to interpolate.
             select_key = key_col if key_col else "rowid"
-            cursor = conn.execute(f"SELECT {select_key}, {val_col} FROM {table_name}")
+            if select_key != "rowid" and select_key not in _KEY_COLUMNS:
+                continue  # pragma: no cover – defensive
+            if val_col not in _VALUE_COLUMNS:  # pragma: no cover – defensive
+                continue
+            cursor = conn.execute(  # noqa: S608 – columns are allowlisted above
+                f"SELECT {select_key}, {val_col} FROM {table_name}"
+            )
             rows = list(cursor.fetchall())
 
             for idx, row in enumerate(rows):

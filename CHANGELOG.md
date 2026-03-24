@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.1] — 2026-03-24
+
+### Fixed
+
+- **F-string SQL hardening in `migration.py`** — added explicit allowlist validation
+  for table and column names before f-string interpolation in `PRAGMA table_info` and
+  `SELECT` queries. Inputs were already hardcoded tuples (not exploitable), but the
+  guards silence static-analysis scanners (Bandit/Semgrep) and protect against future
+  maintainer mistakes.
+- **Silent exception swallowing** — two `except Exception: pass` blocks now log with
+  `exc_info=True`: `store.py` (`decay_config_from_profile` fallback) and
+  `diagnostics.py` (`query_feedback` gap count). Failures in these paths were
+  previously invisible to debugging.
+
+---
+
 ## [1.4.0] — 2026-03-24
 
 ### Changed — EPIC-039: Official MCP SDK transport for OpenClaw plugin

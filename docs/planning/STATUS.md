@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-24 (America/Chicago) — release **v1.4.0**; EPIC-037/038/039 complete; official MCP SDK transport in OpenClaw plugin
+**Last updated:** 2026-03-24 (America/Chicago) — hotfix **v1.4.1**; f-string SQL hardening, silent-exception logging
 
-**Package version (PyPI / `pyproject.toml`):** **1.4.0**
+**Package version (PyPI / `pyproject.toml`):** **1.4.1**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 

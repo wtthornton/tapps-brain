@@ -398,7 +398,7 @@ def run_diagnostics(
     try:
         gaps = len(store.query_feedback(event_type="gap_reported", limit=5000))
     except Exception:
-        pass
+        logger.debug("diagnostics_gap_count_failed", exc_info=True)
     recs: list[str] = []
     gap_line: str | None = None
     try:
