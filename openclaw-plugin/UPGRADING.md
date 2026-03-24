@@ -1,5 +1,25 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v1.4.0 — Official MCP SDK transport (EPIC-039)
+
+- **Breaking internal change:** replaced the hand-rolled JSON-RPC 2.0 client
+  (`mcp_client.ts`, 466 lines) with the official `@modelcontextprotocol/sdk`
+  (`StdioClientTransport` + `Client`). This is the same SDK used by OpenClaw
+  itself, Claude Desktop, and Cursor.
+- **Reconnection model changed:** exponential-backoff retry loops (3 retries at
+  100/200/400ms) replaced with OpenClaw's session-invalidation pattern — on error,
+  the session is torn down and lazily re-created on the next call.
+- **Stderr logging added:** MCP server diagnostic output is now piped and logged
+  via `console.error` (prefixed `[tapps-brain-mcp]`).
+- **Health check timer removed:** dead process detection is now handled natively
+  by the SDK's `transport.pid` property.
+- **No public API change:** `McpClient` class retains the same interface
+  (`start`, `stop`, `callTool`, `readResource`, `callPrompt`, `isRunning`,
+  `reconnect`). `index.ts` required zero changes.
+- **New dependency:** `@modelcontextprotocol/sdk@^1.27.0` added to `dependencies`.
+- **Test speedup:** mcp_client tests run in ~16ms (was ~5s with fake timers).
+- Also includes EPIC-037 (SDK type realignment) and EPIC-038 (dead compat layer removal).
+
 ## v1.3.1 — Align with tapps-brain 1.3.1
 
 - Bumps plugin package, manifests, and `ContextEngineInfo.version` to **1.3.1**
@@ -103,13 +123,11 @@ The script will:
 
 | OpenClaw version | Compatibility mode | Notes |
 |------------------|--------------------|-------|
-| ≥ 2026.3.7       | ContextEngine      | Full lifecycle (ingest/assemble/compact) |
-| 2026.3.1–3.6     | Hook-only          | Memory injected at session start only |
-| < 2026.3.1       | Tools-only         | No automatic memory injection |
+| ≥ 2026.3.7       | ContextEngine      | Full lifecycle (ingest/assemble/compact) — required |
 
-The plugin detects your OpenClaw version at startup and selects the best
-available mode automatically. If `definePluginEntry` is not available in your
-OpenClaw version, the plugin uses an identity shim and logs a warning.
+The plugin requires OpenClaw v2026.3.7+ (`minimumVersion` in `openclaw.plugin.json`).
+For older OpenClaw versions, use the MCP sidecar integration (Mode 3 in the
+[OpenClaw guide](../../docs/guides/openclaw.md)) instead of the plugin.
 
 Canonical install/upgrade runbook:
 `docs/guides/openclaw-runbook.md`

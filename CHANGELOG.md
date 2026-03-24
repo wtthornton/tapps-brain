@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] — 2026-03-24
+
+### Changed — EPIC-039: Official MCP SDK transport for OpenClaw plugin
+
+- **MCP client rewritten** — replaced 466-line hand-rolled JSON-RPC 2.0 client
+  (Content-Length framing, manual stdio parsing, request/response ID matching)
+  with the official `@modelcontextprotocol/sdk` (`StdioClientTransport` + `Client`).
+  This is the same SDK used by OpenClaw, Claude Desktop, and Cursor.
+- **Reconnection model** — exponential-backoff retry loops replaced with
+  OpenClaw's session-invalidation pattern (tear down on error, lazy re-create).
+- **Stderr logging** — MCP server diagnostic output now piped and logged.
+- **Dead process detection** — native `transport.pid` replaces health check timer.
+- **No public API change** — `index.ts` required zero modifications.
+
+### Changed — EPIC-037/038: SDK realignment and simplification
+
+- **Plugin SDK types** — ambient `openclaw-sdk.d.ts` replaced with real SDK imports.
+- **API contract fixes** — `resolveAgentWorkspaceDir`, `registerTool`,
+  `definePluginEntry`, and `registerContextEngine` signatures match real OpenClaw SDK.
+- **Dead compat layers removed** — hook-only and tools-only fallback modes removed;
+  plugin now requires OpenClaw v2026.3.7+ (`minimumVersion` in manifest).
+
+### Added
+
+- `@modelcontextprotocol/sdk@^1.27.0` as a runtime dependency of the OpenClaw plugin.
+
+---
+
 ## [1.3.1] — 2026-03-24
 
 ### Added

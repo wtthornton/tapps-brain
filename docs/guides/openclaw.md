@@ -48,9 +48,8 @@ Four ways to integrate tapps-brain, from zero-config to fully custom:
 | Mode | OpenClaw Version | Setup Effort | Memory Control | Best For |
 |------|-----------------|--------------|----------------|----------|
 | **ContextEngine plugin** | v2026.3.7+ | Zero-config | Automatic | Production use |
-| **Memory slot plugin** | v2026.3.1+ | Low | memory_search / memory_get replaced | Replacing memory-core |
-| **MCP sidecar** | Any | Medium | Full manual | Custom workflows |
-| **mcp-adapter** | v2026.3.1–3.6 | Low | Hook-based | Older installations |
+| **Memory slot plugin** | v2026.3.7+ | Low | memory_search / memory_get replaced | Replacing memory-core |
+| **MCP sidecar** | Any | Medium | Full manual | Custom workflows, older OpenClaw |
 
 ---
 
@@ -265,20 +264,15 @@ Restart OpenClaw after editing `openclaw.json` — MCP config is read at startup
 
 ---
 
-## Mode 4: mcp-adapter (OpenClaw v2026.3.1–3.6)
+## Mode 4: MCP sidecar for older OpenClaw versions
 
-For OpenClaw versions that do not support the ContextEngine API (`definePluginEntry`) but
-do support the `before_agent_start` hook, the plugin automatically registers in
-hook-only mode. No configuration changes required — the version is detected at bootstrap.
+For OpenClaw versions before v2026.3.7 that do not support the ContextEngine API
+(`definePluginEntry`), use Mode 3 (MCP sidecar) instead of the plugin. The agent
+gets all 54 tools as native MCP tools — memory is not automatically injected, but
+the agent can be instructed to use `memory_recall` and `memory_capture` explicitly.
 
-| OpenClaw version | Plugin behaviour |
-|-----------------|-----------------|
-| v2026.3.7+ | Full ContextEngine hooks (recommended) |
-| v2026.3.1–3.6 | `before_agent_start` hook only — memory injected at session start, no per-turn capture |
-| < v2026.3.1 | Tools registered only, no hooks — manual recall/capture via MCP tools |
-
-If you are on v2026.3.1–3.6 or older, upgrade OpenClaw when possible to get per-turn
-recall and auto-capture.
+Upgrade OpenClaw to v2026.3.7+ when possible to get automatic per-turn recall and
+capture via the ContextEngine plugin.
 
 ---
 
@@ -389,21 +383,22 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 
 ## Feature Matrix
 
-| Feature | ContextEngine | Memory Slot | MCP Sidecar | mcp-adapter |
-|---------|:---:|:---:|:---:|:---:|
-| Auto-recall before model call | ✅ | — | — | ✅ (session start) |
-| Auto-capture from messages | ✅ | — | — | — |
-| Pre-compaction flush | ✅ | — | — | — |
-| Replaces memory-core tools | — | ✅ | — | — |
-| Direct tool access (54 tools) | ✅ | ✅ | ✅ | ✅ |
-| Hive multi-agent sharing | ✅ | ✅ | ✅ | — |
-| Cross-project federation | ✅ | ✅ | ✅ | — |
-| Custom profiles | ✅ | ✅ | ✅ | — |
-| Citation footers in recall | ✅ | — | — | — |
-| Session memory search | ✅ | — | ✅ | — |
-| MCP resources (7 URIs: stats, health, entries, metrics, feedback, diagnostics, report) | ✅ | ✅ | ✅ | — |
-| MCP prompts | — | — | ✅ | — |
-| Minimum OpenClaw version | v2026.3.7 | v2026.3.1 | Any | v2026.3.1 |
+| Feature | ContextEngine | Memory Slot | MCP Sidecar |
+|---------|:---:|:---:|:---:|
+| Auto-recall before model call | ✅ | — | — |
+| Auto-capture from messages | ✅ | — | — |
+| Pre-compaction flush | ✅ | — | — |
+| Replaces memory-core tools | — | ✅ | — |
+| Direct tool access (54 tools) | ✅ | ✅ | ✅ |
+| Hive multi-agent sharing | ✅ | ✅ | ✅ |
+| Cross-project federation | ✅ | ✅ | ✅ |
+| Custom profiles | ✅ | ✅ | ✅ |
+| Citation footers in recall | ✅ | — | — |
+| Session memory search | ✅ | — | ✅ |
+| MCP resources (7 URIs: stats, health, entries, metrics, feedback, diagnostics, report) | ✅ | ✅ | ✅ |
+| MCP prompts | — | — | ✅ |
+| Official MCP SDK transport | ✅ | ✅ | ✅ (OpenClaw-native) |
+| Minimum OpenClaw version | v2026.3.7 | v2026.3.7 | Any |
 
 ---
 
@@ -619,14 +614,13 @@ breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 | tapps-brain version | OpenClaw version | Plugin mode |
 |--------------------|-----------------|-------------|
-| 1.3.x | v2026.3.7+ | Full ContextEngine (recommended) |
-| 1.3.x | v2026.3.1-3.6 | `before_agent_start` hook only |
-| 1.3.x | < v2026.3.1 | Tools only (no hooks) |
-| 1.2.x | Any | Sidecar + plugin compatibility baseline |
+| 1.4.x | v2026.3.7+ | Full ContextEngine with official MCP SDK transport (recommended) |
+| 1.3.x | v2026.3.7+ | Full ContextEngine (custom MCP transport) |
+| Any | Any | MCP sidecar (Mode 3 — no plugin required) |
 
-**`minimumVersion` in `openclaw.plugin.json` is set to `"2026.3.1"`** — OpenClaw will
-warn on older versions. The plugin still registers tools as a fallback, but automatic
-recall and capture will not work without hook support.
+**`minimumVersion` in `openclaw.plugin.json` is set to `"2026.3.7"`** — the plugin
+requires the ContextEngine API (`definePluginEntry`). For older OpenClaw versions,
+use Mode 3 (MCP sidecar) instead.
 
 To check your OpenClaw version:
 
@@ -658,10 +652,11 @@ the cutoff.
 **Cause:** The MCP child process (`tapps-brain-mcp`) exited unexpectedly.
 
 **Fixes:**
-1. The plugin (v1.2+) includes automatic reconnection logic: up to 3 retries with
-   exponential backoff (100/200/400ms). If the process recovers, tool calls resume
+1. The plugin (v1.4+) uses the official `@modelcontextprotocol/sdk` transport with
+   session-invalidation reconnection: on error, the session is torn down and lazily
+   re-created on the next tool call. If the process recovers, tool calls resume
    automatically.
-2. If the process does not recover after retries, check the logs:
+2. If the process does not recover, check the logs:
    ```bash
    # Show recent MCP server output
    tapps-brain-mcp --project-dir /path/to/project 2>&1 | head -50

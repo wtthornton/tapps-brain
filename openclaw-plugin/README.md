@@ -1,6 +1,6 @@
 # tapps-brain OpenClaw Plugin
 
-**Plugin version 1.3.1** (tracks the [tapps-brain](https://github.com/wtthornton/tapps-brain) Python release).
+**Plugin version 1.4.0** (tracks the [tapps-brain](https://github.com/wtthornton/tapps-brain) Python release).
 
 ContextEngine plugin that integrates tapps-brain persistent memory into [OpenClaw](https://openclaw.dev).
 
@@ -83,13 +83,16 @@ Settings are defined in `openclaw.plugin.json` via `configSchema`:
 ```
 OpenClaw
   └── tapps-brain plugin (TypeScript, this package)
-        └── tapps-brain-mcp (Python, spawned as child process)
-              └── MemoryStore (SQLite, WAL, FTS5)
+        └── @modelcontextprotocol/sdk (StdioClientTransport + Client)
+              └── tapps-brain-mcp (Python, spawned as child process)
+                    └── MemoryStore (SQLite, WAL, FTS5)
 ```
 
 The plugin is a thin wrapper. All memory logic lives in the Python MCP backend.
-The plugin uses `ownsCompaction: false` — OpenClaw handles compaction, the plugin
-just flushes context to memory before it's discarded.
+The plugin uses `@modelcontextprotocol/sdk`'s official `StdioClientTransport` and
+`Client` — the same SDK used by OpenClaw itself — for MCP communication.
+`ownsCompaction: false` — OpenClaw handles compaction, the plugin just flushes
+context to memory before it's discarded.
 
 ## Development
 

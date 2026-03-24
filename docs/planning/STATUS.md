@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-24 (America/Chicago) — release **v1.3.1**; EPIC-034/035/036 complete; docs and Cursor rules aligned with release gate
+**Last updated:** 2026-03-24 (America/Chicago) — release **v1.4.0**; EPIC-037/038/039 complete; official MCP SDK transport in OpenClaw plugin
 
-**Package version (PyPI / `pyproject.toml`):** **1.3.1**
+**Package version (PyPI / `pyproject.toml`):** **1.4.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -91,10 +91,13 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-034 | Production readiness QA remediation | done | 2026-03-24 |
 | EPIC-035 | OpenClaw install and upgrade UX consistency | done | 2026-03-24 |
 | EPIC-036 | Release gate hardening for OpenClaw distribution | done | 2026-03-24 |
+| EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
+| EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
+| EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
 
 ## Current focus
 
-**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`).
+**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin v1.4.0 uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (see fix_plan):**
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
