@@ -307,10 +307,9 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
       message: { role: "user", content: "another message" },
     });
 
-    // logger.info should have been called with elapsed_ms
+    // logger.info should have been called with inline elapsed time
     expect(logger.info).toHaveBeenCalledWith(
-      "[tapps-brain] ingest:",
-      expect.objectContaining({ elapsed_ms: expect.any(Number) }),
+      expect.stringMatching(/^\[tapps-brain\] ingest: \d+ms$/),
     );
   });
 
@@ -355,8 +354,7 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
     });
 
     expect(logger.info).toHaveBeenCalledWith(
-      "[tapps-brain] assemble:",
-      expect.objectContaining({ elapsed_ms: expect.any(Number) }),
+      expect.stringMatching(/^\[tapps-brain\] assemble: \d+ memories, \d+ms$/),
     );
   });
 
@@ -388,7 +386,9 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
 
     // Flush fails gracefully, then delegates compaction to runtime
     expect(result).toMatchObject({ ok: true, compacted: true });
-    expect(logger.warn).toHaveBeenCalledWith("[tapps-brain] compact flush:", mcpError);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tapps-brain\] compact flush: Error: ingest failed$/),
+    );
   });
 
   // -------------------------------------------------------------------------

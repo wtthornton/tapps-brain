@@ -267,12 +267,13 @@ export class TappsBrainEngine {
       return { ingested: true };
     }
 
-    if (isHeartbeat || !message.content?.trim()) {
+    const contentText = normalizeContent(message.content);
+    if (isHeartbeat || !contentText.trim()) {
       return { ingested: true };
     }
 
     // Track recent messages for compact() flush
-    this.recentMessages.push(message.content);
+    this.recentMessages.push(contentText);
     if (this.recentMessages.length > 20) {
       this.recentMessages.shift();
     }
@@ -290,11 +291,11 @@ export class TappsBrainEngine {
     const t0 = Date.now();
     try {
       await this.mcpClient.callTool("memory_capture", {
-        response: message.content,
+        response: contentText,
         source: message.role === "user" ? "human" : "agent",
         agent_scope: this.hiveEnabled ? "hive" : "private",
       });
-      this.logger.info("[tapps-brain] ingest:", { elapsed_ms: Date.now() - t0 });
+      this.logger.info(`[tapps-brain] ingest: ${Date.now() - t0}ms`);
     } catch (err) {
       // Fail gracefully — never block the conversation
       this.logger.warn("[tapps-brain] ingest:", err);
@@ -332,7 +333,7 @@ export class TappsBrainEngine {
       const recentUserMessages = messages
         .filter((m) => m.role === "user")
         .slice(-3)
-        .map((m) => m.content)
+        .map((m) => normalizeContent(m.content))
         .join(" ");
 
       const query = recentUserMessages || "session context";
@@ -356,14 +357,14 @@ export class TappsBrainEngine {
 
       const memories = recall.memories ?? [];
       if (memories.length === 0) {
-        this.logger.info("[tapps-brain] assemble:", { elapsed_ms: Date.now() - t0, memories: 0 });
+        this.logger.info(`[tapps-brain] assemble: 0 memories, ${Date.now() - t0}ms`);
         return { messages, estimatedTokens: 0 };
       }
 
       // Filter out keys already injected in this session
       const newMemories = memories.filter((m) => !this.injectedKeys.has(m.key));
       if (newMemories.length === 0) {
-        this.logger.info("[tapps-brain] assemble:", { elapsed_ms: Date.now() - t0, memories: 0 });
+        this.logger.info(`[tapps-brain] assemble: 0 memories, ${Date.now() - t0}ms`);
         return { messages, estimatedTokens: 0 };
       }
 
@@ -397,10 +398,7 @@ export class TappsBrainEngine {
         ? Math.ceil(charCount / 4)
         : 0;
 
-      this.logger.info("[tapps-brain] assemble:", {
-        elapsed_ms: Date.now() - t0,
-        memories: newMemories.length,
-      });
+      this.logger.info(`[tapps-brain] assemble: ${newMemories.length} memories, ${Date.now() - t0}ms`);
       return { messages, estimatedTokens, systemPromptAddition };
     } catch (err) {
       // Fail gracefully — return messages unchanged
@@ -453,7 +451,7 @@ export class TappsBrainEngine {
         this.recentMessages = [];
       } catch (err) {
         // Fail gracefully — never block compaction
-        this.logger.warn("[tapps-brain] compact flush:", err);
+        this.logger.warn(`[tapps-brain] compact flush: ${String(err)}`);
       }
     }
 
@@ -1206,6 +1204,36 @@ export default definePluginEntry({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Normalize message.content to a plain string.
+ *
+ * OpenClaw can pass AgentMessage objects where `content` is either:
+ * - a plain string (legacy format)
+ * - an array of content blocks: [{type: "text", text: "..."}]
+ * - undefined/null
+ *
+ * This helper handles all three cases safely.
+ */
+export function normalizeContent(
+  content: unknown,
+): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter((block): block is { type: string; text: string } =>
+        block !== null &&
+        typeof block === "object" &&
+        block.type === "text" &&
+        typeof block.text === "string",
+      )
+      .map((block) => block.text)
+      .join("");
+  }
+  return "";
+}
 
 /**
  * Parse a MEMORY.md file into importable memory entries.
