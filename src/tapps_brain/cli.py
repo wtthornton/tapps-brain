@@ -1345,6 +1345,7 @@ def hive_status(as_json: JsonFlag = False) -> None:
     hive = HiveStore()
     try:
         ns_counts = hive.count_by_namespace()
+        agent_counts = hive.count_by_agent()
         total = sum(ns_counts.values())
     finally:
         hive.close()
@@ -1355,7 +1356,11 @@ def hive_status(as_json: JsonFlag = False) -> None:
             "id": a.id,
             "profile": a.profile,
             "skills": a.skills,
-            "namespace_entries": ns_counts.get(a.profile, 0),
+            # Count entries contributed by this agent (across all namespaces).
+            # Previously used ns_counts.get(a.profile, 0) which always returned 0
+            # because entries go to "universal" or a domain namespace, not a
+            # namespace named after the agent ID. Fix for issue #22.
+            "entries_contributed": agent_counts.get(a.id, 0),
         }
         for a in registry.list_agents()
     ]
@@ -1376,7 +1381,7 @@ def hive_status(as_json: JsonFlag = False) -> None:
             for a in agents:
                 typer.echo(
                     f"  {a['id']} (profile={a['profile']}, "
-                    f"namespace_entries={a['namespace_entries']})"
+                    f"entries_contributed={a['entries_contributed']})"
                 )
         else:
             typer.echo("\nNo registered agents.")

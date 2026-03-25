@@ -448,3 +448,89 @@ class TestLayerHalfLivesValidation:
         """A negative value in layer_half_lives raises ValueError."""
         with pytest.raises(ValidationError):
             DecayConfig(layer_half_lives={"bad_layer": -5})
+
+
+class TestPersonalAssistantProfileDecay:
+    """Regression tests for issue #11: personal-assistant profile ephemeral tier decay.
+
+    The personal-assistant profile defines layers: identity, long-term, short-term,
+    ephemeral. None of the first three are MemoryTier enum values, so they rely on
+    ``layer_half_lives`` from the profile's DecayConfig. This test ensures no
+    ``unknown_tier_fallback`` warning fires and the correct half-lives are used.
+    """
+
+    def _make_decay_config_from_personal_assistant(self) -> "DecayConfig":
+        """Load personal-assistant profile and build its DecayConfig."""
+        from tapps_brain.decay import decay_config_from_profile
+        from tapps_brain.profile import get_builtin_profile
+
+        profile = get_builtin_profile("personal-assistant")
+        return decay_config_from_profile(profile)
+
+    def test_ephemeral_tier_uses_1_day_half_life(self) -> None:
+        """personal-assistant ephemeral layer has half_life_days=1; decay uses that value."""
+        from tapps_brain.decay import _get_half_life
+
+        config = self._make_decay_config_from_personal_assistant()
+        half_life = _get_half_life("ephemeral", config)
+        assert half_life == 1
+
+    def test_identity_tier_uses_365_day_half_life(self) -> None:
+        """personal-assistant identity layer has half_life_days=365."""
+        from tapps_brain.decay import _get_half_life
+
+        config = self._make_decay_config_from_personal_assistant()
+        half_life = _get_half_life("identity", config)
+        assert half_life == 365
+
+    def test_short_term_tier_uses_7_day_half_life(self) -> None:
+        """personal-assistant short-term layer has half_life_days=7."""
+        from tapps_brain.decay import _get_half_life
+
+        config = self._make_decay_config_from_personal_assistant()
+        half_life = _get_half_life("short-term", config)
+        assert half_life == 7
+
+    def test_no_unknown_tier_fallback_warning_for_profile_tiers(self) -> None:
+        """Profile-defined tiers (identity, long-term, short-term, ephemeral) must
+        not trigger unknown_tier_fallback warning — fix for issue #11."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.decay import _get_half_life
+
+        config = self._make_decay_config_from_personal_assistant()
+        mock_logger = MagicMock()
+        with patch("tapps_brain.decay.logger", mock_logger):
+            for tier_name in ("identity", "long-term", "short-term", "ephemeral"):
+                _get_half_life(tier_name, config)
+
+        mock_logger.warning.assert_not_called()
+
+    def test_recall_orchestrator_receives_decay_config(self) -> None:
+        """MemoryStore.recall() must pass decay_config to RecallOrchestrator so that
+        profile-defined tiers are resolved correctly (fix for issue #11)."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.profile import get_builtin_profile
+        from tapps_brain.store import MemoryStore
+
+        profile = get_builtin_profile("personal-assistant")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = MemoryStore(
+                project_root=Path(tmpdir),
+                profile=profile,
+            )
+            # Trigger lazy init of _recall_orchestrator
+            with patch("tapps_brain.decay.logger") as mock_log:
+                store.recall("test query")
+                # No unknown_tier_fallback warning should be emitted
+                for call in mock_log.warning.call_args_list:
+                    assert call[0][0] != "unknown_tier_fallback", (
+                        f"unexpected unknown_tier_fallback warning: {call}"
+                    )
+            # The orchestrator should have a non-None decay config
+            assert hasattr(store, "_recall_orchestrator")
+            orc = store._recall_orchestrator  # type: ignore[attr-defined]
+            assert orc._decay_config is not None

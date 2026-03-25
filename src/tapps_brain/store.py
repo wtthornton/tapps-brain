@@ -1228,6 +1228,7 @@ class MemoryStore:
                     agent_profile = getattr(self._profile, "name", "repo-brain")
                 self._recall_orchestrator = RecallOrchestrator(
                     self,
+                    decay_config=self._get_decay_config(),
                     hive_store=self._hive_store,
                     hive_recall_weight=hive_weight,
                     hive_agent_profile=agent_profile,

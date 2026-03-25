@@ -309,6 +309,40 @@ class TestHiveStoreCountByNamespace:
         assert "universal" in counts
 
 
+class TestHiveStoreCountByAgent:
+    """count_by_agent() method — fix for issue #22."""
+
+    def test_empty_store_returns_empty_dict(self, hive: HiveStore) -> None:
+        assert hive.count_by_agent() == {}
+
+    def test_single_agent(self, hive: HiveStore) -> None:
+        hive.save(key="k1", value="v1", source_agent="agent-a")
+        hive.save(key="k2", value="v2", source_agent="agent-a")
+        counts = hive.count_by_agent()
+        assert counts == {"agent-a": 2}
+
+    def test_multiple_agents(self, hive: HiveStore) -> None:
+        hive.save(key="k1", value="v1", namespace="universal", source_agent="tapp")
+        hive.save(key="k2", value="v2", namespace="universal", source_agent="engram")
+        hive.save(key="k3", value="v3", namespace="repo-brain", source_agent="tapp")
+        counts = hive.count_by_agent()
+        assert counts["tapp"] == 2
+        assert counts["engram"] == 1
+
+    def test_counts_across_namespaces(self, hive: HiveStore) -> None:
+        """Agent contributions span multiple namespaces (universal + domain)."""
+        hive.save(key="k1", value="v1", namespace="universal", source_agent="bot")
+        hive.save(key="k2", value="v2", namespace="my-profile", source_agent="bot")
+        counts = hive.count_by_agent()
+        # Both entries from "bot" counted regardless of namespace
+        assert counts.get("bot", 0) == 2
+
+    def test_unknown_agent_returns_zero_via_get(self, hive: HiveStore) -> None:
+        hive.save(key="k1", value="v1", source_agent="agent-x")
+        counts = hive.count_by_agent()
+        assert counts.get("nonexistent", 0) == 0
+
+
 class TestNamespaceIsolation:
     """Cross-cutting: namespace isolation guarantees."""
 

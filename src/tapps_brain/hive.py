@@ -769,6 +769,18 @@ class HiveStore:
             ).fetchall()
         return {row[0]: row[1] for row in rows}
 
+    def count_by_agent(self) -> dict[str, int]:
+        """Return a mapping of source_agent → entry count across all namespaces.
+
+        Used by ``hive status`` to show how many entries each agent has
+        contributed, regardless of namespace (universal or domain).
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT source_agent, COUNT(*) FROM hive_memories GROUP BY source_agent"
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
 
 # ---------------------------------------------------------------------------
 # Propagation Engine (011-E)

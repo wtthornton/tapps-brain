@@ -40,6 +40,16 @@ class DecayConfig(BaseModel):
         description="Epic 65.11: how-to workflows, steps (between pattern=60, context=14)",
     )
     context_half_life_days: int = Field(default=14, ge=1)
+    ephemeral_half_life_days: int = Field(
+        default=1,
+        ge=1,
+        description="Momentary context / current conversation state (personal-assistant profile: 1 day).",
+    )
+    session_half_life_days: int = Field(
+        default=1,
+        ge=1,
+        description="Ephemeral, current session only. Same default as ephemeral.",
+    )
 
     # Confidence bounds
     confidence_floor: float = Field(default=0.1, ge=0.0, le=1.0)
@@ -88,6 +98,8 @@ _TIER_HALF_LIFE_ATTR: dict[MemoryTier, str] = {
     MemoryTier.pattern: "pattern_half_life_days",
     MemoryTier.procedural: "procedural_half_life_days",
     MemoryTier.context: "context_half_life_days",
+    MemoryTier.ephemeral: "ephemeral_half_life_days",
+    MemoryTier.session: "session_half_life_days",
 }
 
 _SOURCE_CEILING_ATTR: dict[MemorySource, str] = {
@@ -325,6 +337,8 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         "pattern": "pattern_half_life_days",
         "procedural": "procedural_half_life_days",
         "context": "context_half_life_days",
+        "ephemeral": "ephemeral_half_life_days",
+        "session": "session_half_life_days",
     }
     for name, attr in legacy_map.items():
         if name in layer_half_lives:
@@ -341,6 +355,8 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         pattern_half_life_days=legacy.get("pattern_half_life_days", 60),
         procedural_half_life_days=legacy.get("procedural_half_life_days", 30),
         context_half_life_days=legacy.get("context_half_life_days", 14),
+        ephemeral_half_life_days=legacy.get("ephemeral_half_life_days", 1),
+        session_half_life_days=legacy.get("session_half_life_days", 1),
         confidence_floor=global_floor,
         human_confidence_ceiling=ceilings.get("human", 0.95),
         agent_confidence_ceiling=ceilings.get("agent", 0.85),

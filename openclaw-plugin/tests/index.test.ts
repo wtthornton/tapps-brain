@@ -1616,3 +1616,49 @@ describe("TappsBrainEngine — searchWithSessionMemory (028-G)", () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Issue #9 — tool name conflict regression
+// ---------------------------------------------------------------------------
+
+describe("Issue #9 — tapps_memory_search and tapps_memory_get do not conflict with builtins", () => {
+  it("default export registers tapps_memory_search, not memory_search", async () => {
+    /**
+     * Verifies that the plugin registers tools named tapps_memory_search and
+     * tapps_memory_get (not memory_search / memory_get) to avoid collisions
+     * with OpenClaw built-in memory tools.
+     */
+    const registeredTools: string[] = [];
+    const mockApi = {
+      pluginConfig: {},
+      config: {},
+      id: "test-agent",
+      logger: makeMockLogger(),
+      runtime: {
+        agent: {
+          resolveAgentWorkspaceDir: () => "/tmp/workspace",
+        },
+      },
+      registerTool: (tool: { name: string }) => {
+        registeredTools.push(tool.name);
+      },
+      registerContextEngine: vi.fn(),
+    };
+
+    // Import default export to call register()
+    const pluginModule = await import("../src/index.js");
+    const entry = pluginModule.default;
+
+    // register() bootstraps async in the background — we only need the sync part
+    vi.mocked(McpClient).mockImplementationOnce(() => makeMockClient());
+    (entry as { register: (api: typeof mockApi) => void }).register(mockApi as unknown as Parameters<typeof entry.register>[0]);
+
+    // Must have the renamed tools
+    expect(registeredTools).toContain("tapps_memory_search");
+    expect(registeredTools).toContain("tapps_memory_get");
+
+    // Must NOT have the conflicting names
+    expect(registeredTools).not.toContain("memory_search");
+    expect(registeredTools).not.toContain("memory_get");
+  });
+});

@@ -160,7 +160,7 @@ export class TappsBrainEngine {
   readonly info: ContextEngineInfo = {
     id: "tapps-brain-memory",
     name: "tapps-brain — Persistent Memory",
-    version: "1.4.2",
+    version: "1.4.3",
     ownsCompaction: false,
   };
 
@@ -666,20 +666,27 @@ function registerMemorySlotTools(
   api: OpenClawPluginApi,
   engine: TappsBrainEngine,
 ): void {
-  // memory_search — full-text search over tapps-brain persistent store
+  // tapps_memory_search — full-text search over tapps-brain persistent store.
+  //
+  // NOTE: Previously registered as "memory_search" which conflicted with
+  // OpenClaw's built-in memory_search tool. Renamed to "tapps_memory_search"
+  // to avoid the collision (fix for issue #9). The ContextEngine's assemble()
+  // hook handles automatic memory injection, so agents don't need to call
+  // this tool directly in most cases — it is available for explicit queries.
   api.registerTool({
-    name: "memory_search",
+    name: "tapps_memory_search",
     description:
       "Search tapps-brain persistent memory using full-text search (BM25 ranking). " +
-      "Returns matching entries in OpenClaw snippet format.",
+      "Returns matching entries with tier and confidence scores. " +
+      "Note: assemble() injects relevant memories automatically; use this tool " +
+      "for explicit queries not covered by auto-injection.",
     parameters: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query text" },
         tier: {
           type: "string",
-          enum: ["architectural", "pattern", "procedural", "context"],
-          description: "Optional tier filter",
+          description: "Optional tier filter (e.g. 'identity', 'long-term', 'short-term', 'ephemeral')",
         },
         limit: {
           type: "number",
@@ -718,11 +725,15 @@ function registerMemorySlotTools(
         return toolResult({ snippets: [] });
       }
     },
-  }, { names: ["memory_search"] });
+  });
 
-  // memory_get — retrieve a single entry by key or path
+  // tapps_memory_get — retrieve a single tapps-brain entry by key or path.
+  //
+  // NOTE: Previously registered as "memory_get" which conflicted with
+  // OpenClaw's built-in memory_get tool. Renamed to "tapps_memory_get"
+  // to avoid the collision (fix for issue #9).
   api.registerTool({
-    name: "memory_get",
+    name: "tapps_memory_get",
     description:
       "Retrieve a single tapps-brain memory entry by key or path. " +
       "Returns the entry value as Markdown text.",
@@ -756,7 +767,7 @@ function registerMemorySlotTools(
         return toolResult("");
       }
     },
-  }, { names: ["memory_get"] });
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1935,19 +1935,28 @@ class TestMCPAdditionalCoverage:
     # hive_status namespace_entries per agent
     # ------------------------------------------------------------------
 
-    def test_hive_status_agents_include_namespace_entries(self, store_dir):
-        """hive_status agents list includes namespace_entries field."""
+    def test_hive_status_agents_include_entries_contributed(self, store_dir):
+        """hive_status agents list includes entries_contributed field (fix for issue #22).
+
+        Previously the field was named namespace_entries and always returned 0
+        because it looked up by profile name in the namespace counts. Now it
+        counts by source_agent across all namespaces.
+        """
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=True, agent_id="ns-test-agent")
         register_fn = _tool_fn(server, "agent_register")
         status_fn = _tool_fn(server, "hive_status")
+        save_fn = _tool_fn(server, "memory_save")
         register_fn(agent_id="ns-agent", profile="repo-brain", skills="")
         result = json.loads(status_fn())
         assert "agents" in result
         for agent in result["agents"]:
-            assert "namespace_entries" in agent
-            assert isinstance(agent["namespace_entries"], int)
+            # New field name
+            assert "entries_contributed" in agent
+            assert isinstance(agent["entries_contributed"], int)
+            # Old field name must be gone
+            assert "namespace_entries" not in agent
         server._tapps_store._hive_store.close()
         server._tapps_store.close()
 

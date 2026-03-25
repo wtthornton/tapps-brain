@@ -1420,6 +1420,7 @@ def create_server(  # noqa: PLR0915
             hive: HiveStore = shared if shared is not None else HiveStore()
             try:
                 ns_counts = hive.count_by_namespace()
+                agent_counts = hive.count_by_agent()
 
                 registry = AgentRegistry()
                 agents = [
@@ -1427,7 +1428,11 @@ def create_server(  # noqa: PLR0915
                         "id": a.id,
                         "profile": a.profile,
                         "skills": a.skills,
-                        "namespace_entries": ns_counts.get(a.profile, 0),
+                        # Count entries contributed by this agent across all namespaces.
+                        # Fix for issue #22: previously used ns_counts.get(a.profile, 0)
+                        # which always returned 0 because entries are saved to "universal"
+                        # or a domain namespace, not a namespace named after the agent ID.
+                        "entries_contributed": agent_counts.get(a.id, 0),
                     }
                     for a in registry.list_agents()
                 ]
