@@ -26,9 +26,11 @@ class TestMemoryTier:
         assert MemoryTier.pattern == "pattern"
         assert MemoryTier.procedural == "procedural"  # Epic 65.11
         assert MemoryTier.context == "context"
+        assert MemoryTier.ephemeral == "ephemeral"
+        assert MemoryTier.session == "session"
 
     def test_member_count(self) -> None:
-        assert len(MemoryTier) == 4
+        assert len(MemoryTier) == 6  # architectural, pattern, procedural, context, ephemeral, session
 
 
 class TestMemorySource:
@@ -50,11 +52,12 @@ class TestMemoryScope:
     def test_values(self) -> None:
         assert MemoryScope.project == "project"
         assert MemoryScope.branch == "branch"
+        assert MemoryScope.ephemeral == "ephemeral"
         assert MemoryScope.session == "session"
         assert MemoryScope.shared == "shared"
 
     def test_member_count(self) -> None:
-        assert len(MemoryScope) == 4
+        assert len(MemoryScope) == 5  # project, branch, ephemeral, session, shared
 
 
 class TestMemoryEntry:

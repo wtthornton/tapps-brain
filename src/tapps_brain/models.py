@@ -29,6 +29,8 @@ class MemoryTier(StrEnum):
     pattern = "pattern"  # medium decay - coding patterns, conventions
     procedural = "procedural"  # medium decay - how to do (workflows, steps); Epic 65.11
     context = "context"  # fast decay - session-specific context
+    ephemeral = "ephemeral"  # very fast decay - momentary context (default: 1 day)
+    session = "session"  # ephemeral, current session only (default: 1 day)
 
 
 class MemorySource(StrEnum):
@@ -45,6 +47,7 @@ class MemoryScope(StrEnum):
 
     project = "project"  # visible across the entire project
     branch = "branch"  # scoped to a git branch
+    ephemeral = "ephemeral"  # very fast decay - momentary context (profile: 1 day)
     session = "session"  # ephemeral, current session only
     shared = "shared"  # eligible for cross-project federation
 
