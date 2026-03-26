@@ -26,6 +26,67 @@ logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Save-time conflict detection (GitHub #44, task 040.16)
+# ---------------------------------------------------------------------------
+
+
+def detect_save_conflicts(
+    new_value: str,
+    new_tier: str,
+    existing_entries: list[MemoryEntry],
+    similarity_threshold: float = 0.6,
+) -> list[MemoryEntry]:
+    """Detect existing entries that may conflict with a new value.
+
+    Looks for entries in the same tier with high text similarity but
+    different content (potential contradiction).
+
+    Args:
+        new_value: The value about to be saved.
+        new_tier: The tier of the entry about to be saved.
+        existing_entries: All entries to scan for conflicts.
+        similarity_threshold: Entries with similarity above this threshold
+            (but not identical) are considered potential conflicts.
+
+    Returns:
+        List of potentially conflicting entries, sorted by similarity descending.
+    """
+    from tapps_brain.models import MemoryEntry as _MemoryEntry  # local import to avoid cycles
+    from tapps_brain.similarity import text_similarity
+
+    def _normalize(text: str) -> str:
+        return " ".join(text.lower().split())
+
+    new_value_norm = _normalize(new_value)
+
+    # Build a temporary entry for text_similarity (needs a MemoryEntry)
+    _sentinel = _MemoryEntry(
+        key="conflict-sentinel",
+        value=new_value,
+        tier=new_tier,  # type: ignore[arg-type]
+    )
+
+    scored: list[tuple[float, _MemoryEntry]] = []
+    for entry in existing_entries:
+        # Only compare entries in the same tier
+        entry_tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        if entry_tier != new_tier:
+            continue
+
+        # Skip identical entries (normalized)
+        if _normalize(entry.value) == new_value_norm:
+            continue
+
+        sim = text_similarity(_sentinel, entry)
+        if sim > similarity_threshold:
+            scored.append((sim, entry))
+
+    # Sort by similarity descending, then by key for determinism
+    scored.sort(key=lambda t: (-t[0], t[1].key))
+    return [entry for _, entry in scored]
+
+
+# ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 

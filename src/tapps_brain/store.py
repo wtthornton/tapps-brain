@@ -349,6 +349,7 @@ class MemoryStore:
         batch_context: str | None = None,
         session_id: str | None = None,
         dedup: bool = True,
+        conflict_check: bool = False,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -375,6 +376,11 @@ class MemoryStore:
                 (e.g. "import_markdown", "seed", "federation_sync", "consolidate").
             session_id: Optional session identifier for implicit feedback tracking
                 (STORY-029.3).  Used by 029-4b correction detection.
+            conflict_check: When True, check for entries that may conflict with
+                the new value before saving.  Conflicting entries (same tier,
+                high similarity, different content) are logged as warnings and
+                their ``invalid_at`` field is set to now (GitHub #44, task 040.16).
+                Defaults to False — no behaviour change when not opted in.
         """
         # agent_scope enum validation
         if agent_scope not in VALID_AGENT_SCOPES:
@@ -446,6 +452,47 @@ class MemoryStore:
                         pass  # Entry was deleted between check and reinforce; proceed with save
             self._bloom.add(normalized)
 
+        # Conflict detection (GitHub #44, task 040.16) — opt-in only.
+        _conflict_valid_at: str | None = None
+        if conflict_check:
+            from tapps_brain.contradictions import detect_save_conflicts
+
+            with self._lock:
+                _all_entries = list(self._entries.values())
+            _conflicts = detect_save_conflicts(value, tier, _all_entries)
+            if _conflicts:
+                _conflict_keys = [e.key for e in _conflicts]
+                logger.warning(
+                    "memory_save_conflicts_detected",
+                    key=key,
+                    conflicting_keys=_conflict_keys,
+                )
+                # Mark conflicting entries as superseded (set invalid_at = now)
+                _now_conflict = _utc_now_iso()
+                _conflict_valid_at = _now_conflict
+                for _conflict_entry in _conflicts:
+                    if _conflict_entry.invalid_at is None:
+                        _invalidated: MemoryEntry | None = None
+                        with self._lock:
+                            _current = self._entries.get(_conflict_entry.key)
+                            if _current is not None and _current.invalid_at is None:
+                                _invalidated = _current.model_copy(
+                                    update={
+                                        "invalid_at": _now_conflict,
+                                        "updated_at": _now_conflict,
+                                    }
+                                )
+                                self._entries[_conflict_entry.key] = _invalidated
+                        if _invalidated is not None:
+                            try:
+                                self._persistence.save(_invalidated)
+                            except Exception:
+                                logger.debug(
+                                    "conflict_invalidate_persist_failed",
+                                    conflict_key=_conflict_entry.key,
+                                    exc_info=True,
+                                )
+
         self._metrics.increment("store.save")
         with MetricsTimer(self._metrics, "store.save_ms"):
             now = _utc_now_iso()
@@ -484,8 +531,11 @@ class MemoryStore:
                     contradicted=existing.contradicted if existing else False,
                     contradiction_reason=(existing.contradiction_reason if existing else None),
                     seeded_from=existing.seeded_from if existing else None,
-                    # Preserve temporal fields on update (EPIC-004)
-                    valid_at=existing.valid_at if existing else None,
+                    # Preserve temporal fields on update (EPIC-004);
+                    # override valid_at when conflicts were resolved (040.16)
+                    valid_at=_conflict_valid_at if _conflict_valid_at else (
+                        existing.valid_at if existing else None
+                    ),
                     invalid_at=existing.invalid_at if existing else None,
                     superseded_by=existing.superseded_by if existing else None,
                     # Provenance metadata (GitHub #38)
