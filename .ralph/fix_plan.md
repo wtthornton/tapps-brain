@@ -155,7 +155,7 @@
 
 ### Phase 7: Multi-Agent Architecture
 
-- [ ] **040.21** Groups as first-class layer (GitHub #37): Add `hive_groups` and `hive_group_members` tables. Add group-scoped memory storage (namespace = group name). Update recall path: brain → group(s) → hive universal. Add CLI/MCP tools for group management. Preserve profile sovereignty per brain.
+- [x] **040.21** Groups as first-class layer (GitHub #37): Add `hive_groups` and `hive_group_members` tables. Add group-scoped memory storage (namespace = group name). Update recall path: brain → group(s) → hive universal. Add CLI/MCP tools for group management. Preserve profile sovereignty per brain. *(2026-03-25)*
 
 ### Release
 
