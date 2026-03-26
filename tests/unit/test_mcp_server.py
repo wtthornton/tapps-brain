@@ -1387,6 +1387,85 @@ class TestMemorySaveInputValidation:
         assert result["status"] == "saved"
 
 
+class TestProfileAwareTierValidation:
+    """Tests for profile-aware tier validation in memory_save (issue #16)."""
+
+    @pytest.fixture()
+    def mcp_server_with_profile_v2(self, tmp_path):
+        """Create an MCP server with personal-assistant profile active.
+
+        Copies the built-in personal-assistant profile YAML into the project's
+        .tapps-brain directory so create_server auto-resolves it.
+        """
+        import shutil
+
+        from tapps_brain.mcp_server import create_server
+        from tapps_brain.profile import _builtin_profiles_dir  # noqa: PLC2701
+
+        brain_dir = tmp_path / ".tapps-brain"
+        brain_dir.mkdir(exist_ok=True)
+        src = _builtin_profiles_dir() / "personal-assistant.yaml"
+        shutil.copy(src, brain_dir / "profile.yaml")
+
+        server = create_server(tmp_path)
+        yield server
+        if hasattr(server, "_tapps_store"):
+            server._tapps_store.close()
+
+    def test_profile_tier_identity_accepted(self, mcp_server_with_profile_v2):
+        """memory_save with profile tier 'identity' should succeed, not return invalid_tier."""
+        save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
+        result = json.loads(
+            save_fn(key="profile-tier-identity", value="Bill is a CTO", tier="identity")
+        )
+        assert result.get("error") != "invalid_tier", (
+            f"Expected 'identity' tier to be accepted by personal-assistant profile, got: {result}"
+        )
+        assert result.get("status") == "saved"
+
+    def test_profile_tier_long_term_accepted(self, mcp_server_with_profile_v2):
+        """memory_save with profile tier 'long-term' should succeed."""
+        save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
+        result = json.loads(
+            save_fn(key="profile-tier-long-term", value="Bill prefers Python", tier="long-term")
+        )
+        assert result.get("error") != "invalid_tier", (
+            f"Expected 'long-term' tier to be accepted by personal-assistant profile, got: {result}"
+        )
+        assert result.get("status") == "saved"
+
+    def test_profile_tier_short_term_accepted(self, mcp_server_with_profile_v2):
+        """memory_save with profile tier 'short-term' should succeed."""
+        save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
+        result = json.loads(
+            save_fn(key="profile-tier-short-term", value="Current sprint task", tier="short-term")
+        )
+        assert result.get("error") != "invalid_tier"
+        assert result.get("status") == "saved"
+
+    def test_invalid_tier_still_rejected_with_profile(self, mcp_server_with_profile_v2):
+        """Completely invalid tier is still rejected even when a profile is active."""
+        save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
+        result = json.loads(
+            save_fn(key="bad-tier-profile", value="test", tier="totally-invalid-tier")
+        )
+        assert result["error"] == "invalid_tier"
+        # valid_values should include both legacy tiers and profile tiers
+        valid = result["valid_values"]
+        assert "identity" in valid, "Profile tier 'identity' should appear in valid_values"
+        assert "long-term" in valid, "Profile tier 'long-term' should appear in valid_values"
+        assert "architectural" in valid, "Legacy tier 'architectural' should appear in valid_values"
+
+    def test_legacy_tier_still_accepted_with_profile(self, mcp_server_with_profile_v2):
+        """Legacy enum tiers still work even when a profile is active."""
+        save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
+        result = json.loads(
+            save_fn(key="legacy-tier-arch", value="Core service architecture", tier="architectural")
+        )
+        assert result.get("error") != "invalid_tier"
+        assert result.get("status") == "saved"
+
+
 class TestMemoryReinforceValidation:
     """Tests for confidence_boost range validation in memory_reinforce (story-022.1)."""
 

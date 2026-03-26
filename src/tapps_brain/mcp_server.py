@@ -158,7 +158,11 @@ def create_server(  # noqa: PLR0915
         Args:
             key: Unique identifier for the memory.
             value: Memory content text.
-            tier: Memory tier — one of: architectural, pattern, procedural, context.
+            tier: Memory tier — one of the built-in tiers (architectural, pattern,
+                procedural, context) or a layer name defined in the active profile
+                (e.g. identity, long-term, short-term, ephemeral for personal-assistant).
+                Valid values depend on the active profile; check memory_health for the
+                current profile name and its layer names.
             source: Source — one of: human, agent, inferred, system.
             tags: Optional tags for categorization.
             scope: Visibility scope — one of: project, branch, session.
@@ -184,13 +188,23 @@ def create_server(  # noqa: PLR0915
                 }
             )
 
-        _valid_tiers = ("architectural", "pattern", "procedural", "context")
-        if tier not in _valid_tiers:
+        # Build valid tier set: legacy enum tiers + active profile layer names (issue #16)
+        _legacy_tiers: frozenset[str] = frozenset(
+            ("architectural", "pattern", "procedural", "context")
+        )
+        _profile_tiers: frozenset[str] = (
+            frozenset(store.profile.layer_names)
+            if store.profile is not None
+            else frozenset()
+        )
+        _all_valid_tiers: frozenset[str] = _legacy_tiers | _profile_tiers
+        if tier not in _all_valid_tiers:
+            _sorted_valid = sorted(_all_valid_tiers)
             return json.dumps(
                 {
                     "error": "invalid_tier",
-                    "message": f"Invalid tier {tier!r}. Valid values: {list(_valid_tiers)}",
-                    "valid_values": list(_valid_tiers),
+                    "message": f"Invalid tier {tier!r}. Valid values: {_sorted_valid}",
+                    "valid_values": _sorted_valid,
                 }
             )
         _valid_sources = ("human", "agent", "inferred", "system")
