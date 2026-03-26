@@ -257,6 +257,23 @@ class HiveStore:
                 with contextlib.suppress(sqlite3.OperationalError):
                     self._conn.execute(trigger_sql)
 
+            # Group tables (040.21)
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS hive_groups (
+                    name        TEXT    PRIMARY KEY,
+                    description TEXT    NOT NULL DEFAULT '',
+                    created_at  TEXT    NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS hive_group_members (
+                    group_name  TEXT    NOT NULL REFERENCES hive_groups(name),
+                    agent_id    TEXT    NOT NULL,
+                    role        TEXT    NOT NULL DEFAULT 'member',
+                    joined_at   TEXT    NOT NULL,
+                    PRIMARY KEY (group_name, agent_id)
+                );
+            """)
+
             self._conn.commit()
 
     def record_feedback_event(
@@ -752,6 +769,98 @@ class HiveStore:
                     ).fetchall()
 
         return [self._row_to_dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Groups (040.21)
+    # ------------------------------------------------------------------
+
+    def create_group(self, name: str, description: str = "") -> dict[str, Any]:
+        """Create a new agent group."""
+        now = datetime.now(tz=UTC).isoformat()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO hive_groups (name, description, created_at) VALUES (?, ?, ?)",
+                (name, description, now),
+            )
+            self._conn.commit()
+        logger.info("hive.group.created", name=name)
+        return {"name": name, "description": description, "created_at": now}
+
+    def add_group_member(self, group_name: str, agent_id: str, role: str = "member") -> bool:
+        """Add an agent to a group. Returns True on success."""
+        now = datetime.now(tz=UTC).isoformat()
+        with self._lock:
+            # Ensure group exists
+            row = self._conn.execute(
+                "SELECT name FROM hive_groups WHERE name = ?", (group_name,)
+            ).fetchone()
+            if row is None:
+                logger.warning("hive.group.not_found", group_name=group_name)
+                return False
+            self._conn.execute(
+                "INSERT OR REPLACE INTO hive_group_members (group_name, agent_id, role, joined_at) "
+                "VALUES (?, ?, ?, ?)",
+                (group_name, agent_id, role, now),
+            )
+            self._conn.commit()
+        logger.info("hive.group.member_added", group_name=group_name, agent_id=agent_id, role=role)
+        return True
+
+    def remove_group_member(self, group_name: str, agent_id: str) -> bool:
+        """Remove an agent from a group. Returns True if membership existed."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM hive_group_members WHERE group_name = ? AND agent_id = ?",
+                (group_name, agent_id),
+            )
+            self._conn.commit()
+        removed = cur.rowcount > 0
+        if removed:
+            logger.info("hive.group.member_removed", group_name=group_name, agent_id=agent_id)
+        return removed
+
+    def list_groups(self) -> list[dict[str, Any]]:
+        """List all groups."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM hive_groups ORDER BY name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_group_members(self, group_name: str) -> list[dict[str, Any]]:
+        """Get members of a group."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM hive_group_members WHERE group_name = ? ORDER BY joined_at",
+                (group_name,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_agent_groups(self, agent_id: str) -> list[str]:
+        """Get all group names an agent belongs to."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT group_name FROM hive_group_members WHERE agent_id = ? ORDER BY group_name",
+                (agent_id,),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def search_with_groups(
+        self,
+        query: str,
+        agent_id: str,
+        agent_namespace: str | None = None,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        """Search across agent's own namespace + group namespaces + universal.
+
+        The agent's own namespace defaults to ``agent_id`` when not supplied.
+        Group memories are stored with namespace = group name.
+        """
+        own_ns = agent_namespace or agent_id
+        group_names = self.get_agent_groups(agent_id)
+        namespaces = list({own_ns, *group_names, "universal"})
+        return self.search(query, namespaces=namespaces, **kwargs)
 
     def list_namespaces(self) -> list[str]:
         """Return distinct namespace names that have at least one entry."""
