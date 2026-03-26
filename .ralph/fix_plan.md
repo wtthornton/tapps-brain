@@ -159,7 +159,7 @@
 
 ### Release
 
-- [ ] **040.22** Version bump to v2.0.0, update CHANGELOG.md, run full QA gate, rebuild OpenClaw plugin, update docs.
+- [x] **040.22** Version bump to v2.0.0, update CHANGELOG.md, run full QA gate, rebuild OpenClaw plugin, update docs.
 
 ---
 
