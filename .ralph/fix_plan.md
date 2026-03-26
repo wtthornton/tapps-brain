@@ -126,7 +126,7 @@
 
 - [x] **040.5** Adaptive stability schema (GitHub #28): Add `stability REAL` and `difficulty REAL` columns to memories table. Add `adaptive_stability` boolean to `LayerDefinition`. Default false for backward compat. Implement FSRS-style stability update on reinforcement when enabled. Update `DecayConfig` and `calculate_decayed_confidence()`.
 - [x] **040.6** Bayesian confidence (GitHub #35): Add `useful_access_count INTEGER DEFAULT 0` and `total_access_count INTEGER DEFAULT 0` columns. Implement `confidence_new = confidence_old × (useful + α) / (total + α + β)` update path. Track useful vs total access in retrieval feedback loop.
-- [ ] **040.7** Stability-based promotion (GitHub #39): Add `promotion_strategy` field to `LayerDefinition` (default: "threshold" for backward compat). Implement "stability" strategy: `promote_score = stability × log1p(access_count) × (1 - D/10)`. Depends on 040.5.
+- [x] **040.7** Stability-based promotion (GitHub #39): Add `promotion_strategy` field to `LayerDefinition` (default: "threshold" for backward compat). Implement "stability" strategy: `promote_score = stability × log1p(access_count) × (1 - D/10)`. Depends on 040.5.
 - [ ] **040.8** Enhanced composite scoring (GitHub #41): Add optional `graph_centrality` (default 0.0) and `provenance_trust` (default 0.0) weight fields to `ScoringConfig`. If both are 0.0, existing 4-weight formula unchanged. Update `_weights_sum_check()`. Depends on 040.2.
 
 ### Phase 3: Search & Retrieval
