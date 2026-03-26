@@ -65,12 +65,28 @@ class PromotionEngine:
 
         tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
         layer = profile.get_layer(tier_name)
-        if layer is None or layer.promotion_to is None or layer.promotion_threshold is None:
+        if layer is None or layer.promotion_to is None:
+            return None
+
+        if now is None:
+            now = datetime.now(tz=UTC)
+
+        # Stability-based promotion strategy
+        if layer.promotion_strategy == "stability" and entry.stability > 0:
+            promote_score = (
+                entry.stability
+                * math.log1p(entry.access_count)
+                * (1 - entry.difficulty / 10)
+            )
+            if promote_score > layer.promotion_stability_threshold:
+                return layer.promotion_to
+            return None
+
+        # Threshold-based promotion strategy (default)
+        if layer.promotion_threshold is None:
             return None
 
         threshold = layer.promotion_threshold
-        if now is None:
-            now = datetime.now(tz=UTC)
 
         # Check access count
         if entry.access_count < threshold.min_access_count:
@@ -117,6 +133,11 @@ class PromotionEngine:
 
         if now is None:
             now = datetime.now(tz=UTC)
+
+        # Stability-based demotion check
+        if layer.demotion_min_stability > 0 and entry.stability > 0:
+            if entry.stability < layer.demotion_min_stability:
+                return layer.demotion_to
 
         eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
 

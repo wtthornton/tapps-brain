@@ -49,6 +49,18 @@ class LayerDefinition(BaseModel):
         default=False,
         description="Enable FSRS-style adaptive stability on reinforcement.",
     )
+    promotion_strategy: str = Field(
+        default="threshold",
+        description="Promotion strategy: 'threshold' (default) or 'stability'.",
+    )
+    promotion_stability_threshold: float = Field(
+        default=10.0,
+        description="Stability score threshold for stability-based promotion.",
+    )
+    demotion_min_stability: float = Field(
+        default=0.0,
+        description="Minimum stability to stay in this tier. 0 = no demotion by stability.",
+    )
 
 
 _DEFAULT_SOURCE_TRUST: dict[str, float] = {
