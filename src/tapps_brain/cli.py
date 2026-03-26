@@ -1845,6 +1845,69 @@ def _circuit_status_color(circuit_state: str) -> str:
     return typer.colors.RED
 
 
+@diagnostics_app.command("health")
+def diagnostics_health_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+    no_hive: Annotated[
+        bool,
+        typer.Option("--no-hive", help="Skip Hive connectivity check."),
+    ] = False,
+) -> None:
+    """Run a native health check: store, hive, integrity status in one call.
+
+    Exit codes: 0 = all green, 1 = warnings, 2 = errors.
+    """
+    from tapps_brain.health_check import run_health_check
+
+    root = Path(project_dir) if project_dir else None
+    report = run_health_check(project_root=root, check_hive=not no_hive)
+
+    if as_json:
+        _output(report.model_dump(mode="json"), as_json=True)
+    else:
+        status_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(report.status, "?")
+        typer.echo(f"{status_icon} tapps-brain health: {report.status.upper()}")
+        typer.echo(f"   Generated: {report.generated_at}  ({report.elapsed_ms:.0f}ms)")
+        typer.echo("")
+
+        # Store
+        s = report.store
+        s_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(s.status, "?")
+        typer.echo(f"Store {s_icon}: {s.entries}/{s.max_entries} entries  schema={s.schema_version}  size={s.size_bytes // 1024}KB")
+        if s.tiers:
+            typer.echo(f"  Tiers: {', '.join(f'{k}={v}' for k, v in sorted(s.tiers.items()))}")
+
+        # Hive
+        h = report.hive
+        h_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(h.status, "?")
+        if h.connected:
+            typer.echo(f"Hive  {h_icon}: {h.entries} entries  {h.agents} agents  ns={', '.join(h.namespaces)}")
+        else:
+            typer.echo(f"Hive  {h_icon}: not connected")
+
+        # Integrity
+        i = report.integrity
+        i_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(i.status, "?")
+        typer.echo(
+            f"Integ {i_icon}: corrupted={i.corrupted_entries}  "
+            f"orphaned={i.orphaned_relations}  expired={i.expired_entries}"
+        )
+
+        if report.errors:
+            typer.echo("")
+            typer.echo("Errors:")
+            for err in report.errors:
+                typer.echo(f"  ❌ {err}")
+        if report.warnings:
+            typer.echo("")
+            typer.echo("Warnings:")
+            for warn in report.warnings:
+                typer.echo(f"  ⚠️  {warn}")
+
+    raise typer.Exit(code=report.exit_code())
+
+
 @diagnostics_app.command("report")
 def diagnostics_report_cmd(
     project_dir: ProjectDir = None,

@@ -142,6 +142,7 @@ class BM25Scorer:
 
     k1: float = _DEFAULT_K1
     b: float = _DEFAULT_B
+    delta: float = 1.0
 
     # Internal state (populated by build_index)
     _doc_count: int = field(default=0, init=False, repr=False)
@@ -227,5 +228,5 @@ class BM25Scorer:
             # TF saturation
             numerator = tf * (self.k1 + 1.0)
             denominator = tf + self.k1 * (1.0 - self.b + self.b * dl / self._avgdl)
-            total += idf * numerator / denominator
+            total += idf * (numerator / denominator + self.delta)
         return total

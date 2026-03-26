@@ -1140,6 +1140,41 @@ def create_server(  # noqa: PLR0915
         return json.dumps(result.model_dump(mode="json"))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def tapps_brain_health(check_hive: bool = True) -> str:
+        """Return a structured health report for tapps-brain (issue #15).
+
+        Runs all health checks — store connectivity, hive status, and
+        integrity verification — and returns a single machine-readable
+        JSON report.
+
+        The ``status`` field is one of:
+        - ``"ok"``    — all green
+        - ``"warn"``  — degraded but functional (check ``warnings`` list)
+        - ``"error"`` — action required (check ``errors`` list)
+
+        Use this tool in monitoring cron jobs instead of chaining multiple
+        commands. A healthy instance returns ``{"status": "ok", ...}``.
+
+        Args:
+            check_hive: Whether to include Hive connectivity in the report
+                        (default True). Set to False for faster checks.
+        """
+        try:
+            from tapps_brain.health_check import run_health_check
+
+            root = getattr(store, "_project_root", None)
+            report = run_health_check(project_root=root, check_hive=check_hive)
+            return json.dumps(report.model_dump(mode="json"))
+        except Exception as exc:
+            import traceback
+            return json.dumps({
+                "status": "error",
+                "errors": [str(exc)],
+                "warnings": [],
+                "traceback": traceback.format_exc(),
+            })
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_gc_config() -> str:
         """Return the current garbage collection configuration.
 

@@ -106,6 +106,63 @@
 
 ---
 
+---
+
+## EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades (GitHub #24–#44)
+
+**Priority: CRITICAL — 21 stories from competitive research + algorithm analysis**
+**Goal: Make tapps-brain the best AI agent memory system that exists**
+**Constraint: ALL changes must be backward-compatible with existing profiles**
+**Research reports: plans/tapps-brain-research-2026-03-25.md, plans/tapps-brain-algorithms-research-2026-03-25.md**
+
+### Phase 1: Quick Wins (no dependency, low risk)
+
+- [ ] **040.1** BM25+ variant (GitHub #34): In `bm25.py` `_score_doc()`, add lower-bound delta δ=1 to TF-saturation score. One-line change. Update tests.
+- [ ] **040.2** Provenance metadata (GitHub #38): Add `source_session_id TEXT`, `source_channel TEXT`, `source_message_id TEXT`, `triggered_by TEXT` columns to memories table via migration. Update `save()` to accept and persist these fields. Update schema version.
+- [ ] **040.3** Temporal fact validity (GitHub #29): Add `valid_from TEXT`, `valid_until TEXT`, `superseded_by TEXT` columns to memories table via migration. Update query layer to filter expired facts by default (`WHERE valid_until IS NULL OR valid_until > datetime('now')`). Add `include_historical` parameter to search/recall. Update schema version.
+- [ ] **040.4** Memory health stats (GitHub #43): Add `tapps-brain stats` CLI command showing: total by tier with avg confidence, added this week, decayed/prunable, near-expiry, top accessed. Expose via MCP tool.
+
+### Phase 2: Core Algorithm Upgrades
+
+- [ ] **040.5** Adaptive stability schema (GitHub #28): Add `stability REAL` and `difficulty REAL` columns to memories table. Add `adaptive_stability` boolean to `LayerDefinition`. Default false for backward compat. Implement FSRS-style stability update on reinforcement when enabled. Update `DecayConfig` and `calculate_decayed_confidence()`.
+- [ ] **040.6** Bayesian confidence (GitHub #35): Add `useful_access_count INTEGER DEFAULT 0` and `total_access_count INTEGER DEFAULT 0` columns. Implement `confidence_new = confidence_old × (useful + α) / (total + α + β)` update path. Track useful vs total access in retrieval feedback loop.
+- [ ] **040.7** Stability-based promotion (GitHub #39): Add `promotion_strategy` field to `LayerDefinition` (default: "threshold" for backward compat). Implement "stability" strategy: `promote_score = stability × log1p(access_count) × (1 - D/10)`. Depends on 040.5.
+- [ ] **040.8** Enhanced composite scoring (GitHub #41): Add optional `graph_centrality` (default 0.0) and `provenance_trust` (default 0.0) weight fields to `ScoringConfig`. If both are 0.0, existing 4-weight formula unchanged. Update `_weights_sum_check()`. Depends on 040.2.
+
+### Phase 3: Search & Retrieval
+
+- [ ] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion.
+- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9.
+- [ ] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
+
+### Phase 4: Consolidation & Summarization
+
+- [ ] **040.12** TextRank summarization (GitHub #32): Implement Mihalcea & Tarau 2004 TextRank for extractive summarization. Pure Python, no dependencies. ~100 lines. Use for session summarization and dispose() flush.
+- [ ] **040.13** Louvain consolidation (GitHub #36): Replace greedy clustering in `similarity.py` with Louvain community detection (use `python-louvain` or pure implementation). Add information-theoretic merge criterion.
+- [ ] **040.14** Write deduplication with Bloom filter (GitHub #31): Implement in-memory Bloom filter (64KB, k=7). Check before every write. If possible duplicate, run Jaccard similarity check. If dup found, reinforce existing instead of inserting.
+
+### Phase 5: Graph & Relationships
+
+- [ ] **040.15** Memory relationship graph + PageRank (GitHub #33): Enhance `memory_relations` table. Implement PageRank scoring via recursive CTE or in-memory computation. Pre-compute on write/consolidation. Add multi-hop traversal query support.
+- [ ] **040.16** Per-entry conflict detection (GitHub #44): On save, check for semantic contradiction with existing entries in same tier. Surface conflicts with resolution options (override with temporal validity from 040.3, keep both, reject). Depends on 040.3.
+
+### Phase 6: OpenClaw Plugin Fixes
+
+- [ ] **040.17** dispose() flush (GitHub #24): In OpenClaw plugin `dispose()`, flush `recentMessages` to tapps-brain via `memory_ingest` before stopping MCP client. Reuse compact() flush logic.
+- [ ] **040.18** Periodic mid-session flush (GitHub #25): Add configurable `flushIntervalMessages` (default 10) to plugin config. In `ingest()`, flush to tapps-brain after accumulating N messages.
+- [ ] **040.19** assemble() recall nudge (GitHub #27): Inject memory-recall reminder in assemble() context block when incoming message looks like a question or references prior context.
+- [ ] **040.20** openclaw init/upgrade command (GitHub #26): Add `tapps-brain openclaw init` (scaffold correct workspace files) and `tapps-brain openclaw upgrade` (fix stale AGENTS.md, regenerate MEMORY.md from tapps-brain, migrate tier names).
+
+### Phase 7: Multi-Agent Architecture
+
+- [ ] **040.21** Groups as first-class layer (GitHub #37): Add `hive_groups` and `hive_group_members` tables. Add group-scoped memory storage (namespace = group name). Update recall path: brain → group(s) → hive universal. Add CLI/MCP tools for group management. Preserve profile sovereignty per brain.
+
+### Release
+
+- [ ] **040.22** Version bump to v2.0.0, update CHANGELOG.md, run full QA gate, rebuild OpenClaw plugin, update docs.
+
+---
+
 ## Deferred (feature work, not in scope)
 
 | Epic | Title | Priority | Notes |
