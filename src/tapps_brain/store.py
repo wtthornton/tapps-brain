@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
     from tapps_brain.hive import HiveStore
 
+from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
@@ -198,6 +199,11 @@ class MemoryStore:
         for entry in self._persistence.load_all():
             self._entries[entry.key] = entry
 
+        # Bloom filter for write-path deduplication (GitHub #31)
+        self._bloom = BloomFilter()
+        for _entry in self._entries.values():
+            self._bloom.add(normalize_for_dedup(_entry.value))
+
         # Cold-start: load all relations into memory, indexed by entry key
         self._relations: dict[str, list[dict[str, Any]]] = {}
         all_relations = self._persistence.list_relations()
@@ -342,6 +348,7 @@ class MemoryStore:
         skip_consolidation: bool = False,
         batch_context: str | None = None,
         session_id: str | None = None,
+        dedup: bool = True,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -415,6 +422,29 @@ class MemoryStore:
         # Sanitise if flagged but not blocked
         if not safety.safe and safety.sanitised_content:
             value = safety.sanitised_content
+
+        # Bloom filter dedup fast-path (GitHub #31)
+        if dedup:
+            normalized = normalize_for_dedup(value)
+            if self._bloom.might_contain(normalized):
+                _dup_key: str | None = None
+                with self._lock:
+                    for _existing in self._entries.values():
+                        if normalize_for_dedup(_existing.value) == normalized:
+                            _dup_key = _existing.key
+                            break
+                if _dup_key is not None:
+                    logger.debug(
+                        "memory_dedup_bloom_hit",
+                        key=key,
+                        existing_key=_dup_key,
+                    )
+                    self._metrics.increment("store.save.dedup_skip")
+                    try:
+                        return self.reinforce(_dup_key)
+                    except KeyError:
+                        pass  # Entry was deleted between check and reinforce; proceed with save
+            self._bloom.add(normalized)
 
         self._metrics.increment("store.save")
         with MetricsTimer(self._metrics, "store.save_ms"):
