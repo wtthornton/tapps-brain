@@ -78,6 +78,24 @@ class ScoringConfig(BaseModel):
     confidence: float = Field(default=0.30, ge=0.0, le=1.0)
     recency: float = Field(default=0.15, ge=0.0, le=1.0)
     frequency: float = Field(default=0.15, ge=0.0, le=1.0)
+    graph_centrality: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Weight for graph centrality signal (placeholder; populated when "
+            "relationship graph #33 is implemented). Defaults to 0.0 (disabled)."
+        ),
+    )
+    provenance_trust: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Weight for provenance trust signal (source_trust * channel_trust). "
+            "Defaults to 0.0 (disabled)."
+        ),
+    )
     bm25_norm_k: float = Field(default=5.0, ge=0.1)
     frequency_cap: int = Field(default=20, ge=1)
     source_trust: dict[str, float] = Field(
@@ -94,14 +112,36 @@ class ScoringConfig(BaseModel):
 
     @model_validator(mode="after")
     def _weights_sum_check(self) -> ScoringConfig:
-        total = self.relevance + self.confidence + self.recency + self.frequency
-        if not (self._WEIGHT_SUM_LO <= total <= self._WEIGHT_SUM_HI):
-            msg = (
-                f"Scoring weights must sum to ~1.0 (got {total:.3f}). "
-                f"relevance={self.relevance}, confidence={self.confidence}, "
-                f"recency={self.recency}, frequency={self.frequency}"
+        using_new_signals = self.graph_centrality > 0.0 or self.provenance_trust > 0.0
+        if using_new_signals:
+            # All 6 weights must sum to ~1.0
+            total = (
+                self.relevance
+                + self.confidence
+                + self.recency
+                + self.frequency
+                + self.graph_centrality
+                + self.provenance_trust
             )
-            raise ValueError(msg)
+            if not (self._WEIGHT_SUM_LO <= total <= self._WEIGHT_SUM_HI):
+                msg = (
+                    f"Scoring weights must sum to ~1.0 (got {total:.3f}). "
+                    f"relevance={self.relevance}, confidence={self.confidence}, "
+                    f"recency={self.recency}, frequency={self.frequency}, "
+                    f"graph_centrality={self.graph_centrality}, "
+                    f"provenance_trust={self.provenance_trust}"
+                )
+                raise ValueError(msg)
+        else:
+            # Original 4 weights must sum to ~1.0
+            total = self.relevance + self.confidence + self.recency + self.frequency
+            if not (self._WEIGHT_SUM_LO <= total <= self._WEIGHT_SUM_HI):
+                msg = (
+                    f"Scoring weights must sum to ~1.0 (got {total:.3f}). "
+                    f"relevance={self.relevance}, confidence={self.confidence}, "
+                    f"recency={self.recency}, frequency={self.frequency}"
+                )
+                raise ValueError(msg)
         return self
 
 

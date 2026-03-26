@@ -137,14 +137,27 @@ class MemoryRetriever:
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
             self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
             self._bm25_norm_k = float(getattr(scoring_config, "bm25_norm_k", _BM25_NORM_K))
+            self._w_graph = float(getattr(scoring_config, "graph_centrality", 0.0))
+            self._w_provenance = float(getattr(scoring_config, "provenance_trust", 0.0))
             raw_trust = getattr(scoring_config, "source_trust", None)
             self._source_trust: dict[str, float] = (
                 dict(raw_trust) if isinstance(raw_trust, dict) else dict(_DEFAULT_SOURCE_TRUST)
             )
             # Warn if profile weights don't sum to ~1.0 (would make scores inconsistent)
-            weight_sum = (
-                self._w_relevance + self._w_confidence + self._w_recency + self._w_frequency
-            )
+            using_new_signals = self._w_graph > 0.0 or self._w_provenance > 0.0
+            if using_new_signals:
+                weight_sum = (
+                    self._w_relevance
+                    + self._w_confidence
+                    + self._w_recency
+                    + self._w_frequency
+                    + self._w_graph
+                    + self._w_provenance
+                )
+            else:
+                weight_sum = (
+                    self._w_relevance + self._w_confidence + self._w_recency + self._w_frequency
+                )
             if abs(weight_sum - 1.0) > _WEIGHT_SUM_TOLERANCE:
                 logger.warning(
                     "scoring_weights_do_not_sum_to_one",
@@ -153,12 +166,16 @@ class MemoryRetriever:
                     confidence=self._w_confidence,
                     recency=self._w_recency,
                     frequency=self._w_frequency,
+                    graph_centrality=self._w_graph,
+                    provenance_trust=self._w_provenance,
                 )
         else:
             self._w_relevance = _W_RELEVANCE
             self._w_confidence = _W_CONFIDENCE
             self._w_recency = _W_RECENCY
             self._w_frequency = _W_FREQUENCY
+            self._w_graph = 0.0
+            self._w_provenance = 0.0
             self._frequency_cap = _FREQUENCY_CAP
             self._bm25_norm_k = _BM25_NORM_K
             self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
@@ -255,11 +272,25 @@ class MemoryRetriever:
             recency = self._recency_score(entry, now)
             frequency = self._frequency_score(entry)
 
+            # Graph centrality: placeholder 0.0 until relationship graph (#33) is implemented
+            graph_centrality = 0.0
+
+            # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
+            source_key_pt = (
+                entry.source.value
+                if isinstance(entry.source, MemorySource)
+                else str(entry.source)
+            )
+            channel_trust = 1.0
+            provenance_trust = self._source_trust.get(source_key_pt, 1.0) * channel_trust
+
             composite = (
                 self._w_relevance * relevance_norm
                 + self._w_confidence * eff_conf
                 + self._w_recency * recency
                 + self._w_frequency * frequency
+                + self._w_graph * graph_centrality
+                + self._w_provenance * provenance_trust
             )
 
             # M2: Apply per-source trust multiplier
