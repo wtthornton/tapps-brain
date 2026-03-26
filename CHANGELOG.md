@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v2.0.0 (2026-03-26)
+
+### Research-Driven Upgrades (EPIC-040)
+
+**Algorithm Improvements:**
+- BM25+ variant with lower-bound delta for better variable-length scoring (#34)
+- FSRS-style adaptive stability — memories that prove useful persist longer (#28)
+- Bayesian confidence updates — learn from actual usage patterns (#35)
+- Stability-based promotion/demotion strategy (#39)
+- Enhanced 6-signal composite scoring with graph centrality and provenance trust (#41)
+- TextRank extractive summarization — no LLM required (#32)
+- RAKE keyword extraction for automatic key generation (#42)
+- Louvain community detection for smarter consolidation (#36)
+- PageRank scoring for memory relationship graphs (#33)
+- Bloom filter write deduplication (#31)
+
+**Temporal & Provenance:**
+- Temporal fact validity windows — valid_from/valid_until (#29)
+- Rich provenance metadata — source_session_id, source_channel, triggered_by (#38)
+- Per-entry conflict detection and resolution API (#44)
+
+**OpenClaw Plugin:**
+- dispose() now flushes conversation context before shutdown (#24)
+- Periodic mid-session memory flush every N messages (#25)
+- assemble() injects memory recall nudge (#27)
+- openclaw init/upgrade CLI commands (#26)
+
+**Multi-Agent:**
+- Groups as first-class Hive layer — SESSION → BRAIN → GROUP → HIVE (#37)
+- Memory health stats CLI command (#43)
+
+**Schema:** v11 → v15 (4 migrations, all backward-compatible)
+
+---
+
 ## [Unreleased]
 
 ---
