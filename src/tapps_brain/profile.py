@@ -45,6 +45,10 @@ class LayerDefinition(BaseModel):
     promotion_to: str | None = None
     promotion_threshold: PromotionThreshold | None = None
     demotion_to: str | None = None
+    adaptive_stability: bool = Field(
+        default=False,
+        description="Enable FSRS-style adaptive stability on reinforcement.",
+    )
 
 
 _DEFAULT_SOURCE_TRUST: dict[str, float] = {

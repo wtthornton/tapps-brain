@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -42,6 +42,7 @@ _SCHEMA_V10 = 10
 _SCHEMA_V11 = 11
 _SCHEMA_V12 = 12
 _SCHEMA_V13 = 13
+_SCHEMA_V14 = 14
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -162,6 +163,8 @@ class MemoryPersistence:
                 self._migrate_v11_to_v12(cur)
             if current_version < _SCHEMA_V13:
                 self._migrate_v12_to_v13(cur)
+            if current_version < _SCHEMA_V14:
+                self._migrate_v13_to_v14(cur)
 
             self._conn.commit()
 
@@ -531,6 +534,26 @@ class MemoryPersistence:
             (13, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v13_to_v14(self, cur: sqlite3.Cursor) -> None:
+        """Add stability and difficulty columns for FSRS-style adaptive decay (GitHub #28).
+
+        stability: per-memory effective half-life in days (0.0 = use tier default).
+        difficulty: memory difficulty score 1-10 (0.0 = auto from tier).
+        """
+        for col in ("stability", "difficulty"):
+            try:
+                cur.execute(
+                    f"ALTER TABLE memories ADD COLUMN {col} REAL NOT NULL DEFAULT 0.0"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (14, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -672,6 +695,11 @@ class MemoryPersistence:
         if schema_ver >= _SCHEMA_V13:
             columns.extend(["valid_from", "valid_until"])
             values = (*values, entry.valid_from, entry.valid_until)
+
+        # Adaptive stability and difficulty (v14+, GitHub #28)
+        if schema_ver >= _SCHEMA_V14:
+            columns.extend(["stability", "difficulty"])
+            values = (*values, entry.stability, entry.difficulty)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -1087,6 +1115,13 @@ class MemoryPersistence:
             valid_from = row["valid_from"] or ""
             valid_until = row["valid_until"] or ""
 
+        # Read adaptive stability / difficulty (v14+, GitHub #28)
+        stability: float = 0.0
+        difficulty: float = 0.0
+        with contextlib.suppress(KeyError, IndexError):
+            stability = float(row["stability"] or 0.0)
+            difficulty = float(row["difficulty"] or 0.0)
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1120,6 +1155,8 @@ class MemoryPersistence:
             triggered_by=triggered_by,
             valid_from=valid_from,
             valid_until=valid_until,
+            stability=stability,
+            difficulty=difficulty,
         )
 
     @staticmethod

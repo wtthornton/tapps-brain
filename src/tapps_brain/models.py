@@ -174,6 +174,16 @@ class MemoryEntry(BaseModel):
     source_message_id: str = Field(default="", description="Message ID that triggered this memory.")
     triggered_by: str = Field(default="", description="Event or action that triggered this memory.")
 
+    # Adaptive stability and difficulty for FSRS-style decay (GitHub #28, task 040.5)
+    stability: float = Field(
+        default=0.0,
+        description="FSRS-style memory stability in days. 0.0 means use tier half-life.",
+    )
+    difficulty: float = Field(
+        default=0.0,
+        description="Memory difficulty (1-10). 0.0 means auto from tier.",
+    )
+
     # Flywheel feedback tallies (EPIC-031); floats allow fractional implicit signals.
     positive_feedback_count: float = Field(
         default=0.0,

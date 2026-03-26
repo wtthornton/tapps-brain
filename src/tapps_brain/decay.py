@@ -215,6 +215,83 @@ def _decay_reference_time(entry: MemoryEntry) -> str:
     return entry.updated_at
 
 
+# ---------------------------------------------------------------------------
+# Difficulty defaults per tier name (GitHub #28, task 040.5)
+# ---------------------------------------------------------------------------
+
+_TIER_DIFFICULTY_DEFAULT: dict[str, float] = {
+    "identity": 1.0,
+    "long-term": 3.0,
+    "short-term": 6.0,
+    "ephemeral": 9.0,
+    # Legacy tier names
+    "architectural": 1.0,
+    "pattern": 3.0,
+    "procedural": 4.0,
+    "context": 6.0,
+    "session": 9.0,
+}
+
+_STABILITY_MIN = 0.1
+_STABILITY_MAX = 3650.0
+
+
+def update_stability(
+    entry: MemoryEntry,
+    config: DecayConfig,
+    was_useful: bool,
+    *,
+    now: datetime | None = None,
+) -> tuple[float, float]:
+    """Compute updated (stability, difficulty) using FSRS-style rules.
+
+    Args:
+        entry: The memory entry being accessed.
+        config: Decay configuration (used for tier half-life lookup).
+        was_useful: Whether this access was a useful recall.
+        now: Optional current time (for testing).
+
+    Returns:
+        (new_stability_days, new_difficulty)
+    """
+    tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+
+    # Initialize stability from tier half-life if unset
+    s_old = entry.stability
+    if s_old == 0.0:
+        s_old = float(_get_half_life(entry.tier, config))
+
+    # Initialize difficulty from tier if unset
+    d_old = entry.difficulty
+    if d_old == 0.0:
+        d_old = _TIER_DIFFICULTY_DEFAULT.get(tier_str, 5.0)
+
+    # Compute current retrievability R = 0.5^(days / stability)
+    ref_time = _decay_reference_time(entry)
+    days = _days_since(ref_time, now)
+    r = math.pow(0.5, days / max(s_old, 0.1))
+
+    if was_useful:
+        # FSRS-inspired stability increase on successful recall
+        # S_new = S_old * (1 + 0.4 * exp(-D/3) * S_old^(-0.2) * (exp(0.5*(1-R)) - 1))
+        factor = (
+            1.0
+            + 0.4
+            * math.exp(-d_old / 3.0)
+            * math.pow(s_old, -0.2)
+            * (math.exp(0.5 * (1.0 - r)) - 1.0)
+        )
+        s_new = s_old * max(factor, 1.0)  # stability should only grow on useful access
+    else:
+        # Simple shrink on non-useful access
+        s_new = s_old * 0.8
+
+    # Clamp to valid range
+    s_new = max(_STABILITY_MIN, min(_STABILITY_MAX, s_new))
+
+    return (s_new, d_old)
+
+
 def calculate_decayed_confidence(
     entry: MemoryEntry,
     config: DecayConfig,
@@ -227,6 +304,7 @@ def calculate_decayed_confidence(
     When ``decay_model="power_law"`` (EPIC-010), uses:
     ``confidence * (1 + days / (k * half_life))^(-beta)``.
     The result is clamped to ``[confidence_floor, source_ceiling]``.
+    If ``entry.stability > 0``, uses stability as effective half-life (GitHub #28).
     """
     half_life = _get_half_life(entry.tier, config)
     ceiling = _get_ceiling(entry.source, config)
@@ -238,15 +316,20 @@ def calculate_decayed_confidence(
     # Determine decay model for this tier (EPIC-010)
     tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
 
+    # GitHub #28: if entry has a non-zero stability, use it as effective half-life
+    if entry.stability > 0.0:
+        effective_hl = entry.stability
+    else:
+        effective_hl = float(half_life)
+
     # EPIC-010: Importance tags — boost effective half-life
-    effective_hl = float(half_life)
     importance_tags = config.layer_importance_tags.get(tier_str, {})
     if importance_tags and entry.tags:
         max_multiplier = 1.0
         for tag in entry.tags:
             if tag in importance_tags:
                 max_multiplier = max(max_multiplier, importance_tags[tag])
-        effective_hl = half_life * max_multiplier
+        effective_hl = effective_hl * max_multiplier
 
     decay_model = config.layer_decay_models.get(tier_str, config.decay_model)
 
