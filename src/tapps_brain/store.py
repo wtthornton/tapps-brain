@@ -723,6 +723,7 @@ class MemoryStore:
         tier: str | None = None,
         scope: str | None = None,
         as_of: str | None = None,
+        include_historical: bool = False,
     ) -> list[MemoryEntry]:
         """Search via FTS5, with optional post-filters.
 
@@ -735,6 +736,9 @@ class MemoryStore:
                 When set, only entries valid at that time are returned.
                 When ``None`` (default), temporally invalid entries are excluded
                 using the current time.
+            include_historical: When True, include expired/superseded entries
+                (GitHub #29, task 040.3). When False (default), entries whose
+                ``invalid_at`` or ``valid_until`` is in the past are excluded.
         """
         self._metrics.increment("store.search")
         with MetricsTimer(self._metrics, "store.search_ms"):
@@ -748,8 +752,9 @@ class MemoryStore:
                 tag_set = set(tags)
                 results = [r for r in results if tag_set.intersection(r.tags)]
 
-            # Temporal filtering (EPIC-004)
-            results = [r for r in results if r.is_temporally_valid(as_of)]
+            # Temporal filtering (EPIC-004 + GitHub #29)
+            if not include_historical:
+                results = [r for r in results if r.is_temporally_valid(as_of)]
 
             self._metrics.increment("store.search.results", len(results))
             return results

@@ -151,6 +151,17 @@ class MemoryEntry(BaseModel):
         description="Key of the entry that replaced this one.",
     )
 
+    # Temporal validity window (GitHub #29, task 040.3)
+    # Alias fields that mirror valid_at/invalid_at but use human-friendly ISO-8601 strings.
+    valid_from: str = Field(
+        default="",
+        description="ISO-8601 UTC: when this fact begins to be valid (inclusive). Empty means 'always'.",
+    )
+    valid_until: str = Field(
+        default="",
+        description="ISO-8601 UTC: when this fact stops being valid (exclusive). Empty means 'forever'.",
+    )
+
     # Integrity hash for tamper detection (H4a)
     integrity_hash: str | None = Field(
         default=None,
@@ -250,11 +261,20 @@ class MemoryEntry(BaseModel):
         both ``valid_at`` and ``invalid_at`` set to ``None`` is always valid.
 
         The window is ``[valid_at, invalid_at)`` — inclusive start, exclusive end.
+        Also checks ``valid_from`` / ``valid_until`` (GitHub #29, task 040.3).
         """
         ts = as_of or _utc_now_iso()
+        # Check valid_at / invalid_at (bi-temporal EPIC-004 fields)
         if self.valid_at is not None and ts < self.valid_at:
             return False
-        return not (self.invalid_at is not None and ts >= self.invalid_at)
+        if self.invalid_at is not None and ts >= self.invalid_at:
+            return False
+        # Check valid_from / valid_until (human-friendly alias fields, GitHub #29)
+        if self.valid_from and ts < self.valid_from:
+            return False
+        if self.valid_until and ts >= self.valid_until:
+            return False
+        return True
 
     @property
     def is_superseded(self) -> bool:

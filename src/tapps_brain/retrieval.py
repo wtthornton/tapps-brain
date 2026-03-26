@@ -174,6 +174,7 @@ class MemoryRetriever:
         min_confidence: float = _MIN_CONFIDENCE_FLOOR,
         as_of: str | None = None,
         include_superseded: bool = False,
+        include_historical: bool = False,
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
@@ -195,12 +196,16 @@ class MemoryRetriever:
                 only entries valid at that time are returned.
             include_superseded: When True, include temporally invalid entries
                 (marked with ``stale=True`` and a 0.5x relevance penalty).
+            include_historical: Alias for ``include_superseded`` (GitHub #29, task 040.3).
+                When True, include expired/superseded entries in results.
 
         Returns:
             Scored memories sorted by composite score (descending).
         """
         if not query or not query.strip():
             return []
+        # include_historical is an alias for include_superseded (GitHub #29)
+        include_superseded = include_superseded or include_historical
 
         limit = max(1, min(limit, _MAX_RESULTS))
         now = datetime.now(tz=UTC)

@@ -140,7 +140,7 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 12  # v12 provenance metadata (GitHub #38)
+        assert persistence.get_schema_version() == 13  # v12 provenance metadata (GitHub #38)
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -322,7 +322,7 @@ class TestSchemaMigrations:
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 12
+        assert p.get_schema_version() == 13
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -372,7 +372,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 12
+        assert p.get_schema_version() == 13
 
         tables = [
             r[0]
@@ -414,7 +414,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 12
+        assert p.get_schema_version() == 13
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -437,7 +437,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 12
+        assert p.get_schema_version() == 13
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -506,7 +506,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 12
+        assert p.get_schema_version() == 13
 
         # Verify the integrity_hash column was added by the v7→v8 migration.
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()

@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -41,6 +41,7 @@ _SCHEMA_V9 = 9
 _SCHEMA_V10 = 10
 _SCHEMA_V11 = 11
 _SCHEMA_V12 = 12
+_SCHEMA_V13 = 13
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -159,6 +160,8 @@ class MemoryPersistence:
                 self._migrate_v10_to_v11(cur)
             if current_version < _SCHEMA_V12:
                 self._migrate_v11_to_v12(cur)
+            if current_version < _SCHEMA_V13:
+                self._migrate_v12_to_v13(cur)
 
             self._conn.commit()
 
@@ -504,6 +507,30 @@ class MemoryPersistence:
             (12, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v12_to_v13(self, cur: sqlite3.Cursor) -> None:
+        """Add valid_from and valid_until columns for temporal fact validity (GitHub #29, task 040.3).
+
+        These are human-friendly aliases for the existing valid_at/invalid_at bi-temporal fields.
+        They represent the validity window of a fact as reported by the user or source.
+        """
+        for col in ("valid_from", "valid_until"):
+            try:
+                cur.execute(
+                    f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_valid_window "
+            "ON memories(valid_from, valid_until)"
+        )
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (13, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -640,6 +667,11 @@ class MemoryPersistence:
                 entry.source_message_id,
                 entry.triggered_by,
             )
+
+        # Temporal validity window (v13+, GitHub #29)
+        if schema_ver >= _SCHEMA_V13:
+            columns.extend(["valid_from", "valid_until"])
+            values = (*values, entry.valid_from, entry.valid_until)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -1048,6 +1080,13 @@ class MemoryPersistence:
             source_message_id = row["source_message_id"] or ""
             triggered_by = row["triggered_by"] or ""
 
+        # Read temporal validity window (v13+, GitHub #29), gracefully handle missing columns
+        valid_from: str = ""
+        valid_until: str = ""
+        with contextlib.suppress(KeyError, IndexError):
+            valid_from = row["valid_from"] or ""
+            valid_until = row["valid_until"] or ""
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1079,6 +1118,8 @@ class MemoryPersistence:
             source_channel=source_channel,
             source_message_id=source_message_id,
             triggered_by=triggered_by,
+            valid_from=valid_from,
+            valid_until=valid_until,
         )
 
     @staticmethod
