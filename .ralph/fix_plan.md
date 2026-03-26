@@ -117,7 +117,7 @@
 
 ### Phase 1: Quick Wins (no dependency, low risk)
 
-- [ ] **040.1** BM25+ variant (GitHub #34): In `bm25.py` `_score_doc()`, add lower-bound delta δ=1 to TF-saturation score. One-line change. Update tests.
+- [x] **040.1** BM25+ variant (GitHub #34): In `bm25.py` `_score_doc()`, add lower-bound delta δ=1 to TF-saturation score. One-line change. Update tests.
 - [ ] **040.2** Provenance metadata (GitHub #38): Add `source_session_id TEXT`, `source_channel TEXT`, `source_message_id TEXT`, `triggered_by TEXT` columns to memories table via migration. Update `save()` to accept and persist these fields. Update schema version.
 - [ ] **040.3** Temporal fact validity (GitHub #29): Add `valid_from TEXT`, `valid_until TEXT`, `superseded_by TEXT` columns to memories table via migration. Update query layer to filter expired facts by default (`WHERE valid_until IS NULL OR valid_until > datetime('now')`). Add `include_historical` parameter to search/recall. Update schema version.
 - [ ] **040.4** Memory health stats (GitHub #43): Add `tapps-brain stats` CLI command showing: total by tier with avg confidence, added this week, decayed/prunable, near-expiry, top accessed. Expose via MCP tool.
