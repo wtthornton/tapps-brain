@@ -609,9 +609,24 @@ export class TappsBrainEngine {
 
   /**
    * dispose — called on gateway shutdown.
-   * Stops the MCP child process.
+   * Flushes buffered messages to tapps-brain, then stops the MCP child process.
    */
   async dispose(): Promise<void> {
+    // Flush buffered messages before stopping (GitHub #24)
+    if (this.recentMessages.length > 0) {
+      try {
+        await this.ready;
+        const context = this.recentMessages.join("\n\n");
+        await this.mcpClient.callTool("memory_ingest", {
+          context,
+          source: "session_end",
+          agent_scope: this.hiveEnabled ? "hive" : "private",
+        });
+        this.recentMessages = [];
+      } catch {
+        // Fail gracefully — never block shutdown
+      }
+    }
     this.mcpClient.stop();
   }
 }
