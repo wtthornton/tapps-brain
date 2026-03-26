@@ -91,6 +91,8 @@ export interface PluginConfig {
   hiveEnabled?: boolean;
   /** Controls citation footers in assemble() output. Defaults to "auto". */
   citations?: "auto" | "on" | "off";
+  /** Flush conversation context to tapps-brain every N messages. Defaults to 10. */
+  flushIntervalMessages?: number;
 }
 
 /**
@@ -155,6 +157,7 @@ export class TappsBrainEngine {
   private readonly hiveEnabled: boolean;
   private readonly agentId: string;
   private readonly citations: "auto" | "on" | "off";
+  private readonly flushInterval: number;
   private readonly logger: PluginLogger;
 
   readonly info: ContextEngineInfo = {
@@ -172,6 +175,7 @@ export class TappsBrainEngine {
     this.hiveEnabled = config.hiveEnabled ?? false;
     this.agentId = config.agentId ?? "";
     this.citations = config.citations ?? "auto";
+    this.flushInterval = config.flushIntervalMessages ?? 10;
     this.mcpClient = new McpClient(workspaceDir);
     // Default to no-op logger if none provided (e.g. in tests)
     this.logger = logger ?? { info: () => {}, warn: () => {} };
@@ -276,6 +280,21 @@ export class TappsBrainEngine {
     this.recentMessages.push(contentText);
     if (this.recentMessages.length > 20) {
       this.recentMessages.shift();
+    }
+
+    // Periodic mid-session flush (GitHub #25)
+    if (this.recentMessages.length >= this.flushInterval) {
+      try {
+        const context = this.recentMessages.join("\n\n");
+        await this.mcpClient.callTool("memory_ingest", {
+          context,
+          source: "periodic_flush",
+          agent_scope: this.hiveEnabled ? "hive" : "private",
+        });
+        this.recentMessages = [];
+      } catch (err) {
+        this.logger.warn(`[tapps-brain] periodic flush: ${String(err)}`);
+      }
     }
 
     this.ingestCount++;
