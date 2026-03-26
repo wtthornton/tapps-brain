@@ -138,7 +138,7 @@
 ### Phase 4: Consolidation & Summarization
 
 - [x] **040.12** TextRank summarization (GitHub #32): Implement Mihalcea & Tarau 2004 TextRank for extractive summarization. Pure Python, no dependencies. ~100 lines. Use for session summarization and dispose() flush. *(2026-03-25)*
-- [ ] **040.13** Louvain consolidation (GitHub #36): Replace greedy clustering in `similarity.py` with Louvain community detection (use `python-louvain` or pure implementation). Add information-theoretic merge criterion.
+- [x] **040.13** Louvain consolidation (GitHub #36): Replace greedy clustering in `similarity.py` with Louvain community detection (use `python-louvain` or pure implementation). Add information-theoretic merge criterion.
 - [x] **040.14** Write deduplication with Bloom filter (GitHub #31): Implement in-memory Bloom filter (64KB, k=7). Check before every write. If possible duplicate, run Jaccard similarity check. If dup found, reinforce existing instead of inserting.
 
 ### Phase 5: Graph & Relationships
