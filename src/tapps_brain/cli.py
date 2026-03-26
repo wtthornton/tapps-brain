@@ -597,6 +597,103 @@ def memory_tag(
 
 
 # ===================================================================
+# STATS COMMAND
+# ===================================================================
+
+
+@app.command("stats")
+def stats_cmd(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show memory health stats: tiers, recent entries, expiry risk, top accessed, db size."""
+    import os
+    from datetime import datetime, timezone, timedelta
+    from collections import defaultdict
+
+    store = _get_store(project_dir)
+    try:
+        from tapps_brain.decay import DecayConfig, get_effective_confidence
+
+        decay_cfg = store._get_decay_config()
+        entries = store.list_all()
+
+        now = datetime.now(timezone.utc)
+        week_ago = now - timedelta(days=7)
+
+        # Stats by tier
+        tier_counts: dict[str, int] = defaultdict(int)
+        tier_conf_sum: dict[str, float] = defaultdict(float)
+        recent_count = 0
+        near_expiry: list = []
+        top_accessed: list = []
+
+        for e in entries:
+            tier_key = e.tier.value if hasattr(e.tier, "value") else str(e.tier)
+            eff_conf, _ = get_effective_confidence(e, decay_cfg)
+            tier_counts[tier_key] += 1
+            tier_conf_sum[tier_key] += eff_conf
+
+            # Recent entries (created in last 7 days)
+            try:
+                created = datetime.fromisoformat(e.created_at.replace("Z", "+00:00"))
+                if created >= week_ago:
+                    recent_count += 1
+            except Exception:
+                pass
+
+            # Near expiry
+            if eff_conf < 0.35:
+                near_expiry.append((e.key, tier_key, round(eff_conf, 3)))
+
+            top_accessed.append((e.key, tier_key, e.access_count, e.content[:60] if e.content else ""))
+
+        # Top 5 by access_count
+        top_accessed.sort(key=lambda x: x[2], reverse=True)
+        top5 = top_accessed[:5]
+
+        # DB size
+        db_path = store._project_root / ".tapps-brain" / "memory" / "memory.db"
+        db_size_bytes = db_path.stat().st_size if db_path.exists() else 0
+        db_size_kb = round(db_size_bytes / 1024, 1)
+
+        tier_avg = {
+            t: round(tier_conf_sum[t] / tier_counts[t], 3) if tier_counts[t] else 0.0
+            for t in tier_counts
+        }
+
+        if as_json:
+            _output(
+                {
+                    "total_entries": len(entries),
+                    "tiers": {t: {"count": tier_counts[t], "avg_confidence": tier_avg[t]} for t in tier_counts},
+                    "recent_7d": recent_count,
+                    "near_expiry_count": len(near_expiry),
+                    "near_expiry": [{"key": k, "tier": t, "confidence": c} for k, t, c in near_expiry[:10]],
+                    "top_accessed": [{"key": k, "tier": t, "access_count": a} for k, t, a, _ in top5],
+                    "db_size_kb": db_size_kb,
+                },
+                as_json=True,
+            )
+        else:
+            typer.echo(f"\n📊 Memory Health Stats")
+            typer.echo(f"  Total entries: {len(entries)}")
+            typer.echo(f"  DB size: {db_size_kb} KB")
+            typer.echo(f"\n🗂  Entries by tier:")
+            for tier_name in sorted(tier_counts):
+                typer.echo(f"  {tier_name:15s} {tier_counts[tier_name]:4d} entries  avg_conf={tier_avg[tier_name]:.3f}")
+            typer.echo(f"\n🕐 Added in last 7 days: {recent_count}")
+            typer.echo(f"\n⚠️  Near expiry (conf < 0.35): {len(near_expiry)}")
+            for key, tier_name, conf in near_expiry[:10]:
+                typer.echo(f"  [{tier_name}] {key[:60]}  conf={conf}")
+            typer.echo(f"\n🔝 Top 5 most accessed:")
+            for key, tier_name, acc, preview in top5:
+                typer.echo(f"  [{tier_name}] ({acc}x) {key[:50]}  — {preview}")
+    finally:
+        store.close()
+
+
+# ===================================================================
 # IMPORT / EXPORT COMMANDS
 # ===================================================================
 
