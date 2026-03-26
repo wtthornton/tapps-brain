@@ -151,7 +151,7 @@
 - [x] **040.17** dispose() flush (GitHub #24): In OpenClaw plugin `dispose()`, flush `recentMessages` to tapps-brain via `memory_ingest` before stopping MCP client. Reuse compact() flush logic.
 - [x] **040.18** Periodic mid-session flush (GitHub #25): Add configurable `flushIntervalMessages` (default 10) to plugin config. In `ingest()`, flush to tapps-brain after accumulating N messages.
 - [x] **040.19** assemble() recall nudge (GitHub #27): Inject memory-recall reminder in assemble() context block when incoming message looks like a question or references prior context.
-- [ ] **040.20** openclaw init/upgrade command (GitHub #26): Add `tapps-brain openclaw init` (scaffold correct workspace files) and `tapps-brain openclaw upgrade` (fix stale AGENTS.md, regenerate MEMORY.md from tapps-brain, migrate tier names).
+- [x] **040.20** openclaw init/upgrade command (GitHub #26): Add `tapps-brain openclaw init` (scaffold correct workspace files) and `tapps-brain openclaw upgrade` (fix stale AGENTS.md, regenerate MEMORY.md from tapps-brain, migrate tier names).
 
 ### Phase 7: Multi-Agent Architecture
 
