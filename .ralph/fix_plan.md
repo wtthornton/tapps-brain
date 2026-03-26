@@ -133,7 +133,7 @@
 
 - [ ] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion.
 - [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9.
-- [ ] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
+- [x] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
 
 ### Phase 4: Consolidation & Summarization
 
