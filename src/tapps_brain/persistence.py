@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 11
+_SCHEMA_VERSION = 12
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -40,6 +40,7 @@ _SCHEMA_V8 = 8
 _SCHEMA_V9 = 9
 _SCHEMA_V10 = 10
 _SCHEMA_V11 = 11
+_SCHEMA_V12 = 12
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -156,6 +157,8 @@ class MemoryPersistence:
                 self._migrate_v9_to_v10(cur)
             if current_version < _SCHEMA_V11:
                 self._migrate_v10_to_v11(cur)
+            if current_version < _SCHEMA_V12:
+                self._migrate_v11_to_v12(cur)
 
             self._conn.commit()
 
@@ -476,6 +479,31 @@ class MemoryPersistence:
             (11, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v11_to_v12(self, cur: sqlite3.Cursor) -> None:
+        """Add provenance metadata columns to memories (GitHub #38).
+
+        Tracks WHERE each memory came from: session, channel, message, trigger.
+        Existing rows default to empty string (no provenance).
+        """
+        for col in (
+            "source_session_id",
+            "source_channel",
+            "source_message_id",
+            "triggered_by",
+        ):
+            try:
+                cur.execute(
+                    f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (12, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -599,6 +627,19 @@ class MemoryPersistence:
         if schema_ver >= _SCHEMA_V11:
             columns.extend(["positive_feedback_count", "negative_feedback_count"])
             values = (*values, entry.positive_feedback_count, entry.negative_feedback_count)
+
+        # Provenance metadata (v12+, GitHub #38)
+        if schema_ver >= _SCHEMA_V12:
+            columns.extend(
+                ["source_session_id", "source_channel", "source_message_id", "triggered_by"]
+            )
+            values = (
+                *values,
+                entry.source_session_id,
+                entry.source_channel,
+                entry.source_message_id,
+                entry.triggered_by,
+            )
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -996,6 +1037,17 @@ class MemoryPersistence:
             pos_fb = float(row["positive_feedback_count"] or 0)
             neg_fb = float(row["negative_feedback_count"] or 0)
 
+        # Read provenance metadata (v12+), gracefully handle missing columns
+        source_session_id: str = ""
+        source_channel: str = ""
+        source_message_id: str = ""
+        triggered_by: str = ""
+        with contextlib.suppress(KeyError, IndexError):
+            source_session_id = row["source_session_id"] or ""
+            source_channel = row["source_channel"] or ""
+            source_message_id = row["source_message_id"] or ""
+            triggered_by = row["triggered_by"] or ""
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1023,6 +1075,10 @@ class MemoryPersistence:
             integrity_hash=integrity_hash,
             positive_feedback_count=pos_fb,
             negative_feedback_count=neg_fb,
+            source_session_id=source_session_id,
+            source_channel=source_channel,
+            source_message_id=source_message_id,
+            triggered_by=triggered_by,
         )
 
     @staticmethod

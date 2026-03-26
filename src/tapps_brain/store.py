@@ -334,6 +334,10 @@ class MemoryStore:
         branch: str | None = None,
         confidence: float = -1.0,
         agent_scope: str = "private",
+        source_session_id: str = "",
+        source_channel: str = "",
+        source_message_id: str = "",
+        triggered_by: str = "",
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
@@ -352,6 +356,10 @@ class MemoryStore:
             source_agent: Identifier of the agent saving the memory.
             scope: Visibility scope (project, branch, session).
             agent_scope: Hive propagation scope (private, domain, hive).
+            source_session_id: Session ID that triggered this memory (GitHub #38).
+            source_channel: Channel/surface where memory originated (GitHub #38).
+            source_message_id: Message ID that triggered this memory (GitHub #38).
+            triggered_by: Event or action that triggered this memory (GitHub #38).
             tags: Tags for categorization.
             branch: Git branch name (required when scope=branch).
             confidence: Confidence score (-1.0 for auto from source).
@@ -450,6 +458,11 @@ class MemoryStore:
                     valid_at=existing.valid_at if existing else None,
                     invalid_at=existing.invalid_at if existing else None,
                     superseded_by=existing.superseded_by if existing else None,
+                    # Provenance metadata (GitHub #38)
+                    source_session_id=source_session_id,
+                    source_channel=source_channel,
+                    source_message_id=source_message_id,
+                    triggered_by=triggered_by,
                 )
 
                 # Compute integrity hash (H4a)

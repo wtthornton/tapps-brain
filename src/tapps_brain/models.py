@@ -157,6 +157,12 @@ class MemoryEntry(BaseModel):
         description="HMAC-SHA256 hex digest computed over key|value|tier|source.",
     )
 
+    # Provenance metadata (GitHub #38): track WHERE each memory came from.
+    source_session_id: str = Field(default="", description="Session ID that triggered this memory.")
+    source_channel: str = Field(default="", description="Channel/surface (e.g. 'webchat', 'discord').")
+    source_message_id: str = Field(default="", description="Message ID that triggered this memory.")
+    triggered_by: str = Field(default="", description="Event or action that triggered this memory.")
+
     # Flywheel feedback tallies (EPIC-031); floats allow fractional implicit signals.
     positive_feedback_count: float = Field(
         default=0.0,
