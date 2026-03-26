@@ -894,6 +894,68 @@ class MemoryStore:
 
         return final
 
+    def record_access(self, key: str, was_useful: bool) -> None:
+        """Record whether a retrieved memory was useful. Updates Bayesian confidence.
+
+        Increments total_access_count always; increments useful_access_count when
+        was_useful=True. Applies a Bayesian update to confidence:
+
+            new_confidence = old_confidence * (useful + 1) / (total + 2)
+
+        If adaptive_stability is enabled on the entry's tier, also calls
+        update_stability() from decay.py.
+
+        Args:
+            key: The memory entry key.
+            was_useful: Whether this retrieval was useful to the caller.
+        """
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return
+
+            new_total = entry.total_access_count + 1
+            new_useful = entry.useful_access_count + (1 if was_useful else 0)
+
+            # Bayesian update: confidence * (useful + 1) / (total + 2)
+            new_confidence = entry.confidence * (new_useful + 1) / (new_total + 2)
+            # Clamp to [0.0, 1.0]
+            new_confidence = max(0.0, min(1.0, new_confidence))
+
+            updates: dict[str, object] = {
+                "total_access_count": new_total,
+                "useful_access_count": new_useful,
+                "confidence": new_confidence,
+            }
+
+            # Adaptive stability (040.5): update if enabled on this tier
+            if self._profile is not None:
+                tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                layer = self._profile.get_layer(tier_name)
+                if layer is not None and layer.adaptive_stability:
+                    try:
+                        from tapps_brain.decay import update_stability
+
+                        decay_cfg = self._get_decay_config()
+                        new_stab, new_diff = update_stability(entry, decay_cfg, was_useful)
+                        updates["stability"] = new_stab
+                        updates["difficulty"] = new_diff
+                    except Exception:
+                        logger.debug("record_access_stability_update_failed", key=key, exc_info=True)
+
+            updated = entry.model_copy(update=updates)
+            self._entries[key] = updated
+
+        self._persistence.save(updated)
+        logger.debug(
+            "memory_access_recorded",
+            key=key,
+            was_useful=was_useful,
+            new_confidence=new_confidence,
+            total_access_count=new_total,
+            useful_access_count=new_useful,
+        )
+
     # ------------------------------------------------------------------
     # Extraction ingestion (Story 002.3)
     # ------------------------------------------------------------------

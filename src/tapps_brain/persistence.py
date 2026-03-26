@@ -27,7 +27,7 @@ from tapps_brain.models import MemoryEntry
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 14
+_SCHEMA_VERSION = 15
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -43,6 +43,7 @@ _SCHEMA_V11 = 11
 _SCHEMA_V12 = 12
 _SCHEMA_V13 = 13
 _SCHEMA_V14 = 14
+_SCHEMA_V15 = 15
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -165,6 +166,8 @@ class MemoryPersistence:
                 self._migrate_v12_to_v13(cur)
             if current_version < _SCHEMA_V14:
                 self._migrate_v13_to_v14(cur)
+            if current_version < _SCHEMA_V15:
+                self._migrate_v14_to_v15(cur)
 
             self._conn.commit()
 
@@ -554,6 +557,26 @@ class MemoryPersistence:
             (14, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v14_to_v15(self, cur: sqlite3.Cursor) -> None:
+        """Add Bayesian confidence update counters (GitHub #35, task 040.6).
+
+        useful_access_count: times this memory was retrieved and proved useful.
+        total_access_count: total times this memory was retrieved.
+        """
+        for col in ("useful_access_count", "total_access_count"):
+            try:
+                cur.execute(
+                    f"ALTER TABLE memories ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (15, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -700,6 +723,11 @@ class MemoryPersistence:
         if schema_ver >= _SCHEMA_V14:
             columns.extend(["stability", "difficulty"])
             values = (*values, entry.stability, entry.difficulty)
+
+        # Bayesian confidence update counters (v15+, GitHub #35)
+        if schema_ver >= _SCHEMA_V15:
+            columns.extend(["useful_access_count", "total_access_count"])
+            values = (*values, entry.useful_access_count, entry.total_access_count)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -1122,6 +1150,13 @@ class MemoryPersistence:
             stability = float(row["stability"] or 0.0)
             difficulty = float(row["difficulty"] or 0.0)
 
+        # Read Bayesian confidence update counters (v15+, GitHub #35)
+        useful_access_count: int = 0
+        total_access_count: int = 0
+        with contextlib.suppress(KeyError, IndexError):
+            useful_access_count = int(row["useful_access_count"] or 0)
+            total_access_count = int(row["total_access_count"] or 0)
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1157,6 +1192,8 @@ class MemoryPersistence:
             valid_until=valid_until,
             stability=stability,
             difficulty=difficulty,
+            useful_access_count=useful_access_count,
+            total_access_count=total_access_count,
         )
 
     @staticmethod

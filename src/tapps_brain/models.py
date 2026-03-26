@@ -184,6 +184,16 @@ class MemoryEntry(BaseModel):
         description="Memory difficulty (1-10). 0.0 means auto from tier.",
     )
 
+    # Bayesian confidence update counters (GitHub #35, task 040.6)
+    useful_access_count: int = Field(
+        default=0,
+        description="Times this memory was retrieved and proved useful.",
+    )
+    total_access_count: int = Field(
+        default=0,
+        description="Total times this memory was retrieved.",
+    )
+
     # Flywheel feedback tallies (EPIC-031); floats allow fractional implicit signals.
     positive_feedback_count: float = Field(
         default=0.0,
