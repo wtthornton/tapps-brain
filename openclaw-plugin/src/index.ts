@@ -412,7 +412,9 @@ export class TappsBrainEngine {
         this.injectedKeys.add(mem.key);
       }
 
-      const systemPromptAddition = lines.length > 1 ? lines.join("") : undefined;
+      // Add recall nudge (GitHub #27)
+      const nudge = "\n\n⚠️ Before answering questions about prior work, decisions, or preferences — use memory_recall or tapps-brain recall to check persistent memory first.";
+      const systemPromptAddition = lines.length > 1 ? lines.join("") + nudge : undefined;
       const estimatedTokens = systemPromptAddition
         ? Math.ceil(charCount / 4)
         : 0;
