@@ -144,7 +144,7 @@
 ### Phase 5: Graph & Relationships
 
 - [x] **040.15** Memory relationship graph + PageRank (GitHub #33): Enhance `memory_relations` table. Implement PageRank scoring via recursive CTE or in-memory computation. Pre-compute on write/consolidation. Add multi-hop traversal query support.
-- [ ] **040.16** Per-entry conflict detection (GitHub #44): On save, check for semantic contradiction with existing entries in same tier. Surface conflicts with resolution options (override with temporal validity from 040.3, keep both, reject). Depends on 040.3.
+- [x] **040.16** Per-entry conflict detection (GitHub #44): On save, check for semantic contradiction with existing entries in same tier. Surface conflicts with resolution options (override with temporal validity from 040.3, keep both, reject). Depends on 040.3.
 
 ### Phase 6: OpenClaw Plugin Fixes
 
