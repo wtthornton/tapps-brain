@@ -1245,6 +1245,26 @@ export default definePluginEntry({
 
     // Register the ContextEngine — OpenClaw >= 2026.3.7 (our peerDep minimum)
     api.registerContextEngine("tapps-brain-memory", () => engine);
+
+    // SIGTERM handler — flush and stop MCP cleanly on unclean gateway shutdown.
+    //
+    // OpenClaw calls dispose() on graceful shutdown, but a SIGTERM (e.g. during
+    // a gateway restart) kills the process before dispose() can run, leaving
+    // orphaned tapps-brain-mcp child processes. This handler ensures the MCP
+    // child is always stopped, preventing the stray process leak.
+    //
+    // We use once() so multiple plugins don't stack handlers, and we give the
+    // flush a short timeout (2s) so shutdown is never indefinitely blocked.
+    const onSigterm = () => {
+      const timeout = setTimeout(() => process.exit(0), 2000);
+      timeout.unref(); // Don't keep the event loop alive for the timeout alone
+      engine.dispose().finally(() => {
+        clearTimeout(timeout);
+        process.exit(0);
+      });
+    };
+    process.once("SIGTERM", onSigterm);
+    process.once("SIGINT", onSigterm);
   },
 });
 
