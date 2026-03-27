@@ -1,6 +1,6 @@
 # Ralph Fix Plan — tapps-brain
 
-**Scope: housekeeping, quality, and critical issues only.** Feature work (EPIC-032, DEPLOY-OPENCLAW) is deferred — see epic files for details.
+**Scope:** Housekeeping and quality gates (below) are historical/completed. **Current feature delivery** follows the open-issues roadmap (`docs/planning/open-issues-roadmap.md`) — work items **in priority order** in that section. EPIC-032 and DEPLOY-OPENCLAW remain deferred unless the roadmap references them.
 
 **Task sizing:** Each item is scoped to ONE Ralph loop (~15 min). Do one, check it off, commit.
 
@@ -22,6 +22,43 @@
 - EPIC-036: Release gate hardening (`release-ready.sh`, docs checker, CI)
 
 ## Next Tasks
+
+---
+
+### OPEN-ISSUES-ROADMAP: GitHub delivery priority
+
+**Source of truth:** `docs/planning/open-issues-roadmap.md` (last updated: 2026-03-27).  
+**Legend:** `not_started` | `in_progress` | `blocked` | `done` | `closed`
+
+Do **one unchecked item at a time** in the order below (do not skip ahead for lower-priority issues).
+
+| Order | Issue | Title | Status | Notes |
+|---:|---:|---|---|---|
+| 1 | #30 | sqlite-vec integration | `done` | Maps to EPIC-040 **040.9** — optional dep, `memory_vec`, RRF with BM25 |
+| 2 | #15 | Diagnostics health command + MCP | `done` | CLI + MCP + store health sqlite-vec fields |
+| 3 | #45 | Profile-driven agent onboarding | `done` | `profile onboard` + `memory_profile_onboarding` |
+| 4 | #12 | Hive pub-sub / push notifications | `not_started` | Reliable fan-out, near–real-time |
+| 5 | #23 | SQLCipher at-rest encryption | `not_started` | Optional encrypted SQLite; key mgmt docs |
+| 6 | #19 | Sub-agent memory relay | `not_started` | Portable relay format; tolerate partial invalid items |
+| 7 | #40 | Adaptive hybrid fusion | `blocked` (#30) | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights |
+| 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
+| 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
+| 10 | #20 | Profile tier migration | `not_started` | Safe tier remap; audit + dry-run |
+| 11 | #17 | Session summarization workflow | `not_started` | End-of-session flow CLI/API/MCP; check overlap with shipped TextRank |
+
+**Checklist (mirror roadmap):**
+
+- [x] **OR-1** GitHub **#30** sqlite-vec (`done` — 2026-03-27)
+- [x] **OR-2** GitHub **#15** diagnostics health (`done` — validate on GitHub; CLI + MCP + health fields)
+- [x] **OR-3** GitHub **#45** profile-driven onboarding (`done` — CLI + MCP)
+- [ ] **OR-4** GitHub **#12** hive pub-sub (`not_started`)
+- [ ] **OR-5** GitHub **#23** SQLCipher (`not_started`)
+- [ ] **OR-6** GitHub **#19** sub-agent memory relay (`not_started`)
+- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`blocked` on #30)
+- [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
+- [ ] **OR-9** GitHub **#21** store stale (`not_started`)
+- [ ] **OR-10** GitHub **#20** profile migrate (`not_started`)
+- [ ] **OR-11** GitHub **#17** session summarization (`not_started`)
 
 ---
 
@@ -131,8 +168,8 @@
 
 ### Phase 3: Search & Retrieval
 
-- [ ] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion.
-- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9.
+- [x] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion. **Roadmap:** open-issues **OR-1** / priority 1. *(2026-03-27)*
+- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9. **Roadmap:** open-issues **OR-7** / priority 7 (`blocked` until #30).
 - [x] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
 
 ### Phase 4: Consolidation & Summarization
@@ -163,7 +200,7 @@
 
 ---
 
-## Deferred (feature work, not in scope)
+## Deferred (not in open-issues roadmap scope)
 
 | Epic | Title | Priority | Notes |
 |------|-------|----------|-------|

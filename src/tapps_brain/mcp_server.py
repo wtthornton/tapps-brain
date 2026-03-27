@@ -1416,6 +1416,22 @@ def create_server(  # noqa: PLR0915
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_profile_onboarding() -> str:
+        """Return Markdown onboarding guidance for the active memory profile (GitHub #45).
+
+        Summarizes tiers, scoring weights, recall defaults, limits, Hive hints, and
+        operational conventions so agents can use tapps-brain consistently.
+        """
+        profile = store.profile
+        if profile is None:
+            return json.dumps({"error": "no_profile", "message": "No profile loaded."})
+        from tapps_brain.onboarding import render_agent_onboarding
+
+        return json.dumps(
+            {"format": "markdown", "content": render_agent_onboarding(profile)}
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def profile_switch(name: str) -> str:
         """Switch to a different built-in memory profile.
 

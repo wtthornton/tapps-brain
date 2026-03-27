@@ -78,6 +78,121 @@ class TestVersionHelp:
             assert "Usage" in result.stdout, f"{subgroup} --help missing Usage"
 
 
+class TestCliInternals:
+    def test_dimension_grade_letter_all_grades(self) -> None:
+        import typer
+
+        from tapps_brain.cli import (
+            _circuit_status_color,
+            _diagnostics_sre_status,
+            _dimension_grade_letter,
+        )
+
+        assert _dimension_grade_letter(0.9) == "A"
+        assert _dimension_grade_letter(0.75) == "B"
+        assert _dimension_grade_letter(0.6) == "C"
+        assert _dimension_grade_letter(0.45) == "D"
+        assert _dimension_grade_letter(0.1) == "F"
+
+        assert _circuit_status_color("closed") == typer.colors.GREEN
+        assert _circuit_status_color("degraded") == typer.colors.YELLOW
+        assert _circuit_status_color("half_open") == typer.colors.YELLOW
+        assert _circuit_status_color("open") == typer.colors.RED
+
+        assert _diagnostics_sre_status("closed") == "Operational"
+        assert _diagnostics_sre_status("unknown_state") == "unknown_state"
+
+    def test_output_list_dict_scalar(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from tapps_brain.cli import _output
+
+        _output(["a", "b"], as_json=False)
+        assert "a" in capsys.readouterr().out
+
+        _output({"x": 1}, as_json=False)
+        assert "x" in capsys.readouterr().out
+
+        _output(99, as_json=False)
+        assert "99" in capsys.readouterr().out
+
+    def test_feedback_parse_details_option_empty(self) -> None:
+        from tapps_brain.cli import _feedback_parse_details_option
+
+        assert _feedback_parse_details_option(None) is None
+        assert _feedback_parse_details_option("") is None
+        assert _feedback_parse_details_option("   ") is None
+
+
+class TestTopLevelStatsCommand:
+    def test_stats_top_level_human(self, project_dir):
+        r = runner.invoke(app, ["stats", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert "Total entries" in r.stdout
+
+    def test_stats_top_level_json(self, project_dir):
+        r = runner.invoke(app, ["stats", "--project-dir", project_dir, "--json"])
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert data["total_entries"] == 3
+        assert "db_size_kb" in data
+
+    def test_stats_top_level_bad_created_at_and_low_confidence(
+        self, project_dir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+        from tapps_brain.store import MemoryStore
+
+        root = Path(project_dir).resolve()
+        orig_list_all = MemoryStore.list_all
+
+        def list_all_patched(self: MemoryStore) -> list:
+            base = orig_list_all(self)
+            if self._project_root.resolve() != root:
+                return base
+            edge = MemoryEntry(
+                key="stats-edge-low",
+                value="x",
+                tier=MemoryTier.context,
+                confidence=0.05,
+                source=MemorySource.agent,
+                created_at="not-iso",
+            )
+            return [*base, edge]
+
+        monkeypatch.setattr(MemoryStore, "list_all", list_all_patched)
+        r = runner.invoke(app, ["stats", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert "Near expiry" in r.stdout
+
+    def test_stats_top_level_json_near_expiry(
+        self, project_dir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+        from tapps_brain.store import MemoryStore
+
+        root = Path(project_dir).resolve()
+        orig_list_all = MemoryStore.list_all
+
+        def list_all_patched(self: MemoryStore) -> list:
+            base = orig_list_all(self)
+            if self._project_root.resolve() != root:
+                return base
+            edge = MemoryEntry(
+                key="stats-edge-json",
+                value="x",
+                tier=MemoryTier.context,
+                confidence=0.05,
+                source=MemorySource.agent,
+            )
+            return [*base, edge]
+
+        monkeypatch.setattr(MemoryStore, "list_all", list_all_patched)
+        r = runner.invoke(app, ["stats", "--project-dir", project_dir, "--json"])
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert data["near_expiry_count"] >= 1
+        assert len(data["near_expiry"]) >= 1
+
+
 # ===================================================================
 # Store commands
 # ===================================================================
@@ -176,6 +291,57 @@ class TestMemoryCommands:
         assert result.exit_code == 1
         assert "not found" in result.output.lower()
 
+    def test_show_human_includes_branch_when_scope_branch(self, project_dir):
+        s = MemoryStore(Path(project_dir))
+        try:
+            s.save(
+                key="cli-branch-meta",
+                value="scoped note",
+                tier="pattern",
+                scope="branch",
+                branch="release/1.0",
+            )
+        finally:
+            s.close()
+        r = runner.invoke(
+            app,
+            ["memory", "show", "cli-branch-meta", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 0
+        assert "release/1.0" in r.stdout
+
+    def test_show_human_optional_temporal_and_contradiction_fields(
+        self, project_dir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import cli as cli_mod
+        from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+
+        fake = MemoryEntry(
+            key="rich-cli",
+            value="body",
+            tier=MemoryTier.pattern,
+            confidence=0.5,
+            source=MemorySource.agent,
+            branch="feature/z",
+            valid_at="2030-01-01T00:00:00+00:00",
+            invalid_at="2031-01-01T00:00:00+00:00",
+            superseded_by="other-key",
+            contradicted=True,
+            contradiction_reason="overlap",
+        )
+        mock_store = MagicMock()
+        mock_store.get.return_value = fake
+        mock_store.close = MagicMock()
+        monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        r = runner.invoke(
+            app,
+            ["memory", "show", "rich-cli", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 0
+        assert "feature/z" in r.stdout
+        assert "2030-01-01" in r.stdout
+        assert "overlap" in r.stdout
+
     def test_history(self, tmp_path: Path):
         s = MemoryStore(tmp_path)
         s.save(key="pricing", value="$297/mo", tier="context")
@@ -188,6 +354,42 @@ class TestMemoryCommands:
         assert result.exit_code == 0
         assert "2 versions" in result.stdout
         assert "superseded" in result.stdout
+
+    def test_history_human_shows_valid_invalid_when_present(
+        self, project_dir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import cli as cli_mod
+        from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+
+        e_old = MemoryEntry(
+            key="hist-t",
+            value="a",
+            tier=MemoryTier.context,
+            confidence=0.5,
+            source=MemorySource.agent,
+            valid_at="2020-01-01T00:00:00+00:00",
+            invalid_at="2021-06-01T00:00:00+00:00",
+            superseded_by="hist-t",
+        )
+        e_new = MemoryEntry(
+            key="hist-t",
+            value="b",
+            tier=MemoryTier.context,
+            confidence=0.5,
+            source=MemorySource.agent,
+            valid_at="2021-06-01T00:00:00+00:00",
+        )
+        mock_store = MagicMock()
+        mock_store.history.return_value = [e_old, e_new]
+        mock_store.close = MagicMock()
+        monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        r = runner.invoke(
+            app,
+            ["memory", "history", "hist-t", "--project-dir", project_dir],
+        )
+        assert r.exit_code == 0
+        assert "Valid:" in r.stdout
+        assert "Invalid:" in r.stdout
 
     def test_history_json(self, tmp_path: Path):
         s = MemoryStore(tmp_path)
@@ -637,14 +839,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v13" in result.stdout
+        assert "v15" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v13" in result.stdout
+        assert "v15" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
@@ -688,6 +890,25 @@ class TestFlywheelCli:
         result = runner.invoke(app, ["flywheel", "gaps", "--project-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "No clustered gaps" in result.stdout
+
+    def test_flywheel_gaps_human_mocked_rows(
+        self, project_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import cli as cli_mod
+
+        mock_store = MagicMock()
+        mock_store.close = MagicMock()
+        gap = MagicMock()
+        gap.model_dump.return_value = {
+            "query_pattern": "how to test gaps",
+            "priority_score": 0.42,
+            "count": 7,
+        }
+        mock_store.knowledge_gaps.return_value = [gap]
+        monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        r = runner.invoke(app, ["flywheel", "gaps", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert "how to test gaps" in r.stdout
 
     def test_flywheel_report_markdown(self, project_dir: str) -> None:
         result = runner.invoke(app, ["flywheel", "report", "--project-dir", project_dir])
@@ -1007,6 +1228,18 @@ class TestProfileCommands:
         assert len(data) > 0
         assert "name" in data[0]
         assert "half_life_days" in data[0]
+
+    def test_profile_onboard(self, project_dir):
+        result = runner.invoke(app, ["profile", "onboard", "--project-dir", project_dir])
+        assert result.exit_code == 0
+        assert "Layers" in result.stdout or "layers" in result.stdout
+
+    def test_profile_onboard_json(self, project_dir):
+        result = runner.invoke(app, ["profile", "onboard", "--project-dir", project_dir, "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data.get("format") == "markdown"
+        assert "content" in data
 
 
 # ===================================================================
@@ -1581,6 +1814,150 @@ class TestMemoryTagCommand:
 
 
 class TestDiagnosticsCommands:
+    def test_diagnostics_health_json(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["diagnostics", "health", "--json", "--project-dir", project_dir, "--no-hive"],
+        )
+        assert r.exit_code in (0, 1, 2)
+        data = json.loads(r.stdout)
+        assert "store" in data
+        assert "sqlite_vec_enabled" in data["store"]
+
+    def test_diagnostics_health_human(self, project_dir):
+        r = runner.invoke(
+            app,
+            ["diagnostics", "health", "--project-dir", project_dir, "--no-hive"],
+        )
+        assert r.exit_code in (0, 1, 2)
+        assert "tapps-brain health" in r.stdout
+        assert "sqlite-vec" in r.stdout
+
+    def test_diagnostics_health_human_sqlite_vec_on(self, project_dir, monkeypatch):
+        from tapps_brain import health_check as hc
+
+        def fake_run(*, project_root=None, check_hive=True):
+            return hc.HealthReport(
+                status="ok",
+                elapsed_ms=1.0,
+                store=hc.StoreHealth(
+                    status="ok",
+                    entries=2,
+                    max_entries=100,
+                    schema_version="15",
+                    size_bytes=4096,
+                    tiers={"pattern": 2},
+                    sqlite_vec_enabled=True,
+                    sqlite_vec_rows=2,
+                ),
+                hive=hc.HiveHealth(status="ok", connected=False),
+                integrity=hc.IntegrityHealth(status="ok"),
+            )
+
+        monkeypatch.setattr("tapps_brain.health_check.run_health_check", fake_run)
+        r = runner.invoke(
+            app,
+            ["diagnostics", "health", "--project-dir", project_dir, "--no-hive"],
+        )
+        assert r.exit_code == 0
+        assert "sqlite-vec: on" in r.stdout
+
+    def test_diagnostics_health_human_hive_connected(self, project_dir, monkeypatch):
+        from tapps_brain import health_check as hc
+
+        def fake_run(*, project_root=None, check_hive=True):
+            return hc.HealthReport(
+                status="ok",
+                elapsed_ms=1.0,
+                store=hc.StoreHealth(
+                    status="ok",
+                    entries=1,
+                    max_entries=5000,
+                    schema_version="15",
+                    sqlite_vec_enabled=False,
+                    sqlite_vec_rows=0,
+                ),
+                hive=hc.HiveHealth(
+                    status="ok",
+                    connected=True,
+                    namespaces=["ns1"],
+                    entries=3,
+                    agents=1,
+                ),
+                integrity=hc.IntegrityHealth(status="ok"),
+            )
+
+        monkeypatch.setattr("tapps_brain.health_check.run_health_check", fake_run)
+        r = runner.invoke(
+            app,
+            ["diagnostics", "health", "--project-dir", project_dir, "--no-hive"],
+        )
+        assert r.exit_code == 0
+        assert "Hive" in r.stdout
+        assert "ns1" in r.stdout
+
+    def test_diagnostics_health_human_errors_and_warnings(self, project_dir, monkeypatch):
+        from tapps_brain import health_check as hc
+
+        def fake_run(*, project_root=None, check_hive=True):
+            return hc.HealthReport(
+                status="error",
+                elapsed_ms=1.0,
+                store=hc.StoreHealth(status="error", entries=0, max_entries=100),
+                hive=hc.HiveHealth(status="ok", connected=False),
+                integrity=hc.IntegrityHealth(status="ok"),
+                errors=["bad thing"],
+                warnings=["heads up"],
+            )
+
+        monkeypatch.setattr("tapps_brain.health_check.run_health_check", fake_run)
+        r = runner.invoke(
+            app,
+            ["diagnostics", "health", "--project-dir", project_dir, "--no-hive"],
+        )
+        assert r.exit_code == 2
+        assert "Errors:" in r.stdout
+        assert "Warnings:" in r.stdout
+
+    def test_diagnostics_report_human_rich_extras(self, project_dir, monkeypatch):
+        from datetime import UTC, datetime
+
+        from tapps_brain import cli as cli_mod
+        from tapps_brain.diagnostics import DiagnosticsReport, DimensionScore
+
+        rep = DiagnosticsReport(
+            composite_score=0.62,
+            dimensions={"recall": DimensionScore(name="recall", score=0.55)},
+            recorded_at=datetime.now(tz=UTC).isoformat(),
+            recommendations=["tune thresholds"],
+            hive_composite_score=0.51,
+            circuit_state="half_open",
+            gap_count=2,
+            correlation_adjusted=True,
+            anomalies=[{"type": "spike"}],
+        )
+        mock_store = MagicMock()
+        mock_store.diagnostics.return_value = rep
+        mock_store.close = MagicMock()
+        monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        r = runner.invoke(app, ["diagnostics", "report", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert "Hive composite" in r.stdout
+        assert "Recommendations" in r.stdout
+        assert "Anomalies" in r.stdout
+
+    def test_diagnostics_history_human_empty(self, tmp_path):
+        r = runner.invoke(app, ["diagnostics", "history", "--project-dir", str(tmp_path)])
+        assert r.exit_code == 0
+        assert "No diagnostics history yet" in r.stdout
+
+    def test_diagnostics_history_human_table(self, project_dir):
+        r1 = runner.invoke(app, ["diagnostics", "report", "--project-dir", project_dir])
+        assert r1.exit_code == 0
+        r2 = runner.invoke(app, ["diagnostics", "history", "--project-dir", project_dir])
+        assert r2.exit_code == 0
+        assert "row(s)" in r2.stdout
+
     def test_diagnostics_report_json(self, project_dir):
         r = runner.invoke(
             app,
@@ -1613,6 +1990,74 @@ class TestDiagnosticsCommands:
         assert isinstance(hist, list)
         assert len(hist) >= 1
         assert "composite_score" in hist[0]
+
+
+class TestOpenClawCommands:
+    def test_openclaw_init_creates_layout(self, tmp_path: Path):
+        import os
+
+        prev = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            r = runner.invoke(app, ["openclaw", "init"])
+        finally:
+            os.chdir(prev)
+        assert r.exit_code == 0
+        assert (tmp_path / ".tapps-brain" / "memory").is_dir()
+
+    def test_openclaw_migrate_dry_run_json(self, tmp_path: Path):
+        r = runner.invoke(
+            app,
+            ["openclaw", "migrate", "--dry-run", "--workspace", str(tmp_path), "--json"],
+        )
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert "imported" in data
+
+    def test_openclaw_migrate_dry_run_human(self, tmp_path: Path):
+        r = runner.invoke(
+            app,
+            ["openclaw", "migrate", "--dry-run", "--workspace", str(tmp_path)],
+        )
+        assert r.exit_code == 0
+        assert "Would import" in r.stdout
+
+    def test_openclaw_migrate_live_empty_workspace(self, project_dir, tmp_path: Path):
+        r = runner.invoke(
+            app,
+            [
+                "openclaw",
+                "migrate",
+                "--workspace",
+                str(tmp_path),
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert r.exit_code == 0
+        assert "Migration complete" in r.stdout
+
+    def test_openclaw_migrate_live_json(self, project_dir, tmp_path: Path):
+        r = runner.invoke(
+            app,
+            [
+                "openclaw",
+                "migrate",
+                "--workspace",
+                str(tmp_path),
+                "--project-dir",
+                project_dir,
+                "--json",
+            ],
+        )
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert "imported" in data
+
+    def test_openclaw_upgrade_writes_memory_md(self, project_dir):
+        r = runner.invoke(app, ["openclaw", "upgrade", "--project-dir", project_dir])
+        assert r.exit_code == 0
+        assert (Path(project_dir) / "MEMORY.md").exists()
 
 
 # ===================================================================
@@ -1712,3 +2157,19 @@ class TestFeedbackCommands:
             ],
         )
         assert r.exit_code == 1
+
+    def test_feedback_details_json_must_be_object(self, project_dir):
+        r = runner.invoke(
+            app,
+            [
+                "feedback",
+                "rate",
+                "tech-stack",
+                "--details-json",
+                "[1, 2, 3]",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert r.exit_code == 1
+        assert "object" in r.stderr.lower() or "object" in r.stdout.lower()

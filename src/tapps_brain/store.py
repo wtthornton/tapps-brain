@@ -889,6 +889,22 @@ class MemoryStore:
         """Return the current SQLite schema version."""
         return self._persistence.get_schema_version()
 
+    def sqlite_vec_knn_search(
+        self, query_embedding: list[float], k: int
+    ) -> list[tuple[str, float]]:
+        """KNN search via sqlite-vec when enabled (GitHub #30); else empty."""
+        return self._persistence.sqlite_vec_knn_search(query_embedding, k)
+
+    @property
+    def sqlite_vec_enabled(self) -> bool:
+        """True when sqlite-vec ANN index is active."""
+        return bool(getattr(self._persistence, "_sqlite_vec_enabled", False))
+
+    @property
+    def sqlite_vec_row_count(self) -> int:
+        """Row count in ``memory_vec`` (0 when disabled)."""
+        return self._persistence.sqlite_vec_row_count()
+
     # ------------------------------------------------------------------
     # Reinforcement (Story 002.2)
     # ------------------------------------------------------------------

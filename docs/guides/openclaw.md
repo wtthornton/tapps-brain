@@ -1,6 +1,6 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. **54** MCP tools and
+Persistent cross-session memory for your OpenClaw agents. **55** MCP tools and
 **7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
 OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
@@ -172,7 +172,7 @@ memory slot is not claimed.
 
 ## Mode 3: MCP Sidecar
 
-Use the MCP sidecar for direct access to all **54** tools, or when you want full manual
+Use the MCP sidecar for direct access to all **55** tools, or when you want full manual
 control over recall and capture workflows. Works with any OpenClaw version.
 
 ### Install
@@ -268,7 +268,7 @@ Restart OpenClaw after editing `openclaw.json` — MCP config is read at startup
 
 For OpenClaw versions before v2026.3.7 that do not support the ContextEngine API
 (`definePluginEntry`), use Mode 3 (MCP sidecar) instead of the plugin. The agent
-gets all 54 tools as native MCP tools — memory is not automatically injected, but
+gets all 55 tools as native MCP tools — memory is not automatically injected, but
 the agent can be instructed to use `memory_recall` and `memory_capture` explicitly.
 
 Upgrade OpenClaw to v2026.3.7+ when possible to get automatic per-turn recall and
@@ -309,7 +309,7 @@ prevent low-privilege agents from triggering maintenance operations.
 | `core` | `memory_search`, `memory_get` |
 | `lifecycle` | `memory_reinforce`, `memory_supersede`, `memory_history`, `memory_search_sessions` |
 | `search` | `memory_stats`, `memory_health`, `memory_metrics`, `memory_entry_detail`, `memory_recall_prompt`, `memory_store_summary_prompt`, `memory_remember_prompt` |
-| `admin` | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
+| `admin` | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `memory_profile_onboarding`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
 | `hive` | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_create`, `agent_list`, `agent_delete` |
 | `federation` | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
 | `graph` | `memory_relations`, `memory_find_related`, `memory_query_relations` |
@@ -389,7 +389,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | Auto-capture from messages | ✅ | — | — |
 | Pre-compaction flush | ✅ | — | — |
 | Replaces memory-core tools | — | ✅ | — |
-| Direct tool access (54 tools) | ✅ | ✅ | ✅ |
+| Direct tool access (55 tools) | ✅ | ✅ | ✅ |
 | Hive multi-agent sharing | ✅ | ✅ | ✅ |
 | Cross-project federation | ✅ | ✅ | ✅ |
 | Custom profiles | ✅ | ✅ | ✅ |
@@ -402,7 +402,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 
 ---
 
-## All 54 MCP Tools
+## All 55 MCP Tools
 
 ### Core Memory (CRUD)
 
@@ -480,6 +480,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | `memory_consolidation_config` | Show consolidation configuration |
 | `memory_consolidation_config_set` | Update consolidation thresholds |
 | `profile_info` | Show active profile name, layers, scoring config |
+| `memory_profile_onboarding` | Markdown onboarding guide for the active profile |
 | `profile_switch` | Switch to a different built-in profile |
 
 ### MCP Resources
@@ -596,7 +597,7 @@ The import infers tier from heading level:
 
 ### Upgrading from tapps-brain v0.x (28-tool API)
 
-v1.x expanded from 28 to 54 MCP tools. The original 28 tools are unchanged - no
+v1.x expanded from 28 to 55 MCP tools. The original 28 tools are unchanged - no
 breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 ### Migrating from MCP sidecar to ContextEngine plugin

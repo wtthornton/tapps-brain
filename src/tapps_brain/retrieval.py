@@ -552,7 +552,7 @@ class MemoryRetriever:
 
         return results
 
-    def _vector_search(
+    def _vector_search(  # noqa: PLR0911
         self,
         query: str,
         store: MemoryStore,
@@ -572,18 +572,42 @@ class MemoryRetriever:
         except ImportError:
             logger.debug("vector_search_embedder_unavailable")
             return empty
-        if embedder is None or not (all_entries := store.list_all()):
+        if embedder is None or not store.list_all():
             return empty
 
-        texts = [self._entry_to_document(e) for e in all_entries]
         try:
             q = embedder.embed(query)
+        except Exception as e:
+            logger.debug("vector_search_embed_failed", error=str(e))
+            return empty
+        if not q:
+            return empty
+
+        # Prefer sqlite-vec KNN when enabled (GitHub #30) — avoids full-corpus re-embedding.
+        pv = getattr(store, "_persistence", None)
+        if (
+            pv is not None
+            and getattr(pv, "_sqlite_vec_enabled", False)
+            and len(q) == getattr(pv, "_sqlite_vec_dim", 0)
+        ):
+            knn = store.sqlite_vec_knn_search(q, limit)
+            if knn:
+                scored_knn: list[tuple[str, float]] = []
+                for key, dist in knn:
+                    sim = 1.0 / (1.0 + max(0.0, float(dist)))
+                    scored_knn.append((key, sim))
+                scored_knn.sort(key=lambda x: x[1], reverse=True)
+                return scored_knn[:limit]
+
+        all_entries = store.list_all()
+        texts = [self._entry_to_document(e) for e in all_entries]
+        try:
             entry_embs = embedder.embed_batch(texts)
         except Exception as e:
             logger.debug("vector_search_embed_failed", error=str(e))
             return empty
 
-        if not q or len(entry_embs) != len(all_entries):
+        if len(entry_embs) != len(all_entries):
             return empty
         scored: list[tuple[str, float]] = []
         for i, entry in enumerate(all_entries):

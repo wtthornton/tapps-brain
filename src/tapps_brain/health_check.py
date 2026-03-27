@@ -13,14 +13,11 @@ automated orchestrators (OpenClaw cron jobs, monitoring tools).
 
 from __future__ import annotations
 
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Result models
@@ -38,6 +35,8 @@ class StoreHealth(BaseModel):
     tiers: dict[str, int] = Field(default_factory=dict)
     gc_candidates: int = 0
     consolidation_candidates: int = 0
+    sqlite_vec_enabled: bool = False
+    sqlite_vec_rows: int = 0
 
 
 class HiveHealth(BaseModel):
@@ -93,7 +92,7 @@ def _severity(errors: list[str], warnings: list[str]) -> str:
     return "ok"
 
 
-def run_health_check(
+def run_health_check(  # noqa: PLR0915
     project_root: Path | None = None,
     *,
     check_hive: bool = True,
@@ -128,6 +127,8 @@ def run_health_check(
             store_health.tiers = dict(report.tier_distribution)
             store_health.gc_candidates = report.gc_candidates
             store_health.consolidation_candidates = report.consolidation_candidates
+            store_health.sqlite_vec_enabled = store.sqlite_vec_enabled
+            store_health.sqlite_vec_rows = store.sqlite_vec_row_count
 
             # Size on disk
             db_path = root / ".tapps-brain" / "memory" / "memory.db"
@@ -149,7 +150,7 @@ def run_health_check(
     except FileNotFoundError:
         store_health.status = "warn"
         warnings.append("Store database not found (may be first run)")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         store_health.status = "error"
         errors.append(f"Store error: {exc}")
 
@@ -176,7 +177,7 @@ def run_health_check(
             finally:
                 hive.close()
             hive_health.status = "ok"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             hive_health.status = "warn"
             hive_health.connected = False
             warnings.append(f"Hive unavailable: {exc}")
@@ -205,7 +206,7 @@ def run_health_check(
                     for src_key in rel.get("source_entry_keys", []):
                         if src_key not in all_keys:
                             orphaned += 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             integrity_health.orphaned_relations = orphaned
 
@@ -233,7 +234,7 @@ def run_health_check(
             [e for e in errors if "integrity" in e.lower() or "corrupted" in e.lower()],
             [w for w in warnings if "integrity" in w.lower() or "orphaned" in w.lower()],
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         integrity_health.status = "warn"
         warnings.append(f"Integrity check failed: {exc}")
 

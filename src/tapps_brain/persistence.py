@@ -70,10 +70,14 @@ class MemoryPersistence:
         self._lock = threading.Lock()
         # Cached after _ensure_schema() — schema never changes after startup.
         self._schema_version: int = 0
+        # Optional sqlite-vec ANN index (GitHub #30); see _setup_sqlite_vec().
+        self._sqlite_vec_enabled = False
+        self._sqlite_vec_dim = 384
 
         try:
             self._conn = self._connect()
             self._ensure_schema()
+            self._setup_sqlite_vec()
         except sqlite3.DatabaseError as exc:
             _msg = f"Database corrupt: {self._db_path}. Back up and delete to recover."
             # Emit via stdlib logging so pytest caplog can capture it in tests
@@ -174,6 +178,69 @@ class MemoryPersistence:
             # Cache the final schema version so save() avoids repeated DB lookups.
             row2 = cur.execute("SELECT MAX(version) FROM schema_version").fetchone()
             self._schema_version = int(row2[0]) if row2[0] is not None else 0
+
+    def _setup_sqlite_vec(self) -> None:
+        """Load sqlite-vec extension, create ``memory_vec``, backfill if empty."""
+        from tapps_brain.sqlite_vec_index import (
+            DEFAULT_VEC_DIM,
+            ensure_memory_vec_table,
+            maybe_backfill_if_empty,
+            try_load_extension,
+        )
+
+        self._sqlite_vec_dim = DEFAULT_VEC_DIM
+        if not try_load_extension(self._conn):
+            return
+        try:
+            with self._lock:
+                ensure_memory_vec_table(self._conn, dim=self._sqlite_vec_dim)
+                rows = self._conn.execute(
+                    "SELECT * FROM memories WHERE embedding IS NOT NULL AND TRIM(embedding) != ''"
+                ).fetchall()
+                entries = [self._row_to_entry(r) for r in rows]
+                maybe_backfill_if_empty(self._conn, entries)
+                self._conn.commit()
+            self._sqlite_vec_enabled = True
+        except (OSError, sqlite3.OperationalError, TypeError, ValueError):
+            logger.debug("sqlite_vec_setup_failed", exc_info=True)
+            self._sqlite_vec_enabled = False
+
+    def _sqlite_vec_sync_unlocked(self, entry: MemoryEntry) -> None:
+        """Keep ``memory_vec`` in sync with ``memories.embedding`` (caller holds lock)."""
+        if not self._sqlite_vec_enabled:
+            return
+        from tapps_brain.sqlite_vec_index import delete_vec_key, upsert_vec_row
+
+        emb = entry.embedding
+        if emb is not None and len(emb) == self._sqlite_vec_dim:
+            upsert_vec_row(self._conn, entry.key, emb)
+        else:
+            delete_vec_key(self._conn, entry.key)
+
+    def sqlite_vec_knn_search(
+        self, query_embedding: list[float], k: int
+    ) -> list[tuple[str, float]]:
+        """Return (key, distance) from sqlite-vec KNN, or empty if disabled."""
+        if not self._sqlite_vec_enabled:
+            return []
+        from tapps_brain.sqlite_vec_index import knn_search
+
+        with self._lock:
+            return knn_search(
+                self._conn,
+                query_embedding,
+                k,
+                dim=self._sqlite_vec_dim,
+            )
+
+    def sqlite_vec_row_count(self) -> int:
+        """Rows in ``memory_vec`` (0 if disabled)."""
+        if not self._sqlite_vec_enabled:
+            return 0
+        from tapps_brain.sqlite_vec_index import vec_row_count
+
+        with self._lock:
+            return vec_row_count(self._conn)
 
     def _create_v1_schema(self, cur: sqlite3.Cursor) -> None:
         """Create the initial v1 schema."""
@@ -737,6 +804,7 @@ class MemoryPersistence:
                 f"INSERT OR REPLACE INTO memories ({cols}) VALUES ({placeholders})",
                 values,
             )
+            self._sqlite_vec_sync_unlocked(entry)
             self._conn.commit()
         self._audit_log("save", entry.key)
 
@@ -781,6 +849,10 @@ class MemoryPersistence:
         """Delete a memory entry by key. Returns True if deleted."""
         with self._lock:
             cur = self._conn.execute("DELETE FROM memories WHERE key = ?", (key,))
+            if self._sqlite_vec_enabled:
+                from tapps_brain.sqlite_vec_index import delete_vec_key
+
+                delete_vec_key(self._conn, key)
             self._conn.commit()
         deleted = cur.rowcount > 0
         if deleted:

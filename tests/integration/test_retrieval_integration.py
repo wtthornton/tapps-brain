@@ -453,16 +453,17 @@ class TestCompositeScoringIntegration:
         self, store: MemoryStore, retriever: MemoryRetriever
     ) -> None:
         """High-confidence entry should outscore low-confidence with same text."""
+        # Distinct values avoid Bloom write-dedup treating the second save as reinforce-only.
         _save(
             store,
             "low-conf",
-            "Testing approach uses mocks for external services",
+            "Testing approach uses mocks for external services (variant A)",
             confidence=0.3,
         )
         _save(
             store,
             "high-conf",
-            "Testing approach uses mocks for external services",
+            "Testing approach uses mocks for external services (variant B)",
             confidence=0.95,
             source="human",
         )

@@ -48,8 +48,9 @@ mcp = [
 ]
 vector = [
     "faiss-cpu>=1.13.2,<2",
-    "sentence-transformers>=5.2.3,<6",
     "numpy>=2.4.2,<3",
+    "sentence-transformers>=5.2.3,<6",
+    "sqlite-vec>=0.1.6,<0.2",
 ]
 reranker = [
     "cohere>=5.0,<6",
@@ -70,6 +71,7 @@ dev = [
     "ruff>=0.9,<1",
     "mcp>=1.2.0,<2",
     "typer>=0.12.3,<1",
+    "sqlite-vec>=0.1.6,<0.2",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -107,6 +109,8 @@ module = [
     "numpy.*",
     "sentence_transformers",
     "sentence_transformers.*",
+    "sqlite_vec",
+    "sqlite_vec.*",
     "cohere",
     "cohere.*",
     "yaml",

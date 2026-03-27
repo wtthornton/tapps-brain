@@ -389,7 +389,7 @@ npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/proje
 
 ## Maintainers: release gate and doc consistency
 
-Before a release, the repo runs an automated gate that includes this MCP surface (54 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
+Before a release, the repo runs an automated gate that includes this MCP surface (55 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
 
 - **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
 - **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`

@@ -522,15 +522,18 @@ class TestPersonalAssistantProfileDecay:
                 project_root=Path(tmpdir),
                 profile=profile,
             )
-            # Trigger lazy init of _recall_orchestrator
-            with patch("tapps_brain.decay.logger") as mock_log:
-                store.recall("test query")
-                # No unknown_tier_fallback warning should be emitted
-                for call in mock_log.warning.call_args_list:
-                    assert call[0][0] != "unknown_tier_fallback", (
-                        f"unexpected unknown_tier_fallback warning: {call}"
-                    )
-            # The orchestrator should have a non-None decay config
-            assert hasattr(store, "_recall_orchestrator")
-            orc = store._recall_orchestrator  # type: ignore[attr-defined]
-            assert orc._decay_config is not None
+            try:
+                # Trigger lazy init of _recall_orchestrator
+                with patch("tapps_brain.decay.logger") as mock_log:
+                    store.recall("test query")
+                    # No unknown_tier_fallback warning should be emitted
+                    for call in mock_log.warning.call_args_list:
+                        assert call[0][0] != "unknown_tier_fallback", (
+                            f"unexpected unknown_tier_fallback warning: {call}"
+                        )
+                # The orchestrator should have a non-None decay config
+                assert hasattr(store, "_recall_orchestrator")
+                orc = store._recall_orchestrator  # type: ignore[attr-defined]
+                assert orc._decay_config is not None
+            finally:
+                store.close()

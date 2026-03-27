@@ -89,7 +89,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
 | EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
-| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (54 as of v1.3.1) | done | 2026-03-23 |
+| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (55 as of v2.0.0+) | done | 2026-03-23 |
 | EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
@@ -105,7 +105,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **54** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin v1.4.0 uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **55** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin v1.4.0 uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (see fix_plan):**
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).

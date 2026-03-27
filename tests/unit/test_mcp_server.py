@@ -122,6 +122,7 @@ class TestCoreTools:
             "memory_import",
             # Profile tools
             "profile_info",
+            "memory_profile_onboarding",
             "profile_switch",
             # Hive tools
             "hive_status",
@@ -153,6 +154,7 @@ class TestCoreTools:
             # Diagnostics (EPIC-030)
             "diagnostics_report",
             "diagnostics_history",
+            "tapps_brain_health",
             # Flywheel (EPIC-031)
             "flywheel_process",
             "flywheel_gaps",
@@ -2116,6 +2118,21 @@ class TestMCPAdditionalCoverage:
         result = json.loads(info_fn())
         # Either returns a profile or no_profile if no profile was loaded
         assert "name" in result or result.get("error") == "no_profile"
+        server._tapps_store.close()
+
+    def test_memory_profile_onboarding_markdown(self, store_dir):
+        """memory_profile_onboarding returns markdown in JSON when profile loads."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir)
+        fn = _tool_fn(server, "memory_profile_onboarding")
+        result = json.loads(fn())
+        if result.get("error") == "no_profile":
+            server._tapps_store.close()
+            return
+        assert result.get("format") == "markdown"
+        assert "content" in result
+        assert "Layers" in result["content"] or "layers" in result["content"].lower()
         server._tapps_store.close()
 
     # ------------------------------------------------------------------

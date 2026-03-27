@@ -38,7 +38,7 @@ This installs `tapps-brain[mcp]` from PyPI and auto-configures the MCP server.
 - **Configurable profiles** — built-in profiles (e.g. `repo-brain`) or `.tapps-brain/profile.yaml`; see [Profile catalog](../docs/guides/profile-catalog.md)
 - **Hive sharing** -- multiple OpenClaw agents share knowledge via the Hive
 - **Federation** -- cross-project memory sharing via a federated hub
-- **54 MCP tools** -- full programmatic control when you need it (memory, feedback,
+- **55 MCP tools** -- full programmatic control when you need it (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration)
 
 ## How It Works

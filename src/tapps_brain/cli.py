@@ -41,6 +41,9 @@ _DIAG_GRADE_B_MIN = 0.70
 _DIAG_GRADE_C_MIN = 0.55
 _DIAG_GRADE_D_MIN = 0.40
 
+# Top-level ``stats`` command: effective confidence below this counts as near-expiry.
+_STATS_NEAR_EXPIRY_THRESHOLD = 0.35
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
@@ -602,31 +605,30 @@ def memory_tag(
 
 
 @app.command("stats")
-def stats_cmd(
+def stats_cmd(  # noqa: PLR0915
     project_dir: ProjectDir = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Show memory health stats: tiers, recent entries, expiry risk, top accessed, db size."""
-    import os
-    from datetime import datetime, timezone, timedelta
     from collections import defaultdict
+    from datetime import UTC, datetime, timedelta
 
     store = _get_store(project_dir)
     try:
-        from tapps_brain.decay import DecayConfig, get_effective_confidence
+        from tapps_brain.decay import get_effective_confidence
 
         decay_cfg = store._get_decay_config()
         entries = store.list_all()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         week_ago = now - timedelta(days=7)
 
         # Stats by tier
         tier_counts: dict[str, int] = defaultdict(int)
         tier_conf_sum: dict[str, float] = defaultdict(float)
         recent_count = 0
-        near_expiry: list = []
-        top_accessed: list = []
+        near_expiry: list[tuple[str, str, float]] = []
+        top_accessed: list[tuple[str, str, int, str]] = []
 
         for e in entries:
             tier_key = e.tier.value if hasattr(e.tier, "value") else str(e.tier)
@@ -643,10 +645,11 @@ def stats_cmd(
                 pass
 
             # Near expiry
-            if eff_conf < 0.35:
+            if eff_conf < _STATS_NEAR_EXPIRY_THRESHOLD:
                 near_expiry.append((e.key, tier_key, round(eff_conf, 3)))
 
-            top_accessed.append((e.key, tier_key, e.access_count, e.content[:60] if e.content else ""))
+            preview = e.value[:60] if e.value else ""
+            top_accessed.append((e.key, tier_key, e.access_count, preview))
 
         # Top 5 by access_count
         top_accessed.sort(key=lambda x: x[2], reverse=True)
@@ -663,30 +666,38 @@ def stats_cmd(
         }
 
         if as_json:
+            tiers_out = {
+                t: {"count": tier_counts[t], "avg_confidence": tier_avg[t]} for t in tier_counts
+            }
+            near_rows = [{"key": k, "tier": t, "confidence": c} for k, t, c in near_expiry[:10]]
+            top_rows = [{"key": k, "tier": t, "access_count": a} for k, t, a, _ in top5]
             _output(
                 {
                     "total_entries": len(entries),
-                    "tiers": {t: {"count": tier_counts[t], "avg_confidence": tier_avg[t]} for t in tier_counts},
+                    "tiers": tiers_out,
                     "recent_7d": recent_count,
                     "near_expiry_count": len(near_expiry),
-                    "near_expiry": [{"key": k, "tier": t, "confidence": c} for k, t, c in near_expiry[:10]],
-                    "top_accessed": [{"key": k, "tier": t, "access_count": a} for k, t, a, _ in top5],
+                    "near_expiry": near_rows,
+                    "top_accessed": top_rows,
                     "db_size_kb": db_size_kb,
                 },
                 as_json=True,
             )
         else:
-            typer.echo(f"\n📊 Memory Health Stats")
+            typer.echo("\n📊 Memory Health Stats")
             typer.echo(f"  Total entries: {len(entries)}")
             typer.echo(f"  DB size: {db_size_kb} KB")
-            typer.echo(f"\n🗂  Entries by tier:")
+            typer.echo("\n🗂  Entries by tier:")
             for tier_name in sorted(tier_counts):
-                typer.echo(f"  {tier_name:15s} {tier_counts[tier_name]:4d} entries  avg_conf={tier_avg[tier_name]:.3f}")
+                cnt = tier_counts[tier_name]
+                ac = tier_avg[tier_name]
+                typer.echo(f"  {tier_name:15s} {cnt:4d} entries  avg_conf={ac:.3f}")
             typer.echo(f"\n🕐 Added in last 7 days: {recent_count}")
-            typer.echo(f"\n⚠️  Near expiry (conf < 0.35): {len(near_expiry)}")
+            thr = _STATS_NEAR_EXPIRY_THRESHOLD
+            typer.echo(f"\n⚠️  Near expiry (conf < {thr}): {len(near_expiry)}")
             for key, tier_name, conf in near_expiry[:10]:
                 typer.echo(f"  [{tier_name}] {key[:60]}  conf={conf}")
-            typer.echo(f"\n🔝 Top 5 most accessed:")
+            typer.echo("\n🔝 Top 5 most accessed:")
             for key, tier_name, acc, preview in top5:
                 typer.echo(f"  [{tier_name}] ({acc}x) {key[:50]}  — {preview}")
     finally:
@@ -1369,6 +1380,24 @@ def profile_set(
     typer.echo(f"Profile set to '{profile.name}' at {profile_path}")
 
 
+@profile_app.command("onboard")
+def profile_onboard(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Print structured onboarding guidance for the active memory profile (GitHub #45)."""
+    from tapps_brain.onboarding import render_agent_onboarding
+    from tapps_brain.profile import resolve_profile
+
+    root = _resolve_project_dir(project_dir)
+    profile = resolve_profile(root)
+    text = render_agent_onboarding(profile)
+    if as_json:
+        _output({"format": "markdown", "content": text}, as_json=True)
+    else:
+        typer.echo(text)
+
+
 @profile_app.command("layers")
 def profile_layers(
     project_dir: ProjectDir = None,
@@ -2029,7 +2058,15 @@ def diagnostics_health_cmd(
         # Store
         s = report.store
         s_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(s.status, "?")
-        typer.echo(f"Store {s_icon}: {s.entries}/{s.max_entries} entries  schema={s.schema_version}  size={s.size_bytes // 1024}KB")
+        sz_kb = s.size_bytes // 1024
+        typer.echo(
+            f"Store {s_icon}: {s.entries}/{s.max_entries} entries  "
+            f"schema={s.schema_version}  size={sz_kb}KB"
+        )
+        if s.sqlite_vec_enabled:
+            typer.echo(f"  sqlite-vec: on  ({s.sqlite_vec_rows} vectors indexed)")
+        else:
+            typer.echo("  sqlite-vec: off (install optional vector extras)")
         if s.tiers:
             typer.echo(f"  Tiers: {', '.join(f'{k}={v}' for k, v in sorted(s.tiers.items()))}")
 
@@ -2037,7 +2074,8 @@ def diagnostics_health_cmd(
         h = report.hive
         h_icon = {"ok": "✅", "warn": "⚠️", "error": "❌"}.get(h.status, "?")
         if h.connected:
-            typer.echo(f"Hive  {h_icon}: {h.entries} entries  {h.agents} agents  ns={', '.join(h.namespaces)}")
+            ns = ", ".join(h.namespaces)
+            typer.echo(f"Hive  {h_icon}: {h.entries} entries  {h.agents} agents  ns={ns}")
         else:
             typer.echo(f"Hive  {h_icon}: not connected")
 

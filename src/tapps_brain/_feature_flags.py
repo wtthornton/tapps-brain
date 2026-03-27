@@ -67,6 +67,13 @@ class FeatureFlags:
         return self._cache["otel"]
 
     @property
+    def sqlite_vec(self) -> bool:
+        """True when ``sqlite_vec`` (sqlite-vec) is importable."""
+        if "sqlite_vec" not in self._cache:
+            self._cache["sqlite_vec"] = self._probe("sqlite_vec")
+        return self._cache["sqlite_vec"]
+
+    @property
     def memory_semantic_search(self) -> bool:
         """True when optional deps for semantic search are available."""
         if "memory_semantic_search" not in self._cache:
@@ -89,6 +96,7 @@ class FeatureFlags:
             self.faiss,
             self.numpy,
             self.sentence_transformers,
+            self.sqlite_vec,
             self.memory_semantic_search,
             self.anthropic_sdk,
             self.openai_sdk,

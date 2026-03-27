@@ -86,6 +86,7 @@ class TestToolsDiscovery:
                 "memory_import",
                 # Profile
                 "profile_info",
+                "memory_profile_onboarding",
                 "profile_switch",
                 # Hive
                 "hive_status",

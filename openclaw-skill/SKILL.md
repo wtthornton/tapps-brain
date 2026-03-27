@@ -1,6 +1,6 @@
 ---
 name: tapps-brain-memory
-version: "1.4.3"
+version: "2.0.0"
 displayName: "tapps-brain — Persistent Memory"
 description: >
   Persistent cross-session memory for OpenClaw agents. BM25 ranking,
@@ -95,6 +95,8 @@ tools:
     description: Active profile name, layers, scoring config
   - name: profile_switch
     description: Switch to different built-in profile
+  - name: memory_profile_onboarding
+    description: Markdown onboarding guide for the active profile (tiers, scoring, recall)
   # Hive (Multi-Agent Sharing)
   #
   # Memories are shared via agent_scope on memory_save/memory_capture/memory_ingest:
@@ -246,7 +248,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **54 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **55 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration
