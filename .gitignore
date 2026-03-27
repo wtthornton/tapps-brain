@@ -1,4 +1,5 @@
 .venv/
+.venv-release-smoke/
 __pycache__/
 *.egg-info/
 dist/
@@ -10,6 +11,7 @@ build/
 
 # Ralph logs (keep config, ignore runtime artifacts)
 .ralph/logs/
+.ralph/.upgrade-backups/
 
 # Local project memory store (developer machine)
 .tapps-brain/

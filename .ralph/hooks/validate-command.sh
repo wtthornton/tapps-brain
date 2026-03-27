@@ -12,13 +12,37 @@ RALPH_DIR="${CLAUDE_PROJECT_DIR:-.}/.ralph"
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
-# Block destructive git commands
+# Block destructive git commands (allow --force-with-lease which is a safer alternative)
+if echo "$COMMAND" | grep -qE 'git push (--force|--force-if-includes|-f)(\s|$|")' 2>/dev/null && \
+   ! echo "$COMMAND" | grep -q 'force-with-lease' 2>/dev/null; then
+  echo "BLOCKED: Destructive git push not allowed: $COMMAND" >&2
+  exit 2
+fi
 case "$COMMAND" in
-  *"git clean"*|*"git rm"*|*"git reset --hard"*|*"git push --force"*|*"git push -f"*)
+  *"git clean"*|*"git rm"*|*"git reset --hard"*)
     echo "BLOCKED: Destructive git command not allowed: $COMMAND" >&2
     exit 2
     ;;
 esac
+
+# Block --no-verify flag (prevents skipping git hooks)
+# Catches: git commit --no-verify, git push --no-verify, git --no-verify commit, etc.
+if echo "$COMMAND" | grep -qE 'git\s+.*--no-verify' 2>/dev/null; then
+  echo "BLOCKED: --no-verify not allowed (do not skip git hooks): $COMMAND" >&2
+  exit 2
+fi
+case "$COMMAND" in
+  *"git commit"*" -n "*|*"git commit"*" -n")
+    echo "BLOCKED: git commit -n (--no-verify) not allowed: $COMMAND" >&2
+    exit 2
+    ;;
+esac
+
+# Block --no-gpg-sign flag (prevents skipping commit signing)
+if echo "$COMMAND" | grep -qE 'git\s+(commit|merge|tag)\s.*--no-gpg-sign' 2>/dev/null; then
+  echo "BLOCKED: --no-gpg-sign not allowed (do not skip commit signing): $COMMAND" >&2
+  exit 2
+fi
 
 # Block destructive file operations
 case "$COMMAND" in

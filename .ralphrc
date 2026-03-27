@@ -62,3 +62,91 @@ RALPH_ENABLE_TEAMS=false
 RALPH_MAX_TEAMMATES=3
 RALPH_BG_TESTING=false
 RALPH_TEAMMATE_MODE="tmux"
+
+# =============================================================================
+# ADVANCED SETTINGS
+# =============================================================================
+
+# Model to use for Ralph loops (default: uses Claude Code's default)
+# Examples: claude-sonnet-4-6, claude-opus-4-6
+# CLAUDE_MODEL=""
+
+# Effort level for Ralph loops (default: uses agent definition or Claude default)
+# Options: low, medium, high
+# CLAUDE_EFFORT=""
+
+# Auto-update Claude CLI at startup (checks npm registry, attempts npm update -g)
+# Recommended: true for local workstations and home servers (keeps CLI current automatically)
+# Recommended: false for Docker containers (version is pinned at image build, container is ephemeral)
+# Also set false for air-gapped environments without npm registry access
+CLAUDE_AUTO_UPDATE=true
+
+# Minimum Claude CLI version required
+CLAUDE_MIN_VERSION="2.0.76"
+
+# Enable verbose logging
+RALPH_VERBOSE=false
+
+# Agent mode (v1.0+): use --agent ralph instead of -p with --allowedTools
+# When true, uses .claude/agents/ralph.md agent definition (requires CLI v2.1+)
+# Falls back to legacy -p mode if CLI does not support --agent
+# NOTE (Issue #154): Agent mode is also auto-disabled when ALLOWED_TOOLS is
+# customized above, because agent mode uses a blocklist (disallowedTools) which
+# is incompatible with the allowlist approach. See TOOL PERMISSIONS section.
+RALPH_USE_AGENT=true
+RALPH_AGENT_NAME="ralph"
+
+# Custom prompt file (relative to .ralph/)
+# PROMPT_FILE="PROMPT.md"
+
+# Custom fix plan file (relative to .ralph/)
+# FIX_PLAN_FILE="@fix_plan.md"
+
+# Custom agent file (relative to .ralph/)
+# AGENT_FILE="@AGENT.md"
+# =============================================================================
+# PLAN OPTIMIZATION (PLANOPT epic)
+# =============================================================================
+
+# Disable automatic plan optimization on session start
+# When true, fix_plan.md is never reordered by the optimizer
+RALPH_NO_OPTIMIZE=false
+
+# Disable ralph-explorer resolution of vague tasks (tasks with no file paths)
+# When true, tasks without explicit file references are left as-is
+RALPH_NO_EXPLORER_RESOLVE=false
+
+# Maximum vague tasks to resolve per optimization run
+# Caps explorer calls to stay within the ContextManager visible window
+RALPH_MAX_EXPLORER_RESOLVE=5
+# =============================================================================
+# CONTEXT MANAGEMENT (Phase 14)
+# =============================================================================
+
+# Enable progressive context loading to reduce token usage per iteration
+# When enabled, only the current epic and next N unchecked items are injected
+# RALPH_PROGRESSIVE_CONTEXT=false
+
+# Maximum unchecked plan items to include in progressive context
+# RALPH_MAX_PLAN_ITEMS=10
+# =============================================================================
+# COST OPTIMIZATION (Phase 14)
+# =============================================================================
+
+# Prompt cache optimization — structure prompts for maximum cache hits
+# RALPH_PROMPT_CACHE_ENABLED=false
+
+# Cost budget in USD (0 = no budget limit)
+# RALPH_COST_BUDGET_USD=0
+# =============================================================================
+# OPENTELEMETRY EXPORT (Phase 14)
+# =============================================================================
+
+# OTLP HTTP endpoint for trace export (e.g., http://localhost:4318/v1/traces)
+# RALPH_OTLP_ENDPOINT=""
+
+# Enable OTLP trace export to external backend
+# RALPH_OTLP_EXPORT_ENABLED=false
+
+# Monthly cost budget in USD (0 = disabled, triggers alert at 80% by default)
+# RALPH_COST_BUDGET_USD=0

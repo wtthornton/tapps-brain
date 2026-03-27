@@ -12,7 +12,6 @@
         ]
       }
     ],
-
     "Stop": [
       {
         "hooks": [
@@ -24,7 +23,6 @@
         ]
       }
     ],
-
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -45,11 +43,19 @@
             "statusMessage": "Checking file protection..."
           }
         ]
+      },
+      {
+        "matcher": "Edit\\",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "Write",
+            "statusMessage": "bash .ralph/hooks/protect-ralph-files.sh|Checking file protection..."
+          }
+        ]
       }
     ],
-
     "PostToolUse": [],
-
     "SubagentStop": [
       {
         "hooks": [
@@ -60,7 +66,6 @@
         ]
       }
     ],
-
     "StopFailure": [
       {
         "matcher": "rate_limit|server_error",
@@ -71,9 +76,18 @@
             "statusMessage": "Handling API error..."
           }
         ]
+      },
+      {
+        "matcher": "rate_limit\\",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "server_error",
+            "statusMessage": "bash .ralph/hooks/on-stop-failure.sh|Handling API error..."
+          }
+        ]
       }
     ],
-
     "TeammateIdle": [
       {
         "hooks": [
@@ -85,7 +99,6 @@
         ]
       }
     ],
-
     "TaskCompleted": [
       {
         "hooks": [

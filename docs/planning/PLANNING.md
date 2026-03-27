@@ -2,6 +2,11 @@
 
 This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding assistants (Claude Code, Cursor, Copilot) can parse, reference, and execute against them consistently.
 
+Feature intake and triage policy for agent-created `feat` work lives in:
+- `FEATURE_FEASIBILITY_CRITERIA.md`
+- `AGENT_FEATURE_GOVERNANCE.md`
+- `ISSUE_TRIAGE_VIEWS.md`
+
 ## Directory Structure
 
 ```

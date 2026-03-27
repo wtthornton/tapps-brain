@@ -13,13 +13,14 @@ RALPH_DIR="${CLAUDE_PROJECT_DIR:-.}/.ralph"
 INPUT=$(cat)
 
 # PERF: Extract all fields in single jq call (was: 4 separate jq calls)
-read -r agent_name agent_id duration_ms error < <(
+# Use IFS=$'\t' so that fields containing spaces (e.g. agent names) are not split
+IFS=$'\t' read -r agent_name agent_id duration_ms error < <(
   echo "$INPUT" | jq -r '[
     (.agent_name // .subagent_type // "unknown"),
     (.agent_id // "unknown"),
     (.duration_ms // 0 | tostring),
     (.error // "")
-  ] | @tsv' 2>/dev/null || echo "unknown unknown 0 "
+  ] | @tsv' 2>/dev/null || printf 'unknown\tunknown\t0\t'
 )
 
 # Calculate duration in seconds

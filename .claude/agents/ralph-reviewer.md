@@ -48,3 +48,15 @@ Rules:
 - Reference specific file:line locations
 - Don't suggest refactors beyond the scope of the change
 - If everything looks good, say PASS and move on quickly
+
+## Feature governance checklist (when change touches `feat` intake, issues, or triage)
+
+If the work relates to new features, GitHub issues, labels, or planning docs:
+
+1. Read `docs/planning/FEATURE_FEASIBILITY_CRITERIA.md` and `docs/planning/AGENT_FEATURE_GOVERNANCE.md`.
+2. Confirm the proposal has a completed scorecard + hard gates (no blank gates).
+3. Confirm a single triage decision label is appropriate (`triage:approved`, `triage:rescope`, `triage:defer`, `triage:close-candidate`).
+4. For `triage:close-candidate`, verify acceptance criteria against shipped behavior with evidence.
+5. Flag architecture invariant violations (deterministic core, synchronous core, SQLite write-through, backward compatibility).
+
+Include governance findings under **Warnings** or **Critical Issues** as appropriate.

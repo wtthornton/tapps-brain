@@ -102,6 +102,11 @@ On **Windows**, run the shell gate from **WSL** or **Git Bash** (see `docs/plann
 
 Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions, templates, and guidance on writing stories that AI assistants can execute. Reference stories in commits: `feat(story-001.3): description`.
 
+Feature intake and triage governance for agents:
+- `docs/planning/FEATURE_FEASIBILITY_CRITERIA.md`
+- `docs/planning/AGENT_FEATURE_GOVERNANCE.md`
+- `docs/planning/ISSUE_TRIAGE_VIEWS.md`
+
 ## Ralph (Autonomous Dev Loop)
 
 This project is configured for [Ralph for Claude Code](https://github.com/frankbria/ralph-claude-code) — an autonomous development loop that drives Claude Code CLI through tasks iteratively.

@@ -6,6 +6,14 @@
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
+## Feature intake standard
+
+- All new `feat` proposals must follow [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
+- Agent enforcement rules: [`AGENT_FEATURE_GOVERNANCE.md`](./AGENT_FEATURE_GOVERNANCE.md).
+- Use the required scorecard + hard gates before opening or planning a feature issue.
+- Proposals that skip this process are treated as incomplete and should be re-scoped, deferred, or rejected.
+- Triage label filters and optional Projects setup: [`ISSUE_TRIAGE_VIEWS.md`](./ISSUE_TRIAGE_VIEWS.md).
+
 ## Quality gates
 
 | Check | Target | Notes |

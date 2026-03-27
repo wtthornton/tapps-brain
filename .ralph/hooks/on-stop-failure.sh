@@ -18,6 +18,7 @@ if [[ -f "$RALPH_DIR/status.json" ]]; then
   jq --arg err "$error_type" '.status = "error" | .exit_reason = $err' \
     "$RALPH_DIR/status.json" > "$local_tmp" \
     && mv "$local_tmp" "$RALPH_DIR/status.json"
+  rm -f "$local_tmp" 2>/dev/null  # Clean up temp file if mv was skipped
 fi
 
 exit 0

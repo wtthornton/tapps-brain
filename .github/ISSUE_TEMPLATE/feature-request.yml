@@ -1,0 +1,175 @@
+name: Feature request
+description: Propose a new feature after criteria-based intake.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, review and complete:
+        `docs/planning/FEATURE_FEASIBILITY_CRITERIA.md`
+
+        Feature proposals without completed criteria are considered incomplete.
+
+  - type: checkboxes
+    id: intake_ack
+    attributes:
+      label: Intake requirements
+      description: Confirm all required intake steps are done.
+      options:
+        - label: I reviewed `docs/planning/FEATURE_FEASIBILITY_CRITERIA.md`.
+          required: true
+        - label: I completed the 10-criterion scorecard with evidence.
+          required: true
+        - label: I ran the hard gates and documented pass/fail with rationale.
+          required: true
+        - label: I verified this feature does not duplicate existing CLI/API/MCP behavior.
+          required: true
+        - label: I defined measurable success metrics (baseline + target).
+          required: true
+        - label: I included compatibility/migration/rollback notes.
+          required: true
+        - label: I confirmed architecture invariants (deterministic core, synchronous core, SQLite write-through) remain intact.
+          required: true
+        - label: I included source-quality evidence (Tier A/B, not blog-only) for critical claims.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Who is affected, how often, and why this matters now.
+      placeholder: |
+        User pain:
+        Affected workflow:
+        Frequency/severity:
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround and cost
+      placeholder: |
+        Current workaround:
+        Cost/risk:
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed v1 scope
+      placeholder: |
+        In scope:
+        Out of scope:
+    validations:
+      required: true
+
+  - type: textarea
+    id: scorecard
+    attributes:
+      label: Criteria scorecard (0-5 each)
+      description: Include evidence for each score.
+      placeholder: |
+        Value density:
+        Strategic fit:
+        Dependency unlock value:
+        Delivery confidence:
+        Build complexity (inverse):
+        Operational burden (inverse):
+        Risk surface (inverse):
+        Overlap risk (inverse):
+        Measurability:
+        Compatibility/migration safety:
+
+        Computed priority_score:
+    validations:
+      required: true
+
+  - type: textarea
+    id: hard_gates
+    attributes:
+      label: Hard gate results
+      placeholder: |
+        Problem clarity gate: pass/fail
+        No-duplication gate: pass/fail
+        Success metric gate: pass/fail
+        Compatibility gate: pass/fail
+        Operational gate: pass/fail
+        Security/data gate: pass/fail
+        Architecture invariants gate: pass/fail
+        Operational reliability gate: pass/fail
+        Source quality gate: pass/fail
+    validations:
+      required: true
+
+  - type: textarea
+    id: success_metrics
+    attributes:
+      label: Success metrics
+      placeholder: |
+        Baseline:
+        Target:
+        Measurement method:
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      placeholder: |
+        Blocked by:
+        Unlocks:
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility, migration, rollback
+      placeholder: |
+        Compatibility approach:
+        Migration approach:
+        Rollback plan:
+    validations:
+      required: true
+
+  - type: textarea
+    id: operations
+    attributes:
+      label: Operational impact
+      placeholder: |
+        Monitoring:
+        Runbook updates:
+        Failure handling:
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Research evidence and source quality
+      description: List references used, and label each Tier A, B, or C.
+      placeholder: |
+        Tier A:
+        - ...
+        Tier B:
+        - ...
+        Tier C:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test plan
+      placeholder: |
+        Unit:
+        Integration:
+        End-to-end:
+    validations:
+      required: true
