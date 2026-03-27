@@ -15,6 +15,55 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
+// Module-level singleton registry
+//
+// OpenClaw creates a new TappsBrainEngine (and therefore a new McpClient)
+// for every agent session. Without a singleton, each session spawns its own
+// tapps-brain-mcp child process — causing unbounded process accumulation.
+//
+// The registry maps projectDir → McpClient so all sessions sharing the same
+// workspace reuse a single MCP process. Reference counting ensures the process
+// is only stopped when every session using it has been disposed.
+// ---------------------------------------------------------------------------
+
+interface SingletonEntry {
+  client: McpClient;
+  refCount: number;
+}
+
+const _singletons = new Map<string, SingletonEntry>();
+
+/**
+ * Acquire a shared McpClient for the given project directory.
+ * Creates one on first call; increments refCount on subsequent calls.
+ * Call releaseSingleton() in dispose() to decrement the refCount.
+ */
+export function acquireSingleton(projectDir: string): McpClient {
+  const key = resolve(projectDir);
+  let entry = _singletons.get(key);
+  if (!entry) {
+    entry = { client: new McpClient(key), refCount: 0 };
+    _singletons.set(key, entry);
+  }
+  entry.refCount++;
+  return entry.client;
+}
+
+/**
+ * Release a shared McpClient. Stops and removes it when refCount reaches 0.
+ */
+export function releaseSingleton(projectDir: string): void {
+  const key = resolve(projectDir);
+  const entry = _singletons.get(key);
+  if (!entry) return;
+  entry.refCount--;
+  if (entry.refCount <= 0) {
+    entry.client.stop();
+    _singletons.delete(key);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // McpClient
 // ---------------------------------------------------------------------------
 
@@ -27,6 +76,9 @@ import { existsSync } from "node:fs";
  *
  * Reconnection uses OpenClaw's session-invalidation pattern: on error,
  * the session is torn down and lazily re-created on the next call.
+ *
+ * Use acquireSingleton() / releaseSingleton() instead of constructing
+ * McpClient directly to ensure one process per workspace.
  */
 export class McpClient {
   private client: Client | null = null;

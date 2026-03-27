@@ -72,7 +72,7 @@ async function delegateCompactionToRuntime(
   }
 }
 
-import { McpClient, hasMemoryMd, isFirstRun } from "./mcp_client.js";
+import { McpClient, acquireSingleton, releaseSingleton, hasMemoryMd, isFirstRun } from "./mcp_client.js";
 
 // ---------------------------------------------------------------------------
 // Internal types — local aliases used by the engine and tools
@@ -176,7 +176,7 @@ export class TappsBrainEngine {
     this.agentId = config.agentId ?? "";
     this.citations = config.citations ?? "auto";
     this.flushInterval = config.flushIntervalMessages ?? 10;
-    this.mcpClient = new McpClient(workspaceDir);
+    this.mcpClient = acquireSingleton(workspaceDir);
     // Default to no-op logger if none provided (e.g. in tests)
     this.logger = logger ?? { info: () => {}, warn: () => {} };
 
@@ -633,7 +633,7 @@ export class TappsBrainEngine {
    * Flushes buffered messages to tapps-brain, then stops the MCP child process.
    */
   async dispose(): Promise<void> {
-    // Flush buffered messages before stopping (GitHub #24)
+    // Flush buffered messages before releasing (GitHub #24)
     if (this.recentMessages.length > 0) {
       try {
         await this.ready;
@@ -648,7 +648,9 @@ export class TappsBrainEngine {
         // Fail gracefully — never block shutdown
       }
     }
-    this.mcpClient.stop();
+    // Release the singleton reference — only stops the MCP process when
+    // all sessions sharing this workspace have been disposed.
+    releaseSingleton(this.workspaceDir);
   }
 }
 
@@ -1258,10 +1260,12 @@ export default definePluginEntry({
     const onSigterm = () => {
       const timeout = setTimeout(() => process.exit(0), 2000);
       timeout.unref(); // Don't keep the event loop alive for the timeout alone
+      // Force-stop the singleton directly on signal — bypass ref counting
+      // since the process is exiting anyway and dispose() won't be called.
       engine.dispose().finally(() => {
         clearTimeout(timeout);
         process.exit(0);
-      });
+      }).catch(() => process.exit(0));
     };
     process.once("SIGTERM", onSigterm);
     process.once("SIGINT", onSigterm);
