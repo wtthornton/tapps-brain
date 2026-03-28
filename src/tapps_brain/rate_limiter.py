@@ -24,6 +24,7 @@ _DEFAULT_WRITES_PER_SESSION = 100
 BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
     {
         "import_markdown",
+        "memory_relay",
         "seed",
         "federation_sync",
         "consolidate",

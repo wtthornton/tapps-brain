@@ -2361,3 +2361,68 @@ class TestFeedbackCommands:
         )
         assert r.exit_code == 1
         assert "object" in r.stderr.lower() or "object" in r.stdout.lower()
+
+
+class TestRelayImport:
+    """GitHub #19 — relay import from file and stdin."""
+
+    def test_relay_import_file(self, tmp_path: Path):
+        relay_path = tmp_path / "r.json"
+        relay_path.write_text(
+            json.dumps(
+                {
+                    "relay_version": "1.0",
+                    "source_agent": "cli-test-agent",
+                    "items": [
+                        {"key": "relay.cli.key", "value": "relay body", "scope": "project"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        r = runner.invoke(
+            app,
+            [
+                "relay",
+                "import",
+                str(relay_path),
+                "--project-dir",
+                str(tmp_path),
+                "--json",
+            ],
+        )
+        assert r.exit_code == 0
+        out = json.loads(r.stdout)
+        assert out["imported"] == 1
+        assert out["skipped"] == 0
+        st = MemoryStore(tmp_path)
+        try:
+            assert st.get("relay.cli.key") is not None
+        finally:
+            st.close()
+
+    def test_relay_import_stdin(self, tmp_path: Path):
+        payload = json.dumps(
+            {
+                "relay_version": "1.0",
+                "source_agent": "stdin-agent",
+                "items": [{"key": "relay.stdin.key", "value": "stdin val", "tier": "pattern"}],
+            }
+        )
+        r = runner.invoke(
+            app,
+            ["relay", "import", "--stdin", "--project-dir", str(tmp_path), "--json"],
+            input=payload,
+        )
+        assert r.exit_code == 0
+        out = json.loads(r.stdout)
+        assert out["imported"] == 1
+
+    def test_relay_import_invalid_json_exits_1(self, tmp_path: Path):
+        relay_path = tmp_path / "bad.json"
+        relay_path.write_text("not json", encoding="utf-8")
+        r = runner.invoke(
+            app,
+            ["relay", "import", str(relay_path), "--project-dir", str(tmp_path)],
+        )
+        assert r.exit_code == 1

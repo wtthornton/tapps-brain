@@ -93,6 +93,12 @@ app.add_typer(flywheel_app, name="flywheel")
 session_app = typer.Typer(help="Session lifecycle commands.", no_args_is_help=True)
 app.add_typer(session_app, name="session")
 
+relay_app = typer.Typer(
+    help="Cross-node memory relay — import payloads from sub-agents (GitHub #19).",
+    no_args_is_help=True,
+)
+app.add_typer(relay_app, name="relay")
+
 # ---------------------------------------------------------------------------
 # Global options
 # ---------------------------------------------------------------------------
@@ -2582,6 +2588,66 @@ def _write_daily_note(workspace: Path, summary: str) -> None:
 
     with open(note_path, "a") as f:
         f.write(block)
+
+
+# ===================================================================
+# RELAY (GitHub #19)
+# ===================================================================
+
+
+@relay_app.command("import")
+def relay_import_cmd(
+    file: Annotated[
+        Path | None,
+        typer.Argument(help="Relay JSON file (omit when using --stdin)."),
+    ] = None,
+    stdin: Annotated[
+        bool,
+        typer.Option("--stdin", help="Read relay JSON from stdin."),
+    ] = False,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Import memories from a structured relay JSON file or stdin.
+
+    See docs/guides/memory-relay.md for the relay_version 1.0 schema.
+    Invalid items are skipped with warnings; the command exits 0 unless the
+    envelope JSON is unusable.
+    """
+    import sys
+
+    from tapps_brain.memory_relay import import_relay_to_store, parse_relay_document
+
+    if stdin and file is not None:
+        typer.echo("Use either a FILE or --stdin, not both.", err=True)
+        raise typer.Exit(code=1)
+    if not stdin:
+        if file is None:
+            typer.echo("Provide a FILE or use --stdin.", err=True)
+            raise typer.Exit(code=1)
+        if not file.is_file():
+            typer.echo(f"File not found: {file}", err=True)
+            raise typer.Exit(code=1)
+        raw = file.read_text(encoding="utf-8")
+    else:
+        raw = sys.stdin.read()
+
+    payload, err = parse_relay_document(raw)
+    if payload is None:
+        typer.echo(f"Invalid relay document: {err}", err=True)
+        raise typer.Exit(code=1)
+
+    store = _get_store(project_dir)
+    try:
+        outcome = import_relay_to_store(store, payload)
+        if as_json:
+            _output(outcome.to_dict(), as_json=True)
+        else:
+            typer.echo(f"Imported {outcome.imported} entr(y/ies); skipped {outcome.skipped}.")
+            for w in outcome.warnings:
+                typer.secho(f"  ⚠ {w}", fg=typer.colors.YELLOW)
+    finally:
+        store.close()
 
 
 # ---------------------------------------------------------------------------

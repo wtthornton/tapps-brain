@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`.
+
 ---
 
 ## [1.4.2] — 2026-03-24

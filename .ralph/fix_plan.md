@@ -41,7 +41,7 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 | 3 | #45 | Profile-driven agent onboarding | `done` | `profile onboard` + `memory_profile_onboarding` |
 | 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll; **GitHub closed** 2026-03-28 |
 | 5 | #23 | SQLCipher at-rest encryption | `done` | Optional `[encryption]` extra, migrate CLI, `docs/guides/sqlcipher.md`; **GitHub closed** 2026-03-28 |
-| 6 | #19 | Sub-agent memory relay | `not_started` | Portable relay format; tolerate partial invalid items |
+| 6 | #19 | Sub-agent memory relay | `done` | `memory_relay` module; CLI `relay import`; MCP `tapps_brain_relay_export`; docs/guides/memory-relay.md |
 | 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights (#30 prerequisite met) |
 | 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
 | 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
@@ -55,7 +55,7 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 - [x] **OR-3** GitHub **#45** profile-driven onboarding (`done` — CLI + MCP)
 - [x] **OR-4** GitHub **#12** hive pub-sub (`done` — 2026-03-27)
 - [x] **OR-5** GitHub **#23** SQLCipher (`done` — 2026-03-27)
-- [ ] **OR-6** GitHub **#19** sub-agent memory relay (`not_started`)
+- [x] **OR-6** GitHub **#19** sub-agent memory relay (`done`)
 - [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`not_started`; sqlite-vec / #30 shipped)
 - [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
 - [ ] **OR-9** GitHub **#21** store stale (`not_started`)

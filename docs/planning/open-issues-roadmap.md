@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (GitHub: **#12**, **#23** closed; **#17** already closed on GitHub)
+Last updated: 2026-03-28 (GitHub: **#19** closed — sub-agent memory relay shipped)
 Owner: @wtthornton
 
 ## Purpose
@@ -19,15 +19,14 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Priority Order
 
-**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17
+**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19
 
 **Remaining queue (dependency order):**
 
-1. #19 - sub-agent memory relay
-2. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
-3. #18 - hive push / push-tagged
-4. #21 - store stale listing
-5. #20 - profile tier migration
+1. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
+2. #18 - hive push / push-tagged
+3. #21 - store stale listing
+4. #20 - profile tier migration
 
 ## Roadmap by Week
 
@@ -66,10 +65,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ### Week 5 - Interop + Search Quality
 
-- [ ] **#19** `feat: Sub-agent memory relay`
-  - Status: `not_started`
+- [x] **#19** `feat: Sub-agent memory relay`
+  - Status: `done` (`memory_relay` parser + `import_relay_to_store`; CLI `tapps-brain relay import` file or `--stdin`; MCP `tapps_brain_relay_export`; `docs/guides/memory-relay.md`; batch context `memory_relay`)
   - Target outcome: portable relay format + import/export path
-  - Notes: tolerate partial invalid relay items
+  - Notes: invalid rows skipped with warnings
 
 - [ ] **#40** `feat: adaptive query-aware hybrid search fusion`
   - Status: `not_started`
@@ -104,7 +103,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 3 | #45 | profile-driven onboarding | closed | - | 2 | - | GitHub closed |
 | 4 | #12 | hive pub-sub notifications | closed | - | 3 | - | GitHub closed 2026-03-28 |
 | 5 | #23 | SQLCipher encryption | closed | - | 4 | - | GitHub closed 2026-03-28 |
-| 6 | #19 | sub-agent memory relay | not_started | - | 5 | - | Interop and continuity |
+| 6 | #19 | sub-agent memory relay | closed | - | 5 | - | Relay v1.0 + CLI import + MCP export |
 | 7 | #40 | adaptive hybrid fusion | not_started | - | 5 | - | Quality optimization |
 | 8 | #18 | hive push / push-tagged | not_started | - | 6 | - | Sharing ergonomics |
 | 9 | #21 | store stale | not_started | - | 6 | - | Maintenance visibility |
@@ -137,14 +136,15 @@ Copy this section at the end of each week:
   - [x] #12 hive pub-sub — **closed on GitHub** 2026-03-28 (comment + state).
   - [x] #23 SQLCipher — **closed on GitHub** 2026-03-28 (comment + state).
   - [x] #17 session summarization — **closed on GitHub** 2026-03-28 (prior close).
+  - [x] **#19** sub-agent memory relay — shipped + **closed on GitHub** 2026-03-28.
 - In progress:
-  - None (next queue item: **#19** sub-agent memory relay).
+  - None (next queue item: **#40** adaptive hybrid fusion).
 - Blocked:
   - None (#40 unblocked; sqlite-vec prerequisite shipped).
 - Scope changes:
   - None this week (planning sync only).
 - Next week plan:
-  - #19, #40 (Week 5 interop + hybrid fusion).
+  - #40 adaptive hybrid fusion; then Week 6 items (#18, #21, #20).
 
 ## Change Log
 
@@ -154,3 +154,4 @@ Copy this section at the end of each week:
 - 2026-03-27: **#12** shipped — Hive write revision counter, `hive watch`, MCP `hive_write_revision` / `hive_wait_write`, `.hive_write_notify` sidecar; **#40** unblocked from #30 in roadmap.
 - 2026-03-28: **#23** marked `done` in roadmap and tracking table; `.ralph/fix_plan.md` OPEN-ISSUES mirror updated (OR-5 checked); weekly update rewritten to match shipped state; **EPIC-040** epic stub added under `docs/planning/epics/` pointing at fix_plan for full story list.
 - 2026-03-28: Closed **#12** and **#23** on GitHub (`completed`); roadmap priority list collapsed to remaining five issues; **#17** marked `closed` in table (was shipped earlier on GitHub).
+- 2026-03-28: **#19** sub-agent memory relay shipped (`memory_relay`, `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`); GitHub **#19** closed; MCP tool surface **60** (incl. `tapps_brain_session_end` + `tapps_brain_relay_export` in SKILL baseline).

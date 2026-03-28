@@ -120,6 +120,8 @@ class TestCoreTools:
             # Export/import tools
             "memory_export",
             "memory_import",
+            "tapps_brain_relay_export",
+            "tapps_brain_session_end",
             # Profile tools
             "profile_info",
             "memory_profile_onboarding",
@@ -676,6 +678,21 @@ class TestFederationAndMaintenance:
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         assert "memory_export" in tool_names
         assert "memory_import" in tool_names
+
+    def test_tapps_brain_relay_export_builds_payload(self, mcp_server):
+        fn = _tool_fn(mcp_server, "tapps_brain_relay_export")
+        items = json.dumps([{"key": "relay.mcp", "value": "from sub", "scope": "hive"}])
+        out = json.loads(fn(source_agent="sub-a", items_json=items))
+        assert out.get("relay_version") == "1.0"
+        assert out.get("item_count") == 1
+        payload = json.loads(out["payload"])
+        assert payload["source_agent"] == "sub-a"
+        assert payload["items"][0]["key"] == "relay.mcp"
+
+    def test_tapps_brain_relay_export_rejects_non_array(self, mcp_server):
+        fn = _tool_fn(mcp_server, "tapps_brain_relay_export")
+        out = json.loads(fn(source_agent="x", items_json="{}"))
+        assert out.get("error") == "invalid_format"
 
     def test_federation_status_returns_json(self, mcp_server, tmp_path, monkeypatch):
         # Redirect federation config to tmp_path to avoid touching real home dir

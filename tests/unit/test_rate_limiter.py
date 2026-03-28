@@ -249,6 +249,7 @@ class TestBatchExemptContexts:
 
     def test_expected_contexts(self) -> None:
         assert "import_markdown" in BATCH_EXEMPT_CONTEXTS
+        assert "memory_relay" in BATCH_EXEMPT_CONTEXTS
         assert "seed" in BATCH_EXEMPT_CONTEXTS
         assert "federation_sync" in BATCH_EXEMPT_CONTEXTS
         assert "consolidate" in BATCH_EXEMPT_CONTEXTS

@@ -1384,6 +1384,54 @@ def create_server(  # noqa: PLR0915
             }
         )
 
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def tapps_brain_relay_export(source_agent: str, items_json: str) -> str:
+        """Build a memory relay JSON payload for cross-node handoff (GitHub #19).
+
+        Sub-agents without a local store pass the returned string to the primary
+        for ``tapps-brain relay import``.
+
+        Args:
+            source_agent: Identifier for the sending agent (e.g. builder-agent).
+            items_json: JSON array of item objects. Each object should include at
+                least ``key`` and ``value``. Optional: ``tier``, ``scope`` (memory
+                scope or agent_scope disambiguated per docs/guides/memory-relay.md),
+                ``visibility``, ``agent_scope``, ``tags``, ``source``, ``confidence``.
+        """
+        from tapps_brain.memory_relay import RELAY_VERSION, build_relay_json
+
+        try:
+            parsed = json.loads(items_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": "invalid_json", "message": str(exc)})
+
+        if not isinstance(parsed, list):
+            return json.dumps(
+                {"error": "invalid_format", "message": "items_json must be a JSON array"}
+            )
+
+        for i, row in enumerate(parsed):
+            if not isinstance(row, dict):
+                return json.dumps(
+                    {
+                        "error": "invalid_item",
+                        "message": f"items[{i}] must be an object",
+                    }
+                )
+
+        payload = build_relay_json(
+            source_agent=source_agent,
+            items=parsed,
+            relay_version=RELAY_VERSION,
+        )
+        return json.dumps(
+            {
+                "relay_version": RELAY_VERSION,
+                "payload": payload,
+                "item_count": len(parsed),
+            }
+        )
+
     # ------------------------------------------------------------------
     # Profile tools (EPIC-010)
     # ------------------------------------------------------------------

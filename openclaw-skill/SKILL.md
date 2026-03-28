@@ -90,6 +90,10 @@ tools:
     description: Export entries as JSON
   - name: memory_import
     description: Import from JSON or markdown
+  - name: tapps_brain_session_end
+    description: Save end-of-session episodic summary to the store
+  - name: tapps_brain_relay_export
+    description: Build memory relay JSON for primary-node import (GitHub #19)
   # Profiles
   - name: profile_info
     description: Active profile name, layers, scoring config
@@ -254,7 +258,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **58 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **60 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

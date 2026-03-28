@@ -106,10 +106,9 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **55+** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **60** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (canonical queue: `open-issues-roadmap.md`; Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-- **#19** — Sub-agent memory relay (`not_started`).
 - **#40** — Adaptive hybrid fusion / EPIC-040 **040.10** (`not_started`).
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 - **DEPLOY-OPENCLAW** — distribution tasks deferred per fix_plan.
