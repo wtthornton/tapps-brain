@@ -254,7 +254,7 @@ class TestConcurrentGCAndSaves:
             assert not errors, f"Threads raised exceptions: {errors}"
 
             # Store integrity: count must be non-negative.
-            # 3 saver threads × ~2s / 0.002s sleep ≈ up to ~3000 entries; GC only
+            # 3 saver threads x ~2s / 0.002s sleep ~ up to ~3000 entries; GC only
             # archives entries that were explicitly marked contradicted, so we just
             # verify no corruption occurred (no exceptions, count is non-negative).
             count = s.count()

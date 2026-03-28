@@ -140,7 +140,8 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        assert persistence.get_schema_version() == 15  # v15 Bayesian confidence counters (GitHub #35)
+        # v15 Bayesian confidence counters (GitHub #35)
+        assert persistence.get_schema_version() == 15
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)

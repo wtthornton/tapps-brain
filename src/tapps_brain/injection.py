@@ -220,6 +220,7 @@ def inject_memories(
         summaries.append(
             {
                 "key": entry.key,
+                "value": entry.value,
                 "confidence": scored.effective_confidence,
                 "tier": tier,
                 "score": scored.score,

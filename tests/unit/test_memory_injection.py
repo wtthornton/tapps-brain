@@ -162,6 +162,7 @@ class TestInjectMemories:
             assert len(result["memories"]) > 0
             mem = result["memories"][0]
             assert "key" in mem
+            assert mem.get("value") == "test matching value"
             assert "confidence" in mem
             assert "score" in mem
 

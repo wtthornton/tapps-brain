@@ -197,11 +197,11 @@ def run_health_check(  # noqa: PLR0915
             integrity_health.corrupted_entries = corrupted
 
             # Orphaned relations: relations pointing to missing keys
-            with store._lock:  # type: ignore[attr-defined]
-                all_keys = set(store._entries.keys())  # type: ignore[attr-defined]
+            with store._lock:
+                all_keys = set(store._entries.keys())
             orphaned = 0
             try:
-                all_relations = store._persistence.list_relations()  # type: ignore[attr-defined]
+                all_relations = store._persistence.list_relations()
                 for rel in all_relations:
                     for src_key in rel.get("source_entry_keys", []):
                         if src_key not in all_keys:
@@ -213,8 +213,8 @@ def run_health_check(  # noqa: PLR0915
             # Expired entries (past valid_at)
             now_iso = datetime.now(tz=UTC).isoformat()
             expired = 0
-            with store._lock:  # type: ignore[attr-defined]
-                for entry in store._entries.values():  # type: ignore[attr-defined]
+            with store._lock:
+                for entry in store._entries.values():
                     valid_at = getattr(entry, "valid_at", None)
                     if valid_at and valid_at < now_iso:
                         expired += 1

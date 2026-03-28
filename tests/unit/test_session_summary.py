@@ -137,10 +137,15 @@ class TestSessionEndCLI:
         result = runner.invoke(
             app,
             [
-                "session", "end", "Tagged session",
-                "--project-dir", str(tmp_path),
-                "--tag", "deploy",
-                "--tag", "prod",
+                "session",
+                "end",
+                "Tagged session",
+                "--project-dir",
+                str(tmp_path),
+                "--tag",
+                "deploy",
+                "--tag",
+                "prod",
                 "--json",
             ],
         )
@@ -154,9 +159,13 @@ class TestSessionEndCLI:
         result = runner.invoke(
             app,
             [
-                "session", "end", "Daily note test",
-                "--project-dir", str(tmp_path),
-                "--workspace-dir", str(tmp_path),
+                "session",
+                "end",
+                "Daily note test",
+                "--project-dir",
+                str(tmp_path),
+                "--workspace-dir",
+                str(tmp_path),
                 "--daily-note",
             ],
         )

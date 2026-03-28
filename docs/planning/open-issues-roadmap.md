@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (repo: **#18**, **#40**, **#21**, **#20** closed on GitHub after verify)
+Last updated: 2026-03-28 (full gate green: pytest ≥95% cov, ruff, mypy; **#46**/**#48** ready to close on GitHub; **#47** mitigated/closed; **#49** design + child issues sketched)
 Owner: @wtthornton
 
 ## Purpose
@@ -19,14 +19,28 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Priority Order
 
-**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20
+**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20, **#46**, **#48**, **#47** (mitigated)
 
-**Remaining queue (open on GitHub — triage order TBD):**
+**Remaining queue (open on GitHub):**
 
-- **#46** — `assemble()` returns 0 memories / plugin context at session start
-- **#47** — `memory_search` / `memory_get` tool name conflicts on gateway restart
-- **#48** — Invalid tier names from subagents vs personal-assistant profile
-- **#49** — Multi-group memory scopes (Hive, named groups, personal)
+1. **#49** — Multi-group memory scopes — **epic**. Design note:
+   [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md) (named
+   groups vs Hive namespaces vs profile scopes + suggested child issues). Implement after
+   filing/splitting sub-issues.
+
+**Shipped in repo (2026-03-28 PR):**
+
+- **#46** — `assemble()` / recall injection: MCP `CallToolResult` unwrapping in
+  `openclaw-plugin` (`mcp_tool_text` / `McpClient.callTool`) + `value` on recall summaries in
+  `inject_memories`. *Manual check:* OpenClaw session → `assemble()` shows text from existing
+  memories.
+- **#48** — Subagent / odd tiers: `normalize_save_tier` (`tier_normalize.py`) in
+  `MemoryStore.save`, `memory_save` MCP, relay import; profile layer names before global
+  aliases (e.g. `UNKNOWN_TIER` → `pattern` or profile layer). *Manual check:* save with a
+  weird tier and confirm stored tier in DB/recall.
+- **#47** — Tool-name collisions mitigated: plugin exposes `tapps_memory_search` /
+  `tapps_memory_get`; troubleshooting in `docs/guides/openclaw.md`. Stronger follow-up (e.g.
+  MCP `--tool-prefix` on the host) can be a new issue if needed.
 
 **Recently shipped (repo + GitHub closed 2026-03-28):** #18 hive push, #40 adaptive hybrid fusion, #21 store stale, #20 profile migrate
 
@@ -110,6 +124,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 9 | #21 | store stale | closed | - | 6 | - | GitHub closed 2026-03-28 |
 | 10 | #20 | profile migrate | closed | - | 6 | - | GitHub closed 2026-03-28 |
 | 11 | #17 | session summarization | closed | - | 6 | - | GitHub closed 2026-03-28 |
+| 12 | #46 | OpenClaw assemble / MCP recall text | closed | - | — | — | GitHub closed 2026-03-28 |
+| 13 | #48 | save tier normalization | closed | - | — | — | GitHub closed 2026-03-28 |
+| 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
+| 15 | #49 | multi-scope memory epic | open | design | — | — | `design-issue-49-multi-scope-memory.md` |
 
 ## Weekly Update Template
 
@@ -140,6 +158,8 @@ Copy this section at the end of each week:
   - [x] **#19** sub-agent memory relay — shipped + **closed on GitHub** 2026-03-28.
   - [x] **#21** store stale listing — `maintenance stale`, MCP `maintenance_stale`, `StaleCandidateDetail` / `list_gc_stale_details`.
   - [x] **#20** profile tier migrate — `profile migrate-tiers`, MCP `profile_tier_migrate`, audit `tier_migrate`.
+  - [x] **#46** / **#48** / **#47** — shipped + **closed on GitHub** 2026-03-28 (OpenClaw MCP unwrap + tier normalize + mitigated tool names).
+  - [x] **#49** — design note added (`design-issue-49-multi-scope-memory.md`); epic stays open for child issues.
 - In progress:
   - None.
 - Blocked:
@@ -147,10 +167,14 @@ Copy this section at the end of each week:
 - Scope changes:
   - None this week (planning sync only).
 - Next week plan:
-  - Triage **#46–#49** (open); MCP tool count **63**.
+  - **#49** — file child issues from `design-issue-49-multi-scope-memory.md` and sequence work
+    (schema → retrieval → MCP/CLI).
 
 ## Change Log
 
+- 2026-03-28: **#46** OpenClaw `assemble()` / MCP text unwrapping + recall `value` in summaries;
+  **#48** tier normalization (`tier_normalize`, store/MCP/relay); **#47** mitigated + doc;
+  **#49** design note `design-issue-49-multi-scope-memory.md`; Ruff 0.15.x / mypy CI sweep.
 - 2026-03-28: **#21** stale listing + **#20** profile tier migrate shipped (CLI, MCP, store/GC helpers); MCP **63** tools; **#18**, **#40**, **#21**, **#20** closed on GitHub.
 - 2026-03-27: Initial roadmap created from open-issue value prioritization.
 - 2026-03-27: Marked #30 as in-progress and added first weekly execution update.

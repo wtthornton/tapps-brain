@@ -202,7 +202,7 @@ def test_import_invalid_scope_row_skipped(tmp_path: Path) -> None:
         store.close()
 
 
-def test_coerce_unknown_tier_skipped(tmp_path: Path) -> None:
+def test_coerce_unknown_tier_normalized_on_import(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     try:
         r = import_relay_to_store(
@@ -219,7 +219,10 @@ def test_coerce_unknown_tier_skipped(tmp_path: Path) -> None:
                 ],
             },
         )
-        assert r.skipped == 1
+        assert r.imported == 1
+        ent = store.get("tier.bad")
+        assert ent is not None
+        assert str(ent.tier) == "pattern"
     finally:
         store.close()
 

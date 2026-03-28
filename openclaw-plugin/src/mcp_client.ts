@@ -63,6 +63,10 @@ export function releaseSingleton(projectDir: string): void {
   }
 }
 
+import { extractMcpToolText } from "./mcp_tool_text.js";
+
+export { extractMcpToolText } from "./mcp_tool_text.js";
+
 // ---------------------------------------------------------------------------
 // McpClient
 // ---------------------------------------------------------------------------
@@ -196,7 +200,7 @@ export class McpClient {
         name,
         arguments: args,
       }) as CallToolResult;
-      return result;
+      return extractMcpToolText(result);
     } catch (err) {
       // Session invalidation: tear down so next call reconnects.
       this.stop();

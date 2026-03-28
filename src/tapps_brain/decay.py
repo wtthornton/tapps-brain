@@ -43,7 +43,9 @@ class DecayConfig(BaseModel):
     ephemeral_half_life_days: int = Field(
         default=1,
         ge=1,
-        description="Momentary context / current conversation state (personal-assistant profile: 1 day).",
+        description=(
+            "Momentary context / current conversation state (personal-assistant profile: 1 day)."
+        ),
     )
     session_half_life_days: int = Field(
         default=1,
@@ -274,12 +276,8 @@ def update_stability(
     if was_useful:
         # FSRS-inspired stability increase on successful recall
         # S_new = S_old * (1 + 0.4 * exp(-D/3) * S_old^(-0.2) * (exp(0.5*(1-R)) - 1))
-        factor = (
-            1.0
-            + 0.4
-            * math.exp(-d_old / 3.0)
-            * math.pow(s_old, -0.2)
-            * (math.exp(0.5 * (1.0 - r)) - 1.0)
+        factor = 1.0 + 0.4 * math.exp(-d_old / 3.0) * math.pow(s_old, -0.2) * (
+            math.exp(0.5 * (1.0 - r)) - 1.0
         )
         s_new = s_old * max(factor, 1.0)  # stability should only grow on useful access
     else:
@@ -317,10 +315,7 @@ def calculate_decayed_confidence(
     tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
 
     # GitHub #28: if entry has a non-zero stability, use it as effective half-life
-    if entry.stability > 0.0:
-        effective_hl = entry.stability
-    else:
-        effective_hl = float(half_life)
+    effective_hl = entry.stability if entry.stability > 0.0 else float(half_life)
 
     # EPIC-010: Importance tags — boost effective half-life
     importance_tags = config.layer_importance_tags.get(tier_str, {})

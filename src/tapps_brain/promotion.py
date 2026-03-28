@@ -39,7 +39,7 @@ class PromotionEngine:
     def __init__(self, config: DecayConfig | None = None) -> None:
         self._config = config or DecayConfig()
 
-    def check_promotion(
+    def check_promotion(  # noqa: PLR0911
         self,
         entry: MemoryEntry,
         profile: object,  # MemoryProfile
@@ -74,9 +74,7 @@ class PromotionEngine:
         # Stability-based promotion strategy
         if layer.promotion_strategy == "stability" and entry.stability > 0:
             promote_score = (
-                entry.stability
-                * math.log1p(entry.access_count)
-                * (1 - entry.difficulty / 10)
+                entry.stability * math.log1p(entry.access_count) * (1 - entry.difficulty / 10)
             )
             if promote_score > layer.promotion_stability_threshold:
                 return layer.promotion_to
@@ -135,9 +133,12 @@ class PromotionEngine:
             now = datetime.now(tz=UTC)
 
         # Stability-based demotion check
-        if layer.demotion_min_stability > 0 and entry.stability > 0:
-            if entry.stability < layer.demotion_min_stability:
-                return layer.demotion_to
+        if (
+            layer.demotion_min_stability > 0
+            and entry.stability > 0
+            and entry.stability < layer.demotion_min_stability
+        ):
+            return layer.demotion_to
 
         eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
 

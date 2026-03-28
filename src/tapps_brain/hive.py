@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import types
 
+    from tapps_brain.store import MemoryStore
+
 import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -1073,7 +1075,7 @@ class PropagationEngine:
 
 
 def select_local_entries_for_hive_push(
-    store: object,
+    store: MemoryStore,
     *,
     push_all: bool = False,
     tags: list[str] | None = None,
@@ -1095,7 +1097,7 @@ def select_local_entries_for_hive_push(
     if keys:
         resolved: list[Any] = []
         for k in keys:
-            entry = store.get(k)  # type: ignore[union-attr]
+            entry = store.get(k)
             if entry is not None:
                 resolved.append(entry)
         return resolved
@@ -1109,7 +1111,7 @@ def select_local_entries_for_hive_push(
             raise ValueError(msg) from exc
 
     if push_all:
-        return store.list_all(  # type: ignore[union-attr]
+        return store.list_all(
             tier=tier_enum,
             tags=tags,
             include_superseded=include_superseded,
@@ -1119,7 +1121,7 @@ def select_local_entries_for_hive_push(
         msg = "Specify keys, push_all=True, and/or tier/tags filters"
         raise ValueError(msg)
 
-    return store.list_all(  # type: ignore[union-attr]
+    return store.list_all(
         tier=tier_enum,
         tags=tags,
         include_superseded=include_superseded,
