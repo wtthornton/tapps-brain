@@ -3,8 +3,10 @@
 Simplified Louvain algorithm (Blondel et al. 2008) for grouping
 similar memories. Pure Python, no external dependencies.
 """
+
 from __future__ import annotations
-from typing import Any
+
+_MIN_GROUP_SIZE = 2
 
 
 def _modularity_gain(
@@ -22,9 +24,7 @@ def _modularity_gain(
     # Sum of all weights of node
     ki = sum(node_weights[node].values())
     # Sum of all weights in community
-    sigma_tot = sum(
-        sum(node_weights[m].values()) for m in community_members.get(community, set())
-    )
+    sigma_tot = sum(sum(node_weights[m].values()) for m in community_members.get(community, set()))
     return ki_in / total_weight - (sigma_tot * ki) / (2 * total_weight * total_weight)
 
 
@@ -55,8 +55,7 @@ def detect_communities(
     filtered: dict[int, dict[int, float]] = {}
     for n in nodes:
         filtered[n] = {
-            m: w for m, w in similarity_matrix[n].items()
-            if w >= min_similarity and m != n
+            m: w for m, w in similarity_matrix[n].items() if w >= min_similarity and m != n
         }
 
     total_weight = sum(sum(edges.values()) for edges in filtered.values()) / 2
@@ -104,4 +103,4 @@ def group_by_community(node_to_community: dict[int, int]) -> list[list[int]]:
     communities: dict[int, list[int]] = {}
     for node, comm in node_to_community.items():
         communities.setdefault(comm, []).append(node)
-    return [group for group in communities.values() if len(group) >= 2]
+    return [group for group in communities.values() if len(group) >= _MIN_GROUP_SIZE]

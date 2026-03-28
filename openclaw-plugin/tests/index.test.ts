@@ -11,12 +11,45 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// vi.mock is hoisted — all new McpClient() calls use this mock
-vi.mock("../src/mcp_client.js", () => ({
-  McpClient: vi.fn(),
-  hasMemoryMd: vi.fn().mockReturnValue(false),
-  isFirstRun: vi.fn().mockReturnValue(false),
-}));
+// vi.mock is hoisted — registry on globalThis (same pattern as mcp_client.test.ts)
+const _g = globalThis as {
+  __tappsIndexMcpSingletons?: Map<string, { client: unknown; refCount: number }>;
+};
+
+// vi.mock is hoisted — McpClient mocked; acquireSingleton mirrors production ref-counting
+vi.mock("../src/mcp_client.js", () => {
+  const McpClient = vi.fn();
+  return {
+    McpClient,
+    acquireSingleton(projectDir: string) {
+      if (!_g.__tappsIndexMcpSingletons) {
+        _g.__tappsIndexMcpSingletons = new Map();
+      }
+      const reg = _g.__tappsIndexMcpSingletons;
+      let e = reg.get(projectDir);
+      if (!e) {
+        e = { client: new McpClient(projectDir), refCount: 0 };
+        reg.set(projectDir, e);
+      }
+      e.refCount++;
+      return e.client;
+    },
+    releaseSingleton(projectDir: string) {
+      const reg = _g.__tappsIndexMcpSingletons;
+      if (!reg) return;
+      const e = reg.get(projectDir);
+      if (!e) return;
+      e.refCount--;
+      if (e.refCount <= 0) {
+        const c = e.client as { stop?: () => void };
+        c.stop?.();
+        reg.delete(projectDir);
+      }
+    },
+    hasMemoryMd: vi.fn().mockReturnValue(false),
+    isFirstRun: vi.fn().mockReturnValue(false),
+  };
+});
 
 // Mock the OpenClaw SDK — not installed in test environment.
 vi.mock("openclaw/plugin-sdk/core", () => ({
@@ -83,6 +116,7 @@ describe("TappsBrainEngine — bootstrap race condition (028-A)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   // -------------------------------------------------------------------------
@@ -267,6 +301,7 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   // -------------------------------------------------------------------------
@@ -430,6 +465,7 @@ describe("TappsBrainEngine — bootstrap first-run import (028-E)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("calls memory_import when isFirstRun and hasMemoryMd are both true", async () => {
@@ -572,6 +608,7 @@ describe("TappsBrainEngine — ingest rate limiting and heartbeat (028-E)", () =
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("skips MCP call when isHeartbeat is true", async () => {
@@ -767,6 +804,7 @@ describe("TappsBrainEngine — assemble recall injection (028-E)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("returns systemPromptAddition with recalled memories", async () => {
@@ -794,6 +832,32 @@ describe("TappsBrainEngine — assemble recall injection (028-E)", () => {
     expect(result.systemPromptAddition).toContain("fact-1");
     expect(result.systemPromptAddition).toContain("The sky is blue");
     expect(result.estimatedTokens).toBeGreaterThan(0);
+  });
+
+  it("assemble parses MCP CallToolResult-shaped recall (text in content[])", async () => {
+    const inner = JSON.stringify({
+      memories: [{ key: "mcp-wrap", value: "from sdk", tier: "pattern", confidence: 0.9 }],
+    });
+    vi.mocked(McpClient).mockImplementationOnce(() =>
+      makeMockClient({
+        callTool: vi.fn().mockResolvedValue({
+          content: [{ type: "text", text: inner }],
+        }),
+      }),
+    );
+
+    const engine = new TappsBrainEngine({}, "/tmp/workspace");
+    await engine.bootstrap();
+
+    const result = await engine.assemble({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "hello" }],
+      tokenBudget: 2000,
+    });
+
+    expect(result.systemPromptAddition).toBeDefined();
+    expect(result.systemPromptAddition).toContain("mcp-wrap");
+    expect(result.systemPromptAddition).toContain("from sdk");
   });
 
   it("returns no systemPromptAddition when recall returns empty memories", async () => {
@@ -974,6 +1038,7 @@ describe("TappsBrainEngine — compact context flush (028-E)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("returns ok immediately when no recent messages to flush", async () => {
@@ -1214,6 +1279,7 @@ describe("TappsBrainEngine — dispose (028-E)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("calls mcpClient.stop() on dispose", async () => {
@@ -1246,6 +1312,7 @@ describe("TappsBrainEngine — citations in assemble() (028-F)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   it("appends citation footer when citations is 'auto' (default)", async () => {
@@ -1354,6 +1421,7 @@ describe("TappsBrainEngine — searchWithSessionMemory (028-G)", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    _g.__tappsIndexMcpSingletons?.clear();
   });
 
   // -------------------------------------------------------------------------

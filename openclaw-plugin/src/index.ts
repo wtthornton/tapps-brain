@@ -72,7 +72,14 @@ async function delegateCompactionToRuntime(
   }
 }
 
-import { McpClient, acquireSingleton, releaseSingleton, hasMemoryMd, isFirstRun } from "./mcp_client.js";
+import {
+  McpClient,
+  acquireSingleton,
+  releaseSingleton,
+  hasMemoryMd,
+  isFirstRun,
+} from "./mcp_client.js";
+import { extractMcpToolText } from "./mcp_tool_text.js";
 
 // ---------------------------------------------------------------------------
 // Internal types — local aliases used by the engine and tools
@@ -163,7 +170,7 @@ export class TappsBrainEngine {
   readonly info: ContextEngineInfo = {
     id: "tapps-brain-memory",
     name: "tapps-brain — Persistent Memory",
-    version: "2.0.0",
+    version: "2.0.1",
     ownsCompaction: false,
   };
 
@@ -357,15 +364,12 @@ export class TappsBrainEngine {
 
       const query = recentUserMessages || "session context";
 
-      const recallResult = await this.mcpClient.callTool("memory_recall", {
-        message: query,
-      });
-
-      const recall = JSON.parse(
-        typeof recallResult === "string"
-          ? recallResult
-          : JSON.stringify(recallResult),
-      ) as {
+      const recallText = extractMcpToolText(
+        await this.mcpClient.callTool("memory_recall", {
+          message: query,
+        }),
+      );
+      let recall: {
         memories?: Array<{
           key: string;
           value: string;
@@ -373,6 +377,11 @@ export class TappsBrainEngine {
           confidence?: number;
         }>;
       };
+      try {
+        recall = JSON.parse(recallText || "{}") as typeof recall;
+      } catch {
+        recall = {};
+      }
 
       const memories = recall.memories ?? [];
       if (memories.length === 0) {
@@ -512,13 +521,13 @@ export class TappsBrainEngine {
     // -----------------------------------------------------------------------
     if (scope === "memory" || scope === "all") {
       try {
-        const raw = await this.mcpClient.callTool("memory_recall", {
-          message: query,
-          limit,
-        });
-        const parsed = JSON.parse(
-          typeof raw === "string" ? raw : JSON.stringify(raw),
-        ) as {
+        const rawText = extractMcpToolText(
+          await this.mcpClient.callTool("memory_recall", {
+            message: query,
+            limit,
+          }),
+        );
+        let parsed: {
           memories?: Array<{
             key: string;
             value: string;
@@ -526,6 +535,11 @@ export class TappsBrainEngine {
             confidence?: number;
           }>;
         };
+        try {
+          parsed = JSON.parse(rawText || "{}") as typeof parsed;
+        } catch {
+          parsed = {};
+        }
         for (const m of parsed.memories ?? []) {
           results.push({ ...m, source: "memory" });
         }
@@ -539,19 +553,24 @@ export class TappsBrainEngine {
     // -----------------------------------------------------------------------
     if (scope === "session" || scope === "all") {
       try {
-        const raw = await this.mcpClient.callTool("memory_search_sessions", {
-          query,
-          limit,
-        });
-        const parsed = JSON.parse(
-          typeof raw === "string" ? raw : JSON.stringify(raw),
-        ) as {
+        const rawText = extractMcpToolText(
+          await this.mcpClient.callTool("memory_search_sessions", {
+            query,
+            limit,
+          }),
+        );
+        let parsed: {
           sessions?: Array<{
             session_id?: string;
             chunk?: string;
             score?: number;
           }>;
         };
+        try {
+          parsed = JSON.parse(rawText || "{}") as typeof parsed;
+        } catch {
+          parsed = {};
+        }
         for (const s of parsed.sessions ?? []) {
           results.push({
             key: s.session_id ?? "session",
@@ -687,7 +706,7 @@ function createMcpProxyTool(
         return toolResult({ error: "unavailable", message: "tapps-brain MCP not ready" });
       }
       try {
-        const parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+        const parsed = JSON.parse(extractMcpToolText(raw) || "null");
         return toolResult(parsed);
       } catch {
         return toolResult({ error: "parse_error" });
@@ -748,9 +767,12 @@ function registerMemorySlotTools(
       }
 
       try {
-        const entries = JSON.parse(
-          typeof raw === "string" ? raw : JSON.stringify(raw),
-        ) as Array<{ key: string; value: string; tier?: string; confidence?: number }>;
+        const entries = JSON.parse(extractMcpToolText(raw) || "[]") as Array<{
+          key: string;
+          value: string;
+          tier?: string;
+          confidence?: number;
+        }>;
 
         const snippets = entries.slice(0, limit).map((e) => ({
           text: e.value,
@@ -797,9 +819,10 @@ function registerMemorySlotTools(
       }
 
       try {
-        const entry = JSON.parse(
-          typeof raw === "string" ? raw : JSON.stringify(raw),
-        ) as { value?: string; error?: string };
+        const entry = JSON.parse(extractMcpToolText(raw) || "{}") as {
+          value?: string;
+          error?: string;
+        };
         return toolResult(entry.error ? "" : entry.value ?? "");
       } catch {
         return toolResult("");

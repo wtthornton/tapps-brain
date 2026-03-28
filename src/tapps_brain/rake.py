@@ -3,6 +3,7 @@
 Pure Python, no external dependencies. Extracts key phrases from text
 by splitting at stop words and scoring by word co-occurrence.
 """
+
 from __future__ import annotations
 
 import re
@@ -14,7 +15,7 @@ _MIN_PHRASE_LEN = 2
 
 def _tokenize_sentences(text: str) -> list[str]:
     """Split text into sentences."""
-    return re.split(r'[.!?\n]+', text)
+    return re.split(r"[.!?\n]+", text)
 
 
 def _extract_candidate_phrases(sentence: str, stop_words: frozenset[str]) -> list[str]:
@@ -22,18 +23,18 @@ def _extract_candidate_phrases(sentence: str, stop_words: frozenset[str]) -> lis
     # Split on stop words and punctuation
     pattern = r'[\s,;:()\[\]{}"\'"]+'
     words = re.split(pattern, sentence.lower().strip())
-    phrases = []
-    current = []
+    phrases: list[str] = []
+    current: list[str] = []
     for w in words:
         w = w.strip()
         if not w or w in stop_words:
             if current:
-                phrases.append(' '.join(current))
+                phrases.append(" ".join(current))
                 current = []
         else:
             current.append(w)
     if current:
-        phrases.append(' '.join(current))
+        phrases.append(" ".join(current))
     return [p for p in phrases if len(p) > _MIN_PHRASE_LEN]
 
 
@@ -82,5 +83,5 @@ def generate_key(text: str, max_length: int = 64) -> str:
         return "memory"
     phrase = keywords[0][0]
     # Slugify
-    slug = re.sub(r'[^a-z0-9]+', '-', phrase.lower()).strip('-')
+    slug = re.sub(r"[^a-z0-9]+", "-", phrase.lower()).strip("-")
     return slug[:max_length] if slug else "memory"

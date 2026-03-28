@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
-
 
 # ---------------------------------------------------------------------------
 # normalize_for_dedup

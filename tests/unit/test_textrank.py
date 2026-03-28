@@ -1,4 +1,5 @@
 """Tests for TextRank summarization."""
+
 from tapps_brain.textrank import summarize, summarize_messages
 
 
@@ -32,7 +33,7 @@ def test_summarize_messages():
         "We need to pick a database for the memory system.",
         "SQLite is portable and runs on Pi.",
         "PostgreSQL needs a server process.",
-        "Let's go with SQLite for now."
+        "Let's go with SQLite for now.",
     ]
     result = summarize_messages(msgs, top_n=2)
     assert len(result) > 0

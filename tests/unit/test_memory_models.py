@@ -30,7 +30,8 @@ class TestMemoryTier:
         assert MemoryTier.session == "session"
 
     def test_member_count(self) -> None:
-        assert len(MemoryTier) == 6  # architectural, pattern, procedural, context, ephemeral, session
+        # architectural, pattern, procedural, context, ephemeral, session
+        assert len(MemoryTier) == 6
 
 
 class TestMemorySource:

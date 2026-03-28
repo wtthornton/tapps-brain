@@ -459,7 +459,7 @@ class TestPersonalAssistantProfileDecay:
     ``unknown_tier_fallback`` warning fires and the correct half-lives are used.
     """
 
-    def _make_decay_config_from_personal_assistant(self) -> "DecayConfig":
+    def _make_decay_config_from_personal_assistant(self) -> DecayConfig:
         """Load personal-assistant profile and build its DecayConfig."""
         from tapps_brain.decay import decay_config_from_profile
         from tapps_brain.profile import get_builtin_profile
@@ -511,7 +511,7 @@ class TestPersonalAssistantProfileDecay:
         profile-defined tiers are resolved correctly (fix for issue #11)."""
         import tempfile
         from pathlib import Path
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from tapps_brain.profile import get_builtin_profile
         from tapps_brain.store import MemoryStore

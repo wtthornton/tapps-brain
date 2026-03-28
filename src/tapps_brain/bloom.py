@@ -4,6 +4,7 @@ Used as a write-path dedup fast-path. If the filter says "definitely not seen",
 skip expensive similarity check. If "maybe seen", do full check.
 Pure Python, no external dependencies.
 """
+
 from __future__ import annotations
 
 import hashlib

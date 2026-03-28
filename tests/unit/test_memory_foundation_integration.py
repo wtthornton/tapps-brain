@@ -302,11 +302,12 @@ class TestStoreEdgeCases:
         finally:
             store.close()
 
-    def test_invalid_tier_rejected(self, tmp_path: Path) -> None:
+    def test_unknown_tier_coerces_to_pattern(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
         try:
-            with pytest.raises(ValueError):
-                store.save(key="bad-tier", value="v", tier="nonexistent")
+            out = store.save(key="bad-tier", value="v", tier="nonexistent")
+            assert isinstance(out, MemoryEntry)
+            assert str(out.tier) == "pattern"
         finally:
             store.close()
 

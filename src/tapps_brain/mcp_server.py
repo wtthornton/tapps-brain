@@ -178,6 +178,9 @@ def create_server(  # noqa: PLR0915
             source_agent: Agent that produced this memory. Falls back to
                 server's --agent-id when empty.
         """
+        from tapps_brain.models import MemoryTier
+        from tapps_brain.tier_normalize import normalize_save_tier
+
         _valid_scopes = ("private", "domain", "hive")
         if agent_scope not in _valid_scopes:
             return json.dumps(
@@ -190,10 +193,10 @@ def create_server(  # noqa: PLR0915
                 }
             )
 
-        # Build valid tier set: legacy enum tiers + active profile layer names (issue #16)
-        _legacy_tiers: frozenset[str] = frozenset(
-            ("architectural", "pattern", "procedural", "context")
-        )
+        tier = normalize_save_tier(tier, store.profile)
+
+        # Build valid tier set: all enum tiers + active profile layer names (issue #16, #48)
+        _legacy_tiers: frozenset[str] = frozenset(m.value for m in MemoryTier)
         _profile_tiers: frozenset[str] = (
             frozenset(store.profile.layer_names) if store.profile is not None else frozenset()
         )

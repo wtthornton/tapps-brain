@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from tapps_brain.models import MemoryScope, MemoryTier
+from tapps_brain.models import MemoryScope
+from tapps_brain.tier_normalize import normalize_save_tier
 
 if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
@@ -23,14 +24,6 @@ logger = structlog.get_logger(__name__)
 
 RELAY_VERSION: str = "1.0"
 SUPPORTED_RELAY_VERSIONS: frozenset[str] = frozenset({"1.0"})
-
-# Common tier aliases from profiles / docs → base MemoryTier or pass-through for profile layers.
-TIER_ALIASES: dict[str, str] = {
-    "long-term": MemoryTier.architectural.value,
-    "short_term": MemoryTier.pattern.value,
-    "short-term": MemoryTier.pattern.value,
-    "identity": MemoryTier.architectural.value,
-}
 
 _AGENT_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive"})
 _MEMORY_SCOPES: frozenset[str] = frozenset(m.value for m in MemoryScope)
@@ -56,10 +49,7 @@ class RelayImportResult:
 
 def normalize_relay_tier(raw: str | None) -> str:
     """Map common aliases; return a string suitable for ``MemoryStore.save`` tier=."""
-    if raw is None or str(raw).strip() == "":
-        return MemoryTier.pattern.value
-    t = str(raw).strip().lower()
-    return TIER_ALIASES.get(t, t)
+    return normalize_save_tier(raw, None)
 
 
 def resolve_relay_scopes(item: dict[str, Any]) -> tuple[str, str] | None:
@@ -137,12 +127,12 @@ def build_relay_json(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
+def _coerce_relay_item_save_kwargs(
     raw: dict[str, Any],
     *,
     prefix: str,
     default_agent: str,
-    profile_layers: frozenset[str],
+    profile: object | None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Return ``(save_kwargs, None)`` or ``(None, skip_reason)``."""
     key = raw.get("key")
@@ -161,12 +151,8 @@ def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
         return None, f"{prefix}: invalid scope / visibility / agent_scope combination, skipped"
     mem_scope, agent_scope = scopes
 
-    tier_raw = normalize_relay_tier(raw.get("tier"))
-    try:
-        MemoryTier(tier_raw)
-    except ValueError:
-        if tier_raw not in profile_layers:
-            return None, f"{prefix}: unknown tier {tier_raw!r}, skipped"
+    _tier_in = raw.get("tier")
+    tier_raw = normalize_save_tier(_tier_in if isinstance(_tier_in, str) else None, profile)
 
     tags = raw.get("tags")
     if tags is not None and not isinstance(tags, list):
@@ -220,10 +206,6 @@ def import_relay_to_store(store: MemoryStore, payload: dict[str, Any]) -> RelayI
     if not isinstance(default_agent, str):
         default_agent = "unknown"
 
-    profile_layers: frozenset[str] = frozenset()
-    if store.profile is not None:
-        profile_layers = frozenset(store.profile.layer_names)
-
     for idx, raw in enumerate(items):
         prefix = f"items[{idx}]"
         if not isinstance(raw, dict):
@@ -237,13 +219,15 @@ def import_relay_to_store(store: MemoryStore, payload: dict[str, Any]) -> RelayI
             raw,
             prefix=prefix,
             default_agent=default_agent,
-            profile_layers=profile_layers,
+            profile=store.profile,
         )
         if skip is not None:
             logger.warning("relay_skip", reason=skip)
             result.warnings.append(skip)
             result.skipped += 1
             continue
+
+        assert save_kw is not None
 
         try:
             out = store.save(**save_kw)

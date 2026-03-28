@@ -83,6 +83,7 @@ vi.mock("node:path", () => ({
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 import { McpClient, hasMemoryMd, isFirstRun } from "../src/mcp_client.js";
+import { extractMcpToolText } from "../src/mcp_tool_text.js";
 
 // Shorthand accessors for the mock state.
 function mocks() {
@@ -163,7 +164,7 @@ describe("McpClient — process lifecycle", () => {
   it("creates Client with correct name and version", async () => {
     const client = await startedClient();
     expect(mocks().ClientCtor).toHaveBeenCalledWith(
-      { name: "tapps-brain-openclaw", version: "1.4.0" },
+      { name: "tapps-brain-openclaw", version: "2.0.1" },
       {},
     );
     client.stop();
@@ -248,6 +249,27 @@ describe("McpClient — stop / close lifecycle", () => {
 
 // ---------------------------------------------------------------------------
 
+describe("extractMcpToolText", () => {
+  it("returns raw string unchanged", () => {
+    expect(extractMcpToolText('{"a":1}')).toBe('{"a":1}');
+  });
+
+  it("concatenates text parts from MCP CallToolResult", () => {
+    expect(
+      extractMcpToolText({
+        content: [
+          { type: "text", text: '{"mem' },
+          { type: "text", text: 'ories":[]}' },
+        ],
+      }),
+    ).toBe('{"memories":[]}');
+  });
+
+  it("returns empty string for empty content array", () => {
+    expect(extractMcpToolText({ content: [] })).toBe("");
+  });
+});
+
 describe("McpClient — callTool delegation", () => {
   afterEach(resetMockState);
 
@@ -261,7 +283,7 @@ describe("McpClient — callTool delegation", () => {
       name: "memory_list",
       arguments: { limit: 5 },
     });
-    expect(result).toEqual({ content: [{ type: "text", text: "ok" }] });
+    expect(result).toBe("ok");
     client.stop();
   });
 
@@ -412,7 +434,7 @@ describe("McpClient — reconnection via session invalidation", () => {
     mocks().callTool.mockResolvedValueOnce({ content: [] });
     const result = await client.callTool("memory_list", {});
 
-    expect(result).toEqual({ content: [] });
+    expect(result).toBe("");
     expect(mocks().TransportCtor).toHaveBeenCalledTimes(1);
     expect(mocks().connect).toHaveBeenCalledTimes(1);
     client.stop();

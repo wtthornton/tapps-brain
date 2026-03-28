@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from tapps_brain.store import MemoryStore
 
 _PREFERRED_TIERS = ("short-term", "context", "pattern")
 """Ordered list of tier candidates for episodic memory entries.
@@ -19,7 +21,7 @@ back to ``context`` and ``pattern`` which exist in all built-in profiles.
 """
 
 
-def _pick_tier(store: Any, preferred: str) -> str:
+def _pick_tier(store: MemoryStore, preferred: str) -> str:
     """Return *preferred* if valid for the active profile, else the first fallback."""
     profile = getattr(store, "profile", None)
     layer_names: list[str] = list(profile.layer_names) if profile is not None else []
@@ -83,7 +85,7 @@ def session_summary_save(
     root = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
 
     today = datetime.date.today().isoformat()
-    now_ts = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%H%M%S")
+    now_ts = datetime.datetime.now(tz=datetime.UTC).strftime("%H%M%S")
     key = f"session.{today}.{now_ts}"
 
     base_tags = ["date", "session", "episodic"]
@@ -125,7 +127,7 @@ def _append_daily_note(workspace: Path, today: str, summary: str) -> None:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = note_dir / f"{today}.md"
 
-    timestamp = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%H:%M UTC")
+    timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%H:%M UTC")
     block = f"\n## Session End — {timestamp}\n\n{summary}\n"
 
     with open(note_path, "a") as f:

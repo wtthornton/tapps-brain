@@ -679,6 +679,40 @@ the cutoff.
 4. Try `memory_list` to confirm entries exist, then `memory_search` with a term that
    appears verbatim in a saved entry.
 
+### `assemble()` injects no memories at session start (GitHub #46)
+
+**Cause:** The official MCP SDK returns tool results as `{ content: [{ type: "text", text }] }`.
+If the host only parsed a JSON string, the recall payload was empty and no memories appeared
+in `systemPromptAddition`.
+
+**Fix:** Use an OpenClaw plugin build that unwraps MCP tool text before `JSON.parse` (see
+`openclaw-plugin` `mcp_tool_text.extractMcpToolText` and `McpClient.callTool`). Also ensure
+`memory_recall` summaries include entry `value` (core store / injection).
+
+### `memory_search` / `memory_get` name conflicts after gateway restart (GitHub #47)
+
+**Cause:** Multiple plugins or MCP servers registering the same tool names, or stale
+registrations after hot reload.
+
+**Mitigations:**
+1. **ContextEngine plugin:** Agent-facing tools are registered as `tapps_memory_search` and
+   `tapps_memory_get` so they do not collide with OpenClaw’s built-in `memory-core` tools
+   (see plugin `registerMemorySlotTools`).
+2. **MCP sidecar:** Avoid registering two servers that both expose `memory_search` /
+   `memory_get` to the same gateway session. After config changes, do a full gateway restart.
+3. Do not run the tapps-brain MCP sidecar and the memory-slot replacement for the same
+   workspace unless you understand which tool names each surface exposes.
+
+### Subagent tier names rejected vs personal-assistant profile (GitHub #48)
+
+**Fix:** `memory_save` and `MemoryStore.save` normalize tiers (aliases, case-insensitive
+profile layers, fallback to `pattern`). Relay import uses the same rules.
+
+### Multi-group memory scopes — Hive, named groups, personal (GitHub #49)
+
+**Status:** Epic-sized; not shipped in this iteration. See roadmap queue — design work
+for named groups and richer scope model is tracked as **#49**.
+
 ### `MCP process crashes` / plugin stops responding
 
 **Cause:** The MCP child process (`tapps-brain-mcp`) exited unexpectedly.

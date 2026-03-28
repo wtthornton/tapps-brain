@@ -155,11 +155,15 @@ class MemoryEntry(BaseModel):
     # Alias fields that mirror valid_at/invalid_at but use human-friendly ISO-8601 strings.
     valid_from: str = Field(
         default="",
-        description="ISO-8601 UTC: when this fact begins to be valid (inclusive). Empty means 'always'.",
+        description=(
+            "ISO-8601 UTC: when this fact begins to be valid (inclusive). Empty means 'always'."
+        ),
     )
     valid_until: str = Field(
         default="",
-        description="ISO-8601 UTC: when this fact stops being valid (exclusive). Empty means 'forever'.",
+        description=(
+            "ISO-8601 UTC: when this fact stops being valid (exclusive). Empty means 'forever'."
+        ),
     )
 
     # Integrity hash for tamper detection (H4a)
@@ -170,7 +174,10 @@ class MemoryEntry(BaseModel):
 
     # Provenance metadata (GitHub #38): track WHERE each memory came from.
     source_session_id: str = Field(default="", description="Session ID that triggered this memory.")
-    source_channel: str = Field(default="", description="Channel/surface (e.g. 'webchat', 'discord').")
+    source_channel: str = Field(
+        default="",
+        description="Channel/surface (e.g. 'webchat', 'discord').",
+    )
     source_message_id: str = Field(default="", description="Message ID that triggered this memory.")
     triggered_by: str = Field(default="", description="Event or action that triggered this memory.")
 
@@ -292,9 +299,7 @@ class MemoryEntry(BaseModel):
         # Check valid_from / valid_until (human-friendly alias fields, GitHub #29)
         if self.valid_from and ts < self.valid_from:
             return False
-        if self.valid_until and ts >= self.valid_until:
-            return False
-        return True
+        return not (self.valid_until and ts >= self.valid_until)
 
     @property
     def is_superseded(self) -> bool:
@@ -323,7 +328,7 @@ class RecallResult(BaseModel):
     )
     memories: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="List of injected memory summaries (key, confidence, tier, score, stale).",
+        description=("Injected memory summaries: key, value, confidence, tier, score, stale."),
     )
     token_count: int = Field(
         default=0,

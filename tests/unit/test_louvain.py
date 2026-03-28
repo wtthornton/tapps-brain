@@ -1,8 +1,8 @@
 """Tests for Louvain community detection."""
+
 from __future__ import annotations
 
-import pytest
-from tapps_brain.louvain import detect_communities, group_by_community, _modularity_gain
+from tapps_brain.louvain import _modularity_gain, detect_communities, group_by_community
 
 
 class TestModularityGain:
@@ -135,7 +135,7 @@ class TestGroupByCommunity:
         assert [2, 3] in groups
 
     def test_large_community(self):
-        mapping = {i: 0 for i in range(10)}
+        mapping = dict.fromkeys(range(10), 0)
         result = group_by_community(mapping)
         assert len(result) == 1
         assert sorted(result[0]) == list(range(10))

@@ -3,6 +3,7 @@
 Pure Python, no external dependencies. Uses PageRank on a sentence
 similarity graph to extract the most important sentences.
 """
+
 from __future__ import annotations
 
 import math
@@ -13,24 +14,93 @@ _MIN_SENTENCE_LEN = 10
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into sentences."""
-    sentences = re.split(r'(?<=[.!?])\s+|\n{2,}', text.strip())
+    sentences = re.split(r"(?<=[.!?])\s+|\n{2,}", text.strip())
     return [s.strip() for s in sentences if s.strip() and len(s.strip()) > _MIN_SENTENCE_LEN]
 
 
 def _tokenize(sentence: str) -> set[str]:
     """Tokenize and lowercase a sentence, removing stop words."""
-    words = re.findall(r'[a-z0-9]+', sentence.lower())
+    words = re.findall(r"[a-z0-9]+", sentence.lower())
     # Minimal stop words for similarity computation
     stops = {
-        'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-        'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
-        'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
-        'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
-        'under', 'again', 'further', 'then', 'once', 'and', 'but', 'or', 'nor',
-        'not', 'so', 'if', 'than', 'that', 'this', 'it', 'its', 'i', 'you', 'he',
-        'she', 'we', 'they', 'my', 'your', 'his', 'her', 'our', 'their', 'what',
-        'which', 'who', 'whom',
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "out",
+        "off",
+        "over",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "if",
+        "than",
+        "that",
+        "this",
+        "it",
+        "its",
+        "i",
+        "you",
+        "he",
+        "she",
+        "we",
+        "they",
+        "my",
+        "your",
+        "his",
+        "her",
+        "our",
+        "their",
+        "what",
+        "which",
+        "who",
+        "whom",
     }
     return {w for w in words if w not in stops and len(w) > 1}
 
@@ -106,10 +176,10 @@ def summarize(text: str, top_n: int = 5, min_sentences: int = 2) -> str:
     ranked = sorted(range(n), key=lambda i: scores[i], reverse=True)[:top_n]
     ranked_in_order = sorted(ranked)
 
-    return ' '.join(sentences[i] for i in ranked_in_order)
+    return " ".join(sentences[i] for i in ranked_in_order)
 
 
 def summarize_messages(messages: list[str], top_n: int = 5) -> str:
     """Summarize a list of conversation messages using TextRank."""
-    combined = '\n'.join(messages)
+    combined = "\n".join(messages)
     return summarize(combined, top_n=top_n)

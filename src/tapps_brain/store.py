@@ -38,6 +38,7 @@ from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer,
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.safety import check_content_safety
+from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
 
@@ -396,6 +397,8 @@ class MemoryStore:
                 ),
                 "valid_values": list(VALID_AGENT_SCOPES),
             }
+
+        tier = normalize_save_tier(tier, self._profile)
 
         # Write rules validation (Epic 65.17)
         wr_error = _validate_write_rules(key, value, self._write_rules)

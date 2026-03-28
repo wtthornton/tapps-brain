@@ -1,5 +1,12 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v2.0.1 — Align with tapps-brain 2.0.1
+
+- Bumps plugin `package.json`, `openclaw.plugin.json`, and manifests to **2.0.1** with the Python patch release.
+- **Fix:** MCP `CallToolResult` / structured content is unwrapped when calling recall tools so `assemble()` receives memory text (GitHub #46).
+- **Fix:** Injected summaries include recall `value` fields from the Python side.
+- **Operators:** Prefer `tapps_memory_search` / `tapps_memory_get` when both tapps-brain and built-in memory tools are present; see `docs/guides/openclaw.md` (GitHub #47 mitigated).
+
 ## v1.4.0 — Official MCP SDK transport (EPIC-039)
 
 - **Breaking internal change:** replaced the hand-rolled JSON-RPC 2.0 client

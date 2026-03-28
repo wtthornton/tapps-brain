@@ -4,6 +4,7 @@ Computes importance scores for memories based on their connections.
 PR(i) = (1-d)/N + d * sum_j(PR(j)/L(j))
 Pure Python, no external dependencies.
 """
+
 from __future__ import annotations
 
 
@@ -40,7 +41,7 @@ def compute_pagerank(
         return {}
 
     # Initialize scores
-    scores: dict[str, float] = {node: 1.0 / n for node in nodes}
+    scores: dict[str, float] = dict.fromkeys(nodes, 1.0 / n)
 
     for _ in range(iterations):
         new_scores: dict[str, float] = {}

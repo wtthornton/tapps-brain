@@ -1151,7 +1151,7 @@ class MemoryPersistence:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:
+    def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:  # noqa: PLR0915
         """Convert a SQLite Row to a MemoryEntry."""
         tags_raw = row["tags"]
         try:

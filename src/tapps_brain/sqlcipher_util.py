@@ -42,7 +42,7 @@ def pysqlcipher_dbapi2() -> _ConnectFactory | None:
     try:
         from pysqlcipher3 import dbapi2 as sc
 
-        return cast(_ConnectFactory, sc.connect)
+        return cast("_ConnectFactory", sc.connect)
     except ImportError:
         return None
 

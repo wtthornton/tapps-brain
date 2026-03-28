@@ -1389,24 +1389,22 @@ class TestAgentScopeValidation:
 class TestMemorySaveInputValidation:
     """Tests for tier/source validation in memory_save (story-022.1)."""
 
-    def test_invalid_tier_returns_error(self, mcp_server):
-        """memory_save with an unrecognised tier returns error JSON."""
+    def test_unknown_tier_coerces_to_pattern(self, mcp_server):
+        """memory_save normalizes unknown tiers to pattern (GitHub #48)."""
         save_fn = _tool_fn(mcp_server, "memory_save")
         result = json.loads(save_fn(key="bad-tier", value="test", tier="unknown_tier"))
-        assert result["error"] == "invalid_tier"
-        assert "valid_values" in result
-        assert sorted(result["valid_values"]) == [
-            "architectural",
-            "context",
-            "pattern",
-            "procedural",
-        ]
+        assert result.get("status") == "saved"
+        ent = mcp_server._tapps_store.get("bad-tier")
+        assert ent is not None
+        assert str(ent.tier) == "pattern"
 
-    def test_invalid_tier_not_persisted(self, mcp_server):
-        """Entries with an invalid tier are not written to the store."""
+    def test_unknown_tier_still_persisted_as_pattern(self, mcp_server):
+        """Entries with an unknown tier are saved using the pattern tier."""
         save_fn = _tool_fn(mcp_server, "memory_save")
         save_fn(key="bad-tier-np", value="test", tier="wrong")
-        assert mcp_server._tapps_store.get("bad-tier-np") is None
+        ent = mcp_server._tapps_store.get("bad-tier-np")
+        assert ent is not None
+        assert str(ent.tier) == "pattern"
 
     def test_invalid_source_returns_error(self, mcp_server):
         """memory_save with an unrecognised source returns error JSON."""
@@ -1487,18 +1485,16 @@ class TestProfileAwareTierValidation:
         assert result.get("error") != "invalid_tier"
         assert result.get("status") == "saved"
 
-    def test_invalid_tier_still_rejected_with_profile(self, mcp_server_with_profile_v2):
-        """Completely invalid tier is still rejected even when a profile is active."""
+    def test_unknown_tier_coerces_to_pattern_with_profile(self, mcp_server_with_profile_v2):
+        """Unknown tiers coerce to pattern even when a profile is active (GitHub #48)."""
         save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
         result = json.loads(
-            save_fn(key="bad-tier-profile", value="test", tier="totally-invalid-tier")
+            save_fn(key="bad-tier-profile", value="test", tier="totally-invalid-tier-xyz")
         )
-        assert result["error"] == "invalid_tier"
-        # valid_values should include both legacy tiers and profile tiers
-        valid = result["valid_values"]
-        assert "identity" in valid, "Profile tier 'identity' should appear in valid_values"
-        assert "long-term" in valid, "Profile tier 'long-term' should appear in valid_values"
-        assert "architectural" in valid, "Legacy tier 'architectural' should appear in valid_values"
+        assert result.get("status") == "saved"
+        ent = mcp_server_with_profile_v2._tapps_store.get("bad-tier-profile")
+        assert ent is not None
+        assert str(ent.tier) == "pattern"
 
     def test_legacy_tier_still_accepted_with_profile(self, mcp_server_with_profile_v2):
         """Legacy enum tiers still work even when a profile is active."""
@@ -2928,8 +2924,8 @@ class TestMcpServerInputValidation022C:
     # memory_import — invalid enum values should not crash the import loop
     # ------------------------------------------------------------------
 
-    def test_memory_import_invalid_tier_counts_as_error(self, server):
-        """memory_import with an invalid tier counts as error without crashing."""
+    def test_memory_import_unknown_tier_normalized(self, server):
+        """memory_import coerces unknown tiers via store.save (GitHub #48)."""
         fn = _tool_fn(server, "memory_import")
         payload = json.dumps(
             {
@@ -2940,9 +2936,10 @@ class TestMcpServerInputValidation022C:
             }
         )
         result = json.loads(fn(memories_json=payload))
-        assert result["imported"] == 1
-        assert result["errors"] == 1
+        assert result["imported"] == 2
+        assert result["errors"] == 0
         assert result["status"] == "imported"
+        assert str(server._tapps_store.get("bad-tier").tier) == "pattern"
 
     def test_memory_import_invalid_source_counts_as_error(self, server):
         """memory_import with an invalid source counts as error without crashing."""
