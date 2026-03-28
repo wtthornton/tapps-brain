@@ -1464,6 +1464,52 @@ class TestHiveCommands:
         assert result.exit_code == 1
         assert "No new writes" in result.stderr or "timed_out" in result.stderr
 
+    def test_hive_push_requires_selection(self, project_dir):
+        result = runner.invoke(app, ["hive", "push", "--project-dir", project_dir])
+        assert result.exit_code == 1
+        assert "Specify keys" in result.stderr or "Specify keys" in result.stdout
+
+    def test_hive_push_all_dry_run_json(self, project_dir):
+        result = runner.invoke(
+            app,
+            [
+                "hive",
+                "push",
+                "--all",
+                "--dry-run",
+                "--json",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data.get("dry_run") is True
+        assert data.get("count_selected") == 3
+        assert data.get("count_pushed") == 3
+
+    def test_hive_push_tagged_dry_run_json(self, tmp_path: Path):
+        s = MemoryStore(tmp_path)
+        s.save(key="tagged-k", value="v", tier="pattern", tags=["hive-push-me"])
+        s.close()
+        root = str(tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "hive",
+                "push-tagged",
+                "hive-push-me",
+                "--dry-run",
+                "--json",
+                "--project-dir",
+                root,
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data.get("dry_run") is True
+        assert data.get("count_selected") == 1
+
 
 # ===================================================================
 # Agent commands (EPIC-011)

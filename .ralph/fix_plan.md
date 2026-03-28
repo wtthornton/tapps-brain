@@ -42,8 +42,8 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 | 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll; **GitHub closed** 2026-03-28 |
 | 5 | #23 | SQLCipher at-rest encryption | `done` | Optional `[encryption]` extra, migrate CLI, `docs/guides/sqlcipher.md`; **GitHub closed** 2026-03-28 |
 | 6 | #19 | Sub-agent memory relay | `done` | `memory_relay` module; CLI `relay import`; MCP `tapps_brain_relay_export`; docs/guides/memory-relay.md |
-| 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights (#30 prerequisite met) |
-| 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
+| 7 | #40 | Adaptive hybrid fusion | `done` | Maps to EPIC-040 **040.10** — `hybrid_rrf_weights_for_query` + weighted RRF (2026-03-28) |
+| 8 | #18 | Hive push / push-tagged | `done` | CLI `hive push` / `push-tagged`, MCP `hive_push` (2026-03-28) |
 | 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
 | 10 | #20 | Profile tier migration | `not_started` | Safe tier remap; audit + dry-run |
 | 11 | #17 | Session summarization workflow | `done` | `session end`, `session_summary.py`, MCP `tapps_brain_session_end`; **GitHub closed** 2026-03-28 |
@@ -56,8 +56,8 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 - [x] **OR-4** GitHub **#12** hive pub-sub (`done` — 2026-03-27)
 - [x] **OR-5** GitHub **#23** SQLCipher (`done` — 2026-03-27)
 - [x] **OR-6** GitHub **#19** sub-agent memory relay (`done`)
-- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`not_started`; sqlite-vec / #30 shipped)
-- [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
+- [x] **OR-7** GitHub **#40** adaptive hybrid fusion (`done` in repo — 2026-03-28; close on GitHub when verified)
+- [x] **OR-8** GitHub **#18** hive push / push-tagged (`done` in repo — 2026-03-28; close on GitHub when verified)
 - [ ] **OR-9** GitHub **#21** store stale (`not_started`)
 - [ ] **OR-10** GitHub **#20** profile migrate (`not_started`)
 - [x] **OR-11** GitHub **#17** session summarization (`done` / closed on GitHub — 2026-03-28)
@@ -171,7 +171,7 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 ### Phase 3: Search & Retrieval
 
 - [x] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion. **Roadmap:** open-issues **OR-1** / priority 1. *(2026-03-27)*
-- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9. **Roadmap:** open-issues **OR-7** / priority 7 (`not_started`; sqlite-vec / #30 shipped).
+- [x] **040.10** Adaptive hybrid fusion (GitHub #40): Query-type heuristics (`hybrid_rrf_weights_for_query`) and weighted RRF (`reciprocal_rank_fusion_weighted`); `hybrid_config.adaptive_fusion=False` restores 1:1 weights. Depends on 040.9. **Roadmap:** open-issues **OR-7** (`done` in repo — 2026-03-28).
 - [x] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
 
 ### Phase 4: Consolidation & Summarization

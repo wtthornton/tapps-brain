@@ -130,6 +130,7 @@ class TestCoreTools:
             "hive_status",
             "hive_search",
             "hive_propagate",
+            "hive_push",
             "hive_write_revision",
             "hive_wait_write",
             # Agent tools
@@ -1606,6 +1607,34 @@ class TestHiveToolsReuseSharedStore:
         prop_fn = _tool_fn(server, "hive_propagate")
         result = json.loads(prop_fn(key="hive-prop-test", agent_scope="hive"))
         assert result.get("propagated") is True
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_push_all_dry_run(self, store_dir):
+        """hive_push with push_all and dry_run reports counts without requiring Hive writes."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="push-mcp")
+        store = server._tapps_store
+        save_fn = _tool_fn(server, "memory_save")
+        save_fn(key="hp-a", value="one")
+        save_fn(key="hp-b", value="two")
+        push_fn = _tool_fn(server, "hive_push")
+        out = json.loads(push_fn(push_all=True, dry_run=True, agent_scope="hive"))
+        assert out["dry_run"] is True
+        assert out["count_selected"] == 2
+        assert out["count_pushed"] == 2
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_push_invalid_selection_returns_error(self, store_dir):
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="push-mcp2")
+        store = server._tapps_store
+        push_fn = _tool_fn(server, "hive_push")
+        out = json.loads(push_fn(push_all=False, tags="", tier=None, keys=""))
+        assert out.get("error") == "invalid_args"
         store._hive_store.close()
         store.close()
 

@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (GitHub: **#19** closed — sub-agent memory relay shipped)
+Last updated: 2026-03-28 (repo: **#18** hive batch push shipped; close on GitHub when verified)
 Owner: @wtthornton
 
 ## Purpose
@@ -23,10 +23,8 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Remaining queue (dependency order):**
 
-1. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
-2. #18 - hive push / push-tagged
-3. #21 - store stale listing
-4. #20 - profile tier migration
+1. #21 - store stale listing
+2. #20 - profile tier migration
 
 ## Roadmap by Week
 
@@ -70,17 +68,18 @@ Track delivery status for currently open GitHub issues, prioritized by value and
   - Target outcome: portable relay format + import/export path
   - Notes: invalid rows skipped with warnings
 
-- [ ] **#40** `feat: adaptive query-aware hybrid search fusion`
-  - Status: `not_started`
-  - Dependency: (was #30 — sqlite-vec shipped)
+- [x] **#40** `feat: adaptive query-aware hybrid search fusion`
+  - Status: `done` (2026-03-28) — `hybrid_rrf_weights_for_query`, weighted RRF in `MemoryRetriever._get_hybrid_candidates`; `hybrid_config.adaptive_fusion=False` restores 1:1 weights
+  - Dependency: #30 sqlite-vec shipped
   - Target outcome: query-aware BM25/vector weighting improves mixed-query relevance
-  - Notes: keep deterministic and testable weighting heuristics
+  - Notes: deterministic heuristics; no LLM
 
 ### Week 6 - Workflow and Ops Polish
 
-- [ ] **#18** `feat: hive push / push-tagged`
-  - Status: `not_started`
+- [x] **#18** `feat: hive push / push-tagged`
+  - Status: `done` (2026-03-28) — CLI `hive push` / `hive push-tagged`; MCP `hive_push`; `PropagationEngine` `dry_run` / `bypass_profile_hive_rules`; `select_local_entries_for_hive_push` + `push_memory_entries_to_hive`
   - Target outcome: low-friction promotion of project memories to hive
+  - Notes: `--dry-run`, `--force`; close **#18** on GitHub when verified
 
 - [ ] **#21** `feat: store stale`
   - Status: `not_started`
@@ -104,8 +103,8 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 4 | #12 | hive pub-sub notifications | closed | - | 3 | - | GitHub closed 2026-03-28 |
 | 5 | #23 | SQLCipher encryption | closed | - | 4 | - | GitHub closed 2026-03-28 |
 | 6 | #19 | sub-agent memory relay | closed | - | 5 | - | Relay v1.0 + CLI import + MCP export |
-| 7 | #40 | adaptive hybrid fusion | not_started | - | 5 | - | Quality optimization |
-| 8 | #18 | hive push / push-tagged | not_started | - | 6 | - | Sharing ergonomics |
+| 7 | #40 | adaptive hybrid fusion | done | - | 5 | - | Close on GitHub after verify |
+| 8 | #18 | hive push / push-tagged | done | - | 6 | - | MCP `hive_push` + CLI; close on GitHub when verified |
 | 9 | #21 | store stale | not_started | - | 6 | - | Maintenance visibility |
 | 10 | #20 | profile migrate | not_started | - | 6 | - | Migration utility |
 | 11 | #17 | session summarization | closed | - | 6 | - | GitHub closed 2026-03-28 |
@@ -138,13 +137,13 @@ Copy this section at the end of each week:
   - [x] #17 session summarization — **closed on GitHub** 2026-03-28 (prior close).
   - [x] **#19** sub-agent memory relay — shipped + **closed on GitHub** 2026-03-28.
 - In progress:
-  - None (next queue item: **#40** adaptive hybrid fusion).
+  - None (next queue item: **#21** store stale).
 - Blocked:
-  - None (#40 unblocked; sqlite-vec prerequisite shipped).
+  - None.
 - Scope changes:
   - None this week (planning sync only).
 - Next week plan:
-  - #40 adaptive hybrid fusion; then Week 6 items (#18, #21, #20).
+  - #21, #20; close **#18** and **#40** on GitHub when verified.
 
 ## Change Log
 
@@ -155,3 +154,5 @@ Copy this section at the end of each week:
 - 2026-03-28: **#23** marked `done` in roadmap and tracking table; `.ralph/fix_plan.md` OPEN-ISSUES mirror updated (OR-5 checked); weekly update rewritten to match shipped state; **EPIC-040** epic stub added under `docs/planning/epics/` pointing at fix_plan for full story list.
 - 2026-03-28: Closed **#12** and **#23** on GitHub (`completed`); roadmap priority list collapsed to remaining five issues; **#17** marked `closed` in table (was shipped earlier on GitHub).
 - 2026-03-28: **#19** sub-agent memory relay shipped (`memory_relay`, `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`); GitHub **#19** closed; MCP tool surface **60** (incl. `tapps_brain_session_end` + `tapps_brain_relay_export` in SKILL baseline).
+- 2026-03-28: **#40** adaptive hybrid fusion shipped (`fusion.hybrid_rrf_weights_for_query`, weighted RRF, `hybrid_config.adaptive_fusion`); roadmap priority 7 marked `done` (close issue on GitHub after verify).
+- 2026-03-28: **#18** hive push / push-tagged shipped (CLI + MCP `hive_push`, batch helpers in `hive.py`); roadmap priority 8 marked `done`; MCP tool count **61**.

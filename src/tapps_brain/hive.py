@@ -16,6 +16,7 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Sequence  # noqa: TC003
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -999,19 +1000,32 @@ class PropagationEngine:
         hive_store: HiveStore,
         auto_propagate_tiers: list[str] | None = None,
         private_tiers: list[str] | None = None,
+        bypass_profile_hive_rules: bool = False,
+        dry_run: bool = False,
     ) -> dict[str, Any] | None:
         """Propagate a memory entry to the Hive if appropriate.
 
         Returns the saved Hive entry dict, or None if the entry stayed private.
+        When *dry_run* is True, does not write to SQLite; returns a minimal dict
+        with ``namespace`` and ``key`` if propagation would occur.
+
+        *bypass_profile_hive_rules*: when True, ignore *private_tiers* and
+        *auto_propagate_tiers* so explicit *agent_scope* from the caller wins
+        (used for CLI/MCP batch push — GitHub #18).
         """
         effective_scope = agent_scope
 
-        # Private tiers override everything
-        if private_tiers and tier in private_tiers:
-            effective_scope = "private"
-        # Auto-propagation for configured tiers
-        elif auto_propagate_tiers and tier in auto_propagate_tiers and effective_scope == "private":
-            effective_scope = "domain"
+        if not bypass_profile_hive_rules:
+            # Private tiers override everything
+            if private_tiers and tier in private_tiers:
+                effective_scope = "private"
+            # Auto-propagation for configured tiers
+            elif (
+                auto_propagate_tiers
+                and tier in auto_propagate_tiers
+                and effective_scope == "private"
+            ):
+                effective_scope = "domain"
 
         if effective_scope == "private":
             return None
@@ -1026,6 +1040,15 @@ class PropagationEngine:
             )
 
         namespace = "universal" if effective_scope == "hive" else agent_profile
+
+        if dry_run:
+            logger.debug(
+                "hive.propagate_dry_run",
+                key=key,
+                namespace=namespace,
+                agent_id=agent_id,
+            )
+            return {"namespace": namespace, "key": key, "dry_run": True}
 
         result = hive_store.save(
             key=key,
@@ -1047,3 +1070,130 @@ class PropagationEngine:
         )
 
         return result
+
+
+def select_local_entries_for_hive_push(
+    store: object,
+    *,
+    push_all: bool = False,
+    tags: list[str] | None = None,
+    tier: str | None = None,
+    keys: list[str] | None = None,
+    include_superseded: bool = False,
+) -> list[Any]:
+    """Select project memories for batch Hive push (GitHub #18).
+
+    *keys*: explicit entry keys (highest priority). *push_all*: all entries,
+    optionally narrowed by *tier* and/or *tags*. Otherwise require at least one
+    of *tier* or *tags*.
+
+    Raises:
+        ValueError: When selection criteria are empty or *tier* is invalid.
+    """
+    from tapps_brain.models import MemoryTier
+
+    if keys:
+        resolved: list[Any] = []
+        for k in keys:
+            entry = store.get(k)  # type: ignore[union-attr]
+            if entry is not None:
+                resolved.append(entry)
+        return resolved
+
+    tier_enum: MemoryTier | None = None
+    if tier is not None:
+        try:
+            tier_enum = MemoryTier(tier)
+        except ValueError as exc:
+            msg = f"Unknown tier '{tier}'"
+            raise ValueError(msg) from exc
+
+    if push_all:
+        return store.list_all(  # type: ignore[union-attr]
+            tier=tier_enum,
+            tags=tags,
+            include_superseded=include_superseded,
+        )
+
+    if tier_enum is None and not tags:
+        msg = "Specify keys, push_all=True, and/or tier/tags filters"
+        raise ValueError(msg)
+
+    return store.list_all(  # type: ignore[union-attr]
+        tier=tier_enum,
+        tags=tags,
+        include_superseded=include_superseded,
+    )
+
+
+def push_memory_entries_to_hive(
+    entries: Sequence[Any],
+    *,
+    hive_store: HiveStore,
+    agent_id: str,
+    agent_profile: str,
+    agent_scope: str,
+    auto_propagate_tiers: list[str] | None = None,
+    private_tiers: list[str] | None = None,
+    bypass_profile_hive_rules: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Push local *entries* to the Hive using :meth:`PropagationEngine.propagate`.
+
+    Returns a JSON-serializable report: ``pushed``, ``skipped``, ``failed``,
+    each a list of per-key records. *skipped* means propagation returned
+    ``None`` (would stay private under current rules).
+    """
+    from tapps_brain.models import MemorySource, tier_str
+
+    pushed: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for entry in entries:
+        tier_val = tier_str(entry.tier)
+        src = entry.source
+        source_val = src.value if isinstance(src, MemorySource) else str(src)
+        try:
+            result = PropagationEngine.propagate(
+                key=entry.key,
+                value=entry.value,
+                agent_scope=agent_scope,
+                agent_id=agent_id,
+                agent_profile=agent_profile,
+                tier=tier_val,
+                confidence=float(entry.confidence),
+                source=source_val,
+                tags=entry.tags,
+                hive_store=hive_store,
+                auto_propagate_tiers=auto_propagate_tiers,
+                private_tiers=private_tiers,
+                bypass_profile_hive_rules=bypass_profile_hive_rules,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            logger.warning(
+                "hive.push_entry_failed",
+                key=entry.key,
+                error=str(exc),
+                exc_info=True,
+            )
+            failed.append({"key": entry.key, "error": str(exc)})
+            continue
+        if result is None:
+            skipped.append({"key": entry.key, "reason": "not_propagated_private_rules"})
+        else:
+            ns = str(result.get("namespace", ""))
+            pushed.append({"key": entry.key, "namespace": ns})
+
+    return {
+        "dry_run": dry_run,
+        "agent_scope": agent_scope,
+        "count_selected": len(entries),
+        "count_pushed": len(pushed),
+        "count_skipped": len(skipped),
+        "count_failed": len(failed),
+        "pushed": pushed,
+        "skipped": skipped,
+        "failed": failed,
+    }

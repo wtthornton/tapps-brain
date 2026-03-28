@@ -114,6 +114,8 @@ tools:
     description: Search shared Hive memories from other agents
   - name: hive_propagate
     description: Manually share an existing local memory to the Hive
+  - name: hive_push
+    description: Batch-promote local memories to the Hive by tag, tier, keys, or all
   - name: hive_write_revision
     description: Monotonic revision for Hive memory writes (poll for new data)
   - name: hive_wait_write
@@ -258,7 +260,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **60 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **61 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

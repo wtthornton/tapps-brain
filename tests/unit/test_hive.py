@@ -5,13 +5,11 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Generator
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
-    from pathlib import Path
 
 from tapps_brain.hive import (
     AgentRegistration,
@@ -19,6 +17,8 @@ from tapps_brain.hive import (
     ConflictPolicy,
     HiveStore,
     PropagationEngine,
+    push_memory_entries_to_hive,
+    select_local_entries_for_hive_push,
 )
 from tapps_brain.store import MemoryStore
 
@@ -719,6 +719,128 @@ class TestPropagation:
         )
         assert result is not None
         assert result["namespace"] == "universal"
+
+    def test_dry_run_does_not_touch_hive(self, hive: HiveStore) -> None:
+        rev0 = hive.get_write_notify_state()["revision"]
+        result = PropagationEngine.propagate(
+            key="dry-k",
+            value="x",
+            agent_scope="hive",
+            agent_id="dev",
+            agent_profile="repo-brain",
+            tier="pattern",
+            confidence=0.6,
+            source="agent",
+            tags=None,
+            hive_store=hive,
+            dry_run=True,
+        )
+        assert result is not None
+        assert result.get("dry_run") is True
+        assert hive.get("dry-k") is None
+        assert hive.get_write_notify_state()["revision"] == rev0
+
+    def test_bypass_private_tiers_forces_hive(self, hive: HiveStore) -> None:
+        result = PropagationEngine.propagate(
+            key="ctx-push",
+            value="session context",
+            agent_scope="hive",
+            agent_id="dev",
+            agent_profile="repo-brain",
+            tier="context",
+            confidence=0.5,
+            source="agent",
+            tags=None,
+            hive_store=hive,
+            private_tiers=["context"],
+            bypass_profile_hive_rules=True,
+        )
+        assert result is not None
+        assert result["namespace"] == "universal"
+
+
+# ---------------------------------------------------------------------------
+# GitHub #18 — batch Hive push selection + push_memory_entries_to_hive
+# ---------------------------------------------------------------------------
+
+
+class TestHivePushBatch:
+    """Batch promotion helpers (CLI/MCP hive push)."""
+
+    def test_select_requires_filter_without_keys_or_all(self) -> None:
+        store = MagicMock()
+        with pytest.raises(ValueError, match="Specify keys"):
+            select_local_entries_for_hive_push(
+                store,
+                push_all=False,
+                tags=None,
+                tier=None,
+                keys=None,
+            )
+
+    def test_push_memory_entries_batch(self, hive: HiveStore) -> None:
+        from tests.factories import make_entry
+
+        e1 = make_entry(key="bp-a", value="one", tags=["t1"])
+        e2 = make_entry(key="bp-b", value="two", tags=["t2"])
+        report = push_memory_entries_to_hive(
+            [e1, e2],
+            hive_store=hive,
+            agent_id="batch-t",
+            agent_profile="repo-brain",
+            agent_scope="hive",
+        )
+        assert report["count_pushed"] == 2
+        assert report["count_failed"] == 0
+        assert hive.get("bp-a", namespace="universal") is not None
+
+    def test_select_by_keys_skips_missing(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        s.save(key="k1", value="v")
+        out = select_local_entries_for_hive_push(s, keys=["k1", "missing"])
+        assert len(out) == 1
+        assert out[0].key == "k1"
+
+    def test_select_invalid_tier_raises(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        with pytest.raises(ValueError, match="Unknown tier"):
+            select_local_entries_for_hive_push(s, push_all=True, tier="not-a-real-tier")
+
+    def test_push_private_scope_skipped(self, hive: HiveStore) -> None:
+        from tests.factories import make_entry
+
+        e = make_entry(key="sk1", value="x")
+        report = push_memory_entries_to_hive(
+            [e],
+            hive_store=hive,
+            agent_id="t",
+            agent_profile="repo-brain",
+            agent_scope="private",
+        )
+        assert report["count_skipped"] == 1
+        assert report["count_pushed"] == 0
+
+    def test_push_records_save_failure(
+        self,
+        hive: HiveStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from tests.factories import make_entry
+
+        def _boom(**_kwargs: object) -> None:
+            raise RuntimeError("save failed")
+
+        monkeypatch.setattr(hive, "save", _boom)
+        e = make_entry(key="fail-k", value="z")
+        report = push_memory_entries_to_hive(
+            [e],
+            hive_store=hive,
+            agent_id="t",
+            agent_profile="repo-brain",
+            agent_scope="hive",
+        )
+        assert report["count_failed"] == 1
+        assert report["failed"][0]["key"] == "fail-k"
 
 
 # ---------------------------------------------------------------------------

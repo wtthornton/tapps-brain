@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -490,6 +491,64 @@ class TestBM25Integration:
         assert len(results) >= 1
         keys = [r.entry.key for r in results]
         assert "a" in keys or "b" in keys or "c" in keys
+
+    def test_adaptive_hybrid_question_query_prefers_vector_only_hit(self) -> None:
+        """EPIC-040: vague/question-shaped queries up-weight vector RRF."""
+        entries = [_make_entry("only-a", "bm25 side"), _make_entry("only-b", "vector side")]
+        retriever = MemoryRetriever(semantic_enabled=True)
+        store = _make_store(entries)
+
+        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+            return [(entries[0], 1.0)]
+
+        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+            return [("only-b", 0.99)]
+
+        with (
+            patch.object(retriever, "_get_candidates", side_effect=fake_candidates),
+            patch.object(retriever, "_vector_search", side_effect=fake_vector),
+        ):
+            results = retriever.search("what is up", store, limit=5)
+        assert results[0].entry.key == "only-b"
+
+    def test_adaptive_hybrid_long_query_prefers_bm25_only_hit(self) -> None:
+        """EPIC-040: keyword-heavy long queries up-weight BM25 RRF."""
+        entries = [_make_entry("only-a", "bm25 side"), _make_entry("only-b", "vector side")]
+        retriever = MemoryRetriever(semantic_enabled=True)
+        store = _make_store(entries)
+
+        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+            return [(entries[0], 1.0)]
+
+        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+            return [("only-b", 0.99)]
+
+        with (
+            patch.object(retriever, "_get_candidates", side_effect=fake_candidates),
+            patch.object(retriever, "_vector_search", side_effect=fake_vector),
+        ):
+            results = retriever.search("foo bar baz aa bb cc dd ee", store, limit=5)
+        assert results[0].entry.key == "only-a"
+
+    def test_adaptive_hybrid_disabled_equal_rrf_weights(self) -> None:
+        """``hybrid_config.adaptive_fusion=False`` restores 1:1 RRF weighting."""
+        entries = [_make_entry("only-a", "bm25 side"), _make_entry("only-b", "vector side")]
+        cfg = SimpleNamespace(adaptive_fusion=False)
+        retriever = MemoryRetriever(semantic_enabled=True, hybrid_config=cfg)
+        store = _make_store(entries)
+
+        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+            return [(entries[0], 1.0)]
+
+        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+            return [("only-b", 0.99)]
+
+        with (
+            patch.object(retriever, "_get_candidates", side_effect=fake_candidates),
+            patch.object(retriever, "_vector_search", side_effect=fake_vector),
+        ):
+            results = retriever.search("what is up", store, limit=5)
+        assert results[0].entry.key == "only-a"
 
     def test_bm25_multi_term_query(self) -> None:
         """Multi-term queries should match entries with multiple terms."""

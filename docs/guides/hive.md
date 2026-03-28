@@ -210,6 +210,19 @@ result = PropagationEngine.propagate(
 hive.close()
 ```
 
+### Batch push (CLI / MCP, GitHub #18)
+
+From the project store, promote many entries in one go:
+
+```bash
+tapps-brain hive push --all --scope hive --project-dir .
+tapps-brain hive push --tags shared,reviewed --scope domain --dry-run
+tapps-brain hive push --keys my-key,other-key --scope hive
+tapps-brain hive push-tagged shared --scope hive
+```
+
+Use **`--force`** to ignore profile `private_tiers` / `auto_propagate_tiers` so the chosen `domain` or `hive` scope always applies. **`--dry-run`** prints counts without writing to Hive.
+
 ---
 
 ## Conflict Resolution
@@ -362,13 +375,14 @@ profile:
 
 ## MCP Tools
 
-The MCP server exposes 5 Hive tools and 1 agent registration tool:
+Hive-related MCP tools include:
 
 | Tool | Description |
 |------|-------------|
 | `hive_status` | Returns namespaces, entry counts, and registered agents |
 | `hive_search` | Search the Hive with optional namespace filter |
-| `hive_propagate` | Manually propagate a local memory to the Hive |
+| `hive_propagate` | Manually propagate a local memory to the Hive (`force`, `dry_run` optional) |
+| `hive_push` | Batch-promote local memories (`push_all`, `tags`, `tier`, `keys`, `dry_run`, `force`) |
 | `agent_register` | Register an agent in the Hive registry |
 | `profile_info` | Return the active profile's layers and scoring config |
 | `profile_switch` | Switch to a different built-in profile |

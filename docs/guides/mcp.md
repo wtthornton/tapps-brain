@@ -224,7 +224,8 @@ Profiles configure layers, decay models, scoring weights, promotion rules, and l
 |------|-------------|
 | `hive_status` | Return namespaces, entry counts per namespace, and registered agents |
 | `hive_search` | Search the Hive with optional namespace filter |
-| `hive_propagate` | Manually propagate a local memory to the Hive |
+| `hive_propagate` | Manually propagate a local memory to the Hive (optional `force`, `dry_run`) |
+| `hive_push` | Batch-promote local memories to the Hive (`push_all`, `tags`, `tier`, `keys`, `dry_run`, `force`) |
 | `agent_register` | Register an agent in the Hive registry (id, profile, skills) |
 | `agent_create` | Composite: register + validate profile + namespace assignment |
 | `agent_list` | List all registered agents |

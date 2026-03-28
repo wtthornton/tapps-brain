@@ -94,6 +94,19 @@ def _is_consolidated_source(entry: MemoryEntry) -> bool:
     return _CONSOLIDATED_MARKER in reason.lower()
 
 
+def _hybrid_adaptive_fusion_enabled(hybrid_config: object | None) -> bool:
+    """Whether to apply query-aware BM25/vector RRF weights (EPIC-040 / #40).
+
+    ``hybrid_config.adaptive_fusion`` may be set to ``False`` for legacy 1:1 RRF.
+    Missing attribute defaults to enabled. Non-boolean values (e.g. test mocks)
+    are treated as enabled unless explicitly ``False``.
+    """
+    if hybrid_config is None:
+        return True
+    raw = getattr(hybrid_config, "adaptive_fusion", True)
+    return raw is not False
+
+
 # ---------------------------------------------------------------------------
 # MemoryRetriever
 # ---------------------------------------------------------------------------
@@ -277,9 +290,7 @@ class MemoryRetriever:
 
             # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
             source_key_pt = (
-                entry.source.value
-                if isinstance(entry.source, MemorySource)
-                else str(entry.source)
+                entry.source.value if isinstance(entry.source, MemorySource) else str(entry.source)
             )
             channel_trust = 1.0
             provenance_trust = self._source_trust.get(source_key_pt, 1.0) * channel_trust
@@ -498,7 +509,12 @@ class MemoryRetriever:
         query: str,
         store: MemoryStore,
     ) -> list[tuple[MemoryEntry, float]]:
-        """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF."""
+        """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
+
+        EPIC-040: By default uses query-aware weights on BM25 vs vector RRF terms
+        (``hybrid_rrf_weights_for_query``). Set ``hybrid_config.adaptive_fusion``
+        to ``False`` for equal 1:1 weighting (legacy behavior).
+        """
         top_bm25 = 20
         top_vector = 20
         rrf_k = 60
@@ -506,6 +522,13 @@ class MemoryRetriever:
             top_bm25 = getattr(self._hybrid_config, "top_bm25", 20)
             top_vector = getattr(self._hybrid_config, "top_vector", 20)
             rrf_k = getattr(self._hybrid_config, "rrf_k", 60)
+
+        from tapps_brain.fusion import hybrid_rrf_weights_for_query, reciprocal_rank_fusion_weighted
+
+        adaptive_fusion = _hybrid_adaptive_fusion_enabled(self._hybrid_config)
+        bm25_w, vector_w = (1.0, 1.0)
+        if adaptive_fusion:
+            bm25_w, vector_w = hybrid_rrf_weights_for_query(query)
 
         bm25_keys: list[str] = []
         vector_keys: list[str] = []
@@ -532,9 +555,13 @@ class MemoryRetriever:
             for f in as_completed([f1, f2]):
                 f.result()
 
-        from tapps_brain.fusion import reciprocal_rank_fusion
-
-        fused = reciprocal_rank_fusion(bm25_keys, vector_keys, k=rrf_k)
+        fused = reciprocal_rank_fusion_weighted(
+            bm25_keys,
+            vector_keys,
+            bm25_weight=bm25_w,
+            vector_weight=vector_w,
+            k=rrf_k,
+        )
 
         if not fused:
             return self._get_candidates(query, store)

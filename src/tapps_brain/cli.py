@@ -1747,6 +1747,172 @@ def hive_watch(
         hive.close()
 
 
+def _run_hive_push_from_store(
+    *,
+    agent_scope: str,
+    push_all: bool,
+    tags_csv: str,
+    tier: str | None,
+    keys_csv: str,
+    dry_run: bool,
+    force: bool,
+    project_dir: Path | None,
+    as_json: bool,
+) -> None:
+    """Batch-promote local memories to Hive (GitHub #18)."""
+    from tapps_brain.hive import (
+        HiveStore,
+        push_memory_entries_to_hive,
+        select_local_entries_for_hive_push,
+    )
+
+    if agent_scope not in ("domain", "hive"):
+        typer.echo("Error: agent_scope must be 'domain' or 'hive'.", err=True)
+        raise typer.Exit(code=1)
+
+    store = _get_store(project_dir)
+    key_list = [k.strip() for k in keys_csv.split(",") if k.strip()]
+    tag_list = [t.strip() for t in tags_csv.split(",") if t.strip()] or None
+    try:
+        try:
+            entries = select_local_entries_for_hive_push(
+                store,
+                push_all=push_all,
+                tags=tag_list,
+                tier=tier,
+                keys=key_list or None,
+                include_superseded=False,
+            )
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1) from None
+
+        shared = getattr(store, "_hive_store", None)
+        _should_close = shared is None
+        hive: HiveStore = shared if shared is not None else HiveStore()
+        agent_id = getattr(store, "_hive_agent_id", "cli")
+        profile_name = "repo-brain"
+        auto_propagate: list[str] | None = None
+        private_tiers: list[str] | None = None
+        prof = getattr(store, "profile", None)
+        if prof is not None:
+            profile_name = getattr(prof, "name", "repo-brain")
+            hc = getattr(prof, "hive", None)
+            if hc is not None:
+                auto_propagate = hc.auto_propagate_tiers
+                private_tiers = hc.private_tiers
+
+        try:
+            report = push_memory_entries_to_hive(
+                entries,
+                hive_store=hive,
+                agent_id=agent_id,
+                agent_profile=profile_name,
+                agent_scope=agent_scope,
+                auto_propagate_tiers=auto_propagate,
+                private_tiers=private_tiers,
+                bypass_profile_hive_rules=force,
+                dry_run=dry_run,
+            )
+        finally:
+            if _should_close:
+                hive.close()
+
+        if as_json:
+            _output(report, as_json=True)
+        else:
+            mode = "Dry-run" if dry_run else "Done"
+            typer.echo(
+                f"{mode}: selected {report['count_selected']}, "
+                f"pushed {report['count_pushed']}, "
+                f"skipped {report['count_skipped']}, "
+                f"failed {report['count_failed']} "
+                f"(scope={agent_scope})"
+            )
+            if report["failed"]:
+                for row in report["failed"]:
+                    typer.echo(f"  failed: {row['key']}: {row['error']}", err=True)
+    finally:
+        store.close()
+
+
+@hive_app.command("push")
+def hive_push_cmd(
+    scope: Annotated[
+        str, typer.Option("--scope", help="Hive target: 'domain' or 'hive'.")
+    ] = "hive",
+    push_all: Annotated[
+        bool,
+        typer.Option("--all", help="Include all entries; combine with --tags / --tier to narrow."),
+    ] = False,
+    tags: Annotated[
+        str, typer.Option("--tags", help="Comma-separated tags (entry matches any).")
+    ] = "",
+    tier: Annotated[str | None, typer.Option(help="Filter by memory tier.")] = None,
+    keys: Annotated[
+        str, typer.Option("--keys", help="Comma-separated local keys (exclusive).")
+    ] = "",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview without writing to Hive.")
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            help="Ignore profile private_tiers / auto_propagate; use agent_scope as given.",
+        ),
+    ] = False,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Push project memories to the Hive in batch (GitHub #18).
+
+    Use ``--keys`` for explicit keys, or ``--all`` and/or ``--tags`` / ``--tier``.
+    See also ``hive push-tagged``.
+    """
+    _run_hive_push_from_store(
+        agent_scope=scope,
+        push_all=push_all,
+        tags_csv=tags,
+        tier=tier,
+        keys_csv=keys,
+        dry_run=dry_run,
+        force=force,
+        project_dir=project_dir,
+        as_json=as_json,
+    )
+
+
+@hive_app.command("push-tagged")
+def hive_push_tagged_cmd(
+    tag: Annotated[list[str], typer.Argument(help="One or more tags (entry matches any).")],
+    scope: Annotated[
+        str, typer.Option("--scope", help="Hive target: 'domain' or 'hive'.")
+    ] = "hive",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview without writing to Hive.")
+    ] = False,
+    force: Annotated[bool, typer.Option(help="Ignore profile hive tier rules.")] = False,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Push all local memories that carry any of the given tags (GitHub #18)."""
+    tags_csv = ",".join(t.strip() for t in tag if t.strip())
+    if not tags_csv:
+        typer.echo("Error: provide at least one tag.", err=True)
+        raise typer.Exit(code=1)
+    _run_hive_push_from_store(
+        agent_scope=scope,
+        push_all=False,
+        tags_csv=tags_csv,
+        tier=None,
+        keys_csv="",
+        dry_run=dry_run,
+        force=force,
+        project_dir=project_dir,
+        as_json=as_json,
+    )
+
+
 @agent_app.command("create")
 def agent_create(
     agent_id: str,

@@ -1596,7 +1596,12 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def hive_propagate(key: str, agent_scope: str = "hive") -> str:
+    def hive_propagate(
+        key: str,
+        agent_scope: str = "hive",
+        force: bool = False,
+        dry_run: bool = False,
+    ) -> str:
         """Manually propagate a local memory to the Hive shared store.
 
         Use this to share an existing local memory with other agents after
@@ -1607,6 +1612,9 @@ def create_server(  # noqa: PLR0915
             key: Key of the local memory to propagate.
             agent_scope: Propagation scope — 'domain' (same-profile agents)
                 or 'hive' (all agents, default).
+            force: When True, ignore profile private_tiers / auto_propagate rules
+                so *agent_scope* always applies (GitHub #18).
+            dry_run: When True, do not write to Hive; report target namespace only.
         """
         entry = store.get(key)
         if entry is None:
@@ -1620,8 +1628,14 @@ def create_server(  # noqa: PLR0915
             hive: HiveStore = shared if shared is not None else HiveStore()
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
+            auto_propagate: list[str] | None = None
+            private_tiers: list[str] | None = None
             if store.profile is not None:
                 profile_name = getattr(store.profile, "name", "repo-brain")
+                hc = getattr(store.profile, "hive", None)
+                if hc is not None:
+                    auto_propagate = hc.auto_propagate_tiers
+                    private_tiers = hc.private_tiers
 
             tier_val = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
             try:
@@ -1636,6 +1650,10 @@ def create_server(  # noqa: PLR0915
                     source=entry.source.value,
                     tags=entry.tags,
                     hive_store=hive,
+                    auto_propagate_tiers=auto_propagate,
+                    private_tiers=private_tiers,
+                    bypass_profile_hive_rules=force,
+                    dry_run=dry_run,
                 )
             finally:
                 if _should_close:
@@ -1645,6 +1663,87 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"propagated": True, **result})
         except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_propagate")
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_push(
+        agent_scope: str = "hive",
+        push_all: bool = False,
+        tags: str = "",
+        tier: str | None = None,
+        keys: str = "",
+        dry_run: bool = False,
+        force: bool = False,
+    ) -> str:
+        """Batch-promote local project memories to the Hive (GitHub #18).
+
+        Select entries with *push_all*, comma-separated *tags* / *keys*, or
+        *tier*. *keys* wins if non-empty (other filters ignored). Otherwise
+        require *push_all* or at least one of *tags* / *tier*.
+
+        Args:
+            agent_scope: ``domain`` (profile namespace) or ``hive`` (universal).
+            push_all: Include all non-superseded entries (optionally narrowed by
+                *tier* / *tags*).
+            tags: Comma-separated tags; entry matches if it has any listed tag.
+            tier: Filter by memory tier (e.g. architectural).
+            keys: Comma-separated local keys to push.
+            dry_run: Preview without writing to Hive.
+            force: Ignore profile private_tiers / auto_propagate rules.
+        """
+        try:
+            from tapps_brain.hive import (
+                HiveStore,
+                push_memory_entries_to_hive,
+                select_local_entries_for_hive_push,
+            )
+
+            key_list = [k.strip() for k in keys.split(",") if k.strip()]
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
+            try:
+                entries = select_local_entries_for_hive_push(
+                    store,
+                    push_all=push_all,
+                    tags=tag_list,
+                    tier=tier,
+                    keys=key_list or None,
+                    include_superseded=False,
+                )
+            except ValueError as ve:
+                return json.dumps({"error": "invalid_args", "message": str(ve)})
+
+            shared = getattr(store, "_hive_store", None)
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
+            agent_id = getattr(store, "_hive_agent_id", "mcp-user")
+            profile_name = "repo-brain"
+            auto_propagate: list[str] | None = None
+            private_tiers: list[str] | None = None
+            if store.profile is not None:
+                profile_name = getattr(store.profile, "name", "repo-brain")
+                hc = getattr(store.profile, "hive", None)
+                if hc is not None:
+                    auto_propagate = hc.auto_propagate_tiers
+                    private_tiers = hc.private_tiers
+
+            try:
+                report = push_memory_entries_to_hive(
+                    entries,
+                    hive_store=hive,
+                    agent_id=agent_id,
+                    agent_profile=profile_name,
+                    agent_scope=agent_scope,
+                    auto_propagate_tiers=auto_propagate,
+                    private_tiers=private_tiers,
+                    bypass_profile_hive_rules=force,
+                    dry_run=dry_run,
+                )
+            finally:
+                if _should_close:
+                    hive.close()
+            return json.dumps(report)
+        except Exception as exc:
+            logger.exception("hive_tool_error", tool="hive_push")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]

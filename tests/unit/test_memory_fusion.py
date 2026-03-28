@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from tapps_brain.fusion import reciprocal_rank_fusion
+from tapps_brain.fusion import (
+    hybrid_rrf_weights_for_query,
+    reciprocal_rank_fusion,
+    reciprocal_rank_fusion_weighted,
+)
 
 
 class TestReciprocalRankFusion:
@@ -72,3 +76,49 @@ class TestReciprocalRankFusion:
         assert scores["y"] == pytest.approx(2 / 62)
         assert len(result) == 3
         assert result[0][1] >= result[1][1] >= result[2][1]
+
+    def test_weighted_matches_unweighted_when_weights_are_one(self) -> None:
+        bm25 = ["a", "b"]
+        vector = ["b", "c"]
+        u = reciprocal_rank_fusion(bm25, vector, k=60)
+        w = reciprocal_rank_fusion_weighted(bm25, vector, bm25_weight=1.0, vector_weight=1.0, k=60)
+        assert u == w
+
+    def test_weighted_skews_toward_bm25(self) -> None:
+        # Only BM25 lists "a"; only vector lists "b". Equal weights tie on key order.
+        u = reciprocal_rank_fusion_weighted(["a"], ["b"], bm25_weight=2.0, vector_weight=1.0, k=60)
+        assert u[0][0] == "a"
+
+    def test_weighted_skews_toward_vector(self) -> None:
+        u = reciprocal_rank_fusion_weighted(["a"], ["b"], bm25_weight=1.0, vector_weight=2.0, k=60)
+        assert u[0][0] == "b"
+
+    def test_weighted_rejects_negative_weights(self) -> None:
+        with pytest.raises(ValueError, match="non-negative"):
+            reciprocal_rank_fusion_weighted(["a"], ["b"], bm25_weight=-1.0, vector_weight=1.0)
+
+    def test_hybrid_weights_sum_to_one(self) -> None:
+        a, b = hybrid_rrf_weights_for_query("any query here")
+        assert a == pytest.approx(1.0 - b)
+
+    def test_hybrid_weights_question_query_favors_vector(self) -> None:
+        q_alpha, _ = hybrid_rrf_weights_for_query("what is the deployment process")
+        k_alpha, _ = hybrid_rrf_weights_for_query(
+            "FooBarClass deploy k8s manifest.yaml error line 42 stack trace dump"
+        )
+        assert q_alpha < k_alpha
+
+    def test_hybrid_weights_empty_query_is_balanced(self) -> None:
+        a, b = hybrid_rrf_weights_for_query("   ")
+        assert a == pytest.approx(0.5)
+        assert b == pytest.approx(0.5)
+
+    def test_hybrid_weights_phrase_and_code_signals(self) -> None:
+        """Exercise vague-phrase and keyword/code heuristics (coverage)."""
+        vague, _ = hybrid_rrf_weights_for_query("anything about widgets")
+        assert vague < 0.5
+
+        codeish, _ = hybrid_rrf_weights_for_query(
+            "FooBar::deploy->prod (fix) file.txt v1 x2 extra words here"
+        )
+        assert codeish > 0.5

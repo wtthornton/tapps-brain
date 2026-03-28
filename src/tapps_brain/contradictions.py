@@ -63,7 +63,7 @@ def detect_save_conflicts(
     _sentinel = _MemoryEntry(
         key="conflict-sentinel",
         value=new_value,
-        tier=new_tier,  # type: ignore[arg-type]
+        tier=new_tier,
     )
 
     scored: list[tuple[float, _MemoryEntry]] = []
