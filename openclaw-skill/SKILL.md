@@ -110,6 +110,10 @@ tools:
     description: Search shared Hive memories from other agents
   - name: hive_propagate
     description: Manually share an existing local memory to the Hive
+  - name: hive_write_revision
+    description: Monotonic revision for Hive memory writes (poll for new data)
+  - name: hive_wait_write
+    description: Long-poll until Hive write revision advances or timeout
   - name: agent_register
     description: Register this agent in the Hive registry
   - name: agent_list
@@ -150,6 +154,8 @@ tools:
     description: Quality diagnostics scorecard and circuit breaker state
   - name: diagnostics_history
     description: Recent persisted diagnostics snapshots
+  - name: tapps_brain_health
+    description: Native health check — store, hive, integrity in one JSON report
   - name: flywheel_process
     description: Apply feedback events to confidence scores
   - name: flywheel_gaps
@@ -248,7 +254,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **55 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **58 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

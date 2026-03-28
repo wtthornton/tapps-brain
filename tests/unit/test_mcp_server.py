@@ -128,6 +128,8 @@ class TestCoreTools:
             "hive_status",
             "hive_search",
             "hive_propagate",
+            "hive_write_revision",
+            "hive_wait_write",
             # Agent tools
             "agent_register",
             "agent_create",
@@ -1402,7 +1404,7 @@ class TestProfileAwareTierValidation:
         import shutil
 
         from tapps_brain.mcp_server import create_server
-        from tapps_brain.profile import _builtin_profiles_dir  # noqa: PLC2701
+        from tapps_brain.profile import _builtin_profiles_dir
 
         brain_dir = tmp_path / ".tapps-brain"
         brain_dir.mkdir(exist_ok=True)
@@ -1587,6 +1589,48 @@ class TestHiveToolsReuseSharedStore:
         prop_fn = _tool_fn(server, "hive_propagate")
         result = json.loads(prop_fn(key="hive-prop-test", agent_scope="hive"))
         assert result.get("propagated") is True
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_write_revision_uses_shared_store(self, store_dir):
+        """hive_write_revision reads revision from the shared HiveStore."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="rev-agent")
+        store = server._tapps_store
+        store._hive_store.save(key="mcp-rev", value="x")
+        rev_fn = _tool_fn(server, "hive_write_revision")
+        out = json.loads(rev_fn())
+        assert out.get("revision", 0) >= 1
+        assert "updated_at" in out
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_wait_write_returns_immediately_when_revision_ahead(self, store_dir):
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="wait-agent")
+        store = server._tapps_store
+        store._hive_store.save(key="mcp-w", value="y")
+        wait_fn = _tool_fn(server, "hive_wait_write")
+        out = json.loads(wait_fn(since_revision=0, timeout_seconds=5.0))
+        assert out["changed"] is True
+        assert out.get("timed_out") is False
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_wait_write_times_out_without_new_writes(self, store_dir):
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="wait2-agent")
+        store = server._tapps_store
+        rev_fn = _tool_fn(server, "hive_write_revision")
+        wait_fn = _tool_fn(server, "hive_wait_write")
+        state = json.loads(rev_fn())
+        rev = int(state["revision"])
+        out = json.loads(wait_fn(since_revision=rev, timeout_seconds=0.12))
+        assert out["timed_out"] is True
+        assert out["changed"] is False
         store._hive_store.close()
         store.close()
 

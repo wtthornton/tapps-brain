@@ -7,12 +7,32 @@ Feature intake and triage policy for agent-created `feat` work lives in:
 - `AGENT_FEATURE_GOVERNANCE.md`
 - `ISSUE_TRIAGE_VIEWS.md`
 
+## Open issues roadmap vs Ralph tooling
+
+**Plan (what to follow when):**
+
+| Context | Source of truth for *what* to do next | Packaged in PyPI / OpenClaw? |
+|--------|----------------------------------------|-------------------------------|
+| Human or Cursor agent implementing shipped features | `open-issues-roadmap.md` (plus epics / GitHub issues) | N/A — this is how delivery is tracked in-repo |
+| Ralph autonomous loop (Claude Code CLI) | `.ralph/fix_plan.md` for *that loop’s* next unchecked task | **No** — `.ralph/` is dev automation only, not part of the installable package |
+
+**Fix (avoid drift and wrong edits):**
+
+- Feature PRs and non-Ralph agents should **update `open-issues-roadmap.md`** (and issues) when priorities or status change.
+- They should **not** edit `.ralph/` for bookkeeping unless the maintainer explicitly wants Ralph’s checklist synced.
+- Ralph is allowed to update `.ralph/fix_plan.md` per `.ralph/PROMPT.md` after its own loops; that does not substitute for updating the roadmap for product tracking.
+
+**Update (ongoing):**
+
+- When starting a Ralph campaign on open-issues work, **copy or reconcile** the OPEN-ISSUES block in `fix_plan.md` from `open-issues-roadmap.md` so Ralph’s queue matches delivery intent.
+
 ## Directory Structure
 
 ```
 docs/planning/
-├── PLANNING.md          ← This file (conventions & templates)
-├── STATUS.md            ← Snapshot: schema version, deps, tests, epic vs code (update with releases)
+├── PLANNING.md              ← This file (conventions & templates)
+├── open-issues-roadmap.md   ← Canonical GitHub delivery queue (humans / Cursor / releases)
+├── STATUS.md                ← Snapshot: schema version, deps, tests, epic vs code (update with releases)
 └── epics/
     ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
     ├── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)

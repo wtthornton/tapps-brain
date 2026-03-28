@@ -1,11 +1,13 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-27
+Last updated: 2026-03-27 (Week 3 #12 shipped — revision + watch + MCP poll)
 Owner: @wtthornton
 
 ## Purpose
 
 Track delivery status for currently open GitHub issues, prioritized by value and dependency order.
+
+**Canonical queue for shipped product work** in this repo (humans, Cursor, CI context): status and order here are what matter for releases and issue hygiene. Ralph’s `.ralph/fix_plan.md` is a **separate, non-packaged** loop driver — see [Open issues roadmap vs Ralph tooling](PLANNING.md#open-issues-roadmap-vs-ralph-tooling) in `PLANNING.md`.
 
 ## Status Legend
 
@@ -23,7 +25,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 4. #12 - hive pub-sub notifications
 5. #23 - SQLCipher at-rest encryption
 6. #19 - sub-agent memory relay
-7. #40 - adaptive hybrid fusion (depends on #30)
+7. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
 8. #18 - hive push / push-tagged
 9. #21 - store stale listing
 10. #20 - profile tier migration
@@ -52,10 +54,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ### Week 3 - Real-Time Multi-Agent Coordination
 
-- [ ] **#12** `feat: Hive push notifications / pub-sub`
-  - Status: `not_started`
+- [x] **#12** `feat: Hive push notifications / pub-sub`
+  - Status: `done` (monotonic `hive_write_notify` revision; `tapps-brain hive watch`; MCP `hive_write_revision` / `hive_wait_write`; sidecar `~/.tapps-brain/hive/.hive_write_notify`)
   - Target outcome: subscribed agents can react to hive writes in near real time
-  - Notes: prioritize reliability and simple fan-out semantics
+  - Notes: v1 is poll/long-poll + file signal; optional native push (WAL/socket) later
 
 ### Week 4 - Security Hardening
 
@@ -72,8 +74,8 @@ Track delivery status for currently open GitHub issues, prioritized by value and
   - Notes: tolerate partial invalid relay items
 
 - [ ] **#40** `feat: adaptive query-aware hybrid search fusion`
-  - Status: `blocked`
-  - Dependency: #30
+  - Status: `not_started`
+  - Dependency: (was #30 — sqlite-vec shipped)
   - Target outcome: query-aware BM25/vector weighting improves mixed-query relevance
   - Notes: keep deterministic and testable weighting heuristics
 
@@ -103,10 +105,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 1 | #30 | sqlite-vec local vector search | done | - | 1 | - | Foundation for hybrid quality |
 | 2 | #15 | diagnostics health | done | - | 1 | - | Validate and close if complete |
 | 3 | #45 | profile-driven onboarding | done | - | 2 | - | Adoption multiplier |
-| 4 | #12 | hive pub-sub notifications | not_started | - | 3 | - | Real-time coordination |
+| 4 | #12 | hive pub-sub notifications | done | - | 3 | - | Revision + watch + MCP poll |
 | 5 | #23 | SQLCipher encryption | not_started | - | 4 | - | Security/compliance |
 | 6 | #19 | sub-agent memory relay | not_started | - | 5 | - | Interop and continuity |
-| 7 | #40 | adaptive hybrid fusion | blocked | #30 | 5 | - | Quality optimization |
+| 7 | #40 | adaptive hybrid fusion | not_started | - | 5 | - | Quality optimization |
 | 8 | #18 | hive push / push-tagged | not_started | - | 6 | - | Sharing ergonomics |
 | 9 | #21 | store stale | not_started | - | 6 | - | Maintenance visibility |
 | 10 | #20 | profile migrate | not_started | - | 6 | - | Migration utility |
@@ -150,3 +152,4 @@ Copy this section at the end of each week:
 - 2026-03-27: Initial roadmap created from open-issue value prioritization.
 - 2026-03-27: Marked #30 as in-progress and added first weekly execution update.
 - 2026-03-27: Moved **#15** (diagnostics health) to priority 2 and Week 1; renumbered downstream priorities.
+- 2026-03-27: **#12** shipped — Hive write revision counter, `hive watch`, MCP `hive_write_revision` / `hive_wait_write`, `.hive_write_notify` sidecar; **#40** unblocked from #30 in roadmap.

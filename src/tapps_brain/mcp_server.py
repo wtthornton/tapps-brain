@@ -132,8 +132,10 @@ def create_server(  # noqa: PLR0915
             "project architecture, API contracts, and team agreements.\n\n"
             "Recall automatically merges local and Hive results. Use "
             "`hive_status` to see registered agents and namespaces, "
-            "`hive_search` to query the shared store directly, and "
-            "`hive_propagate` to manually share an existing local memory."
+            "`hive_search` to query the shared store directly, "
+            "`hive_propagate` to manually share an existing local memory, "
+            "and `hive_write_revision` / `hive_wait_write` to poll for new "
+            "Hive memory writes (lightweight pub-sub)."
         ),
     )
 
@@ -193,9 +195,7 @@ def create_server(  # noqa: PLR0915
             ("architectural", "pattern", "procedural", "context")
         )
         _profile_tiers: frozenset[str] = (
-            frozenset(store.profile.layer_names)
-            if store.profile is not None
-            else frozenset()
+            frozenset(store.profile.layer_names) if store.profile is not None else frozenset()
         )
         _all_valid_tiers: frozenset[str] = _legacy_tiers | _profile_tiers
         if tier not in _all_valid_tiers:
@@ -1181,12 +1181,15 @@ def create_server(  # noqa: PLR0915
             return json.dumps(report.model_dump(mode="json"))
         except Exception as exc:
             import traceback
-            return json.dumps({
-                "status": "error",
-                "errors": [str(exc)],
-                "warnings": [],
-                "traceback": traceback.format_exc(),
-            })
+
+            return json.dumps(
+                {
+                    "status": "error",
+                    "errors": [str(exc)],
+                    "warnings": [],
+                    "traceback": traceback.format_exc(),
+                }
+            )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_gc_config() -> str:
@@ -1427,9 +1430,7 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": "no_profile", "message": "No profile loaded."})
         from tapps_brain.onboarding import render_agent_onboarding
 
-        return json.dumps(
-            {"format": "markdown", "content": render_agent_onboarding(profile)}
-        )
+        return json.dumps({"format": "markdown", "content": render_agent_onboarding(profile)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def profile_switch(name: str) -> str:
@@ -1596,6 +1597,75 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"propagated": True, **result})
         except Exception as exc:
             logger.exception("hive_tool_error", tool="hive_propagate")
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_write_revision() -> str:
+        """Return the Hive write notification revision (GitHub #12).
+
+        Each successful save to ``hive_memories`` (and confidence patch)
+        increments a monotonic integer. Agents poll this to detect new shared
+        memories without scanning the full store. A sidecar file
+        ``~/.tapps-brain/hive/.hive_write_notify`` is updated for shell
+        watchers.
+
+        Returns:
+            JSON with ``revision`` (int) and ``updated_at`` (ISO timestamp).
+        """
+        try:
+            from tapps_brain.hive import HiveStore
+
+            shared = getattr(store, "_hive_store", None)
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
+            try:
+                state = hive.get_write_notify_state()
+            finally:
+                if _should_close:
+                    hive.close()
+            return json.dumps(state)
+        except Exception as exc:
+            logger.exception("hive_tool_error", tool="hive_write_revision")
+            return json.dumps({"error": "hive_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def hive_wait_write(since_revision: int = 0, timeout_seconds: float = 10.0) -> str:
+        """Wait until the Hive write revision exceeds *since_revision* or timeout.
+
+        Lightweight long-poll for near-real-time awareness of new Hive
+        memories. *timeout_seconds* is capped at 60.
+
+        Args:
+            since_revision: Return immediately if current revision is already
+                greater than this value.
+            timeout_seconds: Max seconds to block (default 10, max 60).
+
+        Returns:
+            JSON with ``revision``, ``updated_at``, ``changed`` (bool), and
+            ``timed_out`` (bool).
+        """
+        try:
+            from tapps_brain.hive import HiveStore
+
+            shared = getattr(store, "_hive_store", None)
+            _should_close = shared is None
+            hive: HiveStore = shared if shared is not None else HiveStore()
+            try:
+                cap = min(60.0, max(0.0, float(timeout_seconds)))
+                state = hive.get_write_notify_state()
+                if state["revision"] > since_revision:
+                    return json.dumps({**state, "changed": True, "timed_out": False})
+                result = hive.wait_for_write_notify(
+                    since_revision=since_revision,
+                    timeout_sec=cap,
+                    poll_interval_sec=0.25,
+                )
+            finally:
+                if _should_close:
+                    hive.close()
+            return json.dumps(result)
+        except Exception as exc:
+            logger.exception("hive_tool_error", tool="hive_wait_write")
             return json.dumps({"error": "hive_error", "message": str(exc)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]

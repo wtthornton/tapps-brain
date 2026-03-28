@@ -53,7 +53,7 @@ uv build
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), feedback APIs (`rate_recall()`, `report_gap()`, `query_feedback()`, …), **`diagnostics()`** / **`diagnostics_history()`**, **`process_feedback()`** / **`generate_report()`** (flywheel), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (**55** tools including feedback, diagnostics, flywheel, Hive, graph, audit, tags, profile; **7** resources including `memory://feedback`, `memory://diagnostics`, `memory://report`; 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v11**; v5 = bi-temporal, v6 = tooling bump, v7 = `agent_scope`, v8 = `integrity_hash`, v9 = `feedback_events`, v10 = `diagnostics_history`, v11 = flywheel counts + `flywheel_meta`). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing (`index_session()`/`search_sessions()`/`cleanup_sessions()`), doc validation (`validate_entries()` with pluggable `LookupEngineLike`), **`health()`** / **`get_metrics()`** (observability), feedback APIs (`rate_recall()`, `report_gap()`, `query_feedback()`, …), **`diagnostics()`** / **`diagnostics_history()`**, **`process_feedback()`** / **`generate_report()`** (flywheel), optional Hive propagation (`hive_store` param), and MCP exposure via `mcp_server.py` (**58** tools including feedback, diagnostics, flywheel, Hive, graph, audit, tags, profile; **7** resources including `memory://feedback`, `memory://diagnostics`, `memory://report`; 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v11**; v5 = bi-temporal, v6 = tooling bump, v7 = `agent_scope`, v8 = `integrity_hash`, v9 = `feedback_events`, v10 = `diagnostics_history`, v11 = flywheel counts + `flywheel_meta`). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, access counting, and `agent_scope` for Hive propagation. `ConsolidatedEntry` extends it for merged memories. `RecallResult` includes `hive_memory_count` for observability and optional **`quality_warning`** when the diagnostics circuit breaker is not CLOSED.
 
@@ -113,7 +113,8 @@ This project is configured for [Ralph for Claude Code](https://github.com/frankb
 
 ### Ralph Rules
 
-- **fix_plan.md is the single source of truth for task priority.** PROMPT.md defines *how* to work (rules, constraints, process). fix_plan.md defines *what* to work on (priorities, order). PROMPT.md must NEVER override or restate priorities — always defer to fix_plan.md for task selection.
+- **Ralph loop only:** `.ralph/fix_plan.md` is the single source of truth for *which task to run next* in that autonomous loop. PROMPT.md defines *how* to work. PROMPT.md must not override fix_plan task order.
+- **Product delivery (humans, Cursor, PRs):** canonical queue is `docs/planning/open-issues-roadmap.md` — update that and GitHub; `.ralph/` is **not packaged** and should not be edited for feature bookkeeping unless explicitly syncing Ralph. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
 - **Do NOT run pytest, ruff, or mypy mid-epic.** QA is deferred to epic boundaries (when the last `- [ ]` in a `##` section is completed). Set `TESTS_STATUS: DEFERRED` for all mid-epic tasks. This saves 2-5 minutes per loop.
@@ -171,5 +172,5 @@ Ralph reads `.ralph/PROMPT.md` + `.ralph/fix_plan.md`, invokes Claude Code CLI, 
 
 - **Do not modify** `.ralph/` or `.ralphrc` during a Ralph loop — these are Ralph's control files
 - Ralph commits its own changes with descriptive messages referencing stories
-- The fix_plan.md is kept in sync with `docs/planning/epics/` priorities
-- See fix_plan.md for current task priorities (not PROMPT.md or epic files)
+- Open-issues delivery order is tracked in `docs/planning/open-issues-roadmap.md`; Ralph’s `fix_plan.md` should be **reconciled** with that file when starting a Ralph campaign on roadmap work
+- Inside Ralph: see fix_plan.md for the next task (not PROMPT.md alone)

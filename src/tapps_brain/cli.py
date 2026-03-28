@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -1541,6 +1542,79 @@ def hive_search(
                 f"(conf={r.get('confidence', 0):.2f}): "
                 f"{r['value'][:80]}"
             )
+
+
+@hive_app.command("watch")
+def hive_watch(
+    since: Annotated[
+        int | None,
+        typer.Option(help="Only emit when revision is greater than this (default: current)."),
+    ] = None,
+    poll_ms: Annotated[int, typer.Option(help="Poll interval in milliseconds.")] = 500,
+    timeout: Annotated[
+        float | None,
+        typer.Option(help="With --once, max seconds to wait (default: 3600)."),
+    ] = None,
+    once: Annotated[
+        bool,
+        typer.Option(help="Wait for the next write then exit."),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Poll Hive write revision — lightweight pub-sub for new shared memories (GitHub #12).
+
+    Also updates ``~/.tapps-brain/hive/.hive_write_notify`` on each Hive write for file watchers.
+    """
+    from tapps_brain.hive import HiveStore
+
+    hive = HiveStore()
+    try:
+        state0 = hive.get_write_notify_state()
+        baseline = state0["revision"] if since is None else since
+        interval = max(50, poll_ms) / 1000.0
+
+        if once:
+            cap = 3600.0 if timeout is None else max(0.0, float(timeout))
+            result = hive.wait_for_write_notify(
+                since_revision=baseline,
+                timeout_sec=cap,
+                poll_interval_sec=interval,
+            )
+            if as_json:
+                _output(result, as_json=True)
+            elif result.get("changed"):
+                typer.echo(
+                    f"Hive write revision {result['revision']} at {result.get('updated_at', '')}"
+                )
+            else:
+                typer.echo(
+                    f"No new writes (revision still {result['revision']}, timed_out="
+                    f"{result.get('timed_out', True)})",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+            return
+
+        last = baseline
+        typer.echo(
+            f"Watching Hive writes (revision >= {last + 1}, poll={poll_ms}ms). Ctrl+C to stop.",
+            err=True,
+        )
+        while True:
+            state = hive.get_write_notify_state()
+            rev = state["revision"]
+            if rev > last:
+                payload = {"revision": rev, "updated_at": state.get("updated_at", "")}
+                if as_json:
+                    typer.echo(json.dumps(payload))
+                else:
+                    typer.echo(f"revision {rev} ({payload['updated_at']})")
+                last = rev
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        typer.echo("Stopped.", err=True)
+    finally:
+        hive.close()
 
 
 @agent_app.command("create")

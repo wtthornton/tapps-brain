@@ -14,7 +14,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Must match shipped MCP surface (see CLAUDE.md / mcp_server).
-EXPECTED_TOOL_COUNT = 55
+EXPECTED_TOOL_COUNT = 58
 EXPECTED_RESOURCE_COUNT = 7
 
 # User-facing OpenClaw paths to scan for banned / inconsistent patterns.
@@ -42,7 +42,7 @@ BANNED_REGEX = [
     ),
     (
         re.compile(r"\bAll\s+41\s+MCP\s+Tools\b", re.IGNORECASE),
-        "Replace stale '41 MCP tools' wording with 55 or remove duplicate list",
+        "Replace stale '41 MCP tools' wording with current count or remove duplicate list",
     ),
 ]
 

@@ -45,7 +45,7 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v11: feedback v9, diagnostics history v10, flywheel v11). MCP server (`mcp_server.py`) exposes **54** tools and **7** resources. See `docs/planning/STATUS.md` for a current snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v11: feedback v9, diagnostics history v10, flywheel v11). MCP server (`mcp_server.py`) exposes **58** tools and **7** resources. See `docs/planning/STATUS.md` for a current snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 
@@ -81,27 +81,31 @@ mypy --strict src/tapps_brain/
 
 ## Planning
 
-Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`. Task order for Ralph: `.ralph/fix_plan.md`.
+Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`.
+
+**Shipped product / Cursor (non-Ralph) priority:** `docs/planning/open-issues-roadmap.md` — update this (and GitHub issues) when delivery status changes; do **not** edit `.ralph/` for feature bookkeeping unless explicitly requested. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
 
 ## Ralph (Autonomous Dev Loop)
 
-This project is configured for Ralph — an autonomous development loop that drives Claude Code CLI through tasks iteratively.
+This project is configured for Ralph — an autonomous development loop that drives Claude Code CLI through tasks iteratively. **`.ralph/` is not packaged** with tapps-brain (PyPI / OpenClaw).
 
 ### Ralph Rules
 
-- **fix_plan.md is the single source of truth for task priority.** PROMPT.md defines *how* to work (rules, constraints, process). fix_plan.md defines *what* to work on (priorities, order). PROMPT.md must NEVER override or restate priorities — always defer to fix_plan.md for task selection.
+- **Inside a Ralph loop:** `fix_plan.md` is the single source of truth for *which task to run next* in that loop. PROMPT.md defines *how* to work. PROMPT.md must not override fix_plan task order.
+- **Outside Ralph:** use `open-issues-roadmap.md` for delivery order; do not modify `.ralph/` unless syncing for Ralph.
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
 
 ### Session Startup Requirement (Always)
 
-- At the start of every new session in this workspace, read these files before any planning or edits:
+- **Ralph / autonomous loop:** at the start of each Ralph session, read before planning or edits:
   - `.ralph/fix_plan.md`
   - `.ralph/PROMPT.md`
   - `.ralphrc`
   - `CLAUDE.md`
   - `.ralph/AGENT.md`
-- If any of the above files change during the session, re-read the changed file(s) before continuing.
+- **Cursor or other agents (default):** read `CLAUDE.md` and `docs/planning/open-issues-roadmap.md` when picking delivery work; Ralph files are optional unless you are running Ralph.
+- If any file you depend on changes during the session, re-read the changed file(s) before continuing.
 
 ### Ralph Files
 

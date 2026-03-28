@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -84,6 +85,12 @@ class TestHiveStoreSchema:
         ).fetchall()
         assert len(tables) == 1
 
+    def test_hive_write_notify_table_exists(self, hive: HiveStore) -> None:
+        tables = hive._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='hive_write_notify'"
+        ).fetchall()
+        assert len(tables) == 1
+
     def test_primary_key_is_namespace_key(self, hive: HiveStore) -> None:
         """Composite PK (namespace, key) should reject duplicates."""
         hive._conn.execute(
@@ -140,6 +147,101 @@ class TestHiveStoreSchema:
         s1.close()
         s2 = HiveStore(db_path=db_path)
         s2.close()
+
+
+# ---------------------------------------------------------------------------
+# GitHub #12 — Hive write notifications (lightweight pub-sub)
+# ---------------------------------------------------------------------------
+
+
+class TestHiveWriteNotify:
+    """Monotonic revision + sidecar for watch / MCP poll."""
+
+    def test_revision_starts_at_zero(self, hive: HiveStore) -> None:
+        state = hive.get_write_notify_state()
+        assert state["revision"] == 0
+        assert state["updated_at"] == ""
+
+    def test_save_increments_revision(self, hive: HiveStore) -> None:
+        hive.save(key="n1", value="a")
+        assert hive.get_write_notify_state()["revision"] == 1
+        hive.save(key="n2", value="b")
+        assert hive.get_write_notify_state()["revision"] == 2
+
+    def test_patch_confidence_increments_when_row_exists(self, hive: HiveStore) -> None:
+        hive.save(key="pc", value="x")
+        before = hive.get_write_notify_state()["revision"]
+        assert hive.patch_confidence(namespace="universal", key="pc", confidence=0.9) is True
+        assert hive.get_write_notify_state()["revision"] == before + 1
+
+    def test_patch_confidence_miss_does_not_bump(self, hive: HiveStore) -> None:
+        r0 = hive.get_write_notify_state()["revision"]
+        assert hive.patch_confidence(namespace="universal", key="missing", confidence=0.9) is False
+        assert hive.get_write_notify_state()["revision"] == r0
+
+    def test_sidecar_file_updated(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "hive.db"
+        h = HiveStore(db_path=db_path)
+        try:
+            h.save(key="sc", value="v")
+            sidecar = tmp_path / ".hive_write_notify"
+            assert sidecar.is_file()
+            lines = sidecar.read_text(encoding="utf-8").strip().split("\n")
+            assert lines[0] == "1"
+            assert len(lines[1]) > 10
+        finally:
+            h.close()
+
+    def test_wait_for_write_notify_detects_background_save(self, hive: HiveStore) -> None:
+        def _delayed_save() -> None:
+            time.sleep(0.12)
+            hive.save(key="bg", value="from-thread")
+
+        threading.Thread(target=_delayed_save, daemon=True).start()
+        out = hive.wait_for_write_notify(
+            since_revision=0,
+            timeout_sec=3.0,
+            poll_interval_sec=0.05,
+        )
+        assert out["changed"] is True
+        assert out["revision"] >= 1
+        assert out.get("timed_out") is False
+
+    def test_wait_times_out_when_no_writes(self, hive: HiveStore) -> None:
+        out = hive.wait_for_write_notify(
+            since_revision=0,
+            timeout_sec=0.15,
+            poll_interval_sec=0.05,
+        )
+        assert out["changed"] is False
+        assert out["timed_out"] is True
+
+    def test_rejected_save_does_not_bump_revision(self, hive: HiveStore) -> None:
+        hive.save(
+            key="auth",
+            value="first",
+            source_agent="writer-a",
+            conflict_policy=ConflictPolicy.source_authority,
+        )
+        r_before = hive.get_write_notify_state()["revision"]
+        rejected = hive.save(
+            key="auth",
+            value="second",
+            source_agent="writer-b",
+            conflict_policy=ConflictPolicy.source_authority,
+        )
+        assert rejected is None
+        assert hive.get_write_notify_state()["revision"] == r_before
+
+    def test_get_write_notify_state_when_row_missing(self, tmp_path: Path) -> None:
+        h = HiveStore(db_path=tmp_path / "notify.db")
+        try:
+            with h._lock:
+                h._conn.execute("DELETE FROM hive_write_notify WHERE id = 1")
+                h._conn.commit()
+            assert h.get_write_notify_state() == {"revision": 0, "updated_at": ""}
+        finally:
+            h.close()
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +507,46 @@ class TestAgentRegistration:
             AgentRegistration(id="x", unknown_field="bad")  # type: ignore[call-arg]
 
 
+class TestHiveStoreConfidenceAndFeedback:
+    """Branch coverage for confidence lookup and feedback query parsing."""
+
+    def test_get_confidence_hit_and_miss(self, hive: HiveStore) -> None:
+        hive.save(key="gc-key", value="v", confidence=0.77)
+        got = hive.get_confidence(namespace="universal", key="gc-key")
+        assert got is not None
+        assert abs(got - 0.77) < 1e-6
+        assert hive.get_confidence(namespace="universal", key="missing-gc") is None
+
+    def test_query_feedback_events_invalid_details_json(self, hive: HiveStore) -> None:
+        hive.record_feedback_event(
+            event_id="fb-bad-json",
+            namespace="universal",
+            entry_key="k1",
+            event_type="test",
+            session_id=None,
+            utility_score=0.5,
+            details={"ok": True},
+            timestamp="2026-01-01T00:00:00+00:00",
+        )
+        with hive._lock:
+            hive._conn.execute(
+                "UPDATE hive_feedback_events SET details = ? WHERE id = ?",
+                ("not-json", "fb-bad-json"),
+            )
+            hive._conn.commit()
+        rows = hive.query_feedback_events(limit=5)
+        match = next(r for r in rows if r["id"] == "fb-bad-json")
+        assert match["details"] == {}
+
+
 class TestAgentRegistry:
     """AgentRegistry YAML-backed storage."""
+
+    def test_load_skips_yaml_dict_without_agents_key(self, tmp_path: Path) -> None:
+        reg_path = tmp_path / "agents.yaml"
+        reg_path.write_text("foo: bar\n", encoding="utf-8")
+        reg = AgentRegistry(registry_path=reg_path)
+        assert reg.list_agents() == []
 
     def test_register_and_get(self, tmp_path: Path) -> None:
         reg = AgentRegistry(registry_path=tmp_path / "agents.yaml")

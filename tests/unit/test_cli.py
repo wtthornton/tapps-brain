@@ -1276,6 +1276,25 @@ class TestHiveCommands:
         assert "results" in data
         assert "count" in data
 
+    def test_hive_watch_once_json_times_out(self):
+        """hive watch --once --json returns timed_out without new writes."""
+        result = runner.invoke(
+            app,
+            ["hive", "watch", "--once", "--timeout", "0.12", "--poll-ms", "40", "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data.get("timed_out") is True
+        assert data.get("changed") is False
+
+    def test_hive_watch_once_human_timeout_exits_nonzero(self):
+        result = runner.invoke(
+            app,
+            ["hive", "watch", "--once", "--timeout", "0.12", "--poll-ms", "40"],
+        )
+        assert result.exit_code == 1
+        assert "No new writes" in result.stderr or "timed_out" in result.stderr
+
 
 # ===================================================================
 # Agent commands (EPIC-011)

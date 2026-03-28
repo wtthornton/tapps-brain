@@ -2,6 +2,8 @@
 
 **Scope:** Housekeeping and quality gates (below) are historical/completed. **Current feature delivery** follows the open-issues roadmap (`docs/planning/open-issues-roadmap.md`) — work items **in priority order** in that section. EPIC-032 and DEPLOY-OPENCLAW remain deferred unless the roadmap references them.
 
+**Not packaged:** This file and all of `.ralph/` are **Ralph / dev-loop only** — they are not part of the PyPI wheel or OpenClaw artifacts. **Canonical delivery status** for the product lives in `docs/planning/open-issues-roadmap.md`. Non-Ralph agents should update the roadmap (and GitHub), not this file, unless explicitly syncing for Ralph. See [Open issues roadmap vs Ralph tooling](../docs/planning/PLANNING.md#open-issues-roadmap-vs-ralph-tooling).
+
 **Task sizing:** Each item is scoped to ONE Ralph loop (~15 min). Do one, check it off, commit.
 
 ## Completed Epics
@@ -37,10 +39,10 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 | 1 | #30 | sqlite-vec integration | `done` | Maps to EPIC-040 **040.9** — optional dep, `memory_vec`, RRF with BM25 |
 | 2 | #15 | Diagnostics health command + MCP | `done` | CLI + MCP + store health sqlite-vec fields |
 | 3 | #45 | Profile-driven agent onboarding | `done` | `profile onboard` + `memory_profile_onboarding` |
-| 4 | #12 | Hive pub-sub / push notifications | `not_started` | Reliable fan-out, near–real-time |
+| 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll (2026-03-27) |
 | 5 | #23 | SQLCipher at-rest encryption | `not_started` | Optional encrypted SQLite; key mgmt docs |
 | 6 | #19 | Sub-agent memory relay | `not_started` | Portable relay format; tolerate partial invalid items |
-| 7 | #40 | Adaptive hybrid fusion | `blocked` (#30) | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights |
+| 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights |
 | 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
 | 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
 | 10 | #20 | Profile tier migration | `not_started` | Safe tier remap; audit + dry-run |
@@ -51,10 +53,10 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 - [x] **OR-1** GitHub **#30** sqlite-vec (`done` — 2026-03-27)
 - [x] **OR-2** GitHub **#15** diagnostics health (`done` — validate on GitHub; CLI + MCP + health fields)
 - [x] **OR-3** GitHub **#45** profile-driven onboarding (`done` — CLI + MCP)
-- [ ] **OR-4** GitHub **#12** hive pub-sub (`not_started`)
+- [x] **OR-4** GitHub **#12** hive pub-sub (`done` — 2026-03-27)
 - [ ] **OR-5** GitHub **#23** SQLCipher (`not_started`)
 - [ ] **OR-6** GitHub **#19** sub-agent memory relay (`not_started`)
-- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`blocked` on #30)
+- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`not_started`; #30 shipped)
 - [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
 - [ ] **OR-9** GitHub **#21** store stale (`not_started`)
 - [ ] **OR-10** GitHub **#20** profile migrate (`not_started`)

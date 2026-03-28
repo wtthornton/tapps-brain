@@ -6,7 +6,8 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 **Project Type:** Python 3.12+ (uv package manager, ruff linter, strict mypy)
 
 ## Current Objectives
-- **fix_plan.md is the single source of truth for what to work on.** Do ONE task per loop, top to bottom. Do not skip, reorder, or pick tasks from other sources.
+- **fix_plan.md is the single source of truth for what to work on in this Ralph loop.** Do ONE task per loop, top to bottom. Do not skip, reorder, or pick tasks from other sources.
+- **Product delivery queue** (for humans / non-Ralph / releases): `docs/planning/open-issues-roadmap.md`. If the OPEN-ISSUES section in fix_plan.md drifts from that file, sync from the roadmap before picking work. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
 - Write tests for new functionality (95% coverage required)
 - Run full lint/type/test suite before committing
 - Reference stories in commits: `feat(story-NNN.N): description`

@@ -15,6 +15,7 @@ import contextlib
 import json
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -272,7 +273,19 @@ class HiveStore:
                     joined_at   TEXT    NOT NULL,
                     PRIMARY KEY (group_name, agent_id)
                 );
+
+                -- Monotonic revision for pub-sub / watch (GitHub #12); single row id=1.
+                CREATE TABLE IF NOT EXISTS hive_write_notify (
+                    id          INTEGER PRIMARY KEY CHECK (id = 1),
+                    revision    INTEGER NOT NULL DEFAULT 0,
+                    updated_at  TEXT    NOT NULL DEFAULT ''
+                );
             """)
+
+            self._conn.execute(
+                "INSERT OR IGNORE INTO hive_write_notify (id, revision, updated_at) "
+                "VALUES (1, 0, '')"
+            )
 
             self._conn.commit()
 
@@ -364,6 +377,48 @@ class HiveStore:
         exc_tb: types.TracebackType | None,
     ) -> None:
         self.close()
+
+    # ------------------------------------------------------------------
+    # Write notifications (GitHub #12 — lightweight pub-sub / watch)
+    # ------------------------------------------------------------------
+
+    def _write_sidecar_notify_locked(self, revision: int, updated_at: str) -> None:
+        """Update ``~/.tapps-brain/hive/.hive_write_notify`` for file-based watchers."""
+        path = self._db_path.parent / ".hive_write_notify"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{revision}\n{updated_at}\n", encoding="utf-8")
+
+    def get_write_notify_state(self) -> dict[str, Any]:
+        """Return monotonic ``revision`` and ``updated_at`` for hive memory writes."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT revision, updated_at FROM hive_write_notify WHERE id = 1"
+            ).fetchone()
+        if row is None:
+            return {"revision": 0, "updated_at": ""}
+        return {"revision": int(row[0]), "updated_at": str(row[1] or "")}
+
+    def wait_for_write_notify(
+        self,
+        *,
+        since_revision: int,
+        timeout_sec: float,
+        poll_interval_sec: float = 0.25,
+    ) -> dict[str, Any]:
+        """Block until ``revision > since_revision`` or *timeout_sec* elapses."""
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        poll = max(0.05, float(poll_interval_sec))
+        while time.monotonic() < deadline:
+            state = self.get_write_notify_state()
+            if state["revision"] > since_revision:
+                return {**state, "changed": True, "timed_out": False}
+            time.sleep(poll)
+        state = self.get_write_notify_state()
+        return {
+            **state,
+            "changed": state["revision"] > since_revision,
+            "timed_out": True,
+        }
 
     # ------------------------------------------------------------------
     # Helpers
@@ -501,8 +556,21 @@ class HiveStore:
                 """,
                 (c, now, namespace, key),
             )
+            if cur.rowcount > 0:
+                self._conn.execute(
+                    "UPDATE hive_write_notify SET revision = revision + 1, updated_at = ? "
+                    "WHERE id = 1",
+                    (now,),
+                )
             self._conn.commit()
-            return cur.rowcount > 0
+            changed = cur.rowcount > 0
+            if changed:
+                n_row = self._conn.execute(
+                    "SELECT revision, updated_at FROM hive_write_notify WHERE id = 1"
+                ).fetchone()
+                if n_row is not None:
+                    self._write_sidecar_notify_locked(int(n_row[0]), str(n_row[1] or ""))
+            return changed
 
     def get_confidence(self, *, namespace: str, key: str) -> float | None:
         """Return current confidence for a Hive row, if it exists."""
@@ -657,7 +725,17 @@ class HiveStore:
                 superseded_by,
             ),
         )
+        self._conn.execute(
+            "UPDATE hive_write_notify SET revision = revision + 1, updated_at = ? WHERE id = 1",
+            (now,),
+        )
         self._conn.commit()
+
+        n_row = self._conn.execute(
+            "SELECT revision, updated_at FROM hive_write_notify WHERE id = 1"
+        ).fetchone()
+        if n_row is not None:
+            self._write_sidecar_notify_locked(int(n_row[0]), str(n_row[1] or ""))
 
         logger.info(
             "hive.saved",
@@ -779,7 +857,8 @@ class HiveStore:
         now = datetime.now(tz=UTC).isoformat()
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO hive_groups (name, description, created_at) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO hive_groups (name, description, created_at) "
+                "VALUES (?, ?, ?)",
                 (name, description, now),
             )
             self._conn.commit()
@@ -822,9 +901,7 @@ class HiveStore:
     def list_groups(self) -> list[dict[str, Any]]:
         """List all groups."""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM hive_groups ORDER BY name"
-            ).fetchall()
+            rows = self._conn.execute("SELECT * FROM hive_groups ORDER BY name").fetchall()
         return [dict(row) for row in rows]
 
     def get_group_members(self, group_name: str) -> list[dict[str, Any]]:
@@ -850,7 +927,7 @@ class HiveStore:
         query: str,
         agent_id: str,
         agent_namespace: str | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> list[dict[str, Any]]:
         """Search across agent's own namespace + group namespaces + universal.
 
