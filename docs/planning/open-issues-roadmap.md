@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (reconciled with `.ralph/fix_plan.md` OPEN-ISSUES block)
+Last updated: 2026-03-28 (GitHub: **#12**, **#23** closed; **#17** already closed on GitHub)
 Owner: @wtthornton
 
 ## Purpose
@@ -19,17 +19,15 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Priority Order
 
-1. #30 - sqlite-vec integration
-2. #15 - diagnostics health (verify current status, likely close)
-3. #45 - profile-driven onboarding
-4. #12 - hive pub-sub notifications
-5. ~~#23 - SQLCipher at-rest encryption~~ (done)
-6. #19 - sub-agent memory relay
-7. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
-8. #18 - hive push / push-tagged
-9. #21 - store stale listing
-10. #20 - profile tier migration
-11. #17 - session summarization workflow
+**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17
+
+**Remaining queue (dependency order):**
+
+1. #19 - sub-agent memory relay
+2. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
+3. #18 - hive push / push-tagged
+4. #21 - store stale listing
+5. #20 - profile tier migration
 
 ## Roadmap by Week
 
@@ -93,26 +91,25 @@ Track delivery status for currently open GitHub issues, prioritized by value and
   - Status: `not_started`
   - Target outcome: safe tier remapping with audit and dry-run support
 
-- [ ] **#17** `feat: session summarization`
-  - Status: `not_started`
-  - Target outcome: complete end-of-session capture flow (CLI/API/MCP)
-  - Notes: reassess implementation overlap before starting
+- [x] **#17** `feat: session summarization`
+  - Status: `closed` on GitHub (2026-03-28) — `tapps-brain session end`, `session_summary.py`, MCP `tapps_brain_session_end`; optional `--daily-note`
+  - Target outcome: end-of-session episodic capture (CLI + Python API + MCP)
 
 ## Tracking Table
 
 | Priority | Issue | Title | Status | Dependency | Target Week | PR | Notes |
 |---|---:|---|---|---|---|---|---|
-| 1 | #30 | sqlite-vec local vector search | done | - | 1 | - | Foundation for hybrid quality |
-| 2 | #15 | diagnostics health | done | - | 1 | - | Validate and close if complete |
-| 3 | #45 | profile-driven onboarding | done | - | 2 | - | Adoption multiplier |
-| 4 | #12 | hive pub-sub notifications | done | - | 3 | - | Revision + watch + MCP poll |
-| 5 | #23 | SQLCipher encryption | done | - | 4 | - | Optional `[encryption]` + CLI migrate |
+| 1 | #30 | sqlite-vec local vector search | closed | - | 1 | - | GitHub closed |
+| 2 | #15 | diagnostics health | closed | - | 1 | - | GitHub closed |
+| 3 | #45 | profile-driven onboarding | closed | - | 2 | - | GitHub closed |
+| 4 | #12 | hive pub-sub notifications | closed | - | 3 | - | GitHub closed 2026-03-28 |
+| 5 | #23 | SQLCipher encryption | closed | - | 4 | - | GitHub closed 2026-03-28 |
 | 6 | #19 | sub-agent memory relay | not_started | - | 5 | - | Interop and continuity |
 | 7 | #40 | adaptive hybrid fusion | not_started | - | 5 | - | Quality optimization |
 | 8 | #18 | hive push / push-tagged | not_started | - | 6 | - | Sharing ergonomics |
 | 9 | #21 | store stale | not_started | - | 6 | - | Maintenance visibility |
 | 10 | #20 | profile migrate | not_started | - | 6 | - | Migration utility |
-| 11 | #17 | session summarization | not_started | - | 6 | - | Episodic workflow |
+| 11 | #17 | session summarization | closed | - | 6 | - | GitHub closed 2026-03-28 |
 
 ## Weekly Update Template
 
@@ -136,11 +133,10 @@ Copy this section at the end of each week:
 ## Weekly Update - 2026-03-28
 
 - Completed:
-  - [x] #30 sqlite-vec local vector search (`done`).
-  - [x] #15 diagnostics health (`done`).
-  - [x] #45 profile-driven onboarding (`done`).
-  - [x] #12 hive pub-sub / notifications (`done`).
-  - [x] #23 SQLCipher at-rest encryption (`done`).
+  - [x] #30, #15, #45 — already closed on GitHub.
+  - [x] #12 hive pub-sub — **closed on GitHub** 2026-03-28 (comment + state).
+  - [x] #23 SQLCipher — **closed on GitHub** 2026-03-28 (comment + state).
+  - [x] #17 session summarization — **closed on GitHub** 2026-03-28 (prior close).
 - In progress:
   - None (next queue item: **#19** sub-agent memory relay).
 - Blocked:
@@ -157,3 +153,4 @@ Copy this section at the end of each week:
 - 2026-03-27: Moved **#15** (diagnostics health) to priority 2 and Week 1; renumbered downstream priorities.
 - 2026-03-27: **#12** shipped — Hive write revision counter, `hive watch`, MCP `hive_write_revision` / `hive_wait_write`, `.hive_write_notify` sidecar; **#40** unblocked from #30 in roadmap.
 - 2026-03-28: **#23** marked `done` in roadmap and tracking table; `.ralph/fix_plan.md` OPEN-ISSUES mirror updated (OR-5 checked); weekly update rewritten to match shipped state; **EPIC-040** epic stub added under `docs/planning/epics/` pointing at fix_plan for full story list.
+- 2026-03-28: Closed **#12** and **#23** on GitHub (`completed`); roadmap priority list collapsed to remaining five issues; **#17** marked `closed` in table (was shipped earlier on GitHub).

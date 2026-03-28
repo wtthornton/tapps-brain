@@ -39,14 +39,14 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 | 1 | #30 | sqlite-vec integration | `done` | Maps to EPIC-040 **040.9** — optional dep, `memory_vec`, RRF with BM25 |
 | 2 | #15 | Diagnostics health command + MCP | `done` | CLI + MCP + store health sqlite-vec fields |
 | 3 | #45 | Profile-driven agent onboarding | `done` | `profile onboard` + `memory_profile_onboarding` |
-| 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll (2026-03-27) |
-| 5 | #23 | SQLCipher at-rest encryption | `done` | Optional `[encryption]` extra, migrate CLI, `docs/guides/sqlcipher.md` (2026-03-27) |
+| 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll; **GitHub closed** 2026-03-28 |
+| 5 | #23 | SQLCipher at-rest encryption | `done` | Optional `[encryption]` extra, migrate CLI, `docs/guides/sqlcipher.md`; **GitHub closed** 2026-03-28 |
 | 6 | #19 | Sub-agent memory relay | `not_started` | Portable relay format; tolerate partial invalid items |
 | 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights (#30 prerequisite met) |
 | 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
 | 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
 | 10 | #20 | Profile tier migration | `not_started` | Safe tier remap; audit + dry-run |
-| 11 | #17 | Session summarization workflow | `not_started` | End-of-session flow CLI/API/MCP; check overlap with shipped TextRank |
+| 11 | #17 | Session summarization workflow | `done` | `session end`, `session_summary.py`, MCP `tapps_brain_session_end`; **GitHub closed** 2026-03-28 |
 
 **Checklist (mirror roadmap):**
 
@@ -60,7 +60,7 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 - [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
 - [ ] **OR-9** GitHub **#21** store stale (`not_started`)
 - [ ] **OR-10** GitHub **#20** profile migrate (`not_started`)
-- [ ] **OR-11** GitHub **#17** session summarization (`not_started`)
+- [x] **OR-11** GitHub **#17** session summarization (`done` / closed on GitHub — 2026-03-28)
 
 ---
 
