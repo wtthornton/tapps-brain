@@ -804,6 +804,20 @@ class TestMaintenanceCommands:
         data = json.loads(result.stdout)
         assert "archived" in data
 
+    def test_stale_json(self, project_dir):
+        result = runner.invoke(
+            app, ["maintenance", "stale", "--project-dir", project_dir, "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["count"] == 0
+        assert data["entries"] == []
+
+    def test_stale_text(self, project_dir):
+        result = runner.invoke(app, ["maintenance", "stale", "--project-dir", project_dir])
+        assert result.exit_code == 0
+        assert "Stale (GC) candidates" in result.stdout
+
     def test_gc_archives_stale_entries(self, tmp_path: Path) -> None:
         """016-B: GC non-dry-run archives session-scoped entries older than 7 days."""
         import sqlite3
@@ -1383,6 +1397,96 @@ class TestProfileCommands:
         result = runner.invoke(app, ["profile", "set", "repo-brain", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "repo-brain" in result.stdout
+
+    def test_profile_migrate_tiers_requires_map(self, project_dir):
+        result = runner.invoke(app, ["profile", "migrate-tiers", "--project-dir", project_dir])
+        assert result.exit_code == 1
+
+    def test_profile_migrate_tiers_dry_run_json(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        s.save(key="m1", value="v", tier="pattern")
+        s.close()
+        result = runner.invoke(
+            app,
+            [
+                "profile",
+                "migrate-tiers",
+                "--project-dir",
+                str(tmp_path),
+                "--map",
+                "pattern:procedural",
+                "--dry-run",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["dry_run"] is True
+        assert data["would_update"] == 1
+        assert data["changes"][0]["to_tier"] == "procedural"
+
+    def test_profile_migrate_tiers_apply_json(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        s.save(key="m2", value="v", tier="pattern")
+        s.close()
+        result = runner.invoke(
+            app,
+            [
+                "profile",
+                "migrate-tiers",
+                "--project-dir",
+                str(tmp_path),
+                "--map",
+                "pattern:procedural",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["updated"] == 1
+        s2 = MemoryStore(tmp_path)
+        from tapps_brain.models import MemoryTier
+
+        assert s2.get("m2") is not None
+        assert s2.get("m2").tier == MemoryTier.procedural
+        s2.close()
+
+    def test_profile_migrate_tiers_text_dry_run(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        s.save(key="tx1", value="v", tier="pattern")
+        s.close()
+        result = runner.invoke(
+            app,
+            [
+                "profile",
+                "migrate-tiers",
+                "--project-dir",
+                str(tmp_path),
+                "--map",
+                "pattern:procedural",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "[dry-run]" in result.stdout
+        assert "tx1" in result.stdout
+
+    def test_profile_migrate_tiers_text_validation_error(self, tmp_path: Path) -> None:
+        MemoryStore(tmp_path).close()
+        result = runner.invoke(
+            app,
+            [
+                "profile",
+                "migrate-tiers",
+                "--project-dir",
+                str(tmp_path),
+                "--map",
+                "a:not_a_valid_tier_ever",
+            ],
+        )
+        assert result.exit_code == 1
+        combined = result.stdout + result.stderr
+        assert "Validation errors" in combined
 
     def test_profile_layers(self, project_dir):
         result = runner.invoke(app, ["profile", "layers", "--project-dir", project_dir])

@@ -11,8 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`.
 - Adaptive query-aware hybrid search fusion (GitHub **#40**, EPIC-040 **040.10**): `hybrid_rrf_weights_for_query()` and weighted RRF in `MemoryRetriever` when `semantic_enabled=True`. Set `hybrid_config.adaptive_fusion=False` for legacy equal BM25/vector RRF weights.
 - Hive batch promotion (GitHub **#18**): CLI `tapps-brain hive push` and `hive push-tagged`; MCP tool `hive_push`; `select_local_entries_for_hive_push` and `push_memory_entries_to_hive` in `hive.py`. `PropagationEngine.propagate` supports `dry_run` and `bypass_profile_hive_rules`; `hive_propagate` accepts `force` and `dry_run`.
+- **GC stale listing (GitHub #21):** `MemoryGarbageCollector.stale_candidate_details`, `StaleCandidateDetail`, `MemoryStore.list_gc_stale_details`, CLI `tapps-brain maintenance stale`, MCP `maintenance_stale` (machine-readable reasons for GC candidates).
+- **Profile tier migration (GitHub #20):** `tapps_brain.profile_migrate`, `MemoryStore.migrate_entry_tiers`, CLI `tapps-brain profile migrate-tiers --map from:to`, MCP `profile_tier_migrate` (`tier_map_json`, `dry_run`); audit log action `tier_migrate`.
+
+### Changed
+
+- **GC / decay alignment:** CLI `maintenance gc`, MCP `maintenance_gc`, `MemoryStore.gc()`, and `health()` GC candidate counts use profile-derived `DecayConfig` plus store `gc_config` (same rules as `list_gc_stale_details`).
 
 ## v2.0.0 (2026-03-26)
 
@@ -46,14 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory health stats CLI command (#43)
 
 **Schema:** v11 → v15 (4 migrations, all backward-compatible)
-
----
-
-## [Unreleased]
-
-### Added
-
-- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`.
 
 ---
 

@@ -75,6 +75,8 @@ tools:
     description: Merge similar memories
   - name: maintenance_gc
     description: Archive stale memories
+  - name: maintenance_stale
+    description: List GC stale candidates with reasons (read-only)
   # GC Config
   - name: memory_gc_config
     description: Return current garbage collection configuration
@@ -99,6 +101,8 @@ tools:
     description: Active profile name, layers, scoring config
   - name: profile_switch
     description: Switch to different built-in profile
+  - name: profile_tier_migrate
+    description: Remap stored tiers with dry-run and audit support
   - name: memory_profile_onboarding
     description: Markdown onboarding guide for the active profile (tiers, scoring, recall)
   # Hive (Multi-Agent Sharing)
@@ -260,7 +264,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **61 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **63 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

@@ -89,7 +89,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
 | EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
-| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (55 as of v2.0.0+) | done | 2026-03-23 |
+| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (63 as of 2026-03-28+) | done | 2026-03-23 |
 | EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
@@ -102,14 +102,14 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
 | EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
-| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (040.10 shipped; GitHub **#18** hive push in repo — see `epics/EPIC-040.md` + roadmap) |
+| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (040.10 shipped; GitHub **#18** hive push **closed** 2026-03-28 — see `epics/EPIC-040.md` + roadmap) |
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **61** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **63** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (canonical queue: `open-issues-roadmap.md`; Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-- **#21** — Store stale listing (`not_started`).
+- **Open GitHub issues** — **#46** assemble context, **#47** tool name conflicts, **#48** invalid tier names from subagents, **#49** multi-group scopes (see GitHub for full titles).
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 - **DEPLOY-OPENCLAW** — distribution tasks deferred per fix_plan.
 

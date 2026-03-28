@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (repo: **#18** hive batch push shipped; close on GitHub when verified)
+Last updated: 2026-03-28 (repo: **#18**, **#40**, **#21**, **#20** closed on GitHub after verify)
 Owner: @wtthornton
 
 ## Purpose
@@ -19,12 +19,16 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Priority Order
 
-**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19
+**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20
 
-**Remaining queue (dependency order):**
+**Remaining queue (open on GitHub — triage order TBD):**
 
-1. #21 - store stale listing
-2. #20 - profile tier migration
+- **#46** — `assemble()` returns 0 memories / plugin context at session start
+- **#47** — `memory_search` / `memory_get` tool name conflicts on gateway restart
+- **#48** — Invalid tier names from subagents vs personal-assistant profile
+- **#49** — Multi-group memory scopes (Hive, named groups, personal)
+
+**Recently shipped (repo + GitHub closed 2026-03-28):** #18 hive push, #40 adaptive hybrid fusion, #21 store stale, #20 profile migrate
 
 ## Roadmap by Week
 
@@ -79,15 +83,13 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 - [x] **#18** `feat: hive push / push-tagged`
   - Status: `done` (2026-03-28) — CLI `hive push` / `hive push-tagged`; MCP `hive_push`; `PropagationEngine` `dry_run` / `bypass_profile_hive_rules`; `select_local_entries_for_hive_push` + `push_memory_entries_to_hive`
   - Target outcome: low-friction promotion of project memories to hive
-  - Notes: `--dry-run`, `--force`; close **#18** on GitHub when verified
+  - Notes: `--dry-run`, `--force`; **#18** closed on GitHub 2026-03-28
 
-- [ ] **#21** `feat: store stale`
-  - Status: `not_started`
-  - Target outcome: list stale entries for review with machine-readable output
+- [x] **#21** `feat: store stale`
+  - Status: `done` (2026-03-28) — `MemoryGarbageCollector.stale_candidate_details`, `MemoryStore.list_gc_stale_details`, CLI `maintenance stale`, MCP `maintenance_stale`; `maintenance gc` / MCP `maintenance_gc` / `store.gc` / `health()` use profile decay + `gc_config`
 
-- [ ] **#20** `feat: profile migrate`
-  - Status: `not_started`
-  - Target outcome: safe tier remapping with audit and dry-run support
+- [x] **#20** `feat: profile migrate`
+  - Status: `done` (2026-03-28) — `profile_migrate` helpers, `MemoryStore.migrate_entry_tiers`, CLI `profile migrate-tiers --map from:to`, MCP `profile_tier_migrate` (`tier_map_json`, `dry_run`); audit action `tier_migrate`
 
 - [x] **#17** `feat: session summarization`
   - Status: `closed` on GitHub (2026-03-28) — `tapps-brain session end`, `session_summary.py`, MCP `tapps_brain_session_end`; optional `--daily-note`
@@ -103,10 +105,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 4 | #12 | hive pub-sub notifications | closed | - | 3 | - | GitHub closed 2026-03-28 |
 | 5 | #23 | SQLCipher encryption | closed | - | 4 | - | GitHub closed 2026-03-28 |
 | 6 | #19 | sub-agent memory relay | closed | - | 5 | - | Relay v1.0 + CLI import + MCP export |
-| 7 | #40 | adaptive hybrid fusion | done | - | 5 | - | Close on GitHub after verify |
-| 8 | #18 | hive push / push-tagged | done | - | 6 | - | MCP `hive_push` + CLI; close on GitHub when verified |
-| 9 | #21 | store stale | not_started | - | 6 | - | Maintenance visibility |
-| 10 | #20 | profile migrate | not_started | - | 6 | - | Migration utility |
+| 7 | #40 | adaptive hybrid fusion | closed | - | 5 | - | GitHub closed 2026-03-28 |
+| 8 | #18 | hive push / push-tagged | closed | - | 6 | - | GitHub closed 2026-03-28 |
+| 9 | #21 | store stale | closed | - | 6 | - | GitHub closed 2026-03-28 |
+| 10 | #20 | profile migrate | closed | - | 6 | - | GitHub closed 2026-03-28 |
 | 11 | #17 | session summarization | closed | - | 6 | - | GitHub closed 2026-03-28 |
 
 ## Weekly Update Template
@@ -136,17 +138,20 @@ Copy this section at the end of each week:
   - [x] #23 SQLCipher — **closed on GitHub** 2026-03-28 (comment + state).
   - [x] #17 session summarization — **closed on GitHub** 2026-03-28 (prior close).
   - [x] **#19** sub-agent memory relay — shipped + **closed on GitHub** 2026-03-28.
+  - [x] **#21** store stale listing — `maintenance stale`, MCP `maintenance_stale`, `StaleCandidateDetail` / `list_gc_stale_details`.
+  - [x] **#20** profile tier migrate — `profile migrate-tiers`, MCP `profile_tier_migrate`, audit `tier_migrate`.
 - In progress:
-  - None (next queue item: **#21** store stale).
+  - None.
 - Blocked:
   - None.
 - Scope changes:
   - None this week (planning sync only).
 - Next week plan:
-  - #21, #20; close **#18** and **#40** on GitHub when verified.
+  - Triage **#46–#49** (open); MCP tool count **63**.
 
 ## Change Log
 
+- 2026-03-28: **#21** stale listing + **#20** profile tier migrate shipped (CLI, MCP, store/GC helpers); MCP **63** tools; **#18**, **#40**, **#21**, **#20** closed on GitHub.
 - 2026-03-27: Initial roadmap created from open-issue value prioritization.
 - 2026-03-27: Marked #30 as in-progress and added first weekly execution update.
 - 2026-03-27: Moved **#15** (diagnostics health) to priority 2 and Week 1; renumbered downstream priorities.
@@ -155,4 +160,4 @@ Copy this section at the end of each week:
 - 2026-03-28: Closed **#12** and **#23** on GitHub (`completed`); roadmap priority list collapsed to remaining five issues; **#17** marked `closed` in table (was shipped earlier on GitHub).
 - 2026-03-28: **#19** sub-agent memory relay shipped (`memory_relay`, `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`); GitHub **#19** closed; MCP tool surface **60** (incl. `tapps_brain_session_end` + `tapps_brain_relay_export` in SKILL baseline).
 - 2026-03-28: **#40** adaptive hybrid fusion shipped (`fusion.hybrid_rrf_weights_for_query`, weighted RRF, `hybrid_config.adaptive_fusion`); roadmap priority 7 marked `done` (close issue on GitHub after verify).
-- 2026-03-28: **#18** hive push / push-tagged shipped (CLI + MCP `hive_push`, batch helpers in `hive.py`); roadmap priority 8 marked `done`; MCP tool count **61**.
+- 2026-03-28: **#18** hive push / push-tagged shipped (CLI + MCP `hive_push`, batch helpers in `hive.py`); roadmap priority 8 marked `done`; MCP tool count **63** (after **#21**/**#20**).

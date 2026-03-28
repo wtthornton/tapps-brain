@@ -1097,3 +1097,35 @@ class TestAgentScopeValidationInStore:
     def test_valid_agent_scopes_constant_contains_expected_values(self) -> None:
         """VALID_AGENT_SCOPES constant contains the three expected values."""
         assert set(VALID_AGENT_SCOPES) == {"private", "domain", "hive"}
+
+
+class TestStoreStaleAndTierMigrate:
+    """GitHub #21 / #20: stale listing and tier migration on MemoryStore."""
+
+    def test_list_gc_stale_details_empty(self, store: MemoryStore) -> None:
+        assert store.list_gc_stale_details() == []
+
+    def test_migrate_entry_tiers_validation_error(self, store: MemoryStore) -> None:
+        from tapps_brain.profile_migrate import TierMigrationResult
+
+        r = store.migrate_entry_tiers({"a": "not_a_tier_zzz"}, dry_run=True)
+        assert isinstance(r, TierMigrationResult)
+        assert r.errors
+
+    def test_migrate_entry_tiers_skipped_identity(self, store: MemoryStore) -> None:
+        store.save(key="same", value="v", tier="pattern")
+        r = store.migrate_entry_tiers({"pattern": "pattern"}, dry_run=True)
+        assert r.skipped_identity == 1
+        assert r.would_update == 0
+
+    def test_migrate_entry_tiers_applies_and_audits(self, store: MemoryStore) -> None:
+        from tapps_brain.models import MemoryTier
+
+        store.save(key="mv", value="v", tier="pattern")
+        r = store.migrate_entry_tiers({"pattern": "procedural"}, dry_run=False)
+        assert r.updated == 1
+        assert store.get("mv") is not None
+        assert store.get("mv").tier == MemoryTier.procedural
+        audits = store.audit(event_type="tier_migrate", limit=20)
+        assert len(audits) >= 1
+        assert audits[0].key == "mv"

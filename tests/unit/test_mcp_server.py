@@ -112,6 +112,7 @@ class TestCoreTools:
             # Maintenance tools
             "maintenance_consolidate",
             "maintenance_gc",
+            "maintenance_stale",
             # GC and consolidation config tools
             "memory_gc_config",
             "memory_gc_config_set",
@@ -126,6 +127,7 @@ class TestCoreTools:
             "profile_info",
             "memory_profile_onboarding",
             "profile_switch",
+            "profile_tier_migrate",
             # Hive tools
             "hive_status",
             "hive_search",
@@ -674,6 +676,7 @@ class TestFederationAndMaintenance:
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         assert "maintenance_consolidate" in tool_names
         assert "maintenance_gc" in tool_names
+        assert "maintenance_stale" in tool_names
 
     def test_export_import_tools_registered(self, mcp_server):
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
@@ -748,6 +751,25 @@ class TestFederationAndMaintenance:
         result = json.loads(fn(dry_run=False))
         assert "archived_count" in result
         assert "remaining_count" in result
+
+    def test_maintenance_stale(self, mcp_server):
+        fn = _tool_fn(mcp_server, "maintenance_stale")
+        result = json.loads(fn())
+        assert result["count"] == 0
+        assert result["entries"] == []
+
+    def test_profile_tier_migrate_dry_run(self, mcp_server):
+        store = mcp_server._tapps_store
+        store.save(key="mtp1", value="x", tier="pattern")
+        fn = _tool_fn(mcp_server, "profile_tier_migrate")
+        result = json.loads(fn(tier_map_json=json.dumps({"pattern": "procedural"}), dry_run=True))
+        assert result["dry_run"] is True
+        assert result["would_update"] == 1
+
+    def test_profile_tier_migrate_invalid_json(self, mcp_server):
+        fn = _tool_fn(mcp_server, "profile_tier_migrate")
+        result = json.loads(fn(tier_map_json="not json {", dry_run=True))
+        assert result.get("error") == "invalid_tier_map"
 
     def test_memory_export(self, mcp_server):
         store = mcp_server._tapps_store

@@ -35,6 +35,7 @@ build/
 .ralph/status.json
 .ralph/status.json.*
 .coverage
+coverage.json
 
 # Claude Code local settings (experimental, not committed)
 .claude/settings.local.json

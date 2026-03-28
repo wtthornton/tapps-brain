@@ -31,7 +31,7 @@ AI agents forget everything between sessions. **tapps-brain** gives them persist
 Every operation — search, decay, consolidation, extraction, scoring — is deterministic and reproducible. No API keys, no latency, no cost.
 
 ### Three equal interfaces
-Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**55** tools, **7** resources) — same engine, same behavior, pick what fits your workflow.
+Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**63** tools, **7** resources) — same engine, same behavior, pick what fits your workflow.
 
 </td>
 <td width="50%">
@@ -153,13 +153,13 @@ tapps-brain export --format json --output backup.json
 
 Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, …). Many commands support `--json` output.
 
-### MCP server — 55 tools
+### MCP server — 63 tools
 
 ```bash
 tapps-brain-mcp --project-dir /path/to/project
 ```
 
-55 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
+63 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
 
 <details>
 <summary><strong>MCP client configuration</strong></summary>
@@ -204,7 +204,7 @@ tapps-brain-mcp --project-dir /path/to/project
 </details>
 
 <details>
-<summary><strong>Full MCP tool reference (55 tools)</strong></summary>
+<summary><strong>Full MCP tool reference (63 tools)</strong></summary>
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -223,9 +223,14 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `memory_search_sessions` | Search past session summaries |
 | **Profiles** | `profile_info` | Active profile layers, scoring, and Hive config |
 | | `profile_switch` | Switch to a different built-in profile |
+| | `memory_profile_onboarding` | Markdown onboarding for the active profile |
+| | `profile_tier_migrate` | Remap stored tiers (`tier_map_json`, `dry_run`) |
 | **Hive** | `hive_status` | Namespaces, entry counts, registered agents |
 | | `hive_search` | Search across Hive namespaces |
 | | `hive_propagate` | Propagate a local memory to the Hive |
+| | `hive_push` | Batch-promote local memories to the Hive |
+| | `hive_write_revision` | Monotonic revision for Hive writes (poll) |
+| | `hive_wait_write` | Long-poll wait for Hive revision |
 | | `agent_register` | Register an agent (id, profile, skills) |
 | | `agent_create` | Composite: register + validate + namespace assignment |
 | | `agent_list` | List registered agents |
@@ -243,6 +248,7 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `feedback_query` | Query stored feedback |
 | **Diagnostics** | `diagnostics_report` | Quality scorecard + circuit breaker |
 | | `diagnostics_history` | Historical diagnostics snapshots |
+| | `tapps_brain_health` | Combined health JSON (store + optional Hive) |
 | **Flywheel** | `flywheel_process` | Bayesian feedback → confidence |
 | | `flywheel_gaps` | Prioritized knowledge gaps |
 | | `flywheel_report` | Markdown quality report |
@@ -255,12 +261,15 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `federation_publish` | Publish shared memories to hub |
 | **Maintenance** | `maintenance_consolidate` | Merge similar memories |
 | | `maintenance_gc` | Archive stale memories |
+| | `maintenance_stale` | List GC stale candidates with reasons (read-only) |
 | | `memory_gc_config` | View GC thresholds |
 | | `memory_gc_config_set` | Set GC thresholds |
 | | `memory_consolidation_config` | View consolidation config |
 | | `memory_consolidation_config_set` | Set consolidation config |
 | | `memory_export` | Export entries as JSON |
 | | `memory_import` | Import entries from JSON |
+| **Session / relay** | `tapps_brain_session_end` | End-of-session episodic summary |
+| | `tapps_brain_relay_export` | Build sub-agent relay JSON for import |
 | **OpenClaw** | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 **Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics` · `memory://feedback` · `memory://diagnostics` · `memory://report`
@@ -496,7 +505,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
-| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (55 tools, 7 resources) |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (63 tools, 7 resources) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy optional dependency detection |
 
 </details>
@@ -584,7 +593,7 @@ tests/
 | Epic | Title | Status |
 |------|-------|--------|
 | [EPIC-001](docs/planning/epics/EPIC-001.md)–[016](docs/planning/epics/EPIC-016.md) | Core platform (tests through Hive hardening) | Done |
-| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface grown to 55 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
+| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 63 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
 | [EPIC-029](docs/planning/epics/EPIC-029.md) | Feedback collection | Done |
 | [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |

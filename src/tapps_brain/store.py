@@ -1529,7 +1529,10 @@ class MemoryStore:
             except (ValueError, TypeError, AttributeError):
                 continue
 
-        gc = MemoryGarbageCollector(gc_config=self._gc_config)
+        gc = MemoryGarbageCollector(
+            config=self._get_decay_config(),
+            gc_config=self._gc_config,
+        )
         gc_candidates = gc.identify_candidates(entries)
 
         groups = find_consolidation_groups(
@@ -1582,7 +1585,10 @@ class MemoryStore:
         from tapps_brain.gc import GCResult, MemoryGarbageCollector
 
         self._metrics.increment("store.gc")
-        gc_collector = MemoryGarbageCollector(gc_config=self._gc_config)
+        gc_collector = MemoryGarbageCollector(
+            config=self._get_decay_config(),
+            gc_config=self._gc_config,
+        )
         with self._lock:
             entries = list(self._entries.values())
         candidates = gc_collector.identify_candidates(entries)
@@ -1606,6 +1612,85 @@ class MemoryStore:
             archived_count=len(candidate_keys),
             remaining_count=len(entries) - len(candidate_keys),
             archived_keys=candidate_keys,
+        )
+
+    def list_gc_stale_details(self, *, now: Any = None) -> list[Any]:  # noqa: ANN401
+        """Return GC stale candidates with reasons (GitHub #21)."""
+        from datetime import UTC, datetime
+
+        from tapps_brain.gc import MemoryGarbageCollector
+
+        gc_collector = MemoryGarbageCollector(
+            config=self._get_decay_config(),
+            gc_config=self._gc_config,
+        )
+        with self._lock:
+            entries = list(self._entries.values())
+        _now = now if now is not None else datetime.now(tz=UTC)
+        details = gc_collector.stale_candidate_details(entries, now=_now)
+        return list(details)
+
+    def migrate_entry_tiers(
+        self,
+        tier_map: dict[str, str],
+        *,
+        dry_run: bool = False,
+    ) -> Any:  # noqa: ANN401
+        """Remap entry tiers with audit records (GitHub #20)."""
+        from tapps_brain.models import tier_str as _tier_str
+        from tapps_brain.profile_migrate import (
+            TierMigrationChange,
+            TierMigrationResult,
+            coerce_tier_value,
+            validate_tier_map,
+        )
+
+        errors = validate_tier_map(tier_map, self._profile)
+        if errors:
+            return TierMigrationResult(dry_run=dry_run, errors=errors)
+
+        changes: list[TierMigrationChange] = []
+        skipped_identity = 0
+        with self._lock:
+            entries = list(self._entries.values())
+
+        for entry in entries:
+            cur = _tier_str(entry.tier)
+            if cur not in tier_map:
+                continue
+            dst_name = tier_map[cur]
+            new_tier = coerce_tier_value(dst_name, self._profile)
+            new_s = _tier_str(new_tier)
+            if new_s == cur:
+                skipped_identity += 1
+                continue
+            changes.append(TierMigrationChange(key=entry.key, from_tier=cur, to_tier=new_s))
+
+        if dry_run:
+            return TierMigrationResult(
+                dry_run=True,
+                would_update=len(changes),
+                skipped_identity=skipped_identity,
+                changes=changes,
+            )
+
+        updated = 0
+        for ch in changes:
+            new_tier = coerce_tier_value(ch.to_tier, self._profile)
+            self.update_fields(ch.key, tier=new_tier)
+            self._persistence.append_audit(
+                action="tier_migrate",
+                key=ch.key,
+                extra={"from_tier": ch.from_tier, "to_tier": ch.to_tier},
+            )
+            updated += 1
+
+        return TierMigrationResult(
+            dry_run=False,
+            would_update=len(changes),
+            updated=updated,
+            skipped_identity=skipped_identity,
+            changes=changes,
         )
 
     def audit(

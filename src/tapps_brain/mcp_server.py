@@ -1125,7 +1125,10 @@ def create_server(  # noqa: PLR0915
         """
         from tapps_brain.gc import GCResult, MemoryGarbageCollector
 
-        gc = MemoryGarbageCollector(gc_config=store.get_gc_config())
+        gc = MemoryGarbageCollector(
+            config=store._get_decay_config(),
+            gc_config=store.get_gc_config(),
+        )
         all_entries = store.list_all()
         candidates = gc.identify_candidates(all_entries)
 
@@ -1152,6 +1155,22 @@ def create_server(  # noqa: PLR0915
             archived_keys=[e.key for e in candidates],
         )
         return json.dumps(result.model_dump(mode="json"))
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def maintenance_stale() -> str:
+        """List GC stale memory candidates with reasons (read-only; GitHub #21).
+
+        Returns JSON with ``count`` and ``entries`` (each entry includes ``key``,
+        ``tier``, ``reasons``, ``effective_confidence``, ``stored_confidence``,
+        ``scope``, and optional diagnostic fields).
+        """
+        details = store.list_gc_stale_details()
+        return json.dumps(
+            {
+                "count": len(details),
+                "entries": [d.model_dump(mode="json") for d in details],
+            }
+        )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def tapps_brain_health(check_hive: bool = True) -> str:
@@ -1514,6 +1533,30 @@ def create_server(  # noqa: PLR0915
         except Exception as exc:
             logger.exception("profile_switch_error", profile=name)
             return json.dumps({"error": "profile_switch_error", "message": str(exc)})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def profile_tier_migrate(tier_map_json: str, dry_run: bool = False) -> str:
+        """Remap stored memory tiers (GitHub #20).
+
+        *tier_map_json* is a JSON object mapping source tier strings to targets,
+        e.g. ``{"old_layer":"pattern","context":"ephemeral"}``. Targets must be
+        valid ``MemoryTier`` values or layer names in the active profile.
+
+        When *dry_run* is True, no rows are updated; the response lists planned
+        changes. Successful applies append ``tier_migrate`` rows to the JSONL audit log.
+
+        Args:
+            tier_map_json: JSON object of from_tier -> to_tier.
+            dry_run: If True, plan only (default False).
+        """
+        try:
+            from tapps_brain.profile_migrate import parse_tier_map_json
+
+            mapping = parse_tier_map_json(tier_map_json)
+            result = store.migrate_entry_tiers(mapping, dry_run=dry_run)
+            return json.dumps(result.model_dump(mode="json"))
+        except (json.JSONDecodeError, ValueError) as exc:
+            return json.dumps({"error": "invalid_tier_map", "message": str(exc)})
 
     # ------------------------------------------------------------------
     # Hive tools (EPIC-011)

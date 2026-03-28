@@ -666,7 +666,7 @@ function toolResult(data: unknown): AgentToolResult {
 
 /**
  * Create an AnyAgentTool that proxies an MCP tool call through the engine.
- * This DRY helper eliminates the repeated proxy pattern across all 55 tools.
+ * This DRY helper eliminates the repeated proxy pattern across all MCP tools.
  */
 function createMcpProxyTool(
   engine: TappsBrainEngine,

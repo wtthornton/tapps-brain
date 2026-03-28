@@ -76,6 +76,7 @@ class TestToolsDiscovery:
                 # Maintenance
                 "maintenance_consolidate",
                 "maintenance_gc",
+                "maintenance_stale",
                 # Config tools
                 "memory_gc_config",
                 "memory_gc_config_set",
@@ -88,6 +89,7 @@ class TestToolsDiscovery:
                 "profile_info",
                 "memory_profile_onboarding",
                 "profile_switch",
+                "profile_tier_migrate",
                 # Hive
                 "hive_status",
                 "hive_search",

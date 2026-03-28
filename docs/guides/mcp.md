@@ -202,6 +202,7 @@ memory_capture(
 |------|-------------|
 | `profile_info` | Return the active profile's name, layers, scoring config, and Hive settings |
 | `profile_switch` | Switch to a different built-in profile by name |
+| `profile_tier_migrate` | Remap stored entry tiers (`tier_map_json`, `dry_run`); writes `tier_migrate` audit rows when applied |
 
 **Example — checking the active profile:**
 
@@ -318,6 +319,7 @@ Federation enables cross-project memory sharing. See the [Federation Guide](fede
 |------|-------------|
 | `maintenance_consolidate` | Merge similar memories (deterministic, Jaccard + TF-IDF) |
 | `maintenance_gc` | Archive stale memories (supports `dry_run`) |
+| `maintenance_stale` | List GC stale candidates with reasons (read-only JSON: `count`, `entries`) |
 | `maintenance_gc_config` | View or set GC thresholds at runtime |
 | `maintenance_consolidation_config` | View or set consolidation configuration |
 | `maintenance_health` | Store health report |
@@ -390,7 +392,7 @@ npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/proje
 
 ## Maintainers: release gate and doc consistency
 
-Before a release, the repo runs an automated gate that includes this MCP surface (55 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
+Before a release, the repo runs an automated gate that includes this MCP surface (63 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
 
 - **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
 - **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`

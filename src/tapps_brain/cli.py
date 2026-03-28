@@ -1018,6 +1018,33 @@ def maintenance_consolidate(
         store.close()
 
 
+@maintenance_app.command("stale")
+def maintenance_stale(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List GC stale candidates with reasons (read-only; GitHub #21)."""
+    store = _get_store(project_dir)
+    try:
+        details = store.list_gc_stale_details()
+        data = {
+            "count": len(details),
+            "entries": [d.model_dump(mode="json") for d in details],
+        }
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            typer.echo(f"Stale (GC) candidates: {len(details)}")
+            for d in details:
+                reasons = ",".join(d.reasons)
+                typer.echo(
+                    f"  - {d.key} [{d.tier}] effective={d.effective_confidence:.3f} "
+                    f"reasons={reasons}"
+                )
+    finally:
+        store.close()
+
+
 @maintenance_app.command("gc")
 def maintenance_gc(
     project_dir: ProjectDir = None,
@@ -1030,7 +1057,10 @@ def maintenance_gc(
     store = _get_store(project_dir)
     try:
         entries = store.list_all(include_superseded=True)
-        gc = MemoryGarbageCollector()
+        gc = MemoryGarbageCollector(
+            config=store._get_decay_config(),
+            gc_config=store.get_gc_config(),
+        )
         candidates = gc.identify_candidates(entries)
 
         if dry_run:
@@ -1509,6 +1539,51 @@ def profile_set(
     profile_path.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
 
     typer.echo(f"Profile set to '{profile.name}' at {profile_path}")
+
+
+@profile_app.command("migrate-tiers")
+def profile_migrate_tiers(
+    project_dir: ProjectDir = None,
+    tier_map: Annotated[
+        list[str] | None,
+        typer.Option("--map", help="Tier mapping from:to (repeatable)."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show planned changes only; do not write."),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Remap stored entry tiers after profile changes (GitHub #20)."""
+    from tapps_brain.profile_migrate import parse_tier_map_pairs
+
+    pairs = list(tier_map) if tier_map else []
+    if not pairs:
+        typer.echo("Error: provide at least one --map from:to", err=True)
+        raise typer.Exit(code=1)
+
+    store = _get_store(project_dir)
+    try:
+        mapping = parse_tier_map_pairs(pairs)
+        result = store.migrate_entry_tiers(mapping, dry_run=dry_run)
+        payload = result.model_dump(mode="json")
+        if as_json:
+            _output(payload, as_json=True)
+        else:
+            if result.errors:
+                typer.echo("Validation errors:", err=True)
+                for err in result.errors:
+                    typer.echo(f"  - {err}", err=True)
+                raise typer.Exit(code=1)
+            mode = "dry-run" if dry_run else "applied"
+            typer.echo(
+                f"[{mode}] would_update={result.would_update} "
+                f"updated={result.updated} skipped_identity={result.skipped_identity}"
+            )
+            for ch in result.changes:
+                typer.echo(f"  {ch.key}: {ch.from_tier} -> {ch.to_tier}")
+    finally:
+        store.close()
 
 
 @profile_app.command("onboard")
@@ -2747,7 +2822,8 @@ def _write_daily_note(workspace: Path, summary: str) -> None:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = note_dir / f"{today}.md"
 
-    from datetime import UTC, datetime as dt
+    from datetime import UTC
+    from datetime import datetime as dt
 
     timestamp = dt.now(tz=UTC).strftime("%H:%M UTC")
     block = f"\n## Session End — {timestamp}\n\n{summary}\n"

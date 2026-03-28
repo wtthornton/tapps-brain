@@ -4,7 +4,7 @@ Covers:
 - _protocols.py: runtime_checkable Protocol instantiation
 - _feature_flags.py: lazy detection with monkeypatched imports
 - retrieval.py: relation expansion, retrieval policy, reranker edges, vector search, _like_search
-- gc.py: edge cases in _should_archive, _days_at_floor, _days_since_timestamp, append_to_archive
+- gc.py: edge cases in _archive_reasons, _days_at_floor, _days_since_timestamp, append_to_archive
 - io.py: tag grouping, scope filter, corrupt JSON, max entries, non-dict payload
 - injection.py: search exception, safety-blocked entries, all-blocked early return
 """

@@ -96,6 +96,36 @@ class TestIdentifyCandidates:
         assert len(candidates) == 0
 
 
+class TestStaleCandidateDetails:
+    def test_matches_identify_candidates(self, gc: MemoryGarbageCollector) -> None:
+        now = datetime.now(tz=UTC)
+        old_update = (now - timedelta(days=600)).isoformat()
+        entry = _make_entry(confidence=0.8, updated_at=old_update)
+        fresh = _make_entry(key="fresh", confidence=0.9)
+
+        cands = gc.identify_candidates([entry, fresh], now=now)
+        details = gc.stale_candidate_details([entry, fresh], now=now)
+        assert len(details) == len(cands) == 1
+        assert details[0].key == entry.key
+        assert "floor_retention" in details[0].reasons
+
+    def test_session_reason_metadata(self, gc: MemoryGarbageCollector) -> None:
+        now = datetime.now(tz=UTC)
+        old_update = (now - timedelta(days=10)).isoformat()
+        entry = _make_entry(scope=MemoryScope.session, updated_at=old_update)
+        details = gc.stale_candidate_details([entry], now=now)
+        assert len(details) == 1
+        assert "session_expired" in details[0].reasons
+        assert details[0].days_since_update is not None
+        assert details[0].days_since_update >= 10.0
+
+    def test_stale_details_default_now(self, gc: MemoryGarbageCollector) -> None:
+        """``now=None`` uses UTC now (covers default branch)."""
+        entry = _make_entry(confidence=0.9)
+        details = gc.stale_candidate_details([entry])
+        assert details == []
+
+
 class TestAppendToArchive:
     def test_writes_jsonl(self, tmp_path: Path) -> None:
         """Archived entries are written to a JSONL file."""

@@ -71,6 +71,21 @@ class GCResult(BaseModel):
     archived_keys: list[str] = Field(default_factory=list)
 
 
+class StaleCandidateDetail(BaseModel):
+    """One memory entry that garbage collection would archive, with review metadata."""
+
+    key: str
+    tier: str
+    reasons: list[str]
+    effective_confidence: float = Field(ge=0.0, le=1.0)
+    stored_confidence: float
+    contradicted: bool
+    scope: str
+    days_at_floor: float | None = None
+    days_since_update: float | None = None
+    updated_at: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Collector
 # ---------------------------------------------------------------------------
@@ -121,31 +136,73 @@ class MemoryGarbageCollector:
 
         candidates: list[MemoryEntry] = []
         for entry in entries:
-            if self._should_archive(entry, now):
+            if self._archive_reasons(entry, now):
                 candidates.append(entry)
         return candidates
 
-    def _should_archive(self, entry: MemoryEntry, now: datetime) -> bool:
-        """Check if a single entry meets any archival criterion."""
+    def stale_candidate_details(
+        self,
+        entries: list[MemoryEntry],
+        *,
+        now: datetime | None = None,
+    ) -> list[StaleCandidateDetail]:
+        """Return structured GC stale candidates (same set as :meth:`identify_candidates`)."""
+        if now is None:
+            now = datetime.now(tz=UTC)
+
+        from tapps_brain.models import MemoryScope, MemoryTier
+
+        out: list[StaleCandidateDetail] = []
+        for entry in entries:
+            reasons = self._archive_reasons(entry, now)
+            if not reasons:
+                continue
+            effective = calculate_decayed_confidence(entry, self._config, now=now)
+            tier_s = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+            scope_s = (
+                entry.scope.value if isinstance(entry.scope, MemoryScope) else str(entry.scope)
+            )
+            days_at_floor: float | None = None
+            if "floor_retention" in reasons:
+                days_at_floor = self._days_at_floor(entry, now)
+            days_since_update: float | None = None
+            if "session_expired" in reasons:
+                days_since_update = _days_since_timestamp(entry.updated_at, now)
+            out.append(
+                StaleCandidateDetail(
+                    key=entry.key,
+                    tier=tier_s,
+                    reasons=reasons,
+                    effective_confidence=float(effective),
+                    stored_confidence=float(entry.confidence),
+                    contradicted=bool(entry.contradicted),
+                    scope=scope_s,
+                    days_at_floor=days_at_floor,
+                    days_since_update=days_since_update,
+                    updated_at=entry.updated_at,
+                )
+            )
+        return out
+
+    def _archive_reasons(self, entry: MemoryEntry, now: datetime) -> list[str]:
+        """Return non-empty list when the entry should be archived; each item is a reason code."""
+        reasons: list[str] = []
         effective = calculate_decayed_confidence(entry, self._config, now=now)
 
-        # Criterion 1: at floor confidence for extended period
         if effective <= self._config.confidence_floor:
             days_at_floor = self._days_at_floor(entry, now)
             if days_at_floor >= self._floor_retention_days:
-                return True
+                reasons.append("floor_retention")
 
-        # Criterion 2: contradicted and low confidence
         if entry.contradicted and effective < self._contradicted_threshold:
-            return True
+            reasons.append("contradicted_low_confidence")
 
-        # Criterion 3: expired session-scoped memory
         if entry.scope == "session":
             days_since_update = _days_since_timestamp(entry.updated_at, now)
             if days_since_update >= self._session_expiry_days:
-                return True
+                reasons.append("session_expired")
 
-        return False
+        return reasons
 
     def _days_at_floor(self, entry: MemoryEntry, now: datetime) -> float:
         """Estimate how long a memory has been at the confidence floor.

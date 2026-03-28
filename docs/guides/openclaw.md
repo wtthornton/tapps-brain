@@ -1,6 +1,6 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. **55** MCP tools and
+Persistent cross-session memory for your OpenClaw agents. **63** MCP tools and
 **7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
 OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
@@ -172,7 +172,7 @@ memory slot is not claimed.
 
 ## Mode 3: MCP Sidecar
 
-Use the MCP sidecar for direct access to all **55** tools, or when you want full manual
+Use the MCP sidecar for direct access to all **63** tools, or when you want full manual
 control over recall and capture workflows. Works with any OpenClaw version.
 
 ### Install
@@ -268,7 +268,7 @@ Restart OpenClaw after editing `openclaw.json` — MCP config is read at startup
 
 For OpenClaw versions before v2026.3.7 that do not support the ContextEngine API
 (`definePluginEntry`), use Mode 3 (MCP sidecar) instead of the plugin. The agent
-gets all 55 tools as native MCP tools — memory is not automatically injected, but
+gets all 63 tools as native MCP tools — memory is not automatically injected, but
 the agent can be instructed to use `memory_recall` and `memory_capture` explicitly.
 
 Upgrade OpenClaw to v2026.3.7+ when possible to get automatic per-turn recall and
@@ -389,7 +389,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | Auto-capture from messages | ✅ | — | — |
 | Pre-compaction flush | ✅ | — | — |
 | Replaces memory-core tools | — | ✅ | — |
-| Direct tool access (55 tools) | ✅ | ✅ | ✅ |
+| Direct tool access (63 tools) | ✅ | ✅ | ✅ |
 | Hive multi-agent sharing | ✅ | ✅ | ✅ |
 | Cross-project federation | ✅ | ✅ | ✅ |
 | Custom profiles | ✅ | ✅ | ✅ |
@@ -402,7 +402,9 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 
 ---
 
-## All 55 MCP Tools
+## All 63 MCP Tools
+
+The canonical name+description list is in [`openclaw-skill/SKILL.md`](../../openclaw-skill/SKILL.md) (OpenClaw) and [`mcp.md`](./mcp.md). Summary tables below.
 
 ### Core Memory (CRUD)
 
@@ -439,6 +441,9 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | `hive_status` | Show namespaces, entry counts, registered agents |
 | `hive_search` | Search shared Hive memories from other agents |
 | `hive_propagate` | Manually share an existing local memory to the Hive |
+| `hive_push` | Batch-promote local memories to the Hive (tags, tier, keys, dry-run) |
+| `hive_write_revision` | Monotonic revision counter for Hive writes (poll) |
+| `hive_wait_write` | Long-poll wait for Hive revision changes |
 | `agent_register` | Register this agent in the Hive registry |
 | `agent_list` | List all registered agents and their profiles |
 | `agent_create` | Create and register a new agent programmatically |
@@ -468,6 +473,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 |------|-------------|
 | `maintenance_consolidate` | Merge similar memories (Jaccard + TF-IDF, no LLM) |
 | `maintenance_gc` | Archive stale memories (never deleted) |
+| `maintenance_stale` | List GC stale candidates with reasons (read-only JSON) |
 | `memory_export` | Export entries as JSON |
 | `memory_import` | Import from JSON or markdown |
 
@@ -482,6 +488,31 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | `profile_info` | Show active profile name, layers, scoring config |
 | `memory_profile_onboarding` | Markdown onboarding guide for the active profile |
 | `profile_switch` | Switch to a different built-in profile |
+| `profile_tier_migrate` | Remap stored tiers (`tier_map_json`, `dry_run`; audit `tier_migrate`) |
+
+### Knowledge graph, feedback, diagnostics, flywheel, session, migration
+
+| Tool | Description |
+|------|-------------|
+| `memory_relations` | Relations for an entry |
+| `memory_find_related` | BFS from an entity |
+| `memory_query_relations` | Query relation triples |
+| `feedback_rate` | Rate recall quality |
+| `feedback_gap` | Report a knowledge gap |
+| `feedback_issue` | Flag a bad entry |
+| `feedback_record` | Custom feedback event |
+| `feedback_query` | Query feedback events |
+| `diagnostics_report` | Quality scorecard + circuit breaker |
+| `diagnostics_history` | Historical diagnostics |
+| `tapps_brain_health` | Combined health JSON (store + optional Hive) |
+| `flywheel_process` | Bayesian feedback processing |
+| `flywheel_gaps` | Prioritized gaps |
+| `flywheel_report` | Markdown quality report |
+| `flywheel_evaluate` | Offline eval harness |
+| `flywheel_hive_feedback` | Hive-wide feedback aggregation |
+| `tapps_brain_session_end` | End-of-session episodic summary |
+| `tapps_brain_relay_export` | Sub-agent relay JSON for primary import |
+| `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 ### MCP Resources
 
@@ -597,7 +628,7 @@ The import infers tier from heading level:
 
 ### Upgrading from tapps-brain v0.x (28-tool API)
 
-v1.x expanded from 28 to 55 MCP tools. The original 28 tools are unchanged - no
+v1.x expanded from 28 to 63 MCP tools (current). The original 28 tools are unchanged — no
 breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 ### Migrating from MCP sidecar to ContextEngine plugin
