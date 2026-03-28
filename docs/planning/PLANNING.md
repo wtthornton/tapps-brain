@@ -72,7 +72,8 @@ docs/planning/
     ├── EPIC-036.md      ← Release gate hardening (done; scripts/release-ready.sh, CI)
     ├── EPIC-037.md      ← OpenClaw plugin SDK realignment — fix API contract to match real SDK (done)
     ├── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
-    └── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
+    ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
+    └── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
 ```
 
 ## Why This Structure

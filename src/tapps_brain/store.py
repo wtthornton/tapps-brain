@@ -165,11 +165,16 @@ class MemoryStore:
         hive_store: HiveStore | None = None,
         hive_agent_id: str = "unknown",
         rate_limiter_config: RateLimiterConfig | None = None,
+        encryption_key: str | None = None,
     ) -> None:
         self._project_root = project_root
         self._rate_limiter = SlidingWindowRateLimiter(rate_limiter_config)
         try:
-            self._persistence = MemoryPersistence(project_root, store_dir=store_dir)
+            self._persistence = MemoryPersistence(
+                project_root,
+                store_dir=store_dir,
+                encryption_key=encryption_key,
+            )
         except sqlite3.DatabaseError:
             _db_path = project_root / store_dir / "memory" / "memory.db"
             logger.error(
@@ -533,9 +538,9 @@ class MemoryStore:
                     seeded_from=existing.seeded_from if existing else None,
                     # Preserve temporal fields on update (EPIC-004);
                     # override valid_at when conflicts were resolved (040.16)
-                    valid_at=_conflict_valid_at if _conflict_valid_at else (
-                        existing.valid_at if existing else None
-                    ),
+                    valid_at=_conflict_valid_at
+                    if _conflict_valid_at
+                    else (existing.valid_at if existing else None),
                     invalid_at=existing.invalid_at if existing else None,
                     superseded_by=existing.superseded_by if existing else None,
                     # Provenance metadata (GitHub #38)
@@ -1037,7 +1042,9 @@ class MemoryStore:
                         updates["stability"] = new_stab
                         updates["difficulty"] = new_diff
                     except Exception:
-                        logger.debug("record_access_stability_update_failed", key=key, exc_info=True)
+                        logger.debug(
+                            "record_access_stability_update_failed", key=key, exc_info=True
+                        )
 
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated
@@ -1560,6 +1567,7 @@ class MemoryStore:
             rate_limit_total_writes=rl_stats.total_writes,
             rate_limit_exempt_writes=rl_stats.exempt_writes,
             relation_count=self.count_relations(),
+            sqlcipher_enabled=self._persistence.sqlcipher_enabled,
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -1654,7 +1662,10 @@ class MemoryStore:
 
         if self._persistence.get_schema_version() < 10:
             return
-        self._diagnostics_history_store = DiagnosticsHistoryStore(self._persistence.db_path)
+        self._diagnostics_history_store = DiagnosticsHistoryStore(
+            self._persistence.db_path,
+            encryption_key=self._persistence.encryption_key,
+        )
         self._anomaly_detector.reset_from_history(
             self._diagnostics_history_store.history(limit=500)
         )
@@ -2062,6 +2073,7 @@ class MemoryStore:
                 db_path=self._persistence.db_path,
                 audit_path=self._persistence.audit_path,
                 config=config,
+                encryption_key=self._persistence.encryption_key,
             )
         return self._feedback_store_instance
 

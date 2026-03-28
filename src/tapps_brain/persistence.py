@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from tapps_brain.relations import RelationEntry
 
 from tapps_brain.models import MemoryEntry
+from tapps_brain.sqlcipher_util import connect_sqlite, resolve_memory_encryption_key
 
 logger = structlog.get_logger(__name__)
 
@@ -58,15 +59,24 @@ class MemoryPersistence:
     TappsMCP passes ``.tapps-mcp`` for backward compatibility.
 
     Files:
-    - ``memory.db`` -- SQLite database (WAL mode, FTS5)
+    - ``memory.db`` -- SQLite database (WAL mode, FTS5); optional SQLCipher when
+      ``encryption_key`` or ``TAPPS_BRAIN_ENCRYPTION_KEY`` is set
+      (see ``docs/guides/sqlcipher.md``).
     - ``memory_log.jsonl`` -- append-only audit log
     """
 
-    def __init__(self, project_root: Path, *, store_dir: str = ".tapps-brain") -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        store_dir: str = ".tapps-brain",
+        encryption_key: str | None = None,
+    ) -> None:
         self._store_dir = project_root / store_dir / "memory"
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = self._store_dir / "memory.db"
         self._audit_path = self._store_dir / "memory_log.jsonl"
+        self._encryption_key = resolve_memory_encryption_key(encryption_key)
         self._lock = threading.Lock()
         # Cached after _ensure_schema() — schema never changes after startup.
         self._schema_version: int = 0
@@ -108,23 +118,27 @@ class MemoryPersistence:
         """Return the path to the JSONL audit log."""
         return self._audit_path
 
+    @property
+    def encryption_key(self) -> str | None:
+        """Passphrase used for SQLCipher, or ``None`` when the DB is plain SQLite."""
+        return self._encryption_key
+
+    @property
+    def sqlcipher_enabled(self) -> bool:
+        """True when opening ``memory.db`` with SQLCipher (key from arg or env)."""
+        return self._encryption_key is not None
+
     # ------------------------------------------------------------------
     # Connection and schema
     # ------------------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        """Open a SQLite connection with recommended pragmas."""
-        conn = sqlite3.connect(
-            str(self._db_path),
+        """Open a SQLite or SQLCipher connection with recommended pragmas."""
+        return connect_sqlite(
+            self._db_path,
+            encryption_key=self._encryption_key,
             check_same_thread=False,
         )
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        # NORMAL synchronous is safe with WAL and gives better write throughput.
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
 
     def _ensure_schema(self) -> None:
         """Create tables if absent and apply forward migrations."""
@@ -568,9 +582,7 @@ class MemoryPersistence:
             "triggered_by",
         ):
             try:
-                cur.execute(
-                    f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"
-                )
+                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e).lower():
                     raise
@@ -581,16 +593,14 @@ class MemoryPersistence:
         )
 
     def _migrate_v12_to_v13(self, cur: sqlite3.Cursor) -> None:
-        """Add valid_from and valid_until columns for temporal fact validity (GitHub #29, task 040.3).
+        """Add valid_from / valid_until for temporal fact validity (#29, task 040.3).
 
         These are human-friendly aliases for the existing valid_at/invalid_at bi-temporal fields.
         They represent the validity window of a fact as reported by the user or source.
         """
         for col in ("valid_from", "valid_until"):
             try:
-                cur.execute(
-                    f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"
-                )
+                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e).lower():
                     raise
@@ -612,9 +622,7 @@ class MemoryPersistence:
         """
         for col in ("stability", "difficulty"):
             try:
-                cur.execute(
-                    f"ALTER TABLE memories ADD COLUMN {col} REAL NOT NULL DEFAULT 0.0"
-                )
+                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} REAL NOT NULL DEFAULT 0.0")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e).lower():
                     raise
@@ -632,9 +640,7 @@ class MemoryPersistence:
         """
         for col in ("useful_access_count", "total_access_count"):
             try:
-                cur.execute(
-                    f"ALTER TABLE memories ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
-                )
+                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e).lower():
                     raise

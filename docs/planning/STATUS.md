@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-24 (America/Chicago) — **v1.4.2**; profile limits recalibrated (research-backed), max_entries 500→5000
+**Last updated:** 2026-03-28 (America/Chicago) — **v2.0.0**; planning sync with open-issues roadmap and fix_plan
 
-**Package version (PyPI / `pyproject.toml`):** **1.4.2**
+**Package version (PyPI / `pyproject.toml`):** **2.0.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -27,7 +27,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Storage / schema
 
-- **SQLite schema version:** **v11** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
+- **SQLite schema version:** **v15** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
 - **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
 - **v6:** version bump for observability alignment (no new columns).
 - **v7:** `agent_scope` column for Hive propagation (EPIC-011).
@@ -102,12 +102,15 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
 | EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
+| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (040.10 / GitHub #40 open; see `epics/EPIC-040.md` + `.ralph/fix_plan.md`) |
 
 ## Current focus
 
-**Shipped:** feedback (`feedback.py`, MCP/CLI), diagnostics (`diagnostics.py`, circuit breaker, `RecallResult.quality_warning`, MCP/CLI), flywheel (`evaluation.py`, `flywheel.py`, `store.process_feedback()` / `generate_report()`, MCP/CLI), schema **v11**. MCP server exposes **55** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin v1.4.0 uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **55+** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
-**Next (see fix_plan):**
+**Next (canonical queue: `open-issues-roadmap.md`; Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
+- **#19** — Sub-agent memory relay (`not_started`).
+- **#40** — Adaptive hybrid fusion / EPIC-040 **040.10** (`not_started`).
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 - **DEPLOY-OPENCLAW** — distribution tasks deferred per fix_plan.
 

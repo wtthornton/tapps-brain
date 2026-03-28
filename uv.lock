@@ -1266,6 +1266,12 @@ crypto = [
 ]
 
 [[package]]
+name = "pysqlcipher3"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/eb/abc035ae8dda359dff865168dffe39d9a61f115cc6100f53276e6d4554c2/pysqlcipher3-1.2.0.tar.gz", hash = "sha256:3c8033812655947ebf29a809ac5106b2bc69be0274eaccef6b58f4580c8d06c5", size = 102845, upload-time = "2023-01-29T23:14:22.304Z" }
+
+[[package]]
 name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1893,6 +1899,9 @@ dev = [
     { name = "sqlite-vec" },
     { name = "typer" },
 ]
+encryption = [
+    { name = "pysqlcipher3" },
+]
 mcp = [
     { name = "mcp" },
 ]
@@ -1921,6 +1930,7 @@ requires-dist = [
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.20,<3" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.20,<3" },
     { name = "pydantic", specifier = ">=2.12.5,<3" },
+    { name = "pysqlcipher3", marker = "extra == 'encryption'", specifier = ">=1.2.0,<2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<9" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25,<1" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.0,<6" },
@@ -1935,7 +1945,7 @@ requires-dist = [
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12.3,<1" },
     { name = "typer", marker = "extra == 'dev'", specifier = ">=0.12.3,<1" },
 ]
-provides-extras = ["cli", "mcp", "vector", "reranker", "otel", "all", "dev"]
+provides-extras = ["cli", "mcp", "vector", "reranker", "encryption", "otel", "all", "dev"]
 
 [[package]]
 name = "threadpoolctl"

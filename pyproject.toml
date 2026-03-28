@@ -55,6 +55,9 @@ vector = [
 reranker = [
     "cohere>=5.0,<6",
 ]
+encryption = [
+    "pysqlcipher3>=1.2.0,<2",
+]
 otel = [
     "opentelemetry-api>=1.20,<3",
     "opentelemetry-sdk>=1.20,<3",
@@ -89,6 +92,7 @@ markers = [
     "benchmark: performance benchmarks (deselect with '-m not benchmark')",
     "requires_cli: tests requiring the [cli] extra (typer)",
     "requires_mcp: tests requiring the [mcp] extra (mcp SDK)",
+    "requires_encryption: tests requiring SQLCipher (pysqlcipher3 + optional system lib)",
 ]
 filterwarnings = [
     "error::ResourceWarning",
@@ -118,6 +122,8 @@ module = [
     "mcp.*",
     "opentelemetry",
     "opentelemetry.*",
+    "pysqlcipher3",
+    "pysqlcipher3.*",
 ]
 ignore_missing_imports = true
 

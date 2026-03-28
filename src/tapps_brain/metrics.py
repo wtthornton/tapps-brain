@@ -69,6 +69,8 @@ class StoreHealthReport(BaseModel):
     rate_limit_exempt_writes: int = 0
     # Relation graph (M3)
     relation_count: int = 0
+    # Encrypted SQLite (GitHub #23)
+    sqlcipher_enabled: bool = False
 
 
 # ---------------------------------------------------------------------------

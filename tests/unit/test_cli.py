@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1144,6 +1145,7 @@ class TestHealthCommand:
         assert "Entries:" in result.stdout
         assert "Schema:" in result.stdout
         assert "Federation:" in result.stdout
+        assert "SQLCipher:" in result.stdout
 
     def test_health_json(self, project_dir):
         result = runner.invoke(
@@ -1155,6 +1157,173 @@ class TestHealthCommand:
         assert "schema_version" in data
         assert "tier_distribution" in data
         assert data["entry_count"] == 3
+        assert data.get("sqlcipher_enabled") is False
+
+
+class TestMaintenanceSqlcipherCommands:
+    """CLI maintenance encrypt-db / decrypt-db / rekey-db (GitHub #23)."""
+
+    def test_encrypt_db_plain_missing(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            ["maintenance", "encrypt-db", "--project-dir", str(tmp_path), "--passphrase", "x"],
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.stdout + result.stderr
+
+    def test_encrypt_db_import_error(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        plain = mem / "memory.db"
+        sqlite3.connect(str(plain)).close()
+        with patch(
+            "tapps_brain.encryption_migrate.encrypt_plain_database",
+            side_effect=ImportError("no sqlcipher"),
+        ):
+            result = runner.invoke(
+                app,
+                ["maintenance", "encrypt-db", "--project-dir", str(tmp_path), "--passphrase", "x"],
+            )
+        assert result.exit_code == 1
+        assert "no sqlcipher" in result.stdout + result.stderr
+
+    def test_encrypt_db_success_mock(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        plain = mem / "memory.db"
+        sqlite3.connect(str(plain)).close()
+        with patch("tapps_brain.encryption_migrate.encrypt_plain_database"):
+            result = runner.invoke(
+                app,
+                ["maintenance", "encrypt-db", "--project-dir", str(tmp_path), "--passphrase", "x"],
+            )
+        assert result.exit_code == 0
+        assert "Encrypted database" in result.stdout
+
+    def test_decrypt_db_encrypted_missing(self, tmp_path: Path) -> None:
+        out = tmp_path / "plain.db"
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "decrypt-db",
+                "--output",
+                str(out),
+                "--project-dir",
+                str(tmp_path),
+                "--passphrase",
+                "x",
+            ],
+        )
+        assert result.exit_code == 1
+
+    def test_decrypt_db_import_error(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        enc = mem / "memory.db"
+        sqlite3.connect(str(enc)).close()
+        out = tmp_path / "out.db"
+        with patch(
+            "tapps_brain.encryption_migrate.decrypt_to_plain_database",
+            side_effect=ImportError("no decrypt"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "decrypt-db",
+                    "--output",
+                    str(out),
+                    "--project-dir",
+                    str(tmp_path),
+                    "--passphrase",
+                    "x",
+                ],
+            )
+        assert result.exit_code == 1
+
+    def test_decrypt_db_success_mock(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        enc = mem / "memory.db"
+        sqlite3.connect(str(enc)).close()
+        out = tmp_path / "out.db"
+        with patch("tapps_brain.encryption_migrate.decrypt_to_plain_database"):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "decrypt-db",
+                    "--output",
+                    str(out),
+                    "--project-dir",
+                    str(tmp_path),
+                    "--passphrase",
+                    "x",
+                ],
+            )
+        assert result.exit_code == 0
+
+    def test_rekey_db_missing(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "rekey-db",
+                "--project-dir",
+                str(tmp_path),
+                "--old-passphrase",
+                "a",
+                "--new-passphrase",
+                "b",
+            ],
+        )
+        assert result.exit_code == 1
+
+    def test_rekey_db_import_error(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        db = mem / "memory.db"
+        sqlite3.connect(str(db)).close()
+        with patch(
+            "tapps_brain.encryption_migrate.rekey_database",
+            side_effect=ImportError("no rekey"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "rekey-db",
+                    "--project-dir",
+                    str(tmp_path),
+                    "--old-passphrase",
+                    "a",
+                    "--new-passphrase",
+                    "b",
+                ],
+            )
+        assert result.exit_code == 1
+
+    def test_rekey_db_success_mock(self, tmp_path: Path) -> None:
+        mem = tmp_path / ".tapps-brain" / "memory"
+        mem.mkdir(parents=True)
+        db = mem / "memory.db"
+        sqlite3.connect(str(db)).close()
+        with patch("tapps_brain.encryption_migrate.rekey_database"):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "rekey-db",
+                    "--project-dir",
+                    str(tmp_path),
+                    "--old-passphrase",
+                    "a",
+                    "--new-passphrase",
+                    "b",
+                ],
+            )
+        assert result.exit_code == 0
 
 
 # ===================================================================

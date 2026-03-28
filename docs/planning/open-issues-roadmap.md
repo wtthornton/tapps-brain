@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-27 (Week 3 #12 shipped — revision + watch + MCP poll)
+Last updated: 2026-03-28 (reconciled with `.ralph/fix_plan.md` OPEN-ISSUES block)
 Owner: @wtthornton
 
 ## Purpose
@@ -23,7 +23,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 2. #15 - diagnostics health (verify current status, likely close)
 3. #45 - profile-driven onboarding
 4. #12 - hive pub-sub notifications
-5. #23 - SQLCipher at-rest encryption
+5. ~~#23 - SQLCipher at-rest encryption~~ (done)
 6. #19 - sub-agent memory relay
 7. #40 - adaptive hybrid fusion (sqlite-vec prerequisite met)
 8. #18 - hive push / push-tagged
@@ -61,8 +61,8 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ### Week 4 - Security Hardening
 
-- [ ] **#23** `feat: SQLCipher support`
-  - Status: `not_started`
+- [x] **#23** `feat: SQLCipher support`
+  - Status: `done` (`[encryption]` extra / `pysqlcipher3`; `sqlcipher_util` + `encryption_migrate`; `MemoryPersistence` / `FeedbackStore` / `DiagnosticsHistoryStore` / `HiveStore` / `MemoryStore`; CLI `maintenance encrypt-db|decrypt-db|rekey-db`; `StoreHealthReport.sqlcipher_enabled`; `docs/guides/sqlcipher.md`)
   - Target outcome: optional encrypted-at-rest SQLite backend with migration paths
   - Notes: include key management docs and fallback behavior
 
@@ -106,7 +106,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 2 | #15 | diagnostics health | done | - | 1 | - | Validate and close if complete |
 | 3 | #45 | profile-driven onboarding | done | - | 2 | - | Adoption multiplier |
 | 4 | #12 | hive pub-sub notifications | done | - | 3 | - | Revision + watch + MCP poll |
-| 5 | #23 | SQLCipher encryption | not_started | - | 4 | - | Security/compliance |
+| 5 | #23 | SQLCipher encryption | done | - | 4 | - | Optional `[encryption]` + CLI migrate |
 | 6 | #19 | sub-agent memory relay | not_started | - | 5 | - | Interop and continuity |
 | 7 | #40 | adaptive hybrid fusion | not_started | - | 5 | - | Quality optimization |
 | 8 | #18 | hive push / push-tagged | not_started | - | 6 | - | Sharing ergonomics |
@@ -133,19 +133,22 @@ Copy this section at the end of each week:
   - #XX, #YY
 ```
 
-## Weekly Update - 2026-03-27
+## Weekly Update - 2026-03-28
 
 - Completed:
-  - [ ] Triage pass completed for all open feature issues (labels + decision comments).
+  - [x] #30 sqlite-vec local vector search (`done`).
+  - [x] #15 diagnostics health (`done`).
+  - [x] #45 profile-driven onboarding (`done`).
+  - [x] #12 hive pub-sub / notifications (`done`).
+  - [x] #23 SQLCipher at-rest encryption (`done`).
 - In progress:
-  - [ ] #30 sqlite-vec local vector search (core foundation).
+  - None (next queue item: **#19** sub-agent memory relay).
 - Blocked:
-  - [ ] #40 adaptive hybrid fusion (blocked on #30 dependency).
+  - None (#40 unblocked; sqlite-vec prerequisite shipped).
 - Scope changes:
-  - Added agent governance and feature-intake enforcement docs/templates.
-  - Raised **#15** (diagnostics health) to priority 2 / Week 1 for early validation and close.
+  - None this week (planning sync only).
 - Next week plan:
-  - #30, #15, #45
+  - #19, #40 (Week 5 interop + hybrid fusion).
 
 ## Change Log
 
@@ -153,3 +156,4 @@ Copy this section at the end of each week:
 - 2026-03-27: Marked #30 as in-progress and added first weekly execution update.
 - 2026-03-27: Moved **#15** (diagnostics health) to priority 2 and Week 1; renumbered downstream priorities.
 - 2026-03-27: **#12** shipped — Hive write revision counter, `hive watch`, MCP `hive_write_revision` / `hive_wait_write`, `.hive_write_notify` sidecar; **#40** unblocked from #30 in roadmap.
+- 2026-03-28: **#23** marked `done` in roadmap and tracking table; `.ralph/fix_plan.md` OPEN-ISSUES mirror updated (OR-5 checked); weekly update rewritten to match shipped state; **EPIC-040** epic stub added under `docs/planning/epics/` pointing at fix_plan for full story list.

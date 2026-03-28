@@ -29,7 +29,7 @@
 
 ### OPEN-ISSUES-ROADMAP: GitHub delivery priority
 
-**Source of truth:** `docs/planning/open-issues-roadmap.md` (last updated: 2026-03-27).  
+**Source of truth:** `docs/planning/open-issues-roadmap.md` (last updated: 2026-03-28).  
 **Legend:** `not_started` | `in_progress` | `blocked` | `done` | `closed`
 
 Do **one unchecked item at a time** in the order below (do not skip ahead for lower-priority issues).
@@ -40,9 +40,9 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 | 2 | #15 | Diagnostics health command + MCP | `done` | CLI + MCP + store health sqlite-vec fields |
 | 3 | #45 | Profile-driven agent onboarding | `done` | `profile onboard` + `memory_profile_onboarding` |
 | 4 | #12 | Hive pub-sub / push notifications | `done` | Revision + `hive watch` + MCP poll (2026-03-27) |
-| 5 | #23 | SQLCipher at-rest encryption | `not_started` | Optional encrypted SQLite; key mgmt docs |
+| 5 | #23 | SQLCipher at-rest encryption | `done` | Optional `[encryption]` extra, migrate CLI, `docs/guides/sqlcipher.md` (2026-03-27) |
 | 6 | #19 | Sub-agent memory relay | `not_started` | Portable relay format; tolerate partial invalid items |
-| 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights |
+| 7 | #40 | Adaptive hybrid fusion | `not_started` | Maps to EPIC-040 **040.10** — query-aware BM25/vector weights (#30 prerequisite met) |
 | 8 | #18 | Hive push / push-tagged | `not_started` | Promote project memories to hive |
 | 9 | #21 | Store stale listing | `not_started` | List stale entries; machine-readable output |
 | 10 | #20 | Profile tier migration | `not_started` | Safe tier remap; audit + dry-run |
@@ -54,9 +54,9 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 - [x] **OR-2** GitHub **#15** diagnostics health (`done` — validate on GitHub; CLI + MCP + health fields)
 - [x] **OR-3** GitHub **#45** profile-driven onboarding (`done` — CLI + MCP)
 - [x] **OR-4** GitHub **#12** hive pub-sub (`done` — 2026-03-27)
-- [ ] **OR-5** GitHub **#23** SQLCipher (`not_started`)
+- [x] **OR-5** GitHub **#23** SQLCipher (`done` — 2026-03-27)
 - [ ] **OR-6** GitHub **#19** sub-agent memory relay (`not_started`)
-- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`not_started`; #30 shipped)
+- [ ] **OR-7** GitHub **#40** adaptive hybrid fusion (`not_started`; sqlite-vec / #30 shipped)
 - [ ] **OR-8** GitHub **#18** hive push / push-tagged (`not_started`)
 - [ ] **OR-9** GitHub **#21** store stale (`not_started`)
 - [ ] **OR-10** GitHub **#20** profile migrate (`not_started`)
@@ -171,7 +171,7 @@ Do **one unchecked item at a time** in the order below (do not skip ahead for lo
 ### Phase 3: Search & Retrieval
 
 - [x] **040.9** sqlite-vec integration (GitHub #30): Add sqlite-vec as optional dependency. Create `memory_vec` virtual table for vector embeddings. Implement local embedding via all-MiniLM-L6-v2 ONNX (optional dep). Compute embeddings on write when available. Unify with BM25 via existing RRF fusion. **Roadmap:** open-issues **OR-1** / priority 1. *(2026-03-27)*
-- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9. **Roadmap:** open-issues **OR-7** / priority 7 (`blocked` until #30).
+- [ ] **040.10** Adaptive hybrid fusion (GitHub #40): Add query-type detection (keyword-heavy vs semantic/vague). Adjust BM25 vs vector weight α per query characteristics. Depends on 040.9. **Roadmap:** open-issues **OR-7** / priority 7 (`not_started`; sqlite-vec / #30 shipped).
 - [x] **040.11** YAKE/RAKE key generation (GitHub #42): Implement RAKE algorithm (~50 lines pure Python) for automatic memory key generation from text. Use in extraction.py and session summarization.
 
 ### Phase 4: Consolidation & Summarization

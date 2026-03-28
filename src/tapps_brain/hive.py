@@ -28,6 +28,8 @@ import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from tapps_brain.sqlcipher_util import connect_sqlite, resolve_hive_encryption_key
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 _DEFAULT_HIVE_DIR = Path.home() / ".tapps-brain" / "hive"
@@ -148,9 +150,10 @@ class HiveStore:
     in different namespaces without conflict.
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Path | None = None, *, encryption_key: str | None = None) -> None:
         self._db_path = db_path or (_DEFAULT_HIVE_DIR / "hive.db")
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._encryption_key = resolve_hive_encryption_key(encryption_key)
         self._lock = threading.Lock()
         self._conn = self._connect()
         self._ensure_schema()
@@ -160,15 +163,11 @@ class HiveStore:
     # ------------------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(
-            str(self._db_path),
+        return connect_sqlite(
+            self._db_path,
+            encryption_key=self._encryption_key,
             check_same_thread=False,
         )
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
 
     def _ensure_schema(self) -> None:
         with self._lock:

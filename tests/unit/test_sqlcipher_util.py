@@ -1,0 +1,125 @@
+"""Unit tests for SQLCipher helpers (GitHub #23)."""
+
+from __future__ import annotations
+
+import sqlite3
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+from tapps_brain import sqlcipher_util
+from tapps_brain.sqlcipher_util import (
+    connect_sqlite,
+    pragma_key_statement,
+    resolve_hive_encryption_key,
+    resolve_memory_encryption_key,
+)
+
+
+def test_resolve_memory_encryption_key_explicit_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAPPS_BRAIN_ENCRYPTION_KEY", "from-env")
+    assert resolve_memory_encryption_key("  explicit  ") == "explicit"
+    assert resolve_memory_encryption_key("") is None
+    assert resolve_memory_encryption_key("   ") is None
+
+
+def test_resolve_memory_encryption_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAPPS_BRAIN_ENCRYPTION_KEY", raising=False)
+    assert resolve_memory_encryption_key(None) is None
+    monkeypatch.setenv("TAPPS_BRAIN_ENCRYPTION_KEY", "  k  ")
+    assert resolve_memory_encryption_key(None) == "k"
+
+
+def test_resolve_hive_encryption_key_hive_env_then_shared(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_ENCRYPTION_KEY", raising=False)
+    assert resolve_hive_encryption_key(None) is None
+    monkeypatch.setenv("TAPPS_BRAIN_ENCRYPTION_KEY", "mem")
+    assert resolve_hive_encryption_key(None) == "mem"
+    monkeypatch.setenv("TAPPS_BRAIN_HIVE_ENCRYPTION_KEY", "hive-only")
+    assert resolve_hive_encryption_key(None) == "hive-only"
+
+
+def test_resolve_hive_encryption_key_explicit_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAPPS_BRAIN_ENCRYPTION_KEY", "fallback")
+    assert resolve_hive_encryption_key("  ") is None
+    assert resolve_hive_encryption_key("ok") == "ok"
+
+
+def test_pragma_key_statement_escapes_quotes() -> None:
+    assert "''" in pragma_key_statement("a'b")
+
+
+def test_connect_sqlite_plain_tmp_path(tmp_path: Path) -> None:
+    db = tmp_path / "p.db"
+    conn = connect_sqlite(db, encryption_key=None, check_same_thread=False)
+    try:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.commit()
+        mode = conn.execute("PRAGMA journal_mode").fetchone()
+        assert mode is not None
+        assert str(mode[0]).upper() == "WAL"
+    finally:
+        conn.close()
+
+
+def test_connect_sqlite_encrypted_requires_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sqlcipher_util, "pysqlcipher_dbapi2", lambda: None)
+    db = tmp_path / "e.db"
+    with pytest.raises(ImportError, match="pysqlcipher3"):
+        connect_sqlite(db, encryption_key="secret", check_same_thread=False)
+
+
+def test_pysqlcipher_dbapi2_returns_connect_with_injected_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = types.ModuleType("pysqlcipher3")
+    sub = types.ModuleType("pysqlcipher3.dbapi2")
+    sub.connect = sqlite3.connect
+    monkeypatch.setitem(sys.modules, "pysqlcipher3", root)
+    monkeypatch.setitem(sys.modules, "pysqlcipher3.dbapi2", sub)
+    root.dbapi2 = sub  # type: ignore[attr-defined]
+    fn = sqlcipher_util.pysqlcipher_dbapi2()
+    assert fn is sqlite3.connect
+
+
+def test_connect_sqlite_encryption_key_with_plain_sqlite_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If connect factory is std sqlite3, ``cipher_version`` is empty after ``PRAGMA key``."""
+    monkeypatch.setattr(sqlcipher_util, "pysqlcipher_dbapi2", lambda: sqlite3.connect)
+    db = tmp_path / "plain.db"
+    with pytest.raises(sqlite3.DatabaseError, match=r"cipher_version|SQLCipher"):
+        connect_sqlite(db, encryption_key="secret", check_same_thread=False)
+
+
+@pytest.mark.requires_encryption
+@pytest.mark.skipif(
+    not sqlcipher_util.sqlcipher_available(),
+    reason="pysqlcipher3 / SQLCipher not available",
+)
+def test_connect_sqlite_encrypted_roundtrip(tmp_path: Path) -> None:
+    db = tmp_path / "enc.db"
+    conn = connect_sqlite(db, encryption_key="k1", check_same_thread=False)
+    try:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.execute("INSERT INTO t VALUES (1)")
+        conn.commit()
+        ver = conn.execute("PRAGMA cipher_version").fetchone()
+        assert ver is not None and str(ver[0]).strip()
+    finally:
+        conn.close()
+
+    conn2 = connect_sqlite(db, encryption_key="k1", check_same_thread=False)
+    try:
+        row = conn2.execute("SELECT x FROM t").fetchone()
+        assert row is not None and int(row[0]) == 1
+    finally:
+        conn2.close()
+
+    with pytest.raises(sqlite3.DatabaseError):
+        connect_sqlite(db, encryption_key="wrong", check_same_thread=False)

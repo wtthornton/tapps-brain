@@ -10,7 +10,6 @@ import importlib
 import json
 import math
 import random
-import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -23,6 +22,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from tapps_brain._protocols import HealthDimension
+from tapps_brain.sqlcipher_util import connect_sqlite
 
 if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
@@ -434,12 +434,14 @@ def run_diagnostics(
 class DiagnosticsHistoryStore:
     """Append-only diagnostics history in the project memory.db."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, encryption_key: str | None = None) -> None:
         self._db_path = db_path
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn = connect_sqlite(
+            db_path,
+            encryption_key=encryption_key,
+            check_same_thread=False,
+        )
 
     def close(self) -> None:
         with self._lock:

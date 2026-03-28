@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
+import sqlite3  # noqa: TC003
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 from pydantic import BaseModel, Field, field_validator
+
+from tapps_brain.sqlcipher_util import connect_sqlite
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -252,6 +254,7 @@ class FeedbackStore:
     Args:
         db_path: Path to the SQLite database file (usually ``memory.db``).
         audit_path: Path to the JSONL audit log (for audit emission).
+        encryption_key: Same passphrase as ``MemoryPersistence`` when using SQLCipher.
     """
 
     def __init__(
@@ -259,10 +262,13 @@ class FeedbackStore:
         db_path: Path,
         audit_path: Path | None = None,
         config: FeedbackConfig | None = None,
+        *,
+        encryption_key: str | None = None,
     ) -> None:
         self._db_path = db_path
         self._audit_path = audit_path
         self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
+        self._encryption_key = encryption_key
         self._lock = threading.Lock()
         self._conn = self._connect()
         self._ensure_table()
@@ -272,13 +278,12 @@ class FeedbackStore:
     # ------------------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        """Open a WAL-mode SQLite connection."""
-        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
+        """Open a WAL-mode SQLite or SQLCipher connection (same key as ``MemoryPersistence``)."""
+        return connect_sqlite(
+            self._db_path,
+            encryption_key=self._encryption_key,
+            check_same_thread=False,
+        )
 
     def _ensure_table(self) -> None:
         """Create ``feedback_events`` table and indexes if not present (idempotent)."""

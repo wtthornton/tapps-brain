@@ -142,6 +142,7 @@ class TestHealthReportIntegration:
 
         # Oldest entry age should be very small (just created)
         assert health.oldest_entry_age_days < 1.0
+        assert health.sqlcipher_enabled is False
 
         store.close()
 
@@ -150,4 +151,5 @@ class TestHealthReportIntegration:
         health = store.health()
         assert health.entry_count == 0
         assert health.tier_distribution == {}
+        assert health.sqlcipher_enabled is False
         store.close()

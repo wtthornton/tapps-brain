@@ -1219,8 +1219,129 @@ def maintenance_health(
                 f"Federation: {'enabled' if report.federation_enabled else 'disabled'}"
                 f" ({report.federation_project_count} projects)"
             )
+            typer.echo(f"SQLCipher: {'enabled' if report.sqlcipher_enabled else 'disabled'}")
     finally:
         store.close()
+
+
+PassphraseOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--passphrase",
+        "-p",
+        envvar="TAPPS_BRAIN_ENCRYPTION_KEY",
+        help="SQLCipher passphrase (or set TAPPS_BRAIN_ENCRYPTION_KEY).",
+    ),
+]
+
+
+def _require_passphrase(value: str | None) -> str:
+    if value and value.strip():
+        return value.strip()
+    prompted = typer.prompt("Passphrase", hide_input=True)
+    return str(prompted)
+
+
+@maintenance_app.command("encrypt-db")
+def maintenance_encrypt_db(
+    project_dir: ProjectDir = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Encrypted DB path (default: memory.db.encrypted beside memory.db).",
+        ),
+    ] = None,
+    passphrase: PassphraseOpt = None,
+) -> None:
+    """Copy plain memory.db to SQLCipher (install tapps-brain[encryption])."""
+    from tapps_brain.encryption_migrate import encrypt_plain_database
+
+    root = _resolve_project_dir(project_dir)
+    plain = root / ".tapps-brain" / "memory" / "memory.db"
+    if not plain.is_file():
+        typer.echo(f"Plain database not found: {plain}", err=True)
+        raise typer.Exit(code=1)
+    dest = output if output is not None else plain.parent / f"{plain.name}.encrypted"
+    pw = _require_passphrase(passphrase)
+    try:
+        encrypt_plain_database(plain, dest, pw)
+    except ImportError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Encrypted database written to {dest}")
+    typer.echo("Back up first, then replace memory.db; use the same passphrase (env or API).")
+
+
+@maintenance_app.command("decrypt-db")
+def maintenance_decrypt_db(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Plain SQLite output file path.",
+        ),
+    ],
+    project_dir: ProjectDir = None,
+    passphrase: PassphraseOpt = None,
+) -> None:
+    """Copy encrypted memory.db to a new plain SQLite file."""
+    from tapps_brain.encryption_migrate import decrypt_to_plain_database
+
+    root = _resolve_project_dir(project_dir)
+    enc = root / ".tapps-brain" / "memory" / "memory.db"
+    if not enc.is_file():
+        typer.echo(f"Database not found: {enc}", err=True)
+        raise typer.Exit(code=1)
+    pw = _require_passphrase(passphrase)
+    try:
+        decrypt_to_plain_database(enc, pw, output)
+    except ImportError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Plain database written to {output}")
+
+
+@maintenance_app.command("rekey-db")
+def maintenance_rekey_db(
+    project_dir: ProjectDir = None,
+    old_passphrase: Annotated[
+        str | None,
+        typer.Option(
+            "--old-passphrase",
+            envvar="TAPPS_BRAIN_ENCRYPTION_KEY",
+            help="Current SQLCipher passphrase.",
+        ),
+    ] = None,
+    new_passphrase: Annotated[
+        str | None,
+        typer.Option("--new-passphrase", help="New SQLCipher passphrase."),
+    ] = None,
+) -> None:
+    """Rotate SQLCipher passphrase in place on project memory.db."""
+    from tapps_brain.encryption_migrate import rekey_database
+
+    root = _resolve_project_dir(project_dir)
+    db_path = root / ".tapps-brain" / "memory" / "memory.db"
+    if not db_path.is_file():
+        typer.echo(f"Database not found: {db_path}", err=True)
+        raise typer.Exit(code=1)
+    old_pw = _require_passphrase(old_passphrase)
+    if new_passphrase and new_passphrase.strip():
+        new_pw = new_passphrase.strip()
+    else:
+        new_pw = str(typer.prompt("New passphrase", hide_input=True)).strip()
+    if not new_pw:
+        typer.echo("New passphrase must be non-empty.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        rekey_database(db_path, old_pw, new_pw)
+    except ImportError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo("Passphrase rotated. Update TAPPS_BRAIN_ENCRYPTION_KEY to the new value.")
 
 
 @store_app.command("metrics")
