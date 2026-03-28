@@ -2036,6 +2036,45 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": str(exc), "imported": 0, "skipped": 0, "errors": 1})
 
     # ------------------------------------------------------------------
+    # Session end tool (Issue #17 — episodic memory capture)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def tapps_brain_session_end(
+        summary: str,
+        tags: list[str] | None = None,
+        daily_note: bool = False,
+    ) -> str:
+        """Record an end-of-session episodic memory entry.
+
+        Saves a short-term episodic memory tagged with ``date``,
+        ``session``, and ``episodic``.  Call this at the end of a
+        session to preserve a concise record of what happened.
+
+        Args:
+            summary: Concise summary of session work, decisions, and outcomes.
+            tags: Optional extra tags to attach alongside the default
+                ``date``, ``session``, and ``episodic`` tags.
+            daily_note: When ``True``, also appends the summary to today's
+                ``memory/YYYY-MM-DD.md`` daily note in the project root.
+
+        Returns:
+            JSON object with ``key``, ``status``, ``tags``, ``tier``, and
+            ``scope`` on success, or an ``error`` field on failure.
+        """
+        from tapps_brain.session_summary import session_summary_save
+
+        result = session_summary_save(
+            summary,
+            tags=tags,
+            project_dir=resolved_dir,
+            workspace_dir=resolved_dir,
+            daily_note=daily_note,
+            source_agent=agent_id,
+        )
+        return json.dumps(result, default=str)
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store

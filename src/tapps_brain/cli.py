@@ -90,6 +90,9 @@ app.add_typer(feedback_app, name="feedback")
 app.add_typer(diagnostics_app, name="diagnostics")
 app.add_typer(flywheel_app, name="flywheel")
 
+session_app = typer.Typer(help="Session lifecycle commands.", no_args_is_help=True)
+app.add_typer(session_app, name="session")
+
 # ---------------------------------------------------------------------------
 # Global options
 # ---------------------------------------------------------------------------
@@ -2384,6 +2387,80 @@ def flywheel_hive_feedback_cmd(
         _output(out, as_json=as_json)
     finally:
         store.close()
+
+
+# ===================================================================
+# SESSION COMMANDS (Issue #17)
+# ===================================================================
+
+
+@session_app.command("end")
+def session_end_cmd(
+    summary: Annotated[str, typer.Argument(help="Session summary text.")],
+    project_dir: ProjectDir = None,
+    tags: Annotated[
+        list[str],
+        typer.Option("--tag", "-t", help="Additional tags (can be repeated)."),
+    ] = [],  # noqa: B006
+    daily_note: Annotated[
+        bool,
+        typer.Option(
+            "--daily-note",
+            help="Append formatted summary to memory/YYYY-MM-DD.md.",
+        ),
+    ] = False,
+    workspace_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--workspace-dir",
+            "-w",
+            help="Workspace root for --daily-note (defaults to project-dir or cwd).",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Record an end-of-session episodic memory entry.
+
+    Creates a short-term episodic memory tagged with 'date', 'session',
+    and 'episodic'. Optionally appends a formatted summary to today's
+    daily note file (memory/YYYY-MM-DD.md).
+    """
+    from tapps_brain.session_summary import session_summary_save
+
+    root = _resolve_project_dir(project_dir)
+    ws = workspace_dir.resolve() if workspace_dir else root
+
+    all_tags = list(tags)
+    result = session_summary_save(summary, tags=all_tags, project_dir=root)
+
+    if daily_note:
+        _write_daily_note(ws, summary)
+
+    if as_json:
+        _output(result, as_json=True)
+    else:
+        key = result.get("key", "")
+        typer.secho(f"✓ Session memory saved: {key}", fg=typer.colors.GREEN)
+        if daily_note:
+            typer.echo(f"  Daily note updated in {ws / 'memory'}")
+
+
+def _write_daily_note(workspace: Path, summary: str) -> None:
+    """Append a formatted session summary to today's daily note file."""
+    import datetime
+
+    today = datetime.date.today().isoformat()
+    note_dir = workspace / "memory"
+    note_dir.mkdir(parents=True, exist_ok=True)
+    note_path = note_dir / f"{today}.md"
+
+    from datetime import UTC, datetime as dt
+
+    timestamp = dt.now(tz=UTC).strftime("%H:%M UTC")
+    block = f"\n## Session End — {timestamp}\n\n{summary}\n"
+
+    with open(note_path, "a") as f:
+        f.write(block)
 
 
 # ---------------------------------------------------------------------------
