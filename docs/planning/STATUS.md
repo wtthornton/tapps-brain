@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-28 (America/Chicago) — **v2.0.0**; planning sync with open-issues roadmap and fix_plan
+**Last updated:** 2026-03-28 (America/Chicago) — **v2.0.1**; planning sync with open-issues roadmap and fix_plan
 
-**Package version (PyPI / `pyproject.toml`):** **2.0.0**
+**Package version (PyPI / `pyproject.toml`):** **2.0.1**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -106,7 +106,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.0 per fix_plan **040.22**), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **63** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **63** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (canonical queue: `open-issues-roadmap.md`; Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
 - **Open GitHub issues** — **#46**, **#48**, **#47** closed/mitigated in repo (unwrap MCP recall + tier normalization + `tapps_memory_*` / `openclaw.md`). **#49** remains epic; split using `docs/planning/design-issue-49-multi-scope-memory.md`.

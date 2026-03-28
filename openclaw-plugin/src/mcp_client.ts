@@ -139,7 +139,7 @@ export class McpClient {
     }
 
     this.client = new Client(
-      { name: "tapps-brain-openclaw", version: "1.4.0" },
+      { name: "tapps-brain-openclaw", version: "2.0.1" },
       {},
     );
 

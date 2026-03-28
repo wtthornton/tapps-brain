@@ -21,6 +21,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **GC / decay alignment:** CLI `maintenance gc`, MCP `maintenance_gc`, `MemoryStore.gc()`, and `health()` GC candidate counts use profile-derived `DecayConfig` plus store `gc_config` (same rules as `list_gc_stale_details`).
 
+## v2.0.1 (2026-03-28)
+
+### Fixed
+
+- **OpenClaw plugin (GitHub #46):** Unwrap MCP `CallToolResult` / structured content when calling recall tools (`mcp_tool_text`, `McpClient.callTool`) so `assemble()` receives memory text.
+- **Memory injection:** Include recall `value` in assembled summaries (`inject_memories`).
+- **Save tier aliases (GitHub #48):** `tier_normalize.normalize_save_tier` on `MemoryStore.save`, `memory_save` MCP, and relay import; profile layer names matched before global aliases.
+
+### Changed
+
+- **Tool naming (GitHub #47, mitigated):** Plugin registers `tapps_memory_search` / `tapps_memory_get`; host hygiene documented in `docs/guides/openclaw.md`.
+
+### Added
+
+- **Planning:** `docs/planning/design-issue-49-multi-scope-memory.md` for epic #49 (named groups vs Hive namespaces vs profile scopes).
+
+### Chore
+
+- Ruff 0.15.x alignment, `ruff format`, and strict mypy fixes across core and tests.
+
 ## v2.0.0 (2026-03-26)
 
 ### Research-Driven Upgrades (EPIC-040)
