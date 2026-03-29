@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
+from tapps_brain.memory_group import MEMORY_GROUP_UNSET, normalize_memory_group
 from tapps_brain.models import (
     MemoryEntry,
     MemoryScope,
@@ -350,6 +351,7 @@ class MemoryStore:
         source_channel: str = "",
         source_message_id: str = "",
         triggered_by: str = "",
+        memory_group: str | None | object = MEMORY_GROUP_UNSET,
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
@@ -374,6 +376,10 @@ class MemoryStore:
             source_channel: Channel/surface where memory originated (GitHub #38).
             source_message_id: Message ID that triggered this memory (GitHub #38).
             triggered_by: Event or action that triggered this memory (GitHub #38).
+            memory_group: Optional project-local partition (GitHub #49). Use
+                :data:`~tapps_brain.memory_group.MEMORY_GROUP_UNSET` to preserve
+                the existing value on update; pass ``None`` or ``\"\"`` after
+                normalize to clear; pass a non-empty string to set.
             tags: Tags for categorization.
             branch: Git branch name (required when scope=branch).
             confidence: Confidence score (-1.0 for auto from source).
@@ -399,6 +405,16 @@ class MemoryStore:
             }
 
         tier = normalize_save_tier(tier, self._profile)
+
+        _mg_explicit: str | None | object = MEMORY_GROUP_UNSET
+        if memory_group is not MEMORY_GROUP_UNSET:
+            if memory_group is None:
+                _mg_explicit = None
+            else:
+                try:
+                    _mg_explicit = normalize_memory_group(str(memory_group))
+                except ValueError as exc:
+                    return {"error": "invalid_memory_group", "message": str(exc)}
 
         # Write rules validation (Epic 65.17)
         wr_error = _validate_write_rules(key, value, self._write_rules)
@@ -507,6 +523,13 @@ class MemoryStore:
             with self._lock:
                 existing = self._entries.get(key)
 
+                if memory_group is MEMORY_GROUP_UNSET:
+                    mg_for_entry: str | None = (
+                        existing.memory_group if existing is not None else None
+                    )
+                else:
+                    mg_for_entry = cast("str | None", _mg_explicit)
+
                 # EPIC-010: Accept profile layer names as tier values.
                 # Try MemoryTier enum first; if it fails, accept the raw
                 # string when the active profile defines a layer with that name.
@@ -551,6 +574,7 @@ class MemoryStore:
                     source_channel=source_channel,
                     source_message_id=source_message_id,
                     triggered_by=triggered_by,
+                    memory_group=mg_for_entry,
                 )
 
                 # Compute integrity hash (H4a)
@@ -760,6 +784,7 @@ class MemoryStore:
         tier: str | None = None,
         scope: str | None = None,
         tags: list[str] | None = None,
+        memory_group: str | None = None,
         include_superseded: bool = True,
     ) -> list[MemoryEntry]:
         """List entries with optional filters.
@@ -768,6 +793,8 @@ class MemoryStore:
             tier: Filter by tier.
             scope: Filter by scope.
             tags: Filter by tags.
+            memory_group: When set, only entries in this project-local group
+                (``None`` on entry means ungrouped; omit this arg to list all).
             include_superseded: When ``False``, exclude temporally invalid
                 (superseded/expired) entries. Default ``True`` for backward
                 compatibility.
@@ -779,6 +806,8 @@ class MemoryStore:
             entries = [e for e in entries if e.tier == tier]
         if scope is not None:
             entries = [e for e in entries if e.scope == scope]
+        if memory_group is not None:
+            entries = [e for e in entries if e.memory_group == memory_group]
         if tags:
             tag_set = set(tags)
             entries = [e for e in entries if tag_set.intersection(e.tags)]
@@ -786,6 +815,12 @@ class MemoryStore:
             entries = [e for e in entries if e.is_temporally_valid()]
 
         return entries
+
+    def list_memory_groups(self) -> list[str]:
+        """Return sorted distinct project-local ``memory_group`` values (GitHub #49)."""
+        with self._lock:
+            names = {e.memory_group for e in self._entries.values() if e.memory_group}
+        return sorted(names)
 
     def delete(self, key: str) -> bool:
         """Delete a memory entry by key. Returns True if deleted."""
@@ -810,6 +845,7 @@ class MemoryStore:
         tags: list[str] | None = None,
         tier: str | None = None,
         scope: str | None = None,
+        memory_group: str | None = None,
         as_of: str | None = None,
         include_historical: bool = False,
     ) -> list[MemoryEntry]:
@@ -820,6 +856,7 @@ class MemoryStore:
             tags: Filter by tags.
             tier: Filter by tier.
             scope: Filter by scope.
+            memory_group: When set, restrict to this project-local group (GitHub #49).
             as_of: ISO-8601 timestamp for point-in-time temporal filtering.
                 When set, only entries valid at that time are returned.
                 When ``None`` (default), temporally invalid entries are excluded
@@ -830,12 +867,14 @@ class MemoryStore:
         """
         self._metrics.increment("store.search")
         with MetricsTimer(self._metrics, "store.search_ms"):
-            results = self._persistence.search(query)
+            results = self._persistence.search(query, memory_group=memory_group)
 
             if tier is not None:
                 results = [r for r in results if r.tier == tier]
             if scope is not None:
                 results = [r for r in results if r.scope == scope]
+            if memory_group is not None:
+                results = [r for r in results if r.memory_group == memory_group]
             if tags:
                 tag_set = set(tags)
                 results = [r for r in results if tag_set.intersection(r.tags)]

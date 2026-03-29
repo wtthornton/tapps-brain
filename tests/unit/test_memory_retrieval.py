@@ -482,7 +482,10 @@ class TestBM25Integration:
         store = _make_store(entries)
 
         def mock_vector_search(
-            query: str, store: object, limit: int = 20
+            query: str,
+            store: object,
+            limit: int = 20,
+            **kwargs: object,
         ) -> list[tuple[str, float]]:
             return [("b", 0.9), ("a", 0.7), ("c", 0.5)][:limit]
 
@@ -498,10 +501,14 @@ class TestBM25Integration:
         retriever = MemoryRetriever(semantic_enabled=True)
         store = _make_store(entries)
 
-        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+        def fake_candidates(
+            q: str, s: object, *args: object, **kwargs: object
+        ) -> list[tuple[MemoryEntry, float]]:
             return [(entries[0], 1.0)]
 
-        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+        def fake_vector(
+            q: str, s: object, limit: int = 20, **kwargs: object
+        ) -> list[tuple[str, float]]:
             return [("only-b", 0.99)]
 
         with (
@@ -517,10 +524,14 @@ class TestBM25Integration:
         retriever = MemoryRetriever(semantic_enabled=True)
         store = _make_store(entries)
 
-        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+        def fake_candidates(
+            q: str, s: object, *args: object, **kwargs: object
+        ) -> list[tuple[MemoryEntry, float]]:
             return [(entries[0], 1.0)]
 
-        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+        def fake_vector(
+            q: str, s: object, limit: int = 20, **kwargs: object
+        ) -> list[tuple[str, float]]:
             return [("only-b", 0.99)]
 
         with (
@@ -537,10 +548,14 @@ class TestBM25Integration:
         retriever = MemoryRetriever(semantic_enabled=True, hybrid_config=cfg)
         store = _make_store(entries)
 
-        def fake_candidates(q: str, s: object) -> list[tuple[MemoryEntry, float]]:
+        def fake_candidates(
+            q: str, s: object, *args: object, **kwargs: object
+        ) -> list[tuple[MemoryEntry, float]]:
             return [(entries[0], 1.0)]
 
-        def fake_vector(q: str, s: object, limit: int = 20) -> list[tuple[str, float]]:
+        def fake_vector(
+            q: str, s: object, limit: int = 20, **kwargs: object
+        ) -> list[tuple[str, float]]:
             return [("only-b", 0.99)]
 
         with (

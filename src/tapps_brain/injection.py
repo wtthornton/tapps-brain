@@ -68,6 +68,7 @@ def inject_memories(
     decay_config: DecayConfig | None = None,
     config: InjectionConfig | None = None,
     scoring_config: ScoringConfig | None = None,
+    memory_group: str | None = None,
 ) -> dict[str, Any]:
     """Search for and format relevant memories for injection.
 
@@ -80,6 +81,8 @@ def inject_memories(
         scoring_config: Optional scoring configuration (weights + source_trust
             multipliers). When ``None``, the store's active profile scoring
             config is used if available, otherwise module defaults apply.
+        memory_group: When set, restrict ranked retrieval to this project-local
+            group (GitHub #49). Hive merge in recall is unchanged.
 
     Returns:
         Dict with:
@@ -139,6 +142,7 @@ def inject_memories(
             store,
             limit=max_inject,
             min_confidence=min_confidence,
+            memory_group=memory_group,
         )
     except Exception:
         logger.warning(

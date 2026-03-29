@@ -141,7 +141,7 @@ class TestMemoryPersistence:
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
         # v15 Bayesian confidence counters (GitHub #35)
-        assert persistence.get_schema_version() == 15
+        assert persistence.get_schema_version() == 16
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -316,14 +316,14 @@ class TestSchemaMigrations:
         conn.close()
 
     def test_migrate_v1_to_current(self, tmp_path: Path) -> None:
-        """Opening a v1 DB should migrate it all the way to v11."""
+        """Opening a v1 DB should migrate it all the way to current schema."""
         store_dir = tmp_path / ".tapps-brain" / "memory"
         store_dir.mkdir(parents=True)
         db_path = str(store_dir / "memory.db")
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 15
+        assert p.get_schema_version() == 16
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -352,6 +352,8 @@ class TestSchemaMigrations:
         assert "feedback_events" in tables
         # Verify v10+ migration: diagnostics_history table exists
         assert "diagnostics_history" in tables
+        # Verify v16: project-local memory_group column (GitHub #49)
+        assert "memory_group" in columns
         p.close()
 
     def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
@@ -373,7 +375,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 15
+        assert p.get_schema_version() == 16
 
         tables = [
             r[0]
@@ -415,7 +417,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 15
+        assert p.get_schema_version() == 16
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -438,7 +440,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 15
+        assert p.get_schema_version() == 16
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -507,7 +509,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 15
+        assert p.get_schema_version() == 16
 
         # Verify the integrity_hash column was added by the v7→v8 migration.
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()

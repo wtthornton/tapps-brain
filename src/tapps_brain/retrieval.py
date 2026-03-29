@@ -205,6 +205,7 @@ class MemoryRetriever:
         as_of: str | None = None,
         include_superseded: bool = False,
         include_historical: bool = False,
+        memory_group: str | None = None,
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
@@ -215,6 +216,7 @@ class MemoryRetriever:
         Args:
             query: Search query string.
             store: Memory store to search.
+            memory_group: When set, restrict to this project-local group (GitHub #49).
             limit: Max results (default 10, max 50).
             include_contradicted: Include contradicted memories.
             include_sources: Include source entries of consolidated memories
@@ -247,9 +249,11 @@ class MemoryRetriever:
 
         # Epic 65.8: hybrid path when semantic enabled
         if self._semantic_enabled:
-            candidates = self._get_hybrid_candidates(effective_query, store)
+            candidates = self._get_hybrid_candidates(
+                effective_query, store, memory_group=memory_group
+            )
         else:
-            candidates = self._get_candidates(effective_query, store)
+            candidates = self._get_candidates(effective_query, store, memory_group=memory_group)
 
         # Score and filter
         scored: list[ScoredMemory] = []
@@ -485,6 +489,8 @@ class MemoryRetriever:
         self,
         query: str,
         store: MemoryStore,
+        *,
+        memory_group: str | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
@@ -495,19 +501,21 @@ class MemoryRetriever:
         """
         # Try FTS5 via store.search() for candidate filtering
         try:
-            fts_results = store.search(query)
+            fts_results = store.search(query, memory_group=memory_group)
             if fts_results:
                 return self._bm25_score_entries(query, fts_results, store)
         except Exception:
             logger.debug("fts5_search_failed", query=query)
 
         # Fallback: full corpus BM25 scan
-        return self._bm25_full_scan(query, store)
+        return self._bm25_full_scan(query, store, memory_group=memory_group)
 
     def _get_hybrid_candidates(
         self,
         query: str,
         store: MemoryStore,
+        *,
+        memory_group: str | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
 
@@ -535,7 +543,7 @@ class MemoryRetriever:
 
         def run_bm25() -> None:
             nonlocal bm25_keys
-            candidates = self._get_candidates(query, store)
+            candidates = self._get_candidates(query, store, memory_group=memory_group)
             # Take top top_bm25 by score
             sorted_cands = sorted(
                 candidates,
@@ -546,7 +554,9 @@ class MemoryRetriever:
 
         def run_vector() -> None:
             nonlocal vector_keys
-            vector_results = self._vector_search(query, store, limit=top_vector)
+            vector_results = self._vector_search(
+                query, store, limit=top_vector, memory_group=memory_group
+            )
             vector_keys = [k for k, _ in vector_results]
 
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -564,9 +574,9 @@ class MemoryRetriever:
         )
 
         if not fused:
-            return self._get_candidates(query, store)
+            return self._get_candidates(query, store, memory_group=memory_group)
 
-        entry_by_key = {e.key: e for e in store.list_all()}
+        entry_by_key = {e.key: e for e in store.list_all(memory_group=memory_group)}
         max_rrf = fused[0][1] if fused else 1.0
 
         results: list[tuple[MemoryEntry, float]] = []
@@ -577,6 +587,9 @@ class MemoryRetriever:
             relevance_raw = rrf_score / max_rrf if max_rrf > 0 else 0.0
             results.append((entry, relevance_raw))
 
+        if memory_group is not None:
+            results = [(e, s) for e, s in results if e.memory_group == memory_group]
+
         return results
 
     def _vector_search(  # noqa: PLR0911
@@ -584,6 +597,8 @@ class MemoryRetriever:
         query: str,
         store: MemoryStore,
         limit: int = 20,
+        *,
+        memory_group: str | None = None,
     ) -> list[tuple[str, float]]:
         """Epic 65.8: Embed query, cosine similarity with entry embeddings.
 
@@ -599,7 +614,7 @@ class MemoryRetriever:
         except ImportError:
             logger.debug("vector_search_embedder_unavailable")
             return empty
-        if embedder is None or not store.list_all():
+        if embedder is None or not store.list_all(memory_group=memory_group):
             return empty
 
         try:
@@ -624,9 +639,17 @@ class MemoryRetriever:
                     sim = 1.0 / (1.0 + max(0.0, float(dist)))
                     scored_knn.append((key, sim))
                 scored_knn.sort(key=lambda x: x[1], reverse=True)
+                if memory_group is not None:
+                    with store._lock:
+                        allowed = {
+                            k
+                            for k, e in store._entries.items()
+                            if e.memory_group == memory_group
+                        }
+                    scored_knn = [(k, s) for k, s in scored_knn if k in allowed]
                 return scored_knn[:limit]
 
-        all_entries = store.list_all()
+        all_entries = store.list_all(memory_group=memory_group)
         texts = [self._entry_to_document(e) for e in all_entries]
         try:
             entry_embs = embedder.embed_batch(texts)
@@ -683,12 +706,14 @@ class MemoryRetriever:
         self,
         query: str,
         store: MemoryStore,
+        *,
+        memory_group: str | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         """Full corpus BM25 scan as fallback.
 
         Falls back to word overlap if BM25 fails.
         """
-        all_entries = store.list_all()
+        all_entries = store.list_all(memory_group=memory_group)
         if not all_entries:
             return []
 
@@ -702,19 +727,21 @@ class MemoryRetriever:
             ]
         except Exception:
             logger.debug("bm25_full_scan_failed_using_word_overlap", query=query)
-            return self._like_search(query, store)
+            return self._like_search(query, store, memory_group=memory_group)
 
     def _like_search(
         self,
         query: str,
         store: MemoryStore,
+        *,
+        memory_group: str | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         """Fallback LIKE-based search with simple word overlap scoring."""
         query_words = set(query.lower().split())
         if not query_words:
             return []
 
-        all_entries = store.list_all()
+        all_entries = store.list_all(memory_group=memory_group)
         results: list[tuple[MemoryEntry, float]] = []
 
         for entry in all_entries:

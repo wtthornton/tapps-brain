@@ -95,6 +95,7 @@ class TestCoreTools:
             "memory_delete",
             "memory_search",
             "memory_list",
+            "memory_list_groups",
             "memory_recall",
             "memory_reinforce",
             "memory_ingest",

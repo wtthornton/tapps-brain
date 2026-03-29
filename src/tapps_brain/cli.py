@@ -161,6 +161,7 @@ def _entry_to_row(entry: Any) -> dict[str, Any]:  # noqa: ANN401
         "confidence": f"{entry.confidence:.2f}",
         "effective": f"{eff_conf:.2f}",
         "scope": entry.scope.value,
+        "group": entry.memory_group or "",
         "tags": ", ".join(entry.tags) if entry.tags else "",
         "created": entry.created_at[:10],
     }
@@ -264,6 +265,10 @@ def store_list(
     project_dir: ProjectDir = None,
     tier: Annotated[str | None, typer.Option(help="Filter by tier.")] = None,
     scope: Annotated[str | None, typer.Option(help="Filter by scope.")] = None,
+    group: Annotated[
+        str | None,
+        typer.Option(help="Filter by project-local memory group (GitHub #49)."),
+    ] = None,
     include_superseded: Annotated[
         bool, typer.Option("--include-superseded", help="Include superseded entries.")
     ] = False,
@@ -276,14 +281,37 @@ def store_list(
             tier=tier,
             scope=scope,
             include_superseded=include_superseded,
+            memory_group=group,
         )
         if as_json:
             _output([_entry_to_row(e) for e in entries], as_json=True)
         else:
             rows = [_entry_to_row(e) for e in entries]
-            base_cols = ["key", "tier", "confidence", "effective", "scope", "created"]
+            base_cols = ["key", "tier", "confidence", "effective", "scope", "group", "created"]
             _print_table(rows, columns=base_cols)
             typer.echo(f"\n{len(entries)} entries")
+    finally:
+        store.close()
+
+
+@store_app.command("groups")
+def store_groups(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List distinct project-local memory group names (GitHub #49)."""
+    store = _get_store(project_dir)
+    try:
+        names = store.list_memory_groups()
+        if as_json:
+            _output(names, as_json=True)
+        else:
+            if not names:
+                typer.echo("(no groups — all entries are ungrouped)")
+            else:
+                for n in names:
+                    typer.echo(n)
+            typer.echo(f"\n{len(names)} group(s)")
     finally:
         store.close()
 
@@ -294,18 +322,22 @@ def store_search(
     project_dir: ProjectDir = None,
     tier: Annotated[str | None, typer.Option(help="Filter by tier.")] = None,
     scope: Annotated[str | None, typer.Option(help="Filter by scope.")] = None,
+    group: Annotated[
+        str | None,
+        typer.Option(help="Filter by project-local memory group (GitHub #49)."),
+    ] = None,
     as_of: Annotated[str | None, typer.Option(help="Point-in-time query (ISO-8601).")] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Search memory entries by query text."""
     store = _get_store(project_dir)
     try:
-        results = store.search(query, tier=tier, scope=scope, as_of=as_of)
+        results = store.search(query, tier=tier, scope=scope, as_of=as_of, memory_group=group)
         if as_json:
             _output([_entry_to_row(e) for e in results], as_json=True)
         else:
             rows = [_entry_to_row(e) for e in results]
-            _print_table(rows, columns=["key", "tier", "confidence", "effective", "scope"])
+            _print_table(rows, columns=["key", "tier", "confidence", "effective", "scope", "group"])
             typer.echo(f"\n{len(results)} results")
     finally:
         store.close()
@@ -344,6 +376,9 @@ def memory_show(
             typer.echo(f"Source:        {entry.source.value}")
             typer.echo(f"Source Agent:  {entry.source_agent}")
             typer.echo(f"Scope:         {entry.scope.value}")
+            typer.echo(
+                f"Group:         {entry.memory_group if entry.memory_group else '(ungrouped)'}"
+            )
             typer.echo(f"Tags:          {', '.join(entry.tags) if entry.tags else '(none)'}")
             typer.echo(f"Created:       {entry.created_at}")
             typer.echo(f"Updated:       {entry.updated_at}")
@@ -457,6 +492,10 @@ def memory_search(
     query: Annotated[str, typer.Argument(help="Search query.")],
     project_dir: ProjectDir = None,
     as_of: Annotated[str | None, typer.Option(help="Point-in-time query (ISO-8601).")] = None,
+    group: Annotated[
+        str | None,
+        typer.Option(help="Restrict to project-local memory group (GitHub #49)."),
+    ] = None,
     limit: Annotated[int, typer.Option(help="Maximum results.")] = 20,
     as_json: JsonFlag = False,
 ) -> None:
@@ -466,7 +505,7 @@ def memory_search(
         from tapps_brain.retrieval import MemoryRetriever
 
         retriever = MemoryRetriever()
-        scored = retriever.search(query, store, limit=limit, as_of=as_of)
+        scored = retriever.search(query, store, limit=limit, as_of=as_of, memory_group=group)
         if as_json:
             _output(
                 [
@@ -1419,12 +1458,16 @@ def recall_cmd(
     message: Annotated[str, typer.Argument(help="Message to search memories for.")],
     project_dir: ProjectDir = None,
     max_tokens: Annotated[int, typer.Option(help="Token budget.")] = 2000,
+    group: Annotated[
+        str | None,
+        typer.Option(help="Restrict local retrieval to this memory group (GitHub #49)."),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Test auto-recall from the terminal."""
     store = _get_store(project_dir)
     try:
-        result = store.recall(message, max_tokens=max_tokens)
+        result = store.recall(message, max_tokens=max_tokens, memory_group=group)
         if as_json:
             _output(
                 {

@@ -27,7 +27,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Storage / schema
 
-- **SQLite schema version:** **v15** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
+- **SQLite schema version:** **v16** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
 - **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
 - **v6:** version bump for observability alignment (no new columns).
 - **v7:** `agent_scope` column for Hive propagation (EPIC-011).
@@ -35,6 +35,8 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 - **v9:** `feedback_events` table (EPIC-029).
 - **v10:** `diagnostics_history` table (EPIC-030).
 - **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
+- **v12–v15:** provenance, temporal window, FSRS stability/difficulty, Bayesian access counters (see migrations in `persistence.py`).
+- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub #49).
 - **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
 ## Dependencies (high level)

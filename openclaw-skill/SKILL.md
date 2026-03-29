@@ -43,6 +43,8 @@ tools:
     description: Full-text search with filters
   - name: memory_list
     description: List entries with optional filters
+  - name: memory_list_groups
+    description: List distinct project-local memory group names (GitHub #49)
   # Lifecycle (Recall/Reinforce/Ingest)
   - name: memory_recall
     description: Auto-recall ranked memories for a message
@@ -264,7 +266,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **63 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **64 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

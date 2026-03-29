@@ -28,7 +28,7 @@ from tapps_brain.sqlcipher_util import connect_sqlite, resolve_memory_encryption
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 15
+_SCHEMA_VERSION = 16
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -45,6 +45,7 @@ _SCHEMA_V12 = 12
 _SCHEMA_V13 = 13
 _SCHEMA_V14 = 14
 _SCHEMA_V15 = 15
+_SCHEMA_V16 = 16
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -186,6 +187,8 @@ class MemoryPersistence:
                 self._migrate_v13_to_v14(cur)
             if current_version < _SCHEMA_V15:
                 self._migrate_v14_to_v15(cur)
+            if current_version < _SCHEMA_V16:
+                self._migrate_v15_to_v16(cur)
 
             self._conn.commit()
 
@@ -650,6 +653,30 @@ class MemoryPersistence:
             (15, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v15_to_v16(self, cur: sqlite3.Cursor) -> None:
+        """Add project-local memory_group column (GitHub #49).
+
+        Optional TEXT: NULL = ungrouped within the project. Used for SQL filters;
+        not indexed in FTS5 (filter-only).
+        """
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN memory_group TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+        try:
+            cur.execute("ALTER TABLE archived_memories ADD COLUMN memory_group TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_memory_group ON memories(memory_group)"
+        )
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (16, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -802,6 +829,11 @@ class MemoryPersistence:
             columns.extend(["useful_access_count", "total_access_count"])
             values = (*values, entry.useful_access_count, entry.total_access_count)
 
+        # Project-local partition (v16+, GitHub #49)
+        if schema_ver >= _SCHEMA_V16:
+            columns.append("memory_group")
+            values = (*values, entry.memory_group)
+
         placeholders = ", ".join("?" * len(columns))
 
         cols = ", ".join(columns)
@@ -865,8 +897,13 @@ class MemoryPersistence:
             self._audit_log("delete", key)
         return deleted
 
-    def search(self, query: str) -> list[MemoryEntry]:
-        """Full-text search via FTS5 across key, value, and tags."""
+    def search(self, query: str, *, memory_group: str | None = None) -> list[MemoryEntry]:
+        """Full-text search via FTS5 across key, value, and tags.
+
+        Args:
+            query: FTS query text.
+            memory_group: When set, restrict to entries in this project-local group.
+        """
         if not query.strip():
             return []
 
@@ -875,16 +912,19 @@ class MemoryPersistence:
         if not safe_query:
             return []
 
-        with self._lock:
-            try:
-                rows = self._conn.execute(
-                    """
+        sql = """
                     SELECT m.* FROM memories m
                     JOIN memories_fts fts ON m.rowid = fts.rowid
                     WHERE memories_fts MATCH ?
-                    """,
-                    (safe_query,),
-                ).fetchall()
+        """
+        params: list[Any] = [safe_query]
+        if memory_group is not None and self._schema_version >= _SCHEMA_V16:
+            sql += " AND m.memory_group = ?"
+            params.append(memory_group)
+
+        with self._lock:
+            try:
+                rows = self._conn.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 logger.debug("fts_search_failed", query=query)
                 return []
@@ -1235,6 +1275,12 @@ class MemoryPersistence:
             useful_access_count = int(row["useful_access_count"] or 0)
             total_access_count = int(row["total_access_count"] or 0)
 
+        # Project-local group (v16+, GitHub #49)
+        memory_group: str | None = None
+        with contextlib.suppress(KeyError, IndexError):
+            mg = row["memory_group"]
+            memory_group = str(mg) if mg is not None and str(mg) != "" else None
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1259,6 +1305,7 @@ class MemoryPersistence:
             invalid_at=invalid_at,
             superseded_by=superseded_by,
             agent_scope=agent_scope,
+            memory_group=memory_group,
             integrity_hash=integrity_hash,
             positive_feedback_count=pos_fb,
             negative_feedback_count=neg_fb,

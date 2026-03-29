@@ -153,13 +153,13 @@ tapps-brain export --format json --output backup.json
 
 Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, …). Many commands support `--json` output.
 
-### MCP server — 63 tools
+### MCP server — 64 tools
 
 ```bash
 tapps-brain-mcp --project-dir /path/to/project
 ```
 
-63 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
+64 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
 
 <details>
 <summary><strong>MCP client configuration</strong></summary>
@@ -204,7 +204,7 @@ tapps-brain-mcp --project-dir /path/to/project
 </details>
 
 <details>
-<summary><strong>Full MCP tool reference (63 tools)</strong></summary>
+<summary><strong>Full MCP tool reference (64 tools)</strong></summary>
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -505,7 +505,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
-| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (63 tools, 7 resources) |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (64 tools, 7 resources) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy optional dependency detection |
 
 </details>
@@ -593,7 +593,7 @@ tests/
 | Epic | Title | Status |
 |------|-------|--------|
 | [EPIC-001](docs/planning/epics/EPIC-001.md)–[016](docs/planning/epics/EPIC-016.md) | Core platform (tests through Hive hardening) | Done |
-| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 63 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
+| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 64 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
 | [EPIC-029](docs/planning/epics/EPIC-029.md) | Feedback collection | Done |
 | [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |

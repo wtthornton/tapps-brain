@@ -49,3 +49,9 @@ until a concrete consumer exists.
 
 - Renaming Hive “namespace” to “group” globally (high churn, breaks mental model).
 - Implicit sync between project `group` and Hive namespace without explicit user/agent action.
+
+## Actionable child issues (file on GitHub)
+
+Copy-paste titles, acceptance criteria, and dependency order from
+[`epic-49-tasks.md`](epic-49-tasks.md) into child issues; track real issue numbers in
+[`open-issues-roadmap.md`](open-issues-roadmap.md).

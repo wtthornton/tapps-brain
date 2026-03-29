@@ -324,9 +324,10 @@ def consolidate(
     # Track source IDs
     source_ids = [e.key for e in entries]
 
-    # Use newest entry's scope
+    # Use newest entry's scope and project-local group (GitHub #49)
     sorted_by_updated = sorted(entries, key=lambda e: e.updated_at, reverse=True)
     scope = sorted_by_updated[0].scope
+    memory_group = sorted_by_updated[0].memory_group
 
     # Create consolidated entry
     now = datetime.now(tz=UTC).isoformat()
@@ -338,6 +339,7 @@ def consolidate(
         source=MemorySource.system,
         source_agent="tapps-consolidation",
         scope=scope,
+        memory_group=memory_group,
         tags=tags,
         created_at=now,
         updated_at=now,
@@ -381,9 +383,13 @@ def should_consolidate(
         List of entries that should be consolidated with the given entry.
         Returns empty list if no consolidation needed.
     """
-    # Filter out already-consolidated entries from candidates
+    # Filter out already-consolidated entries from candidates; same project-local group (#49)
     active_candidates = [
-        c for c in candidates if not getattr(c, "is_consolidated", False) and c.key != entry.key
+        c
+        for c in candidates
+        if not getattr(c, "is_consolidated", False)
+        and c.key != entry.key
+        and c.memory_group == entry.memory_group
     ]
 
     if not active_candidates:

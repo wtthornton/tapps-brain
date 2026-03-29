@@ -154,6 +154,7 @@ def create_server(  # noqa: PLR0915
         confidence: float = -1.0,
         agent_scope: str = "private",
         source_agent: str = "",
+        group: str | None = None,
     ) -> str:
         """Save or update a memory entry.
 
@@ -177,7 +178,12 @@ def create_server(  # noqa: PLR0915
                 API contracts, architectural choices).
             source_agent: Agent that produced this memory. Falls back to
                 server's --agent-id when empty.
+            group: Optional project-local memory partition (GitHub #49). Omit to
+                keep an existing entry's group on update; use empty string to
+                clear; set to a short label (e.g. team-a) to assign. Not a Hive
+                namespace — see memory_groups guide vs agent_scope.
         """
+        from tapps_brain.memory_group import MEMORY_GROUP_UNSET
         from tapps_brain.models import MemoryTier
         from tapps_brain.tier_normalize import normalize_save_tier
 
@@ -220,6 +226,7 @@ def create_server(  # noqa: PLR0915
                 }
             )
         resolved_agent = source_agent if source_agent else agent_id
+        memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
         result = store.save(
             key=key,
             value=value,
@@ -230,6 +237,7 @@ def create_server(  # noqa: PLR0915
             confidence=confidence,
             agent_scope=agent_scope,
             source_agent=resolved_agent,
+            memory_group=memory_group_arg,
         )
         if isinstance(result, dict):
             # Error from safety check or write rules
@@ -240,6 +248,7 @@ def create_server(  # noqa: PLR0915
                 "key": result.key,
                 "tier": str(result.tier),
                 "confidence": result.confidence,
+                "memory_group": result.memory_group,
             }
         )
 
@@ -271,6 +280,7 @@ def create_server(  # noqa: PLR0915
         tier: str | None = None,
         scope: str | None = None,
         as_of: str | None = None,
+        group: str | None = None,
     ) -> str:
         """Search memory entries using full-text search.
 
@@ -279,6 +289,7 @@ def create_server(  # noqa: PLR0915
             tier: Optional tier filter (architectural, pattern, procedural, context).
             scope: Optional scope filter (project, branch, session).
             as_of: Optional ISO-8601 timestamp for point-in-time query.
+            group: Optional project-local memory group filter (GitHub #49).
         """
         if as_of is not None:
             try:
@@ -292,7 +303,7 @@ def create_server(  # noqa: PLR0915
                         "message": f"as_of must be a valid ISO-8601 timestamp, got {as_of!r}",
                     }
                 )
-        results = store.search(query, tier=tier, scope=scope, as_of=as_of)
+        results = store.search(query, tier=tier, scope=scope, as_of=as_of, memory_group=group)
         return json.dumps(
             [
                 {
@@ -301,6 +312,7 @@ def create_server(  # noqa: PLR0915
                     "tier": str(e.tier),
                     "confidence": e.confidence,
                     "tags": e.tags,
+                    "memory_group": e.memory_group,
                 }
                 for e in results
             ]
@@ -311,6 +323,7 @@ def create_server(  # noqa: PLR0915
         tier: str | None = None,
         scope: str | None = None,
         include_superseded: bool = False,
+        group: str | None = None,
     ) -> str:
         """List memory entries with optional filters.
 
@@ -318,11 +331,13 @@ def create_server(  # noqa: PLR0915
             tier: Optional tier filter.
             scope: Optional scope filter.
             include_superseded: Whether to include superseded entries.
+            group: Optional project-local memory group filter (GitHub #49).
         """
         entries = store.list_all(
             tier=tier,
             scope=scope,
             include_superseded=include_superseded,
+            memory_group=group,
         )
         return json.dumps(
             [
@@ -333,17 +348,26 @@ def create_server(  # noqa: PLR0915
                     "confidence": e.confidence,
                     "tags": e.tags,
                     "scope": e.scope.value,
+                    "memory_group": e.memory_group,
                 }
                 for e in entries
             ]
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_list_groups() -> str:
+        """List distinct project-local memory group names (GitHub #49).
+
+        Returns sorted labels used with the ``group`` parameter on save/search/list/recall.
+        """
+        return json.dumps(store.list_memory_groups())
 
     # ------------------------------------------------------------------
     # Lifecycle tools — recall, reinforce, ingest, supersede, history
     # ------------------------------------------------------------------
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_recall(message: str) -> str:
+    def memory_recall(message: str, group: str | None = None) -> str:
         """Run auto-recall for a message and return ranked memories.
 
         Searches the memory store for entries relevant to the given message,
@@ -351,8 +375,10 @@ def create_server(  # noqa: PLR0915
 
         Args:
             message: The user/agent message to match against stored memories.
+            group: Optional project-local group — restricts local retrieval; Hive
+                results are still merged (GitHub #49).
         """
-        result = store.recall(message)
+        result = store.recall(message, memory_group=group)
         return json.dumps(
             {
                 "memory_section": result.memory_section,

@@ -50,6 +50,7 @@ class RecallConfig:
     scope_filter: MemoryScope | None = None
     tier_filter: MemoryTier | None = None
     branch: str | None = None
+    memory_group: str | None = None
     dedupe_window: list[str] = field(default_factory=list)
     use_graph_boost: bool = False
     graph_boost_factor: float = 0.15
@@ -122,6 +123,7 @@ class RecallOrchestrator:
             decay_config=self._decay_config,
             config=injection_config,
             scoring_config=scoring_config,
+            memory_group=cfg.memory_group,
         )
 
         # Graph boost: boost scores of entries connected via relation graph
@@ -362,6 +364,7 @@ class RecallOrchestrator:
             "scope_filter": self._config.scope_filter,
             "tier_filter": self._config.tier_filter,
             "branch": self._config.branch,
+            "memory_group": self._config.memory_group,
             "dedupe_window": list(self._config.dedupe_window),
             "use_graph_boost": self._config.use_graph_boost,
             "graph_boost_factor": self._config.graph_boost_factor,
@@ -373,7 +376,13 @@ class RecallOrchestrator:
 
     def _needs_post_filter(self, cfg: RecallConfig) -> bool:
         """Check whether any post-filter is active."""
-        return bool(cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.dedupe_window)
+        return bool(
+            cfg.scope_filter
+            or cfg.tier_filter
+            or cfg.branch
+            or cfg.memory_group
+            or cfg.dedupe_window
+        )
 
     def _apply_post_filters(
         self,
@@ -398,8 +407,8 @@ class RecallOrchestrator:
             if key in dedupe_set:
                 continue
 
-            # Scope / tier / branch filter: look up entry in store
-            if cfg.scope_filter or cfg.tier_filter or cfg.branch:
+            # Scope / tier / branch / memory_group filter: look up entry in store
+            if cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.memory_group:
                 entry = self._store.get(key) if key else None
                 if key:
                     entry_cache[key] = entry  # cache for section rebuild below
@@ -413,6 +422,12 @@ class RecallOrchestrator:
                 if cfg.tier_filter and entry.tier != cfg.tier_filter:
                     continue
                 if cfg.branch and entry.scope == MemoryScope.branch and entry.branch != cfg.branch:
+                    continue
+                if (
+                    cfg.memory_group
+                    and str(mem.get("source", "")) != "hive"
+                    and entry.memory_group != cfg.memory_group
+                ):
                     continue
 
             filtered.append(mem)

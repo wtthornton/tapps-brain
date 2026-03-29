@@ -211,7 +211,7 @@ class TestStoreCommands:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["total_entries"] == 3
-        assert data["schema_version"] == 15
+        assert data["schema_version"] == 16
 
     def test_list(self, project_dir):
         result = runner.invoke(app, ["store", "list", "--project-dir", project_dir])
@@ -869,7 +869,7 @@ class TestMaintenanceCommands:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["schema_version"] == 15
+        assert data["schema_version"] == 16
 
 
 class TestFlywheelCli:
@@ -2182,7 +2182,7 @@ class TestDiagnosticsCommands:
                     status="ok",
                     entries=2,
                     max_entries=100,
-                    schema_version="15",
+                    schema_version="16",
                     size_bytes=4096,
                     tiers={"pattern": 2},
                     sqlite_vec_enabled=True,
@@ -2211,7 +2211,7 @@ class TestDiagnosticsCommands:
                     status="ok",
                     entries=1,
                     max_entries=5000,
-                    schema_version="15",
+                    schema_version="16",
                     sqlite_vec_enabled=False,
                     sqlite_vec_rows=0,
                 ),

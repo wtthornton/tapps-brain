@@ -137,6 +137,12 @@ class MemoryEntry(BaseModel):
         description="Hive propagation scope: 'private' | 'domain' | 'hive'.",
     )
 
+    # Project-local partition (GitHub #49); not Hive namespace or profile tier.
+    memory_group: str | None = Field(
+        default=None,
+        description="Optional project-local group for retrieval filters (e.g. team-a, feature-x).",
+    )
+
     # Bi-temporal versioning (EPIC-004)
     valid_at: str | None = Field(
         default=None,
@@ -258,6 +264,18 @@ class MemoryEntry(BaseModel):
             msg = f"agent_scope must be one of {sorted(_VALID_AGENT_SCOPES)!r}. Got: {v!r}"
             raise ValueError(msg)
         return v
+
+    @field_validator("memory_group", mode="before")
+    @classmethod
+    def _validate_memory_group(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            msg = f"memory_group must be a string or None. Got: {type(v).__name__}"
+            raise TypeError(msg)
+        from tapps_brain.memory_group import normalize_memory_group
+
+        return normalize_memory_group(v)
 
     @model_validator(mode="after")
     def _apply_defaults_and_validate(self) -> MemoryEntry:
