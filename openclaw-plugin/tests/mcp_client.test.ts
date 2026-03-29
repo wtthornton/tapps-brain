@@ -164,7 +164,7 @@ describe("McpClient — process lifecycle", () => {
   it("creates Client with correct name and version", async () => {
     const client = await startedClient();
     expect(mocks().ClientCtor).toHaveBeenCalledWith(
-      { name: "tapps-brain-openclaw", version: "2.0.1" },
+      { name: "tapps-brain-openclaw", version: "2.0.2" },
       {},
     );
     client.stop();

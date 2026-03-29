@@ -1,6 +1,6 @@
 # tapps-brain OpenClaw Plugin
 
-**Plugin version 2.0.1** (tracks the [tapps-brain](https://github.com/wtthornton/tapps-brain) Python release).
+**Plugin version 2.0.2** (tracks the [tapps-brain](https://github.com/wtthornton/tapps-brain) Python release).
 
 ContextEngine plugin that integrates tapps-brain persistent memory into [OpenClaw](https://openclaw.dev).
 

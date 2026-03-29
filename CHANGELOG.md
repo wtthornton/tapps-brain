@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.2 (2026-03-29)
+
 ### Added
 
 - **Agent integration:** `docs/guides/agent-integration.md`, MCP resource `memory://agent-contract`, `recall_diagnostics` on `memory_recall` / `RecallResult` (empty-reason codes), `StoreHealthReport.package_version` / `profile_name`, `memory://stats` includes package + profile, CLI `tapps-brain memory save`, `scripts/generate_mcp_tool_manifest.py` → `docs/generated/mcp-tools-manifest.json`.

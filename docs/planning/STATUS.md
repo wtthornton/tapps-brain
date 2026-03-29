@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-28 (America/Chicago) — **v2.0.1**; planning sync with open-issues roadmap and fix_plan
+**Last updated:** 2026-03-29 (America/Chicago) — **v2.0.2**; planning sync with open-issues roadmap (GitHub **#49** closed; backlog **#51**, **#52**)
 
-**Package version (PyPI / `pyproject.toml`):** **2.0.1**
+**Package version (PyPI / `pyproject.toml`):** **2.0.2**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -36,7 +36,8 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 - **v10:** `diagnostics_history` table (EPIC-030).
 - **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
 - **v12–v15:** provenance, temporal window, FSRS stability/difficulty, Bayesian access counters (see migrations in `persistence.py`).
-- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub #49). Relay import accepts optional per-item `memory_group` / `group` (`memory-relay.md`).
+- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub **#49** v1 **closed** 2026-03-29). Relay import accepts optional per-item `memory_group` / `group` (`memory-relay.md`).
+- **Federation hub:** `~/.tapps-brain/memory/federated.db` — `federated_memories` has no `memory_group` column yet; optional follow-up is GitHub **#51**.
 - **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
 ## Dependencies (high level)
@@ -91,7 +92,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
 | EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
-| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (63 as of 2026-03-28+) | done | 2026-03-23 |
+| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (64 as of 2026-03-29) | done | 2026-03-23 |
 | EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
@@ -104,14 +105,14 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
 | EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
-| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (040.10 shipped; GitHub **#18** hive push **closed** 2026-03-28 — see `epics/EPIC-040.md` + roadmap) |
+| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (roadmap queue: open **#51** / **#52** only; epic **#49** v1 **closed** 2026-03-29 — see `epics/EPIC-040.md`, `open-issues-roadmap.md`) |
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23** — see `open-issues-roadmap.md`), **sub-agent memory relay** (GitHub **#19** — `relay import`, `tapps_brain_relay_export`, `docs/guides/memory-relay.md`), feedback / diagnostics / flywheel, schema **v15**. MCP server exposes **63** tools and **7** resources (`memory://stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.2** documents + version alignment; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server exposes **64** tools and **8** resources (incl. `memory://agent-contract` and related URIs — see `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
-**Next (canonical queue: `open-issues-roadmap.md`; Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-- **Open GitHub issues** — **#46**, **#48**, **#47** closed/mitigated in repo (unwrap MCP recall + tier normalization + `tapps_memory_*` / `openclaw.md`). **#49** remains epic; split using `docs/planning/design-issue-49-multi-scope-memory.md`.
+**Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
+- **Open GitHub issues (backlog)** — **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** optional federation hub `memory_group`; **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** long-term Hive `agent_scope` `group:<name>` + membership. Specs: [`epic-49-tasks.md`](epic-49-tasks.md), [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 - **DEPLOY-OPENCLAW** — distribution tasks deferred per fix_plan.
 
@@ -121,7 +122,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 - **Docs checker:** `scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
 - **CI:** `.github/workflows/ci.yml` — `lint` runs docs checker; `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
 - **Remediation on failure:** `scripts/publish-checklist.md`, `docs/guides/openclaw-runbook.md`, `docs/planning/epics/EPIC-036.md`.
-- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` ([Unreleased]).
+- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.2+).
 
 ## READY-035 docs consistency evidence (2026-03-24)
 

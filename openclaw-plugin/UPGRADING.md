@@ -1,5 +1,10 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v2.0.2 — Align with tapps-brain 2.0.2
+
+- Bumps plugin `package.json`, `openclaw.plugin.json`, `ContextEngineInfo` / client identity strings, and manifests to **2.0.2** with the Python patch release.
+- **Ships** the features listed under **v2.0.2** in root `CHANGELOG.md` (agent integration doc and `memory://agent-contract`, relay `memory_group`, adaptive hybrid fusion, hive push, maintenance stale / tier migrate, GC/decay alignment, OpenClaw capture-rate alignment, etc.).
+
 ## v2.0.1 — Align with tapps-brain 2.0.1
 
 - Bumps plugin `package.json`, `openclaw.plugin.json`, and manifests to **2.0.1** with the Python patch release.
