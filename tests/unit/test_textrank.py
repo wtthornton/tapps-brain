@@ -1,6 +1,6 @@
 """Tests for TextRank summarization."""
 
-from tapps_brain.textrank import summarize, summarize_messages
+from tapps_brain.textrank import _pagerank, _sentence_similarity, summarize, summarize_messages
 
 
 def test_summarize_basic():
@@ -37,3 +37,12 @@ def test_summarize_messages():
     ]
     result = summarize_messages(msgs, top_n=2)
     assert len(result) > 0
+
+
+def test_pagerank_empty_matrix():
+    assert _pagerank([]) == []
+
+
+def test_sentence_similarity_empty_after_stopwords():
+    """No content words -> similarity 0."""
+    assert _sentence_similarity("a a a", "the the") == 0.0

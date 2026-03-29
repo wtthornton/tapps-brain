@@ -642,9 +642,7 @@ class MemoryRetriever:
                 if memory_group is not None:
                     with store._lock:
                         allowed = {
-                            k
-                            for k, e in store._entries.items()
-                            if e.memory_group == memory_group
+                            k for k, e in store._entries.items() if e.memory_group == memory_group
                         }
                     scored_knn = [(k, s) for k, s in scored_knn if k in allowed]
                 return scored_knn[:limit]

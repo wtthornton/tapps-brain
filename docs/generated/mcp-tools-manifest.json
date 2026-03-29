@@ -1,0 +1,262 @@
+{
+  "source": "src/tapps_brain/mcp_server.py",
+  "tool_count": 64,
+  "tools": [
+    {
+      "name": "agent_create",
+      "description": "Create an agent: register in the Hive with a validated profile."
+    },
+    {
+      "name": "agent_delete",
+      "description": "Delete a registered agent from the Hive."
+    },
+    {
+      "name": "agent_list",
+      "description": "List all registered agents in the Hive."
+    },
+    {
+      "name": "agent_register",
+      "description": "Register an agent in the Hive."
+    },
+    {
+      "name": "diagnostics_history",
+      "description": "Return recent persisted diagnostics snapshots."
+    },
+    {
+      "name": "diagnostics_report",
+      "description": "Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."
+    },
+    {
+      "name": "federation_publish",
+      "description": "Publish shared-scope memories to the federation hub."
+    },
+    {
+      "name": "federation_status",
+      "description": "Show federation hub status: registered projects and subscriptions."
+    },
+    {
+      "name": "federation_subscribe",
+      "description": "Subscribe a project to receive memories from other federated projects."
+    },
+    {
+      "name": "federation_unsubscribe",
+      "description": "Remove a project's federation subscription."
+    },
+    {
+      "name": "feedback_gap",
+      "description": "Report a knowledge gap (``gap_reported`` event)."
+    },
+    {
+      "name": "feedback_issue",
+      "description": "Flag a quality issue with a memory entry (``issue_flagged``)."
+    },
+    {
+      "name": "feedback_query",
+      "description": "Query recorded feedback events with optional filters."
+    },
+    {
+      "name": "feedback_rate",
+      "description": "Rate a recalled memory entry (creates ``recall_rated`` event)."
+    },
+    {
+      "name": "feedback_record",
+      "description": "Record a generic feedback event (built-in or custom type)."
+    },
+    {
+      "name": "flywheel_evaluate",
+      "description": "Run BEIR-format directory or YAML suite evaluation."
+    },
+    {
+      "name": "flywheel_gaps",
+      "description": "Return top knowledge gaps as JSON."
+    },
+    {
+      "name": "flywheel_hive_feedback",
+      "description": "Aggregate / apply Hive cross-project feedback penalties."
+    },
+    {
+      "name": "flywheel_process",
+      "description": "Run feedback → confidence pipeline (EPIC-031)."
+    },
+    {
+      "name": "flywheel_report",
+      "description": "Generate quality report (markdown + structured summary)."
+    },
+    {
+      "name": "hive_propagate",
+      "description": "Manually propagate a local memory to the Hive shared store."
+    },
+    {
+      "name": "hive_push",
+      "description": "Batch-promote local project memories to the Hive (GitHub #18)."
+    },
+    {
+      "name": "hive_search",
+      "description": "Search the shared Hive for memories from other agents."
+    },
+    {
+      "name": "hive_status",
+      "description": "Return Hive status: namespaces, entry counts, and registered agents."
+    },
+    {
+      "name": "hive_wait_write",
+      "description": "Wait until the Hive write revision exceeds *since_revision* or timeout."
+    },
+    {
+      "name": "hive_write_revision",
+      "description": "Return the Hive write notification revision (GitHub #12)."
+    },
+    {
+      "name": "maintenance_consolidate",
+      "description": "Trigger memory consolidation to merge similar entries."
+    },
+    {
+      "name": "maintenance_gc",
+      "description": "Run garbage collection to archive stale memories."
+    },
+    {
+      "name": "maintenance_stale",
+      "description": "List GC stale memory candidates with reasons (read-only; GitHub #21)."
+    },
+    {
+      "name": "memory_audit",
+      "description": "Query the audit trail for memory events."
+    },
+    {
+      "name": "memory_capture",
+      "description": "Extract and persist new facts from an agent response."
+    },
+    {
+      "name": "memory_consolidation_config",
+      "description": "Return the current auto-consolidation configuration."
+    },
+    {
+      "name": "memory_consolidation_config_set",
+      "description": "Update auto-consolidation configuration."
+    },
+    {
+      "name": "memory_delete",
+      "description": "Delete a memory entry by key."
+    },
+    {
+      "name": "memory_entries_by_tag",
+      "description": "Return all memory entries that carry a specific tag."
+    },
+    {
+      "name": "memory_export",
+      "description": "Export memory entries as JSON."
+    },
+    {
+      "name": "memory_find_related",
+      "description": "Find entries related to a key via BFS traversal of the relation graph."
+    },
+    {
+      "name": "memory_gc_config",
+      "description": "Return the current garbage collection configuration."
+    },
+    {
+      "name": "memory_gc_config_set",
+      "description": "Update garbage collection configuration thresholds."
+    },
+    {
+      "name": "memory_get",
+      "description": "Retrieve a single memory entry by key."
+    },
+    {
+      "name": "memory_history",
+      "description": "Show the full version chain for a memory key."
+    },
+    {
+      "name": "memory_import",
+      "description": "Import memory entries from a JSON string."
+    },
+    {
+      "name": "memory_index_session",
+      "description": "Index session chunks for future search."
+    },
+    {
+      "name": "memory_ingest",
+      "description": "Extract and store durable facts from conversation context."
+    },
+    {
+      "name": "memory_list",
+      "description": "List memory entries with optional filters."
+    },
+    {
+      "name": "memory_list_groups",
+      "description": "List distinct project-local memory group names (GitHub #49)."
+    },
+    {
+      "name": "memory_list_tags",
+      "description": "List all tags used in the memory store with their usage counts."
+    },
+    {
+      "name": "memory_profile_onboarding",
+      "description": "Return Markdown onboarding guidance for the active memory profile (GitHub #45)."
+    },
+    {
+      "name": "memory_query_relations",
+      "description": "Filter relations by subject, predicate, and/or object_entity."
+    },
+    {
+      "name": "memory_recall",
+      "description": "Run auto-recall for a message and return ranked memories."
+    },
+    {
+      "name": "memory_reinforce",
+      "description": "Reinforce a memory entry, boosting its confidence and resetting decay."
+    },
+    {
+      "name": "memory_relations",
+      "description": "Return all relations associated with a memory entry key."
+    },
+    {
+      "name": "memory_save",
+      "description": "Save or update a memory entry."
+    },
+    {
+      "name": "memory_search",
+      "description": "Search memory entries using full-text search."
+    },
+    {
+      "name": "memory_search_sessions",
+      "description": "Search past session summaries."
+    },
+    {
+      "name": "memory_supersede",
+      "description": "Create a new version of a memory, superseding the old one."
+    },
+    {
+      "name": "memory_update_tags",
+      "description": "Atomically add and/or remove tags on an existing memory entry."
+    },
+    {
+      "name": "openclaw_migrate",
+      "description": "Migrate memories from an OpenClaw workspace to tapps-brain."
+    },
+    {
+      "name": "profile_info",
+      "description": "Return the active profile name, layers, and scoring config."
+    },
+    {
+      "name": "profile_switch",
+      "description": "Switch to a different built-in memory profile."
+    },
+    {
+      "name": "profile_tier_migrate",
+      "description": "Remap stored memory tiers (GitHub #20)."
+    },
+    {
+      "name": "tapps_brain_health",
+      "description": "Return a structured health report for tapps-brain (issue #15)."
+    },
+    {
+      "name": "tapps_brain_relay_export",
+      "description": "Build a memory relay JSON payload for cross-node handoff (GitHub #19)."
+    },
+    {
+      "name": "tapps_brain_session_end",
+      "description": "Record an end-of-session episodic memory entry."
+    }
+  ]
+}

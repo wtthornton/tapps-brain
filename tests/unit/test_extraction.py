@@ -84,3 +84,31 @@ class TestExtractDurableFacts:
             assert "value" in f
             assert "tier" in f
             assert f["tier"] in ("architectural", "pattern", "context")
+
+    def test_note_colon_extracts(self) -> None:
+        """'note:' prefix (common in agent output) is extracted."""
+        ctx = "Note: Production deploys must go through the staging gate first."
+        facts = extract_durable_facts(ctx)
+        assert len(facts) == 1
+        assert "staging" in facts[0]["value"].lower()
+
+    def test_we_use_extracts(self) -> None:
+        """'we use' stack statements are extracted."""
+        ctx = "For persistence we use PostgreSQL 16 with SQLAlchemy 2."
+        facts = extract_durable_facts(ctx)
+        assert len(facts) == 1
+        assert "PostgreSQL" in facts[0]["value"]
+
+    def test_remember_that_extracts(self) -> None:
+        """'remember that' instructions are extracted."""
+        ctx = "Please remember that the portfolio site is deployed on Vercel."
+        facts = extract_durable_facts(ctx)
+        assert len(facts) == 1
+        assert "Vercel" in facts[0]["value"]
+
+    def test_final_approach_extracts(self) -> None:
+        """'final approach' summaries are extracted as architectural."""
+        ctx = "The final approach is to run the worker on a separate Fly machine."
+        facts = extract_durable_facts(ctx)
+        assert len(facts) == 1
+        assert facts[0]["tier"] == "architectural"

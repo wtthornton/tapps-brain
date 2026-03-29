@@ -28,8 +28,8 @@
       },
       "captureRateLimit": {
         "type": "number",
-        "default": 5,
-        "description": "Capture facts every N ingest() calls (0 = every call)"
+        "default": 3,
+        "description": "Run memory_capture every N ingest() calls (0 = every call). Lower N = more capture attempts."
       },
       "agentId": {
         "type": "string",

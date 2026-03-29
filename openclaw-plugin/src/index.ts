@@ -316,12 +316,23 @@ export class TappsBrainEngine {
 
     const t0 = Date.now();
     try {
-      await this.mcpClient.callTool("memory_capture", {
-        response: contentText,
-        source: message.role === "user" ? "human" : "agent",
-        agent_scope: this.hiveEnabled ? "hive" : "private",
-      });
-      this.logger.info(`[tapps-brain] ingest: ${Date.now() - t0}ms`);
+      const captureRaw = extractMcpToolText(
+        await this.mcpClient.callTool("memory_capture", {
+          response: contentText,
+          source: message.role === "user" ? "human" : "agent",
+          agent_scope: this.hiveEnabled ? "hive" : "private",
+        }),
+      );
+      let captured = 0;
+      try {
+        const parsed = JSON.parse(captureRaw || "{}") as { count?: number };
+        captured = typeof parsed.count === "number" ? parsed.count : 0;
+      } catch {
+        captured = 0;
+      }
+      this.logger.info(
+        `[tapps-brain] ingest: ${Date.now() - t0}ms, captured=${captured}`,
+      );
     } catch (err) {
       // Fail gracefully — never block the conversation
       this.logger.warn("[tapps-brain] ingest:", err);
@@ -385,14 +396,18 @@ export class TappsBrainEngine {
 
       const memories = recall.memories ?? [];
       if (memories.length === 0) {
-        this.logger.info(`[tapps-brain] assemble: 0 memories, ${Date.now() - t0}ms`);
+        this.logger.info(
+          `[tapps-brain] assemble: 0 memories (recall: no hits), ${Date.now() - t0}ms`,
+        );
         return { messages, estimatedTokens: 0 };
       }
 
       // Filter out keys already injected in this session
       const newMemories = memories.filter((m) => !this.injectedKeys.has(m.key));
       if (newMemories.length === 0) {
-        this.logger.info(`[tapps-brain] assemble: 0 memories, ${Date.now() - t0}ms`);
+        this.logger.info(
+          `[tapps-brain] assemble: 0 new memories (${memories.length} already injected), ${Date.now() - t0}ms`,
+        );
         return { messages, estimatedTokens: 0 };
       }
 

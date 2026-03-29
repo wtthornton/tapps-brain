@@ -51,6 +51,14 @@ class StoreHealthReport(BaseModel):
     entry_count: int = 0
     max_entries: int = 5000
     schema_version: int = 0
+    package_version: str = Field(
+        default="",
+        description="Installed tapps-brain distribution version (PEP 440).",
+    )
+    profile_name: str | None = Field(
+        default=None,
+        description="Active MemoryProfile name when a profile is loaded.",
+    )
     tier_distribution: dict[str, int] = Field(default_factory=dict)
     oldest_entry_age_days: float = 0.0
     consolidation_candidates: int = 0

@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Must match shipped MCP surface (see CLAUDE.md / mcp_server).
 EXPECTED_TOOL_COUNT = 64
-EXPECTED_RESOURCE_COUNT = 7
+EXPECTED_RESOURCE_COUNT = 8
 
 # User-facing OpenClaw paths to scan for banned / inconsistent patterns.
 DOC_GLOBS = [

@@ -342,9 +342,9 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
       message: { role: "user", content: "another message" },
     });
 
-    // logger.info should have been called with inline elapsed time
+    // logger.info should include elapsed time and capture count from memory_capture
     expect(logger.info).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[tapps-brain\] ingest: \d+ms$/),
+      expect.stringMatching(/^\[tapps-brain\] ingest: \d+ms, captured=\d+$/),
     );
   });
 
@@ -389,7 +389,7 @@ describe("TappsBrainEngine — structured error logging (028-B)", () => {
     });
 
     expect(logger.info).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[tapps-brain\] assemble: \d+ memories, \d+ms$/),
+      expect.stringMatching(/^\[tapps-brain\] assemble: .+\d+ms$/),
     );
   });
 

@@ -333,7 +333,8 @@ Resources are read-only views that MCP clients can pull into context:
 
 | URI | Description |
 |-----|-------------|
-| `memory://stats` | Entry count, tier distribution, schema version |
+| `memory://stats` | Entry count, tier distribution, schema version, package version, profile name |
+| `memory://agent-contract` | Agent integration JSON (versions, profile layers, recall empty-reason codes); see [Agent integration](agent-integration.md) |
 | `memory://health` | Store health report |
 | `memory://entries/{key}` | Full detail view of a single entry |
 | `memory://metrics` | Operation counters and latency histograms |
@@ -392,7 +393,7 @@ npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/proje
 
 ## Maintainers: release gate and doc consistency
 
-Before a release, the repo runs an automated gate that includes this MCP surface (64 tools, 7 resources) end-to-end with Python packaging and the OpenClaw plugin:
+Before a release, the repo runs an automated gate that includes this MCP surface (64 tools, 8 resources) end-to-end with Python packaging and the OpenClaw plugin:
 
 - **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
 - **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`

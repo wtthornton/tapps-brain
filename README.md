@@ -31,7 +31,7 @@ AI agents forget everything between sessions. **tapps-brain** gives them persist
 Every operation — search, decay, consolidation, extraction, scoring — is deterministic and reproducible. No API keys, no latency, no cost.
 
 ### Three equal interfaces
-Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**63** tools, **7** resources) — same engine, same behavior, pick what fits your workflow.
+Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**64** tools, **8** resources) — same engine, same behavior, pick what fits your workflow.
 
 </td>
 <td width="50%">
@@ -159,7 +159,7 @@ Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`
 tapps-brain-mcp --project-dir /path/to/project
 ```
 
-64 tools, 7 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
+64 tools, 8 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
 
 <details>
 <summary><strong>MCP client configuration</strong></summary>
@@ -270,6 +270,7 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `memory_import` | Import entries from JSON |
 | **Session / relay** | `tapps_brain_session_end` | End-of-session episodic summary |
 | | `tapps_brain_relay_export` | Build sub-agent relay JSON for import (items may set `memory_group` / `group`; see [memory-relay](docs/guides/memory-relay.md)) |
+| **Memory (CLI)** | *(Typer)* `memory save` | Same semantics as MCP `memory_save` — see [Agent integration](docs/guides/agent-integration.md) |
 | **OpenClaw** | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 **Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics` · `memory://feedback` · `memory://diagnostics` · `memory://report`
@@ -505,7 +506,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
-| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (64 tools, 7 resources) |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (64 tools, 8 resources) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy optional dependency detection |
 
 </details>
@@ -593,7 +594,7 @@ tests/
 | Epic | Title | Status |
 |------|-------|--------|
 | [EPIC-001](docs/planning/epics/EPIC-001.md)–[016](docs/planning/epics/EPIC-016.md) | Core platform (tests through Hive hardening) | Done |
-| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 64 tools / 7 resources — see [MCP guide](docs/guides/mcp.md)) |
+| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 64 tools / 8 resources — see [MCP guide](docs/guides/mcp.md)) |
 | [EPIC-029](docs/planning/epics/EPIC-029.md) | Feedback collection | Done |
 | [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |

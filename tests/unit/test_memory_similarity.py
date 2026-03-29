@@ -10,6 +10,7 @@ from tapps_brain.similarity import (
     DEFAULT_TAG_WEIGHT,
     DEFAULT_TEXT_WEIGHT,
     SimilarityResult,
+    _term_frequency,
     compute_similarity,
     cosine_similarity,
     find_consolidation_groups,
@@ -198,6 +199,14 @@ class TestCosineSimilarity:
         vec_b = {"b": 1.0}
         assert cosine_similarity(vec_a, vec_b) == 0.0
 
+    def test_zero_magnitude_returns_zero(self) -> None:
+        """Vectors with zero norm yield 0.0 (guard on division)."""
+        assert cosine_similarity({"a": 0.0}, {"a": 1.0}) == 0.0
+
+
+def test_term_frequency_empty_terms() -> None:
+    assert _term_frequency([]) == {}
+
 
 # ---------------------------------------------------------------------------
 # Combined similarity tests
@@ -236,6 +245,16 @@ class TestComputeSimilarity:
             security_entry, similar_security_entry, tag_weight=0.8, text_weight=0.2
         )
         expected = (result.tag_score * 0.8) + (result.text_score * 0.2)
+        assert abs(result.combined_score - expected) < 0.01
+
+    def test_zero_total_weights_use_equal_split(
+        self, security_entry: MemoryEntry, similar_security_entry: MemoryEntry
+    ) -> None:
+        """When tag_weight + text_weight == 0, fall back to 0.5 / 0.5."""
+        result = compute_similarity(
+            security_entry, similar_security_entry, tag_weight=0.0, text_weight=0.0
+        )
+        expected = (result.tag_score * 0.5) + (result.text_score * 0.5)
         assert abs(result.combined_score - expected) < 0.01
 
     def test_similarity_result_sorting(self) -> None:

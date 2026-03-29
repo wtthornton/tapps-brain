@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tapps_brain.injection import (
     _MAX_INJECT_HIGH,
@@ -14,6 +15,8 @@ from tapps_brain.injection import (
     inject_memories,
 )
 from tapps_brain.profile import ScoringConfig
+from tapps_brain.retrieval import ScoredMemory
+from tapps_brain.store import MemoryStore
 from tests.factories import make_entry
 
 if TYPE_CHECKING:
@@ -314,7 +317,14 @@ class TestSourceTrustRegression:
 # Return-key consistency (020-A: all paths return the same keys)
 # ---------------------------------------------------------------------------
 
-_EXPECTED_KEYS = {"memory_section", "memory_injected", "memories", "truncated", "injected_tokens"}
+_EXPECTED_KEYS = {
+    "memory_section",
+    "memory_injected",
+    "memories",
+    "truncated",
+    "injected_tokens",
+    "recall_diagnostics",
+}
 
 
 class TestReturnKeyConsistency:
@@ -328,6 +338,7 @@ class TestReturnKeyConsistency:
         )
         assert result["truncated"] is False
         assert result["injected_tokens"] == 0
+        assert result["recall_diagnostics"]["empty_reason"] == "engagement_low"
 
     def test_no_results_has_all_keys(self) -> None:
         store = _make_store([])
@@ -337,6 +348,9 @@ class TestReturnKeyConsistency:
         )
         assert result["truncated"] is False
         assert result["injected_tokens"] == 0
+        diag = result["recall_diagnostics"]
+        assert diag["empty_reason"] == "store_empty"
+        assert diag["visible_entries"] == 0
 
     def test_successful_injection_has_all_keys(self) -> None:
         entries = [_make_entry("k", "matching search text here")]
@@ -345,3 +359,46 @@ class TestReturnKeyConsistency:
         assert _EXPECTED_KEYS.issubset(result.keys()), (
             f"Missing keys in success return: {_EXPECTED_KEYS - result.keys()}"
         )
+        assert result["recall_diagnostics"]["empty_reason"] is None
+        assert result["recall_diagnostics"]["visible_entries"] == 1
+
+
+class TestInjectMemoriesDiagnosticsBranches:
+    def test_no_ranked_matches_when_store_nonempty(self) -> None:
+        entries = [_make_entry("only", "alpha beta gamma delta")]
+        store = _make_store(entries)
+        with patch("tapps_brain.injection.MemoryRetriever.search", return_value=[]):
+            result = inject_memories("quantum meson gluon zzzz", store, "high")
+        d = result["recall_diagnostics"]
+        assert d["empty_reason"] == "no_ranked_matches"
+        assert d["visible_entries"] == 1
+
+    def test_below_score_threshold(self) -> None:
+        entry = _make_entry("lowscore", "some text content here for bm25")
+        scored = ScoredMemory(
+            entry=entry,
+            score=0.05,
+            effective_confidence=0.9,
+            bm25_relevance=0.05,
+            stale=False,
+        )
+        store = _make_store([entry])
+        with patch("tapps_brain.injection.MemoryRetriever.search", return_value=[scored]):
+            result = inject_memories("content", store, "high")
+        d = result["recall_diagnostics"]
+        assert d["empty_reason"] == "below_score_threshold"
+        assert d["retriever_hits"] == 1
+
+    def test_group_empty_real_store(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        try:
+            s.save(
+                key="g1",
+                value="only in team a",
+                tier="pattern",
+                memory_group="team-a",
+            )
+            result = inject_memories("team", s, "high", memory_group="team-b")
+            assert result["recall_diagnostics"]["empty_reason"] == "group_empty"
+        finally:
+            s.close()

@@ -264,6 +264,20 @@ class TestStoreCommands:
         assert result.exit_code == 0
         assert "0 results" in result.stdout
 
+    def test_store_groups_empty_human(self, tmp_path: Path) -> None:
+        r = runner.invoke(app, ["store", "groups", "--project-dir", str(tmp_path)])
+        assert r.exit_code == 0
+        assert "no groups" in r.stdout.lower()
+
+    def test_store_groups_json(self, project_dir) -> None:
+        r = runner.invoke(
+            app,
+            ["store", "groups", "--project-dir", project_dir, "--json"],
+        )
+        assert r.exit_code == 0
+        data = json.loads(r.stdout)
+        assert isinstance(data, list)
+
 
 # ===================================================================
 # Memory commands
@@ -291,6 +305,113 @@ class TestMemoryCommands:
         result = runner.invoke(app, ["memory", "show", "nonexistent", "--project-dir", project_dir])
         assert result.exit_code == 1
         assert "not found" in result.output.lower()
+
+    def test_memory_save_cli(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "memory",
+                "save",
+                "cli.save.key",
+                "value from cli save",
+                "--tier",
+                "pattern",
+                "--project-dir",
+                str(tmp_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Saved memory" in result.stdout
+        s = MemoryStore(tmp_path)
+        try:
+            ent = s.get("cli.save.key")
+            assert ent is not None
+            assert ent.value == "value from cli save"
+        finally:
+            s.close()
+
+    def test_memory_save_cli_json(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            ["memory", "save", "j.json", "body", "--project-dir", str(tmp_path), "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["status"] == "saved"
+        assert data["key"] == "j.json"
+
+    def test_memory_save_invalid_agent_scope(self, tmp_path: Path) -> None:
+        r = runner.invoke(
+            app,
+            [
+                "memory",
+                "save",
+                "k",
+                "v",
+                "--agent-scope",
+                "everyone",
+                "--project-dir",
+                str(tmp_path),
+            ],
+        )
+        assert r.exit_code == 1
+
+    def test_memory_save_invalid_tier(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import tier_normalize as tn
+
+        monkeypatch.setattr(
+            tn,
+            "normalize_save_tier",
+            lambda _raw, _prof: "___not_a_valid_layer___",
+        )
+        r = runner.invoke(
+            app,
+            ["memory", "save", "k", "v", "--tier", "x", "--project-dir", str(tmp_path), "--json"],
+        )
+        assert r.exit_code == 1
+        err = json.loads(r.stdout)
+        assert err.get("error") == "invalid_tier"
+
+    def test_memory_save_invalid_source(self, tmp_path: Path) -> None:
+        r = runner.invoke(
+            app,
+            [
+                "memory",
+                "save",
+                "k",
+                "v",
+                "--source",
+                "ghost",
+                "--project-dir",
+                str(tmp_path),
+            ],
+        )
+        assert r.exit_code == 1
+
+    def test_memory_save_store_returns_error_dict(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import cli as cli_mod
+
+        real = MemoryStore(tmp_path)
+
+        def _blocked_save(*_a: object, **_k: object) -> dict[str, str]:
+            return {"error": "content_blocked", "message": "blocked"}
+
+        monkeypatch.setattr(real, "save", _blocked_save)
+        monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: real)
+        try:
+            r = runner.invoke(
+                app,
+                ["memory", "save", "k", "v", "--project-dir", str(tmp_path), "--json"],
+            )
+            assert r.exit_code == 1
+            out = json.loads(r.stdout)
+            assert out.get("error") == "content_blocked"
+        finally:
+            real.close()
 
     def test_show_human_includes_branch_when_scope_branch(self, project_dir):
         s = MemoryStore(Path(project_dir))

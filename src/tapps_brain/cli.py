@@ -59,7 +59,10 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 store_app = typer.Typer(help="Inspect store contents and statistics.", no_args_is_help=True)
-memory_app = typer.Typer(help="Query and inspect individual memories.", no_args_is_help=True)
+memory_app = typer.Typer(
+    help="Query, inspect, and save individual memories (MCP parity for save).",
+    no_args_is_help=True,
+)
 federation_app = typer.Typer(help="Manage cross-project federation.", no_args_is_help=True)
 maintenance_app = typer.Typer(help="Run store maintenance operations.", no_args_is_help=True)
 
@@ -346,6 +349,125 @@ def store_search(
 # ===================================================================
 # MEMORY COMMANDS
 # ===================================================================
+
+
+@memory_app.command("save")
+def memory_save_cmd(
+    key: Annotated[str, typer.Argument(help="Memory key (slug; same rules as MCP memory_save).")],
+    value: Annotated[str, typer.Argument(help="Memory body text.")],
+    tier: Annotated[str, typer.Option(help="Tier or active profile layer name.")] = "pattern",
+    source: Annotated[str, typer.Option(help="human | agent | inferred | system")] = "agent",
+    scope: Annotated[str, typer.Option(help="project | branch | session")] = "project",
+    branch: Annotated[str | None, typer.Option(help="Required when scope is branch.")] = None,
+    agent_scope: Annotated[
+        str, typer.Option(help="Hive propagation: private | domain | hive.")
+    ] = "private",
+    confidence: Annotated[float, typer.Option(help="-1 uses source default confidence.")] = -1.0,
+    source_agent: Annotated[str, typer.Option(help="Attributing agent id (optional).")] = "",
+    tag: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Tag (repeatable).", show_default=False),
+    ] = None,
+    group: Annotated[
+        str | None, typer.Option("--group", help="Project-local memory group (GitHub #49).")
+    ] = None,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Save or update one memory (same core semantics as MCP ``memory_save``).
+
+    Example:
+
+        tapps-brain memory save auth.plan "Use device code flow" --tier pattern --tag security
+    """
+    from tapps_brain.memory_group import MEMORY_GROUP_UNSET
+    from tapps_brain.models import MemoryTier
+    from tapps_brain.tier_normalize import normalize_save_tier
+
+    store = _get_store(project_dir)
+    try:
+        if agent_scope not in ("private", "domain", "hive"):
+            err = {
+                "error": "invalid_agent_scope",
+                "message": f"Invalid agent_scope {agent_scope!r}. Use private, domain, or hive.",
+            }
+            if as_json:
+                _output(err, as_json=True)
+            else:
+                typer.echo(err["message"], err=True)
+            raise typer.Exit(code=1)
+
+        norm_tier = normalize_save_tier(tier, store.profile)
+        legacy = frozenset(m.value for m in MemoryTier)
+        prof_layers = (
+            frozenset(store.profile.layer_names) if store.profile is not None else frozenset()
+        )
+        valid_tiers = legacy | prof_layers
+        if norm_tier not in valid_tiers:
+            ordered = sorted(valid_tiers)
+            tier_err: dict[str, Any] = {
+                "error": "invalid_tier",
+                "message": f"Invalid tier {norm_tier!r}. Valid: {ordered}",
+                "valid_values": ordered,
+            }
+            if as_json:
+                _output(tier_err, as_json=True)
+            else:
+                typer.echo(tier_err["message"], err=True)
+            raise typer.Exit(code=1)
+
+        src_ok = ("human", "agent", "inferred", "system")
+        if source not in src_ok:
+            err = {
+                "error": "invalid_source",
+                "message": f"Invalid source {source!r}. Valid: {list(src_ok)}",
+            }
+            if as_json:
+                _output(err, as_json=True)
+            else:
+                typer.echo(err["message"], err=True)
+            raise typer.Exit(code=1)
+
+        mg: str | None | object = MEMORY_GROUP_UNSET if group is None else group
+        resolved_agent = source_agent.strip() or "cli"
+        out = store.save(
+            key=key.strip(),
+            value=value,
+            tier=norm_tier,
+            source=source,
+            tags=tag or [],
+            scope=scope,
+            branch=branch,
+            confidence=confidence,
+            agent_scope=agent_scope,
+            source_agent=resolved_agent,
+            memory_group=mg,
+        )
+        if isinstance(out, dict):
+            if as_json:
+                _output(out, as_json=True)
+            else:
+                typer.echo(
+                    f"Save failed ({out.get('error', 'unknown')}): {out.get('message', '')}",
+                    err=True,
+                )
+            raise typer.Exit(code=1)
+        if as_json:
+            _output(
+                {
+                    "status": "saved",
+                    "key": out.key,
+                    "tier": str(out.tier),
+                    "confidence": out.confidence,
+                    "memory_group": out.memory_group,
+                },
+                as_json=True,
+            )
+        else:
+            grp = out.memory_group if out.memory_group else "(ungrouped)"
+            typer.echo(f"Saved memory '{out.key}' (tier={out.tier!s}, group={grp})")
+    finally:
+        store.close()
 
 
 @memory_app.command("show")
@@ -1283,6 +1405,10 @@ def maintenance_health(
             typer.echo(f"Store: {report.store_path}")
             typer.echo(f"Entries: {report.entry_count} / {report.max_entries}")
             typer.echo(f"Schema: v{report.schema_version}")
+            if report.package_version:
+                typer.echo(f"Package: {report.package_version}")
+            if report.profile_name:
+                typer.echo(f"Profile: {report.profile_name}")
             typer.echo("Tiers:")
             for tier, count in report.tier_distribution.items():
                 typer.echo(f"  {tier}: {count}")

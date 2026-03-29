@@ -379,16 +379,19 @@ def create_server(  # noqa: PLR0915
                 results are still merged (GitHub #49).
         """
         result = store.recall(message, memory_group=group)
-        return json.dumps(
-            {
-                "memory_section": result.memory_section,
-                "memory_count": result.memory_count,
-                "token_count": result.token_count,
-                "recall_time_ms": result.recall_time_ms,
-                "truncated": result.truncated,
-                "memories": result.memories,
-            }
-        )
+        payload: dict[str, Any] = {
+            "memory_section": result.memory_section,
+            "memory_count": result.memory_count,
+            "token_count": result.token_count,
+            "recall_time_ms": result.recall_time_ms,
+            "truncated": result.truncated,
+            "memories": result.memories,
+        }
+        if result.recall_diagnostics is not None:
+            payload["recall_diagnostics"] = result.recall_diagnostics.model_dump(mode="json")
+        if result.quality_warning:
+            payload["quality_warning"] = result.quality_warning
+        return json.dumps(payload)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_reinforce(key: str, confidence_boost: float = 0.0) -> str:
@@ -839,14 +842,62 @@ def create_server(  # noqa: PLR0915
         """Store statistics: entry count, tier distribution, schema version."""
         snap = store.snapshot()
         schema_ver = store.get_schema_version()
+        h = store.health()
         return json.dumps(
             {
                 "project_root": str(snap.project_root),
                 "total_entries": snap.total_count,
                 "max_entries": store._max_entries,
                 "schema_version": schema_ver,
+                "package_version": h.package_version,
+                "profile_name": h.profile_name,
                 "tier_distribution": snap.tier_counts,
             }
+        )
+
+    @mcp.resource("memory://agent-contract")  # type: ignore[untyped-decorator]
+    def agent_contract_resource() -> str:
+        """Agent integration snapshot: versions, profile, tiers, recall empty codes."""
+        from tapps_brain.models import MemoryTier
+        from tapps_brain.recall_diagnostics import (
+            RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
+            RECALL_EMPTY_ENGAGEMENT_LOW,
+            RECALL_EMPTY_GROUP_EMPTY,
+            RECALL_EMPTY_NO_RANKED_MATCHES,
+            RECALL_EMPTY_POST_FILTER,
+            RECALL_EMPTY_RAG_BLOCKED,
+            RECALL_EMPTY_SEARCH_FAILED,
+            RECALL_EMPTY_STORE_EMPTY,
+        )
+
+        h = store.health()
+        prof = store.profile
+        layers = list(prof.layer_names) if prof is not None else []
+        return json.dumps(
+            {
+                "package_version": h.package_version,
+                "schema_version": h.schema_version,
+                "profile_name": h.profile_name,
+                "profile_layer_names": layers,
+                "canonical_memory_tiers": [m.value for m in MemoryTier],
+                "recall_empty_reason_codes": sorted(
+                    {
+                        RECALL_EMPTY_ENGAGEMENT_LOW,
+                        RECALL_EMPTY_SEARCH_FAILED,
+                        RECALL_EMPTY_STORE_EMPTY,
+                        RECALL_EMPTY_GROUP_EMPTY,
+                        RECALL_EMPTY_NO_RANKED_MATCHES,
+                        RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
+                        RECALL_EMPTY_RAG_BLOCKED,
+                        RECALL_EMPTY_POST_FILTER,
+                    }
+                ),
+                "write_path_mcp": "memory_save",
+                "write_path_cli": "tapps-brain memory save KEY VALUE [options]",
+                "read_paths_mcp": ["memory_search", "memory_recall", "memory_list", "memory_get"],
+                "operator_docs": "https://github.com/wtthornton/tapps-brain/tree/main/docs/guides",
+            },
+            indent=2,
         )
 
     @mcp.resource("memory://health")  # type: ignore[untyped-decorator]

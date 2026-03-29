@@ -1592,11 +1592,24 @@ class MemoryStore:
         # Rate limiter anomaly counts (H6c)
         rl_stats = self._rate_limiter.stats
 
+        pkg_ver = ""
+        try:
+            import importlib.metadata
+
+            pkg_ver = importlib.metadata.version("tapps-brain")
+        except importlib.metadata.PackageNotFoundError:
+            pkg_ver = ""
+
+        prof = getattr(self, "_profile", None)
+        prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
+
         return StoreHealthReport(
             store_path=str(self._project_root),
             entry_count=len(entries),
             max_entries=self._max_entries,
             schema_version=schema_ver,
+            package_version=pkg_ver,
+            profile_name=prof_name,
             tier_distribution=tier_counts,
             oldest_entry_age_days=oldest_age,
             consolidation_candidates=consolidation_candidates,

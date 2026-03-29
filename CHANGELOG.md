@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent integration:** `docs/guides/agent-integration.md`, MCP resource `memory://agent-contract`, `recall_diagnostics` on `memory_recall` / `RecallResult` (empty-reason codes), `StoreHealthReport.package_version` / `profile_name`, `memory://stats` includes package + profile, CLI `tapps-brain memory save`, `scripts/generate_mcp_tool_manifest.py` → `docs/generated/mcp-tools-manifest.json`.
 - **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`. Optional per-item `memory_group` / `group` preserves project-local partitions on import (GitHub #49).
 - Adaptive query-aware hybrid search fusion (GitHub **#40**, EPIC-040 **040.10**): `hybrid_rrf_weights_for_query()` and weighted RRF in `MemoryRetriever` when `semantic_enabled=True`. Set `hybrid_config.adaptive_fusion=False` for legacy equal BM25/vector RRF weights.
 - Hive batch promotion (GitHub **#18**): CLI `tapps-brain hive push` and `hive push-tagged`; MCP tool `hive_push`; `select_local_entries_for_hive_push` and `push_memory_entries_to_hive` in `hive.py`. `PropagationEngine.propagate` supports `dry_run` and `bypass_profile_hive_rules`; `hive_propagate` accepts `force` and `dry_run`.
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **GC / decay alignment:** CLI `maintenance gc`, MCP `maintenance_gc`, `MemoryStore.gc()`, and `health()` GC candidate counts use profile-derived `DecayConfig` plus store `gc_config` (same rules as `list_gc_stale_details`).
+- **OpenClaw auto-capture (tapp-workspace #12):** `extract_durable_facts` recognizes additional phrases common in agent/dev text (`note:`, `summary:`, `we use`, `remember that`, `root cause`, `final approach`, etc.). ContextEngine `ingest` logs `captured=N` from `memory_capture`; `assemble` distinguishes recall-empty vs already-injected. `openclaw.plugin.json` `captureRateLimit` default aligned to `3` (was `5`, inconsistent with plugin runtime default).
 
 ## v2.0.1 (2026-03-28)
 

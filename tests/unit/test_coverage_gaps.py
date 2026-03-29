@@ -144,7 +144,7 @@ class TestProtocols:
             def recall(self, message: str, **kwargs: object):
                 from tapps_brain.models import RecallResult
 
-                return RecallResult(memories=[], memory_count=0, query=message)
+                return RecallResult(memories=[], memory_count=0)
 
         assert isinstance(FakeRecallHook(), RecallHookLike)
 
@@ -869,6 +869,19 @@ class TestInjectionSearchException:
             result = inject_memories("test query", store, config=InjectionConfig())
         assert result["memory_injected"] == 0
         assert result["memory_section"] == ""
+        assert result["recall_diagnostics"]["empty_reason"] == "search_failed"
+
+    def test_search_exception_visible_count_raises(self):
+        from tapps_brain.injection import InjectionConfig, inject_memories
+
+        store = _mock_store([_entry("k", "v")])
+        store.list_all.side_effect = RuntimeError("list broke")
+        with patch(
+            "tapps_brain.injection.MemoryRetriever.search",
+            side_effect=RuntimeError("search broke"),
+        ):
+            result = inject_memories("test query", store, config=InjectionConfig())
+        assert result["recall_diagnostics"]["visible_entries"] is None
 
 
 class TestInjectionSafetyBlocked:
@@ -890,6 +903,7 @@ class TestInjectionSafetyBlocked:
             result = inject_memories("test query", _mock_store(), config=InjectionConfig())
         assert result["memory_injected"] == 0
         assert result["memory_section"] == ""
+        assert result["recall_diagnostics"]["empty_reason"] == "rag_safety_blocked"
 
     def test_mixed_safe_and_unsafe(self):
         from tapps_brain.injection import InjectionConfig, inject_memories

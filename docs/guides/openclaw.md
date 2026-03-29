@@ -1,7 +1,7 @@
 # tapps-brain for OpenClaw
 
 Persistent cross-session memory for your OpenClaw agents. **63** MCP tools and
-**7** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
+**8** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
 OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
 
 **Canonical install/upgrade runbook (PyPI + Git-only):**
@@ -395,7 +395,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | Custom profiles | ✅ | ✅ | ✅ |
 | Citation footers in recall | ✅ | — | — |
 | Session memory search | ✅ | — | ✅ |
-| MCP resources (7 URIs: stats, health, entries, metrics, feedback, diagnostics, report) | ✅ | ✅ | ✅ |
+| MCP resources (8 URIs: stats, health, agent-contract, entries, metrics, feedback, diagnostics, report) | ✅ | ✅ | ✅ |
 | MCP prompts | — | — | ✅ |
 | Official MCP SDK transport | ✅ | ✅ | ✅ (OpenClaw-native) |
 | Minimum OpenClaw version | v2026.3.7 | v2026.3.7 | Any |

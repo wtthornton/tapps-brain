@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import NoReturn
+
+import pytest
+
+import tapps_brain.tier_normalize as tier_normalize_mod
 from tapps_brain.models import MemoryTier
 from tapps_brain.tier_normalize import normalize_save_tier
 
@@ -40,3 +46,19 @@ def test_unknown_maps_to_pattern() -> None:
 
 def test_enum_case_insensitive() -> None:
     assert normalize_save_tier("ARCHITECTURAL", None) == MemoryTier.architectural.value
+
+
+def test_member_value_loop_when_constructor_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cover fallback loop when ``MemoryTier(t)`` fails but ``t`` matches a member value."""
+
+    class _CallableShim:
+        pattern = MemoryTier
+
+        def __call__(self, _val: str) -> NoReturn:
+            raise ValueError("forced")
+
+        def __iter__(self) -> Iterator[MemoryTier]:
+            return iter(MemoryTier)
+
+    monkeypatch.setattr(tier_normalize_mod, "MemoryTier", _CallableShim())
+    assert normalize_save_tier("procedural", None) == MemoryTier.procedural.value

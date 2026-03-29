@@ -23,7 +23,14 @@ from typing import TYPE_CHECKING
 import structlog
 
 from tapps_brain.injection import InjectionConfig, estimate_tokens, inject_memories
-from tapps_brain.models import MemoryEntry, MemoryScope, MemoryTier, RecallResult
+from tapps_brain.models import (
+    MemoryEntry,
+    MemoryScope,
+    MemoryTier,
+    RecallDiagnostics,
+    RecallResult,
+)
+from tapps_brain.recall_diagnostics import RECALL_EMPTY_POST_FILTER
 
 if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
@@ -126,6 +133,13 @@ class RecallOrchestrator:
             memory_group=cfg.memory_group,
         )
 
+        diag_raw = result.get("recall_diagnostics")
+        recall_diag: RecallDiagnostics | None
+        if isinstance(diag_raw, dict):
+            recall_diag = RecallDiagnostics.model_validate(diag_raw)
+        else:
+            recall_diag = None
+
         # Graph boost: boost scores of entries connected via relation graph
         memories = result.get("memories", [])
         memory_section: str = result.get("memory_section", "")
@@ -143,11 +157,19 @@ class RecallOrchestrator:
                 memory_section = self._rebuild_section(memories)
 
         # Post-filter: scope, tier, branch, dedupe
-
+        count_before_post_filter = len(memories)
         if memories and self._needs_post_filter(cfg):
             memories, memory_section = self._apply_post_filters(memories, cfg, message)
             # Recount Hive memories after post-filtering — some may have been removed.
             hive_count = sum(1 for m in memories if m.get("source") == "hive")
+
+        if not memories and count_before_post_filter > 0 and self._needs_post_filter(cfg):
+            prev = recall_diag
+            recall_diag = RecallDiagnostics(
+                empty_reason=RECALL_EMPTY_POST_FILTER,
+                retriever_hits=prev.retriever_hits if prev is not None else 0,
+                visible_entries=prev.visible_entries if prev is not None else None,
+            )
 
         # Recompute token count from the final section so Hive additions are reflected.
         # inject_memories() token count only covers local results; _rebuild_section()
@@ -166,6 +188,7 @@ class RecallOrchestrator:
             truncated=result.get("truncated", False),
             memory_count=len(memories),
             hive_memory_count=hive_count,
+            recall_diagnostics=recall_diag,
         )
 
     # ------------------------------------------------------------------

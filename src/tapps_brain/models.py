@@ -332,6 +332,24 @@ class MemoryEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class RecallDiagnostics(BaseModel):
+    """Machine-readable context when recall returns few or no memories."""
+
+    empty_reason: str | None = Field(
+        default=None,
+        description="Set when nothing was injected; null when memories are present.",
+    )
+    retriever_hits: int = Field(
+        default=0,
+        ge=0,
+        description="Rows returned by retriever before composite score cutoff.",
+    )
+    visible_entries: int | None = Field(
+        default=None,
+        description="Entry count visible for this query (e.g. memory_group scope).",
+    )
+
+
 class RecallResult(BaseModel):
     """Result of an auto-recall operation.
 
@@ -375,6 +393,10 @@ class RecallResult(BaseModel):
     quality_warning: str | None = Field(
         default=None,
         description="Set when diagnostics circuit breaker is not CLOSED (EPIC-030).",
+    )
+    recall_diagnostics: RecallDiagnostics | None = Field(
+        default=None,
+        description="Why recall was empty or pipeline stats (agent observability).",
     )
 
 

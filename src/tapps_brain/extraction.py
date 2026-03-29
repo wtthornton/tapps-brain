@@ -13,7 +13,8 @@ import unicodedata
 _MIN_CHUNK_CHARS = 20
 
 
-# Decision/architecture pattern phrases (case-insensitive)
+# Decision/architecture pattern phrases (case-insensitive).
+# Keep specific phrases before broad ones (first match wins per chunk).
 _DECISION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bwe\s+decided\b", re.I), "architectural"),
     (re.compile(r"\bkey\s+decision\b", re.I), "architectural"),
@@ -26,6 +27,16 @@ _DECISION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bgoing\s+forward\b", re.I), "context"),
     (re.compile(r"\bconvention\s*:", re.I), "pattern"),
     (re.compile(r"\bpattern\s*:", re.I), "pattern"),
+    # Common in agent replies and dev notes (auto-capture / OpenClaw ingest)
+    (re.compile(r"\bnote\s*:", re.I), "pattern"),
+    (re.compile(r"\bsummary\s*:", re.I), "pattern"),
+    (re.compile(r"\btl;?dr\b", re.I), "context"),
+    (re.compile(r"\bremember\s+that\b", re.I), "context"),
+    (re.compile(r"\bimplementation\s+note\b", re.I), "pattern"),
+    (re.compile(r"\broot\s+cause\b", re.I), "pattern"),
+    (re.compile(r"\b(?:chosen|final)\s+approach\b", re.I), "architectural"),
+    (re.compile(r"\bwe(?:'re|\s+are)\s+using\b", re.I), "pattern"),
+    (re.compile(r"\bwe\s+use\b", re.I), "pattern"),
 ]
 
 # Sentence boundary for splitting
@@ -67,8 +78,8 @@ def extract_durable_facts(
 ) -> list[dict[str, str]]:
     """Extract durable fact candidates from context using rule-based patterns.
 
-    Looks for decision-like phrases: "we decided", "key decision", "architecture
-    choice", "we agreed", "important:", etc. Returns candidates as
+    Looks for decision-like phrases: "we decided", "note:", "summary:", "we use",
+    "remember that", "root cause", "final approach", etc. Returns candidates as
     [{key, value, tier}]. Tier is inferred from pattern (architectural, pattern,
     context).
 

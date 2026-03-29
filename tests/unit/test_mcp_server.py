@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+
+from tapps_brain.store import MemoryStore
 
 pytestmark = pytest.mark.requires_mcp
 
@@ -273,6 +277,7 @@ class TestResources:
         templates = mcp_server._resource_manager.list_resources()
         uris = [str(r.uri) for r in templates]
         assert "memory://stats" in uris
+        assert "memory://agent-contract" in uris
 
     def test_health_resource_registered(self, mcp_server):
         templates = mcp_server._resource_manager.list_resources()
@@ -302,6 +307,7 @@ class TestResources:
         assert report.entry_count >= 1
         assert report.max_entries == 5000
         assert report.schema_version >= 1
+        assert isinstance(report.package_version, str)
         assert "pattern" in report.tier_distribution
 
     def test_health_report_oldest_age(self, mcp_server):
@@ -311,6 +317,39 @@ class TestResources:
         report = store.health()
         # Just created, age should be very small
         assert report.oldest_entry_age_days >= 0.0
+
+    def test_health_report_package_version_missing(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        try:
+            with patch(
+                "importlib.metadata.version",
+                side_effect=importlib.metadata.PackageNotFoundError,
+            ):
+                report = s.health()
+                assert report.package_version == ""
+        finally:
+            s.close()
+
+    def test_stats_resource_includes_package_and_profile(self, mcp_server):
+        rm = mcp_server._resource_manager
+        for res in rm.list_resources():
+            if str(res.uri) == "memory://stats":
+                body = json.loads(res.fn())
+                assert "package_version" in body
+                assert "profile_name" in body
+                return
+        raise AssertionError("memory://stats not found")
+
+    def test_agent_contract_resource_json(self, mcp_server):
+        rm = mcp_server._resource_manager
+        for res in rm.list_resources():
+            if str(res.uri) == "memory://agent-contract":
+                body = json.loads(res.fn())
+                assert "canonical_memory_tiers" in body
+                assert "recall_empty_reason_codes" in body
+                assert "write_path_mcp" in body
+                return
+        raise AssertionError("memory://agent-contract not found")
 
     def test_get_metrics_returns_snapshot(self, mcp_server):
         store = mcp_server._tapps_store
@@ -412,6 +451,8 @@ class TestMcpToolHandlerExecution:
         payload = json.loads(recall(message="recall phrase xyz"))
         assert "memory_count" in payload
         assert "token_count" in payload
+        assert "recall_diagnostics" in payload
+        assert payload["recall_diagnostics"]["empty_reason"] is None
 
         reinforce = _tool_fn(mcp_server, "memory_reinforce")
         assert json.loads(reinforce(key="no-such", confidence_boost=0.0))["error"] == "not_found"
@@ -424,6 +465,20 @@ class TestMcpToolHandlerExecution:
         )
         assert ing["status"] == "ingested"
         assert "created_keys" in ing
+
+    def test_memory_recall_empty_store_has_diagnostics(self, tmp_path: Path) -> None:
+        from tapps_brain.mcp_server import create_server
+
+        root = tmp_path / "mcp_empty_recall"
+        root.mkdir()
+        srv = create_server(root)
+        try:
+            recall = _tool_fn(srv, "memory_recall")
+            payload = json.loads(recall(message="anything"))
+            assert payload["memory_count"] == 0
+            assert payload["recall_diagnostics"]["empty_reason"] == "store_empty"
+        finally:
+            srv._tapps_store.close()
 
     def test_memory_supersede_and_history_tools(self, mcp_server):
         store = mcp_server._tapps_store

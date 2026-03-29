@@ -183,7 +183,7 @@ tools:
     description: Migrate OpenClaw workspace memories into tapps-brain
 resources:
   - uri: memory://stats
-    description: Entry count, tier distribution, schema version, and capacity
+    description: Entry count, tier distribution, schema version, package version, profile name, capacity
   - uri: memory://health
     description: Store health report — DB status, WAL mode, decay health, consolidation readiness
   - uri: memory://metrics
@@ -196,6 +196,8 @@ resources:
     description: Latest rendered flywheel quality report (markdown)
   - uri: "memory://entries/{key}"
     description: Full detail view of a single entry — all fields including decay state and access count
+  - uri: memory://agent-contract
+    description: Agent integration JSON — versions, profile layers, recall empty-reason codes, primary MCP/CLI paths
 prompts:
   - name: recall
     description: "Auto-recall memories about a topic: 'What do you remember about {topic}?'"
@@ -266,7 +268,7 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **64 MCP tools, 7 resources:** Full programmatic control (memory, feedback,
+- **64 MCP tools, 8 resources:** Full programmatic control (memory, feedback,
   diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
 
 ## Configuration

@@ -12,6 +12,15 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from tapps_brain.recall_diagnostics import (
+    RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
+    RECALL_EMPTY_ENGAGEMENT_LOW,
+    RECALL_EMPTY_GROUP_EMPTY,
+    RECALL_EMPTY_NO_RANKED_MATCHES,
+    RECALL_EMPTY_RAG_BLOCKED,
+    RECALL_EMPTY_SEARCH_FAILED,
+    RECALL_EMPTY_STORE_EMPTY,
+)
 from tapps_brain.retrieval import MemoryRetriever
 from tapps_brain.safety import check_content_safety
 
@@ -33,6 +42,44 @@ _MAX_INJECT_MEDIUM = 3
 # (~0.36 raw) would score ~0.25 after the multiplier, which still deserves inclusion.
 _MIN_SCORE = 0.2
 _MIN_CONFIDENCE_MEDIUM = 0.5
+
+
+def _visible_entry_count(store: MemoryStore, memory_group: str | None) -> int:
+    """Count entries visible for retrieval (respects ``memory_group`` when set)."""
+    return len(store.list_all(memory_group=memory_group))
+
+
+def _recall_diag_payload(
+    *,
+    empty_reason: str | None,
+    retriever_hits: int = 0,
+    visible_entries: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "empty_reason": empty_reason,
+        "retriever_hits": retriever_hits,
+        "visible_entries": visible_entries,
+    }
+
+
+def _injection_empty(
+    *,
+    empty_reason: str | None,
+    retriever_hits: int = 0,
+    visible_entries: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "memory_section": "",
+        "memory_injected": 0,
+        "memories": [],
+        "truncated": False,
+        "injected_tokens": 0,
+        "recall_diagnostics": _recall_diag_payload(
+            empty_reason=empty_reason,
+            retriever_hits=retriever_hits,
+            visible_entries=visible_entries,
+        ),
+    }
 
 
 @dataclass
@@ -60,7 +107,7 @@ def estimate_tokens(text: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def inject_memories(
+def inject_memories(  # noqa: PLR0915
     question: str,
     store: MemoryStore,
     engagement_level: str = "high",
@@ -89,16 +136,17 @@ def inject_memories(
         - ``memory_section``: Formatted markdown section (or empty string).
         - ``memory_injected``: Number of memories injected.
         - ``memories``: List of injected memory summaries.
+        - ``recall_diagnostics``: ``empty_reason`` (code or null), ``retriever_hits``,
+          ``visible_entries`` — for agents when recall is empty.
     """
     # Low engagement: never inject
     if engagement_level == "low":
-        return {
-            "memory_section": "",
-            "memory_injected": 0,
-            "memories": [],
-            "truncated": False,
-            "injected_tokens": 0,
-        }
+        vis = _visible_entry_count(store, memory_group)
+        return _injection_empty(
+            empty_reason=RECALL_EMPTY_ENGAGEMENT_LOW,
+            retriever_hits=0,
+            visible_entries=vis,
+        )
 
     config = config or InjectionConfig()
 
@@ -150,25 +198,36 @@ def inject_memories(
             question=question[:80],
             exc_info=True,
         )
-        return {
-            "memory_section": "",
-            "memory_injected": 0,
-            "memories": [],
-            "truncated": False,
-            "injected_tokens": 0,
-        }
+        vis_err: int | None = None
+        try:
+            vis_err = _visible_entry_count(store, memory_group)
+        except Exception:
+            vis_err = None
+        return _injection_empty(
+            empty_reason=RECALL_EMPTY_SEARCH_FAILED,
+            retriever_hits=0,
+            visible_entries=vis_err,
+        )
+
+    visible = _visible_entry_count(store, memory_group)
+    n_retriever = len(results)
 
     # Filter by minimum score
     results = [r for r in results if r.score >= _MIN_SCORE]
 
     if not results:
-        return {
-            "memory_section": "",
-            "memory_injected": 0,
-            "memories": [],
-            "truncated": False,
-            "injected_tokens": 0,
-        }
+        if n_retriever == 0:
+            if visible == 0:
+                reason = RECALL_EMPTY_GROUP_EMPTY if memory_group else RECALL_EMPTY_STORE_EMPTY
+            else:
+                reason = RECALL_EMPTY_NO_RANKED_MATCHES
+        else:
+            reason = RECALL_EMPTY_BELOW_SCORE_THRESHOLD
+        return _injection_empty(
+            empty_reason=reason,
+            retriever_hits=n_retriever,
+            visible_entries=visible,
+        )
 
     # RAG safety check on values before injection (defense-in-depth)
     safe_results = []
@@ -184,13 +243,11 @@ def inject_memories(
             )
 
     if not safe_results:
-        return {
-            "memory_section": "",
-            "memory_injected": 0,
-            "memories": [],
-            "truncated": False,
-            "injected_tokens": 0,
-        }
+        return _injection_empty(
+            empty_reason=RECALL_EMPTY_RAG_BLOCKED,
+            retriever_hits=len(results),
+            visible_entries=visible,
+        )
 
     # Context budget enforcement
     max_tokens = config.injection_max_tokens
@@ -238,6 +295,11 @@ def inject_memories(
         "memories": summaries,
         "truncated": truncated,
         "injected_tokens": used_tokens,
+        "recall_diagnostics": _recall_diag_payload(
+            empty_reason=None,
+            retriever_hits=n_retriever,
+            visible_entries=visible,
+        ),
     }
 
 

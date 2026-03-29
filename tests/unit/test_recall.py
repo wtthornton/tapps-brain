@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 from tapps_brain._protocols import CaptureHookLike, RecallHookLike
 from tapps_brain.models import MemoryScope, MemoryTier, RecallResult
 from tapps_brain.recall import RecallConfig, RecallOrchestrator
+from tapps_brain.recall_diagnostics import RECALL_EMPTY_POST_FILTER
 from tapps_brain.store import MemoryStore
 
 # ---------------------------------------------------------------------------
@@ -206,6 +207,14 @@ class TestRecallOrchestrator:
         result = orch.recall("auth module refactoring session")
         keys = [m.get("key") for m in result.memories]
         assert "session-note" not in keys
+
+    def test_post_filter_excluded_sets_recall_diagnostics(self, store):
+        cfg = RecallConfig(scope_filter=MemoryScope.session)
+        orch = RecallOrchestrator(store, config=cfg)
+        result = orch.recall("Python 3.12 with FastAPI")
+        assert result.memory_count == 0
+        assert result.recall_diagnostics is not None
+        assert result.recall_diagnostics.empty_reason == RECALL_EMPTY_POST_FILTER
 
     def test_recall_respects_tier_filter(self, store):
         cfg = RecallConfig(tier_filter=MemoryTier.architectural)
