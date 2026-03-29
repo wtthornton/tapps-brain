@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-03-28 (full gate green: pytest ≥95% cov, ruff, mypy; **#46**/**#48** ready to close on GitHub; **#47** mitigated/closed; **#49** child task spec: [`epic-49-tasks.md`](epic-49-tasks.md))
+Last updated: 2026-03-29 (GitHub **#49** v1 epic **closed**; backlog split **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** 49-E federation, **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** `agent_scope` `group:<name>`; spec [`epic-49-tasks.md`](epic-49-tasks.md))
 Owner: @wtthornton
 
 ## Purpose
@@ -19,18 +19,14 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Priority Order
 
-**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20, **#46**, **#48**, **#47** (mitigated)
+**Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20, **#46**, **#48**, **#47** (mitigated), **#49** (v1 `memory_group` epic complete)
 
 **Remaining queue (open on GitHub):**
 
-1. **#49** — Multi-group memory scopes — **epic** (core + relay done in repo; close on GitHub
-   when children A–D are tracked/closed). Design:
-   [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
-   **Shipped in repo (2026-03-28):** schema **v16** `memory_group`, store/retrieval/recall,
-   MCP (`group` + `memory_list_groups`), CLI (`--group`, `store groups`), operator doc
-   [`memory-scopes.md`](../guides/memory-scopes.md), relay items optional `memory_group` /
-   `group` ([`memory-relay.md`](../guides/memory-relay.md)). **Optional backlog:** federation
-   hub carry ([`epic-49-tasks.md`](epic-49-tasks.md) 49-E) — file only if a subscriber needs it.
+1. **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** — **49-E (optional):** federation hub carries publisher `memory_group` — only if a subscriber needs it ([`epic-49-tasks.md`](epic-49-tasks.md) § 49-E).
+2. **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — **Long-term:** Hive `agent_scope` `group:<name>` + membership + recall union (distinct from project-local `--group` / `memory_group`). Design: [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
+
+**Closed epic #49 (v1 recap):** schema **v16** `memory_group`, store/retrieval/recall, MCP (`group` + `memory_list_groups`), CLI (`--group`, `store groups`), [`memory-scopes.md`](../guides/memory-scopes.md), relay [`memory-relay.md`](../guides/memory-relay.md). Child slices 49-A–D were delivered on `main` without separate GitHub children; see [#49](https://github.com/wtthornton/tapps-brain/issues/49) closure comment.
 
 **Shipped in repo (2026-03-28 PR):**
 
@@ -131,7 +127,9 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 12 | #46 | OpenClaw assemble / MCP recall text | closed | - | — | — | GitHub closed 2026-03-28 |
 | 13 | #48 | save tier normalization | closed | - | — | — | GitHub closed 2026-03-28 |
 | 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
-| 15 | #49 | multi-scope memory epic | open (close after GH children) | optional 49-E fed hub | — | — | relay `memory_group`; schema v16 |
+| 15 | #49 | multi-scope memory epic (v1) | closed | — | — | — | 2026-03-29; backlog → **#51**, **#52** |
+| 16 | #51 | federation hub `memory_group` (49-E) | open | — | — | — | optional subscriber-driven |
+| 17 | #52 | `agent_scope` group:<name> + membership | open | — | — | — | long-term Hive slice |
 
 ## Weekly Update Template
 
@@ -163,8 +161,8 @@ Copy this section at the end of each week:
   - [x] **#21** store stale listing — `maintenance stale`, MCP `maintenance_stale`, `StaleCandidateDetail` / `list_gc_stale_details`.
   - [x] **#20** profile tier migrate — `profile migrate-tiers`, MCP `profile_tier_migrate`, audit `tier_migrate`.
   - [x] **#46** / **#48** / **#47** — shipped + **closed on GitHub** 2026-03-28 (OpenClaw MCP unwrap + tier normalize + mitigated tool names).
-  - [x] **#49** — design note + `epic-49-tasks.md`; core + relay `memory_group` shipped in repo;
-    epic closes on GitHub when child issues A–D are done; federation hub extension (49-E) backlog.
+  - [x] **#49** — design note + `epic-49-tasks.md`; core + relay `memory_group` shipped in repo
+    (2026-03-28). Epic **closed** 2026-03-29; backlog **#51** / **#52** (see Weekly Update 2026-03-29).
 - In progress:
   - None.
 - Blocked:
@@ -172,10 +170,24 @@ Copy this section at the end of each week:
 - Scope changes:
   - None this week (planning sync only).
 - Next week plan:
-  - **#49** — file GitHub children from [`epic-49-tasks.md`](epic-49-tasks.md) (49-A→B→C, D parallel); implement **49-A** first.
+  - Triage **#51** / **#52** when a subscriber or product milestone needs them.
+
+## Weekly Update - 2026-03-29
+
+- Completed:
+  - [x] **#49** — closed on GitHub; v1 `memory_group` epic complete on `main`.
+  - [x] Backlog filed: **#51** (49-E federation), **#52** (long-term `agent_scope` groups).
+- In progress:
+  - None.
+- Blocked:
+  - None.
+- Next week plan:
+  - **#51** / **#52** — backlog only; prioritize when requested.
 
 ## Change Log
 
+- 2026-03-29: **#49** closed on GitHub; **#51** (49-E), **#52** (long-term groups) opened; roadmap + [`epic-49-tasks.md`](epic-49-tasks.md) synced.
+- 2026-03-28: **GitHub hygiene** — issue **#49** title/body updated on GitHub (v1 shipped vs backlog); **#46**/**#48**/**#47** already closed with **#50**.
 - 2026-03-28: **#49** relay items accept optional `memory_group` / `group`; **49-E** narrowed to
   optional federation hub only ([`epic-49-tasks.md`](epic-49-tasks.md)); roadmap copy updated.
 - 2026-03-28: **#49** actionable child spec [`epic-49-tasks.md`](epic-49-tasks.md) (49-A…E); roadmap table links design + tasks.

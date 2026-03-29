@@ -1,9 +1,9 @@
 # Epic #49 — actionable child issues (multi-scope memory)
 
-**Parent:** GitHub **#49** (multi-group memory scopes).  
+**Parent:** GitHub **[#49](https://github.com/wtthornton/tapps-brain/issues/49)** — **closed** (v1 complete 2026-03-29).  
 **Design:** [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
 
-Use this file to **file child issues on GitHub**, then paste the real issue numbers into [`open-issues-roadmap.md`](open-issues-roadmap.md) under epic #49.
+**Status:** Slices **49-A–D** shipped on `main` (schema v16, retrieval, MCP/CLI, docs) without separate GitHub child issues. **Backlog:** **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** (49-E federation hub), **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** (long-term `agent_scope` `group:<name>` + membership). Canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md).
 
 ## Dependency order
 
@@ -22,7 +22,8 @@ Use this file to **file child issues on GitHub**, then paste the real issue numb
 | **49-B**            | Retrieval filter by `group`      | Blocks C (MCP passes filters through store) |
 | **49-C**            | MCP + CLI `group` parameters       | After B               |
 | **49-D**            | Scope alignment doc                | Parallel with B/C     |
-| **49-E**            | Federation hub `memory_group`    | Optional backlog      |
+| **49-E**            | Federation hub `memory_group`    | **GitHub [#51](https://github.com/wtthornton/tapps-brain/issues/51)** |
+| **long-term**       | `agent_scope` group + membership | **GitHub [#52](https://github.com/wtthornton/tapps-brain/issues/52)** |
 
 ---
 
