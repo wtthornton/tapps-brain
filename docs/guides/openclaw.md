@@ -512,7 +512,7 @@ The canonical name+description list is in [`openclaw-skill/SKILL.md`](../../open
 | `flywheel_evaluate` | Offline eval harness |
 | `flywheel_hive_feedback` | Hive-wide feedback aggregation |
 | `tapps_brain_session_end` | End-of-session episodic summary |
-| `tapps_brain_relay_export` | Sub-agent relay JSON for primary import |
+| `tapps_brain_relay_export` | Sub-agent relay JSON for primary import (optional per-item `memory_group` / `group`; [memory-relay.md](memory-relay.md)) |
 | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 ### MCP Resources

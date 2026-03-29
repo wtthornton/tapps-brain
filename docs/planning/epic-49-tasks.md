@@ -12,7 +12,8 @@ Use this file to **file child issues on GitHub**, then paste the real issue numb
         │                        │
         └────────────────────────┴──► 49-D (docs, parallel anytime after A is clear)
 
-49-E (relay/federation group field) — optional; after A (and B if import affects ranking)
+49-E (federation hub `memory_group`) — optional backlog; relay import/export carries
+`memory_group` / `group` as of 2026-03-28 (see `memory-relay.md`).
 ```
 
 | ID (use until filed) | Title slug                         | Blocks / notes        |
@@ -21,7 +22,7 @@ Use this file to **file child issues on GitHub**, then paste the real issue numb
 | **49-B**            | Retrieval filter by `group`      | Blocks C (MCP passes filters through store) |
 | **49-C**            | MCP + CLI `group` parameters       | After B               |
 | **49-D**            | Scope alignment doc                | Parallel with B/C     |
-| **49-E**            | Relay / federation `group`       | Optional; after A     |
+| **49-E**            | Federation hub `memory_group`    | Optional backlog      |
 
 ---
 
@@ -141,25 +142,27 @@ Single **operator-facing** table (and short prose) mapping:
 
 ---
 
-## 49-E — Optional: relay / federation / export carry `group`
+## 49-E — Optional backlog: federation hub carries `memory_group`
 
-**Suggested GitHub title:** `feat(#49): optional group field in memory relay / federation export`
+**Suggested GitHub title:** `feat(#49): optional memory_group on federation hub publish/subscribe`
 
-**Depends on:** 49-A; coordinate with 49-B if import replays through retrieval.
+**Depends on:** 49-A; hub schema + subscriber import mapping.
 
 ### Summary
 
-If **relay** (`memory_relay`) or **federation** export/import round-trips entries, optionally include **`group`** so portable bundles preserve partition labels.
+**Relay:** Shipped — `memory_relay` import accepts optional per-item `memory_group` or `group` (same normalization as `MemoryStore.save`); `relay_version` **1.0** unchanged (optional keys). See [`docs/guides/memory-relay.md`](../guides/memory-relay.md).
 
-### Acceptance criteria
+**Federation:** The hub (`federated_memories`) still does not store project-local `memory_group`. Add only if subscribers need the publisher’s partition label (schema migration, `publish`/`search`/sync paths, docs).
 
-- [ ] Format version bump or backward-compatible optional field (document migration for consumers).
-- [ ] Import: set `group` on stored entries; unknown fields ignored on old readers if applicable.
-- [ ] Tests: export → import preserves group.
+### Acceptance criteria (federation only)
+
+- [ ] Hub column or JSON sidecar; backward-compatible migration for existing `federated.db`.
+- [ ] Publish copies `memory_group`; subscribe/import restores it where product rules allow.
+- [ ] Tests round-trip project → hub → subscriber store.
 
 ### Out of scope
 
-- Required only when a concrete consumer asks for it; can remain **unfiled** until then.
+- Not required to close epic **#49**; file a child issue when a concrete subscriber workflow needs it.
 
 ---
 
@@ -168,4 +171,5 @@ If **relay** (`memory_relay`) or **federation** export/import round-trips entrie
 1. Create GitHub issues from **49-A → 49-B → 49-C**; **49-D** in parallel once **49-A** is filed (or when field name is decided).
 2. In each child issue body, paste the **Acceptance criteria** checkboxes from above; set **parent / tracked-by #49** if your repo supports sub-issues.
 3. Replace placeholders **49-A** … in this file or roadmap with real numbers (e.g. `#1234`).
-4. Close **#49** when all **required** children (A–D) are done; leave **49-E** open as a follow-up or file later.
+4. Close **#49** when all **required** children (A–D) are done; **49-E** federation hub work
+   stays optional backlog until filed.

@@ -1444,7 +1444,8 @@ def create_server(  # noqa: PLR0915
             items_json: JSON array of item objects. Each object should include at
                 least ``key`` and ``value``. Optional: ``tier``, ``scope`` (memory
                 scope or agent_scope disambiguated per docs/guides/memory-relay.md),
-                ``visibility``, ``agent_scope``, ``tags``, ``source``, ``confidence``.
+                ``visibility``, ``agent_scope``, ``tags``, ``source``, ``confidence``,
+                ``branch``, ``memory_group`` or ``group`` (project-local partition).
         """
         from tapps_brain.memory_relay import RELAY_VERSION, build_relay_json
 

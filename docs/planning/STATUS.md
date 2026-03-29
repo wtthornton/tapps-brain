@@ -36,7 +36,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 - **v10:** `diagnostics_history` table (EPIC-030).
 - **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
 - **v12–v15:** provenance, temporal window, FSRS stability/difficulty, Bayesian access counters (see migrations in `persistence.py`).
-- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub #49).
+- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub #49). Relay import accepts optional per-item `memory_group` / `group` (`memory-relay.md`).
 - **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
 ## Dependencies (high level)

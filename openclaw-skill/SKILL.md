@@ -97,7 +97,7 @@ tools:
   - name: tapps_brain_session_end
     description: Save end-of-session episodic summary to the store
   - name: tapps_brain_relay_export
-    description: Build memory relay JSON for primary-node import (GitHub #19)
+    description: Build memory relay JSON for primary-node import (GitHub #19); items may include optional memory_group or group per memory-relay.md
   # Profiles
   - name: profile_info
     description: Active profile name, layers, scoring config

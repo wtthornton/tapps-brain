@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`.
+- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`. Optional per-item `memory_group` / `group` preserves project-local partitions on import (GitHub #49).
 - Adaptive query-aware hybrid search fusion (GitHub **#40**, EPIC-040 **040.10**): `hybrid_rrf_weights_for_query()` and weighted RRF in `MemoryRetriever` when `semantic_enabled=True`. Set `hybrid_config.adaptive_fusion=False` for legacy equal BM25/vector RRF weights.
 - Hive batch promotion (GitHub **#18**): CLI `tapps-brain hive push` and `hive push-tagged`; MCP tool `hive_push`; `select_local_entries_for_hive_push` and `push_memory_entries_to_hive` in `hive.py`. `PropagationEngine.propagate` supports `dry_run` and `bypass_profile_hive_rules`; `hive_propagate` accepts `force` and `dry_run`.
 - **GC stale listing (GitHub #21):** `MemoryGarbageCollector.stale_candidate_details`, `StaleCandidateDetail`, `MemoryStore.list_gc_stale_details`, CLI `tapps-brain maintenance stale`, MCP `maintenance_stale` (machine-readable reasons for GC candidates).

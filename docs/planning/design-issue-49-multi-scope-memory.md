@@ -40,10 +40,13 @@ should not be overloaded to mean Hive namespace or named group without renaming 
 3. **MCP/CLI:** `memory_save` / search / recall parameters; list groups if exposed.
 4. **Hive alignment doc:** Table mapping “when to use Hive namespace vs project group vs
    profile layer”; no code or small doc-only PR.
-5. **Optional:** Federated or export format carrying `group` for relay/import.
+5. **Optional:** Federation hub carrying project-local `memory_group` for subscribers who need
+   the publisher’s partition label. **Relay** carries `memory_group` / `group` per item
+   (`docs/guides/memory-relay.md`); federation hub schema remains unchanged until a consumer
+   asks.
 
-Work should land in that order (1→2→3) with 4 as parallel documentation. Issue 5 is optional
-until a concrete consumer exists.
+Work should land in that order (1→2→3) with 4 as parallel documentation. Federation hub
+extension (item 5) is optional until a concrete consumer exists.
 
 ## Out of scope for first slice
 

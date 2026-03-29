@@ -35,6 +35,9 @@ Top-level object:
 | `source_agent` | string | no | Overrides envelope `source_agent` for this row. |
 | `confidence` | number | no | Default `-1.0` (source default). |
 | `branch` | string | no | Required when memory scope is `branch`. |
+| `memory_group` or `group` | string | no | Project-local partition (GitHub #49); same semantics as MCP `group` / CLI `--group`. Empty or whitespace → ungrouped. If both fields are set, `memory_group` wins. |
+
+`relay_version` **1.0** is unchanged — consumers must ignore unknown item keys; older importers simply dropped these fields.
 
 ### Example
 
@@ -62,5 +65,6 @@ Top-level object:
 
 ## See also
 
+- [Memory scopes](memory-scopes.md) — `memory_group` vs Hive namespace vs profile layer.
 - `memory_export` / `memory_import` MCP tools for full-store JSON (different shape).
 - GitHub issue [#19](https://github.com/wtthornton/tapps-brain/issues/19).

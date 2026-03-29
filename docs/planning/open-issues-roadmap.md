@@ -23,12 +23,14 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Remaining queue (open on GitHub):**
 
-1. **#49** — Multi-group memory scopes — **epic**. Design:
+1. **#49** — Multi-group memory scopes — **epic** (core + relay done in repo; close on GitHub
+   when children A–D are tracked/closed). Design:
    [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
    **Shipped in repo (2026-03-28):** schema **v16** `memory_group`, store/retrieval/recall,
    MCP (`group` + `memory_list_groups`), CLI (`--group`, `store groups`), operator doc
-   [`memory-scopes.md`](../guides/memory-scopes.md). **Optional follow-up:** relay/federation
-   carry `group` ([`epic-49-tasks.md`](epic-49-tasks.md) 49-E); file GitHub children + close epic when ready.
+   [`memory-scopes.md`](../guides/memory-scopes.md), relay items optional `memory_group` /
+   `group` ([`memory-relay.md`](../guides/memory-relay.md)). **Optional backlog:** federation
+   hub carry ([`epic-49-tasks.md`](epic-49-tasks.md) 49-E) — file only if a subscriber needs it.
 
 **Shipped in repo (2026-03-28 PR):**
 
@@ -129,7 +131,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 12 | #46 | OpenClaw assemble / MCP recall text | closed | - | — | — | GitHub closed 2026-03-28 |
 | 13 | #48 | save tier normalization | closed | - | — | — | GitHub closed 2026-03-28 |
 | 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
-| 15 | #49 | multi-scope memory epic | open (core shipped) | optional 49-E relay | — | — | `memory-scopes.md`; schema v16 `memory_group` |
+| 15 | #49 | multi-scope memory epic | open (close after GH children) | optional 49-E fed hub | — | — | relay `memory_group`; schema v16 |
 
 ## Weekly Update Template
 
@@ -161,7 +163,8 @@ Copy this section at the end of each week:
   - [x] **#21** store stale listing — `maintenance stale`, MCP `maintenance_stale`, `StaleCandidateDetail` / `list_gc_stale_details`.
   - [x] **#20** profile tier migrate — `profile migrate-tiers`, MCP `profile_tier_migrate`, audit `tier_migrate`.
   - [x] **#46** / **#48** / **#47** — shipped + **closed on GitHub** 2026-03-28 (OpenClaw MCP unwrap + tier normalize + mitigated tool names).
-  - [x] **#49** — design note (`design-issue-49-multi-scope-memory.md`) + child issue spec (`epic-49-tasks.md`); epic stays open until GitHub children filed and implemented.
+  - [x] **#49** — design note + `epic-49-tasks.md`; core + relay `memory_group` shipped in repo;
+    epic closes on GitHub when child issues A–D are done; federation hub extension (49-E) backlog.
 - In progress:
   - None.
 - Blocked:
@@ -173,6 +176,8 @@ Copy this section at the end of each week:
 
 ## Change Log
 
+- 2026-03-28: **#49** relay items accept optional `memory_group` / `group`; **49-E** narrowed to
+  optional federation hub only ([`epic-49-tasks.md`](epic-49-tasks.md)); roadmap copy updated.
 - 2026-03-28: **#49** actionable child spec [`epic-49-tasks.md`](epic-49-tasks.md) (49-A…E); roadmap table links design + tasks.
 - 2026-03-28: **#46** OpenClaw `assemble()` / MCP text unwrapping + recall `value` in summaries;
   **#48** tier normalization (`tier_normalize`, store/MCP/relay); **#47** mitigated + doc;

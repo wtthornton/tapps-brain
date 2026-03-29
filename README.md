@@ -269,7 +269,7 @@ tapps-brain-mcp --project-dir /path/to/project
 | | `memory_export` | Export entries as JSON |
 | | `memory_import` | Import entries from JSON |
 | **Session / relay** | `tapps_brain_session_end` | End-of-session episodic summary |
-| | `tapps_brain_relay_export` | Build sub-agent relay JSON for import |
+| | `tapps_brain_relay_export` | Build sub-agent relay JSON for import (items may set `memory_group` / `group`; see [memory-relay](docs/guides/memory-relay.md)) |
 | **OpenClaw** | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 **Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics` · `memory://feedback` · `memory://diagnostics` · `memory://report`

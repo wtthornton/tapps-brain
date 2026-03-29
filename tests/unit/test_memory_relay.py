@@ -419,3 +419,169 @@ def test_build_relay_json_roundtrip(tmp_path: Path) -> None:
         assert r.imported == 1
     finally:
         store.close()
+
+
+def test_import_memory_group_persisted(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "mg.row",
+                        "value": "v",
+                        "scope": "project",
+                        "memory_group": " team-a ",
+                    }
+                ],
+            },
+        )
+        assert r.imported == 1
+        ent = store.get("mg.row")
+        assert ent is not None
+        assert ent.memory_group == "team-a"
+    finally:
+        store.close()
+
+
+def test_import_group_alias_persisted(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "grp.alias",
+                        "value": "v",
+                        "scope": "project",
+                        "group": "feature-x",
+                    }
+                ],
+            },
+        )
+        assert r.imported == 1
+        assert store.get("grp.alias").memory_group == "feature-x"
+    finally:
+        store.close()
+
+
+def test_import_memory_group_wins_over_group(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "mg.win",
+                        "value": "v",
+                        "scope": "project",
+                        "memory_group": "canonical",
+                        "group": "ignored",
+                    }
+                ],
+            },
+        )
+        assert r.imported == 1
+        assert store.get("mg.win").memory_group == "canonical"
+    finally:
+        store.close()
+
+
+def test_import_empty_group_string_ungrouped(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "mg.empty",
+                        "value": "v",
+                        "scope": "project",
+                        "group": "   ",
+                    }
+                ],
+            },
+        )
+        assert r.imported == 1
+        assert store.get("mg.empty").memory_group is None
+    finally:
+        store.close()
+
+
+def test_import_invalid_memory_group_type_skipped(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "mg.badtype",
+                        "value": "v",
+                        "scope": "project",
+                        "group": 123,
+                    }
+                ],
+            },
+        )
+        assert r.imported == 0
+        assert r.skipped == 1
+        assert "memory_group/group must be a string" in r.warnings[0]
+    finally:
+        store.close()
+
+
+def test_import_memory_group_too_long_skipped(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        long_name = "a" * 65
+        r = import_relay_to_store(
+            store,
+            {
+                "source_agent": "s",
+                "items": [
+                    {
+                        "key": "mg.long",
+                        "value": "v",
+                        "scope": "project",
+                        "memory_group": long_name,
+                    }
+                ],
+            },
+        )
+        assert r.imported == 0
+        assert r.skipped == 1
+        assert "invalid memory_group" in r.warnings[0]
+    finally:
+        store.close()
+
+
+def test_build_relay_json_roundtrip_preserves_group(tmp_path: Path) -> None:
+    items = [
+        {
+            "key": "r.grp",
+            "value": "body",
+            "scope": "project",
+            "group": "squad-b",
+        }
+    ]
+    s = build_relay_json(source_agent="agent-x", items=items)
+    data, err = parse_relay_document(s)
+    assert err is None
+    assert data is not None
+    store = MemoryStore(tmp_path)
+    try:
+        r = import_relay_to_store(store, data)
+        assert r.imported == 1
+        assert store.get("r.grp").memory_group == "squad-b"
+    finally:
+        store.close()

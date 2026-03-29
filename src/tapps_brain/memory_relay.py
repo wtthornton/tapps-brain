@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.models import MemoryScope
 from tapps_brain.tier_normalize import normalize_save_tier
 
@@ -127,7 +128,25 @@ def build_relay_json(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _coerce_relay_item_save_kwargs(
+def _relay_memory_group_save_kw(
+    raw: dict[str, Any], prefix: str
+) -> tuple[dict[str, Any], str | None]:
+    """Build ``memory_group`` kwargs for ``MemoryStore.save``; ``({}, None)`` if unset."""
+    mem_g_raw = raw.get("memory_group")
+    grp_raw = raw.get("group")
+    if mem_g_raw is None and grp_raw is None:
+        return {}, None
+    chosen = mem_g_raw if mem_g_raw is not None else grp_raw
+    if not isinstance(chosen, str):
+        return {}, f"{prefix}: memory_group/group must be a string when provided, skipped"
+    try:
+        normalized = normalize_memory_group(chosen)
+    except ValueError as exc:
+        return {}, f"{prefix}: invalid memory_group ({exc}), skipped"
+    return {"memory_group": normalized}, None
+
+
+def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
     raw: dict[str, Any],
     *,
     prefix: str,
@@ -178,6 +197,10 @@ def _coerce_relay_item_save_kwargs(
     if isinstance(branch, str) and branch.strip():
         branch_s = branch.strip()
 
+    mg_kw, mg_skip = _relay_memory_group_save_kw(raw, prefix)
+    if mg_skip is not None:
+        return None, mg_skip
+
     save_kw: dict[str, Any] = {
         "key": key,
         "value": value,
@@ -190,6 +213,7 @@ def _coerce_relay_item_save_kwargs(
         "confidence": confidence,
         "branch": branch_s,
         "batch_context": "memory_relay",
+        **mg_kw,
     }
     return save_kw, None
 

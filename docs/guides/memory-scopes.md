@@ -23,5 +23,6 @@ Three concepts are easy to confuse. They are **separate** in tapps-brain.
 
 - **CLI:** `tapps-brain store list --group X`, `store search Q --group X`, `store groups`, `tapps-brain recall MSG --group X`, `memory search Q --group X`.
 - **MCP:** `memory_save` / `memory_search` / `memory_list` / `memory_recall` optional `group`; `memory_list_groups` lists distinct names.
+- **Relay:** per-item optional `memory_group` or `group` in relay JSON (`relay_version` 1.0); see [Memory relay](memory-relay.md).
 
 See also: `docs/planning/design-issue-49-multi-scope-memory.md`.
