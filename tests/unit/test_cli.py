@@ -203,8 +203,8 @@ class TestStoreCommands:
     def test_stats(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "Entries: 3 / 500" in result.stdout
-        assert "Schema: v15" in result.stdout
+        assert "Entries: 3 / 5000" in result.stdout
+        assert "Schema: v16" in result.stdout
 
     def test_stats_json(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir, "--json"])
@@ -854,14 +854,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v15" in result.stdout
+        assert "v16" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v15" in result.stdout
+        assert "v16" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
