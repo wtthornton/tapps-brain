@@ -58,3 +58,9 @@ def test_delete_expired_sessions(tmp_path: Path) -> None:
     deleted = delete_expired_sessions(tmp_path, ttl_days=3650)
     assert isinstance(deleted, int)
     assert deleted >= 0
+
+
+def test_delete_expired_sessions_rejects_non_positive_ttl(tmp_path: Path) -> None:
+    """ttl_days < 1 is a no-op (returns 0 without opening persistence)."""
+    assert delete_expired_sessions(tmp_path, ttl_days=0) == 0
+    assert delete_expired_sessions(tmp_path, ttl_days=-1) == 0

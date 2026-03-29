@@ -40,6 +40,8 @@ def make_entry(
     valid_at: str | None = None,
     invalid_at: str | None = None,
     superseded_by: str | None = None,
+    stability: float | None = None,
+    difficulty: float | None = None,
 ) -> MemoryEntry:
     """Create a ``MemoryEntry`` with sensible test defaults.
 
@@ -77,5 +79,9 @@ def make_entry(
 
     if confidence != -1.0:
         kwargs["confidence"] = confidence
+    if stability is not None:
+        kwargs["stability"] = stability
+    if difficulty is not None:
+        kwargs["difficulty"] = difficulty
 
     return MemoryEntry(**kwargs)

@@ -20,6 +20,11 @@ def test_extract_keywords_empty():
     assert extract_keywords("   ") == []
 
 
+def test_extract_keywords_no_phrases_meeting_min_length():
+    """Tokenizes to content but every candidate phrase is shorter than min length."""
+    assert extract_keywords("hi.") == []
+
+
 def test_generate_key():
     text = "Bill prefers dark mode for all applications"
     key = generate_key(text)

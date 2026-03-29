@@ -265,6 +265,63 @@ class TestCheckPromotion:
         result = engine.check_promotion(entry, profile, now=_JAN_15)
         assert result is None
 
+    def test_stability_promotion_triggers_when_score_above_threshold(self) -> None:
+        """Stability strategy promotes when computed score exceeds layer threshold."""
+        layers = [
+            LayerDefinition(
+                name="context",
+                half_life_days=14,
+                promotion_to="procedural",
+                promotion_strategy="stability",
+                promotion_stability_threshold=10.0,
+            ),
+            LayerDefinition(name="procedural", half_life_days=30),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="stab-promo-yes",
+            tier=MemoryTier.context,
+            confidence=0.8,
+            access_count=20,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+            stability=50.0,
+            difficulty=1.0,
+        )
+        engine = PromotionEngine()
+        # Omit ``now`` to cover default ``datetime.now(UTC)`` branch in check_promotion.
+        result = engine.check_promotion(entry, profile)
+        assert result == "procedural"
+
+    def test_stability_promotion_noop_when_score_below_threshold(self) -> None:
+        """Stability strategy does not promote when score stays below threshold."""
+        layers = [
+            LayerDefinition(
+                name="context",
+                half_life_days=14,
+                promotion_to="procedural",
+                promotion_strategy="stability",
+                promotion_stability_threshold=10.0,
+            ),
+            LayerDefinition(name="procedural", half_life_days=30),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="stab-promo-no",
+            tier=MemoryTier.context,
+            confidence=0.8,
+            access_count=2,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_1_ISO,
+            stability=5.0,
+            difficulty=5.0,
+        )
+        engine = PromotionEngine()
+        result = engine.check_promotion(entry, profile, now=_JAN_15)
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # Demotion tests
@@ -273,6 +330,34 @@ class TestCheckPromotion:
 
 class TestCheckDemotion:
     """Tests for PromotionEngine.check_demotion."""
+
+    def test_demotion_by_low_stability_before_floor_checks(self) -> None:
+        """When demotion_min_stability is set, low stability demotes immediately."""
+        layers = [
+            LayerDefinition(
+                name="pattern",
+                half_life_days=60,
+                confidence_floor=0.1,
+                demotion_to="context",
+                demotion_min_stability=10.0,
+            ),
+            LayerDefinition(name="context", half_life_days=14),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="stab-demote",
+            tier=MemoryTier.pattern,
+            confidence=0.9,
+            access_count=5,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_15_ISO,
+            stability=2.0,
+        )
+        engine = PromotionEngine()
+        # Omit ``now`` to cover default ``datetime.now(UTC)`` branch in check_demotion.
+        result = engine.check_demotion(entry, profile)
+        assert result == "context"
 
     def test_demotion_on_stale_entry(self) -> None:
         """Entry with low effective confidence and no recent access is demoted."""
