@@ -1,5 +1,10 @@
 # Upgrading the tapps-brain OpenClaw Plugin
 
+## v2.0.3 — Align with tapps-brain 2.0.3
+
+- Bumps plugin `package.json`, `openclaw.plugin.json`, `ContextEngineInfo` / client identity strings, and manifests to **2.0.3** with the Python patch release.
+- **No feature delta vs 2.0.2** — distribution and version consistency only; see root `CHANGELOG.md` **v2.0.3**.
+
 ## v2.0.2 — Align with tapps-brain 2.0.2
 
 - Bumps plugin `package.json`, `openclaw.plugin.json`, `ContextEngineInfo` / client identity strings, and manifests to **2.0.2** with the Python patch release.

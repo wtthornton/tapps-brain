@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-03-29 (America/Chicago) — **v2.0.2**; planning sync with open-issues roadmap (GitHub **#49** closed; backlog **#51**, **#52**)
+**Last updated:** 2026-03-30 (America/Chicago) — **v2.0.3**; version bump + doc sync (open-issues backlog **#51**, **#52** unchanged)
 
-**Package version (PyPI / `pyproject.toml`):** **2.0.2**
+**Package version (PyPI / `pyproject.toml`):** **2.0.3**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -109,7 +109,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.2** documents + version alignment; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server exposes **64** tools and **8** resources (incl. `memory://agent-contract` and related URIs — see `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.3** version alignment; **2.0.2** agent-integration + relay docs; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server exposes **64** tools and **8** resources (incl. `memory://agent-contract` and related URIs — see `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
 - **Open GitHub issues (backlog)** — **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** optional federation hub `memory_group`; **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** long-term Hive `agent_scope` `group:<name>` + membership. Specs: [`epic-49-tasks.md`](epic-49-tasks.md), [`design-issue-49-multi-scope-memory.md`](design-issue-49-multi-scope-memory.md).
@@ -122,7 +122,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 - **Docs checker:** `scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
 - **CI:** `.github/workflows/ci.yml` — `lint` runs docs checker; `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
 - **Remediation on failure:** `scripts/publish-checklist.md`, `docs/guides/openclaw-runbook.md`, `docs/planning/epics/EPIC-036.md`.
-- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.2+).
+- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.3+).
 
 ## READY-035 docs consistency evidence (2026-03-24)
 

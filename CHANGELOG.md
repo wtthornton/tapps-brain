@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.3 (2026-03-30)
+
+### Changed
+
+- Version and distribution alignment: Python package, OpenClaw plugin/skill manifests, MCP `server.json`, and planning snapshot docs bumped to **2.0.3** (no API changes).
+
 ## v2.0.2 (2026-03-29)
 
 ### Added
