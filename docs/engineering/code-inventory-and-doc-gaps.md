@@ -50,7 +50,7 @@ Summary (Phase 2 implementation status, 2026-03-31):
 - [x] **#58 / ED-P1-02** — `docs/guides/observability.md`; README `[otel]` footnote; EPIC-032 pointer.
 - [x] **#59 / ED-P1-03** — `docs/guides/visual-snapshot.md`; README nav link.
 - [x] **#60 / ED-P1-04** — Manifest includes resources; docs + OpenClaw check read counts from manifest.
-- [x] **#61 / ED-P2-01** — `mem0-review/` scope note in `docs/engineering/README.md`.
+- [x] **#61 / ED-P2-01** — Documented then **removed** `mem0-review/` from the repo (no longer vendored).
 - [x] **#62 / ED-P2-02** — Import/static check: `otel_exporter` has no CLI/MCP/store wiring (documented); no new orphan modules filed beyond explicit test-only helpers. Re-run when adding entry points.
 
 - [x] Hive guide/profile defaults reconciled (2026-03-31 baseline).

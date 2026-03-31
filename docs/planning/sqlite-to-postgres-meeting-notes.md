@@ -20,7 +20,7 @@ Capture migration discussion from SQLite to PostgreSQL, including rationale, tra
 
 - Current repository is heavily SQLite-centered (schema migrations, sqlite-vec, SQLCipher path).
 - No first-party Postgres migration plan or PoC appears in core `src/` or primary docs yet.
-- `mem0-review/` contains Postgres-related materials but appears to be reference/research content, not active tapps-brain runtime backend code.
+- ~~`mem0-review/`~~ (removed from repo): was reference/research content only, not tapps-brain runtime.
 - Migration planning should treat performance, portability, operational complexity, and reliability as first-class constraints.
 
 ## Key questions for next discussion

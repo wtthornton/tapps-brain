@@ -56,3 +56,6 @@ openclaw-plugin/node_modules/
 
 # LOCK-1: Instance lock file (auto-released by flock)
 .ralph/.ralph.lock
+
+# Local Mem0 checkout (not part of tapps-brain; do not commit)
+mem0-review/

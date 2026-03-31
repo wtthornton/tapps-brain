@@ -21,10 +21,6 @@ This baseline is generated from current code paths in:
 
 It is intentionally implementation-first, not roadmap-first.
 
-## Vendored reference tree
-
-The `mem0-review/` directory is **upstream Mem0 source and docs**, checked in for comparison and research. It is **not** part of the packaged `tapps_brain` module or PyPI wheel.
-
 ## Follow-up work
 
 Prioritized issues to file on GitHub: [`docs/planning/engineering-doc-phase2-follow-up-issues.md`](../planning/engineering-doc-phase2-follow-up-issues.md).

@@ -123,12 +123,14 @@
 
 **Problem:** Large tree under `mem0-review/` can be mistaken for product code; it is reference/research.
 
-**Acceptance criteria:**
+**Resolution (2026):** Issue #61 documented the distinction; **`mem0-review/` was removed from the repository** entirely so it is not confused with product code.
 
-- [ ] Root `README.md` or `docs/engineering/README.md` notes what `mem0-review/` is and that it is not part of the packaged `tapps_brain` surface.
-- [ ] Optional: `.gitignore` or `CONTRIBUTING.md` policy if it should not ship in forks/releases.
+**Acceptance criteria (historical):**
 
-**Refs:** `mem0-review/README.md`
+- [x] `docs/engineering/README.md` noted scope (later superseded by removal).
+- [x] Tree deleted — no vendored Mem0 checkout in tapps-brain.
+
+**Refs:** *(none — directory removed)*
 
 ---
 
