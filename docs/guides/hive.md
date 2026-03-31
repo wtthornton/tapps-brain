@@ -7,6 +7,7 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents on the sam
 ## Table of Contents
 
 - [Overview](#overview)
+- [Who attaches `HiveStore`?](#who-attaches-hivestore)
 - [Architecture](#architecture)
 - [Namespaces](#namespaces)
 - [Agent Registration](#agent-registration)
@@ -49,8 +50,18 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents on the sam
 Key properties:
 - **SQLite with WAL mode** — concurrent reads, single writer, FTS5 full-text search
 - **Namespace isolation** — each agent writes to its own namespace; cross-namespace search available
-- **Backward compatible** — Hive is disabled by default; single-agent behavior is unchanged
+- **Backward compatible core model** — local single-agent behavior remains valid. In practice, whether Hive is attached depends on interface/runtime configuration.
 - **Thread-safe** — all operations are protected by `threading.Lock`
+
+### Who attaches `HiveStore`?
+
+| Interface | Default | Notes |
+|-----------|---------|--------|
+| **CLI** (`tapps-brain` commands) | **Attached** — `HiveStore()` is passed into `MemoryStore` | No `--no-hive` flag yet; use the library with `hive_store=None` if you need a Hive-free CLI-style workflow. |
+| **MCP** (`tapps-brain-mcp`) | **Attached** — `enable_hive=True` by default | Pass `--no-enable-hive` to run without an attached Hive. |
+| **Python library** | **Not attached** unless you pass `hive_store=` | e.g. `MemoryStore(path, hive_store=HiveStore())` to match CLI/MCP behavior. |
+
+Profile `hive` settings (tiers, conflict policy, `recall_weight`) apply only when a `HiveStore` is attached — they do not turn Hive on or off by themselves.
 
 ---
 
@@ -301,10 +312,10 @@ The Hive config is part of the memory profile. See the [Profile Design Guide](pr
 
 ```yaml
 hive:
-  auto_propagate_tiers: []        # Tiers that auto-propagate to Hive
-  private_tiers: []               # Tiers that never propagate
-  conflict_policy: "supersede"    # Default conflict resolution
-  recall_weight: 0.8              # Weight for Hive results in recall (0.0-1.0)
+  auto_propagate_tiers: ["architectural", "pattern"]  # Current code defaults
+  private_tiers: ["context"]                           # Current code defaults
+  conflict_policy: "supersede"                         # Default conflict resolution
+  recall_weight: 0.8                                   # Weight for Hive results in recall (0.0-1.0)
 ```
 
 ### How profile name maps to namespace

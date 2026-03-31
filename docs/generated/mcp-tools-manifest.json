@@ -1,6 +1,7 @@
 {
   "source": "src/tapps_brain/mcp_server.py",
   "tool_count": 64,
+  "resource_count": 8,
   "tools": [
     {
       "name": "agent_create",
@@ -257,6 +258,40 @@
     {
       "name": "tapps_brain_session_end",
       "description": "Record an end-of-session episodic memory entry."
+    }
+  ],
+  "resources": [
+    {
+      "uri": "memory://agent-contract",
+      "description": "Agent integration snapshot: versions, profile, tiers, recall empty codes."
+    },
+    {
+      "uri": "memory://diagnostics",
+      "description": "Latest diagnostics report (does not append history by default)."
+    },
+    {
+      "uri": "memory://entries/{key}",
+      "description": "Full detail view of a single memory entry."
+    },
+    {
+      "uri": "memory://feedback",
+      "description": "Recent feedback events (up to 500), newest-friendly order by query default."
+    },
+    {
+      "uri": "memory://health",
+      "description": "Store health report."
+    },
+    {
+      "uri": "memory://metrics",
+      "description": "Operation metrics: counters and latency histograms."
+    },
+    {
+      "uri": "memory://report",
+      "description": "Latest flywheel quality report summary (from last ``generate_report``)."
+    },
+    {
+      "uri": "memory://stats",
+      "description": "Store statistics: entry count, tier distribution, schema version."
     }
   ]
 }

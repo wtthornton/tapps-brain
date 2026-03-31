@@ -201,20 +201,21 @@ from tapps_brain.federation import (
 config = load_federation_config()
 
 # Inspect
-print(config.hub_path)        # custom hub path or ""
+print(config.hub_path)        # optional override; empty => ~/.tapps-brain/memory/federated.db
 print(config.projects)        # list[FederationProject]
 print(config.subscriptions)   # list[FederationSubscription]
 
-# Modify and save
-config.hub_path = "/custom/hub/path"
+# Optional: relocate the hub SQLite file (persists in federation.yaml)
+config.hub_path = "/custom/hub/federated.db"
 save_federation_config(config)
+# Subsequent FederatedStore() / CLI / MCP publish use this path unless db_path= is passed.
 ```
 
 `FederationConfig` fields:
 
 | Field           | Type                         | Description                        |
 |-----------------|------------------------------|------------------------------------|
-| `hub_path`      | `str`                        | Custom path to federated.db        |
+| `hub_path`      | `str`                        | Hub SQLite path; when non-empty, `FederatedStore()` and federation tools use it (`expanduser` applied). Empty string selects the default `~/.tapps-brain/memory/federated.db`. Pass `db_path=` to override without reading YAML. |
 | `projects`      | `list[FederationProject]`    | Registered projects                |
 | `subscriptions` | `list[FederationSubscription]`| Active subscriptions              |
 

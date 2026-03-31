@@ -1,8 +1,10 @@
 # tapps-brain for OpenClaw
 
-Persistent cross-session memory for your OpenClaw agents. **63** MCP tools and
-**8** resources (memory, feedback, diagnostics, flywheel, Hive, federation, graph,
-OpenClaw migration), zero LLM dependency in core, SQLite-backed, works offline.
+Persistent cross-session memory for your OpenClaw agents. MCP tool and resource
+**counts** are recorded in [`docs/generated/mcp-tools-manifest.json`](../generated/mcp-tools-manifest.json)
+(regenerate: `python scripts/generate_mcp_tool_manifest.py`). Surface includes memory,
+feedback, diagnostics, flywheel, Hive, federation, graph, and OpenClaw migration; zero
+LLM dependency in core; SQLite-backed; works offline.
 
 **Canonical install/upgrade runbook (PyPI + Git-only):**
 [openclaw-runbook.md](./openclaw-runbook.md)
@@ -172,7 +174,7 @@ memory slot is not claimed.
 
 ## Mode 3: MCP Sidecar
 
-Use the MCP sidecar for direct access to all **63** tools, or when you want full manual
+Use the MCP sidecar for direct access to all shipped tools (see manifest), or when you want full manual
 control over recall and capture workflows. Works with any OpenClaw version.
 
 ### Install
@@ -268,7 +270,7 @@ Restart OpenClaw after editing `openclaw.json` — MCP config is read at startup
 
 For OpenClaw versions before v2026.3.7 that do not support the ContextEngine API
 (`definePluginEntry`), use Mode 3 (MCP sidecar) instead of the plugin. The agent
-gets all 64 tools as native MCP tools — memory is not automatically injected, but
+gets all shipped MCP tools as native tools — memory is not automatically injected, but
 the agent can be instructed to use `memory_recall` and `memory_capture` explicitly.
 
 Upgrade OpenClaw to v2026.3.7+ when possible to get automatic per-turn recall and
@@ -389,7 +391,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 | Auto-capture from messages | ✅ | — | — |
 | Pre-compaction flush | ✅ | — | — |
 | Replaces memory-core tools | — | ✅ | — |
-| Direct tool access (64 tools) | ✅ | ✅ | ✅ |
+| Direct tool access (full MCP surface) | ✅ | ✅ | ✅ |
 | Hive multi-agent sharing | ✅ | ✅ | ✅ |
 | Cross-project federation | ✅ | ✅ | ✅ |
 | Custom profiles | ✅ | ✅ | ✅ |
@@ -402,7 +404,7 @@ Set `profilePath` in your plugin config to use it. Built-in profiles:
 
 ---
 
-## All 64 MCP Tools
+## All MCP tools
 
 The canonical name+description list is in [`openclaw-skill/SKILL.md`](../../openclaw-skill/SKILL.md) (OpenClaw) and [`mcp.md`](./mcp.md). Summary tables below.
 
@@ -629,7 +631,7 @@ The import infers tier from heading level:
 
 ### Upgrading from tapps-brain v0.x (28-tool API)
 
-v1.x expanded from 28 to 64 MCP tools (current). The original 28 tools are unchanged — no
+v1.x expanded from 28 to the current MCP tool surface (see `docs/generated/mcp-tools-manifest.json`). The original 28 tools are unchanged — no
 breaking changes. New tools are additive. See CHANGELOG for the full list.
 
 ### Migrating from MCP sidecar to ContextEngine plugin

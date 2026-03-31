@@ -66,7 +66,7 @@ def _resolve_project_dir(project_dir: str | None) -> Path:
 def _get_store(
     project_dir: Path,
     *,
-    enable_hive: bool = False,
+    enable_hive: bool = True,
     agent_id: str = "unknown",
 ) -> Any:  # noqa: ANN401
     """Open a MemoryStore for the given project directory.
@@ -74,6 +74,7 @@ def _get_store(
     When *enable_hive* is ``True``, a shared :class:`HiveStore` is
     created and wired into the store together with *agent_id*.
     """
+    from tapps_brain.embeddings import get_embedding_provider
     from tapps_brain.store import MemoryStore
 
     hive_store = None
@@ -84,6 +85,7 @@ def _get_store(
 
     return MemoryStore(
         project_dir,
+        embedding_provider=get_embedding_provider(semantic_search_enabled=True),
         hive_store=hive_store,
         hive_agent_id=agent_id,
     )
@@ -92,7 +94,7 @@ def _get_store(
 def create_server(  # noqa: PLR0915
     project_dir: Path | None = None,
     *,
-    enable_hive: bool = False,
+    enable_hive: bool = True,
     agent_id: str = "unknown",
 ) -> Any:  # noqa: ANN401
     """Create and configure a FastMCP server instance.
@@ -1040,12 +1042,13 @@ def create_server(  # noqa: PLR0915
         """
         from tapps_brain.federation import (
             FederatedStore,
+            federated_hub_db_path,
             load_federation_config,
         )
 
         config = load_federation_config()
         try:
-            hub = FederatedStore()
+            hub = FederatedStore(db_path=federated_hub_db_path(config))
             try:
                 stats = hub.get_stats()
             finally:
@@ -1142,12 +1145,13 @@ def create_server(  # noqa: PLR0915
         """
         from tapps_brain.federation import (
             FederatedStore,
+            federated_hub_db_path,
             register_project,
             sync_to_hub,
         )
 
         register_project(project_id, str(resolved_dir))
-        hub = FederatedStore()
+        hub = FederatedStore(db_path=federated_hub_db_path())
         try:
             result = sync_to_hub(
                 store=store,
@@ -2389,9 +2393,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--enable-hive",
-        action="store_true",
-        default=False,
-        help="Enable Hive multi-agent shared brain.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable Hive multi-agent shared brain (default: enabled).",
     )
     args = parser.parse_args()
 

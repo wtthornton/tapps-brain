@@ -189,16 +189,18 @@ class DiagnosticsProfileConfig(BaseModel):
 class HiveConfig(BaseModel):
     """Hive propagation configuration (EPIC-011).
 
-    Controls how memories flow between the local store and the Hive.
-    When absent or all defaults, Hive is effectively disabled.
+    Controls tier routing, conflict resolution, and Hive recall weight when a
+    ``HiveStore`` is attached (see CLI/MCP defaults vs
+    ``MemoryStore(..., hive_store=...)`` in the Hive guide). This block does not
+    attach or detach Hive; it only applies when ``hive_store`` is non-``None``.
     """
 
     auto_propagate_tiers: list[str] = Field(
-        default_factory=list,
+        default_factory=lambda: ["architectural", "pattern"],
         description="Tiers that auto-propagate to the Hive (e.g. ['architectural']).",
     )
     private_tiers: list[str] = Field(
-        default_factory=list,
+        default_factory=lambda: ["context"],
         description="Tiers that never propagate (e.g. ['context']).",
     )
     conflict_policy: str = Field(

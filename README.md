@@ -13,7 +13,7 @@
 
 A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 ranking, dual decay models, automatic consolidation,<br>cross-project federation, and pluggable vector search.
 
-[Getting Started](docs/guides/getting-started.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md) · [OpenClaw](docs/guides/openclaw.md) · [OpenClaw runbook](docs/guides/openclaw-runbook.md)
+[Getting Started](docs/guides/getting-started.md) · [Engineering baseline](docs/engineering/README.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md) · [Visual snapshot](docs/guides/visual-snapshot.md) · [OpenClaw](docs/guides/openclaw.md) · [OpenClaw runbook](docs/guides/openclaw-runbook.md)
 
 </div>
 
@@ -31,7 +31,7 @@ AI agents forget everything between sessions. **tapps-brain** gives them persist
 Every operation — search, decay, consolidation, extraction, scoring — is deterministic and reproducible. No API keys, no latency, no cost.
 
 ### Three equal interfaces
-Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (**64** tools, **8** resources) — same engine, same behavior, pick what fits your workflow.
+Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (tools/resources per [`docs/generated/mcp-tools-manifest.json`](docs/generated/mcp-tools-manifest.json)) — same engine, same behavior, pick what fits your workflow.
 
 </td>
 <td width="50%">
@@ -112,11 +112,13 @@ pip install tapps-brain                 # core library
 pip install tapps-brain[mcp]            # + MCP server for Claude Code, Cursor, VS Code Copilot
 pip install tapps-brain[vector]         # + hybrid search (FAISS + sentence-transformers)
 pip install tapps-brain[reranker]       # + Cohere semantic reranking
-pip install tapps-brain[otel]           # + OpenTelemetry observability
+pip install tapps-brain[otel]           # + OpenTelemetry types/helpers (not wired to CLI/MCP yet — see docs/guides/observability.md)
 pip install tapps-brain[all]            # everything above (except otel)
 ```
 
 > **Contributors:** `uv sync --extra dev` installs the full dev stack (pytest, ruff, mypy, mcp, typer).
+
+**Observability note:** [docs/guides/observability.md](docs/guides/observability.md) describes metrics/diagnostics and the OTel module status (EP032).
 
 > **Pre-release / CI parity:** `bash scripts/release-ready.sh` (Linux, macOS, WSL, or Git Bash on Windows) runs packaging, tests, lint, types, and the OpenClaw plugin build. OpenClaw-facing doc drift: `python scripts/check_openclaw_docs_consistency.py`. Details: [`scripts/publish-checklist.md`](scripts/publish-checklist.md), [`docs/planning/STATUS.md`](docs/planning/STATUS.md).
 
@@ -153,13 +155,13 @@ tapps-brain export --format json --output backup.json
 
 Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, …). Many commands support `--json` output.
 
-### MCP server — 64 tools
+### MCP server
 
 ```bash
 tapps-brain-mcp --project-dir /path/to/project
 ```
 
-64 tools, 8 resources, and 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
+Tool and resource counts are recorded in [`docs/generated/mcp-tools-manifest.json`](docs/generated/mcp-tools-manifest.json) (regenerate: `python scripts/generate_mcp_tool_manifest.py`). The server also exposes 3 prompts via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with Claude Code, Cursor, VS Code Copilot, and any MCP-compatible client.
 
 <details>
 <summary><strong>MCP client configuration</strong></summary>
@@ -204,7 +206,7 @@ tapps-brain-mcp --project-dir /path/to/project
 </details>
 
 <details>
-<summary><strong>Full MCP tool reference (64 tools)</strong></summary>
+<summary><strong>Full MCP tool reference</strong></summary>
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -506,7 +508,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
-| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (64 tools, 8 resources) |
+| **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (counts in `docs/generated/mcp-tools-manifest.json`) |
 | **Infra** | `_protocols`, `_feature_flags` | Protocol interfaces, lazy optional dependency detection |
 
 </details>

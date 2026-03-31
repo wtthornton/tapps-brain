@@ -73,6 +73,7 @@ class TestVersionHelp:
             "openclaw",
             "feedback",
             "diagnostics",
+            "visual",
         ]:
             result = runner.invoke(app, [subgroup, "--help"])
             assert result.exit_code == 0, f"{subgroup} --help failed"
@@ -674,7 +675,7 @@ class TestFederationCommands:
     def test_status(self):
         result = runner.invoke(app, ["federation", "status"])
         assert result.exit_code == 0
-        assert "Hub:" in result.stdout
+        assert "Hub DB:" in result.stdout
 
     def test_status_json(self):
         result = runner.invoke(app, ["federation", "status", "--json"])
@@ -2697,3 +2698,27 @@ class TestRelayImport:
             ["relay", "import", str(relay_path), "--project-dir", str(tmp_path)],
         )
         assert r.exit_code == 1
+
+
+class TestVisualExport:
+    def test_visual_export_writes_json(self, tmp_path: Path, project_dir: str):
+        out = tmp_path / "snap" / "brain-visual.json"
+        r = runner.invoke(
+            app,
+            [
+                "visual",
+                "export",
+                "-o",
+                str(out),
+                "--project-dir",
+                project_dir,
+                "--skip-diagnostics",
+            ],
+        )
+        assert r.exit_code == 0
+        assert out.is_file()
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert data["schema_version"] == 1
+        assert "fingerprint_sha256" in data
+        assert "theme" in data
+        assert data["diagnostics"] is None

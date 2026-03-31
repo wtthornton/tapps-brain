@@ -14,6 +14,7 @@ from tapps_brain.federation import (
     FederationProject,
     FederationSubscription,
     add_subscription,
+    federated_hub_db_path,
     federated_search,
     load_federation_config,
     register_project,
@@ -46,6 +47,27 @@ def hub_store(tmp_path: Path) -> Generator[FederatedStore, None, None]:
     store = FederatedStore(db_path=tmp_path / "federated.db")
     yield store
     store.close()
+
+
+class TestFederatedHubDbPath:
+    def test_default_relative_to_hub_dir(self, tmp_path: Path) -> None:
+        cfg = FederationConfig()
+        assert federated_hub_db_path(cfg) == tmp_path / "federated.db"
+
+    def test_non_empty_hub_path(self, tmp_path: Path) -> None:
+        custom = tmp_path / "custom" / "hub.db"
+        cfg = FederationConfig(hub_path=str(custom))
+        assert federated_hub_db_path(cfg) == custom
+
+    def test_federated_store_reads_hub_path_from_saved_config(self, tmp_path: Path) -> None:
+        custom_db = tmp_path / "other" / "fed.db"
+        custom_db.parent.mkdir(parents=True)
+        save_federation_config(FederationConfig(hub_path=str(custom_db)))
+        store = FederatedStore()
+        try:
+            assert store._db_path == custom_db
+        finally:
+            store.close()
 
 
 def _make_entry(

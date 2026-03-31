@@ -80,6 +80,13 @@ flywheel_app = typer.Typer(
     help="Continuous improvement flywheel (EPIC-031).",
     no_args_is_help=True,
 )
+visual_app = typer.Typer(
+    help=(
+        "Export JSON snapshots for brain visual surfaces "
+        "(see docs/planning/brain-visual-implementation-plan.md)."
+    ),
+    no_args_is_help=True,
+)
 
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
@@ -92,6 +99,7 @@ app.add_typer(openclaw_app, name="openclaw")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(diagnostics_app, name="diagnostics")
 app.add_typer(flywheel_app, name="flywheel")
+app.add_typer(visual_app, name="visual")
 
 session_app = typer.Typer(help="Session lifecycle commands.", no_args_is_help=True)
 app.add_typer(session_app, name="session")
@@ -133,10 +141,17 @@ def _resolve_project_dir(project_dir: Path | None) -> Path:
 
 def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
     """Open a MemoryStore from the resolved project dir."""
+    from tapps_brain.embeddings import get_embedding_provider
+    from tapps_brain.hive import HiveStore
     from tapps_brain.store import MemoryStore
 
     root = _resolve_project_dir(project_dir)
-    return MemoryStore(root)
+    return MemoryStore(
+        root,
+        embedding_provider=get_embedding_provider(semantic_search_enabled=True),
+        hive_store=HiveStore(),
+        hive_agent_id="cli",
+    )
 
 
 def _output(data: Any, as_json: bool) -> None:  # noqa: ANN401
@@ -989,11 +1004,13 @@ def federation_status(
     as_json: JsonFlag = False,
 ) -> None:
     """Show federation hub status."""
-    from tapps_brain.federation import load_federation_config
+    from tapps_brain.federation import federated_hub_db_path, load_federation_config
 
     config = load_federation_config()
+    hub_db = federated_hub_db_path(config)
     data = {
-        "hub_path": config.hub_path,
+        "hub_path": str(hub_db),
+        "hub_path_config": config.hub_path,
         "projects": len(config.projects),
         "subscriptions": len(config.subscriptions),
         "project_list": [p.project_id for p in config.projects],
@@ -1001,7 +1018,7 @@ def federation_status(
     if as_json:
         _output(data, as_json=True)
     else:
-        typer.echo(f"Hub: {config.hub_path}")
+        typer.echo(f"Hub DB: {hub_db}")
         typer.echo(f"Projects: {len(config.projects)}")
         for p in config.projects:
             typer.echo(f"  - {p.project_id} ({p.project_root})")
@@ -3059,6 +3076,43 @@ def relay_import_cmd(
                 typer.secho(f"  ⚠ {w}", fg=typer.colors.YELLOW)
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# Visual snapshot (brain-visual.json)
+# ---------------------------------------------------------------------------
+
+
+@visual_app.command("export")
+def visual_export_cmd(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output path for brain-visual.json (default: ./brain-visual.json).",
+        ),
+    ] = Path("brain-visual.json"),
+    project_dir: ProjectDir = None,
+    skip_diagnostics: Annotated[
+        bool,
+        typer.Option(
+            "--skip-diagnostics",
+            help="Skip store diagnostics (faster; omits circuit_state/composite_score).",
+        ),
+    ] = False,
+) -> None:
+    """Write a versioned JSON snapshot for the static brain visual demo and dashboards."""
+    from tapps_brain.visual_snapshot import build_visual_snapshot, snapshot_to_json
+
+    store = _get_store(project_dir)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=skip_diagnostics)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(snapshot_to_json(snap), encoding="utf-8")
+    finally:
+        store.close()
+    typer.echo(f"Wrote {output.resolve()}")
 
 
 # ---------------------------------------------------------------------------

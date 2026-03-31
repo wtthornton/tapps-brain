@@ -2,6 +2,8 @@
 
 tapps-brain exposes its full API via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), making persistent memory available to Claude Code, Cursor, VS Code Copilot, and any other MCP-compatible client.
 
+**Tool and resource counts** ship in [`docs/generated/mcp-tools-manifest.json`](../generated/mcp-tools-manifest.json) (`tool_count`, `resource_count`, lists). Regenerate after `mcp_server.py` changes: `python scripts/generate_mcp_tool_manifest.py`. Do not cite stale integers in other docs unless labeled historical.
+
 ## Installation
 
 ```bash
@@ -393,9 +395,9 @@ npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/proje
 
 ## Maintainers: release gate and doc consistency
 
-Before a release, the repo runs an automated gate that includes this MCP surface (64 tools, 8 resources) end-to-end with Python packaging and the OpenClaw plugin:
+Before a release, the repo runs an automated gate that includes this MCP surface (counts in `docs/generated/mcp-tools-manifest.json`) end-to-end with Python packaging and the OpenClaw plugin:
 
 - **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
 - **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`
 
-If you add or rename MCP tools/resources, update `openclaw-skill/SKILL.md` frontmatter and the `EXPECTED_*` constants in `scripts/check_openclaw_docs_consistency.py`.
+If you add or rename MCP tools/resources, update `openclaw-skill/SKILL.md` frontmatter and run `python scripts/generate_mcp_tool_manifest.py` so the consistency script reads the updated counts.

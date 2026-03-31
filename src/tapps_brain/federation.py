@@ -80,9 +80,10 @@ class FederationConfig(BaseModel):
     hub_path: str = Field(
         default="",
         description=(
-            "Path to federated.db (default: ~/.tapps-brain/memory/federated.db). "
-            "Note: stored for reference but not currently used to override the hub path — "
-            "FederatedStore always uses the default location unless db_path is passed directly."
+            "Path to the federation hub SQLite file. When non-empty, FederatedStore() and "
+            "sync entry points use this path (after expanduser). When empty, the default is "
+            "~/.tapps-brain/memory/federated.db. Pass db_path= to FederatedStore to override "
+            "explicitly without reading federation.yaml."
         ),
     )
     projects: list[FederationProject] = Field(default_factory=list)
@@ -108,6 +109,20 @@ def load_federation_config() -> FederationConfig:
     if raw is None or not isinstance(raw, dict):
         return FederationConfig()
     return FederationConfig(**raw)
+
+
+def federated_hub_db_path(config: FederationConfig | None = None) -> Path:
+    """Resolve the federation hub SQLite path from ``FederationConfig`` or defaults.
+
+    When ``hub_path`` is set in ``federation.yaml``, it is used (via :func:`Path.expanduser`).
+    Otherwise returns ``~/.tapps-brain/memory/federated.db``.
+    """
+    if config is None:
+        config = load_federation_config()
+    hint = (config.hub_path or "").strip()
+    if hint:
+        return Path(hint).expanduser()
+    return _DEFAULT_HUB_DIR / "federated.db"
 
 
 def save_federation_config(config: FederationConfig) -> None:
@@ -242,7 +257,7 @@ class FederatedStore:
     """
 
     def __init__(self, db_path: Path | None = None) -> None:
-        self._db_path = db_path or (_DEFAULT_HUB_DIR / "federated.db")
+        self._db_path = db_path if db_path is not None else federated_hub_db_path()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._conn = self._connect()

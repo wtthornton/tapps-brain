@@ -7,15 +7,25 @@ Run: python scripts/check_openclaw_docs_consistency.py
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_MANIFEST = PROJECT_ROOT / "docs" / "generated" / "mcp-tools-manifest.json"
 
-# Must match shipped MCP surface (see CLAUDE.md / mcp_server).
-EXPECTED_TOOL_COUNT = 64
-EXPECTED_RESOURCE_COUNT = 8
+
+def _load_expected_mcp_counts() -> tuple[int, int]:
+    if not _MANIFEST.is_file():
+        msg = f"Missing {_MANIFEST}; run: python scripts/generate_mcp_tool_manifest.py"
+        raise SystemExit(msg)
+    data = json.loads(_MANIFEST.read_text(encoding="utf-8"))
+    return int(data["tool_count"]), int(data["resource_count"])
+
+
+# Canonical counts from mcp_server.py (regenerate manifest when tools/resources change).
+EXPECTED_TOOL_COUNT, EXPECTED_RESOURCE_COUNT = _load_expected_mcp_counts()
 
 # User-facing OpenClaw paths to scan for banned / inconsistent patterns.
 DOC_GLOBS = [
@@ -93,13 +103,13 @@ def _check_skill_counts() -> list[str]:
     n_res = _count_yaml_sequence_items(resources_block, "resources")
     if n_tools != EXPECTED_TOOL_COUNT:
         errors.append(
-            f"SKILL.md tools: expected {EXPECTED_TOOL_COUNT} tools, found {n_tools}. "
-            "Update EXPECTED_TOOL_COUNT in this script when MCP surface changes."
+            f"SKILL.md tools: expected {EXPECTED_TOOL_COUNT} tools (see {_MANIFEST}), "
+            f"found {n_tools}. Sync SKILL.md or regenerate the manifest from mcp_server.py."
         )
     if n_res != EXPECTED_RESOURCE_COUNT:
         errors.append(
-            f"SKILL.md resources: expected {EXPECTED_RESOURCE_COUNT} URIs, found {n_res}. "
-            "Update EXPECTED_RESOURCE_COUNT in this script when MCP surface changes."
+            f"SKILL.md resources: expected {EXPECTED_RESOURCE_COUNT} URIs (see {_MANIFEST}), "
+            f"found {n_res}. Sync SKILL.md or regenerate the manifest from mcp_server.py."
         )
     return errors
 

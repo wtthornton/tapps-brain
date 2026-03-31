@@ -90,7 +90,7 @@ class InjectionConfig:
     Consumers pass this to control reranker and token budget behavior.
     """
 
-    reranker_enabled: bool = False
+    reranker_enabled: bool = True
     reranker_provider: str = "noop"
     reranker_top_k: int = 10
     reranker_api_key: str | None = None
@@ -172,7 +172,9 @@ def inject_memories(  # noqa: PLR0915
     retriever = MemoryRetriever(
         config=decay_config,
         reranker=reranker,
+        semantic_enabled=True,
         reranker_enabled=config.reranker_enabled,
+        relations_enabled=True,
         scoring_config=scoring_config,
     )
 

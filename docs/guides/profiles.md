@@ -642,9 +642,9 @@ profile:
     max_value_length: 4096          # >= 1
     max_tags: 10                    # >= 1
 
-  hive:                             # Optional (defaults: Hive disabled).
-    auto_propagate_tiers: []        # Layer names that auto-propagate.
-    private_tiers: []               # Layer names that never propagate.
+  hive:                             # Optional (runtime attach depends on interface config).
+    auto_propagate_tiers: ["architectural", "pattern"]  # Current code defaults.
+    private_tiers: ["context"]                          # Current code defaults.
     conflict_policy: "supersede"    # "supersede"|"source_authority"|"confidence_max"|"last_write_wins"
     recall_weight: 0.8              # 0.0–1.0. Weight for Hive results in recall.
 ```

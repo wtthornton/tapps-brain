@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>tapps-brain visual — bento preview</title>
+  <style>
+    :root {
+      --hue-p: 210;
+      --hue-a: 234;
+      --chroma: 0.55;
+      --surf: 10;
+      --txt: 94;
+      --flow: 120deg;
+      --border: hsla(var(--hue-p), 14%, 42%, 0.35);
+      --panel: hsl(var(--hue-p), 12%, calc(var(--surf) * 1%));
+      --panel-elev: hsl(var(--hue-p), 14%, calc(var(--surf) * 1% + 3%));
+      --text: hsl(0, 0%, calc(var(--txt) * 1%));
+      --accent: hsl(var(--hue-a), calc(var(--chroma) * 100%), 58%);
+      --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background-color: hsl(230, 14%, 4%);
+      background-image:
+        linear-gradient(var(--flow), hsla(var(--hue-p), 40%, 18%, 0.2), transparent 42%),
+        var(--grain);
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    header {
+      margin-bottom: 1.25rem;
+    }
+    header h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem 0;
+    }
+    header p {
+      margin: 0;
+      opacity: 0.82;
+      font-size: 0.9rem;
+      max-width: 52ch;
+    }
+
+    .load-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+    .load-row label {
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: hsla(var(--hue-p), 12%, 12%, 0.6);
+      backdrop-filter: blur(8px);
+    }
+    .load-row input[type="file"] {
+      display: none;
+    }
+    .muted {
+      font-size: 0.8rem;
+      opacity: 0.75;
+    }
+
+    /* Bento: grid + subgrid (supporting browsers align tile internals) */
+    .bento {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: auto auto auto;
+    }
+    @media (max-width: 900px) {
+      .bento { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 520px) {
+      .bento { grid-template-columns: 1fr; }
+    }
+
+    .tile {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: linear-gradient(160deg, var(--panel-elev), var(--panel));
+      backdrop-filter: blur(12px);
+      padding: 1rem 1.1rem;
+      min-height: 5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .tile::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--grain);
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    .tile > * { position: relative; z-index: 1; }
+
+    .hero {
+      grid-column: span 2;
+      grid-row: span 2;
+      min-height: 220px;
+    }
+    @media (max-width: 900px) {
+      .hero { grid-column: span 2; grid-row: span 1; min-height: 160px; }
+    }
+    @media (max-width: 520px) {
+      .hero { grid-column: span 1; }
+    }
+
+    .hero .glyph {
+      font-size: 3rem;
+      line-height: 1;
+      margin: 0 0 0.5rem 0;
+      font-weight: 700;
+      letter-spacing: -0.06em;
+      color: var(--accent);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .hero .glyph {
+        animation: pulse 5s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { filter: brightness(1); }
+        50% { filter: brightness(1.12); }
+      }
+    }
+
+    .tile h2 {
+      margin: 0 0 0.35rem 0;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      opacity: 0.72;
+      font-weight: 600;
+    }
+    .tile .stat {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .tile .sub {
+      font-size: 0.78rem;
+      opacity: 0.78;
+      margin-top: 0.25rem;
+    }
+
+    .tile-wide {
+      grid-column: 1 / -1;
+    }
+
+    pre {
+      margin: 0;
+      font-size: 0.72rem;
+      overflow: auto;
+      max-height: 9rem;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>tapps-brain</h1>
+      <p>
+        Dark-first bento shell. Load <code>brain-visual.json</code> from
+        <code>tapps-brain visual export -o brain-visual.json</code> (requires
+        <code>uv sync --extra cli</code>). File picker works over <code>file://</code>.
+      </p>
+    </header>
+    <div class="load-row">
+      <label>
+        Load snapshot…
+        <input id="file" type="file" accept="application/json,.json" />
+      </label>
+      <span id="status" class="muted">No file loaded — showing placeholders.</span>
+    </div>
+
+    <div class="bento">
+      <section class="tile hero" aria-label="Brain identity">
+        <p class="glyph" id="glyph">◆</p>
+        <h2>Fingerprint</h2>
+        <pre id="fp">—</pre>
+      </section>
+      <section class="tile" aria-label="Entries">
+        <h2>Entries</h2>
+        <div class="stat" id="entries">—</div>
+        <div class="sub" id="profile">profile</div>
+      </section>
+      <section class="tile" aria-label="Schema">
+        <h2>Schema</h2>
+        <div class="stat" id="schema">—</div>
+        <div class="sub" id="fed">federation</div>
+      </section>
+      <section class="tile" aria-label="Hive">
+        <h2>Hive</h2>
+        <div class="stat" id="hive">—</div>
+        <div class="sub" id="scopes">agent scopes</div>
+      </section>
+      <section class="tile" aria-label="Diagnostics">
+        <h2>Diagnostics</h2>
+        <div class="stat" id="diag">—</div>
+        <div class="sub" id="circuit">circuit</div>
+      </section>
+      <section class="tile tile-wide" aria-label="Privacy">
+        <h2>Privacy</h2>
+        <p class="sub" id="privacy"></p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const root = document.documentElement;
+    const el = (id) => document.getElementById(id);
+
+    function applySnapshot(data) {
+      root.style.setProperty("--hue-p", String(data.theme.hue_primary));
+      root.style.setProperty("--hue-a", String(data.theme.hue_accent));
+      root.style.setProperty("--chroma", String(data.theme.accent_chroma));
+      root.style.setProperty("--surf", String(data.theme.surface_lightness));
+      root.style.setProperty("--txt", String(data.theme.text_lightness));
+      root.style.setProperty("--flow", `${data.theme.flow_angle_deg}deg`);
+
+      el("glyph").textContent = "◆";
+      el("fp").textContent = data.fingerprint_sha256;
+      el("entries").textContent = String(data.health.entry_count ?? "—");
+      el("profile").textContent = data.health.profile_name || "(default profile)";
+      el("schema").textContent = String(data.health.schema_version ?? "—");
+      el("fed").textContent = data.health.federation_enabled ? "on" : "off";
+      el("hive").textContent = data.hive_attached ? "attached" : "local";
+      el("scopes").textContent = Object.entries(data.agent_scope_counts || {})
+        .map(([k, v]) => `${k}:${v}`)
+         .join(" ") || "—";
+
+      if (data.diagnostics) {
+        el("diag").textContent = data.diagnostics.composite_score.toFixed(2);
+        el("circuit").textContent = data.diagnostics.circuit_state;
+      } else {
+        el("diag").textContent = "—";
+        el("circuit").textContent = "skipped";
+      }
+      el("privacy").textContent = data.privacy || "";
+
+      el("status").textContent = `Loaded schema_version ${data.schema_version}`;
+    }
+
+    document.getElementById("file").addEventListener("change", (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          applySnapshot(JSON.parse(String(r.result)));
+        } catch (e) {
+          el("status").textContent = "Invalid JSON: " + e;
+        }
+      };
+      r.readAsText(f);
+    });
+  </script>
+</body>
+</html>

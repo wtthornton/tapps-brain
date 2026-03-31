@@ -61,7 +61,7 @@ Add it to your editor's MCP config (e.g. `.mcp.json` for Claude Code):
 }
 ```
 
-The AI assistant gets **63** MCP tools — core memory, sessions, Hive, federation, graph, tags, feedback, diagnostics, flywheel, OpenClaw migrate, and more — with no custom integration code required. See [MCP Server](mcp.md) for the full list.
+The AI assistant gets the full MCP tool surface — core memory, sessions, Hive, federation, graph, tags, feedback, diagnostics, flywheel, OpenClaw migrate, and more — with no custom integration code required. Canonical names/counts: [mcp-tools-manifest.json](../generated/mcp-tools-manifest.json). See [MCP Server](mcp.md) for setup.
 
 ---
 

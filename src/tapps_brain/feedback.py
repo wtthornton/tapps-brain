@@ -96,11 +96,11 @@ class FeedbackConfig(BaseModel):
         ),
     )
     strict_event_types: bool = Field(
-        default=False,
+        default=True,
         description=(
             "When True, ``FeedbackStore.record()`` rejects event types that are "
             "not in the built-in or registered custom set.  "
-            "Default False preserves open-enum behaviour."
+            "Default True enforces a stable, audited event vocabulary."
         ),
     )
     implicit_feedback_window_seconds: int = Field(

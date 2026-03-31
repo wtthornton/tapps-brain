@@ -133,7 +133,7 @@ def _token_overlap_ratio(a: str, b: str) -> float:
 class ConsolidationConfig:
     """Configuration for auto-consolidation on save."""
 
-    enabled: bool = False
+    enabled: bool = True
     threshold: float = 0.7
     min_entries: int = 3
 
@@ -357,7 +357,7 @@ class MemoryStore:
         batch_context: str | None = None,
         session_id: str | None = None,
         dedup: bool = True,
-        conflict_check: bool = False,
+        conflict_check: bool = True,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -392,7 +392,7 @@ class MemoryStore:
                 the new value before saving.  Conflicting entries (same tier,
                 high similarity, different content) are logged as warnings and
                 their ``invalid_at`` field is set to now (GitHub #44, task 040.16).
-                Defaults to False — no behaviour change when not opted in.
+                Defaults to True for safer writes.
         """
         # agent_scope enum validation
         if agent_scope not in VALID_AGENT_SCOPES:
