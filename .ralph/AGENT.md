@@ -72,5 +72,6 @@ CI runs the docs checker in `lint` and a `release-ready` job with `SKIP_FULL_PYT
 
 ## Notes
 - Reference stories in commits: `feat(story-001.3): description`
-- See CLAUDE.md at project root for full architecture details
-- See docs/planning/epics/ for planned work
+- See `CLAUDE.md` at project root for full architecture and quality commands
+- Implementation ground truth: `docs/engineering/README.md` (architecture, flows, schema, optional-feature matrix)
+- Planned/shipped product context: `docs/planning/open-issues-roadmap.md` and `docs/planning/epics/`

@@ -596,7 +596,7 @@ tests/
 | Epic | Title | Status |
 |------|-------|--------|
 | [EPIC-001](docs/planning/epics/EPIC-001.md)–[016](docs/planning/epics/EPIC-016.md) | Core platform (tests through Hive hardening) | Done |
-| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (surface 64 tools / 8 resources — see [MCP guide](docs/guides/mcp.md)) |
+| [EPIC-008](docs/planning/epics/EPIC-008.md) | MCP server | Done (tool/resource counts: [mcp-tools-manifest.json](docs/generated/mcp-tools-manifest.json); [MCP guide](docs/guides/mcp.md)) |
 | [EPIC-029](docs/planning/epics/EPIC-029.md) | Feedback collection | Done |
 | [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |

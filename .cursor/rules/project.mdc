@@ -47,7 +47,7 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (v1–v11: feedback v9, diagnostics history v10, flywheel v11). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1–v16**; v16 = `memory_group`; full timeline in `docs/planning/STATUS.md`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 
@@ -65,7 +65,7 @@ mypy --strict src/tapps_brain/
 - **Write-through cache** — all mutations update both in-memory dict and SQLite
 - **Lazy decay** — exponential decay computed on read, not via background tasks
 - **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls
-- **Max 500 entries per project** — enforced in MemoryStore
+- **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore
 
 ## Code Quality
 

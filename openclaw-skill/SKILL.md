@@ -268,8 +268,9 @@ and restart OpenClaw. Details: [openclaw-install-from-git.md § Upgrade](https:/
   `agent_scope: "hive"` on `memory_save` for cross-cutting facts or
   `"domain"` for same-profile sharing
 - **Federation:** Cross-project memory sharing via a federated hub
-- **64 MCP tools, 8 resources:** Full programmatic control (memory, feedback,
-  diagnostics, flywheel, Hive, federation, graph, OpenClaw migration) when you need it
+- **MCP tools & resources:** Full programmatic control (memory, feedback,
+  diagnostics, flywheel, Hive, federation, graph, OpenClaw migration); counts and URIs
+  match `docs/generated/mcp-tools-manifest.json` in the tapps-brain repo
 
 ## Configuration
 

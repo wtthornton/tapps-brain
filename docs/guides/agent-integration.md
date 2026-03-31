@@ -61,7 +61,7 @@ See [Memory scopes](memory-scopes.md) and [Profile catalog](profile-catalog.md).
 | Artifact | Purpose |
 |----------|---------|
 | `memory://agent-contract` | One JSON blob: versions, profile layers, canonical tiers, empty-reason codes, doc links |
-| `docs/generated/mcp-tools-manifest.json` | Tool names + short descriptions (regenerate: `python scripts/generate_mcp_tool_manifest.py`) |
+| `docs/generated/mcp-tools-manifest.json` | `tool_count` / `resource_count`, tool names + resource URIs + short descriptions (regenerate: `python scripts/generate_mcp_tool_manifest.py`) |
 
 ## Related docs
 

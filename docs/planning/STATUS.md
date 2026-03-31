@@ -135,7 +135,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
   - `openclaw-skill/SKILL.md` (cross-link to canonical runbook)
 - Capability/status claims reconciled:
   - stale `41 MCP tools` references removed from OpenClaw guide
-  - resource list aligned to 7 URIs (`stats`, `health`, `entries/{key}`, `metrics`, `feedback`, `diagnostics`, `report`)
+  - resource URIs: canonical list in `docs/generated/mcp-tools-manifest.json` (**8** resources, including `memory://agent-contract`; older copy said 7 before that URI shipped)
   - stale planned wording removed for shipped OpenClaw migration/tooling references
 
 ## READY-034 QA evidence (2026-03-24)
