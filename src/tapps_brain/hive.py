@@ -291,6 +291,17 @@ class HiveStore:
 
             self._conn.commit()
 
+            # Forward migrations — run unconditionally; IF NOT EXISTS guards make
+            # them idempotent so re-running on an already-migrated DB is safe.
+            self._migrate_add_memory_group()
+
+    def _migrate_add_memory_group(self) -> None:
+        """Add ``memory_group`` column to ``hive_memories`` if not present (GitHub #51)."""
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(hive_memories)").fetchall()}
+        if "memory_group" not in cols:
+            self._conn.execute("ALTER TABLE hive_memories ADD COLUMN memory_group TEXT")
+            self._conn.commit()
+
     def record_feedback_event(
         self,
         *,
@@ -452,6 +463,7 @@ class HiveStore:
         invalid_at: str | None = None,
         superseded_by: str | None = None,
         conflict_policy: ConflictPolicy | str = ConflictPolicy.supersede,
+        memory_group: str | None = None,
     ) -> dict[str, Any] | None:
         """Save a memory entry to the Hive.
 
@@ -505,6 +517,7 @@ class HiveStore:
                         source=source,
                         tags=tags,
                         now=now,
+                        memory_group=memory_group,
                     )
                 # "overwrite" path — preserve original created_at
                 return self._write_entry_locked(
@@ -521,6 +534,7 @@ class HiveStore:
                     valid_at=valid_at,
                     invalid_at=invalid_at,
                     superseded_by=superseded_by,
+                    memory_group=memory_group,
                 )
 
             # No existing entry — normal write
@@ -538,6 +552,7 @@ class HiveStore:
                 valid_at=valid_at,
                 invalid_at=invalid_at,
                 superseded_by=superseded_by,
+                memory_group=memory_group,
             )
 
     def patch_confidence(
@@ -651,6 +666,7 @@ class HiveStore:
         source: str,
         tags: list[str] | None,
         now: str,
+        memory_group: str | None = None,
     ) -> dict[str, Any]:
         """Mark old version invalid and write new version. Caller must hold ``self._lock``."""
         # Include microseconds (22 chars) so that two rapid supersedes on the
@@ -677,6 +693,7 @@ class HiveStore:
             valid_at=now,
             invalid_at=None,
             superseded_by=None,
+            memory_group=memory_group,
         )
 
     def _write_entry_locked(
@@ -695,6 +712,7 @@ class HiveStore:
         valid_at: str | None,
         invalid_at: str | None,
         superseded_by: str | None,
+        memory_group: str | None = None,
     ) -> dict[str, Any]:
         """Perform the actual INSERT OR REPLACE and return the entry dict.
 
@@ -708,8 +726,8 @@ class HiveStore:
             INSERT OR REPLACE INTO hive_memories
             (namespace, key, value, tier, confidence, source,
              source_agent, tags, created_at, updated_at,
-             valid_at, invalid_at, superseded_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             valid_at, invalid_at, superseded_by, memory_group)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 namespace,
@@ -725,6 +743,7 @@ class HiveStore:
                 valid_at,
                 invalid_at,
                 superseded_by,
+                memory_group,
             ),
         )
         self._conn.execute(
@@ -760,6 +779,7 @@ class HiveStore:
             "valid_at": valid_at,
             "invalid_at": invalid_at,
             "superseded_by": superseded_by,
+            "memory_group": memory_group,
         }
 
     def get(self, key: str, namespace: str = "universal") -> dict[str, Any] | None:
@@ -1004,6 +1024,7 @@ class PropagationEngine:
         private_tiers: list[str] | None = None,
         bypass_profile_hive_rules: bool = False,
         dry_run: bool = False,
+        memory_group: str | None = None,
     ) -> dict[str, Any] | None:
         """Propagate a memory entry to the Hive if appropriate.
 
@@ -1061,6 +1082,7 @@ class PropagationEngine:
             confidence=confidence,
             source=source,
             tags=tags,
+            memory_group=memory_group,
         )
 
         logger.info(

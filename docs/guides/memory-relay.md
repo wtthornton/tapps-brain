@@ -63,8 +63,13 @@ Top-level object:
 - Bulk import uses rate-limit batch context `memory_relay`.
 - RAG safety and write rules apply per row (blocked rows count as skipped).
 
+## Hive propagation and `memory_group`
+
+When a relayed entry has `agent_scope` set to `domain` or `hive` (triggering Hive propagation), the entry's `memory_group` label is carried through to the Hive entry unchanged.  Subscribers that pull from the Hive and need project-local partition semantics can read the `memory_group` field on the returned row.  A value of `null`/absent means the entry was not assigned to any group (GitHub #51).
+
 ## See also
 
 - [Memory scopes](memory-scopes.md) — `memory_group` vs Hive namespace vs profile layer.
+- [Hive guide](hive.md) — `memory_group` field in the Hive schema.
 - `memory_export` / `memory_import` MCP tools for full-store JSON (different shape).
 - GitHub issue [#19](https://github.com/wtthornton/tapps-brain/issues/19).

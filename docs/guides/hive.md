@@ -82,6 +82,9 @@ Each Hive entry stores:
 | `valid_at` | Bi-temporal: when the fact became true |
 | `invalid_at` | Bi-temporal: when the fact stopped being true |
 | `superseded_by` | Key of the superseding entry |
+| `memory_group` | Publisher's project-local partition label (optional, `null` means ungrouped) |
+
+> **`memory_group` (GitHub #51):** When a publisher propagates an entry that carries a project-local `memory_group` label, that label is preserved verbatim in the Hive entry. Subscribers that implement partition semantics can read this field to restore group membership after a pull. A value of `null`/`None` means the entry was not assigned to any group.
 
 ---
 

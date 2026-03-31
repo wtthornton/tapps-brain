@@ -730,6 +730,7 @@ class MemoryStore:
                 hive_store=self._hive_store,
                 auto_propagate_tiers=auto_propagate,
                 private_tiers=private,
+                memory_group=entry.memory_group,
             )
         except Exception:
             logger.debug("hive_propagation_failed", key=entry.key, exc_info=True)
