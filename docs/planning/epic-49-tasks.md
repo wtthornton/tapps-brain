@@ -157,9 +157,11 @@ Single **operator-facing** table (and short prose) mapping:
 
 ### Acceptance criteria (federation only)
 
-- [ ] Hub column or JSON sidecar; backward-compatible migration for existing `federated.db`.
-- [ ] Publish copies `memory_group`; subscribe/import restores it where product rules allow.
-- [ ] Tests round-trip project → hub → subscriber store.
+- [x] Hub column or JSON sidecar; backward-compatible migration for existing `federated.db`.
+- [x] Publish copies `memory_group`; subscribe/import restores it where product rules allow.
+- [x] Tests round-trip project → hub → subscriber store.
+
+**Shipped:** 2026-04-02 on `main` (`FederatedStore` `memory_group` column, `sync_from_hub`, hub `search(..., memory_group=…)`; see GitHub **#51** / **EPIC-041** STORY-041.1).
 
 ### Out of scope
 

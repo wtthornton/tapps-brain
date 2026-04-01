@@ -32,14 +32,18 @@ def store_dir(tmp_path):
 
 @pytest.fixture
 def mcp_server(store_dir):
-    """Create a FastMCP server backed by a temp store."""
+    """Create a FastMCP server backed by a temp store (Hive off — matches tests that expect no shared Hive)."""
     from tapps_brain.mcp_server import create_server
 
-    server = create_server(store_dir)
+    server = create_server(store_dir, enable_hive=False)
     yield server
     # Clean up the store
     if hasattr(server, "_tapps_store"):
-        server._tapps_store.close()
+        st = server._tapps_store
+        h = getattr(st, "_hive_store", None)
+        if h is not None:
+            h.close()
+        st.close()
 
 
 class TestServerCreation:
@@ -48,7 +52,7 @@ class TestServerCreation:
     def test_create_server_returns_fastmcp_instance(self, store_dir):
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         assert server is not None
         assert server.name == "tapps-brain"
         server._tapps_store.close()
@@ -56,7 +60,7 @@ class TestServerCreation:
     def test_create_server_defaults_to_cwd(self):
         from tapps_brain.mcp_server import create_server
 
-        server = create_server()
+        server = create_server(enable_hive=False)
         assert server is not None
         server._tapps_store.close()
 
@@ -471,7 +475,7 @@ class TestMcpToolHandlerExecution:
 
         root = tmp_path / "mcp_empty_recall"
         root.mkdir()
-        srv = create_server(root)
+        srv = create_server(root, enable_hive=False)
         try:
             recall = _tool_fn(srv, "memory_recall")
             payload = json.loads(recall(message="anything"))
@@ -535,13 +539,13 @@ class TestMcpToolHandlerExecution:
         rec = _tool_fn(mcp_server, "feedback_record")
         r4 = json.loads(
             rec(
-                event_type="deploy_completed",
+                event_type="implicit_negative",
                 entry_key="fb-mcp-1",
-                utility_score=0.5,
+                utility_score=-0.1,
                 details_json="{}",
             ),
         )
-        assert r4["event"]["event_type"] == "deploy_completed"
+        assert r4["event"]["event_type"] == "implicit_negative"
 
         bad = json.loads(rec(event_type="not-valid-type"))
         assert bad.get("error") == "validation_error"
@@ -1148,7 +1152,10 @@ class TestFederationErrorPaths:
             def close(self) -> None:
                 closed_calls.append("closed")
 
-        monkeypatch.setattr("tapps_brain.federation.FederatedStore", lambda: FakeHub())
+        monkeypatch.setattr(
+            "tapps_brain.federation.FederatedStore",
+            lambda *args, **kwargs: FakeHub(),
+        )
 
         fn = _tool_fn(mcp_server, "federation_status")
         result = json.loads(fn())
@@ -1246,10 +1253,10 @@ class TestMCPHiveWiring:
     """Tests for --agent-id and --enable-hive flags (STORY-013.1)."""
 
     def test_default_no_hive(self, store_dir):
-        """Without flags, store has no HiveStore and agent_id='unknown'."""
+        """With enable_hive=False, store has no HiveStore and agent_id='unknown'."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         store = server._tapps_store
         assert store._hive_store is None
         assert store._hive_agent_id == "unknown"
@@ -1274,7 +1281,7 @@ class TestMCPHiveWiring:
         """--agent-id alone sets the ID but no HiveStore."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, agent_id="solo-agent")
+        server = create_server(store_dir, enable_hive=False, agent_id="solo-agent")
         store = server._tapps_store
         assert store._hive_store is None
         assert store._hive_agent_id == "solo-agent"
@@ -1375,7 +1382,7 @@ class TestMemorySaveSourceAgent:
         """When source_agent is empty, falls back to server's --agent-id."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, agent_id="server-agent-id")
+        server = create_server(store_dir, enable_hive=False, agent_id="server-agent-id")
         save_fn = _tool_fn(server, "memory_save")
         result = json.loads(save_fn(key="sa-fallback", value="test"))
         assert result["status"] == "saved"
@@ -1419,13 +1426,22 @@ class TestAgentScopeValidation:
         result = json.loads(save_fn(key="valid-hive", value="test", agent_scope="hive"))
         assert result["status"] == "saved"
 
+    def test_valid_agent_scope_group(self, mcp_server):
+        """memory_save with agent_scope='group:team-x' succeeds (GitHub #52)."""
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="valid-group", value="test", agent_scope="group:team-x"))
+        assert result["status"] == "saved"
+        entry = mcp_server._tapps_store.get("valid-group")
+        assert entry is not None
+        assert entry.agent_scope == "group:team-x"
+
     def test_invalid_agent_scope_returns_error(self, mcp_server):
         """memory_save with invalid agent_scope returns error dict."""
         save_fn = _tool_fn(mcp_server, "memory_save")
         result = json.loads(save_fn(key="bad-scope", value="test", agent_scope="hivee"))
         assert result["error"] == "invalid_agent_scope"
         assert "valid_values" in result
-        assert sorted(result["valid_values"]) == ["domain", "hive", "private"]
+        assert sorted(result["valid_values"]) == ["domain", "group:<name>", "hive", "private"]
 
     def test_invalid_agent_scope_not_persisted(self, mcp_server):
         """Entry is not stored when agent_scope is invalid."""
@@ -1505,7 +1521,7 @@ class TestProfileAwareTierValidation:
         src = _builtin_profiles_dir() / "personal-assistant.yaml"
         shutil.copy(src, brain_dir / "profile.yaml")
 
-        server = create_server(tmp_path)
+        server = create_server(tmp_path, enable_hive=False)
         yield server
         if hasattr(server, "_tapps_store"):
             server._tapps_store.close()
@@ -1638,7 +1654,7 @@ class TestHiveToolsReuseSharedStore:
         """Without --enable-hive, _tapps_hive_store is None."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         assert server._tapps_hive_store is None
         server._tapps_store.close()
 
@@ -1709,6 +1725,17 @@ class TestHiveToolsReuseSharedStore:
         push_fn = _tool_fn(server, "hive_push")
         out = json.loads(push_fn(push_all=False, tags="", tier=None, keys=""))
         assert out.get("error") == "invalid_args"
+        store._hive_store.close()
+        store.close()
+
+    def test_hive_push_rejects_private_agent_scope(self, store_dir) -> None:
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=True, agent_id="push-mcp3")
+        store = server._tapps_store
+        push_fn = _tool_fn(server, "hive_push")
+        out = json.loads(push_fn(push_all=True, dry_run=True, agent_scope="private"))
+        assert out.get("error") == "invalid_agent_scope"
         store._hive_store.close()
         store.close()
 
@@ -1813,7 +1840,7 @@ class TestHiveToolsReuseSharedStore:
         """hive_status creates a temporary HiveStore when --enable-hive is not set."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         assert server._tapps_store._hive_store is None
         # Without --enable-hive, hive_status still works via fallback (temp instance)
         status_fn = _tool_fn(server, "hive_status")
@@ -1825,7 +1852,7 @@ class TestHiveToolsReuseSharedStore:
         """hive_search creates a temporary HiveStore when --enable-hive is not set."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         assert server._tapps_store._hive_store is None
         search_fn = _tool_fn(server, "hive_search")
         result = json.loads(search_fn(query="test"))
@@ -1879,7 +1906,7 @@ class TestHiveToolsReuseSharedStore:
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)  # no --enable-hive → uses temp HiveStore
+        server = create_server(store_dir, enable_hive=False)  # no --enable-hive → uses temp HiveStore
         assert server._tapps_store._hive_store is None
 
         close_called = []
@@ -1918,7 +1945,7 @@ class TestHiveToolsReuseSharedStore:
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)  # no --enable-hive → uses temp HiveStore
+        server = create_server(store_dir, enable_hive=False)  # no --enable-hive → uses temp HiveStore
         assert server._tapps_store._hive_store is None
 
         close_called = []
@@ -1974,7 +2001,7 @@ class TestHiveToolsReuseSharedStore:
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         original_init = None
 
         def patched_hive_store_init(self, db_path=None):
@@ -2005,7 +2032,7 @@ class TestMCPAdditionalCoverage:
         """profile_info returns error JSON when store has no profile."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         monkeypatch.setattr(server._tapps_store, "_profile", None)
         info_fn = _tool_fn(server, "profile_info")
         result = json.loads(info_fn())
@@ -2020,7 +2047,7 @@ class TestMCPAdditionalCoverage:
         """profile_switch returns error with available list for unknown profile."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         switch_fn = _tool_fn(server, "profile_switch")
         result = json.loads(switch_fn(name="this-profile-does-not-exist"))
         assert result["error"] == "profile_not_found"
@@ -2036,7 +2063,7 @@ class TestMCPAdditionalCoverage:
         """hive_propagate returns not_found when key is absent from store."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         propagate_fn = _tool_fn(server, "hive_propagate")
         result = json.loads(propagate_fn(key="nonexistent-key"))
         assert result["error"] == "not_found"
@@ -2050,7 +2077,9 @@ class TestMCPAdditionalCoverage:
         store = server._tapps_store
         store.save(key="local-fact", value="A local fact", tier="architectural")
         propagate_fn = _tool_fn(server, "hive_propagate")
-        result = json.loads(propagate_fn(key="local-fact", agent_scope="private"))
+        result = json.loads(
+            propagate_fn(key="local-fact", agent_scope="private", force=True),
+        )
         assert result["propagated"] is False
         assert "reason" in result
         store._hive_store.close()
@@ -2061,7 +2090,7 @@ class TestMCPAdditionalCoverage:
         from tapps_brain.mcp_server import create_server
 
         # No enable_hive — store has no shared _hive_store
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         store = server._tapps_store
         store.save(key="temp-fact", value="A temporary fact", tier="architectural")
         propagate_fn = _tool_fn(server, "hive_propagate")
@@ -2125,7 +2154,7 @@ class TestMCPAdditionalCoverage:
         """agent_list returns count=0 or more for an empty registry (YAML-backed)."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         list_fn = _tool_fn(server, "agent_list")
         result = json.loads(list_fn())
         assert "agents" in result or "error" in result
@@ -2139,7 +2168,7 @@ class TestMCPAdditionalCoverage:
         """agent_delete returns deleted=True for an existing agent."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         register_fn = _tool_fn(server, "agent_register")
         delete_fn = _tool_fn(server, "agent_delete")
         register_fn(agent_id="del-agent-1", profile="repo-brain", skills="")
@@ -2152,7 +2181,7 @@ class TestMCPAdditionalCoverage:
         """agent_delete returns deleted=False for an agent that does not exist."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         delete_fn = _tool_fn(server, "agent_delete")
         result = json.loads(delete_fn(agent_id="no-such-agent"))
         assert result["deleted"] is False
@@ -2163,7 +2192,7 @@ class TestMCPAdditionalCoverage:
         """agent_delete returns error JSON when AgentRegistry raises unexpectedly."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         import tapps_brain.hive as hive_mod
 
         monkeypatch.setattr(
@@ -2277,7 +2306,7 @@ class TestMCPAdditionalCoverage:
         """profile_info returns profile data when a profile is loaded."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         info_fn = _tool_fn(server, "profile_info")
         result = json.loads(info_fn())
         # Either returns a profile or no_profile if no profile was loaded
@@ -2288,7 +2317,7 @@ class TestMCPAdditionalCoverage:
         """memory_profile_onboarding returns markdown in JSON when profile loads."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         fn = _tool_fn(server, "memory_profile_onboarding")
         result = json.loads(fn())
         if result.get("error") == "no_profile":
@@ -2307,7 +2336,7 @@ class TestMCPAdditionalCoverage:
         """profile_switch returns switched=True for a valid built-in profile."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         switch_fn = _tool_fn(server, "profile_switch")
         result = json.loads(switch_fn(name="repo-brain"))
         assert result["switched"] is True
@@ -2345,7 +2374,7 @@ class TestMCPAdditionalCoverage:
         """agent_list returns error JSON when AgentRegistry raises unexpectedly."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir)
+        server = create_server(store_dir, enable_hive=False)
         import tapps_brain.hive as hive_mod
 
         monkeypatch.setattr(
@@ -2391,7 +2420,7 @@ class TestKnowledgeGraphTools:
         """Server with two entries that have extractable relations."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(tmp_path)
+        server = create_server(tmp_path, enable_hive=False)
         store = server._tapps_store
         # Save entries with entity-rich content so relations are extracted
         store.save(
@@ -2498,7 +2527,7 @@ class TestAuditTrailMCPTool:
         """Server with a couple of saved entries to generate audit events."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(tmp_path)
+        server = create_server(tmp_path, enable_hive=False)
         store = server._tapps_store
         store.save(key="audit-key-1", value="First entry for audit testing.", tier="pattern")
         store.save(key="audit-key-2", value="Second entry for audit testing.", tier="context")
@@ -2583,7 +2612,7 @@ class TestTagManagementMCPTools:
         """Server with entries that carry tags."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(tmp_path)
+        server = create_server(tmp_path, enable_hive=False)
         store = server._tapps_store
         store.save(key="entry-alpha", value="Alpha entry.", tier="pattern", tags=["python", "web"])
         store.save(
@@ -2692,7 +2721,7 @@ class TestTagManagementMCPTools:
         """Exceeding 10 tags returns an error."""
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(tmp_path)
+        server = create_server(tmp_path, enable_hive=False)
         store = server._tapps_store
         store.save(
             key="taggy",
@@ -2780,7 +2809,7 @@ class TestGcAndConsolidationConfigTools:
     def server(self, tmp_path):
         from tapps_brain.mcp_server import create_server
 
-        srv = create_server(tmp_path)
+        srv = create_server(tmp_path, enable_hive=False)
         yield srv
         srv._tapps_store.close()
 
@@ -2894,12 +2923,11 @@ class TestGcAndConsolidationConfigTools:
         assert isinstance(result["threshold"], float)
         assert isinstance(result["min_entries"], int)
 
-    def test_memory_consolidation_config_default_disabled(self, server):
-        """memory_consolidation_config shows auto-consolidation disabled by default."""
+    def test_memory_consolidation_config_default_enabled(self, server):
+        """memory_consolidation_config reflects store default (auto-consolidation on)."""
         fn = _tool_fn(server, "memory_consolidation_config")
         result = json.loads(fn())
-        # Auto-consolidation is off by default (ConsolidationConfig.enabled=False)
-        assert result["enabled"] is False
+        assert result["enabled"] is True
 
     # ------------------------------------------------------------------
     # memory_consolidation_config_set — write
@@ -2972,7 +3000,7 @@ class TestMcpServerInputValidation022C:
     def server(self, tmp_path):
         from tapps_brain.mcp_server import create_server
 
-        srv = create_server(tmp_path)
+        srv = create_server(tmp_path, enable_hive=False)
         yield srv
         srv._tapps_store.close()
 

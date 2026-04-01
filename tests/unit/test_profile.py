@@ -766,8 +766,8 @@ class TestMergeProfilesHive:
             # No hive specified — uses default HiveConfig()
         )
         merged = _merge_profiles(child, parent)
-        # Child's default hive wins (child overrides parent for scalar configs)
-        assert merged.hive.auto_propagate_tiers == []
+        # Child's default HiveConfig wins over parent (full child.hive replaces)
+        assert merged.hive.auto_propagate_tiers == ["architectural", "pattern"]
         assert merged.hive.recall_weight == 0.8  # default
 
 

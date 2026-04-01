@@ -1,4 +1,4 @@
-"""Tests for GitHub #51 — federation hub carries publisher memory_group."""
+"""Tests for ``memory_group`` on Hive ``hive_memories`` (multi-scope memory / propagation)."""
 
 from __future__ import annotations
 
@@ -159,6 +159,54 @@ def test_propagate_private_scope_stays_local(hive_store: HiveStore) -> None:
 # ---------------------------------------------------------------------------
 # Full round-trip via MemoryEntry → _propagate_to_hive
 # ---------------------------------------------------------------------------
+
+
+class TestPropagationGroupScope:
+    """GitHub #52: agent_scope group:<name> + Hive membership."""
+
+    def test_propagate_group_member(self, hive_store: HiveStore) -> None:
+        hive_store.create_group("team-alpha")
+        assert hive_store.add_group_member("team-alpha", "agent-1")
+        result = PropagationEngine.propagate(
+            key="gkey",
+            value="group shared",
+            agent_scope="group:team-alpha",
+            agent_id="agent-1",
+            agent_profile="repo-brain",
+            tier="pattern",
+            confidence=0.8,
+            source="agent",
+            tags=[],
+            hive_store=hive_store,
+        )
+        assert result is not None
+        assert result["namespace"] == "team-alpha"
+        got = hive_store.get("gkey", namespace="team-alpha")
+        assert got is not None
+        assert got["value"] == "group shared"
+
+    def test_propagate_group_non_member(self, hive_store: HiveStore) -> None:
+        hive_store.create_group("team-beta")
+        result = PropagationEngine.propagate(
+            key="no-access",
+            value="secret",
+            agent_scope="group:team-beta",
+            agent_id="outsider",
+            agent_profile="repo-brain",
+            tier="pattern",
+            confidence=0.8,
+            source="agent",
+            tags=[],
+            hive_store=hive_store,
+        )
+        assert result is None
+        assert hive_store.get("no-access", namespace="team-beta") is None
+
+    def test_agent_is_group_member(self, hive_store: HiveStore) -> None:
+        hive_store.create_group("g")
+        assert not hive_store.agent_is_group_member("g", "a")
+        hive_store.add_group_member("g", "a")
+        assert hive_store.agent_is_group_member("g", "a")
 
 
 def test_round_trip_via_memory_entry(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from tapps_brain.agent_scope import normalize_agent_scope
 from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.models import MemoryScope
 from tapps_brain.tier_normalize import normalize_save_tier
@@ -26,7 +27,6 @@ logger = structlog.get_logger(__name__)
 RELAY_VERSION: str = "1.0"
 SUPPORTED_RELAY_VERSIONS: frozenset[str] = frozenset({"1.0"})
 
-_AGENT_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive"})
 _MEMORY_SCOPES: frozenset[str] = frozenset(m.value for m in MemoryScope)
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
@@ -59,29 +59,34 @@ def resolve_relay_scopes(item: dict[str, Any]) -> tuple[str, str] | None:
     ag = item.get("agent_scope")
     legacy = item.get("scope")
 
+    ag_norm: str | None = None
+
     if vis is not None:
         vs = str(vis).strip().lower()
         if vs not in _MEMORY_SCOPES:
             return None
         vis = vs
     if ag is not None:
-        ags = str(ag).strip().lower()
-        if ags not in _AGENT_SCOPES:
+        try:
+            ag_norm = normalize_agent_scope(str(ag).strip())
+        except ValueError:
             return None
-        ag = ags
 
     if legacy is not None:
-        ls = str(legacy).strip().lower()
-        if ls in _AGENT_SCOPES:
-            ag = ag or ls
-            vis = vis or MemoryScope.project.value
-        elif ls in _MEMORY_SCOPES:
+        raw_legacy = str(legacy).strip()
+        ls = raw_legacy.lower()
+        if ls in _MEMORY_SCOPES:
             vis = vis or ls
-            ag = ag or "private"
+            ag_norm = ag_norm or "private"
         else:
-            return None
+            try:
+                legacy_ag = normalize_agent_scope(raw_legacy)
+            except ValueError:
+                return None
+            ag_norm = ag_norm or legacy_ag
+            vis = vis or MemoryScope.project.value
 
-    return (vis or MemoryScope.project.value), (ag or "private")
+    return (vis or MemoryScope.project.value), (ag_norm or "private")
 
 
 def parse_relay_document(raw: str) -> tuple[dict[str, Any] | None, str | None]:

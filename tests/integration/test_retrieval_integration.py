@@ -49,6 +49,7 @@ def _save(
     tags: list[str] | None = None,
     confidence: float = -1.0,
     source: str = "agent",
+    conflict_check: bool = True,
 ) -> None:
     """Helper to save a memory entry with sensible defaults."""
     result = store.save(
@@ -58,6 +59,7 @@ def _save(
         tags=tags or [],
         confidence=confidence,
         source=source,
+        conflict_check=conflict_check,
     )
     assert not isinstance(result, dict), f"save failed: {result}"
 
@@ -454,11 +456,13 @@ class TestCompositeScoringIntegration:
     ) -> None:
         """High-confidence entry should outscore low-confidence with same text."""
         # Distinct values avoid Bloom write-dedup treating the second save as reinforce-only.
+        # Disable conflict_check: near-duplicate text would invalidate the first entry (#44).
         _save(
             store,
             "low-conf",
             "Testing approach uses mocks for external services (variant A)",
             confidence=0.3,
+            conflict_check=False,
         )
         _save(
             store,
@@ -466,6 +470,7 @@ class TestCompositeScoringIntegration:
             "Testing approach uses mocks for external services (variant B)",
             confidence=0.95,
             source="human",
+            conflict_check=False,
         )
 
         results = retriever.search("testing mocks external services", store)

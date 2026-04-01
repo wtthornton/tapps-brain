@@ -130,6 +130,38 @@ class TestPublishAndSync:
         # local-only should NOT be in B
         assert store_b.get("local-only") is None
 
+    def test_publish_then_sync_preserves_memory_group(
+        self,
+        tmp_path: Path,
+        store_a: MemoryStore,
+        store_b: MemoryStore,
+        hub_store: FederatedStore,
+    ) -> None:
+        store_a.save(
+            key="grp-k",
+            value="grouped shared memory",
+            scope="shared",
+            tier="pattern",
+            memory_group="team-fed",
+        )
+        _register_both(tmp_path)
+        add_subscription("project-b", sources=["project-a"])
+
+        sync_to_hub(
+            store_a, hub_store, project_id="project-a", project_root=str(tmp_path / "project_a")
+        )
+        hub_rows = hub_store.get_project_entries("project-a")
+        assert len(hub_rows) == 1
+        assert hub_rows[0].get("memory_group") == "team-fed"
+
+        config = load_federation_config()
+        pull = sync_from_hub(store_b, hub_store, project_id="project-b", config=config)
+        assert pull["imported"] == 1
+
+        got = store_b.get("grp-k")
+        assert got is not None
+        assert got.memory_group == "team-fed"
+
     def test_hub_contains_published_entries(
         self,
         tmp_path: Path,

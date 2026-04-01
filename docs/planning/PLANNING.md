@@ -73,7 +73,8 @@ docs/planning/
     ├── EPIC-037.md      ← OpenClaw plugin SDK realignment — fix API contract to match real SDK (done)
     ├── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
-    └── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
+    ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
+    └── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
 ```
 
 ## Why This Structure

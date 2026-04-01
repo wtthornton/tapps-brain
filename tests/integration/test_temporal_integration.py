@@ -130,18 +130,22 @@ class TestConsolidationTemporal:
             ),
         )
 
-        # Save very similar entries to trigger consolidation
+        # Save very similar entries to trigger consolidation.
+        # conflict_check=False: semantic conflict invalidation uses invalid_at without
+        # superseded_by; this test asserts consolidation-driven supersession chains.
         store.save(
             key="react-pattern-1",
             value="We use React with TypeScript for all frontend components",
             tier="pattern",
             tags=["frontend", "react"],
+            conflict_check=False,
         )
         store.save(
             key="react-pattern-2",
             value="We use React with TypeScript for frontend UI components",
             tier="pattern",
             tags=["frontend", "react"],
+            conflict_check=False,
         )
         # Third entry should trigger consolidation
         store.save(
@@ -149,6 +153,7 @@ class TestConsolidationTemporal:
             value="We use React with TypeScript for building frontend components",
             tier="pattern",
             tags=["frontend", "react"],
+            conflict_check=False,
         )
 
         # Check that source entries were temporally invalidated
@@ -158,6 +163,10 @@ class TestConsolidationTemporal:
         # Consolidation must trigger given low threshold (0.3) and 3 near-identical entries
         assert len(invalidated) > 0, "Expected consolidation to invalidate at least one entry"
         for entry in invalidated:
+            # Source rows get superseded_by from consolidation; consolidated rows can later
+            # get invalid_at from semantic conflict detection (#44) without superseded_by.
+            if entry.source_agent == "tapps-consolidation":
+                continue
             assert entry.superseded_by is not None
 
         store.close()

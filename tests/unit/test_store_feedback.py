@@ -173,8 +173,9 @@ class TestRecordFeedback:
         assert ev.utility_score == 1.0
 
     def test_custom_event_type(self, store: MemoryStore) -> None:
-        ev = store.record_feedback("deploy_completed", details={"env": "prod"})
-        assert ev.event_type == "deploy_completed"
+        """Builtin event types accept extra details under strict vocabulary."""
+        ev = store.record_feedback("gap_reported", details={"env": "prod", "query": "x"})
+        assert ev.event_type == "gap_reported"
         assert ev.details["env"] == "prod"
 
     def test_invalid_event_type_raises(self, store: MemoryStore) -> None:

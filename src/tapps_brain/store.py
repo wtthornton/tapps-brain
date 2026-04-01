@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
+from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normalize_agent_scope
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET, normalize_memory_group
 from tapps_brain.models import (
     MemoryEntry,
@@ -46,7 +47,7 @@ logger = structlog.get_logger(__name__)
 # Maximum number of memories per project.
 _MAX_ENTRIES = 5000
 
-# Valid Hive propagation scope values.
+# Built-in Hive propagation primitives (``group:<name>`` is also valid; see ``agent_scope``).
 VALID_AGENT_SCOPES: tuple[str, ...] = ("private", "domain", "hive")
 
 # RAG safety match count threshold for blocking content.
@@ -371,7 +372,7 @@ class MemoryStore:
             source: Source of the memory (human, agent, inferred, system).
             source_agent: Identifier of the agent saving the memory.
             scope: Visibility scope (project, branch, session).
-            agent_scope: Hive propagation scope (private, domain, hive).
+            agent_scope: Hive propagation scope (private, domain, hive, group:<name>).
             source_session_id: Session ID that triggered this memory (GitHub #38).
             source_channel: Channel/surface where memory originated (GitHub #38).
             source_message_id: Message ID that triggered this memory (GitHub #38).
@@ -394,14 +395,13 @@ class MemoryStore:
                 their ``invalid_at`` field is set to now (GitHub #44, task 040.16).
                 Defaults to True for safer writes.
         """
-        # agent_scope enum validation
-        if agent_scope not in VALID_AGENT_SCOPES:
+        try:
+            agent_scope = normalize_agent_scope(agent_scope)
+        except ValueError as exc:
             return {
                 "error": "invalid_agent_scope",
-                "message": (
-                    f"Invalid agent_scope {agent_scope!r}. Valid values: {list(VALID_AGENT_SCOPES)}"
-                ),
-                "valid_values": list(VALID_AGENT_SCOPES),
+                "message": str(exc),
+                "valid_values": agent_scope_valid_values_for_errors(),
             }
 
         tier = normalize_save_tier(tier, self._profile)
@@ -1124,7 +1124,7 @@ class MemoryStore:
             source: Source attribution for created entries.
             capture_prompt: Optional guidance for extraction.
             agent_scope: Hive propagation scope for captured facts —
-                ``'private'`` (default), ``'domain'``, or ``'hive'``.
+                ``'private'`` (default), ``'domain'``, ``'hive'``, or ``'group:<name>'``.
 
         Returns:
             List of keys for newly created entries.
@@ -1458,6 +1458,7 @@ class MemoryStore:
                     hive_store=self._hive_store,
                     hive_recall_weight=hive_weight,
                     hive_agent_profile=agent_profile,
+                    hive_agent_id=self._hive_agent_id,
                 )
 
         with MetricsTimer(self._metrics, "store.recall_ms"):

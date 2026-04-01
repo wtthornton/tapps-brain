@@ -384,7 +384,7 @@ class TestFeedbackConfig:
     def test_default_config(self) -> None:
         cfg = FeedbackConfig()
         assert cfg.custom_event_types == []
-        assert cfg.strict_event_types is False
+        assert cfg.strict_event_types is True
 
     def test_default_known_types_equals_builtins(self) -> None:
         cfg = FeedbackConfig()
@@ -474,12 +474,12 @@ class TestFeedbackConfig:
         finally:
             store.close()
 
-    def test_default_store_without_config_is_non_strict(self, db_path: Path) -> None:
-        """Store with no config defaults to non-strict (open enum behaviour)."""
+    def test_default_store_without_config_is_strict(self, db_path: Path) -> None:
+        """Store with default FeedbackConfig rejects unknown types when strict is on."""
         store = FeedbackStore(db_path=db_path)
         try:
-            store.record(FeedbackEvent(event_type="any_valid_type"))
-            assert len(store.query()) == 1
+            with pytest.raises(ValueError, match="Unknown event_type"):
+                store.record(FeedbackEvent(event_type="any_valid_type"))
         finally:
             store.close()
 
@@ -516,7 +516,7 @@ class TestFeedbackConfigProfileYaml:
         assert hasattr(profile, "feedback")
         assert isinstance(profile.feedback, FeedbackConfig)
         assert profile.feedback.custom_event_types == []
-        assert profile.feedback.strict_event_types is False
+        assert profile.feedback.strict_event_types is True
 
     def test_profile_yaml_with_custom_feedback_section(self, tmp_path: Path) -> None:
         """A profile YAML with feedback.custom_event_types loads correctly."""
@@ -564,7 +564,7 @@ class TestFeedbackConfigProfileYaml:
 
         profile = load_profile(profile_yaml)
         assert profile.feedback.custom_event_types == []
-        assert profile.feedback.strict_event_types is False
+        assert profile.feedback.strict_event_types is True
 
 
 # ---------------------------------------------------------------------------

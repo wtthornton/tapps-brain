@@ -1069,10 +1069,11 @@ class TestAgentScopeValidationInStore:
     """Tests for agent_scope enum validation in MemoryStore.save() (STORY-014.1)."""
 
     def test_valid_agent_scope_values(self, store: MemoryStore) -> None:
-        """All valid agent_scope values are accepted by store.save()."""
-        for scope in VALID_AGENT_SCOPES:
-            result = store.save(key=f"scope-{scope}", value=f"value for {scope}", agent_scope=scope)
-            assert isinstance(result, MemoryEntry), f"Expected MemoryEntry for scope={scope!r}"
+        """Primitives and group:<name> are accepted by store.save()."""
+        for scope in (*VALID_AGENT_SCOPES, "group:push-team"):
+            safe_key = f"scope-{scope}".replace(":", "-")
+            result = store.save(key=safe_key, value=f"value for {scope}", agent_scope=scope)
+            assert isinstance(result, MemoryEntry), f"Expected MemoryEntry for scope={scope!r} key={safe_key!r}"
 
     def test_invalid_agent_scope_returns_error_dict(self, store: MemoryStore) -> None:
         """Invalid agent_scope returns error dict with error='invalid_agent_scope'."""
@@ -1080,7 +1081,7 @@ class TestAgentScopeValidationInStore:
         assert isinstance(result, dict)
         assert result["error"] == "invalid_agent_scope"
         assert "valid_values" in result
-        assert sorted(result["valid_values"]) == ["domain", "hive", "private"]
+        assert sorted(result["valid_values"]) == ["domain", "group:<name>", "hive", "private"]
 
     def test_invalid_agent_scope_not_persisted(self, store: MemoryStore) -> None:
         """Entry is not stored when agent_scope is invalid."""

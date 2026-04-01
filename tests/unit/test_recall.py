@@ -581,3 +581,27 @@ class TestApplyPostFiltersRobustness:
         filtered, section = orch._apply_post_filters([], cfg, "query")
         assert filtered == []
         assert section == ""
+
+
+class TestRecallHiveGroupNamespaces:
+    """GitHub #52: Hive recall unions member group namespaces."""
+
+    def test_search_hive_includes_get_agent_groups(self, store: MemoryStore) -> None:
+        from unittest.mock import MagicMock
+
+        hive = MagicMock()
+        hive.get_agent_groups.return_value = ["squad-a", "squad-b"]
+        hive.search.return_value = []
+
+        orch = RecallOrchestrator(
+            store,
+            hive_store=hive,
+            hive_agent_profile="repo-brain",
+            hive_agent_id="agent-99",
+        )
+        orch._search_hive("query text", [])
+        hive.search.assert_called_once()
+        ns = hive.search.call_args.kwargs["namespaces"]
+        assert ns[:2] == ["universal", "repo-brain"]
+        assert "squad-a" in ns and "squad-b" in ns
+        hive.get_agent_groups.assert_called_once_with("agent-99")

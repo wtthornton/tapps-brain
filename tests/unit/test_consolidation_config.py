@@ -22,7 +22,7 @@ class TestConsolidationConfig:
         from tapps_brain.store import ConsolidationConfig
 
         cfg = ConsolidationConfig()
-        assert cfg.enabled is False
+        assert cfg.enabled is True
         assert cfg.threshold == pytest.approx(0.7)
         assert cfg.min_entries == 3
 
@@ -67,7 +67,7 @@ class TestMemoryStoreConsolidationConfig:
 
         cfg = store.get_consolidation_config()
         assert isinstance(cfg, ConsolidationConfig)
-        assert cfg.enabled is False
+        assert cfg.enabled is True
         assert cfg.threshold == pytest.approx(0.7)
         assert cfg.min_entries == 3
 
@@ -100,9 +100,13 @@ def mcp_server(tmp_path: Path):
     pytest.importorskip("mcp")
     from tapps_brain.mcp_server import create_server
 
-    server = create_server(tmp_path)
+    server = create_server(tmp_path, enable_hive=False)
     yield server
-    server._tapps_store.close()
+    st = server._tapps_store
+    h = getattr(st, "_hive_store", None)
+    if h is not None:
+        h.close()
+    st.close()
 
 
 class TestConsolidationConfigMCPTool:
@@ -112,7 +116,7 @@ class TestConsolidationConfigMCPTool:
     def test_memory_consolidation_config_returns_defaults(self, mcp_server) -> None:
         fn = _tool_fn(mcp_server, "memory_consolidation_config")
         result = json.loads(fn())
-        assert result["enabled"] is False
+        assert result["enabled"] is True
         assert result["threshold"] == pytest.approx(0.7)
         assert result["min_entries"] == 3
 
@@ -137,7 +141,7 @@ class TestConsolidationConfigMCPTool:
         assert result["threshold"] == pytest.approx(0.5)
         assert result["min_entries"] == 5
         # enabled should remain at default
-        assert result["enabled"] is False
+        assert result["enabled"] is True
 
     @pytest.mark.requires_mcp
     def test_memory_consolidation_config_tools_registered(self, mcp_server) -> None:
@@ -165,7 +169,7 @@ class TestMaintenanceConsolidationConfigCLI:
         )
         assert result.exit_code == 0
         assert "enabled" in result.output
-        assert "False" in result.output
+        assert "True" in result.output
 
     def test_consolidation_config_json_output(self, tmp_path: Path) -> None:
         from typer.testing import CliRunner
@@ -179,7 +183,7 @@ class TestMaintenanceConsolidationConfigCLI:
         )
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["enabled"] is False
+        assert data["enabled"] is True
         assert data["threshold"] == pytest.approx(0.7)
         assert data["min_entries"] == 3
 

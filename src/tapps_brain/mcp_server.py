@@ -131,7 +131,10 @@ def create_server(  # noqa: PLR0915
             "patterns, and role-specific knowledge.\n"
             "- **hive**: Visible to ALL agents in the Hive regardless of "
             "profile. Use for cross-cutting facts: tech stack decisions, "
-            "project architecture, API contracts, and team agreements.\n\n"
+            "project architecture, API contracts, and team agreements.\n"
+            "- **group:<name>**: Hive namespace *name* for members of that group "
+            "(distinct from project-local `group` on saves). Requires Hive group "
+            "membership.\n\n"
             "Recall automatically merges local and Hive results. Use "
             "`hive_status` to see registered agents and namespaces, "
             "`hive_search` to query the shared store directly, "
@@ -172,7 +175,8 @@ def create_server(  # noqa: PLR0915
             tags: Optional tags for categorization.
             scope: Visibility scope — one of: project, branch, session.
             confidence: Confidence score (0.0-1.0, or -1.0 for auto).
-            agent_scope: Hive propagation scope — one of: private, domain, hive.
+            agent_scope: Hive propagation scope — private, domain, hive, or
+                group:<name> (cross-agent group; requires membership in that Hive group).
                 Use 'private' (default) for agent-specific notes and reasoning.
                 Use 'domain' to share with agents using the same profile
                 (e.g., coding conventions shared among all repo-brain agents).
@@ -185,19 +189,22 @@ def create_server(  # noqa: PLR0915
                 clear; set to a short label (e.g. team-a) to assign. Not a Hive
                 namespace — see memory_groups guide vs agent_scope.
         """
+        from tapps_brain.agent_scope import (
+            agent_scope_valid_values_for_errors,
+            normalize_agent_scope,
+        )
         from tapps_brain.memory_group import MEMORY_GROUP_UNSET
         from tapps_brain.models import MemoryTier
         from tapps_brain.tier_normalize import normalize_save_tier
 
-        _valid_scopes = ("private", "domain", "hive")
-        if agent_scope not in _valid_scopes:
+        try:
+            agent_scope = normalize_agent_scope(agent_scope)
+        except ValueError as exc:
             return json.dumps(
                 {
                     "error": "invalid_agent_scope",
-                    "message": (
-                        f"Invalid agent_scope {agent_scope!r}. Valid values: {list(_valid_scopes)}"
-                    ),
-                    "valid_values": list(_valid_scopes),
+                    "message": str(exc),
+                    "valid_values": agent_scope_valid_values_for_errors(),
                 }
             )
 
@@ -444,9 +451,15 @@ def create_server(  # noqa: PLR0915
             context: Raw session/transcript text to scan for facts.
             source: Source attribution — one of: human, agent, inferred, system.
             agent_scope: Hive propagation scope for extracted facts — one of:
-                'private' (default, only this agent), 'domain' (same-profile
-                agents), or 'hive' (all agents).
+                'private' (default), 'domain', 'hive', or 'group:<name>'.
         """
+        from tapps_brain.agent_scope import normalize_agent_scope
+
+        try:
+            agent_scope = normalize_agent_scope(agent_scope)
+        except ValueError as exc:
+            return json.dumps({"error": "invalid_agent_scope", "message": str(exc)})
+
         created_keys = store.ingest_context(context, source=source, agent_scope=agent_scope)
         return json.dumps(
             {
@@ -594,12 +607,17 @@ def create_server(  # noqa: PLR0915
         Args:
             response: The agent's response text to scan for facts.
             source: Source attribution — one of: human, agent, inferred, system.
-            agent_scope: Hive propagation scope for captured facts — one of:
-                'private' (default, only this agent), 'domain' (same-profile
-                agents), or 'hive' (all agents). Set to 'hive' to share
-                architectural decisions or cross-cutting facts with all agents.
+            agent_scope: Hive propagation scope — 'private' (default),
+                'domain', 'hive', or 'group:<name>' (Hive group namespace).
+                Set to 'hive' to share architectural decisions with all agents.
         """
+        from tapps_brain.agent_scope import normalize_agent_scope
         from tapps_brain.recall import RecallOrchestrator
+
+        try:
+            agent_scope = normalize_agent_scope(agent_scope)
+        except ValueError as exc:
+            return json.dumps({"error": "invalid_agent_scope", "message": str(exc)})
 
         orchestrator = RecallOrchestrator(store)
         created_keys = orchestrator.capture(response, source=source, agent_scope=agent_scope)
@@ -1738,8 +1756,8 @@ def create_server(  # noqa: PLR0915
 
         Args:
             key: Key of the local memory to propagate.
-            agent_scope: Propagation scope — 'domain' (same-profile agents)
-                or 'hive' (all agents, default).
+            agent_scope: Propagation scope — 'domain', 'hive' (default),
+                or 'group:<name>' (Hive group; requires membership).
             force: When True, ignore profile private_tiers / auto_propagate rules
                 so *agent_scope* always applies (GitHub #18).
             dry_run: When True, do not write to Hive; report target namespace only.
@@ -1749,7 +1767,22 @@ def create_server(  # noqa: PLR0915
             return json.dumps({"error": "not_found", "message": f"Key '{key}' not found."})
 
         try:
+            from tapps_brain.agent_scope import (
+                agent_scope_valid_values_for_errors,
+                normalize_agent_scope,
+            )
             from tapps_brain.hive import HiveStore, PropagationEngine
+
+            try:
+                agent_scope = normalize_agent_scope(agent_scope)
+            except ValueError as exc:
+                return json.dumps(
+                    {
+                        "error": "invalid_agent_scope",
+                        "message": str(exc),
+                        "valid_values": agent_scope_valid_values_for_errors(),
+                    }
+                )
 
             shared = getattr(store, "_hive_store", None)
             _should_close = shared is None
@@ -1810,7 +1843,7 @@ def create_server(  # noqa: PLR0915
         require *push_all* or at least one of *tags* / *tier*.
 
         Args:
-            agent_scope: ``domain`` (profile namespace) or ``hive`` (universal).
+            agent_scope: ``domain``, ``hive``, or ``group:<name>`` (not ``private``).
             push_all: Include all non-superseded entries (optionally narrowed by
                 *tier* / *tags*).
             tags: Comma-separated tags; entry matches if it has any listed tag.
@@ -1820,11 +1853,34 @@ def create_server(  # noqa: PLR0915
             force: Ignore profile private_tiers / auto_propagate rules.
         """
         try:
+            from tapps_brain.agent_scope import (
+                agent_scope_valid_values_for_errors,
+                normalize_agent_scope,
+            )
             from tapps_brain.hive import (
                 HiveStore,
                 push_memory_entries_to_hive,
                 select_local_entries_for_hive_push,
             )
+
+            try:
+                agent_scope = normalize_agent_scope(agent_scope)
+            except ValueError as exc:
+                return json.dumps(
+                    {
+                        "error": "invalid_agent_scope",
+                        "message": str(exc),
+                        "valid_values": agent_scope_valid_values_for_errors(),
+                    }
+                )
+            if agent_scope == "private":
+                return json.dumps(
+                    {
+                        "error": "invalid_agent_scope",
+                        "message": "hive_push requires domain, hive, or group:<name>.",
+                        "valid_values": agent_scope_valid_values_for_errors(),
+                    }
+                )
 
             key_list = [k.strip() for k in keys.split(",") if k.strip()]
             tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None

@@ -53,7 +53,7 @@
 
 ### Core tables
 
-- `federated_memories`
+- `federated_memories` (includes optional `memory_group` — publisher project-local partition on the hub; GitHub **#51** / 49-E)
 - `federation_meta`
 
 ### FTS

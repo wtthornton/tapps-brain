@@ -52,6 +52,13 @@ def test_resolve_invalid_agent_scope_field() -> None:
     assert resolve_relay_scopes({"agent_scope": "everyone", "scope": "project"}) is None
 
 
+def test_resolve_agent_scope_group() -> None:
+    assert resolve_relay_scopes({"visibility": "project", "agent_scope": "group:squad-1"}) == (
+        "project",
+        "group:squad-1",
+    )
+
+
 def test_parse_valid() -> None:
     raw = json.dumps(
         {

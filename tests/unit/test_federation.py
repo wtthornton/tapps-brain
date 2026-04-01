@@ -78,6 +78,7 @@ def _make_entry(
     source: MemorySource = MemorySource.agent,
     scope: MemoryScope = MemoryScope.shared,
     tags: list[str] | None = None,
+    memory_group: str | None = None,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry with sensible defaults."""
     return make_entry(
@@ -88,6 +89,7 @@ def _make_entry(
         source=source,
         scope=scope,
         tags=tags,
+        memory_group=memory_group,
     )
 
 
@@ -115,6 +117,7 @@ class MockMemoryStore:
             key=kwargs["key"],
             value=kwargs["value"],
             scope=MemoryScope.project,
+            memory_group=kwargs.get("memory_group"),
         )
         self._entries[entry.key] = entry
         return entry
@@ -307,6 +310,15 @@ class TestFederatedStore:
         assert stats["total_entries"] == 0
         assert stats["projects"] == {}
 
+    def test_schema_has_memory_group_column(self, hub_store: FederatedStore) -> None:
+        cols = {
+            row[1]
+            for row in hub_store._conn.execute(
+                "PRAGMA table_info(federated_memories)"
+            ).fetchall()
+        }
+        assert "memory_group" in cols
+
     def test_publish_entries(self, hub_store: FederatedStore) -> None:
         entries = [
             _make_entry(key="pattern-a", value="Use dependency injection"),
@@ -440,6 +452,32 @@ class TestFederatedStore:
         results = hub_store.search("entry", limit=3)
         assert len(results) <= 3
 
+    def test_publish_round_trips_memory_group(self, hub_store: FederatedStore) -> None:
+        hub_store.publish(
+            "proj-a",
+            [
+                _make_entry(key="g1", value="alpha team fact", memory_group="team-a"),
+                _make_entry(key="g2", value="ungrouped fact"),
+            ],
+        )
+        rows = hub_store.get_project_entries("proj-a")
+        by_key = {r["key"]: r for r in rows}
+        assert by_key["g1"].get("memory_group") == "team-a"
+        assert by_key["g2"].get("memory_group") in (None, "")
+
+    def test_search_filters_by_memory_group(self, hub_store: FederatedStore) -> None:
+        hub_store.publish(
+            "proj-a",
+            [
+                _make_entry(key="a", value="widget alpha", memory_group="g1"),
+                _make_entry(key="b", value="widget beta", memory_group="g2"),
+            ],
+        )
+        r1 = hub_store.search("widget", memory_group="g1")
+        assert len(r1) == 1 and r1[0]["key"] == "a"
+        r_all = hub_store.search("widget")
+        assert len(r_all) == 2
+
 
 # ===========================================================================
 # 4. Sync operations
@@ -565,6 +603,31 @@ class TestSyncFromHub:
         config = FederationConfig()
         result = sync_from_hub(mock_store, hub_store, "proj-a", config=config)
         assert result == {"imported": 0, "skipped": 0, "conflicts": 0}
+
+    def test_sync_restores_memory_group(self, hub_store: FederatedStore) -> None:
+        hub_store.publish(
+            "proj-b",
+            [
+                _make_entry(
+                    key="grouped-b",
+                    value="from b",
+                    confidence=0.8,
+                    tags=["api"],
+                    memory_group="squad-x",
+                ),
+            ],
+        )
+        register_project("proj-a", "/tmp/a")
+        register_project("proj-b", "/tmp/b")
+        add_subscription("proj-a", sources=["proj-b"])
+
+        mock_store = MockMemoryStore([])
+        config = load_federation_config()
+        sync_from_hub(mock_store, hub_store, "proj-a", config=config)
+        assert len(mock_store._saved) == 1
+        assert mock_store._saved[0].get("memory_group") == "squad-x"
+        assert mock_store.get("grouped-b") is not None
+        assert mock_store.get("grouped-b").memory_group == "squad-x"
 
     def test_sync_adds_federated_tags(self, hub_store: FederatedStore) -> None:
         hub_store.publish(
@@ -826,6 +889,7 @@ class TestFederatedSearchResult:
         assert result.tier == "pattern"
         assert result.tags == []
         assert result.relevance_score == 0.0
+        assert result.memory_group is None
 
     def test_full_construction(self) -> None:
         result = FederatedSearchResult(
@@ -837,6 +901,8 @@ class TestFederatedSearchResult:
             tier="architectural",
             tags=["api"],
             relevance_score=0.95,
+            memory_group="team-z",
         )
         assert result.confidence == 0.9
         assert result.tags == ["api"]
+        assert result.memory_group == "team-z"

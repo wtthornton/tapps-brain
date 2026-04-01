@@ -87,6 +87,7 @@ class RecallOrchestrator:
         hive_store: HiveStore | None = None,
         hive_recall_weight: float = 0.8,
         hive_agent_profile: str = "repo-brain",
+        hive_agent_id: str = "unknown",
     ) -> None:
         self._store = store
         self._retriever = retriever
@@ -95,6 +96,7 @@ class RecallOrchestrator:
         self._hive_store = hive_store
         self._hive_recall_weight = hive_recall_weight
         self._hive_agent_profile = hive_agent_profile
+        self._hive_agent_id = hive_agent_id
 
     # ------------------------------------------------------------------
     # Recall
@@ -212,7 +214,7 @@ class RecallOrchestrator:
             response: The agent's response text to scan for facts.
             source: Source attribution for created entries.
             agent_scope: Hive propagation scope for captured facts —
-                ``'private'`` (default), ``'domain'``, or ``'hive'``.
+                ``'private'`` (default), ``'domain'``, ``'hive'``, or ``'group:<name>'``.
 
         Returns:
             List of keys for newly created memory entries.
@@ -252,8 +254,16 @@ class RecallOrchestrator:
 
         local_keys = {str(m.get("key", "")) for m in local_memories}
 
-        # Search universal + agent's domain namespace
+        # Universal + profile namespace + Hive membership group namespaces (GitHub #52).
         namespaces = ["universal", self._hive_agent_profile]
+        try:
+            extra_groups = self._hive_store.get_agent_groups(self._hive_agent_id)
+        except Exception:
+            logger.debug("hive_recall_agent_groups_failed", exc_info=True)
+            extra_groups = []
+        for g in extra_groups:
+            if g not in namespaces:
+                namespaces.append(g)
         try:
             hive_results = self._hive_store.search(
                 message,

@@ -72,9 +72,6 @@ MAX_VALUE_LENGTH: int = 4096
 MAX_TAGS: int = 10
 MAX_TAG_LENGTH: int = 64
 
-# Valid values for the ``agent_scope`` Hive propagation field.
-_VALID_AGENT_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive"})
-
 
 def tier_str(tier: MemoryTier | str) -> str:
     """Return the string value of a tier, handling both MemoryTier enum and str."""
@@ -131,10 +128,13 @@ class MemoryEntry(BaseModel):
         description="Vector embedding for semantic search when enabled.",
     )
 
-    # Hive agent scope (EPIC-011)
+    # Hive agent scope (EPIC-011 + GitHub #52 group:<name>)
     agent_scope: str = Field(
         default="private",
-        description="Hive propagation scope: 'private' | 'domain' | 'hive'.",
+        description=(
+            "Hive propagation: 'private' | 'domain' | 'hive' | 'group:<name>' "
+            "(cross-agent Hive group namespace; requires membership)."
+        ),
     )
 
     # Project-local partition (GitHub #49); not Hive namespace or profile tier.
@@ -260,10 +260,13 @@ class MemoryEntry(BaseModel):
     @field_validator("agent_scope")
     @classmethod
     def _validate_agent_scope(cls, v: str) -> str:
-        if v not in _VALID_AGENT_SCOPES:
-            msg = f"agent_scope must be one of {sorted(_VALID_AGENT_SCOPES)!r}. Got: {v!r}"
-            raise ValueError(msg)
-        return v
+        from tapps_brain.agent_scope import normalize_agent_scope
+
+        try:
+            return normalize_agent_scope(v)
+        except ValueError as exc:
+            msg = str(exc)
+            raise ValueError(msg) from exc
 
     @field_validator("memory_group", mode="before")
     @classmethod

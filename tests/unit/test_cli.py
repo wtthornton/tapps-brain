@@ -1091,7 +1091,8 @@ class TestFlywheelCli:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["process"]["skipped"] is True
+        # CLI always attaches HiveStore; process runs (may update 0) rather than skipping.
+        assert data["process"]["skipped"] is False
 
     def test_flywheel_hive_feedback_text(self, project_dir: str) -> None:
         result = runner.invoke(app, ["flywheel", "hive-feedback", "--project-dir", project_dir])
@@ -2309,6 +2310,10 @@ class TestDiagnosticsCommands:
                     tiers={"pattern": 2},
                     sqlite_vec_enabled=True,
                     sqlite_vec_rows=2,
+                    retrieval_effective_mode="hybrid_sqlite_vec_knn",
+                    retrieval_summary=(
+                        "Hybrid test summary. CLI `memory search` default: BM25-only."
+                    ),
                 ),
                 hive=hc.HiveHealth(status="ok", connected=False),
                 integrity=hc.IntegrityHealth(status="ok"),
@@ -2321,6 +2326,8 @@ class TestDiagnosticsCommands:
         )
         assert r.exit_code == 0
         assert "sqlite-vec: on" in r.stdout
+        assert "Retrieval:" in r.stdout
+        assert "hybrid_sqlite_vec_knn" in r.stdout
 
     def test_diagnostics_health_human_hive_connected(self, project_dir, monkeypatch):
         from tapps_brain import health_check as hc
@@ -2553,17 +2560,17 @@ class TestFeedbackCommands:
             [
                 "feedback",
                 "record",
-                "pr_merged",
+                "implicit_negative",
                 "--entry-key",
                 "api-pattern",
                 "--utility-score",
-                "0.25",
+                "-0.1",
                 "--project-dir",
                 project_dir,
             ],
         )
         assert r4.exit_code == 0
-        assert "pr_merged" in r4.stdout
+        assert "implicit_negative" in r4.stdout
 
         lst = runner.invoke(
             app,

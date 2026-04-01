@@ -25,6 +25,13 @@ def test_run_health_check_smoke(tmp_path: Path) -> None:
     assert report.status in ("ok", "warn", "error")
     assert report.store.schema_version != "unknown" or report.store.entries >= 0
     assert any("empty" in w.lower() for w in report.warnings)
+    assert report.store.retrieval_effective_mode in (
+        "bm25_only",
+        "hybrid_sqlite_vec_knn",
+        "hybrid_sqlite_vec_empty",
+        "hybrid_on_the_fly_embeddings",
+    )
+    assert "CLI `memory search`" in report.store.retrieval_summary
 
 
 def test_run_health_check_store_file_not_found(

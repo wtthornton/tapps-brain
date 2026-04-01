@@ -24,6 +24,7 @@ except ImportError:
     raise SystemExit(_msg) from None
 
 from tapps_brain import __version__
+from tapps_brain.agent_scope import normalize_agent_scope
 
 # Route structlog output to stderr so it doesn't pollute CLI stdout/JSON
 structlog.configure(
@@ -367,7 +368,7 @@ def store_search(
 
 
 @memory_app.command("save")
-def memory_save_cmd(
+def memory_save_cmd(  # noqa: PLR0915
     key: Annotated[str, typer.Argument(help="Memory key (slug; same rules as MCP memory_save).")],
     value: Annotated[str, typer.Argument(help="Memory body text.")],
     tier: Annotated[str, typer.Option(help="Tier or active profile layer name.")] = "pattern",
@@ -375,7 +376,8 @@ def memory_save_cmd(
     scope: Annotated[str, typer.Option(help="project | branch | session")] = "project",
     branch: Annotated[str | None, typer.Option(help="Required when scope is branch.")] = None,
     agent_scope: Annotated[
-        str, typer.Option(help="Hive propagation: private | domain | hive.")
+        str,
+        typer.Option(help="Hive propagation: private | domain | hive | group:<name>."),
     ] = "private",
     confidence: Annotated[float, typer.Option(help="-1 uses source default confidence.")] = -1.0,
     source_agent: Annotated[str, typer.Option(help="Attributing agent id (optional).")] = "",
@@ -401,16 +403,15 @@ def memory_save_cmd(
 
     store = _get_store(project_dir)
     try:
-        if agent_scope not in ("private", "domain", "hive"):
-            err = {
-                "error": "invalid_agent_scope",
-                "message": f"Invalid agent_scope {agent_scope!r}. Use private, domain, or hive.",
-            }
+        try:
+            agent_scope = normalize_agent_scope(agent_scope)
+        except ValueError as exc:
+            err = {"error": "invalid_agent_scope", "message": str(exc)}
             if as_json:
                 _output(err, as_json=True)
             else:
                 typer.echo(err["message"], err=True)
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         norm_tier = normalize_save_tier(tier, store.profile)
         legacy = frozenset(m.value for m in MemoryTier)
@@ -2027,8 +2028,17 @@ def _run_hive_push_from_store(
         select_local_entries_for_hive_push,
     )
 
-    if agent_scope not in ("domain", "hive"):
-        typer.echo("Error: agent_scope must be 'domain' or 'hive'.", err=True)
+    try:
+        agent_scope = normalize_agent_scope(agent_scope)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    if agent_scope == "private":
+        typer.echo(
+            "Error: agent_scope cannot be 'private' for hive push; "
+            "use domain, hive, or group:<name>.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     store = _get_store(project_dir)
@@ -2100,7 +2110,8 @@ def _run_hive_push_from_store(
 @hive_app.command("push")
 def hive_push_cmd(
     scope: Annotated[
-        str, typer.Option("--scope", help="Hive target: 'domain' or 'hive'.")
+        str,
+        typer.Option("--scope", help="Hive target: domain | hive | group:<name>."),
     ] = "hive",
     push_all: Annotated[
         bool,
@@ -2147,7 +2158,8 @@ def hive_push_cmd(
 def hive_push_tagged_cmd(
     tag: Annotated[list[str], typer.Argument(help="One or more tags (entry matches any).")],
     scope: Annotated[
-        str, typer.Option("--scope", help="Hive target: 'domain' or 'hive'.")
+        str,
+        typer.Option("--scope", help="Hive target: domain | hive | group:<name>."),
     ] = "hive",
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Preview without writing to Hive.")
@@ -2698,6 +2710,10 @@ def diagnostics_health_cmd(
             typer.echo(f"  sqlite-vec: on  ({s.sqlite_vec_rows} vectors indexed)")
         else:
             typer.echo("  sqlite-vec: off (install optional vector extras)")
+        if getattr(s, "retrieval_effective_mode", "unknown") != "unknown":
+            typer.echo(f"  Retrieval: {s.retrieval_effective_mode}")
+            if s.retrieval_summary:
+                typer.echo(f"    {s.retrieval_summary}")
         if s.tiers:
             typer.echo(f"  Tiers: {', '.join(f'{k}={v}' for k, v in sorted(s.tiers.items()))}")
 

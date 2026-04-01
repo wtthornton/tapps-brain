@@ -163,8 +163,12 @@ class TestMemoryEntry:
             assert entry.agent_scope == scope
 
     def test_agent_scope_invalid_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="agent_scope must be one of"):
+        with pytest.raises(ValidationError, match="Invalid agent_scope"):
             MemoryEntry(key="k", value="v", agent_scope="public")
+
+    def test_agent_scope_group_form_accepted(self) -> None:
+        entry = MemoryEntry(key="k", value="v", agent_scope="group:team-z")
+        assert entry.agent_scope == "group:team-z"
 
     def test_branch_required_for_branch_scope(self) -> None:
         with pytest.raises(ValidationError, match="Branch name is required"):

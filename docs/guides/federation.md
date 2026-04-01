@@ -4,6 +4,8 @@ Cross-project memory sharing via a central hub store.
 
 **Story:** STORY-002.5 from EPIC-002
 
+**Related:** Hive (cross-**agent** sharing) is different from federation — see **[Hive vs federation](hive-vs-federation.md)**.
+
 ## Overview
 
 Federation uses a **hub-and-spoke model**. Each project is a spoke that
@@ -92,6 +94,10 @@ result = sync_to_hub(store, hub, project_id="my-api", keys=["api-pattern", "db-p
 
 Only entries with `scope="shared"` are published. Project-scoped and
 branch-scoped entries are never sent to the hub.
+
+### `memory_group` on the hub
+
+Shared entries may carry an optional project-local **`memory_group`** (same field as in the project DB). **Publish** copies it to the hub row; **sync from hub** restores it on imported memories so subscribers keep the publisher’s partition label. **`FederatedStore.search(..., memory_group="…")`** restricts hub results to that label. Schema: `docs/engineering/data-stores-and-schema.md` (federation hub).
 
 ## Subscribing
 

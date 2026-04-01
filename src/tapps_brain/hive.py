@@ -31,6 +31,7 @@ import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from tapps_brain.agent_scope import hive_group_name_from_scope
 from tapps_brain.sqlcipher_util import connect_sqlite, resolve_hive_encryption_key
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -296,7 +297,7 @@ class HiveStore:
             self._migrate_add_memory_group()
 
     def _migrate_add_memory_group(self) -> None:
-        """Add ``memory_group`` column to ``hive_memories`` if not present (GitHub #51)."""
+        """Add ``memory_group`` column to ``hive_memories`` if not present (multi-scope / Hive)."""
         cols = {row[1] for row in self._conn.execute("PRAGMA table_info(hive_memories)").fetchall()}
         if "memory_group" not in cols:
             self._conn.execute("ALTER TABLE hive_memories ADD COLUMN memory_group TEXT")
@@ -944,6 +945,15 @@ class HiveStore:
             ).fetchall()
         return [row[0] for row in rows]
 
+    def agent_is_group_member(self, group_name: str, agent_id: str) -> bool:
+        """Return True if *agent_id* is registered in *group_name*."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM hive_group_members WHERE group_name = ? AND agent_id = ?",
+                (group_name, agent_id),
+            ).fetchone()
+        return row is not None
+
     def search_with_groups(
         self,
         query: str,
@@ -1001,6 +1011,8 @@ class PropagationEngine:
     - ``private`` → stays local (no propagation)
     - ``domain`` → saved to Hive namespace matching the agent's profile name
     - ``hive`` → saved to the ``universal`` namespace
+    - ``group:<name>`` → saved to Hive namespace *name* when *agent_id* is a
+      member of that group (see ``HiveStore.create_group`` / ``add_group_member``)
 
     Auto-propagation: if the entry's tier is in the profile's
     ``hive.auto_propagate_tiers``, scope is upgraded to ``domain``.
@@ -1053,7 +1065,23 @@ class PropagationEngine:
         if effective_scope == "private":
             return None
 
-        if effective_scope not in ("domain", "hive"):
+        group_ns = hive_group_name_from_scope(effective_scope)
+        if group_ns is not None:
+            if not hive_store.agent_is_group_member(group_ns, agent_id):
+                logger.warning(
+                    "hive.propagate.group_denied",
+                    group_name=group_ns,
+                    agent_id=agent_id,
+                    key=key,
+                    reason="not_a_member",
+                )
+                return None
+            namespace = group_ns
+        elif effective_scope == "hive":
+            namespace = "universal"
+        elif effective_scope == "domain":
+            namespace = agent_profile
+        else:
             logger.warning(
                 "hive.propagate.unknown_scope",
                 effective_scope=effective_scope,
@@ -1061,8 +1089,7 @@ class PropagationEngine:
                 key=key,
                 fallback="domain",
             )
-
-        namespace = "universal" if effective_scope == "hive" else agent_profile
+            namespace = agent_profile
 
         if dry_run:
             logger.debug(
@@ -1194,6 +1221,7 @@ def push_memory_entries_to_hive(
                 private_tiers=private_tiers,
                 bypass_profile_hive_rules=bypass_profile_hive_rules,
                 dry_run=dry_run,
+                memory_group=entry.memory_group,
             )
         except Exception as exc:
             logger.warning(

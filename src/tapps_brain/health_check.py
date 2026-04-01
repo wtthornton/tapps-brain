@@ -37,6 +37,18 @@ class StoreHealth(BaseModel):
     consolidation_candidates: int = 0
     sqlite_vec_enabled: bool = False
     sqlite_vec_rows: int = 0
+    # GitHub #63 — effective retrieval / vector stack (no model load on health check)
+    retrieval_effective_mode: str = Field(
+        default="unknown",
+        description=(
+            "Machine-readable mode: bm25_only | hybrid_sqlite_vec_knn | "
+            "hybrid_sqlite_vec_empty | hybrid_on_the_fly_embeddings | unknown"
+        ),
+    )
+    retrieval_summary: str = Field(
+        default="",
+        description="One-line explanation of BM25 vs vector vs sqlite-vec for operators.",
+    )
 
 
 class HiveHealth(BaseModel):
@@ -84,6 +96,46 @@ class HealthReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _retrieval_health_from_store(store: object) -> tuple[str, str]:
+    """Derive retrieval mode from installed extras and store state (GitHub #63).
+
+    Does not load sentence-transformers models — uses feature detection only.
+    """
+    from tapps_brain._feature_flags import feature_flags
+
+    st_ok = feature_flags.sentence_transformers
+    sv_en = getattr(store, "sqlite_vec_enabled", None)
+    sv_on = bool(sv_en()) if callable(sv_en) else False
+    sv_rc = getattr(store, "sqlite_vec_row_count", None)
+    sv_n = int(sv_rc()) if callable(sv_rc) else 0
+
+    cli_note = " CLI `memory search` default: BM25-only."
+
+    if not st_ok:
+        return (
+            "bm25_only",
+            "Vector leg unavailable: sentence-transformers not installed "
+            "(e.g. `uv sync --extra vector`). Hybrid recall still calls the vector "
+            "path but it returns no candidates, so results are BM25-only." + cli_note,
+        )
+    if sv_on and sv_n > 0:
+        return (
+            "hybrid_sqlite_vec_knn",
+            f"Hybrid BM25+vector; sqlite-vec KNN index on ({sv_n} rows)." + cli_note,
+        )
+    if sv_on:
+        return (
+            "hybrid_sqlite_vec_empty",
+            "Hybrid-capable: sqlite-vec extension on but `memory_vec` empty — "
+            "vector leg may embed on the fly." + cli_note,
+        )
+    return (
+        "hybrid_on_the_fly_embeddings",
+        "Hybrid BM25+vector; no sqlite-vec KNN — vector leg uses on-the-fly embedding "
+        "(heavier on large corpora)." + cli_note,
+    )
+
+
 def _severity(errors: list[str], warnings: list[str]) -> str:
     if errors:
         return "error"
@@ -129,6 +181,9 @@ def run_health_check(  # noqa: PLR0915
             store_health.consolidation_candidates = report.consolidation_candidates
             store_health.sqlite_vec_enabled = store.sqlite_vec_enabled
             store_health.sqlite_vec_rows = store.sqlite_vec_row_count
+            mode, summary = _retrieval_health_from_store(store)
+            store_health.retrieval_effective_mode = mode
+            store_health.retrieval_summary = summary
 
             # Size on disk
             db_path = root / ".tapps-brain" / "memory" / "memory.db"

@@ -66,8 +66,8 @@ This document maps the dominant runtime call paths as implemented now.
 ## 4) Federation flow
 
 - Federation is explicit and sync-oriented.
-- Projects publish selected entries to federated hub.
-- Projects pull synced entries from subscriptions.
+- Projects publish selected entries to federated hub (hub rows include optional publisher **`memory_group`** — GitHub **#51** / 49-E).
+- Projects pull synced entries from subscriptions; import restores **`memory_group`** on local saves when present.
 - No automatic background cross-project propagation in core path.
 
 ## 5) Maintenance flow

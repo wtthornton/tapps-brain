@@ -517,11 +517,11 @@ class TestShouldRunAutoConsolidation:
 class TestMemoryStoreConsolidation:
     """Integration tests for MemoryStore with auto-consolidation."""
 
-    def test_consolidation_disabled_by_default(self, temp_project_root: Path) -> None:
-        """Consolidation is disabled by default."""
+    def test_consolidation_enabled_by_default(self, temp_project_root: Path) -> None:
+        """Consolidation is enabled by default."""
         store = MemoryStore(temp_project_root)
         try:
-            assert store._consolidation_config.enabled is False
+            assert store._consolidation_config.enabled is True
         finally:
             store.close()
 
@@ -563,10 +563,13 @@ class TestMemoryStoreConsolidation:
         """Consolidation config can be updated."""
         store = MemoryStore(temp_project_root)
         try:
+            assert store._consolidation_config.enabled is True
+
+            new_config = ConsolidationConfig(enabled=False)
+            store.set_consolidation_config(new_config)
             assert store._consolidation_config.enabled is False
 
-            new_config = ConsolidationConfig(enabled=True)
-            store.set_consolidation_config(new_config)
+            store.set_consolidation_config(ConsolidationConfig(enabled=True))
             assert store._consolidation_config.enabled is True
         finally:
             store.close()

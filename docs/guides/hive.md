@@ -2,7 +2,7 @@
 
 The Hive is tapps-brain's multi-agent shared brain. It enables agents on the same machine to share knowledge through a central SQLite store with namespace isolation, conflict resolution, and configurable propagation.
 
-> **Hive vs. Federation**: Federation shares memories across **projects** (`~/.tapps-brain/memory/federated.db`). The Hive shares memories across **agents** within or across projects (`~/.tapps-brain/hive/hive.db`). They solve different problems and can be used together.
+> **Hive vs. Federation**: Federation shares memories across **projects** (`~/.tapps-brain/memory/federated.db`). The Hive shares memories across **agents** within or across projects (`~/.tapps-brain/hive/hive.db`). They solve different problems and can be used together. **Decision guide:** [`hive-vs-federation.md`](hive-vs-federation.md).
 
 ## Table of Contents
 
@@ -121,6 +121,14 @@ Entries with `agent_scope: "domain"` are written to a namespace matching the age
 
 Entries with `agent_scope: "private"` stay in the agent's local store and are never propagated to the Hive.
 
+### Hive group scope (`agent_scope: "group:<name>"`) — GitHub #52
+
+Use **`group:<name>`** (e.g. `group:team-alpha`) to write to a **Hive namespace** named `<name>`, shared only with agents **registered as members** of that Hive group (`HiveStore.create_group` / `add_group_member`). This is **cross-agent** sharing like `domain` / `hive`, but partitioned by explicit membership—not by profile alone.
+
+- **Not** the same as project-local `memory_group` / CLI `--group` (GitHub #49): those label rows inside the **project** SQLite DB; `group:<name>` targets the **Hive** store and requires **Hive** group membership.
+- **Propagation:** If the saving agent is not a member of `<name>`, the write stays local (no Hive row); a warning is logged (`hive.propagate.group_denied`).
+- **Recall:** Hive-aware recall searches **universal**, the agent’s **profile (domain) namespace**, and **every Hive group namespace** the agent belongs to, then merges with local results (same weighting as other Hive hits).
+
 ---
 
 ## Agent Registration
@@ -181,6 +189,7 @@ The `PropagationEngine` routes memory entries to the Hive based on `agent_scope`
 | `private` | Stays in local store | Agent-specific working memory, session context |
 | `domain` | Agent's profile namespace | Domain knowledge shared with same-role agents |
 | `hive` | `universal` namespace | Platform-wide facts all agents should know |
+| `group:<name>` | Hive namespace `<name>` | Small-team or feature cohort facts; requires Hive group membership |
 
 ### Auto-propagation
 

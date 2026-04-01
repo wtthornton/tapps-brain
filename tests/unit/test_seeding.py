@@ -14,7 +14,7 @@ from tapps_brain.seeding import (
     reseed_from_profile,
     seed_from_profile,
 )
-from tapps_brain.store import MemoryStore
+from tapps_brain.store import ConsolidationConfig, MemoryStore
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,7 +50,8 @@ class _FakeProfile:
 
 @pytest.fixture()
 def store(tmp_path: Path):
-    return MemoryStore(tmp_path)
+    # Isolate seeding from auto-consolidation + conflict side effects (default store has both on).
+    return MemoryStore(tmp_path, consolidation_config=ConsolidationConfig(enabled=False))
 
 
 def _full_profile():

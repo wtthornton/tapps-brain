@@ -30,8 +30,17 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 | CLI | Store helper | Attaches `HiveStore()` by default |
 | MCP | `--enable-hive / --no-enable-hive` | Enabled by default (`--enable-hive`) |
 
+## Health / operator surfaces (GitHub #63)
+
+| Surface | What to read |
+|---------|----------------|
+| CLI | `tapps-brain diagnostics health` — includes **sqlite-vec** lines and **Retrieval:** (`retrieval_effective_mode` + summary) |
+| MCP | `tapps_brain_health` — same fields in JSON under `store` |
+| Guide | Optional stack semantics: this matrix; retrieval wording in `health_check.py` (`_retrieval_health_from_store`) |
+
 ## Important semantics to document clearly
 
 - Hive behavior is additive, but interface defaults can still attach Hive automatically.
 - Federation is explicit sync/publish, not automatic background replication.
 - Federation `hub_path` in `federation.yaml` is honored by `FederatedStore()` when non-empty (see `federated_hub_db_path()` in `federation.py`).
+- **Hive vs federation** (when to use which): `docs/guides/hive-vs-federation.md` (GitHub **#64**).

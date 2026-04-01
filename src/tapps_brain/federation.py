@@ -23,6 +23,8 @@ import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from tapps_brain.memory_group import normalize_memory_group
+
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
     from tapps_brain.store import MemoryStore
@@ -290,6 +292,7 @@ class FederatedStore:
                     updated_at TEXT NOT NULL,
                     published_at TEXT NOT NULL,
                     origin_project_root TEXT NOT NULL DEFAULT '',
+                    memory_group TEXT,
                     PRIMARY KEY (project_id, key)
                 );
 
@@ -314,6 +317,8 @@ class FederatedStore:
                     USING fts5(key, value, tags, content=federated_memories, content_rowid=rowid)
                 """)
 
+            self._migrate_federated_memory_group()
+
             self._conn.commit()
 
     def close(self) -> None:
@@ -328,6 +333,19 @@ class FederatedStore:
     def __exit__(self, *_: object) -> None:
         """Close the connection on context manager exit."""
         self.close()
+
+    def _migrate_federated_memory_group(self) -> None:
+        """Add ``memory_group`` to ``federated_memories`` when missing (GitHub #51 / 49-E)."""
+        cur = self._conn.execute("PRAGMA table_info(federated_memories)")
+        cols = {row[1] for row in cur.fetchall()}
+        if "memory_group" in cols:
+            return
+        self._conn.execute("ALTER TABLE federated_memories ADD COLUMN memory_group TEXT")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fed_memory_group ON federated_memories(memory_group)"
+        )
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("INSERT INTO federated_fts(federated_fts) VALUES('rebuild')")
 
     # ------------------------------------------------------------------
     # Publish / Unpublish
@@ -360,8 +378,8 @@ class FederatedStore:
                     INSERT OR REPLACE INTO federated_memories
                     (project_id, key, value, tier, confidence, source,
                      source_agent, tags, created_at, updated_at,
-                     published_at, origin_project_root)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     published_at, origin_project_root, memory_group)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id,
@@ -376,6 +394,7 @@ class FederatedStore:
                         entry.updated_at,
                         now,
                         project_root,
+                        getattr(entry, "memory_group", None),
                     ),
                 )
                 published += 1
@@ -446,6 +465,7 @@ class FederatedStore:
         tags: list[str] | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        memory_group: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search federated memories with optional filtering.
 
@@ -455,6 +475,8 @@ class FederatedStore:
             tags: Require entries to have at least one of these tags.
             min_confidence: Minimum confidence threshold.
             limit: Maximum results.
+            memory_group: When set, only rows with this project-local group label
+                (publisher ``memory_group`` on the hub).
 
         Returns:
             List of matching entries as dicts with project attribution.
@@ -468,14 +490,28 @@ class FederatedStore:
             project_filter = f" AND fm.project_id IN ({placeholders})"
             project_params = list(project_ids)
 
+        mg_filter = ""
+        mg_params: list[Any] = []
+        if memory_group is not None:
+            mg_filter = " AND fm.memory_group = ?"
+            mg_params = [memory_group]
+
         # Fetch more rows than limit when tag filtering is active (Python-side),
         # since tags are stored as JSON arrays and can't be filtered in SQL cheaply.
         sql_limit = limit * 3 if tags else limit
 
+        like_mg = mg_filter.replace("fm.", "") if mg_filter else ""
+
         with self._lock:
             # Try FTS5 first
             try:
-                fts_params: list[Any] = [query, min_confidence, *project_params, sql_limit]
+                fts_params: list[Any] = [
+                    query,
+                    min_confidence,
+                    *project_params,
+                    *mg_params,
+                    sql_limit,
+                ]
                 rows = self._conn.execute(
                     f"""
                     SELECT fm.*, rank
@@ -484,6 +520,7 @@ class FederatedStore:
                     WHERE fts MATCH ?
                     AND fm.confidence >= ?
                     {project_filter}
+                    {mg_filter}
                     ORDER BY rank
                     LIMIT ?
                     """,
@@ -497,6 +534,7 @@ class FederatedStore:
                     f"%{query}%",
                     min_confidence,
                     *project_params,
+                    *mg_params,
                     sql_limit,
                 ]
                 rows = self._conn.execute(
@@ -506,6 +544,7 @@ class FederatedStore:
                     WHERE (key LIKE ? OR value LIKE ?)
                     AND confidence >= ?
                     {like_filter}
+                    {like_mg}
                     LIMIT ?
                     """,
                     fallback_params,
@@ -677,6 +716,19 @@ def sync_from_hub(
                 conflicts += 1
                 continue
 
+            mg_raw = entry_dict.get("memory_group")
+            memory_group_save: str | None = None
+            if mg_raw is not None and str(mg_raw) != "":
+                try:
+                    memory_group_save = normalize_memory_group(str(mg_raw))
+                except ValueError:
+                    logger.warning(
+                        "federation.sync_invalid_memory_group",
+                        key=key,
+                        memory_group_raw=mg_raw,
+                    )
+                    memory_group_save = None
+
             # Import into local store
             store.save(
                 key=key,
@@ -687,6 +739,7 @@ def sync_from_hub(
                 scope="project",
                 tags=[*entry_tags, "federated", f"from:{source_id}"],
                 batch_context="federation_sync",
+                memory_group=memory_group_save,
             )
             imported += 1
 
@@ -722,6 +775,7 @@ class FederatedSearchResult:
     tier: str = "pattern"
     tags: list[str] = field(default_factory=list)
     relevance_score: float = 0.0
+    memory_group: str | None = None
 
 
 def federated_search(
@@ -770,6 +824,7 @@ def federated_search(
                     tier=entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier),
                     tags=entry.tags,
                     relevance_score=entry.confidence * 1.2,  # local boost
+                    memory_group=entry.memory_group,
                 )
             )
 
@@ -784,6 +839,11 @@ def federated_search(
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            mg_hub = row.get("memory_group")
+            if mg_hub is not None and mg_hub != "":
+                mg_hub_s: str | None = str(mg_hub)
+            else:
+                mg_hub_s = None
             results.append(
                 FederatedSearchResult(
                     key=key,
@@ -794,6 +854,7 @@ def federated_search(
                     tier=row.get("tier", "pattern"),
                     tags=row.get("tags", []),
                     relevance_score=row.get("confidence", 0.0),
+                    memory_group=mg_hub_s,
                 )
             )
 
