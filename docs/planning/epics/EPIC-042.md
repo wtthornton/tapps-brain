@@ -1,0 +1,236 @@
+---
+id: EPIC-042
+title: "Retrieval and ranking (RAG-style memory) — research and upgrades"
+status: planned
+priority: high
+created: 2026-03-31
+tags: [retrieval, bm25, hybrid, embeddings, rerank, injection, decay, rag]
+---
+
+# EPIC-042: Retrieval and ranking (RAG-style memory)
+
+## Context
+
+Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Core product value is **retrieving the right memories** under **bounded context** without LLM-in-the-loop scoring today (`bm25.py`, `retrieval.py`, `fusion.py`, `injection.py`, `decay.py`).
+
+## Success criteria
+
+- [ ] Each story below has either a **closed GitHub issue** with outcome, or an explicit **wontfix / satisfied** note in the epic.
+- [ ] At least one **benchmark or offline eval** run documents retrieval quality before/after for any merged upgrade path (`evaluation.py` harness).
+- [ ] `features-and-technologies.md` §1 updated if default behaviors or deps change.
+
+## Stories
+
+**§1 table order:** **042.1** lexical/FTS+BM25 → **042.2** dense semantic → **042.3** sqlite-vec → **042.4** hybrid RRF → **042.5** composite ranking → **042.6** rerank → **042.7** token-budget injection → **042.8** decay/FSRS.
+
+### STORY-042.1: Lexical / keyword search (FTS5 + Okapi BM25)
+
+**Status:** planned  
+**Effort:** L  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/bm25.py`, `src/tapps_brain/persistence.py`, `src/tapps_brain/retrieval.py`, `tests/unit/test_memory_bm25.py`, `tests/unit/test_memory_retrieval.py`  
+**Verification:** `pytest tests/unit/test_memory_bm25.py tests/unit/test_memory_retrieval.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **FTS5** backs fast text paths; **Okapi BM25** is reimplemented in pure Python with ~50 stop words and light normalization.
+- Rank fusion and hybrid paths assume BM25 scores are **comparable** within a corpus rebuild cycle.
+
+#### Research notes (2026-forward)
+
+- **Production hybrid RAG** commonly uses **wide recall** (e.g. top-100 per channel) then **RRF** then **cross-encoder rerank**; lexical channel remains essential for **codes, IDs, rare tokens** where dense models blur.
+- **Learned sparse** encoders (e.g. SPLADE-style) are an alternative sparse channel; tradeoffs: model size, CPU/GPU, cold start vs BM25 zero-shot.
+- **Mathematics:** BM25 term weight ∝ `IDF * (f * (k1+1)) / (f + k1 * (1 - b + b * dl/avgdl))` — audit **k1, b** and field length definition vs our average document length for coding memories.
+
+#### Implementation themes (fix / enhance / improve)
+
+- [ ] Spike: **tokenization** for code (identifiers, paths) vs whitespace split assumptions in BM25 and FTS query construction.
+- [x] Document **when FTS vs BM25 full scan** runs; eliminate unnecessary full-corpus rescans if hotspots exist. *(2026-04-01: `docs/engineering/call-flows.md` recall § + `_bm25_score_entries` docstring.)*
+- [ ] Optional: pluggable **stemming/locale** or **ASCII folding** behind profile flag (deterministic).
+- [ ] Add regression **golden set** in `evaluation.py` for lexical-only queries (SKUs, error strings).
+
+---
+
+### STORY-042.2: Dense retrieval / semantic search
+
+**Status:** planned  
+**Effort:** L  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/embeddings.py`, `src/tapps_brain/_feature_flags.py`, `pyproject.toml` `[vector]`, `tests/unit/test_memory_embeddings.py`, `tests/unit/test_memory_embeddings_persistence.py`  
+**Verification:** `pytest tests/unit/test_memory_embeddings.py tests/unit/test_memory_embeddings_persistence.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **`sentence-transformers`** + **`numpy`** when `[vector]` installed; **`faiss-cpu`** optional for some paths.
+- Embeddings stored on entries and used when hybrid config enables semantic search.
+
+#### Research notes (2026-forward)
+
+- **Model churn:** Multilingual and **long-context** embedding models evolve yearly; pin **evaluated** defaults and document **dimension** and **MRL truncation** if adopted.
+- **Mathematics:** Cosine vs L2 in ANN — ensure **normalized vectors** if inner-product indexes are used; mismatch causes silent recall loss.
+- **Late interaction** (ColBERT-style) improves precision but increases storage/compute — likely **out of scope** for embedded SQLite-first product unless service mode appears.
+
+#### Implementation themes
+
+- [ ] **Model card** in docs: default model name, dim, max tokens, license.
+- [ ] Spike: **quantization** (int8) for embedding storage size vs quality (offline measured).
+- [ ] Optional: **embedding version** column or metadata for **reindex** jobs after model upgrades.
+
+---
+
+### STORY-042.3: Vector index in database (sqlite-vec)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-042.2 (conceptual)  
+**Context refs:** `src/tapps_brain/sqlite_vec_index.py`, `src/tapps_brain/persistence.py`, `src/tapps_brain/health_check.py`, `tests/unit/test_sqlite_vec_index.py`, `tests/unit/test_persistence_sqlite_vec.py`, `tests/unit/test_sqlite_vec_try_load.py`  
+**Verification:** `pytest tests/ -k sqlite_vec -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **`memory_vec` / vec0** when `sqlite-vec` importable; KNN path wired from store; health surfaces row counts and mode strings (#63).
+
+#### Research notes (2026-forward)
+
+- **DB-native vectors** reduce moving parts vs external Milvus/PGVector but bound **scale** to single-node SQLite expectations.
+- Compare **HNSW** (where available externally) vs sqlite-vec **latency/recall** on N≈5k–50k rows for sizing guidance.
+
+#### Implementation themes
+
+- [ ] Operator doc: **rebuild / vacuum** playbook if index corrupts or versions drift.
+- [ ] Spike: batch **incremental** index updates vs per-save cost under consolidation churn.
+- [ ] Align **distance metric** documentation with actual SQL invoked.
+
+---
+
+### STORY-042.4: Hybrid search (RRF + weighted RRF)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-042.1, STORY-042.2  
+**Context refs:** `src/tapps_brain/fusion.py`, `src/tapps_brain/retrieval.py`, `tests/unit/test_memory_fusion.py`, `tests/unit/test_memory_retrieval.py`  
+**Verification:** `pytest tests/unit/test_memory_fusion.py tests/unit/test_memory_retrieval.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **RRF** merges ranked lists; **query-aware weights** (`hybrid_rrf_weights_for_query`, #40) bias BM25 vs vector without ML.
+
+#### Research notes (2026-forward)
+
+- Industry writeups emphasize RRF because score scales differ; **code today:** `fusion.py` uses **k = 60** (documented alongside Elasticsearch/Azure defaults). This story validates **weighted** RRF behavior and whether **k** / per-channel top-k should be profile-tunable.
+- **Candidate pool size:** pulling too few from each channel hurts recall; too many hurts latency — **profile-tunable** `top_k_lexical` / `top_k_dense` worth evaluating.
+
+#### Implementation themes
+
+- [ ] Document **formula** in `fusion.py` docstring with citation to standard RRF.
+- [ ] Profile flags for **per-channel top-k** and **k** (deterministic defaults unchanged if unset).
+- [ ] A/B harness: same golden queries, report MRR/nDCG@k from `evaluation.py`.
+
+---
+
+### STORY-042.5: Composite ranking (relevance + confidence + recency + frequency)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/retrieval.py` (`_W_RELEVANCE`…), `src/tapps_brain/profile.py` `ScoringConfig`, `tests/unit/test_memory_retrieval.py`  
+**Verification:** `pytest tests/unit/test_memory_retrieval.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- Fixed **40/30/15/15** blend then **source trust** multipliers; profile may expose scoring knobs where wired.
+
+#### Research notes (2026-forward)
+
+- **Score calibration:** linear blend is interpretable but not **calibrated probability**; for “confidence gates,” consider **Platt-style** calibration on held-out feedback (optional, offline).
+- **Position bias** in user feedback can distort frequency term — document in flywheel epic (#047).
+
+#### Implementation themes
+
+- [ ] Expose **documented** profile tuning for weights with **sum-to-1** validation.
+- [ ] Spike: **min-max normalization** per channel before blend vs current BM25 normalization — measure side effects.
+- [ ] Ensure **superseded / invalid** entries never contribute to ranking (audit `list_all` / retriever filters).
+
+---
+
+### STORY-042.6: Re-ranking (Cohere + alternatives)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-042.4  
+**Context refs:** `src/tapps_brain/reranker.py`, `src/tapps_brain/injection.py`, `tests/unit/test_reranker.py`, `tests/unit/test_memory_retrieval.py`  
+**Verification:** `pytest tests/unit/test_reranker.py tests/unit/test_memory_retrieval.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **Cohere** rerank when `[reranker]` extra; noop fallback.
+
+#### Research notes (2026-forward)
+
+- **Cross-encoders** remain state-of-the-art for **precision** atop hybrid recall; vendor lock-in vs **open local cross-encoder** (e.g. small transformer) is a product tradeoff.
+- **Latency SLO:** rerank top-10 vs top-50 changes cost; **dynamic cap** from `InjectionConfig` / profile.
+
+#### Implementation themes
+
+- [ ] Add **second provider** spike (local ONNX/transformers) behind protocol — same interface as `reranker.py`.
+- [ ] Structured log: **rerank latency**, **provider**, **candidates_in**.
+- [ ] Document **PII** implications of sending snippets to cloud API.
+
+---
+
+### STORY-042.7: Token-budgeted context (injection)
+
+**Status:** planned  
+**Effort:** S  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/injection.py`, `tests/unit/test_memory_injection.py`  
+**Verification:** `pytest tests/unit/test_memory_injection.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **`injection_max_tokens`**, per-tier **max counts**, **`_MIN_SCORE`** gate; **estimate_tokens** heuristic.
+
+#### Research notes (2026-forward)
+
+- Prefer **tokenizer-aligned** counting when talking to specific models (e.g. tiktoken for GPT family) — heuristic byte/char estimates drift for non-English.
+- **Mathematics:** knapsack-style packing (value = score, weight = tokens) could beat greedy truncation for **optimal** budget use — optional advanced story.
+
+#### Implementation themes
+
+- [ ] Optional **tokenizer backend** hook (offline, explicit dep) for accurate budgets.
+- [ ] Injection **telemetry**: truncated count, dropped-below-min-score count (metrics).
+- [ ] Document **order** of memories in injected block (score desc vs diversity).
+
+---
+
+### STORY-042.8: Stale / decayed relevance (exponential decay + FSRS fields)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/decay.py`, `src/tapps_brain/models.py` (stability/difficulty), `tests/unit/test_memory_decay.py`  
+**Verification:** `pytest tests/unit/test_memory_decay.py -v --tb=short -m "not benchmark"`
+
+#### Code baseline
+
+- **Lazy exponential decay** on read; tier half-lives; **FSRS-like** fields on model partially wired.
+
+#### Research notes (2026-forward)
+
+- **FSRS-4.5 / 5** literature uses **review outcomes** to update stability; we have **access/feedback** signals — map to a **deterministic** update rule or stay tier-only.
+- Avoid **double-counting** decay if composite score also penalizes age.
+
+#### Implementation themes
+
+- [ ] Decision doc: **FSRS full** vs **tier half-life only** vs **hybrid**.
+- [ ] If FSRS-lite: define **update on recall** vs **update on reinforce** with tests.
+- [ ] Profile: **per-tier** half-life overrides already exist — audit against real team cadences.
+
+## Priority order
+
+Respects **Depends on** edges: **042.4** needs **042.1** + **042.2**; **042.6** needs **042.4**; **042.3** follows **042.2**.
+
+1. **042.1**, **042.5**, **042.7**, **042.8** — lexical channel, composite weights, injection caps, decay/FSRS (no cross-deps).  
+2. **042.2**, **042.3** — embeddings then sqlite-vec index.  
+3. **042.4** — hybrid RRF (requires BM25 + dense paths).  
+4. **042.6** — rerank after hybrid candidate lists exist.

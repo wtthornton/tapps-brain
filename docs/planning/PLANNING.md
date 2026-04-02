@@ -74,7 +74,8 @@ docs/planning/
     ├── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
     ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
-    └── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
+    ├── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
+    └── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`)
 ```
 
 ## Why This Structure
@@ -142,8 +143,8 @@ Stories are sections within their parent epic file:
 **Status:** planned | active | done
 **Effort:** S | M | L | XL
 **Depends on:** STORY-NNN.X (or "none")
-**Context refs:** `src/module.py`, `tests/unit/test_module.py`
-**Verification:** `pytest tests/unit/test_module.py -v`
+**Context refs:** `src/tapps_brain/module.py`, `tests/unit/test_memory_module.py`
+**Verification:** `pytest tests/unit/test_memory_module.py -v --tb=short -m "not benchmark"`
 
 #### Why
 One or two sentences explaining why this story matters. Not what — why.
@@ -161,8 +162,8 @@ One or two sentences explaining why this story matters. Not what — why.
 | **Status** | Current state (matches epic statuses) |
 | **Effort** | Relative size: S (<2h), M (2-4h), L (4-8h), XL (8h+) |
 | **Depends on** | Blocking dependencies — AI will not start blocked work |
-| **Context refs** | Files the AI should read before starting |
-| **Verification** | Command to run to confirm the story is done |
+| **Context refs** | Files the AI should read before starting; include **`tests/unit/…` modules that mirror the Verification command** when pytest is the gate |
+| **Verification** | Command to run to confirm the story is done; prefer `pytest … -v --tb=short -m "not benchmark"` for unit/integration tests. Use explicit **doc-only** or **design-only** lines when there is no automated gate. **EPIC-042–051** follow the shared rules in [`epics/EPIC-042-feature-tech-index.md`](epics/EPIC-042-feature-tech-index.md). |
 
 ## Conventions
 

@@ -676,8 +676,11 @@ class MemoryRetriever:
     ) -> list[tuple[MemoryEntry, float]]:
         """Score a set of entries using BM25.
 
-        Builds the BM25 index over the full corpus (for proper IDF),
-        then looks up scores for the given entries.
+        Builds the BM25 index over the **full project corpus** (``store.list_all()``
+        without ``memory_group``) so IDF is consistent with the whole store, then
+        assigns scores to the **FTS candidate subset** only. Callers typically
+        pass FTS hits from ``store.search``; see ``_get_candidates`` for when
+        FTS is skipped in favor of ``_bm25_full_scan``.
         """
         try:
             all_entries = store.list_all()
