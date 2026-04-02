@@ -963,6 +963,13 @@ class TestStoreMetrics:
         assert "store.save.phase.embed_ms" not in snap.histograms
         assert "store.save.phase.hive_ms" not in snap.histograms
 
+    def test_health_includes_save_phase_summary(self, store: MemoryStore) -> None:
+        store.save(key="hp", value="health phase summary")
+        h = store.health()
+        assert h.save_phase_summary
+        assert "lock_build_ms" in h.save_phase_summary
+        assert "persist_ms" in h.save_phase_summary
+
     def test_get_hit_miss_counters(self, store: MemoryStore) -> None:
         store.save(key="exists", value="hello")
         store._metrics.reset()

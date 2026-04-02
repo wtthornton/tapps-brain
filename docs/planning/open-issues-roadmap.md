@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#52** reopened on GitHub — pending issue-body checklist vs shipped behavior; **#51**, **#63**, **#64** closed)
+Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed)
 Owner: @wtthornton
 
 ## Purpose
@@ -24,7 +24,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 **Closed on GitHub (EPIC-041):**
 
 - **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** — federation hub `memory_group` (49-E); STORY-041.1.
-- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; STORY-041.2 (**reopened** — align GitHub checklist with `main` or re-close when done).
+- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; STORY-041.2 (**closed** on GitHub — checklist aligned with `main`).
 - **[#63](https://github.com/wtthornton/tapps-brain/issues/63)** — `retrieval_effective_mode` / `retrieval_summary` on health (CLI + MCP); STORY-041.3.
 - **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); STORY-041.4.
 
@@ -119,11 +119,11 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Recommended next steps (2026-04-02)
 
-- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Update the issue body checklist to reflect what shipped on `main` (EPIC-041 STORY-041.2), or confirm gaps; then re-close.
+- **#52** — done (GitHub issue body checklist updated + issue closed).
 
 **Next engineering (canonical queue)**
 
-- **Save-path observability** (tracking row 20): **v1 shipped** — phase latency histograms on `MemoryStore.save` (`metrics.py` / `store.py`). Optional follow-up: fold summaries into CLI health JSON or operator dashboards.
+- **Save-path observability** (tracking row 20): phase histograms on `MemoryStore.save`; **`StoreHealthReport.save_phase_summary`** + `HealthReport.store.save_phase_summary` (MCP `tapps_brain_health` reuses live store; CLI cold health may stay empty for phases).
 - **MemoryStore decomposition** (tracking row 22): design-first only; see **EPIC-050** / **EPIC-051** for concurrency and scale framing.
 
 **Done in repo (was backlog item 6)**
@@ -150,10 +150,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
 | 15 | #49 | multi-scope memory epic (v1) | closed | — | — | — | 2026-03-29; backlog → **#51**, **#52** |
 | 16 | #51 | federation hub `memory_group` (49-E) | closed | — | — | — | EPIC-041 STORY-041.1; GitHub closed 2026-03-31 / verified |
-| 17 | #52 | `agent_scope` group:<name> + membership | open | — | — | — | Reopened 2026-04-02; EPIC-041 shipped — verify checklist then close |
+| 17 | #52 | `agent_scope` group:<name> + membership | closed | — | — | — | Checklist vs `main` 2026-04-02; GitHub closed |
 | 18 | #63 | Vector / hybrid discoverability (health & guides) | closed | — | — | — | EPIC-041 STORY-041.3; GitHub closed 2026-04-02 |
 | 19 | #64 | Hive vs federation decision guide | closed | — | — | — | EPIC-041 STORY-041.4; GitHub closed 2026-04-02 |
-| 20 | — | Save-path / consolidation observability | done | — | — | — | 2026-04-02: save **phase** histograms (`store.save.phase.*`) in `get_metrics` / `memory://metrics`; **EPIC-051** 051.6 v1 |
+| 20 | — | Save-path / consolidation observability | done | — | — | — | Phase histograms + `save_phase_summary` on `store.health()` / MCP health (live store); `memory://metrics` unchanged |
 | 21 | — | Concurrency expectations (docs; metrics optional) | done | — | — | — | 2026-04-01 — `system-architecture.md` § concurrency |
 | 22 | — | MemoryStore modularization epic | not_started | — | — | — | Backlog 2026-03-31; long-term refactor |
 
@@ -252,6 +252,7 @@ Copy this section at the end of each week:
 - 2026-04-02 (eve): **#63** health `retrieval_effective_mode` / `retrieval_summary` + CLI; **#64** `docs/guides/hive-vs-federation.md`; roadmap rows 18–19 `done`; **EPIC-041** STORY-041.3–041.4.
 - 2026-04-02 (pm): **#51** / 49-E implemented — `FederatedStore` + `sync_from_hub` + docs; roadmap table row 16 `done`; **EPIC-041**; `epic-49-tasks.md` § 49-E marked shipped.
 - 2026-04-02: **#52** product confirmed — prioritized alongside **#51**; recommended next steps + queue item 2 + table row 17 + weekly update.
+- 2026-04-02 (eve): **#52** GitHub body checklist reconciled with shipped STORY-041.2; issue **closed**; roadmap + STATUS synced.
 - 2026-04-01: **#51** subscriber confirmed; GitHub **#63**, **#64** opened; roadmap queue + table + weekly update synced.
 - 2026-03-31: Engineering architecture review — added **Recommended next steps**, **Priority Order** backlog items 3–7, tracking rows **18–22** (no GitHub numbers yet); weekly update 2026-03-31.
 - 2026-03-29: **#49** closed on GitHub; **#51** (49-E), **#52** (long-term groups) opened; roadmap + [`epic-49-tasks.md`](epic-49-tasks.md) synced.

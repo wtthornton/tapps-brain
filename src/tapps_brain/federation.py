@@ -24,6 +24,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from tapps_brain.memory_group import normalize_memory_group
+from tapps_brain.sqlcipher_util import resolve_sqlite_busy_timeout_ms
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -272,7 +273,8 @@ class FederatedStore:
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        busy_ms = resolve_sqlite_busy_timeout_ms()
+        conn.execute(f"PRAGMA busy_timeout={busy_ms}")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 

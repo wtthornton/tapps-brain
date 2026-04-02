@@ -112,6 +112,7 @@ from tapps_brain.similarity import find_similar as find_similar
 from tapps_brain.store import VALID_AGENT_SCOPES as VALID_AGENT_SCOPES
 from tapps_brain.store import ConsolidationConfig as ConsolidationConfig
 from tapps_brain.store import MemoryStore as MemoryStore
+from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 
 __all__ = [
     "VALID_AGENT_SCOPES",
@@ -132,6 +133,7 @@ __all__ = [
     "MemorySnapshot",
     "MemorySource",
     "MemoryStore",
+    "MemoryStoreLockTimeout",
     "MemoryTier",
     "MetricsSnapshot",
     "RateLimiterConfig",

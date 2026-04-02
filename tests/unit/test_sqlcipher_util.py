@@ -15,6 +15,7 @@ from tapps_brain.sqlcipher_util import (
     pragma_key_statement,
     resolve_hive_encryption_key,
     resolve_memory_encryption_key,
+    resolve_sqlite_busy_timeout_ms,
 )
 
 
@@ -52,6 +53,27 @@ def test_pragma_key_statement_escapes_quotes() -> None:
     assert "''" in pragma_key_statement("a'b")
 
 
+def test_resolve_sqlite_busy_timeout_ms_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAPPS_SQLITE_BUSY_MS", raising=False)
+    assert resolve_sqlite_busy_timeout_ms() == 5000
+
+
+def test_resolve_sqlite_busy_timeout_ms_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "12000")
+    assert resolve_sqlite_busy_timeout_ms() == 12000
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "0")
+    assert resolve_sqlite_busy_timeout_ms() == 0
+
+
+def test_resolve_sqlite_busy_timeout_ms_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "not-int")
+    assert resolve_sqlite_busy_timeout_ms() == 5000
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "-1")
+    assert resolve_sqlite_busy_timeout_ms() == 5000
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "3600001")
+    assert resolve_sqlite_busy_timeout_ms() == 5000
+
+
 def test_connect_sqlite_plain_tmp_path(tmp_path: Path) -> None:
     db = tmp_path / "p.db"
     conn = connect_sqlite(db, encryption_key=None, check_same_thread=False)
@@ -61,6 +83,19 @@ def test_connect_sqlite_plain_tmp_path(tmp_path: Path) -> None:
         mode = conn.execute("PRAGMA journal_mode").fetchone()
         assert mode is not None
         assert str(mode[0]).upper() == "WAL"
+    finally:
+        conn.close()
+
+
+def test_connect_sqlite_busy_timeout_follows_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "7777")
+    db = tmp_path / "busy.db"
+    conn = connect_sqlite(db, encryption_key=None, check_same_thread=False)
+    try:
+        row = conn.execute("PRAGMA busy_timeout").fetchone()
+        assert row is not None and int(row[0]) == 7777
     finally:
         conn.close()
 

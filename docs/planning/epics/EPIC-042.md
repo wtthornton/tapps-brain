@@ -44,10 +44,10 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes (fix / enhance / improve)
 
-- [ ] Spike: **tokenization** for code (identifiers, paths) vs whitespace split assumptions in BM25 and FTS query construction.
+- [x] Spike: **tokenization** for code (identifiers, paths) vs whitespace split — `lexical.py` (`tokenize_lexical`, camelCase boundaries), BM25 + FTS query terms wired from profile (2026-04-02).
 - [x] Document **when FTS vs BM25 full scan** runs; eliminate unnecessary full-corpus rescans if hotspots exist. *(2026-04-01: `docs/engineering/call-flows.md` recall § + `_bm25_score_entries` docstring.)*
-- [ ] Optional: pluggable **stemming/locale** or **ASCII folding** behind profile flag (deterministic).
-- [ ] Add regression **golden set** in `evaluation.py` for lexical-only queries (SKUs, error strings).
+- [x] Optional: **stem / ASCII fold** behind profile — `LexicalRetrievalConfig` (`apply_stem`, `ascii_fold`, `camel_case_tokenization`, `fts_path_splits`) on `MemoryProfile`, passed to `MemoryPersistence` and `MemoryRetriever` (2026-04-02).
+- [x] Add regression **golden set** in `evaluation.py` for lexical-only queries (SKUs, error strings) — `lexical_golden_eval_suite()` + `load_eval_suite_into_store()` (2026-04-02).
 
 ---
 

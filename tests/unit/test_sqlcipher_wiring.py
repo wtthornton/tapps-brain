@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from tapps_brain.persistence import MemoryPersistence
+from tapps_brain.sqlcipher_util import resolve_sqlite_busy_timeout_ms
 
 
 def _connect_shim(captured: list[str | None]):
@@ -22,7 +23,8 @@ def _connect_shim(captured: list[str | None]):
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        busy_ms = resolve_sqlite_busy_timeout_ms()
+        conn.execute(f"PRAGMA busy_timeout={busy_ms}")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 

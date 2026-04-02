@@ -901,13 +901,29 @@ class TestRowToEntryEdgeCases:
 class TestEscapeFtsQuery:
     """Tests for FTS query escaping."""
 
-    def test_escape_tokens(self) -> None:
-        result = MemoryPersistence._escape_fts_query("hello world")
-        assert result == '"hello" "world"'
+    def test_escape_tokens(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        try:
+            result = p._escape_fts_query_text("hello world")
+            assert result == '"hello" "world"'
+        finally:
+            p.close()
 
-    def test_escape_empty(self) -> None:
-        assert MemoryPersistence._escape_fts_query("") == ""
-        assert MemoryPersistence._escape_fts_query("   ") == ""
+    def test_escape_path_splits_segments(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        try:
+            result = p._escape_fts_query_text("src/models/foo")
+            assert result == '"src" "models" "foo"'
+        finally:
+            p.close()
+
+    def test_escape_empty(self, tmp_path: Path) -> None:
+        p = MemoryPersistence(tmp_path)
+        try:
+            assert p._escape_fts_query_text("") == ""
+            assert p._escape_fts_query_text("   ") == ""
+        finally:
+            p.close()
 
 
 class TestTemporalPersistence:

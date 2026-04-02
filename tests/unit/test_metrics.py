@@ -5,7 +5,13 @@ from __future__ import annotations
 import threading
 import time
 
-from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, _Reservoir
+from tapps_brain.metrics import (
+    MetricsCollector,
+    MetricsSnapshot,
+    MetricsTimer,
+    _Reservoir,
+    compact_save_phase_summary,
+)
 
 
 class TestReservoir:
@@ -144,6 +150,29 @@ class TestMetricsCollector:
 
         snap = mc.snapshot()
         assert snap.histograms["concurrent.latency"].count == num_threads * obs_per_thread
+
+
+class TestCompactSavePhaseSummary:
+    def test_empty_when_no_histograms(self) -> None:
+        snap = MetricsSnapshot()
+        assert compact_save_phase_summary(snap) == ""
+
+    def test_includes_observed_phases(self) -> None:
+        from tapps_brain.metrics import HistogramStats
+
+        snap = MetricsSnapshot(
+            histograms={
+                "store.save.phase.lock_build_ms": HistogramStats(
+                    count=2, min=0.1, max=2.0, mean=1.0, p50=1.0, p95=1.8, p99=1.9
+                ),
+                "store.save.phase.persist_ms": HistogramStats(
+                    count=2, min=5.0, max=6.0, mean=5.5, p50=5.5, p95=5.9, p99=5.95
+                ),
+            }
+        )
+        s = compact_save_phase_summary(snap)
+        assert "lock_build_ms p50=1.0ms n=2" in s
+        assert "persist_ms p50=5.5ms n=2" in s
 
 
 class TestMetricsSnapshot:

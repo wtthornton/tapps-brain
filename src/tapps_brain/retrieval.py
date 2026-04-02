@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
+from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
@@ -127,9 +128,15 @@ class MemoryRetriever:
         retrieval_policy: object | None = None,
         relations_enabled: bool = False,
         expand_queries: bool = True,
+        lexical_config: LexicalRetrievalConfig | None = None,
     ) -> None:
         self._config = config or DecayConfig()
-        self._bm25 = BM25Scorer()
+        _lex = lexical_config or LexicalRetrievalConfig()
+        self._bm25 = BM25Scorer(
+            apply_stem=_lex.apply_stem,
+            ascii_fold=_lex.ascii_fold,
+            camel_case_tokenization=_lex.camel_case_tokenization,
+        )
         self._bm25_entries: list[MemoryEntry] = []
         self._bm25_corpus_size: int = 0
         self._bm25_fingerprint: int = 0

@@ -18,6 +18,7 @@ import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from tapps_brain.feedback import FeedbackConfig
+from tapps_brain.lexical import LexicalRetrievalConfig
 
 # ---------------------------------------------------------------------------
 # Sub-models
@@ -271,6 +272,10 @@ class MemoryProfile(BaseModel):
         default_factory=DiagnosticsProfileConfig,
         description="Diagnostics history retention and custom dimension paths.",
     )
+    lexical: LexicalRetrievalConfig = Field(
+        default_factory=LexicalRetrievalConfig,
+        description="BM25 tokenization and FTS query term splitting (EPIC-042).",
+    )
 
     @model_validator(mode="after")
     def _validate_layers(self) -> MemoryProfile:
@@ -414,6 +419,7 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         hive=child.hive,
         feedback=child.feedback,
         diagnostics=child.diagnostics,
+        lexical=child.lexical,
     )
 
 

@@ -7,10 +7,12 @@ Auto-consolidation triggers on save when enabled (Epic 58).
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -29,6 +31,7 @@ from tapps_brain.models import (
 from tapps_brain.persistence import MemoryPersistence
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from tapps_brain.embeddings import EmbeddingProvider
@@ -36,7 +39,13 @@ if TYPE_CHECKING:
     from tapps_brain.hive import HiveStore
 
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
-from tapps_brain.metrics import MetricsCollector, MetricsSnapshot, MetricsTimer, StoreHealthReport
+from tapps_brain.metrics import (
+    MetricsCollector,
+    MetricsSnapshot,
+    MetricsTimer,
+    StoreHealthReport,
+    compact_save_phase_summary,
+)
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.safety import check_content_safety
@@ -99,6 +108,21 @@ _RAG_BLOCK_THRESHOLD = 3
 _REFORMULATION_WINDOW = 60
 
 
+class MemoryStoreLockTimeout(RuntimeError):  # noqa: N818 — Timeout reads better for operators
+    """Raised when the store lock is not acquired within the configured timeout (EPIC-050.2)."""
+
+
+def _env_lock_timeout_seconds() -> float | None:
+    raw = os.environ.get("TAPPS_STORE_LOCK_TIMEOUT_S", "").strip()
+    if not raw:
+        return None
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
 def _jaccard_similarity(a: str, b: str) -> float:
     """Jaccard similarity between token sets of two strings.
 
@@ -150,8 +174,10 @@ class ConsolidationConfig:
 class MemoryStore:
     """In-memory cache with SQLite write-through persistence.
 
-    Thread-safe via ``threading.Lock``. Write-through: every mutation
-    updates both the in-memory dict and SQLite synchronously.
+    Thread-safe: one ``threading.Lock`` serializes orchestration and cache access.
+    Optional ``lock_timeout_seconds`` or env ``TAPPS_STORE_LOCK_TIMEOUT_S`` (>0) makes
+    contended acquires fail fast with :exc:`MemoryStoreLockTimeout` instead of blocking.
+    Write-through: every mutation updates both the in-memory dict and SQLite synchronously.
     Auto-consolidation triggers on save when enabled (Epic 58).
     """
 
@@ -169,14 +195,19 @@ class MemoryStore:
         hive_agent_id: str = "unknown",
         rate_limiter_config: RateLimiterConfig | None = None,
         encryption_key: str | None = None,
+        lock_timeout_seconds: float | None = None,
     ) -> None:
         self._project_root = project_root
         self._rate_limiter = SlidingWindowRateLimiter(rate_limiter_config)
+        # Profile before persistence so lexical FTS/BM25 settings apply at open.
+        self._profile = self._resolve_profile(project_root, profile)
+        _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
         try:
             self._persistence = MemoryPersistence(
                 project_root,
                 store_dir=store_dir,
                 encryption_key=encryption_key,
+                lexical_config=_lexical,
             )
         except sqlite3.DatabaseError:
             _db_path = project_root / store_dir / "memory" / "memory.db"
@@ -187,6 +218,12 @@ class MemoryStore:
             )
             raise
         self._lock = threading.Lock()
+        if lock_timeout_seconds is not None:
+            self._lock_timeout_sec = (
+                float(lock_timeout_seconds) if lock_timeout_seconds > 0 else None
+            )
+        else:
+            self._lock_timeout_sec = _env_lock_timeout_seconds()
         self._consolidation_config = consolidation_config or ConsolidationConfig()
         self._embedding_provider = embedding_provider
         self._write_rules = write_rules
@@ -198,9 +235,6 @@ class MemoryStore:
         self._metrics = MetricsCollector()
         self._hive_store = hive_store
         self._hive_agent_id = hive_agent_id
-
-        # EPIC-010: resolve and store the active profile
-        self._profile = self._resolve_profile(project_root, profile)
 
         # Cold-start: load all entries into memory
         self._entries: dict[str, MemoryEntry] = {}
@@ -225,7 +259,7 @@ class MemoryStore:
         # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
         # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
         # Maps session_id → set of entry_keys that were reinforced in the session.
-        # All access must be protected by self._lock.
+        # All access must run under ``_serialized()`` (same underlying lock).
         self._session_recall_log: dict[str, list[tuple[str, float]]] = {}
         self._session_reinforced: dict[str, set[str]] = {}
 
@@ -259,6 +293,29 @@ class MemoryStore:
             relation_count=len(all_relations),
             auto_consolidation=self._consolidation_config.enabled,
         )
+
+    @contextmanager
+    def _serialized(self) -> Iterator[None]:
+        """Serialize access to in-memory state and save-path critical sections (EPIC-050.2)."""
+        lock = self._lock
+        timeout = self._lock_timeout_sec
+        if timeout is None:
+            lock.acquire()
+            try:
+                yield
+            finally:
+                lock.release()
+        else:
+            if not lock.acquire(timeout=timeout):
+                raise MemoryStoreLockTimeout(
+                    f"MemoryStore lock not acquired within {timeout}s — another thread holds it. "
+                    "Reduce concurrent load on this process or unset TAPPS_STORE_LOCK_TIMEOUT_S. "
+                    "See docs/engineering/system-architecture.md § Concurrency model."
+                )
+            try:
+                yield
+            finally:
+                lock.release()
 
     @property
     def project_root(self) -> Path:
@@ -458,7 +515,7 @@ class MemoryStore:
             normalized = normalize_for_dedup(value)
             if self._bloom.might_contain(normalized):
                 _dup_key: str | None = None
-                with self._lock:
+                with self._serialized():
                     for _existing in self._entries.values():
                         if normalize_for_dedup(_existing.value) == normalized:
                             _dup_key = _existing.key
@@ -481,7 +538,7 @@ class MemoryStore:
         if conflict_check:
             from tapps_brain.contradictions import detect_save_conflicts
 
-            with self._lock:
+            with self._serialized():
                 _all_entries = list(self._entries.values())
             _conflicts = detect_save_conflicts(value, tier, _all_entries)
             if _conflicts:
@@ -497,7 +554,7 @@ class MemoryStore:
                 for _conflict_entry in _conflicts:
                     if _conflict_entry.invalid_at is None:
                         _invalidated: MemoryEntry | None = None
-                        with self._lock:
+                        with self._serialized():
                             _current = self._entries.get(_conflict_entry.key)
                             if _current is not None and _current.invalid_at is None:
                                 _invalidated = _current.model_copy(
@@ -522,7 +579,7 @@ class MemoryStore:
             now = _utc_now_iso()
             with (
                 MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
-                self._lock,
+                self._serialized(),
             ):
                 existing = self._entries.get(key)
 
@@ -602,7 +659,7 @@ class MemoryStore:
                     try:
                         emb = self._embedding_provider.embed(value)
                         entry = entry.model_copy(update={"embedding": emb})
-                        with self._lock:
+                        with self._serialized():
                             # Re-read current entry to avoid overwriting concurrent
                             # updates (e.g. another save/update_fields in between).
                             current = self._entries.get(key)
@@ -618,7 +675,7 @@ class MemoryStore:
                 with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
                     self._persistence.save(entry)
             except Exception:
-                with self._lock:
+                with self._serialized():
                     if existing is not None:
                         self._entries[key] = existing
                     else:
@@ -636,7 +693,7 @@ class MemoryStore:
                 if relations:
                     self._persistence.save_relations(key, relations)
                     # Reload from persistence to keep timestamps consistent
-                    with self._lock:
+                    with self._serialized():
                         self._relations[key] = self._persistence.load_relations(key)
 
             # Auto-consolidation check (Epic 58)
@@ -656,7 +713,7 @@ class MemoryStore:
         if session_id is not None:
             _correction_targets: list[tuple[str, float]] = []
             _now_corr = time.monotonic()
-            with self._lock:
+            with self._serialized():
                 _correction_targets = self._detect_correction(session_id, entry.value, _now_corr)
             for _ck, _overlap in _correction_targets:
                 self._emit_implicit_feedback(
@@ -758,7 +815,7 @@ class MemoryStore:
         """
         self._metrics.increment("store.get")
         with MetricsTimer(self._metrics, "store.get_ms"):
-            with self._lock:
+            with self._serialized():
                 if scope is not None and branch is not None:
                     entry = self._resolve_scope(key, scope, branch)
                 else:
@@ -783,7 +840,7 @@ class MemoryStore:
             try:
                 self._persistence.save(updated)
             except Exception:
-                with self._lock:
+                with self._serialized():
                     self._entries[updated.key] = entry
                 raise
             return updated
@@ -808,7 +865,7 @@ class MemoryStore:
                 (superseded/expired) entries. Default ``True`` for backward
                 compatibility.
         """
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
 
         if tier is not None:
@@ -827,13 +884,13 @@ class MemoryStore:
 
     def list_memory_groups(self) -> list[str]:
         """Return sorted distinct project-local ``memory_group`` values (GitHub #49)."""
-        with self._lock:
+        with self._serialized():
             names = {e.memory_group for e in self._entries.values() if e.memory_group}
         return sorted(names)
 
     def delete(self, key: str) -> bool:
         """Delete a memory entry by key. Returns True if deleted."""
-        with self._lock:
+        with self._serialized():
             if key not in self._entries:
                 return False
             removed = self._entries.pop(key)
@@ -843,7 +900,7 @@ class MemoryStore:
         try:
             self._persistence.delete(key)
         except Exception:
-            with self._lock:
+            with self._serialized():
                 self._entries[key] = removed
             raise
         return True
@@ -901,7 +958,7 @@ class MemoryStore:
         Preserves immutable fields like ``created_at``. Used by Epic 24
         decay/contradiction/reinforcement systems.
         """
-        with self._lock:
+        with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
                 return None
@@ -914,19 +971,19 @@ class MemoryStore:
         try:
             self._persistence.save(updated)
         except Exception:
-            with self._lock:
+            with self._serialized():
                 self._entries[key] = entry
             raise
         return updated
 
     def count(self) -> int:
         """Return the total number of memory entries."""
-        with self._lock:
+        with self._serialized():
             return len(self._entries)
 
     def snapshot(self) -> MemorySnapshot:
         """Return a serializable snapshot of the full memory state."""
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
 
         tier_counts: dict[str, int] = {}
@@ -989,7 +1046,7 @@ class MemoryStore:
         self._metrics.increment("store.reinforce")
         decay_cfg = self._get_decay_config()
 
-        with self._lock:
+        with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
                 raise KeyError(key)
@@ -1013,7 +1070,7 @@ class MemoryStore:
                     promoted = updated.model_copy(
                         update={"tier": target_tier, "updated_at": _utc_now_iso()}
                     )
-                    with self._lock:
+                    with self._serialized():
                         self._entries[key] = promoted
                     self._persistence.save(promoted)
                     self._persistence.append_audit(
@@ -1039,7 +1096,7 @@ class MemoryStore:
         # EPIC-029 story 029.3: implicit positive feedback
         if session_id is not None:
             _should_emit = False
-            with self._lock:
+            with self._serialized():
                 _should_emit = self._check_and_mark_reinforced(session_id, key)
             if _should_emit:
                 self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
@@ -1061,7 +1118,7 @@ class MemoryStore:
             key: The memory entry key.
             was_useful: Whether this retrieval was useful to the caller.
         """
-        with self._lock:
+        with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
                 return
@@ -1145,7 +1202,7 @@ class MemoryStore:
         for fact in facts:
             key = fact["key"]
             # Skip if already exists
-            with self._lock:
+            with self._serialized():
                 if key in self._entries:
                     continue
 
@@ -1242,7 +1299,7 @@ class MemoryStore:
         validator = MemoryDocValidator(self._lookup_engine)
 
         # Collect entries to validate
-        with self._lock:
+        with self._serialized():
             if keys is not None:
                 entries = [self._entries[k] for k in keys if k in self._entries]
             else:
@@ -1285,7 +1342,7 @@ class MemoryStore:
         self._metrics.increment("store.supersede")
         now = _utc_now_iso()
 
-        with self._lock:
+        with self._serialized():
             old_entry = self._entries.get(old_key)
             if old_entry is None:
                 raise KeyError(old_key)
@@ -1330,7 +1387,7 @@ class MemoryStore:
             raise ValueError(msg)
 
         # Set valid_at on the new entry
-        with self._lock:
+        with self._serialized():
             updated_new = new_entry.model_copy(update={"valid_at": now})
             self._entries[new_key] = updated_new
         self._persistence.save(updated_new)
@@ -1349,7 +1406,7 @@ class MemoryStore:
                 for r in old_relations
             ]
             self._persistence.save_relations(new_key, transferred)
-            with self._lock:
+            with self._serialized():
                 self._relations[new_key] = self._persistence.load_relations(new_key)
 
         return updated_new
@@ -1370,7 +1427,7 @@ class MemoryStore:
         Raises:
             KeyError: If *key* does not exist.
         """
-        with self._lock:
+        with self._serialized():
             if key not in self._entries:
                 raise KeyError(key)
 
@@ -1414,7 +1471,7 @@ class MemoryStore:
     def _version_count(self, key: str) -> int:
         """Count how many versions of a key exist (for generating version suffixes).
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
         """
         count = 0
         for k in self._entries:
@@ -1450,7 +1507,7 @@ class MemoryStore:
         session_id: str | None = str(_raw_sid) if _raw_sid is not None else None
 
         self._metrics.increment("store.recall")
-        with self._lock:
+        with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
                 # Wire Hive store and profile for hive-aware recall (EPIC-011)
                 hive_weight = 0.8
@@ -1476,7 +1533,7 @@ class MemoryStore:
         if session_id is not None:
             # Flush entries whose window has expired (lazy negative detection)
             _expired: list[str] = []
-            with self._lock:
+            with self._serialized():
                 _expired = self._consume_expired_recalls(session_id)
             for _k in _expired:
                 self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
@@ -1488,7 +1545,7 @@ class MemoryStore:
             ]
 
             # EPIC-029 story 029-7: remember which keys came from Hive (per session).
-            with self._lock:
+            with self._serialized():
                 _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
                 for _m in _memories:
                     if not isinstance(_m, dict):
@@ -1506,7 +1563,7 @@ class MemoryStore:
             # the entry keys recalled by the similar past query.
             _reform_targets: list[tuple[str, float]] = []
             _now_track = time.monotonic()
-            with self._lock:
+            with self._serialized():
                 _reform_targets = self._detect_reformulation(session_id, message, _now_track)
                 # Update query log with current query + recalled keys (after detection
                 # so we don't match the current query against itself)
@@ -1545,7 +1602,7 @@ class MemoryStore:
             result = result.model_copy(update={"quality_warning": qw})
 
         if not getattr(result, "memory_count", 0) and message.strip():
-            with self._lock:
+            with self._serialized():
                 self._zero_result_queries.append((message.strip(), _utc_now_iso()))
 
         return result
@@ -1558,7 +1615,7 @@ class MemoryStore:
         from tapps_brain.gc import MemoryGarbageCollector
         from tapps_brain.similarity import find_consolidation_groups
 
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
 
         tier_counts: dict[str, int] = {}
@@ -1613,6 +1670,8 @@ class MemoryStore:
         prof = getattr(self, "_profile", None)
         prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
 
+        save_phases = compact_save_phase_summary(self._metrics.snapshot())
+
         return StoreHealthReport(
             store_path=str(self._project_root),
             entry_count=len(entries),
@@ -1636,6 +1695,7 @@ class MemoryStore:
             rate_limit_exempt_writes=rl_stats.exempt_writes,
             relation_count=self.count_relations(),
             sqlcipher_enabled=self._persistence.sqlcipher_enabled,
+            save_phase_summary=save_phases,
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -1654,7 +1714,7 @@ class MemoryStore:
             config=self._get_decay_config(),
             gc_config=self._gc_config,
         )
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
         candidates = gc_collector.identify_candidates(entries)
         candidate_keys = [c.key for c in candidates]
@@ -1689,7 +1749,7 @@ class MemoryStore:
             config=self._get_decay_config(),
             gc_config=self._gc_config,
         )
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
         _now = now if now is not None else datetime.now(tz=UTC)
         details = gc_collector.stale_candidate_details(entries, now=_now)
@@ -1716,7 +1776,7 @@ class MemoryStore:
 
         changes: list[TierMigrationChange] = []
         skipped_identity = 0
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
 
         for entry in entries:
@@ -1927,7 +1987,7 @@ class MemoryStore:
         Raises:
             KeyError: If *key* does not exist in the store.
         """
-        with self._lock:
+        with self._serialized():
             if key not in self._entries:
                 raise KeyError(key)
 
@@ -1981,7 +2041,7 @@ class MemoryStore:
         Returns:
             List of matching relation dicts.
         """
-        with self._lock:
+        with self._serialized():
             matches: list[dict[str, Any]] = []
             for rels in self._relations.values():
                 for rel in rels:
@@ -2015,7 +2075,7 @@ class MemoryStore:
         Returns:
             Dict mapping tag → count of entries that carry that tag.
         """
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
         counts: dict[str, int] = {}
         for entry in entries:
@@ -2046,7 +2106,7 @@ class MemoryStore:
         add_set = set(add or [])
         remove_set = set(remove or [])
 
-        with self._lock:
+        with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
                 return {"error": "not_found", "message": f"Entry '{key}' not found."}
@@ -2110,7 +2170,7 @@ class MemoryStore:
 
         self._metrics.increment("store.verify_integrity")
 
-        with self._lock:
+        with self._serialized():
             entries = list(self._entries.values())
 
         total = len(entries)
@@ -2161,7 +2221,7 @@ class MemoryStore:
 
     def zero_result_gap_signals(self) -> list[tuple[str, str]]:
         """Return (query, timestamp) pairs for recalls that returned no memories."""
-        with self._lock:
+        with self._serialized():
             return list(self._zero_result_queries)
 
     def process_feedback(
@@ -2193,13 +2253,13 @@ class MemoryStore:
         from tapps_brain.flywheel import generate_report as flywheel_generate_report
 
         qr = flywheel_generate_report(self, **kwargs)
-        with self._lock:
+        with self._serialized():
             self._latest_quality_report = qr.model_dump(mode="json")
         return qr
 
     def latest_quality_report(self) -> dict[str, Any] | None:
         """Last report from ``generate_report`` (None if never run)."""
-        with self._lock:
+        with self._serialized():
             return self._latest_quality_report
 
     # ------------------------------------------------------------------
@@ -2243,7 +2303,7 @@ class MemoryStore:
             return
         ns: str | None = None
         if session_id:
-            with self._lock:
+            with self._serialized():
                 ns = self._hive_feedback_key_index.get(session_id, {}).get(ek)
         if ns is None:
             d = event.details if isinstance(event.details, dict) else {}
@@ -2494,7 +2554,7 @@ class MemoryStore:
     def _consume_expired_recalls(self, session_id: str) -> list[str]:
         """Return keys of expired unreinforced recalls and remove them from the log.
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
         Expired = recall_time < now - window AND not yet reinforced.
         """
         window = self._get_implicit_feedback_window()
@@ -2518,7 +2578,7 @@ class MemoryStore:
         """Check if *key* was recalled in *session_id* within the feedback window.
 
         If so, marks it as reinforced and returns True.
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
         """
         window = self._get_implicit_feedback_window()
         now_mono = time.monotonic()
@@ -2540,7 +2600,7 @@ class MemoryStore:
     ) -> None:
         """Emit an implicit feedback event (best-effort, never raises).
 
-        Called outside ``self._lock`` to avoid holding the lock during I/O.
+        Called outside ``_serialized()`` to avoid holding the lock during I/O.
         Optional *details* dict is forwarded to ``FeedbackEvent.details``.
         """
         try:
@@ -2570,7 +2630,7 @@ class MemoryStore:
     ) -> list[tuple[str, float]]:
         """Detect query reformulations and return (entry_key, jaccard_sim) pairs.
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
 
         Compares *current_query* against recent queries in ``_session_query_log``
         for *session_id*.  Any past query within ``_REFORMULATION_WINDOW`` seconds
@@ -2600,7 +2660,7 @@ class MemoryStore:
     ) -> list[tuple[str, float]]:
         """Detect recall-then-store corrections; return (entry_key, overlap) pairs.
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
 
         For each recently recalled entry in ``_session_recalled_values`` for
         *session_id* that is still within the implicit feedback window and whose
@@ -2632,7 +2692,7 @@ class MemoryStore:
     def _evict_lowest_confidence(self) -> None:
         """Evict the entry with the lowest confidence to make room.
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
         """
         if not self._entries:
             return
@@ -2645,7 +2705,7 @@ class MemoryStore:
     def _resolve_scope(self, key: str, scope: str, branch: str) -> MemoryEntry | None:
         """Resolve scope precedence: session > branch > project.
 
-        Must be called while holding ``self._lock``.
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
         """
         # Try most specific first
         for try_scope in [MemoryScope.session, MemoryScope.branch, MemoryScope.project]:

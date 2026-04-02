@@ -49,6 +49,28 @@ class MetricsSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+_SAVE_PHASE_HIST_KEYS: tuple[str, ...] = (
+    "store.save.phase.lock_build_ms",
+    "store.save.phase.embed_ms",
+    "store.save.phase.persist_ms",
+    "store.save.phase.hive_ms",
+    "store.save.phase.relations_ms",
+    "store.save.phase.consolidate_ms",
+)
+
+
+def compact_save_phase_summary(snap: MetricsSnapshot) -> str:
+    """One-line p50 + sample counts for ``MemoryStore.save`` sub-phases (operators / health)."""
+    parts: list[str] = []
+    for full in _SAVE_PHASE_HIST_KEYS:
+        st = snap.histograms.get(full)
+        if st is None or st.count <= 0:
+            continue
+        short = full.removeprefix("store.save.phase.")
+        parts.append(f"{short} p50={st.p50:.1f}ms n={st.count}")
+    return "; ".join(parts)
+
+
 class StoreHealthReport(BaseModel):
     """Aggregate health view for a project memory store (EPIC-007)."""
 
@@ -84,6 +106,11 @@ class StoreHealthReport(BaseModel):
     relation_count: int = 0
     # Encrypted SQLite (GitHub #23)
     sqlcipher_enabled: bool = False
+    # Save-path phase latencies (EPIC-051.6); empty when no samples since process start
+    save_phase_summary: str = Field(
+        default="",
+        description="Compact p50 ms + n for store.save phase histograms (see get_metrics).",
+    )
 
 
 # ---------------------------------------------------------------------------

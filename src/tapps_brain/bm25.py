@@ -7,8 +7,9 @@ stop-word removal, suffix stripping).  Pure Python, no external deps.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
+
+from tapps_brain.lexical import tokenize_lexical
 
 # ---------------------------------------------------------------------------
 # Stop words (~50 common English words)
@@ -112,13 +113,40 @@ def stem(word: str) -> str:
 # Preprocessing
 # ---------------------------------------------------------------------------
 
-_WORD_RE = re.compile(r"[a-z0-9]+")
+
+def preprocess(
+    text: str,
+    *,
+    apply_stem: bool = True,
+    ascii_fold: bool = False,
+    camel_case_tokenization: bool = True,
+) -> list[str]:
+    """Lowercase, tokenise, remove stop words, and optionally stem.
+
+    Tokenization follows :func:`tapps_brain.lexical.tokenize_lexical` (camelCase
+    boundaries, punctuation separators). Use ``camel_case_tokenization=False``
+    for legacy whitespace-style runs only.
+    """
+    tokens = tokenize_lexical(
+        text,
+        ascii_fold=ascii_fold,
+        camel_case_tokenization=camel_case_tokenization,
+    )
+    out: list[str] = []
+    for t in tokens:
+        if t in _STOP_WORDS:
+            continue
+        out.append(stem(t) if apply_stem else t)
+    return out
 
 
-def preprocess(text: str) -> list[str]:
-    """Lowercase, tokenise, remove stop words, and stem."""
-    tokens = _WORD_RE.findall(text.lower())
-    return [stem(t) for t in tokens if t not in _STOP_WORDS]
+def preprocess_similarity(text: str) -> list[str]:
+    """Tokenize for TF-IDF / overlap heuristics (stable product names like ``FastAPI``).
+
+    Retrieval uses :func:`preprocess` with camelCase boundaries; similarity-style
+    callers keep ``camel_case_tokenization=False`` so acronyms stay single tokens.
+    """
+    return preprocess(text, camel_case_tokenization=False)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +171,9 @@ class BM25Scorer:
     k1: float = _DEFAULT_K1
     b: float = _DEFAULT_B
     delta: float = 1.0
+    apply_stem: bool = True
+    ascii_fold: bool = False
+    camel_case_tokenization: bool = True
 
     # Internal state (populated by build_index)
     _doc_count: int = field(default=0, init=False, repr=False)
@@ -157,9 +188,17 @@ class BM25Scorer:
     # Index building
     # ------------------------------------------------------------------
 
+    def _preprocess_doc(self, text: str) -> list[str]:
+        return preprocess(
+            text,
+            apply_stem=self.apply_stem,
+            ascii_fold=self.ascii_fold,
+            camel_case_tokenization=self.camel_case_tokenization,
+        )
+
     def build_index(self, documents: list[str]) -> None:
         """Preprocess *documents* and compute IDF values."""
-        self._doc_terms = [preprocess(doc) for doc in documents]
+        self._doc_terms = [self._preprocess_doc(doc) for doc in documents]
         self._doc_count = len(self._doc_terms)
         self._doc_lens = [len(terms) for terms in self._doc_terms]
         total_len = sum(self._doc_lens)
@@ -194,7 +233,7 @@ class BM25Scorer:
 
         Returns a list of BM25 scores (one per document) in index order.
         """
-        query_terms = preprocess(query)
+        query_terms = self._preprocess_doc(query)
         if not self._doc_count or not query_terms:
             return [0.0] * self._doc_count
 

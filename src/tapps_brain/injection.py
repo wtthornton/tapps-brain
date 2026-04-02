@@ -26,6 +26,7 @@ from tapps_brain.safety import check_content_safety
 
 if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
+    from tapps_brain.lexical import LexicalRetrievalConfig
     from tapps_brain.profile import ScoringConfig
     from tapps_brain.store import MemoryStore
 
@@ -115,6 +116,7 @@ def inject_memories(  # noqa: PLR0915
     decay_config: DecayConfig | None = None,
     config: InjectionConfig | None = None,
     scoring_config: ScoringConfig | None = None,
+    lexical_config: LexicalRetrievalConfig | None = None,
     memory_group: str | None = None,
 ) -> dict[str, Any]:
     """Search for and format relevant memories for injection.
@@ -130,6 +132,8 @@ def inject_memories(  # noqa: PLR0915
             config is used if available, otherwise module defaults apply.
         memory_group: When set, restrict ranked retrieval to this project-local
             group (GitHub #49). Hive merge in recall is unchanged.
+        lexical_config: BM25 / lexical options. When ``None``, uses the store's
+            active profile ``lexical`` block when present.
 
     Returns:
         Dict with:
@@ -158,6 +162,11 @@ def inject_memories(  # noqa: PLR0915
         if profile is not None:
             scoring_config = getattr(profile, "scoring", None)
 
+    if lexical_config is None:
+        profile = getattr(store, "profile", None)
+        if profile is not None:
+            lexical_config = getattr(profile, "lexical", None)
+
     from tapps_brain.reranker import get_reranker
 
     reranker = (
@@ -176,6 +185,7 @@ def inject_memories(  # noqa: PLR0915
         reranker_enabled=config.reranker_enabled,
         relations_enabled=True,
         scoring_config=scoring_config,
+        lexical_config=lexical_config,
     )
 
     # Determine limits based on engagement level

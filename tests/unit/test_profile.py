@@ -8,6 +8,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.profile import (
     GCConfig,
     HiveConfig,
@@ -769,6 +770,24 @@ class TestMergeProfilesHive:
         # Child's default HiveConfig wins over parent (full child.hive replaces)
         assert merged.hive.auto_propagate_tiers == ["architectural", "pattern"]
         assert merged.hive.recall_weight == 0.8  # default
+
+
+class TestMergeProfilesLexical:
+    """Child lexical config must replace parent on merge."""
+
+    def test_child_lexical_preserved(self) -> None:
+        parent = MemoryProfile(
+            name="parent",
+            layers=[LayerDefinition(name="a", half_life_days=90)],
+        )
+        child = MemoryProfile(
+            name="child",
+            layers=[LayerDefinition(name="b", half_life_days=7)],
+            lexical=LexicalRetrievalConfig(apply_stem=False, ascii_fold=True),
+        )
+        merged = _merge_profiles(child, parent)
+        assert merged.lexical.apply_stem is False
+        assert merged.lexical.ascii_fold is True
 
 
 class TestGetBuiltinProfileSecurity:

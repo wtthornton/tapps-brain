@@ -642,7 +642,9 @@ def memory_search(
     try:
         from tapps_brain.retrieval import MemoryRetriever
 
-        retriever = MemoryRetriever()
+        _prof = getattr(store, "profile", None)
+        _lex = getattr(_prof, "lexical", None) if _prof is not None else None
+        retriever = MemoryRetriever(lexical_config=_lex)
         scored = retriever.search(query, store, limit=limit, as_of=as_of, memory_group=group)
         if as_json:
             _output(
@@ -2714,6 +2716,8 @@ def diagnostics_health_cmd(
             typer.echo(f"  Retrieval: {s.retrieval_effective_mode}")
             if s.retrieval_summary:
                 typer.echo(f"    {s.retrieval_summary}")
+        if getattr(s, "save_phase_summary", ""):
+            typer.echo(f"  Save phases: {s.save_phase_summary}")
         if s.tiers:
             typer.echo(f"  Tiers: {', '.join(f'{k}={v}' for k, v in sorted(s.tiers.items()))}")
 

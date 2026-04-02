@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from tapps_brain.relations import RelationEntry
 
+from tapps_brain.lexical import LexicalRetrievalConfig, build_fts_match_query
 from tapps_brain.models import MemoryEntry
 from tapps_brain.sqlcipher_util import connect_sqlite, resolve_memory_encryption_key
 
@@ -72,12 +73,14 @@ class MemoryPersistence:
         *,
         store_dir: str = ".tapps-brain",
         encryption_key: str | None = None,
+        lexical_config: LexicalRetrievalConfig | None = None,
     ) -> None:
         self._store_dir = project_root / store_dir / "memory"
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = self._store_dir / "memory.db"
         self._audit_path = self._store_dir / "memory_log.jsonl"
         self._encryption_key = resolve_memory_encryption_key(encryption_key)
+        self._lexical = lexical_config or LexicalRetrievalConfig()
         self._lock = threading.Lock()
         # Cached after _ensure_schema() — schema never changes after startup.
         self._schema_version: int = 0
@@ -908,7 +911,7 @@ class MemoryPersistence:
             return []
 
         # Escape FTS5 special characters for safety
-        safe_query = self._escape_fts_query(query)
+        safe_query = self._escape_fts_query_text(query)
         if not safe_query:
             return []
 
@@ -1025,7 +1028,7 @@ class MemoryPersistence:
         """
         if not query or not query.strip():
             return []
-        safe = self._escape_fts_query(query)
+        safe = self._escape_fts_query_text(query)
         if not safe:
             return []
         with self._lock:
@@ -1321,17 +1324,17 @@ class MemoryPersistence:
             total_access_count=total_access_count,
         )
 
-    @staticmethod
-    def _escape_fts_query(query: str) -> str:
+    def _escape_fts_query_text(self, query: str) -> str:
         """Escape an FTS5 query string for safe matching.
 
-        Wraps each token in double quotes to treat them as literals.
+        Wraps each token in double quotes to treat them as literals (AND).
         Inner double-quote characters are escaped by doubling them (FTS5 syntax).
+        Term splitting follows :class:`~tapps_brain.lexical.LexicalRetrievalConfig`.
         """
-        tokens = query.strip().split()
-        if not tokens:
-            return ""
-        return " ".join(f'"{t.replace(chr(34), chr(34) + chr(34))}"' for t in tokens)
+        return build_fts_match_query(
+            query,
+            fts_path_splits=self._lexical.fts_path_splits,
+        )
 
     def append_audit(
         self,

@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tapps_brain.bm25 import preprocess
+from tapps_brain.bm25 import preprocess_similarity
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -111,8 +111,8 @@ def text_similarity(entry_a: MemoryEntry, entry_b: MemoryEntry) -> float:
     text_a = _extract_text(entry_a)
     text_b = _extract_text(entry_b)
 
-    terms_a = preprocess(text_a)
-    terms_b = preprocess(text_b)
+    terms_a = preprocess_similarity(text_a)
+    terms_b = preprocess_similarity(text_b)
 
     tf_a = _term_frequency(terms_a)
     tf_b = _term_frequency(terms_b)

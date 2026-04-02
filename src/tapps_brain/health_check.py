@@ -49,6 +49,10 @@ class StoreHealth(BaseModel):
         default="",
         description="One-line explanation of BM25 vs vector vs sqlite-vec for operators.",
     )
+    save_phase_summary: str = Field(
+        default="",
+        description="Save-phase p50 latencies from in-process metrics; empty if none.",
+    )
 
 
 class HiveHealth(BaseModel):
@@ -148,12 +152,17 @@ def run_health_check(  # noqa: PLR0915
     project_root: Path | None = None,
     *,
     check_hive: bool = True,
+    store: object | None = None,
 ) -> HealthReport:
     """Run all health checks and return a structured report.
 
     Args:
         project_root: Path to the project root (defaults to cwd).
         check_hive: Whether to check Hive connectivity (may be slow if unreachable).
+        store: When set (e.g. MCP server's ``MemoryStore``), reuse it for the store
+            health slice so fields like ``save_phase_summary`` reflect in-process
+            metrics. Caller must not close it. When omitted, a temporary store is
+            opened and closed.
 
     Returns:
         HealthReport with structured results.
@@ -170,20 +179,24 @@ def run_health_check(  # noqa: PLR0915
         from tapps_brain.store import MemoryStore
 
         root = project_root or Path.cwd()
-        store = MemoryStore(project_root=root)
+        reuse = store is not None
+        ms: MemoryStore = store if reuse else MemoryStore(project_root=root)  # type: ignore[assignment]
+        if reuse:
+            root = Path(getattr(ms, "_project_root", root))
         try:
-            report = store.health()
+            report = ms.health()
             store_health.entries = report.entry_count
             store_health.max_entries = report.max_entries
             store_health.schema_version = str(report.schema_version)
             store_health.tiers = dict(report.tier_distribution)
             store_health.gc_candidates = report.gc_candidates
             store_health.consolidation_candidates = report.consolidation_candidates
-            store_health.sqlite_vec_enabled = store.sqlite_vec_enabled
-            store_health.sqlite_vec_rows = store.sqlite_vec_row_count
-            mode, summary = _retrieval_health_from_store(store)
+            store_health.sqlite_vec_enabled = ms.sqlite_vec_enabled
+            store_health.sqlite_vec_rows = ms.sqlite_vec_row_count
+            mode, summary = _retrieval_health_from_store(ms)
             store_health.retrieval_effective_mode = mode
             store_health.retrieval_summary = summary
+            store_health.save_phase_summary = getattr(report, "save_phase_summary", "") or ""
 
             # Size on disk
             db_path = root / ".tapps-brain" / "memory" / "memory.db"
@@ -200,7 +213,8 @@ def run_health_check(  # noqa: PLR0915
                 )
 
         finally:
-            store.close()
+            if not reuse:
+                ms.close()
         store_health.status = "ok"
     except FileNotFoundError:
         store_health.status = "warn"

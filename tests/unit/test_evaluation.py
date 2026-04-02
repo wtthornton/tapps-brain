@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tapps_brain.evaluation import (
+    LEXICAL_GOLDEN_EVAL_SUITE_NAME,
     AnthropicJudge,
     EvalCorpus,
     EvalDoc,
@@ -23,6 +24,8 @@ from tapps_brain.evaluation import (
     evaluate,
     evaluate_with_judge,
     ideal_dcg_at_k,
+    lexical_golden_eval_suite,
+    load_eval_suite_into_store,
     ndcg_at_k,
     precision_at_k,
     recall_at_k,
@@ -90,6 +93,29 @@ def test_eval_suite_yaml_roundtrip(tmp_path: Path) -> None:
     s2 = EvalSuite.load_yaml(p)
     assert s2.name == "x"
     assert "k" in s2.corpus.docs
+
+
+def test_lexical_golden_suite_evaluate(tmp_path: Path) -> None:
+    """EPIC-042 STORY-042.1 — built-in lexical golden set finds judged docs."""
+    root = tmp_path / "lex"
+    root.mkdir()
+    store = MemoryStore(root)
+    try:
+        suite = lexical_golden_eval_suite()
+        assert suite.name == LEXICAL_GOLDEN_EVAL_SUITE_NAME
+        load_eval_suite_into_store(store, suite)
+        rep = evaluate(
+            store,
+            suite,
+            k=5,
+            thresholds=EvalThresholds(min_mrr=0.0, min_ndcg_at_k=0.0, k=5),
+        )
+        assert len(rep.per_query) == 3
+        assert rep.mrr >= 0.33
+        for row in rep.per_query:
+            assert row.reciprocal_rank > 0, row.model_dump()
+    finally:
+        store.close()
 
 
 def test_evaluate_on_store(tmp_path: Path) -> None:

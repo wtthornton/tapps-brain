@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from tapps_brain.hive import HiveStore
-from tapps_brain.store import MemoryStore
+from tapps_brain.store import MemoryStore, MemoryStoreLockTimeout
 
 
 @pytest.fixture()
@@ -454,3 +454,67 @@ class TestConcurrentHiveRecallDuringPropagation:
             t.join(timeout=30)
 
         assert not errors, f"Threads raised exceptions: {errors}"
+
+
+class TestMemoryStoreLockTimeout:
+    """EPIC-050 STORY-050.2 — optional timed acquire surfaces contention."""
+
+    def test_lock_timeout_raises_when_contended(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path, lock_timeout_seconds=0.15)
+        gate = threading.Event()
+        done = threading.Event()
+        err: list[Exception] = []
+
+        def holder() -> None:
+            try:
+                with store._serialized():
+                    gate.set()
+                    done.wait(timeout=5.0)
+            except Exception as exc:
+                err.append(exc)
+
+        def waiter() -> None:
+            try:
+                gate.wait(timeout=5.0)
+                store.save(key="k", value="v", tier="context")
+            except Exception as exc:
+                err.append(exc)
+
+        t1 = threading.Thread(target=holder)
+        t2 = threading.Thread(target=waiter)
+        t1.start()
+        t2.start()
+        t2.join(timeout=5.0)
+        done.set()
+        t1.join(timeout=5.0)
+
+        assert any(isinstance(e, MemoryStoreLockTimeout) for e in err), (
+            f"expected MemoryStoreLockTimeout, got {err!r}"
+        )
+        store.close()
+
+    def test_default_lock_blocks_until_free(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path)
+        try:
+            gate = threading.Event()
+            ok: list[bool] = []
+
+            def holder() -> None:
+                with store._serialized():
+                    gate.set()
+                    time.sleep(0.2)
+
+            def waiter() -> None:
+                gate.wait(timeout=5.0)
+                store.save(key="x", value="y", tier="context")
+                ok.append(True)
+
+            t1 = threading.Thread(target=holder)
+            t2 = threading.Thread(target=waiter)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+            assert ok == [True]
+        finally:
+            store.close()

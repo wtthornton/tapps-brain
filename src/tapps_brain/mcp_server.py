@@ -1298,7 +1298,11 @@ def create_server(  # noqa: PLR0915
             from tapps_brain.health_check import run_health_check
 
             root = getattr(store, "_project_root", None)
-            report = run_health_check(project_root=root, check_hive=check_hive)
+            report = run_health_check(
+                project_root=root,
+                check_hive=check_hive,
+                store=store,
+            )
             return json.dumps(report.model_dump(mode="json"))
         except Exception as exc:
             import traceback

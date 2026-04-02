@@ -7,6 +7,10 @@ Environment:
     TAPPS_BRAIN_ENCRYPTION_KEY — passphrase for project ``memory.db``
     TAPPS_BRAIN_HIVE_ENCRYPTION_KEY — optional override for ``hive.db``;
         if unset, falls back to ``TAPPS_BRAIN_ENCRYPTION_KEY``.
+    TAPPS_SQLITE_BUSY_MS — SQLite ``PRAGMA busy_timeout`` in milliseconds for all
+        ``connect_sqlite`` paths (memory, Hive, feedback, diagnostics). Default ``5000``
+        when unset or invalid; clamped to ``0``..``3600000``. See
+        ``docs/guides/sqlite-database-locked.md``.
 """
 
 from __future__ import annotations
@@ -49,6 +53,24 @@ def pysqlcipher_dbapi2() -> _ConnectFactory | None:
 
 def sqlcipher_available() -> bool:
     return pysqlcipher_dbapi2() is not None
+
+
+_DEFAULT_SQLITE_BUSY_MS = 5000
+_MAX_SQLITE_BUSY_MS = 3_600_000
+
+
+def resolve_sqlite_busy_timeout_ms() -> int:
+    """Return ``PRAGMA busy_timeout`` value from ``TAPPS_SQLITE_BUSY_MS`` or default."""
+    raw = os.environ.get("TAPPS_SQLITE_BUSY_MS", "").strip()
+    if not raw:
+        return _DEFAULT_SQLITE_BUSY_MS
+    try:
+        ms = int(raw, 10)
+    except ValueError:
+        return _DEFAULT_SQLITE_BUSY_MS
+    if ms < 0 or ms > _MAX_SQLITE_BUSY_MS:
+        return _DEFAULT_SQLITE_BUSY_MS
+    return ms
 
 
 def pragma_key_statement(passphrase: str) -> str:
@@ -97,6 +119,7 @@ def connect_sqlite(
 
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA busy_timeout=5000")
+    busy_ms = resolve_sqlite_busy_timeout_ms()
+    conn.execute(f"PRAGMA busy_timeout={busy_ms}")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

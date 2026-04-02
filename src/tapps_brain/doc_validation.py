@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from tapps_brain.bm25 import preprocess
+from tapps_brain.bm25 import preprocess_similarity
 from tapps_brain.similarity import _term_frequency, cosine_similarity
 
 if TYPE_CHECKING:
@@ -452,11 +452,11 @@ class DocSimilarityScorer:
         # Find best matching chunk via TF-IDF cosine similarity
         best_score = 0.0
         best_chunk = ""
-        claim_terms = preprocess(claim.claim_text)
+        claim_terms = preprocess_similarity(claim.claim_text)
         claim_tf = _term_frequency(claim_terms)
 
         for chunk in chunks:
-            chunk_terms = preprocess(chunk)
+            chunk_terms = preprocess_similarity(chunk)
             chunk_tf = _term_frequency(chunk_terms)
             score = cosine_similarity(claim_tf, chunk_tf)
             if score > best_score:
@@ -504,13 +504,13 @@ class DocSimilarityScorer:
         doc_lower = doc_content.lower()
 
         # Look for deprecation markers near the claim terms
-        claim_terms = set(preprocess(claim_lower))
+        claim_terms = set(preprocess_similarity(claim_lower))
         for marker in _DEPRECATION_MARKERS:
             if marker in doc_lower:
                 # Check if deprecation is near any claim terms
                 marker_pos = doc_lower.find(marker)
                 nearby = doc_lower[max(0, marker_pos - 200) : marker_pos + 200]
-                nearby_terms = set(preprocess(nearby))
+                nearby_terms = set(preprocess_similarity(nearby))
                 if claim_terms & nearby_terms:
                     return True
         return False

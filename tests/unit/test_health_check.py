@@ -32,6 +32,21 @@ def test_run_health_check_smoke(tmp_path: Path) -> None:
         "hybrid_on_the_fly_embeddings",
     )
     assert "CLI `memory search`" in report.store.retrieval_summary
+    assert report.store.save_phase_summary == ""
+
+
+def test_run_health_check_save_phase_summary_with_reused_store(tmp_path: Path) -> None:
+    """In-process save metrics require the same ``MemoryStore`` instance (e.g. MCP server)."""
+    from tapps_brain.store import MemoryStore
+
+    ms = MemoryStore(project_root=tmp_path)
+    try:
+        ms.save(key="x", value="y")
+        report = run_health_check(project_root=tmp_path, check_hive=False, store=ms)
+        assert report.store.save_phase_summary
+        assert "persist_ms" in report.store.save_phase_summary
+    finally:
+        ms.close()
 
 
 def test_run_health_check_store_file_not_found(

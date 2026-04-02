@@ -8,6 +8,7 @@ from tapps_brain.bm25 import (
     _STOP_WORDS,
     BM25Scorer,
     preprocess,
+    preprocess_similarity,
     stem,
 )
 
@@ -88,6 +89,24 @@ class TestPreprocess:
     def test_strips_punctuation(self) -> None:
         result = preprocess("hello, world! foo-bar")
         assert result == ["hello", "world", "foo", "bar"]
+
+    def test_splits_camel_case(self) -> None:
+        result = preprocess("getUserId and HTTPResponse")
+        assert "get" in result
+        assert "user" in result
+        assert "http" in result
+        assert "response" in result
+
+    def test_legacy_mode_no_camel_split(self) -> None:
+        result = preprocess("getUserId", camel_case_tokenization=False)
+        assert result == ["getuserid"]
+
+    def test_no_stem_when_disabled(self) -> None:
+        result = preprocess("running", apply_stem=False)
+        assert result == ["running"]
+
+    def test_preprocess_similarity_skips_camel_split(self) -> None:
+        assert "fastapi" in preprocess_similarity("from fastapi import FastAPI")
 
 
 # ---------------------------------------------------------------------------
@@ -223,3 +242,9 @@ class TestBM25Scorer:
         # Doc 0 matches both terms, should score highest
         assert scores[0] > scores[1]
         assert scores[0] > scores[2]
+
+    def test_camel_case_doc_matches_split_query_terms(self) -> None:
+        scorer = BM25Scorer()
+        scorer.build_index(["Use getUserId when authenticating users"])
+        scores = scorer.score("user authentication")
+        assert scores[0] > 0.0

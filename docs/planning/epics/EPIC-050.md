@@ -41,7 +41,7 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-050.2: Thread safety (`threading.Lock` + SQLite discipline)
 
-**Status:** planned | **Effort:** L | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/persistence.py`, `tests/unit/test_memory_foundation_integration.py`, `tests/unit/test_concurrent.py`  
 **Verification:** `pytest tests/unit/test_memory_foundation_integration.py tests/unit/test_concurrent.py -v --tb=short -m "not benchmark"`
 
@@ -52,9 +52,9 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] **Lock ordering** document (global order: `_lock` before persistence subcalls).
-- [ ] Reduce **lock scope** where provably safe (formal review + stress test).
-- [ ] **Timeout** on lock acquire with actionable error (deadlock hint).
+- [x] **Lock ordering** + **reentrancy** — `docs/engineering/system-architecture.md` § *Concurrency model* (2026-04-02).
+- [ ] Reduce **lock scope** where provably safe (formal review + stress test) — deferred; no behavior change beyond `_serialized()` wrapper.
+- [x] **Timeout** on lock acquire — `TAPPS_STORE_LOCK_TIMEOUT_S` / `lock_timeout_seconds=` → `MemoryStoreLockTimeout`; tests in `test_concurrent.py`.
 
 ---
 
@@ -71,9 +71,9 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Default **busy_timeout** env `TAPPS_SQLITE_BUSY_MS` (if not present).
-- [ ] Operator **runbook**: “Database is locked” triage flowchart.
-- [ ] Spike: **read connection** pool for search-only paths (thread-safe design required).
+- [x] Default **busy_timeout** env `TAPPS_SQLITE_BUSY_MS` (if not present) — `resolve_sqlite_busy_timeout_ms()` in `sqlcipher_util.py`, federation hub aligned (2026-04-02).
+- [x] Operator **runbook**: “Database is locked” triage flowchart — [`docs/guides/sqlite-database-locked.md`](../../guides/sqlite-database-locked.md) (2026-04-02).
+- [ ] Spike: **read connection** pool for search-only paths (thread-safe design required) — documented as future work in runbook; no code path yet.
 
 ## Priority order
 

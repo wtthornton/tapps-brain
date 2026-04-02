@@ -189,6 +189,72 @@ class EvalSuite(BaseModel):
         return suite
 
 
+LEXICAL_GOLDEN_EVAL_SUITE_NAME = "lexical_golden_v1"
+
+
+def lexical_golden_eval_suite() -> EvalSuite:
+    """Tiny deterministic suite for lexical / BM25 regression (EPIC-042 STORY-042.1).
+
+    Queries emphasize error tokens, SKU-like strings, and file paths — cases where
+    a lexical channel must stay sharp. Use with :func:`load_eval_suite_into_store`
+    before :func:`evaluate`.
+    """
+    docs = {
+        "mem-err-enoent": EvalDoc.model_validate(
+            {
+                "_id": "mem-err-enoent",
+                "text": "OS error ENOENT: no such file or directory when opening config.yaml",
+            }
+        ),
+        "mem-sku": EvalDoc.model_validate(
+            {
+                "_id": "mem-sku",
+                "text": "Product SKU ACME-4096-X must map to warehouse bin B12",
+            }
+        ),
+        "mem-path": EvalDoc.model_validate(
+            {
+                "_id": "mem-path",
+                "text": "Import path src/tapps_brain/store.py defines MemoryStore",
+            }
+        ),
+        "mem-noise": EvalDoc.model_validate(
+            {
+                "_id": "mem-noise",
+                "text": "Unrelated note about lunch scheduling",
+            }
+        ),
+    }
+    queries = {
+        "q-enoent": EvalQuery.model_validate({"_id": "q-enoent", "text": "ENOENT config"}),
+        "q-sku": EvalQuery.model_validate({"_id": "q-sku", "text": "ACME-4096-X"}),
+        "q-store-path": EvalQuery.model_validate(
+            {"_id": "q-store-path", "text": "tapps_brain store.py"}
+        ),
+    }
+    qrels = {
+        "q-enoent": {"mem-err-enoent": 2},
+        "q-sku": {"mem-sku": 2},
+        "q-store-path": {"mem-path": 2},
+    }
+    return EvalSuite(
+        name=LEXICAL_GOLDEN_EVAL_SUITE_NAME,
+        corpus=EvalCorpus(docs=docs),
+        queries=EvalQueries(queries=queries),
+        qrels=EvalQrels(qrels=qrels),
+    )
+
+
+def load_eval_suite_into_store(store: MemoryStore, suite: EvalSuite, *, tier: str = "pattern") -> None:
+    """Persist each corpus document as a memory entry (``key`` = doc id, ``value`` = text)."""
+    for _doc_id, doc in suite.corpus.docs.items():
+        text = (doc.text or "").strip()
+        if not text and doc.title:
+            text = doc.title.strip()
+        body = text or doc.id
+        store.save(key=doc.id, value=body, tier=tier, source="agent")
+
+
 # ---------------------------------------------------------------------------
 # Metrics (pure Python)
 # ---------------------------------------------------------------------------

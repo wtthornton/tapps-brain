@@ -106,7 +106,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
 | EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (major v2.0 stories shipped; see `epics/EPIC-040.md`, `open-issues-roadmap.md`) |
-| EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** reopened (checklist); **#51**/**#63**/**#64** closed on GitHub |
+| EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** checklist closed on GitHub; **#51**/**#63**/**#64** closed |
 | EPIC-042 … EPIC-051 | Feature / technology improvement program | planned | — (index: `epics/EPIC-042-feature-tech-index.md`) |
 
 ## Current focus
@@ -114,8 +114,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 **Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.3** version alignment; **2.0.2** agent-integration + relay docs; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server tool/resource **counts** and URI list: `docs/generated/mcp-tools-manifest.json` (source: `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — reconcile issue checklist with shipped `group:<name>` work; close when satisfied.
-- **Roadmap row 20** — save-path phase metrics **v1** shipped (histograms); optional health-JSON surfacing later.
+- **Roadmap row 20** — save-path phase histograms + compact `save_phase_summary` on `StoreHealth` / MCP health when using the live server store.
 - **EPIC-042–051** — pick one story from [`EPIC-042-feature-tech-index.md`](epics/EPIC-042-feature-tech-index.md) when doing architecture follow-up.
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 
