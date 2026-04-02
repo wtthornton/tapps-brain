@@ -29,6 +29,10 @@
 
 All three stores are SQLite-backed today.
 
+## Feature and technology inventory
+
+- **Industry features ↔ deps ↔ modules:** [`features-and-technologies.md`](features-and-technologies.md) (review-oriented map).
+
 ## Interface boundaries
 
 - CLI and MCP are thin adapters over `MemoryStore` and supporting services.

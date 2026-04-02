@@ -1,0 +1,147 @@
+# Industry features and technologies (implementation map)
+
+**Audience:** Architecture and product review — what capability areas we cover, which libraries/patterns we use, and where behavior lives in code.
+
+**Improvement program (epics + stories):** [`docs/planning/epics/EPIC-042-feature-tech-index.md`](../planning/epics/EPIC-042-feature-tech-index.md) — maps each section here to **EPIC-042** … **EPIC-051** with research notes and implementation themes.
+
+**Related:** [`optional-features-matrix.md`](optional-features-matrix.md), [`data-stores-and-schema.md`](data-stores-and-schema.md), [`call-flows.md`](call-flows.md), [`system-architecture.md`](system-architecture.md).
+
+---
+
+## 1. Retrieval and ranking (RAG-style memory)
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
+| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` when `[vector]` extra installed; vectors stored on entries and optionally in sqlite-vec table. |
+| **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. |
+| **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. |
+| **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
+| **Re-ranking (cross-encoder API)** | **Cohere** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when configured; falls back to noop. |
+| **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
+| **Stale / decayed relevance** | **Exponential decay** + optional **FSRS-like fields** | `decay.py` lazy decay on read; `models.py` carries `stability` / `difficulty` for FSRS-style paths (tier half-lives as baseline). |
+
+**Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± vectors ± fixed formulas.
+
+---
+
+## 2. Storage, persistence, and schema
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **Embedded OLTP store** | **SQLite** | Project `memory.db`, Hive `hive.db`, federation `federated.db`; WAL where configured (`persistence.py`, `hive.py`, `federation.py`). |
+| **Declarative migrations** | Versioned schema | `persistence.py` `_ensure_schema()` — current **v16** includes `memory_group`, temporal fields, embeddings, etc. (`data-stores-and-schema.md`). |
+| **Full-text index** | **FTS5** + sync triggers | `memories_fts`, session FTS, Hive `hive_fts`, federation `federated_fts`. |
+| **Structured config / validation** | **Pydantic v2** | `models.py`, `profile.py`, API payloads. |
+| **Structured logging** | **structlog** | Used across store, retrieval, MCP, CLI. |
+| **Encryption at rest (optional)** | **SQLCipher** via **`pysqlcipher3`** (`[encryption]` extra) | `sqlcipher_util.py`, optional encrypted connections in persistence / Hive / Feedback / diagnostics stores; CLI maintenance encrypt/rekey. |
+| **Append-only audit** | JSONL | `audit.py` / project `memory_log.jsonl` (see store initialization paths). |
+
+---
+
+## 3. Ingestion, deduplication, and lifecycle
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **Write-time content safety** | Rule-based **RAG safety** | `safety.py` — pattern checks, sanitize/block on save and before injection. |
+| **Near-duplicate detection** | **Bloom filter** + normalized text | `bloom.py` + `normalize_for_dedup` on save path; may **reinforce** existing key instead of new row. |
+| **Contradiction / conflict handling** | Heuristic **save-time conflicts** | `contradictions.py` + `store.save(..., conflict_check=True)` — can set temporal invalidation on conflicting entries (GitHub #44). |
+| **Deterministic merge / consolidation** | **Jaccard**, **TF-IDF**, topic flags | `consolidation.py`, `similarity.py`, `auto_consolidation.py` — merge similar entries **without LLM**; auto path on save when enabled (`ConsolidationConfig`). |
+| **Garbage collection / archival** | Tier-aware GC | `gc.py`, profile `GCConfig`, CLI/MCP maintenance paths. |
+| **Profile-driven seeding** | External **project profile** shape | `seeding.py` — seeds only empty store (first run); `reseed_from_profile` updates `auto-seeded` tags only. |
+| **Caps** | Max entries per project | Default 5000; profile `limits.max_entries`; eviction by lowest confidence when over cap. |
+
+---
+
+## 4. Multi-tenant, sharing, and sync models
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **Cross-agent shared memory** | **Hive** (separate SQLite DB + namespaces) | `hive.py` — `HiveStore`, `PropagationEngine`, group membership, FTS5 per store; CLI/MCP attach `HiveStore` by default (see guides). |
+| **Cross-project hub** | **Federation** (hub SQLite + explicit sync) | `federation.py` — publish/subscribe/pull; **not** continuous background replication; optional `memory_group` on hub rows (#51). |
+| **Agent / scope routing** | String **`agent_scope`** (+ `group:<name>`) | `agent_scope.py`, propagation rules in profile `HiveConfig`, recall namespace union in `recall.py`. |
+| **Project-local partitioning** | **`memory_group`** column | Filter/list/recall/MCP/CLI; distinct from Hive namespace (see `memory-scopes.md`). |
+| **Change notification (polling)** | Monotonic revision + sidecar file | Hive `hive_write_notify`, MCP `hive_write_revision` / `hive_wait_write`, CLI `hive watch`. |
+
+---
+
+## 5. Agent / tool integration
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **MCP server** | **`mcp`** SDK (`[mcp]` extra) | `mcp_server.py` — tool/resource/prompt surface; manifest: `docs/generated/mcp-tools-manifest.json` (64 tools, 8 resources as of generation). |
+| **CLI** | **Typer** (`[cli]` extra) | `cli.py` — `tapps-brain` entry point; store helper attaches embedding provider + `HiveStore` for typical commands. |
+| **Portable interchange** | **YAML** + **JSON** | Agent registry YAML; relay JSON (`memory_relay.py`); profile YAML under `profiles/`. |
+
+---
+
+## 6. Quality loop, observability, and ops
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **User/agent feedback signals** | Typed events + optional strict mode | `feedback.py`, `FeedbackStore`, profile `FeedbackConfig`. |
+| **Diagnostics / SLO-style scorecard** | Deterministic composite + **EWMA** anomalies | `diagnostics.py`, circuit breaker behavior, MCP/CLI diagnostics tools. |
+| **Flywheel (confidence updates)** | Bayesian-style updates + reports | `flywheel.py` — optional **LLM-as-judge** backends detected via `_feature_flags.py` (`openai`, `anthropic`) for **offline/reporting** paths, not core retrieve. |
+| **Health checks** | Aggregated store + Hive + retrieval mode | `health_check.py` — `retrieval_effective_mode`, `retrieval_summary`, sqlite-vec fields (#63). |
+| **Distributed tracing (optional)** | **OpenTelemetry** (`[otel]` extra) | `otel_exporter.py` — exporter creation when deps present; wiring documented as optional (`optional-features-matrix.md`, observability guide). |
+| **Rate limiting** | In-process **sliding window** | `rate_limiter.py` + `RateLimiterConfig` on `MemoryStore`. |
+| **Integrity** | Per-entry **hash** | `integrity.py` — `integrity_hash` on `MemoryEntry`. |
+
+---
+
+## 7. Optional / auxiliary capabilities
+
+| Industry feature | What we use | How (implementation) |
+|------------------|-------------|-------------------------|
+| **Session memory** | Session index + FTS | `session_index.py`, `session_summary.py`, CLI/MCP session end. |
+| **Graph-like links** | Relations table | `relations.py`, `extract_relations` on save. |
+| **Markdown round-trip** | Import/sync helpers | `markdown_import.py`, `markdown_sync.py`. |
+| **Evaluation harness** | **BEIR-style** deterministic metrics | `evaluation.py` (regression / quality experiments, not runtime MCP). |
+| **Doc validation** | Pluggable lookup | `doc_validation.py` with `LookupEngineLike` protocol. |
+| **Visual snapshot (operator)** | Documented optional path | See `docs/guides/visual-snapshot.md` (#59). |
+
+---
+
+## 8. Dependency extras (install surface)
+
+| Extra (`pyproject.toml`) | Packages | Purpose |
+|--------------------------|----------|---------|
+| `cli` | `typer` | Command-line interface. |
+| `mcp` | `mcp` | MCP server. |
+| `vector` | `faiss-cpu`, `numpy`, `sentence-transformers`, `sqlite-vec` | Embeddings, optional FAISS, sqlite-vec extension binding. |
+| `reranker` | `cohere` | API re-ranking. |
+| `encryption` | `pysqlcipher3` | SQLCipher. |
+| `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
+| **Core** | `pydantic`, `structlog`, `pyyaml` | Always installed. |
+
+Lazy detection: `_feature_flags.py` probes importability for vector, sqlite_vec, otel, optional LLM SDKs.
+
+---
+
+## 9. Concurrency and runtime model
+
+| Topic | What we use |
+|-------|-------------|
+| **Async** | **None in core** — synchronous API by design. |
+| **Thread safety** | **`threading.Lock`** in `MemoryStore` and persistence-critical sections. |
+| **SQLite** | **WAL** mode where enabled; single-writer semantics typical of SQLite. |
+
+---
+
+## 10. Review checklist (improvement framing)
+
+Use this list when comparing to industry alternatives:
+
+1. **Retrieval:** Is BM25 + optional hybrid + RRF sufficient, or do we need learned sparse, colBERT, or managed vector DB?
+2. **Freshness:** Is lazy decay + consolidation threshold tuning enough vs explicit TTL jobs?
+3. **Correctness:** Save-time conflicts are heuristic — need stronger ontology or human review queues?
+4. **Scale:** Single-node SQLite + lock — document limits; queue or service extraction if MCP concurrency grows.
+5. **Security:** SQLCipher optional; key management and backup story for operators.
+6. **Observability:** OTel optional — unify metrics for save-path latency / consolidation (roadmap backlog item).
+
+---
+
+## Change log
+
+- **2026-03-31:** Linked improvement program index (EPIC-042–051) for section-by-section research stories.
+- **2026-03-31:** Initial map for architecture review (features ↔ technologies ↔ modules).
