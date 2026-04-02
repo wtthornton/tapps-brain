@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#51**, **#52**, **#63**, **#64** closed on GitHub — EPIC-041)
+Last updated: 2026-04-02 (**#52** reopened on GitHub — pending issue-body checklist vs shipped behavior; **#51**, **#63**, **#64** closed)
 Owner: @wtthornton
 
 ## Purpose
@@ -24,7 +24,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 **Closed on GitHub (EPIC-041):**
 
 - **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** — federation hub `memory_group` (49-E); STORY-041.1.
-- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; STORY-041.2.
+- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; STORY-041.2 (**reopened** — align GitHub checklist with `main` or re-close when done).
 - **[#63](https://github.com/wtthornton/tapps-brain/issues/63)** — `retrieval_effective_mode` / `retrieval_summary` on health (CLI + MCP); STORY-041.3.
 - **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); STORY-041.4.
 
@@ -119,6 +119,8 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 ## Recommended next steps (2026-04-02)
 
+- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Update the issue body checklist to reflect what shipped on `main` (EPIC-041 STORY-041.2), or confirm gaps; then re-close.
+
 **Next engineering (canonical queue)**
 
 - **Save-path observability** (tracking row 20 / **EPIC-051** STORY-051.6): spike metrics or structured logging for save-adjacent work (consolidation, embed); avoid hot-path bloat without measurement.
@@ -148,7 +150,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
 | 15 | #49 | multi-scope memory epic (v1) | closed | — | — | — | 2026-03-29; backlog → **#51**, **#52** |
 | 16 | #51 | federation hub `memory_group` (49-E) | closed | — | — | — | EPIC-041 STORY-041.1; GitHub closed 2026-03-31 / verified |
-| 17 | #52 | `agent_scope` group:<name> + membership | closed | — | — | — | EPIC-041 STORY-041.2; GitHub closed 2026-04-02 |
+| 17 | #52 | `agent_scope` group:<name> + membership | open | — | — | — | Reopened 2026-04-02; EPIC-041 shipped — verify checklist then close |
 | 18 | #63 | Vector / hybrid discoverability (health & guides) | closed | — | — | — | EPIC-041 STORY-041.3; GitHub closed 2026-04-02 |
 | 19 | #64 | Hive vs federation decision guide | closed | — | — | — | EPIC-041 STORY-041.4; GitHub closed 2026-04-02 |
 | 20 | — | Save-path / consolidation observability | not_started | — | — | — | Next ops spike; **EPIC-051** 051.6 |
