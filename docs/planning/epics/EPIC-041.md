@@ -1,7 +1,7 @@
 ---
 id: EPIC-041
 title: "Federation hub memory_group, Hive groups follow-up, operator clarity"
-status: active
+status: done
 priority: high
 created: 2026-04-02
 tags: [federation, hive, memory_group, documentation, github-51, github-52, github-63, github-64]

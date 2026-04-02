@@ -15,7 +15,7 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Success criteria
 
-- [ ] Engineering doc answers: **how many concurrent MCP clients**, **what fails first**, **what to tune**.
+- [x] Engineering doc answers: **how many concurrent MCP clients**, **what fails first**, **what to tune** — see [`system-architecture.md`](../../engineering/system-architecture.md) § *Concurrency model* (2026-04-01).
 
 ## Stories
 
@@ -34,7 +34,7 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] `docs/engineering/system-architecture.md` subsection: **threading model**.
+- [x] `docs/engineering/system-architecture.md` subsection: **threading model** (merged into § *Concurrency model*, 2026-04-01).
 - [ ] Optional **async wrapper** package (`tapps_brain_async`) — spike only if demand.
 
 ---

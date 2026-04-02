@@ -41,9 +41,11 @@ All three stores are SQLite-backed today.
 
 ## Concurrency model (current)
 
-- Core operations are synchronous and lock-based.
-- SQLite uses WAL mode where configured.
-- Thread safety is handled via `threading.Lock` in store and persistence paths.
+- **No async core:** Public APIs are synchronous. MCP hosts may call into `MemoryStore` from thread pools; each call still runs the sync stack to completion.
+- **Process-local serialization:** `MemoryStore` uses a `threading.Lock` so **one mutating or read-heavy store operation at a time** per process for the in-memory cache and orchestration. Contended workloads queue on that lock before they touch SQLite.
+- **Persistence:** `MemoryPersistence` (and Hive / federation stores) use their own locks around connection use. SQLite is opened in **WAL** mode where configured so readers and writers can overlap at the engine level, but **application-level locks still serialize** access from this codebase’s typical single-connection-per-store pattern.
+- **What operators should expect:** Many concurrent MCP clients or CLI scripts against **one** `MemoryStore` behave like a **single-lane road**: latency grows under parallel load; failures often show as **lock wait** or **database is locked** if SQLite busy limits are exceeded, not as silent corruption.
+- **Scaling posture:** Throughput targets are **modest concurrent sessions**, not high-QPS multi-tenant service. If lock or `database is locked` errors appear in production, first tune **SQLite busy timeout** / workload separation; **queue or service extraction** is a product/architecture decision (see **EPIC-050**, **EPIC-051**, and `open-issues-roadmap.md` row 22), not a quick config tweak.
 
 ## High-level subsystem map
 
