@@ -19,7 +19,8 @@ from tapps_brain.store import (
 
 if TYPE_CHECKING:
     from collections.abc import Generator
-    from pathlib import Path
+
+from pathlib import Path
 
 
 @pytest.fixture()
@@ -1095,7 +1096,9 @@ class TestAgentScopeValidationInStore:
         for scope in (*VALID_AGENT_SCOPES, "group:push-team"):
             safe_key = f"scope-{scope}".replace(":", "-")
             result = store.save(key=safe_key, value=f"value for {scope}", agent_scope=scope)
-            assert isinstance(result, MemoryEntry), f"Expected MemoryEntry for scope={scope!r} key={safe_key!r}"
+            assert isinstance(result, MemoryEntry), (
+                f"Expected MemoryEntry for scope={scope!r} key={safe_key!r}"
+            )
 
     def test_invalid_agent_scope_returns_error_dict(self, store: MemoryStore) -> None:
         """Invalid agent_scope returns error dict with error='invalid_agent_scope'."""
@@ -1152,3 +1155,63 @@ class TestStoreStaleAndTierMigrate:
         audits = store.audit(event_type="tier_migrate", limit=20)
         assert len(audits) >= 1
         assert audits[0].key == "mv"
+
+
+class TestAdaptiveStabilityStore:
+    """EPIC-042.8: profile-driven stability updates on reinforce and record_access."""
+
+    @pytest.fixture
+    def adaptive_profile(self) -> object:
+        from tapps_brain.profile import LayerDefinition, MemoryProfile, ScoringConfig
+
+        return MemoryProfile(
+            name="adaptive-test",
+            layers=[
+                LayerDefinition(
+                    name="pattern",
+                    half_life_days=60,
+                    confidence_floor=0.1,
+                    adaptive_stability=True,
+                ),
+            ],
+            scoring=ScoringConfig(
+                relevance=0.40,
+                confidence=0.30,
+                recency=0.15,
+                frequency=0.15,
+            ),
+        )
+
+    def test_reinforce_updates_stability_when_layer_flag_on(
+        self, tmp_path: Path, adaptive_profile: object
+    ) -> None:
+        s = MemoryStore(tmp_path, profile=adaptive_profile)
+        try:
+            s.save(key="k", value="v", tier="pattern")
+            assert s.get("k") is not None
+            assert s.get("k").stability == 0.0
+            out = s.reinforce("k")
+            assert out.stability > 0.0
+        finally:
+            s.close()
+
+    def test_reinforce_leaves_stability_zero_when_flag_off(self, tmp_path: Path) -> None:
+        s = MemoryStore(tmp_path)
+        try:
+            s.save(key="k", value="v", tier="pattern")
+            out = s.reinforce("k")
+            assert out.stability == 0.0
+        finally:
+            s.close()
+
+    def test_record_access_updates_stability_when_layer_flag_on(
+        self, tmp_path: Path, adaptive_profile: object
+    ) -> None:
+        s = MemoryStore(tmp_path, profile=adaptive_profile)
+        try:
+            s.save(key="k", value="v", tier="pattern")
+            s.record_access("k", True)
+            assert s.get("k") is not None
+            assert s.get("k").stability > 0.0
+        finally:
+            s.close()

@@ -222,9 +222,9 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Decision doc: **FSRS full** vs **tier half-life only** vs **hybrid**.
-- [ ] If FSRS-lite: define **update on recall** vs **update on reinforce** with tests.
-- [ ] Profile: **per-tier** half-life overrides already exist — audit against real team cadences.
+- [x] Decision doc: **FSRS full** vs **tier half-life only** vs **hybrid** — [`docs/guides/memory-decay-and-fsrs.md`](../../guides/memory-decay-and-fsrs.md) (2026-04-02).
+- [x] FSRS-lite: **update on recall** (`record_access`) vs **update on reinforce** (`reinforce`, `was_useful=True`) + tests (2026-04-02).
+- [x] Profile: **per-tier** half-life overrides — documented in guide (operators tune `layers[].half_life_days`; unknown tiers fall back with warning) (2026-04-02).
 
 ## Priority order
 

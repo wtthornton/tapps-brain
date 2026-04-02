@@ -14,6 +14,7 @@ from tapps_brain.decay import (
     decay_config_from_profile,
     get_effective_confidence,
     is_stale,
+    update_stability,
 )
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 from tests.factories import make_entry
@@ -26,6 +27,8 @@ def _make_entry(
     confidence: float = 0.8,
     updated_at: str | None = None,
     last_reinforced: str | None = None,
+    stability: float | None = None,
+    difficulty: float | None = None,
 ) -> MemoryEntry:
     """Helper to create a MemoryEntry with controlled timestamps."""
     return make_entry(
@@ -34,6 +37,8 @@ def _make_entry(
         confidence=confidence,
         updated_at=updated_at,
         last_reinforced=last_reinforced,
+        stability=stability,
+        difficulty=difficulty,
     )
 
 
@@ -204,6 +209,37 @@ class TestGetEffectiveConfidence:
         decayed, stale = get_effective_confidence(entry, config, now=now)
         assert decayed > 0.7
         assert not stale
+
+
+class TestUpdateStability:
+    """EPIC-042.8: deterministic FSRS-lite stability updates."""
+
+    def test_useful_access_increases_stability(self, config: DecayConfig) -> None:
+        now = datetime.now(tz=UTC)
+        old = (now - timedelta(days=10)).isoformat()
+        entry = _make_entry(
+            tier=MemoryTier.pattern,
+            confidence=0.8,
+            updated_at=old,
+            stability=0.0,
+            difficulty=0.0,
+        )
+        s_new, d_new = update_stability(entry, config, True, now=now)
+        # Initialized from pattern half-life (60d), then grown on useful recall
+        assert s_new > 60.0
+        assert d_new == pytest.approx(3.0)  # default difficulty for pattern tier
+
+    def test_non_useful_access_shrinks_stability(self, config: DecayConfig) -> None:
+        now = datetime.now(tz=UTC)
+        entry = _make_entry(
+            tier=MemoryTier.pattern,
+            confidence=0.8,
+            stability=100.0,
+            difficulty=5.0,
+        )
+        s_new, d_new = update_stability(entry, config, False, now=now)
+        assert s_new == pytest.approx(80.0)
+        assert d_new == pytest.approx(5.0)
 
 
 class TestDaysSince:

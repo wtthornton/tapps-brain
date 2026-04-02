@@ -48,7 +48,10 @@ class LayerDefinition(BaseModel):
     demotion_to: str | None = None
     adaptive_stability: bool = Field(
         default=False,
-        description="Enable FSRS-style adaptive stability on reinforcement.",
+        description=(
+            "Enable FSRS-style adaptive stability updates on "
+            "``MemoryStore.record_access`` and ``MemoryStore.reinforce``."
+        ),
     )
     promotion_strategy: str = Field(
         default="threshold",

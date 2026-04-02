@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed; **EPIC-042.5** composite-weight docs + shared sum validation on `main`; **EPIC-042.7** injection tokenizer hook + telemetry on `main`)
+Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed; **EPIC-042.5** composite-weight docs + shared sum validation on `main`; **EPIC-042.7** injection tokenizer hook + telemetry on `main`; **EPIC-042.8** decay/FSRS decision doc + reinforce stability path on `main`)
 Owner: @wtthornton
 
 ## Purpose
@@ -249,6 +249,7 @@ Copy this section at the end of each week:
 
 ## Change Log
 
+- 2026-04-02: **EPIC-042** STORY-042.8 — `docs/guides/memory-decay-and-fsrs.md` (hybrid decay model); `MemoryStore.reinforce` applies `update_stability` when `layer.adaptive_stability`; profile field description aligned; `features-and-technologies.md` link.
 - 2026-04-02: **EPIC-042** STORY-042.7 — `InjectionConfig.count_tokens` optional hook; `inject_memories` returns `injection_telemetry` (score-drop, safety-drop, token-budget omit counts, `token_counter` label); ordering documented in `injection.py`.
 - 2026-04-02 (eve): **#63** health `retrieval_effective_mode` / `retrieval_summary` + CLI; **#64** `docs/guides/hive-vs-federation.md`; roadmap rows 18–19 `done`; **EPIC-041** STORY-041.3–041.4.
 - 2026-04-02 (pm): **#51** / 49-E implemented — `FederatedStore` + `sync_from_hub` + docs; roadmap table row 16 `done`; **EPIC-041**; `epic-49-tasks.md` § 49-E marked shipped.

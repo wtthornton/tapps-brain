@@ -1051,7 +1051,24 @@ class MemoryStore:
             if entry is None:
                 raise KeyError(key)
 
-            updates = _reinforce(entry, decay_cfg, confidence_boost=confidence_boost)
+            updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
+            # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
+            # using pre-reinforce timestamps for retrievability — same layer flag as record_access.
+            if self._profile is not None:
+                tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                layer = self._profile.get_layer(tier_name)
+                if layer is not None and layer.adaptive_stability:
+                    try:
+                        from tapps_brain.decay import update_stability
+
+                        new_stab, new_diff = update_stability(entry, decay_cfg, True)
+                        updates["stability"] = new_stab
+                        updates["difficulty"] = new_diff
+                    except Exception:
+                        logger.debug(
+                            "reinforce_stability_update_failed", key=key, exc_info=True
+                        )
+
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated
 

@@ -1,8 +1,13 @@
 """Time-based decay engine for memory confidence.
 
 Recalculates confidence on read using exponential decay with
-tier-specific half-lives. No background threads or timers -
+tier-specific half-lives. No background threads or timers —
 decay is computed lazily when memories are accessed.
+
+**FSRS-lite:** Optional ``update_stability()`` adjusts per-entry ``stability``
+(days) when profile ``adaptive_stability`` is enabled on ``record_access`` and
+``reinforce``. Product stance (full FSRS vs tier-only vs hybrid) is documented
+in ``docs/guides/memory-decay-and-fsrs.md`` (EPIC-042.8).
 """
 
 from __future__ import annotations

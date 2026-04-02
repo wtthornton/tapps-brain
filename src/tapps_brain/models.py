@@ -190,7 +190,10 @@ class MemoryEntry(BaseModel):
     # Adaptive stability and difficulty for FSRS-style decay (GitHub #28, task 040.5)
     stability: float = Field(
         default=0.0,
-        description="FSRS-style memory stability in days. 0.0 means use tier half-life.",
+        description=(
+            "FSRS-style memory stability in days. 0.0 means use tier half-life. "
+            "See docs/guides/memory-decay-and-fsrs.md."
+        ),
     )
     difficulty: float = Field(
         default=0.0,
