@@ -13,9 +13,9 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
-| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` when `[vector]` extra installed; vectors stored on entries and optionally in sqlite-vec table. |
+| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` when `[vector]` extra installed; vectors stored on entries and optionally in sqlite-vec table. **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
 | **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. |
-| **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. |
+| **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
 | **Re-ranking (cross-encoder API)** | **Cohere** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when configured; falls back to noop. |
 | **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
@@ -30,7 +30,7 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **Embedded OLTP store** | **SQLite** | Project `memory.db`, Hive `hive.db`, federation `federated.db`; WAL where configured (`persistence.py`, `hive.py`, `federation.py`). |
-| **Declarative migrations** | Versioned schema | `persistence.py` `_ensure_schema()` — current **v16** includes `memory_group`, temporal fields, embeddings, etc. (`data-stores-and-schema.md`). |
+| **Declarative migrations** | Versioned schema | `persistence.py` `_ensure_schema()` — current **v17** includes `embedding_model_id`, `memory_group`, temporal fields, embeddings, etc. (`data-stores-and-schema.md`). |
 | **Full-text index** | **FTS5** + sync triggers | `memories_fts`, session FTS, Hive `hive_fts`, federation `federated_fts`. |
 | **Structured config / validation** | **Pydantic v2** | `models.py`, `profile.py`, API payloads. |
 | **Structured logging** | **structlog** | Used across store, retrieval, MCP, CLI. |

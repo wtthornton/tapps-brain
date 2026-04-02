@@ -32,9 +32,12 @@ class DiagnosticsSummary(BaseModel):
 
 
 class VisualThemeTokens(BaseModel):
-    """Deterministic HSL-oriented tokens for CSS (dark-first, OLED-friendly)."""
+    """Deterministic theme seeds aligned with NLT Labs amber palette (see BRAND-STYLE-GUIDE).
 
-    hue_primary: int = Field(ge=0, le=359, description="Base hue for surfaces and accents.")
+    Hues are constrained to the gold/amber wedge so exports never encode cyan/blue/purple chrome.
+    """
+
+    hue_primary: int = Field(ge=0, le=359, description="Base hue in amber family (snapshot seed).")
     hue_accent: int = Field(ge=0, le=359)
     accent_chroma: float = Field(ge=0.0, le=1.0, description="Relative saturation scale.")
     surface_lightness: int = Field(
@@ -75,21 +78,24 @@ def compute_fingerprint_hex(identity: dict[str, object]) -> str:
 
 
 def theme_from_fingerprint(fingerprint_hex: str) -> VisualThemeTokens:
-    """Derive theme tokens deterministically from fingerprint bytes."""
+    """Derive theme tokens deterministically from fingerprint bytes.
+
+    Accent hues stay in ~28–48° (amber/gold) per NLT Labs brand (no blue/cyan/purple accents).
+    """
     digest = bytes.fromhex(fingerprint_hex)
     if len(digest) < _THEME_SEED_BYTE_LEN:
         digest = digest.ljust(_THEME_SEED_BYTE_LEN, b"0")
     b = digest
-    hue_p = int.from_bytes(b[0:2], "big") % 360
-    hue_a = (hue_p + 24 + (b[2] % 48)) % 360
-    chroma = 0.45 + (b[3] % 56) / 100.0
-    surf = 6 + (b[4] % 9)
-    text = 90 + (b[5] % 9)
+    hue_p = 28 + (b[0] % 20)
+    hue_a = min(48, hue_p + 2 + (b[1] % 10))
+    chroma = round(0.5 + (b[2] % 14) / 100.0, 2)
+    surf = 6 + (b[3] % 7)
+    text = 90 + (b[4] % 9)
     flow = int.from_bytes(b[6:8], "big") % 360
     return VisualThemeTokens(
         hue_primary=hue_p,
         hue_accent=hue_a,
-        accent_chroma=round(chroma, 2),
+        accent_chroma=chroma,
         surface_lightness=surf,
         text_lightness=text,
         flow_angle_deg=flow,

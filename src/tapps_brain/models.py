@@ -127,6 +127,11 @@ class MemoryEntry(BaseModel):
         default=None,
         description="Vector embedding for semantic search when enabled.",
     )
+    # STORY-042.2: which model produced ``embedding`` (nullable for legacy rows).
+    embedding_model_id: str | None = Field(
+        default=None,
+        description="Dense model id when embedding was computed (e.g. all-MiniLM-L6-v2).",
+    )
 
     # Hive agent scope (EPIC-011 + GitHub #52 group:<name>)
     agent_scope: str = Field(

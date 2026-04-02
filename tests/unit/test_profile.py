@@ -12,6 +12,7 @@ from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.profile import (
     GCConfig,
     HiveConfig,
+    HybridFusionConfig,
     LayerDefinition,
     LimitsConfig,
     MemoryProfile,
@@ -114,6 +115,35 @@ class TestPromotionThreshold:
         assert pt.min_access_count == 10
 
 
+class TestHybridFusionConfig:
+    """Hybrid RRF profile knobs (STORY-042.4)."""
+
+    def test_defaults_match_retriever_historical(self) -> None:
+        h = HybridFusionConfig()
+        assert h.adaptive_fusion is True
+        assert h.top_bm25 == 20
+        assert h.top_vector == 20
+        assert h.rrf_k == 60
+
+    def test_yaml_aliases_top_k_lexical_dense(self) -> None:
+        h = HybridFusionConfig.model_validate(
+            {"top_k_lexical": 40, "top_k_dense": 35, "rrf_k": 48, "adaptive_fusion": False}
+        )
+        assert h.top_bm25 == 40
+        assert h.top_vector == 35
+        assert h.rrf_k == 48
+        assert h.adaptive_fusion is False
+
+    def test_rejects_unknown_keys(self) -> None:
+        with pytest.raises(ValidationError):
+            HybridFusionConfig.model_validate({"top_bm25": 10, "typo": 1})
+
+    def test_builtin_repo_brain_has_hybrid_fusion_defaults(self) -> None:
+        p = get_builtin_profile("repo-brain")
+        assert p.hybrid_fusion.top_bm25 == 20
+        assert p.hybrid_fusion.rrf_k == 60
+
+
 class TestScoringConfig:
     """ScoringConfig model tests."""
 
@@ -153,6 +183,18 @@ class TestScoringConfig:
     def test_default_frequency_cap(self) -> None:
         sc = ScoringConfig()
         assert sc.frequency_cap == 20
+
+    def test_default_relevance_normalization_sigmoid(self) -> None:
+        sc = ScoringConfig()
+        assert sc.relevance_normalization == "sigmoid"
+
+    def test_relevance_normalization_minmax(self) -> None:
+        sc = ScoringConfig(relevance_normalization="minmax")
+        assert sc.relevance_normalization == "minmax"
+
+    def test_relevance_normalization_invalid(self) -> None:
+        with pytest.raises(ValidationError):
+            ScoringConfig(relevance_normalization="invalid")  # type: ignore[arg-type]
 
     def test_default_source_trust_values(self) -> None:
         """source_trust defaults match _DEFAULT_SOURCE_TRUST."""

@@ -3,250 +3,549 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>tapps-brain visual — bento preview</title>
+  <meta name="theme-color" content="#f0ede6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0e13" />
+  <title>tapps-brain · NLT visual snapshot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <style>
+    /* NLT Labs tokens — BRAND-STYLE-GUIDE.md §2, §3, §4, §5 (amber-only accent; light-leading) */
     :root {
-      --hue-p: 210;
-      --hue-a: 234;
-      --chroma: 0.55;
-      --surf: 10;
-      --txt: 94;
-      --flow: 120deg;
-      --border: hsla(var(--hue-p), 14%, 42%, 0.35);
-      --panel: hsl(var(--hue-p), 12%, calc(var(--surf) * 1%));
-      --panel-elev: hsl(var(--hue-p), 14%, calc(var(--surf) * 1% + 3%));
-      --text: hsl(0, 0%, calc(var(--txt) * 1%));
-      --accent: hsl(var(--hue-a), calc(var(--chroma) * 100%), 58%);
-      --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+      color-scheme: light;
+      --nlt-accent-primary: #d97706;
+      --nlt-accent-secondary: #f59e0b;
+      --nlt-accent-dim: #b45309;
+      --nlt-gradient: linear-gradient(135deg, #d97706, #f59e0b);
+      --nlt-gradient-text: linear-gradient(135deg, #f59e0b, #d97706);
+      --nlt-focus-ring: #f59e0b;
+      --nlt-focus-ring-offset: 2px;
+      --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+      --font-body: Inter, system-ui, "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --bg: #f0ede6;
+      --bg-alt: #f5f5f0;
+      --surface: #ffffff;
+      --border: rgba(0, 0, 0, 0.1);
+      --fg: #1a1a1a;
+      --fg-dim: #5a6370;
+      --accent: var(--nlt-accent-primary);
+      --flow-ambient: 135deg;
+      --header-bg: rgba(240, 237, 230, 0.82);
     }
 
-    * { box-sizing: border-box; }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0a0e13;
+      --bg-alt: #0f1419;
+      --surface: #141b22;
+      --border: rgba(255, 255, 255, 0.08);
+      --fg: #f0f4f8;
+      --fg-dim: #8899aa;
+      --header-bg: rgba(15, 20, 25, 0.82);
+    }
+
+    :focus:not(:focus-visible) {
+      outline: none;
+    }
+    :focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
-      color: var(--text);
-      background-color: hsl(230, 14%, 4%);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--fg);
+      background-color: var(--bg);
       background-image:
-        linear-gradient(var(--flow), hsla(var(--hue-p), 40%, 18%, 0.2), transparent 42%),
-        var(--grain);
+        radial-gradient(ellipse 60% 50% at 50% 40%, rgba(217, 119, 6, 0.1), transparent),
+        radial-gradient(ellipse 40% 40% at 70% 60%, rgba(245, 158, 11, 0.06), transparent),
+        linear-gradient(var(--flow-ambient), rgba(217, 119, 6, 0.04), transparent 55%),
+        linear-gradient(to bottom, transparent 55%, var(--bg));
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+      background: var(--header-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-wordmark {
+      font-size: 1.625rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .brand-wordmark .nlt {
+      color: var(--fg);
+    }
+
+    .brand-wordmark .labs {
+      color: var(--nlt-accent-primary);
+    }
+
+    .brand-subtitle {
+      margin: 0;
+      font-size: 7px;
+      line-height: 1.1;
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      font-weight: 600;
+    }
+
+    @media (max-width: 480px) {
+      .brand-subtitle {
+        display: none;
+      }
+      .brand-mark {
+        width: 32px;
+        height: 32px;
+      }
+    }
+
+    .theme-toggle {
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .theme-toggle:hover {
+      border-color: rgba(217, 119, 6, 0.35);
+      transform: translateY(-1px);
+    }
+
+    main {
+      padding-bottom: 3rem;
     }
 
     .wrap {
-      max-width: 1100px;
+      max-width: 1280px;
       margin: 0 auto;
-      padding: 1.5rem;
+      padding: 2rem 1.5rem 0;
     }
 
-    header {
-      margin-bottom: 1.25rem;
+    @media (min-width: 1024px) {
+      .wrap {
+        padding-top: 3rem;
+      }
     }
-    header h1 {
-      font-size: 1.35rem;
+
+    .product-tag {
+      margin: 0 0 0.5rem;
+      font-size: 0.75rem;
       font-weight: 600;
-      letter-spacing: -0.02em;
-      margin: 0 0 0.35rem 0;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
     }
-    header p {
-      margin: 0;
-      opacity: 0.82;
-      font-size: 0.9rem;
+
+    .page-title {
+      margin: 0 0 0.75rem;
+      font-family: var(--font-display);
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      font-optical-sizing: auto;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      color: var(--fg);
+    }
+
+    .gradient-text {
+      background: var(--nlt-gradient-text);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .lede {
+      margin: 0 0 1.5rem;
       max-width: 52ch;
+      color: var(--fg-dim);
+      font-size: 0.95rem;
+    }
+
+    .lede code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
     }
 
     .load-row {
+      position: relative;
       display: flex;
       flex-wrap: wrap;
-      gap: 0.75rem;
+      gap: 1rem;
       align-items: center;
-      margin-bottom: 1.25rem;
-    }
-    .load-row label {
-      font-size: 0.85rem;
-      cursor: pointer;
-      padding: 0.35rem 0.75rem;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: hsla(var(--hue-p), 12%, 12%, 0.6);
-      backdrop-filter: blur(8px);
-    }
-    .load-row input[type="file"] {
-      display: none;
-    }
-    .muted {
-      font-size: 0.8rem;
-      opacity: 0.75;
+      margin-bottom: 1.5rem;
     }
 
-    /* Bento: grid + subgrid (supporting browsers align tile internals) */
+    .load-row label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0.75rem 1.75rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--nlt-gradient);
+      border: none;
+      box-shadow: 0 4px 20px rgba(217, 119, 6, 0.2);
+      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .load-row label:hover {
+      opacity: 0.92;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(217, 119, 6, 0.35);
+    }
+
+    .load-row input[type="file"] {
+      position: absolute;
+      width: 0.1px;
+      height: 0.1px;
+      opacity: 0;
+      overflow: hidden;
+    }
+
+    .muted {
+      font-size: 0.875rem;
+      color: var(--fg-dim);
+    }
+
+    /* Bento — BRAND-STYLE-GUIDE §4 */
     .bento {
       display: grid;
-      gap: 0.75rem;
       grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: auto auto auto;
+      gap: 24px;
     }
+
     @media (max-width: 900px) {
-      .bento { grid-template-columns: repeat(2, 1fr); }
+      .bento {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
-    @media (max-width: 520px) {
-      .bento { grid-template-columns: 1fr; }
+
+    @media (max-width: 600px) {
+      .bento {
+        grid-template-columns: 1fr;
+      }
     }
 
     .tile {
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: linear-gradient(160deg, var(--panel-elev), var(--panel));
-      backdrop-filter: blur(12px);
-      padding: 1rem 1.1rem;
-      min-height: 5rem;
       position: relative;
-      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 1.5rem;
+      min-height: 160px;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
     }
-    .tile::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: var(--grain);
-      pointer-events: none;
-      opacity: 0.7;
+
+    @media (prefers-reduced-motion: reduce) {
+      .tile,
+      .load-row label,
+      .theme-toggle {
+        transition: none;
+      }
     }
-    .tile > * { position: relative; z-index: 1; }
+
+    .tile:hover {
+      transform: translateY(-4px);
+      border-color: rgba(217, 119, 6, 0.3);
+      box-shadow: 0 12px 40px rgba(217, 119, 6, 0.08);
+    }
+
+    html[data-theme="dark"] .tile:hover {
+      box-shadow: 0 20px 60px rgba(217, 119, 6, 0.1);
+    }
 
     .hero {
       grid-column: span 2;
       grid-row: span 2;
-      min-height: 220px;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
     }
+
     @media (max-width: 900px) {
-      .hero { grid-column: span 2; grid-row: span 1; min-height: 160px; }
-    }
-    @media (max-width: 520px) {
-      .hero { grid-column: span 1; }
-    }
-
-    .hero .glyph {
-      font-size: 3rem;
-      line-height: 1;
-      margin: 0 0 0.5rem 0;
-      font-weight: 700;
-      letter-spacing: -0.06em;
-      color: var(--accent);
-    }
-    @media (prefers-reduced-motion: no-preference) {
-      .hero .glyph {
-        animation: pulse 5s ease-in-out infinite;
-      }
-      @keyframes pulse {
-        0%, 100% { filter: brightness(1); }
-        50% { filter: brightness(1.12); }
+      .hero {
+        grid-column: span 2;
+        grid-row: span 1;
+        min-height: 200px;
       }
     }
 
-    .tile h2 {
-      margin: 0 0 0.35rem 0;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      opacity: 0.72;
+    @media (max-width: 600px) {
+      .hero {
+        grid-column: span 1;
+      }
+    }
+
+    .hero-mark {
+      width: 72px;
+      height: 72px;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-tag {
+      margin: 0 0 0.5rem;
+      font-size: 0.75rem;
       font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
     }
+
     .tile .stat {
       font-size: 1.5rem;
       font-weight: 700;
-      letter-spacing: -0.03em;
+      letter-spacing: -0.02em;
+      color: var(--fg);
     }
+
     .tile .sub {
-      font-size: 0.78rem;
-      opacity: 0.78;
-      margin-top: 0.25rem;
+      margin: 0.35rem 0 0;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: var(--fg-dim);
     }
 
     .tile-wide {
       grid-column: 1 / -1;
+      min-height: auto;
     }
 
     pre {
-      margin: 0;
-      font-size: 0.72rem;
+      margin: 0.5rem 0 0;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      line-height: 1.55;
       overflow: auto;
-      max-height: 9rem;
-      opacity: 0.85;
+      max-height: 10rem;
+      color: var(--fg-dim);
+      word-break: break-all;
+    }
+
+    .site-footer {
+      max-width: 1280px;
+      margin: 3rem auto 0;
+      padding: 2rem 1.5rem 3rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-quote {
+      margin: 0 0 0.35rem;
+      font-size: 0.9rem;
+      font-style: italic;
+      color: var(--fg);
+    }
+
+    .footer-attrib {
+      margin: 0;
+      font-size: 0.75rem;
+      color: var(--fg-dim);
+      max-width: 48ch;
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>tapps-brain</h1>
-      <p>
-        Dark-first bento shell. Load <code>brain-visual.json</code> from
-        <code>tapps-brain visual export -o brain-visual.json</code> (requires
-        <code>uv sync --extra cli</code>). File picker works over <code>file://</code>.
-      </p>
-    </header>
-    <div class="load-row">
-      <label>
-        Load snapshot…
-        <input id="file" type="file" accept="application/json,.json" />
-      </label>
-      <span id="status" class="muted">No file loaded — showing placeholders.</span>
+  <header
+    class="site-header"
+    aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual demo."
+  >
+    <div class="header-inner">
+      <div class="brand-lockup" aria-label="NLT Labs wordmark and AN mark">
+        <img
+          class="brand-mark"
+          src="nlt-an-mark-sm.svg"
+          width="40"
+          height="40"
+          alt=""
+          decoding="async"
+        />
+        <div class="brand-text">
+          <span class="brand-wordmark"><span class="nlt">NLT</span><span class="labs">labs</span></span>
+          <p class="brand-subtitle">New Logic Tech Labs</p>
+        </div>
+      </div>
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+        Dark theme
+      </button>
     </div>
+  </header>
 
-    <div class="bento">
-      <section class="tile hero" aria-label="Brain identity">
-        <p class="glyph" id="glyph">◆</p>
-        <h2>Fingerprint</h2>
-        <pre id="fp">—</pre>
-      </section>
-      <section class="tile" aria-label="Entries">
-        <h2>Entries</h2>
-        <div class="stat" id="entries">—</div>
-        <div class="sub" id="profile">profile</div>
-      </section>
-      <section class="tile" aria-label="Schema">
-        <h2>Schema</h2>
-        <div class="stat" id="schema">—</div>
-        <div class="sub" id="fed">federation</div>
-      </section>
-      <section class="tile" aria-label="Hive">
-        <h2>Hive</h2>
-        <div class="stat" id="hive">—</div>
-        <div class="sub" id="scopes">agent scopes</div>
-      </section>
-      <section class="tile" aria-label="Diagnostics">
-        <h2>Diagnostics</h2>
-        <div class="stat" id="diag">—</div>
-        <div class="sub" id="circuit">circuit</div>
-      </section>
-      <section class="tile tile-wide" aria-label="Privacy">
-        <h2>Privacy</h2>
-        <p class="sub" id="privacy"></p>
-      </section>
+  <main>
+    <div class="wrap">
+      <p class="product-tag">tapps-brain</p>
+      <h1 class="page-title">Visual <span class="gradient-text">snapshot</span></h1>
+      <p class="lede">
+        This shell uses NLT Labs tokens (amber accent, warm surfaces, Inter + Fraunces + JetBrains Mono).
+        Export JSON with <code>tapps-brain visual export -o brain-visual.json</code> (needs
+        <code>uv sync --extra cli</code>). On <code>file://</code>, use Load snapshot. Over HTTP we load
+        <code>brain-visual.json</code> from this folder when it exists.
+      </p>
+
+      <div class="load-row">
+        <label>
+          Load snapshot
+          <input id="file" type="file" accept="application/json,.json" />
+        </label>
+        <span id="status" class="muted">No file loaded; placeholders shown.</span>
+      </div>
+
+      <div class="bento" aria-label="Store snapshot summary">
+        <section class="tile hero" aria-label="Brain identity">
+          <img
+            class="hero-mark"
+            src="nlt-an-mark-sm.svg"
+            width="72"
+            height="72"
+            alt=""
+            decoding="async"
+          />
+          <p class="section-tag">Fingerprint</p>
+          <pre id="fp">—</pre>
+        </section>
+        <section class="tile" aria-label="Entries">
+          <p class="section-tag">Entries</p>
+          <div class="stat" id="entries">—</div>
+          <p class="sub" id="profile">profile</p>
+        </section>
+        <section class="tile" aria-label="Schema">
+          <p class="section-tag">Schema</p>
+          <div class="stat" id="schema">—</div>
+          <p class="sub" id="fed">federation</p>
+        </section>
+        <section class="tile" aria-label="Hive">
+          <p class="section-tag">Hive</p>
+          <div class="stat" id="hive">—</div>
+          <p class="sub" id="scopes">agent scopes</p>
+        </section>
+        <section class="tile" aria-label="Diagnostics">
+          <p class="section-tag">Diagnostics</p>
+          <div class="stat" id="diag">—</div>
+          <p class="sub" id="circuit">circuit</p>
+        </section>
+        <section class="tile tile-wide" aria-label="Privacy">
+          <p class="section-tag">Privacy</p>
+          <p class="sub" id="privacy"></p>
+        </section>
+      </div>
     </div>
-  </div>
+  </main>
+
+  <footer class="site-footer">
+    <p class="footer-quote">“Intelligence is the ability to adapt to change.”</p>
+    <p class="footer-attrib">
+      Stephen Hawking, as cited by NLT Labs. We use this line as a decision test: the work should make
+      teams more adaptive.
+    </p>
+  </footer>
 
   <script>
     const root = document.documentElement;
     const el = (id) => document.getElementById(id);
+    const THEME_KEY = "tapps-brain-visual-theme";
+
+    function applyTheme(dark) {
+      const btn = el("theme-toggle");
+      if (dark) {
+        root.setAttribute("data-theme", "dark");
+        btn.textContent = "Light theme";
+        btn.setAttribute("aria-pressed", "true");
+      } else {
+        root.removeAttribute("data-theme");
+        btn.textContent = "Dark theme";
+        btn.setAttribute("aria-pressed", "false");
+      }
+    }
+
+    (function initTheme() {
+      /* Light-leading per NLT guide; only localStorage opts into dark. */
+      applyTheme(localStorage.getItem(THEME_KEY) === "dark");
+    })();
+
+    el("theme-toggle").addEventListener("click", () => {
+      const nextDark = !root.hasAttribute("data-theme");
+      applyTheme(nextDark);
+      localStorage.setItem(THEME_KEY, nextDark ? "dark" : "light");
+    });
 
     function applySnapshot(data) {
-      root.style.setProperty("--hue-p", String(data.theme.hue_primary));
-      root.style.setProperty("--hue-a", String(data.theme.hue_accent));
-      root.style.setProperty("--chroma", String(data.theme.accent_chroma));
-      root.style.setProperty("--surf", String(data.theme.surface_lightness));
-      root.style.setProperty("--txt", String(data.theme.text_lightness));
-      root.style.setProperty("--flow", `${data.theme.flow_angle_deg}deg`);
+      if (data.theme && typeof data.theme.flow_angle_deg === "number") {
+        root.style.setProperty("--flow-ambient", `${data.theme.flow_angle_deg}deg`);
+      }
 
-      el("glyph").textContent = "◆";
       el("fp").textContent = data.fingerprint_sha256;
       el("entries").textContent = String(data.health.entry_count ?? "—");
       el("profile").textContent = data.health.profile_name || "(default profile)";
       el("schema").textContent = String(data.health.schema_version ?? "—");
       el("fed").textContent = data.health.federation_enabled ? "on" : "off";
       el("hive").textContent = data.hive_attached ? "attached" : "local";
-      el("scopes").textContent = Object.entries(data.agent_scope_counts || {})
-        .map(([k, v]) => `${k}:${v}`)
-         .join(" ") || "—";
+      el("scopes").textContent =
+        Object.entries(data.agent_scope_counts || {})
+          .map(([k, v]) => `${k}:${v}`)
+          .join(" ") || "—";
 
       if (data.diagnostics) {
         el("diag").textContent = data.diagnostics.composite_score.toFixed(2);
@@ -273,6 +572,11 @@
       };
       r.readAsText(f);
     });
+
+    fetch("brain-visual.json")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(applySnapshot)
+      .catch(() => {});
   </script>
 </body>
 </html>

@@ -4,6 +4,8 @@
 
 **Source map:** [`docs/engineering/features-and-technologies.md`](../../engineering/features-and-technologies.md)
 
+**Snapshot (2026-04-02):** **EPIC-042** is **in_progress** (042.1 / 042.2 / 042.4 / 042.5 / 042.7 / 042.8 **done**; 042.3 / 042.6 **planned**). **EPIC-050** is **in_progress** (**050.1**/**050.2**/**050.3** **done**; deferred items in epic bodies).
+
 This index links **one epic per major section** of the feature/technology map. Each epic contains **stories per table row** (industry feature category), with **code baseline**, **2026-oriented research notes**, and **implementation acceptance themes** for fix/enhance/improve work.
 
 | Epic | Scope (section) | File |

@@ -65,6 +65,7 @@ profile:
     confidence: 0.30
     recency: 0.15
     frequency: 0.15
+    # relevance_normalization: minmax  # optional STORY-042.5: per-query min-max raw relevance
     bm25_norm_k: 5.0
     frequency_cap: 20
     source_trust:
@@ -72,6 +73,14 @@ profile:
       system: 0.9
       agent: 0.7
       inferred: 0.5
+
+  # Hybrid BM25 + vector RRF (STORY-042.4). Defaults match code; widen recall with e.g.
+  # top_k_lexical / top_k_dense (aliases for top_bm25 / top_vector) or tune rrf_k.
+  # hybrid_fusion:
+  #   adaptive_fusion: true
+  #   top_bm25: 20
+  #   top_vector: 20
+  #   rrf_k: 60
 
   source_confidence:
     human: 0.95

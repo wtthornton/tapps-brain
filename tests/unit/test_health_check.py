@@ -77,7 +77,7 @@ def _store_health_return(**overrides: object) -> MagicMock:
     hr = MagicMock()
     hr.entry_count = 4600
     hr.max_entries = 5000
-    hr.schema_version = 16
+    hr.schema_version = 17
     hr.tier_distribution = {"pattern": 1}
     hr.gc_candidates = 0
     hr.consolidation_candidates = 0

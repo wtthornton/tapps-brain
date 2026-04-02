@@ -126,6 +126,37 @@ class TestMemoryPersistence:
         assert persistence.search("") == []
         assert persistence.search("   ") == []
 
+    def test_search_with_readonly_connection_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "1")
+        p = MemoryPersistence(tmp_path)
+        try:
+            p.save(MemoryEntry(key="k-ro", value="walrus search terms"))
+            results = p.search("walrus")
+            assert len(results) >= 1
+            assert any(r.key == "k-ro" for r in results)
+        finally:
+            p.close()
+
+    def test_readonly_conn_failure_falls_back_to_writer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "1")
+
+        def _fail_readonly(*_a: object, **_k: object) -> sqlite3.Connection:
+            raise sqlite3.Error("simulated readonly open failure")
+
+        monkeypatch.setattr("tapps_brain.persistence.connect_sqlite_readonly", _fail_readonly)
+        p = MemoryPersistence(tmp_path)
+        try:
+            p.save(MemoryEntry(key="k-fb", value="unique owl phrase"))
+            results = p.search("owl")
+            assert len(results) >= 1
+            assert results[0].key == "k-fb"
+        finally:
+            p.close()
+
     def test_load_all(self, persistence: MemoryPersistence) -> None:
         persistence.save(MemoryEntry(key="k1", value="v1"))
         persistence.save(MemoryEntry(key="k2", value="v2"))
@@ -140,8 +171,8 @@ class TestMemoryPersistence:
         assert persistence.count() == 2
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
-        # v15 Bayesian confidence counters (GitHub #35)
-        assert persistence.get_schema_version() == 16
+        # v17 embedding_model_id (STORY-042.2)
+        assert persistence.get_schema_version() == 17
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -323,7 +354,7 @@ class TestSchemaMigrations:
         self._create_v1_db(db_path)
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 16
+        assert p.get_schema_version() == 17
 
         # Verify v2 migration: embedding column exists
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -354,6 +385,8 @@ class TestSchemaMigrations:
         assert "diagnostics_history" in tables
         # Verify v16: project-local memory_group column (GitHub #49)
         assert "memory_group" in columns
+        # Verify v17: embedding_model_id (STORY-042.2)
+        assert "embedding_model_id" in columns
         p.close()
 
     def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
@@ -375,7 +408,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 16
+        assert p.get_schema_version() == 17
 
         tables = [
             r[0]
@@ -417,7 +450,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 16
+        assert p.get_schema_version() == 17
         tables = [
             r[0]
             for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -440,7 +473,7 @@ class TestSchemaMigrations:
 
         # Opening should not raise even though column already exists
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 16
+        assert p.get_schema_version() == 17
         p.close()
 
     def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
@@ -509,7 +542,7 @@ class TestSchemaMigrations:
         conn.close()
 
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 16
+        assert p.get_schema_version() == 17
 
         # Verify the integrity_hash column was added by the v7→v8 migration.
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()

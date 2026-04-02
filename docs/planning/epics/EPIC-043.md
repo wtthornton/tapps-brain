@@ -15,7 +15,7 @@ Maps to **§2** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Success criteria
 
-- [ ] Schema changes remain **migratable** from v16 with tests.
+- [ ] Schema changes remain **migratable** from v17 with tests.
 - [ ] Security-sensitive paths (encryption, audit) have **operator docs** updates when behavior changes.
 
 ## Stories
@@ -53,7 +53,7 @@ Three DBs: project `memory.db`, Hive, federation hub; WAL where configured.
 
 #### Code baseline
 
-**v16** includes `memory_group`, temporal columns, embeddings, etc. Migrations are **imperative SQL in Python** (version steps), not a separate declarative migration DSL — the feature map uses “declarative” in the product sense of **declared schema versions**, not Flyway-style files.
+**v17** includes `embedding_model_id`, `memory_group`, temporal columns, embeddings, etc. Migrations are **imperative SQL in Python** (version steps), not a separate declarative migration DSL — the feature map uses “declarative” in the product sense of **declared schema versions**, not Flyway-style files.
 
 #### Research notes (2026-forward)
 

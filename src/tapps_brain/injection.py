@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 import structlog
 
+from tapps_brain.profile import HybridFusionConfig
 from tapps_brain.recall_diagnostics import (
     RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
     RECALL_EMPTY_ENGAGEMENT_LOW,
@@ -207,15 +208,16 @@ def inject_memories(  # noqa: PLR0915
     # Resolve scoring_config: prefer explicit arg, fall back to store profile.
     # This ensures source_trust multipliers and scoring weights from the active
     # profile are respected rather than always using module-level defaults.
-    if scoring_config is None:
-        profile = getattr(store, "profile", None)
-        if profile is not None:
-            scoring_config = getattr(profile, "scoring", None)
-
-    if lexical_config is None:
-        profile = getattr(store, "profile", None)
-        if profile is not None:
-            lexical_config = getattr(profile, "lexical", None)
+    profile = getattr(store, "profile", None)
+    if scoring_config is None and profile is not None:
+        scoring_config = getattr(profile, "scoring", None)
+    if lexical_config is None and profile is not None:
+        lexical_config = getattr(profile, "lexical", None)
+    hybrid_config = None
+    if profile is not None:
+        raw_hf = getattr(profile, "hybrid_fusion", None)
+        if isinstance(raw_hf, HybridFusionConfig):
+            hybrid_config = raw_hf
 
     from tapps_brain.reranker import get_reranker
 
@@ -232,6 +234,7 @@ def inject_memories(  # noqa: PLR0915
         config=decay_config,
         reranker=reranker,
         semantic_enabled=True,
+        hybrid_config=hybrid_config,
         reranker_enabled=config.reranker_enabled,
         relations_enabled=True,
         scoring_config=scoring_config,

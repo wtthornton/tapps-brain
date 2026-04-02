@@ -41,6 +41,21 @@ def test_theme_from_fingerprint_short_hex_pads() -> None:
     assert 0 <= t.flow_angle_deg <= 359
 
 
+def test_theme_from_fingerprint_stays_in_amber_wedge() -> None:
+    """Accent hues stay in the NLT amber/gold range (not blue/cyan/purple)."""
+    for fp in (
+        "a" * 64,
+        "0" * 64,
+        "f" * 64,
+        "deadbeef" * 8,
+        "c0ffee",
+    ):
+        t = theme_from_fingerprint(fp)
+        assert 28 <= t.hue_primary <= 47
+        assert 28 <= t.hue_accent <= 48
+        assert t.hue_accent >= t.hue_primary
+
+
 def test_build_visual_snapshot_shape(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     try:

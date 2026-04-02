@@ -540,7 +540,7 @@ class MemoryStore:
 
             with self._serialized():
                 _all_entries = list(self._entries.values())
-            _conflicts = detect_save_conflicts(value, tier, _all_entries)
+            _conflicts = detect_save_conflicts(value, tier, _all_entries, exclude_key=key)
             if _conflicts:
                 _conflict_keys = [e.key for e in _conflicts]
                 logger.warning(
@@ -658,13 +658,23 @@ class MemoryStore:
                 with MetricsTimer(self._metrics, "store.save.phase.embed_ms"):
                     try:
                         emb = self._embedding_provider.embed(value)
-                        entry = entry.model_copy(update={"embedding": emb})
+                        _mid_raw = getattr(self._embedding_provider, "model_id", None)
+                        _mid: str | None = (
+                            _mid_raw.strip()
+                            if isinstance(_mid_raw, str) and _mid_raw.strip()
+                            else None
+                        )
+                        _embed_update: dict[str, object] = {
+                            "embedding": emb,
+                            "embedding_model_id": _mid,
+                        }
+                        entry = entry.model_copy(update=_embed_update)
                         with self._serialized():
                             # Re-read current entry to avoid overwriting concurrent
                             # updates (e.g. another save/update_fields in between).
                             current = self._entries.get(key)
                             if current is not None and current.key == entry.key:
-                                entry = current.model_copy(update={"embedding": emb})
+                                entry = current.model_copy(update=_embed_update)
                             self._entries[key] = entry
                     except Exception:
                         logger.debug("embedding_compute_failed", key=key, exc_info=True)
@@ -1065,9 +1075,7 @@ class MemoryStore:
                         updates["stability"] = new_stab
                         updates["difficulty"] = new_diff
                     except Exception:
-                        logger.debug(
-                            "reinforce_stability_update_failed", key=key, exc_info=True
-                        )
+                        logger.debug("reinforce_stability_update_failed", key=key, exc_info=True)
 
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated

@@ -1,0 +1,46 @@
+{
+  "agent_scope_counts": {
+    "private": 4
+  },
+  "diagnostics": null,
+  "fingerprint_sha256": "5d6246cb4e2cc7704da3a3420dd87eb3cb3db954ec481122f43a940def844c9d",
+  "generated_at": "2026-04-02T21:48:43.667690+00:00",
+  "health": {
+    "consolidation_candidates": 0,
+    "entry_count": 4,
+    "federation_enabled": true,
+    "federation_project_count": 2,
+    "gc_candidates": 0,
+    "integrity_no_hash": 0,
+    "integrity_tampered": 0,
+    "integrity_tampered_keys": [],
+    "integrity_verified": 4,
+    "max_entries": 5000,
+    "oldest_entry_age_days": 2.273857185636574,
+    "package_version": "2.0.3",
+    "profile_name": "repo-brain",
+    "rate_limit_exempt_writes": 0,
+    "rate_limit_minute_anomalies": 0,
+    "rate_limit_session_anomalies": 0,
+    "rate_limit_total_writes": 0,
+    "relation_count": 0,
+    "save_phase_summary": "",
+    "schema_version": 17,
+    "sqlcipher_enabled": false,
+    "store_path": "C:\\cursor\\tapps-brain",
+    "tier_distribution": {
+      "architectural": 4
+    }
+  },
+  "hive_attached": true,
+  "privacy": "Aggregated counts and health metadata only; excludes memory text, keys, and tags.",
+  "schema_version": 1,
+  "theme": {
+    "accent_chroma": 0.8,
+    "flow_angle_deg": 296,
+    "hue_accent": 192,
+    "hue_primary": 146,
+    "surface_lightness": 12,
+    "text_lightness": 98
+  }
+}

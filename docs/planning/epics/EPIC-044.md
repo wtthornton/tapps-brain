@@ -83,6 +83,7 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 #### Implementation themes
 
+- [x] **exclude_key:** the key being saved is not treated as a separate conflicting row (`detect_save_conflicts(..., exclude_key=key)`); prevents concurrent same-key updates from tripping ``valid_at``/``invalid_at`` ordering (2026-04-02).
 - [ ] User-visible **reason** on conflict (`contradiction_reason` population audit).
 - [ ] Profile: **aggressiveness** tiers for `detect_save_conflicts`.
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from tapps_brain.feedback import FeedbackConfig
 from tapps_brain.lexical import LexicalRetrievalConfig
@@ -128,6 +128,14 @@ class ScoringConfig(BaseModel):
         ),
     )
     bm25_norm_k: float = Field(default=5.0, ge=0.1)
+    relevance_normalization: Literal["sigmoid", "minmax"] = Field(
+        default="sigmoid",
+        description=(
+            "Map raw relevance (BM25 or hybrid RRF) into [0, 1] before the composite blend. "
+            "'sigmoid' uses score/(score+bm25_norm_k). 'minmax' rescales the **filtered** "
+            "candidate set per query (best=1, worst=0; equal raw scores → 1.0)."
+        ),
+    )
     frequency_cap: int = Field(default=20, ge=1)
     source_trust: dict[str, float] = Field(
         default_factory=lambda: dict(_DEFAULT_SOURCE_TRUST),
@@ -191,6 +199,45 @@ class RecallProfileConfig(BaseModel):
     default_engagement: Literal["low", "medium", "high"] = "high"
     min_score: float = Field(default=0.3, ge=0.0, le=1.0)
     min_confidence: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class HybridFusionConfig(BaseModel):
+    """Hybrid BM25 + dense recall pool sizes and RRF *k* (EPIC-042 / STORY-042.4).
+
+    Configure under ``profile.hybrid_fusion`` in YAML. ``MemoryRetriever`` reads these
+    when passed as ``hybrid_config`` (e.g. from ``inject_memories`` via the active
+    store profile). Defaults match historical hardcoded behavior (20/20/60).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    adaptive_fusion: bool = Field(
+        default=True,
+        description=(
+            "When True, query-aware BM25 vs vector weights (#40). "
+            "When False, equal 1:1 RRF weights."
+        ),
+    )
+    top_bm25: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        validation_alias=AliasChoices("top_bm25", "top_k_lexical"),
+        description="Max BM25 candidates fed into RRF (YAML alias: top_k_lexical).",
+    )
+    top_vector: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        validation_alias=AliasChoices("top_vector", "top_k_dense"),
+        description="Max vector/KNN candidates fed into RRF (YAML alias: top_k_dense).",
+    )
+    rrf_k: int = Field(
+        default=60,
+        ge=1,
+        le=500,
+        description="RRF denominator offset k in 1/(k+rank); default 60 (see fusion.py).",
+    )
 
 
 class LimitsConfig(BaseModel):
@@ -304,6 +351,10 @@ class MemoryProfile(BaseModel):
     lexical: LexicalRetrievalConfig = Field(
         default_factory=LexicalRetrievalConfig,
         description="BM25 tokenization and FTS query term splitting (EPIC-042).",
+    )
+    hybrid_fusion: HybridFusionConfig = Field(
+        default_factory=HybridFusionConfig,
+        description="Hybrid search RRF pool sizes and k (STORY-042.4); see HybridFusionConfig.",
     )
 
     @model_validator(mode="after")
@@ -449,6 +500,7 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         feedback=child.feedback,
         diagnostics=child.diagnostics,
         lexical=child.lexical,
+        hybrid_fusion=child.hybrid_fusion,
     )
 
 

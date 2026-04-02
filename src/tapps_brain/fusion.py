@@ -1,9 +1,24 @@
 """Reciprocal Rank Fusion (RRF) for hybrid search (Epic 65.8).
 
-Merges ranked lists from BM25 and vector search into a single ranking
-using the RRF formula: score = sum(1/(k + rank)) per document.
+Merges ranked lists from BM25 and vector search into a single ranking.
 
-EPIC-040 / GitHub #40: query-aware BM25 vs vector RRF weights bias fusion toward
+**RRF score (multi-list).** For document *d*, let *r_i(d)* be the 1-based rank of *d*
+in ranked list *i* if *d* appears, else treat that list as contributing 0. The fused
+score is:
+
+    RRF(d) = sum_i  c_i / (k + r_i(d))
+
+where *k > 0* is a smoothing constant (default **60**) and *c_i* is a non-negative
+weight for list *i*. Equal weighting (*c_i = 1*) is the common baseline; this
+package uses *(c_bm25, c_vector)* from ``hybrid_rrf_weights_for_query`` when
+adaptive fusion is enabled (EPIC-040 / GitHub #40).
+
+**Reference:** Cormack, Clarke, and Buettcher, *Reciprocal Rank Fusion outperforms
+Condorcet and individual Rank Learning Algorithms* (SIGIR / CEAS literature, 2009).
+The same *k* in the denominator is widely adopted in production search (e.g.
+Elasticsearch RRF, Azure AI Search RRF) with *k = 60* as a common default.
+
+EPIC-040 / GitHub #40: query-aware BM25 vs vector weights bias fusion toward
 keyword-heavy vs semantic-style queries without LLM calls.
 """
 
@@ -107,7 +122,12 @@ def reciprocal_rank_fusion_weighted(
 ) -> list[tuple[str, float]]:
     """Fuse ranked lists with per-source RRF weights.
 
-    For each document: score = bm25_weight·Σ 1/(k+rank_bm25) + vector_weight·Σ 1/(k+rank_vec).
+    For each distinct key *d*, fused score is::
+
+        bm25_weight / (k + rank_bm25(d)) + vector_weight / (k + rank_vector(d))
+
+    with the term omitted when *d* is absent from that list. Ranks are **1-based**
+    (best document has rank 1). See module docstring for citation and notation.
 
     Args:
         bm25_ranked: Entry keys ordered by BM25 relevance (best first).
@@ -150,8 +170,8 @@ def reciprocal_rank_fusion(
     Args:
         bm25_ranked: List of entry keys ordered by BM25 relevance (best first).
         vector_ranked: List of entry keys ordered by vector similarity (best first).
-        k: RRF constant (default 60 per Elasticsearch/Azure AI Search). Higher k
-            reduces rank difference impact; typical range 10-100.
+        k: RRF smoothing constant (default 60; see module docstring for references).
+            Larger *k* dampens differences between ranks; typical tuning range ~10-100.
 
     Returns:
         List of (entry_key, fused_score) sorted by fused_score descending.

@@ -285,6 +285,27 @@ class TestScoringHelpers:
         score = retriever._normalize_relevance(100.0)
         assert score > 0.9
 
+    def test_normalize_relevance_sigmoid_ignores_minmax_bounds(self) -> None:
+        """Default sigmoid path must not use per-query rmin/rmax."""
+        retriever = MemoryRetriever()
+        score = retriever._normalize_relevance(5.0, rmin=0.0, rmax=10.0)
+        assert score == pytest.approx(0.5)
+
+    def test_normalize_relevance_minmax_spread(self) -> None:
+        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        assert r._normalize_relevance(1.0, rmin=1.0, rmax=5.0) == pytest.approx(0.0)
+        assert r._normalize_relevance(5.0, rmin=1.0, rmax=5.0) == pytest.approx(1.0)
+        assert r._normalize_relevance(3.0, rmin=1.0, rmax=5.0) == pytest.approx(0.5)
+
+    def test_normalize_relevance_minmax_clamps(self) -> None:
+        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        assert r._normalize_relevance(10.0, rmin=1.0, rmax=5.0) == 1.0
+        assert r._normalize_relevance(-2.0, rmin=1.0, rmax=5.0) == 0.0
+
+    def test_normalize_relevance_minmax_degenerate(self) -> None:
+        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        assert r._normalize_relevance(2.0, rmin=2.0, rmax=2.0) == 1.0
+
     def test_recency_score_recent(self) -> None:
         entry = _make_entry(updated_at=_NOW.isoformat())
         score = MemoryRetriever._recency_score(entry, _NOW)
@@ -304,6 +325,43 @@ class TestScoringHelpers:
         retriever = MemoryRetriever()
         entry = _make_entry(access_count=100)
         assert retriever._frequency_score(entry) == 1.0
+
+
+class TestRelevanceNormalizationMinmax:
+    """STORY-042.5: optional per-query min-max relevance before composite blend."""
+
+    def test_minmax_orders_by_raw_when_other_signals_equal(self) -> None:
+        base = _RECENT
+        e_low = _make_entry("low-rel", "alpha beta gamma", updated_at=base, access_count=5)
+        e_high = _make_entry("high-rel", "alpha beta gamma", updated_at=base, access_count=5)
+        retriever = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        store = _make_store([e_low, e_high])
+        with patch.object(
+            retriever,
+            "_get_candidates",
+            return_value=[(e_low, 2.0), (e_high, 8.0)],
+        ):
+            results = retriever.search("query", store)
+        assert len(results) == 2
+        assert results[0].entry.key == "high-rel"
+        assert results[0].bm25_relevance == 1.0
+        assert results[1].entry.key == "low-rel"
+        assert results[1].bm25_relevance == 0.0
+
+    def test_minmax_equal_raw_scores_use_degenerate_one(self) -> None:
+        e1 = _make_entry("a", "same text", updated_at=_RECENT, access_count=5)
+        e2 = _make_entry("b", "same text", updated_at=_RECENT, access_count=5)
+        retriever = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        store = _make_store([e1, e2])
+        with patch.object(
+            retriever,
+            "_get_candidates",
+            return_value=[(e1, 3.0), (e2, 3.0)],
+        ):
+            results = retriever.search("q", store)
+        assert len(results) == 2
+        assert results[0].bm25_relevance == 1.0
+        assert results[1].bm25_relevance == 1.0
 
 
 # ---------------------------------------------------------------------------

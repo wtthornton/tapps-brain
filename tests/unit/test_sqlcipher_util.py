@@ -12,9 +12,11 @@ import pytest
 from tapps_brain import sqlcipher_util
 from tapps_brain.sqlcipher_util import (
     connect_sqlite,
+    connect_sqlite_readonly,
     pragma_key_statement,
     resolve_hive_encryption_key,
     resolve_memory_encryption_key,
+    resolve_memory_readonly_search_enabled,
     resolve_sqlite_busy_timeout_ms,
 )
 
@@ -53,6 +55,17 @@ def test_pragma_key_statement_escapes_quotes() -> None:
     assert "''" in pragma_key_statement("a'b")
 
 
+def test_resolve_memory_readonly_search_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", raising=False)
+    assert resolve_memory_readonly_search_enabled() is False
+    monkeypatch.setenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "1")
+    assert resolve_memory_readonly_search_enabled() is True
+    monkeypatch.setenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "true")
+    assert resolve_memory_readonly_search_enabled() is True
+    monkeypatch.setenv("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "no")
+    assert resolve_memory_readonly_search_enabled() is False
+
+
 def test_resolve_sqlite_busy_timeout_ms_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TAPPS_SQLITE_BUSY_MS", raising=False)
     assert resolve_sqlite_busy_timeout_ms() == 5000
@@ -72,6 +85,26 @@ def test_resolve_sqlite_busy_timeout_ms_invalid_falls_back(monkeypatch: pytest.M
     assert resolve_sqlite_busy_timeout_ms() == 5000
     monkeypatch.setenv("TAPPS_SQLITE_BUSY_MS", "3600001")
     assert resolve_sqlite_busy_timeout_ms() == 5000
+
+
+def test_connect_sqlite_readonly_plain_select(tmp_path: Path) -> None:
+    db = tmp_path / "ro.db"
+    w = connect_sqlite(db, encryption_key=None, check_same_thread=False)
+    try:
+        w.execute("CREATE TABLE t (x INTEGER)")
+        w.execute("INSERT INTO t VALUES (42)")
+        w.commit()
+    finally:
+        w.close()
+
+    r = connect_sqlite_readonly(db, encryption_key=None, check_same_thread=False)
+    try:
+        row = r.execute("SELECT x FROM t").fetchone()
+        assert row is not None and int(row[0]) == 42
+        with pytest.raises(sqlite3.OperationalError):
+            r.execute("INSERT INTO t VALUES (2)")
+    finally:
+        r.close()
 
 
 def test_connect_sqlite_plain_tmp_path(tmp_path: Path) -> None:
@@ -158,3 +191,26 @@ def test_connect_sqlite_encrypted_roundtrip(tmp_path: Path) -> None:
 
     with pytest.raises(sqlite3.DatabaseError):
         connect_sqlite(db, encryption_key="wrong", check_same_thread=False)
+
+
+@pytest.mark.requires_encryption
+@pytest.mark.skipif(
+    not sqlcipher_util.sqlcipher_available(),
+    reason="pysqlcipher3 / SQLCipher not available",
+)
+def test_connect_sqlite_readonly_encrypted_select(tmp_path: Path) -> None:
+    db = tmp_path / "enc_ro.db"
+    conn_w = connect_sqlite(db, encryption_key="k1", check_same_thread=False)
+    try:
+        conn_w.execute("CREATE TABLE t (x INTEGER)")
+        conn_w.execute("INSERT INTO t VALUES (7)")
+        conn_w.commit()
+    finally:
+        conn_w.close()
+
+    conn_r = connect_sqlite_readonly(db, encryption_key="k1", check_same_thread=False)
+    try:
+        row = conn_r.execute("SELECT x FROM t").fetchone()
+        assert row is not None and int(row[0]) == 7
+    finally:
+        conn_r.close()

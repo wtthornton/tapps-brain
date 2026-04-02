@@ -53,6 +53,19 @@ def test_detect_save_conflicts_skips_identical_normalized() -> None:
     assert hits == []
 
 
+def test_detect_save_conflicts_excludes_save_target_key() -> None:
+    """Updating key K must not flag K's prior value as a separate conflict."""
+    existing = [_entry("shared", "thread-0-iter-0", MemoryTier.pattern)]
+    hits = detect_save_conflicts(
+        "thread-1-iter-0",
+        MemoryTier.pattern.value,
+        existing,
+        similarity_threshold=0.25,
+        exclude_key="shared",
+    )
+    assert hits == []
+
+
 def test_detect_save_conflicts_sorted_by_similarity_then_key() -> None:
     hi = _entry("z", "alpha beta gamma delta", MemoryTier.context)
     lo = _entry("y", "alpha beta", MemoryTier.context)

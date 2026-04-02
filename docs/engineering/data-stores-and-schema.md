@@ -62,7 +62,7 @@
 
 ## Schema version timeline (`memory.db`)
 
-Current schema version in `persistence.py`: **v16**
+Current schema version in `persistence.py`: **v17**
 
 - v1: base memories, archive, FTS, core indexes
 - v2: embeddings column
@@ -80,6 +80,7 @@ Current schema version in `persistence.py`: **v16**
 - v14: `stability` and `difficulty`
 - v15: Bayesian access counters
 - v16: `memory_group` on active + archive tables
+- v17: `embedding_model_id` on active + archive tables (dense provenance)
 
 ## Migration execution points
 

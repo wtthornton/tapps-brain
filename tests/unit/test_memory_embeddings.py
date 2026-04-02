@@ -11,7 +11,11 @@ from tapps_brain.embeddings import (
     EmbeddingProvider,
     NoopProvider,
     SentenceTransformerProvider,
+    dequantize_embedding_int8,
+    embedding_cosine_similarity,
     get_embedding_provider,
+    quantize_embedding_int8,
+    renormalize_embedding_l2,
 )
 from tapps_brain.models import MemoryEntry
 from tapps_brain.store import MemoryStore
@@ -43,6 +47,61 @@ class TestNoopProvider:
     def test_dimension_property(self) -> None:
         provider = NoopProvider(dimension=128)
         assert provider.dimension == 128
+
+    def test_model_id_optional(self) -> None:
+        assert NoopProvider(dimension=4).model_id is None
+        assert NoopProvider(dimension=4, model_id="m").model_id == "m"
+
+
+class TestQuantizeEmbeddingInt8:
+    """STORY-042.2 offline spike: int8 symmetric quantization helpers."""
+
+    def test_empty_roundtrip(self) -> None:
+        assert quantize_embedding_int8([]) == b""
+        assert dequantize_embedding_int8(b"") == []
+
+    def test_roundtrip_exact_powers(self) -> None:
+        v = [1.0, -1.0, 0.0]
+        blob = quantize_embedding_int8(v)
+        assert len(blob) == 3
+        back = dequantize_embedding_int8(blob, renormalize=False)
+        assert back == pytest.approx([1.0, -1.0, 0.0])
+
+    def test_clamp_out_of_range(self) -> None:
+        blob = quantize_embedding_int8([2.0, -2.0])
+        back = dequantize_embedding_int8(blob, renormalize=False)
+        assert back == pytest.approx([1.0, -1.0])
+
+    def test_cosine_self_high_after_renormalize(self) -> None:
+        """Random unit vectors: cosine(u, rq(u)) should stay very high after int8 + L2 fixup."""
+        import random
+
+        rng = random.Random(42)
+        dim = 384
+        raw = [rng.gauss(0, 1) for _ in range(dim)]
+        u = renormalize_embedding_l2(raw)
+        blob = quantize_embedding_int8(u)
+        rq = dequantize_embedding_int8(blob, renormalize=True)
+        sim = embedding_cosine_similarity(u, rq)
+        assert sim >= 0.998
+
+    def test_pairwise_similarity_drift_bounded(self) -> None:
+        """Cosine between two fixed unit vectors vs their quantized forms (deterministic)."""
+        import random
+
+        rng = random.Random(7)
+        dim = 128
+
+        def unit() -> list[float]:
+            v = [rng.gauss(0, 1) for _ in range(dim)]
+            return renormalize_embedding_l2(v)
+
+        a, b = unit(), unit()
+        c0 = embedding_cosine_similarity(a, b)
+        aq = dequantize_embedding_int8(quantize_embedding_int8(a), renormalize=True)
+        bq = dequantize_embedding_int8(quantize_embedding_int8(b), renormalize=True)
+        c1 = embedding_cosine_similarity(aq, bq)
+        assert abs(c0 - c1) < 0.02
 
 
 class TestGetEmbeddingProvider:
@@ -86,6 +145,18 @@ class TestStoreWithEmbeddingProvider:
         assert loaded is not None
         assert loaded.embedding is not None
         assert loaded.embedding == [0.0] * 384
+        assert loaded.embedding_model_id is None
+        store.close()
+
+    def test_save_with_model_id_persisted(self, tmp_path: Path) -> None:
+        provider = NoopProvider(dimension=384, model_id="noop-test-model")
+        store = MemoryStore(tmp_path, embedding_provider=provider)
+        result = store.save("mid-key", "text", tier="pattern")
+        assert isinstance(result, MemoryEntry)
+        assert result.embedding_model_id == "noop-test-model"
+        loaded = store.get("mid-key")
+        assert loaded is not None
+        assert loaded.embedding_model_id == "noop-test-model"
         store.close()
 
     def test_save_without_provider_no_embedding(self, tmp_path: Path) -> None:
@@ -121,6 +192,7 @@ class TestSentenceTransformerProvider:
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model")
         assert provider.dimension == 384
+        assert provider.model_id == "test-model"
 
     def test_init_falls_back_to_384_when_dimension_none(self) -> None:
         """When get_sentence_embedding_dimension() returns None, fall back to 384."""

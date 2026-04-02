@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed; **EPIC-042.5** composite-weight docs + shared sum validation on `main`; **EPIC-042.7** injection tokenizer hook + telemetry on `main`; **EPIC-042.8** decay/FSRS decision doc + reinforce stability path on `main`)
+Last updated: 2026-04-02 (**#52** closed; **EPIC-042** STORY-042.2 **done** (v17 `embedding_model_id`, int8 spike helpers); **STORY-042.4** **done** (RRF doc + `profile.hybrid_fusion`); **EPIC-050** partial; **EPIC-044.3** `exclude_key` fix; **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
 Owner: @wtthornton
 
 ## Purpose
@@ -120,11 +120,15 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 ## Recommended next steps (2026-04-02)
 
 - **#52** — done (GitHub issue body checklist updated + issue closed).
+- **Agent / Cursor handoff:** paste-ready task prompt in [`next-session-prompt.md`](next-session-prompt.md); numbered queue mirrored in [`STATUS.md`](STATUS.md) § *Current focus*.
 
 **Next engineering (canonical queue)**
 
-- **Save-path observability** (tracking row 20): phase histograms on `MemoryStore.save`; **`StoreHealthReport.save_phase_summary`** + `HealthReport.store.save_phase_summary` (MCP `tapps_brain_health` reuses live store; CLI cold health may stay empty for phases).
+- **Save-path observability** — tracking table row 20 **done** (`save_phase_summary` on live store health / MCP); further metrics are optional.
 - **MemoryStore decomposition** (tracking row 22): design-first only; see **EPIC-050** / **EPIC-051** for concurrency and scale framing.
+- **Retrieval epic (`EPIC-042`):** **042.2** done (int8 helpers, **v17** `embedding_model_id`, model card + **§ Performance review backlog** in [`embedding-model-card.md`](../guides/embedding-model-card.md)). **042.4** done (RRF formula + citation in `fusion.py`; `HybridFusionConfig` / YAML `hybrid_fusion` + inject path). **Recommended order:** **042.3** (sqlite-vec ops docs) → **042.6** (rerank observability).
+- **Conflicts (`EPIC-044.3`):** `exclude_key` shipped; remainder = user-visible conflict reason + profile aggressiveness for `detect_save_conflicts`.
+- **Concurrency (`EPIC-050`):** remaining — **050.1** optional async wrapper spike only; **050.2** “reduce lock scope” deferred; optional WAL **checkpoint** runbook line under **050.3** research.
 
 **Done in repo (was backlog item 6)**
 
@@ -249,6 +253,11 @@ Copy this section at the end of each week:
 
 ## Change Log
 
+- 2026-04-02 (late): **STORY-042.4** — RRF notation + references in `fusion.py`; `profile.HybridFusionConfig` (`top_k_lexical` / `top_k_dense` aliases); `inject_memories` passes hybrid fusion config from real profiles; commented template in `repo-brain.yaml`.
+- 2026-04-02 (handoff): Added [`next-session-prompt.md`](next-session-prompt.md) for copy-paste agent continuation; roadmap “Recommended next steps” links it.
+- 2026-04-02 (late): **EPIC-042** status sync — **042.1**/**042.5**/**042.7**/**042.8** → **done**; **042.2** → **in_progress** (model card `embedding-model-card.md`, min-max `ScoringConfig.relevance_normalization`); **EPIC-050** **STORY-050.3** → **done** (`connect_sqlite_readonly`, `TAPPS_SQLITE_MEMORY_READONLY_SEARCH`); **EPIC-044.3** note `exclude_key` conflict fix; roadmap “Next engineering” bullets refreshed.
+- 2026-04-02 (eve): **STORY-042.2** closed — schema **v17** `embedding_model_id`; `embeddings.py` int8 quantize/dequantize + tests; `MemoryStore.save` sets model id from provider; planning/docs synced.
+- 2026-04-02 (late): **Embedding model card** § *Performance review backlog* + `system-architecture.md` cross-link; **STATUS** / **next-session-prompt** / roadmap “recommended next” reordered (**042.3** → **042.4** → **042.6**; **044.3** remainder called out).
 - 2026-04-02: **EPIC-042** STORY-042.8 — `docs/guides/memory-decay-and-fsrs.md` (hybrid decay model); `MemoryStore.reinforce` applies `update_stability` when `layer.adaptive_stability`; profile field description aligned; `features-and-technologies.md` link.
 - 2026-04-02: **EPIC-042** STORY-042.7 — `InjectionConfig.count_tokens` optional hook; `inject_memories` returns `injection_telemetry` (score-drop, safety-drop, token-budget omit counts, `token_counter` label); ordering documented in `injection.py`.
 - 2026-04-02 (eve): **#63** health `retrieval_effective_mode` / `retrieval_summary` + CLI; **#64** `docs/guides/hive-vs-federation.md`; roadmap rows 18–19 `done`; **EPIC-041** STORY-041.3–041.4.

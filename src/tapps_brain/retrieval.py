@@ -10,6 +10,11 @@ search with RRF when semantic_search.enabled.
 
 EPIC-042.5: Composite weights come from ``profile.ScoringConfig`` (YAML ``scoring:``);
 see ``SCORING_WEIGHT_SUM_MIN`` / ``SCORING_WEIGHT_SUM_MAX`` in ``profile.py``.
+EPIC-042.4: Hybrid RRF pool sizes and ``k`` come from ``profile.HybridFusionConfig``
+(YAML ``hybrid_fusion:``) when the retriever is constructed with ``hybrid_config``
+(``inject_memories`` passes the store profile). See ``fusion.py`` for the RRF formula.
+Optional ``scoring.relevance_normalization: minmax`` applies per-query min-max to raw
+relevance over surviving candidates (vs default ``sigmoid`` via ``bm25_norm_k``).
 Default ``search()`` excludes: contradicted entries (unless ``include_contradicted``),
 consolidated source rows (unless ``include_sources``), temporally invalid /
 superseded entries (unless ``include_superseded`` / ``include_historical``), and
@@ -169,6 +174,16 @@ class MemoryRetriever:
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
             self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
             self._bm25_norm_k = float(getattr(scoring_config, "bm25_norm_k", _BM25_NORM_K))
+            _rel_norm = getattr(scoring_config, "relevance_normalization", "sigmoid")
+            self._relevance_norm_mode: str = (
+                _rel_norm
+                if _rel_norm
+                in (
+                    "sigmoid",
+                    "minmax",
+                )
+                else "sigmoid"
+            )
             self._w_graph = float(getattr(scoring_config, "graph_centrality", 0.0))
             self._w_provenance = float(getattr(scoring_config, "provenance_trust", 0.0))
             raw_trust = getattr(scoring_config, "source_trust", None)
@@ -205,9 +220,10 @@ class MemoryRetriever:
             self._w_provenance = 0.0
             self._frequency_cap = _FREQUENCY_CAP
             self._bm25_norm_k = _BM25_NORM_K
+            self._relevance_norm_mode = "sigmoid"
             self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
 
-    def search(
+    def search(  # noqa: PLR0915
         self,
         query: str,
         store: MemoryStore,
@@ -269,8 +285,11 @@ class MemoryRetriever:
         else:
             candidates = self._get_candidates(effective_query, store, memory_group=memory_group)
 
-        # Score and filter
-        scored: list[ScoredMemory] = []
+        # Score and filter (two phases when min-max relevance is enabled)
+        pending: list[
+            tuple[MemoryEntry, float, float, bool, bool]
+        ] = []  # entry, relevance_raw, eff_conf, stale_flag, temporally_valid
+
         for entry, relevance_raw in candidates:
             # Filter source entries of consolidated memories (Epic 58.5)
             if not include_sources and _is_consolidated_source(entry):
@@ -298,8 +317,18 @@ class MemoryRetriever:
             if not temporally_valid:
                 stale_flag = True
 
-            # Compute composite score
-            relevance_norm = self._normalize_relevance(relevance_raw)
+            pending.append((entry, relevance_raw, eff_conf, stale_flag, temporally_valid))
+
+        rmin: float | None = None
+        rmax: float | None = None
+        if self._relevance_norm_mode == "minmax" and pending:
+            rels = [p[1] for p in pending]
+            rmin = min(rels)
+            rmax = max(rels)
+
+        scored: list[ScoredMemory] = []
+        for entry, relevance_raw, eff_conf, stale_flag, temporally_valid in pending:
+            relevance_norm = self._normalize_relevance(relevance_raw, rmin=rmin, rmax=rmax)
             recency = self._recency_score(entry, now)
             frequency = self._frequency_score(entry)
 
@@ -536,6 +565,11 @@ class MemoryRetriever:
         EPIC-040: By default uses query-aware weights on BM25 vs vector RRF terms
         (``hybrid_rrf_weights_for_query``). Set ``hybrid_config.adaptive_fusion``
         to ``False`` for equal 1:1 weighting (legacy behavior).
+
+        Pool sizes and ``rrf_k`` default to 20/20/60; override via
+        ``profile.hybrid_fusion`` (``top_bm25`` / ``top_vector`` / ``rrf_k``, or YAML
+        aliases ``top_k_lexical`` / ``top_k_dense``) on the object passed as
+        ``hybrid_config``.
         """
         top_bm25 = 20
         top_vector = 20
@@ -781,14 +815,28 @@ class MemoryRetriever:
         overlap = len(query_words & entry_words)
         return overlap / len(query_words)
 
-    def _normalize_relevance(self, raw_score: float) -> float:
+    def _normalize_relevance(
+        self,
+        raw_score: float,
+        *,
+        rmin: float | None = None,
+        rmax: float | None = None,
+    ) -> float:
         """Normalize relevance score to 0.0-1.0 range.
 
-        Uses sigmoid normalization: ``score / (score + K)`` where
-        K defaults to 5.0, tuned for BM25 scores (typical range 0-15+).
-        A BM25 score of K maps to 0.5 normalized. K is configurable
-        via ``scoring_config.bm25_norm_k`` (EPIC-010).
+        **minmax** (``ScoringConfig.relevance_normalization``): when *rmin* and
+        *rmax* are provided (per-query extrema over filtered candidates),
+        returns ``(raw - rmin) / (rmax - rmin)`` clamped to [0, 1], or ``1.0``
+        when ``rmax <= rmin`` (degenerate spread).
+
+        **sigmoid** (default): ``score / (score + K)`` where *K* is
+        ``bm25_norm_k`` (default 5.0). Non-positive raw scores map to ``0.0``.
         """
+        if self._relevance_norm_mode == "minmax" and rmin is not None and rmax is not None:
+            if rmax > rmin:
+                scaled = (raw_score - rmin) / (rmax - rmin)
+                return min(1.0, max(0.0, scaled))
+            return 1.0
         if raw_score <= 0:
             return 0.0
         return raw_score / (raw_score + self._bm25_norm_k)

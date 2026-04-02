@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-02 (America/Chicago) — **v2.0.3**; **EPIC-041** done; **#51**–**#64** closed on GitHub; concurrency ops doc in `system-architecture.md`
+**Last updated:** 2026-04-02 (America/Chicago) — **v2.0.3**; **EPIC-041** done; **#51**–**#64** closed; **EPIC-042** active (**042.1**/**042.2**/**042.4**/**042.5**/**042.7**/**042.8** done; **042.3**/**042.6** open); **EPIC-050** partial; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
 **Package version (PyPI / `pyproject.toml`):** **2.0.3**
 
@@ -27,7 +27,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Storage / schema
 
-- **SQLite schema version:** **v16** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
+- **SQLite schema version:** **v17** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
 - **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
 - **v6:** version bump for observability alignment (no new columns).
 - **v7:** `agent_scope` column for Hive propagation (EPIC-011).
@@ -37,6 +37,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 - **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
 - **v12–v15:** provenance, temporal window, FSRS stability/difficulty, Bayesian access counters (see migrations in `persistence.py`).
 - **v16:** `memory_group` on `memories` (optional project-local partition; GitHub **#49** v1 **closed** 2026-03-29). Relay import accepts optional per-item `memory_group` / `group` (`memory-relay.md`).
+- **v17:** `embedding_model_id` on `memories` / `archived_memories` (STORY-042.2 — dense model provenance for reindex).
 - **Federation hub:** `~/.tapps-brain/memory/federated.db` — `federated_memories` carries optional publisher **`memory_group`** (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
 
@@ -107,16 +108,20 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
 | EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (major v2.0 stories shipped; see `epics/EPIC-040.md`, `open-issues-roadmap.md`) |
 | EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** checklist closed on GitHub; **#51**/**#63**/**#64** closed |
-| EPIC-042 … EPIC-051 | Feature / technology improvement program | planned | — (index: `epics/EPIC-042-feature-tech-index.md`) |
+| EPIC-042 … EPIC-051 | Feature / technology improvement program | in_progress (042, 050 partial) | **EPIC-042** — **042.1**/**042.2**/**042.4**/**042.5**/**042.7**/**042.8** done; **042.3**/**042.6** open. **EPIC-050** — **050.2**/**050.3** done; **050.1** doc done, async wrapper optional. Index: `epics/EPIC-042-feature-tech-index.md` |
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.3** version alignment; **2.0.2** agent-integration + relay docs; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server tool/resource **counts** and URI list: `docs/generated/mcp-tools-manifest.json` (source: `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039).
+**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.3** version alignment; **2.0.2** agent-integration + relay docs; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server tool/resource **counts** and URI list: `docs/generated/mcp-tools-manifest.json` (source: `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039). **2026-04-02 follow-ups on `main`:** [`embedding-model-card.md`](../guides/embedding-model-card.md) (includes **§ Performance review backlog** for deferred dense-path / save-path ideas); optional `scoring.relevance_normalization: minmax`; **STORY-042.4** — RRF formula + citations in `fusion.py`, `profile.hybrid_fusion` / `HybridFusionConfig` (`top_k_lexical` / `top_k_dense`, `rrf_k`) wired through `inject_memories`; opt-in `TAPPS_SQLITE_MEMORY_READONLY_SEARCH` read connection for FTS + sqlite-vec KNN; save-time conflict `exclude_key` (stabilizes concurrent same-key saves). **Schema v17** + int8 quantization spike helpers + `embedding_model_id` on embed path (**STORY-042.2** done). Concurrent save stress test wall-clock bound **60s** for stable full-suite runs on loaded Windows hosts.
+
+**Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-- **Roadmap row 20** — save-path phase histograms + compact `save_phase_summary` on `StoreHealth` / MCP health when using the live server store.
-- **EPIC-042–051** — pick one story from [`EPIC-042-feature-tech-index.md`](epics/EPIC-042-feature-tech-index.md) when doing architecture follow-up.
-- **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
+1. **STORY-042.3** — sqlite-vec operator playbook (rebuild/vacuum), incremental index cost notes, distance metric vs SQL (`sqlite_vec_index.py`, `persistence.py`).
+2. **STORY-042.6** — rerank latency / provider observability (`reranker.py`, injection); optional `evaluation.py` A/B harness for hybrid knobs remains backlog.
+3. **EPIC-044.3** — conflict UX: user-visible reason; profile aggressiveness for `detect_save_conflicts` (partial: `exclude_key` shipped).
+4. **EPIC-050** — optional WAL checkpoint note in runbook (long-lived MCP); lock-scope reduction still deferred unless benchmark-driven.
+5. **EPIC-032** — OTel GenAI semantic conventions (deferred).
 
 ## READY-036 release gate (2026-03-24)
 

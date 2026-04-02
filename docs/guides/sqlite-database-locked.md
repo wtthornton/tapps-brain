@@ -47,9 +47,23 @@ Restart the MCP server or CLI after changing the environment.
 - **SQLCipher** mis-key or mixed plain/encrypted opens — see [`sqlcipher.md`](sqlcipher.md).
 - **Very slow disk** or **network-backed** project roots — WAL still needs reliable file locking.
 
-## Read-only connection pool (spike / future)
+## Read-only search connection (project memory, opt-in)
 
-Today each store uses a **single** SQLite connection per process (plus internal locks). A **separate read connection** for search-only paths could overlap reads with writes more at the SQLite layer, but it must be designed with the **store** and **persistence** lock ordering rules to avoid deadlocks and torn reads. That work is tracked as a **spike** under **EPIC-050** STORY-050.3; there is no separate read pool in the product yet.
+**Project** ``MemoryPersistence`` (``memory.db``) can open a **second** SQLite connection in **read-only** URI mode for:
+
+- FTS ``search()``
+- sqlite-vec ``sqlite_vec_knn_search()`` (when the extension is enabled)
+
+This uses a dedicated ``threading.Lock`` (``_read_lock``) so these reads do not wait on the primary writer connection’s lock, while WAL still gives each reader a consistent snapshot.
+
+| Variable | Meaning |
+| -------- | ------- |
+| ``TAPPS_SQLITE_MEMORY_READONLY_SEARCH`` | Set to ``1``, ``true``, or ``yes`` to enable. **Unset** = legacy behavior (single connection for search). |
+| *(invalid / empty)* | Disabled (same as unset). |
+
+If opening the read-only handle fails (platform, SQLCipher, or URI issues), the store **falls back** to the writer connection for that process lifetime. Helpers: ``connect_sqlite_readonly`` / ``resolve_memory_readonly_search_enabled`` in ``sqlcipher_util.py``.
+
+**Not** a connection pool: one optional read handle per ``MemoryPersistence`` instance. Hive, federation, and other stores are unchanged.
 
 ## Related documentation
 

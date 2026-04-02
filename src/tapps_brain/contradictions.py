@@ -35,6 +35,8 @@ def detect_save_conflicts(
     new_tier: str,
     existing_entries: list[MemoryEntry],
     similarity_threshold: float = 0.6,
+    *,
+    exclude_key: str | None = None,
 ) -> list[MemoryEntry]:
     """Detect existing entries that may conflict with a new value.
 
@@ -47,6 +49,9 @@ def detect_save_conflicts(
         existing_entries: All entries to scan for conflicts.
         similarity_threshold: Entries with similarity above this threshold
             (but not identical) are considered potential conflicts.
+        exclude_key: Entry key being overwritten by this save. That row is
+            never treated as a separate conflicting memory (avoids invalidating
+            the head then rebuilding it with the same ``valid_at``/``invalid_at``).
 
     Returns:
         List of potentially conflicting entries, sorted by similarity descending.
@@ -68,6 +73,8 @@ def detect_save_conflicts(
 
     scored: list[tuple[float, _MemoryEntry]] = []
     for entry in existing_entries:
+        if exclude_key is not None and entry.key == exclude_key:
+            continue
         # Only compare entries in the same tier
         entry_tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
         if entry_tier != new_tier:

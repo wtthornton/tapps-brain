@@ -11,6 +11,11 @@ Environment:
         ``connect_sqlite`` paths (memory, Hive, feedback, diagnostics). Default ``5000``
         when unset or invalid; clamped to ``0``..``3600000``. See
         ``docs/guides/sqlite-database-locked.md``.
+    TAPPS_SQLITE_MEMORY_READONLY_SEARCH — when ``1``/``true``/``yes``, project
+        ``MemoryPersistence`` uses a second **read-only** SQLite connection for
+        FTS search and sqlite-vec KNN (WAL snapshot reads) so those queries do not
+        contend on the writer connection lock. See ``connect_sqlite_readonly`` and
+        ``docs/guides/sqlite-database-locked.md``.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Callable
+from pathlib import Path
 from typing import cast
 
 # pysqlcipher3.dbapi2 mirrors sqlite3 for connections used here.
@@ -57,6 +63,12 @@ def sqlcipher_available() -> bool:
 
 _DEFAULT_SQLITE_BUSY_MS = 5000
 _MAX_SQLITE_BUSY_MS = 3_600_000
+
+
+def resolve_memory_readonly_search_enabled() -> bool:
+    """True when ``TAPPS_SQLITE_MEMORY_READONLY_SEARCH`` opts into the read-only search conn."""
+    raw = os.environ.get("TAPPS_SQLITE_MEMORY_READONLY_SEARCH", "").strip().lower()
+    return raw in ("1", "true", "yes")
 
 
 def resolve_sqlite_busy_timeout_ms() -> int:
@@ -119,6 +131,45 @@ def connect_sqlite(
 
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    busy_ms = resolve_sqlite_busy_timeout_ms()
+    conn.execute(f"PRAGMA busy_timeout={busy_ms}")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def connect_sqlite_readonly(
+    path: str | os.PathLike[str],
+    *,
+    encryption_key: str | None,
+    check_same_thread: bool = False,
+) -> sqlite3.Connection:
+    """Open a **read-only** SQLite or SQLCipher handle to an existing WAL database.
+
+    Uses a ``file:`` URI with ``mode=ro`` so the connection cannot mutate schema or
+    data. Skips ``PRAGMA journal_mode`` (not appropriate on RO). Applies the same
+    ``busy_timeout`` and ``foreign_keys`` as ``connect_sqlite`` for consistency.
+
+    The primary writer must have created/opened the database first (migrations, WAL).
+    """
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    if encryption_key:
+        connect_fn = _require_sqlcipher()
+        conn = connect_fn(uri, uri=True, check_same_thread=check_same_thread)
+        conn.row_factory = sqlite3.Row
+        conn.execute(pragma_key_statement(encryption_key))
+        try:
+            row = conn.execute("PRAGMA cipher_version").fetchone()
+            if row is None or not str(row[0] or "").strip():
+                conn.close()
+                msg = "SQLCipher PRAGMA key failed or cipher_version missing"
+                raise sqlite3.DatabaseError(msg)
+        except sqlite3.Error:
+            conn.close()
+            raise
+    else:
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=check_same_thread)
+        conn.row_factory = sqlite3.Row
+
     busy_ms = resolve_sqlite_busy_timeout_ms()
     conn.execute(f"PRAGMA busy_timeout={busy_ms}")
     conn.execute("PRAGMA foreign_keys=ON")

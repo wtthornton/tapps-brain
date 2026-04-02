@@ -5,10 +5,15 @@ Defines EmbeddingProvider protocol and implementations:
 - SentenceTransformerProvider: optional sentence-transformers backend (behind feature_flags).
 
 Used by Epic 65.8 hybrid search (BM25 + vector).
+
+Operator-facing defaults (model id, dimension, license, upgrade notes):
+``docs/guides/embedding-model-card.md`` (STORY-042.2).
 """
 
 from __future__ import annotations
 
+import math
+import struct
 from typing import Any, Protocol, cast, runtime_checkable
 
 import structlog
@@ -30,6 +35,77 @@ else:
     SentenceTransformer = None
 
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"
+
+# Symmetric int8 scale for components in [-1, 1] (L2-normalized sentence embeddings).
+_INT8_QUANT_SCALE = 127.0
+
+
+def quantize_embedding_int8(embedding: list[float]) -> bytes:
+    """Lossy symmetric int8 quantization for spike / offline experiments (STORY-042.2).
+
+    Each float is clamped to ``[-1, 1]``, scaled by 127, rounded, then clamped to
+    ``[-127, 127]`` and packed as signed bytes. **Not** used for sqlite-vec or on-disk
+    JSON floats today — product storage remains float32 JSON arrays.
+
+    Args:
+        embedding: Dense vector (typically L2-normalized).
+
+    Returns:
+        Packed signed bytes, length ``len(embedding)``.
+    """
+    if not embedding:
+        return b""
+    packed: list[int] = []
+    for x in embedding:
+        xf = float(x)
+        if xf > 1.0:
+            xf = 1.0
+        elif xf < -1.0:
+            xf = -1.0
+        q = round(xf * _INT8_QUANT_SCALE)
+        q = max(-127, min(127, q))
+        packed.append(q)
+    return struct.pack(f"{len(packed)}b", *packed)
+
+
+def dequantize_embedding_int8(blob: bytes, *, renormalize: bool = False) -> list[float]:
+    """Decode :func:`quantize_embedding_int8` output to float32 components in ``[-1, 1]``.
+
+    Args:
+        blob: Packed int8 bytes from :func:`quantize_embedding_int8`.
+        renormalize: When True, L2-normalize after dequantization (recommended before
+            cosine similarity vs freshly normalized query vectors).
+    """
+    if not blob:
+        return []
+    vals = struct.unpack(f"{len(blob)}b", blob)
+    out = [v / _INT8_QUANT_SCALE for v in vals]
+    if renormalize:
+        return renormalize_embedding_l2(out)
+    return out
+
+
+def renormalize_embedding_l2(embedding: list[float]) -> list[float]:
+    """Return a unit L2-norm copy of *embedding* (or zeros if norm is zero)."""
+    if not embedding:
+        return []
+    s = math.sqrt(sum(x * x for x in embedding))
+    if s <= 0.0:
+        return [0.0] * len(embedding)
+    inv = 1.0 / s
+    return [x * inv for x in embedding]
+
+
+def embedding_cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two equal-length dense vectors."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / (na * nb)
 
 
 @runtime_checkable
@@ -61,12 +137,18 @@ class NoopProvider:
     matches all-MiniLM-L6-v2 (384) for schema consistency.
     """
 
-    def __init__(self, dimension: int = 384) -> None:
+    def __init__(self, dimension: int = 384, *, model_id: str | None = None) -> None:
         self._dimension = dimension
+        self._model_id = model_id
 
     @property
     def dimension(self) -> int:
         return self._dimension
+
+    @property
+    def model_id(self) -> str | None:
+        """Optional Hugging Face / sentence-transformers model id for provenance."""
+        return self._model_id
 
     def embed(self, text: str) -> list[float]:
         """Return a zero vector of dimension length."""
@@ -96,6 +178,11 @@ class SentenceTransformerProvider:
         self._model = SentenceTransformer(model_name)
         raw_dim = self._model.get_sentence_embedding_dimension()
         self._dim: int = int(raw_dim) if raw_dim is not None else 384
+
+    @property
+    def model_id(self) -> str:
+        """Sentence-transformers model name (stored with embeddings for reindex planning)."""
+        return self._model_name
 
     @property
     def dimension(self) -> int:

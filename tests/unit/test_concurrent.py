@@ -10,7 +10,9 @@ Tests cover (016-D):
 - Multiple agents propagating to HiveStore concurrently → all entries arrive
 - Concurrent recall from Hive during propagation → no exceptions
 
-All tests use a 30-second timeout via pytest-timeout or threading.Event.
+Wall-clock bounds use ``threading.Thread.join(timeout=…)`` plus an elapsed
+assertion; the hot-path save stress test uses **60s** so full-suite runs on
+slow/loaded Windows hosts stay green.
 """
 
 from __future__ import annotations
@@ -57,14 +59,17 @@ class TestConcurrentSave:
                 errors.append(exc)
 
         threads = [threading.Thread(target=saver, args=(t,)) for t in range(num_threads)]
+        _join_timeout = 60.0
         start = time.monotonic()
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=30)
+            t.join(timeout=_join_timeout)
 
         elapsed = time.monotonic() - start
-        assert elapsed < 30, f"Concurrent save test timed out after {elapsed:.1f}s"
+        assert elapsed < _join_timeout, (
+            f"Concurrent save test timed out after {elapsed:.1f}s (limit {_join_timeout}s)"
+        )
         assert not errors, f"Threads raised exceptions: {errors}"
 
         # All 500 entries must be present (store enforces max 500)

@@ -1,7 +1,7 @@
 ---
 id: EPIC-042
 title: "Retrieval and ranking (RAG-style memory) — research and upgrades"
-status: planned
+status: in_progress
 priority: high
 created: 2026-03-31
 tags: [retrieval, bm25, hybrid, embeddings, rerank, injection, decay, rag]
@@ -25,7 +25,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.1: Lexical / keyword search (FTS5 + Okapi BM25)
 
-**Status:** planned  
+**Status:** done (2026-04-02)  
 **Effort:** L  
 **Depends on:** none  
 **Context refs:** `src/tapps_brain/bm25.py`, `src/tapps_brain/persistence.py`, `src/tapps_brain/retrieval.py`, `tests/unit/test_memory_bm25.py`, `tests/unit/test_memory_retrieval.py`  
@@ -53,7 +53,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.2: Dense retrieval / semantic search
 
-**Status:** planned  
+**Status:** done (2026-04-02) — model card, int8 quantization spike helpers, ``embedding_model_id`` (schema v17), store wiring  
 **Effort:** L  
 **Depends on:** none  
 **Context refs:** `src/tapps_brain/embeddings.py`, `src/tapps_brain/_feature_flags.py`, `pyproject.toml` `[vector]`, `tests/unit/test_memory_embeddings.py`, `tests/unit/test_memory_embeddings_persistence.py`  
@@ -72,9 +72,10 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] **Model card** in docs: default model name, dim, max tokens, license.
-- [ ] Spike: **quantization** (int8) for embedding storage size vs quality (offline measured).
-- [ ] Optional: **embedding version** column or metadata for **reindex** jobs after model upgrades.
+- [x] **Model card** in docs: default model name, dim, max tokens, license — [`embedding-model-card.md`](../../guides/embedding-model-card.md) (2026-04-02).
+- [x] Spike: **quantization** (int8) — symmetric scale-127 helpers in ``embeddings.py`` + deterministic quality bounds in unit tests; **on-disk storage remains float JSON** until a product decision adopts int8 blobs.
+- [x] **Embedding model id** — nullable ``memories.embedding_model_id`` (schema **v17**), ``MemoryEntry.embedding_model_id``, set from ``SentenceTransformerProvider.model_id`` / optional ``NoopProvider(model_id=…)`` on embed path.
+- **Performance backlog (review later):** optional on-disk int8/float16, batch reindex, lock-hold vs embed, sqlite-vec alignment — tracked in [`embedding-model-card.md`](../../guides/embedding-model-card.md) § *Performance review backlog* (not scheduled implementation).
 
 ---
 
@@ -105,11 +106,11 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.4: Hybrid search (RRF + weighted RRF)
 
-**Status:** planned  
+**Status:** done (2026-04-02) — RRF formula + citation in `fusion.py`; `HybridFusionConfig` / `profile.hybrid_fusion` wired through `inject_memories`  
 **Effort:** M  
 **Depends on:** STORY-042.1, STORY-042.2  
-**Context refs:** `src/tapps_brain/fusion.py`, `src/tapps_brain/retrieval.py`, `tests/unit/test_memory_fusion.py`, `tests/unit/test_memory_retrieval.py`  
-**Verification:** `pytest tests/unit/test_memory_fusion.py tests/unit/test_memory_retrieval.py -v --tb=short -m "not benchmark"`
+**Context refs:** `src/tapps_brain/fusion.py`, `src/tapps_brain/profile.py`, `src/tapps_brain/injection.py`, `src/tapps_brain/retrieval.py`, `tests/unit/test_memory_fusion.py`, `tests/unit/test_memory_retrieval.py`, `tests/unit/test_profile.py`  
+**Verification:** `pytest tests/unit/test_memory_fusion.py tests/unit/test_memory_retrieval.py tests/unit/test_profile.py -v --tb=short -m "not benchmark"`
 
 #### Code baseline
 
@@ -122,15 +123,15 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Document **formula** in `fusion.py` docstring with citation to standard RRF.
-- [ ] Profile flags for **per-channel top-k** and **k** (deterministic defaults unchanged if unset).
-- [ ] A/B harness: same golden queries, report MRR/nDCG@k from `evaluation.py`.
+- [x] Document **formula** in `fusion.py` docstring with citation to standard RRF (Cormack et al.; production *k*=60 note).
+- [x] Profile flags for **per-channel top-k** and **k**: `HybridFusionConfig` (`top_bm25` / `top_vector` / `rrf_k`, YAML aliases `top_k_lexical` / `top_k_dense`); `inject_memories` passes `profile.hybrid_fusion` when it is a real model instance (avoids MagicMock test doubles).
+- [ ] Optional follow-up: A/B harness — same golden queries, report MRR/nDCG@k from `evaluation.py` (not blocking).
 
 ---
 
 ### STORY-042.5: Composite ranking (relevance + confidence + recency + frequency)
 
-**Status:** planned  
+**Status:** done (2026-04-02)  
 **Effort:** M  
 **Depends on:** none  
 **Context refs:** `src/tapps_brain/retrieval.py` (`_W_RELEVANCE`…), `src/tapps_brain/profile.py` `ScoringConfig`, `tests/unit/test_memory_retrieval.py`  
@@ -148,7 +149,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 #### Implementation themes
 
 - [x] Expose **documented** profile tuning for weights with **sum-to-1** validation — `ScoringConfig`, `SCORING_WEIGHT_SUM_*`, `composite_scoring_weight_total()`, `repo-brain.yaml` comments, `retrieval.py` module doc + retriever warning band aligned with profile (2026-04-02).
-- [ ] Spike: **min-max normalization** per channel before blend vs current BM25 normalization — measure side effects.
+- [x] Spike: **min-max normalization** per channel before blend vs current BM25 normalization — opt-in ``scoring.relevance_normalization: minmax`` (per-query extrema over **filtered** candidates; default ``sigmoid`` unchanged); see ``retrieval.py`` / ``ScoringConfig`` (2026-04-02).
 - [x] Ensure **superseded / invalid** entries never contribute to ranking (audit `list_all` / retriever filters) — documented in `retrieval.py` module doc; default `search()` filters temporally invalid, contradicted, consolidated sources (2026-04-02).
 
 ---
@@ -180,7 +181,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.7: Token-budgeted context (injection)
 
-**Status:** planned  
+**Status:** done (2026-04-02)  
 **Effort:** S  
 **Depends on:** none  
 **Context refs:** `src/tapps_brain/injection.py`, `tests/unit/test_memory_injection.py`  
@@ -205,7 +206,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.8: Stale / decayed relevance (exponential decay + FSRS fields)
 
-**Status:** planned  
+**Status:** done (2026-04-02)  
 **Effort:** M  
 **Depends on:** none  
 **Context refs:** `src/tapps_brain/decay.py`, `src/tapps_brain/models.py` (stability/difficulty), `tests/unit/test_memory_decay.py`  

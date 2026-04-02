@@ -3,6 +3,11 @@
 Uses WAL journal mode for concurrent reads during writes, FTS5 for
 full-text search, and schema versioning with forward migrations.
 A JSONL audit log is maintained for debugging/compliance (append-only).
+
+When ``TAPPS_SQLITE_MEMORY_READONLY_SEARCH`` is enabled, FTS ``search()`` and
+sqlite-vec ``sqlite_vec_knn_search()`` use a second read-only connection under
+``_read_lock`` so they do not serialize behind the primary writer lock
+(EPIC-050 STORY-050.3).
 """
 
 from __future__ import annotations
@@ -24,12 +29,17 @@ if TYPE_CHECKING:
 
 from tapps_brain.lexical import LexicalRetrievalConfig, build_fts_match_query
 from tapps_brain.models import MemoryEntry
-from tapps_brain.sqlcipher_util import connect_sqlite, resolve_memory_encryption_key
+from tapps_brain.sqlcipher_util import (
+    connect_sqlite,
+    connect_sqlite_readonly,
+    resolve_memory_encryption_key,
+    resolve_memory_readonly_search_enabled,
+)
 
 logger = structlog.get_logger(__name__)
 
 # Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 16
+_SCHEMA_VERSION = 17
 
 # Previous schema versions for migration checks.
 _SCHEMA_V2 = 2
@@ -47,6 +57,7 @@ _SCHEMA_V13 = 13
 _SCHEMA_V14 = 14
 _SCHEMA_V15 = 15
 _SCHEMA_V16 = 16
+_SCHEMA_V17 = 17
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -82,6 +93,10 @@ class MemoryPersistence:
         self._encryption_key = resolve_memory_encryption_key(encryption_key)
         self._lexical = lexical_config or LexicalRetrievalConfig()
         self._lock = threading.Lock()
+        self._read_lock = threading.Lock()
+        self._read_conn: sqlite3.Connection | None = None
+        self._readonly_search_enabled = resolve_memory_readonly_search_enabled()
+        self._readonly_conn_failed = False
         # Cached after _ensure_schema() — schema never changes after startup.
         self._schema_version: int = 0
         # Optional sqlite-vec ANN index (GitHub #30); see _setup_sqlite_vec().
@@ -144,6 +159,29 @@ class MemoryPersistence:
             check_same_thread=False,
         )
 
+    def _get_read_connection(self) -> sqlite3.Connection | None:
+        """Lazily open a read-only handle for search/KNN when env enables it (EPIC-050.3)."""
+        if not self._readonly_search_enabled or self._readonly_conn_failed:
+            return None
+        with self._read_lock:
+            if self._read_conn is None:
+                try:
+                    self._read_conn = connect_sqlite_readonly(
+                        self._db_path,
+                        encryption_key=self._encryption_key,
+                        check_same_thread=False,
+                    )
+                    if self._sqlite_vec_enabled:
+                        from tapps_brain.sqlite_vec_index import try_load_extension
+
+                        try_load_extension(self._read_conn)
+                except (OSError, sqlite3.Error):
+                    logger.debug("memory_readonly_conn_failed", exc_info=True)
+                    self._readonly_conn_failed = True
+                    self._read_conn = None
+                    return None
+            return self._read_conn
+
     def _ensure_schema(self) -> None:
         """Create tables if absent and apply forward migrations."""
         with self._lock:
@@ -192,6 +230,8 @@ class MemoryPersistence:
                 self._migrate_v14_to_v15(cur)
             if current_version < _SCHEMA_V16:
                 self._migrate_v15_to_v16(cur)
+            if current_version < _SCHEMA_V17:
+                self._migrate_v16_to_v17(cur)
 
             self._conn.commit()
 
@@ -245,6 +285,15 @@ class MemoryPersistence:
             return []
         from tapps_brain.sqlite_vec_index import knn_search
 
+        read_conn = self._get_read_connection()
+        if read_conn is not None:
+            with self._read_lock:
+                return knn_search(
+                    read_conn,
+                    query_embedding,
+                    k,
+                    dim=self._sqlite_vec_dim,
+                )
         with self._lock:
             return knn_search(
                 self._conn,
@@ -680,6 +729,22 @@ class MemoryPersistence:
             (16, datetime.now(tz=UTC).isoformat()),
         )
 
+    def _migrate_v16_to_v17(self, cur: sqlite3.Cursor) -> None:
+        """Add ``embedding_model_id`` for dense provenance / reindex (STORY-042.2).
+
+        Nullable TEXT: NULL = unknown or pre-migration row.
+        """
+        for table in ("memories", "archived_memories"):
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN embedding_model_id TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+        cur.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (17, datetime.now(tz=UTC).isoformat()),
+        )
+
     def migrate_contradicted_to_temporal(self) -> int:
         """Migrate ``contradicted`` entries with "consolidated into" to temporal fields.
 
@@ -725,7 +790,7 @@ class MemoryPersistence:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(self, entry: MemoryEntry) -> None:
+    def save(self, entry: MemoryEntry) -> None:  # noqa: PLR0915
         """Insert or replace a memory entry."""
         tags_json = json.dumps(entry.tags, ensure_ascii=False)
         embedding_json: str | None = None
@@ -837,6 +902,11 @@ class MemoryPersistence:
             columns.append("memory_group")
             values = (*values, entry.memory_group)
 
+        # Dense embedding model id (v17+, STORY-042.2)
+        if schema_ver >= _SCHEMA_V17:
+            columns.append("embedding_model_id")
+            values = (*values, entry.embedding_model_id)
+
         placeholders = ", ".join("?" * len(columns))
 
         cols = ", ".join(columns)
@@ -925,12 +995,21 @@ class MemoryPersistence:
             sql += " AND m.memory_group = ?"
             params.append(memory_group)
 
-        with self._lock:
-            try:
-                rows = self._conn.execute(sql, params).fetchall()
-            except sqlite3.OperationalError:
-                logger.debug("fts_search_failed", query=query)
-                return []
+        read_conn = self._get_read_connection()
+        if read_conn is not None:
+            with self._read_lock:
+                try:
+                    rows = read_conn.execute(sql, params).fetchall()
+                except sqlite3.OperationalError:
+                    logger.debug("fts_search_failed", query=query)
+                    return []
+        else:
+            with self._lock:
+                try:
+                    rows = self._conn.execute(sql, params).fetchall()
+                except sqlite3.OperationalError:
+                    logger.debug("fts_search_failed", query=query)
+                    return []
 
         return [self._row_to_entry(r) for r in rows]
 
@@ -977,6 +1056,11 @@ class MemoryPersistence:
 
     def close(self) -> None:
         """Close the database connection."""
+        with self._read_lock:
+            if self._read_conn is not None:
+                with contextlib.suppress(sqlite3.Error):
+                    self._read_conn.close()
+                self._read_conn = None
         with self._lock:
             self._conn.close()
 
@@ -1284,6 +1368,11 @@ class MemoryPersistence:
             mg = row["memory_group"]
             memory_group = str(mg) if mg is not None and str(mg) != "" else None
 
+        embedding_model_id: str | None = None
+        with contextlib.suppress(KeyError, IndexError):
+            em = row["embedding_model_id"]
+            embedding_model_id = str(em) if em is not None and str(em) != "" else None
+
         return MemoryEntry(
             key=row["key"],
             value=row["value"],
@@ -1304,6 +1393,7 @@ class MemoryPersistence:
             contradiction_reason=row["contradiction_reason"],
             seeded_from=row["seeded_from"],
             embedding=embedding,
+            embedding_model_id=embedding_model_id,
             valid_at=valid_at,
             invalid_at=invalid_at,
             superseded_by=superseded_by,

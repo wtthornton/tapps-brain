@@ -57,8 +57,24 @@ class TestEmbeddingPersistence:
         assert loaded.embedding is None
 
     def test_schema_version_2_after_init(self, persistence: MemoryPersistence) -> None:
-        # Schema v2+ has embedding column; v3+ adds session_index (Epic 65.10)
+        # Schema v2+ has embedding column; v17+ adds embedding_model_id (STORY-042.2)
         assert persistence.get_schema_version() >= 2
+
+    def test_save_and_load_embedding_model_id(self, persistence: MemoryPersistence) -> None:
+        embedding = [0.1, 0.2, 0.3] * 128
+        entry = MemoryEntry(
+            key="emid",
+            value="v",
+            tier=MemoryTier.pattern,
+            source=MemorySource.agent,
+            embedding=embedding,
+            embedding_model_id="all-MiniLM-L6-v2",
+        )
+        persistence.save(entry)
+        loaded = persistence.get("emid")
+        assert loaded is not None
+        assert loaded.embedding_model_id == "all-MiniLM-L6-v2"
+        assert loaded.embedding == embedding
 
     def test_existing_entries_null_embedding(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
