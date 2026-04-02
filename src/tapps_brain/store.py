@@ -520,7 +520,10 @@ class MemoryStore:
         self._metrics.increment("store.save")
         with MetricsTimer(self._metrics, "store.save_ms"):
             now = _utc_now_iso()
-            with self._lock:
+            with (
+                MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
+                self._lock,
+            ):
                 existing = self._entries.get(key)
 
                 if memory_group is MEMORY_GROUP_UNSET:
@@ -595,23 +598,25 @@ class MemoryStore:
 
             # Compute embedding when semantic search is enabled (Epic 65.7)
             if self._embedding_provider is not None:
-                try:
-                    emb = self._embedding_provider.embed(value)
-                    entry = entry.model_copy(update={"embedding": emb})
-                    with self._lock:
-                        # Re-read current entry to avoid overwriting concurrent
-                        # updates (e.g. another save/update_fields in between).
-                        current = self._entries.get(key)
-                        if current is not None and current.key == entry.key:
-                            entry = current.model_copy(update={"embedding": emb})
-                        self._entries[key] = entry
-                except Exception:
-                    logger.debug("embedding_compute_failed", key=key, exc_info=True)
+                with MetricsTimer(self._metrics, "store.save.phase.embed_ms"):
+                    try:
+                        emb = self._embedding_provider.embed(value)
+                        entry = entry.model_copy(update={"embedding": emb})
+                        with self._lock:
+                            # Re-read current entry to avoid overwriting concurrent
+                            # updates (e.g. another save/update_fields in between).
+                            current = self._entries.get(key)
+                            if current is not None and current.key == entry.key:
+                                entry = current.model_copy(update={"embedding": emb})
+                            self._entries[key] = entry
+                    except Exception:
+                        logger.debug("embedding_compute_failed", key=key, exc_info=True)
 
             # Persist to SQLite — rollback in-memory cache on failure to
             # maintain write-through consistency.
             try:
-                self._persistence.save(entry)
+                with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
+                    self._persistence.save(entry)
             except Exception:
                 with self._lock:
                     if existing is not None:
@@ -622,15 +627,17 @@ class MemoryStore:
 
             # Hive propagation (EPIC-011)
             if self._hive_store is not None:
-                self._propagate_to_hive(entry)
+                with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
+                    self._propagate_to_hive(entry)
 
             # Extract and persist relations (EPIC-006)
-            relations = extract_relations(key, value)
-            if relations:
-                self._persistence.save_relations(key, relations)
-                # Reload from persistence to keep timestamps consistent
-                with self._lock:
-                    self._relations[key] = self._persistence.load_relations(key)
+            with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
+                relations = extract_relations(key, value)
+                if relations:
+                    self._persistence.save_relations(key, relations)
+                    # Reload from persistence to keep timestamps consistent
+                    with self._lock:
+                        self._relations[key] = self._persistence.load_relations(key)
 
             # Auto-consolidation check (Epic 58)
             if (
@@ -638,7 +645,8 @@ class MemoryStore:
                 and not skip_consolidation
                 and not self._consolidation_in_progress
             ):
-                self._maybe_consolidate(entry)
+                with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
+                    self._maybe_consolidate(entry)
 
         # EPIC-029 story 029-4b: recall-then-store correction detection.
         # If this save follows a recent recall (within the feedback window) and the

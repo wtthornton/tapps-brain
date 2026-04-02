@@ -123,7 +123,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Next engineering (canonical queue)**
 
-- **Save-path observability** (tracking row 20 / **EPIC-051** STORY-051.6): spike metrics or structured logging for save-adjacent work (consolidation, embed); avoid hot-path bloat without measurement.
+- **Save-path observability** (tracking row 20): **v1 shipped** — phase latency histograms on `MemoryStore.save` (`metrics.py` / `store.py`). Optional follow-up: fold summaries into CLI health JSON or operator dashboards.
 - **MemoryStore decomposition** (tracking row 22): design-first only; see **EPIC-050** / **EPIC-051** for concurrency and scale framing.
 
 **Done in repo (was backlog item 6)**
@@ -153,7 +153,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 17 | #52 | `agent_scope` group:<name> + membership | open | — | — | — | Reopened 2026-04-02; EPIC-041 shipped — verify checklist then close |
 | 18 | #63 | Vector / hybrid discoverability (health & guides) | closed | — | — | — | EPIC-041 STORY-041.3; GitHub closed 2026-04-02 |
 | 19 | #64 | Hive vs federation decision guide | closed | — | — | — | EPIC-041 STORY-041.4; GitHub closed 2026-04-02 |
-| 20 | — | Save-path / consolidation observability | not_started | — | — | — | Next ops spike; **EPIC-051** 051.6 |
+| 20 | — | Save-path / consolidation observability | done | — | — | — | 2026-04-02: save **phase** histograms (`store.save.phase.*`) in `get_metrics` / `memory://metrics`; **EPIC-051** 051.6 v1 |
 | 21 | — | Concurrency expectations (docs; metrics optional) | done | — | — | — | 2026-04-01 — `system-architecture.md` § concurrency |
 | 22 | — | MemoryStore modularization epic | not_started | — | — | — | Backlog 2026-03-31; long-term refactor |
 

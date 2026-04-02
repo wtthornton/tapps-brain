@@ -115,7 +115,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
 - **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — reconcile issue checklist with shipped `group:<name>` work; close when satisfied.
-- **Roadmap row 20** — save-path / consolidation observability spike (**EPIC-051** STORY-051.6).
+- **Roadmap row 20** — save-path phase metrics **v1** shipped (histograms); optional health-JSON surfacing later.
 - **EPIC-042–051** — pick one story from [`EPIC-042-feature-tech-index.md`](epics/EPIC-042-feature-tech-index.md) when doing architecture follow-up.
 - **EPIC-032** — OTel GenAI semantic conventions (optional telemetry export, deferred).
 

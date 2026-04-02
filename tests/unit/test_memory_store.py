@@ -948,6 +948,21 @@ class TestStoreMetrics:
         assert snap.histograms["store.save_ms"].count == 1
         assert snap.histograms["store.save_ms"].min > 0
 
+    def test_save_records_phase_latency_histograms(self, store: MemoryStore) -> None:
+        """Save-path sub-phases (roadmap: save observability / EPIC-051.6)."""
+        store.save(key="phase", value="plain save without relations text")
+        snap = store.get_metrics()
+        for name in (
+            "store.save.phase.lock_build_ms",
+            "store.save.phase.persist_ms",
+            "store.save.phase.relations_ms",
+        ):
+            assert name in snap.histograms, f"missing {name}"
+            assert snap.histograms[name].count == 1
+            assert snap.histograms[name].min > 0
+        assert "store.save.phase.embed_ms" not in snap.histograms
+        assert "store.save.phase.hive_ms" not in snap.histograms
+
     def test_get_hit_miss_counters(self, store: MemoryStore) -> None:
         store.save(key="exists", value="hello")
         store._metrics.reset()

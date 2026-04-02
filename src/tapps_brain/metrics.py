@@ -3,6 +3,11 @@
 Provides lightweight counters and histograms with no external dependencies.
 Thread-safe via ``threading.Lock``. Zero-cost when not read — just atomic
 counter increments and reservoir sampling.
+
+``MemoryStore.save`` also records phase histograms (milliseconds) under
+``store.save.phase.*``: ``lock_build_ms``, ``persist_ms``, ``relations_ms``;
+optional ``embed_ms``, ``hive_ms``, and ``consolidate_ms`` when those paths run.
+Expose via ``memory://metrics`` (MCP) or ``MemoryStore.get_metrics()``.
 """
 
 from __future__ import annotations

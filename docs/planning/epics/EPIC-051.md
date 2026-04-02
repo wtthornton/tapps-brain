@@ -117,8 +117,9 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 #### Implementation themes
 
-- [ ] Break down **MetricsTimer** sub-spans: safety, persist, hive, relations, consolidate, embed.
-- [ ] Surface **top counters** in `store.get_metrics()` and MCP health JSON.
+- [x] Break down **MetricsTimer** sub-spans on save: lock/build, persist, hive, relations, consolidate, embed (`store.save.phase.*` histograms; 2026-04-02).
+- [x] Surface in `store.get_metrics()` and MCP **`memory://metrics`** resource (full snapshot includes new histograms).
+- [ ] Optional: compact save-phase summary lines on CLI **`diagnostics health`** / `HealthReport` JSON.
 
 ## Priority order
 
