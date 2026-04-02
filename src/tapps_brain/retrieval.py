@@ -7,6 +7,14 @@ signals (confidence, recency, access frequency).
 Uses BM25 (Okapi) for text relevance scoring with automatic
 index building and invalidation. Epic 65.8: hybrid BM25 + vector
 search with RRF when semantic_search.enabled.
+
+EPIC-042.5: Composite weights come from ``profile.ScoringConfig`` (YAML ``scoring:``);
+see ``SCORING_WEIGHT_SUM_MIN`` / ``SCORING_WEIGHT_SUM_MAX`` in ``profile.py``.
+Default ``search()`` excludes: contradicted entries (unless ``include_contradicted``),
+consolidated source rows (unless ``include_sources``), temporally invalid /
+superseded entries (unless ``include_superseded`` / ``include_historical``), and
+entries below ``min_confidence`` after decay. BM25/FTS may still index the full
+corpus for IDF; ranking applies the filters above.
 """
 
 from __future__ import annotations
@@ -22,6 +30,11 @@ from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource
+from tapps_brain.profile import (
+    SCORING_WEIGHT_SUM_MAX,
+    SCORING_WEIGHT_SUM_MIN,
+    composite_scoring_weight_total,
+)
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
 if TYPE_CHECKING:
@@ -62,7 +75,6 @@ _W_RECENCY = 0.15
 _W_FREQUENCY = 0.15
 
 _FREQUENCY_CAP = 20.0
-_WEIGHT_SUM_TOLERANCE = 0.01  # Allow 1% deviation from 1.0 in scoring weights
 
 # Per-source trust multipliers applied to composite score (M2).
 # These are post-composite multipliers, not additive weights.
@@ -163,22 +175,17 @@ class MemoryRetriever:
             self._source_trust: dict[str, float] = (
                 dict(raw_trust) if isinstance(raw_trust, dict) else dict(_DEFAULT_SOURCE_TRUST)
             )
-            # Warn if profile weights don't sum to ~1.0 (would make scores inconsistent)
-            using_new_signals = self._w_graph > 0.0 or self._w_provenance > 0.0
-            if using_new_signals:
-                weight_sum = (
-                    self._w_relevance
-                    + self._w_confidence
-                    + self._w_recency
-                    + self._w_frequency
-                    + self._w_graph
-                    + self._w_provenance
-                )
-            else:
-                weight_sum = (
-                    self._w_relevance + self._w_confidence + self._w_recency + self._w_frequency
-                )
-            if abs(weight_sum - 1.0) > _WEIGHT_SUM_TOLERANCE:
+            # Warn if duck-typed scoring_config weights fall outside the same band as
+            # ``ScoringConfig`` (YAML-loaded profiles are already validated there).
+            weight_sum = composite_scoring_weight_total(
+                self._w_relevance,
+                self._w_confidence,
+                self._w_recency,
+                self._w_frequency,
+                graph_centrality=self._w_graph,
+                provenance_trust=self._w_provenance,
+            )
+            if not (SCORING_WEIGHT_SUM_MIN <= weight_sum <= SCORING_WEIGHT_SUM_MAX):
                 logger.warning(
                     "scoring_weights_do_not_sum_to_one",
                     weight_sum=round(weight_sum, 4),

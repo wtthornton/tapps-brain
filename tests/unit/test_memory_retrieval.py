@@ -14,6 +14,7 @@ from tapps_brain.models import (
     MemorySource,
     MemoryTier,
 )
+from tapps_brain.profile import ScoringConfig
 from tapps_brain.reranker import NoopReranker
 from tapps_brain.retrieval import MemoryRetriever, ScoredMemory
 from tests.factories import make_entry
@@ -780,6 +781,66 @@ class TestScoringCorrectnessReview:
 
         mock_logger.warning.assert_called_once()
         assert mock_logger.warning.call_args[0][0] == "scoring_weights_do_not_sum_to_one"
+
+    def test_scoring_weights_within_profile_band_no_warning(self) -> None:
+        """Valid partial sums (profile band) do not emit retriever weight warnings."""
+        from unittest.mock import patch
+
+        # 1.03 is valid for Pydantic (0.95-1.05 band); old retriever used 0.01 tolerance.
+        scoring_cfg = ScoringConfig(
+            relevance=0.43,
+            confidence=0.30,
+            recency=0.15,
+            frequency=0.15,
+        )
+        mock_logger = MagicMock()
+        with patch("tapps_brain.retrieval.logger", mock_logger):
+            MemoryRetriever(scoring_config=scoring_cfg)
+        mock_logger.warning.assert_not_called()
+
+    def test_composite_weight_profile_changes_rank_order(self) -> None:
+        """Confidence-heavy vs frequency-heavy profiles reorder two same-text candidates."""
+        shared = "shared token alpha beta gamma"
+        hi_conf = _make_entry(
+            "key-a",
+            shared,
+            confidence=0.95,
+            access_count=0,
+            updated_at=_RECENT,
+        )
+        hi_freq = _make_entry(
+            "key-b",
+            shared,
+            confidence=0.55,
+            access_count=25,
+            updated_at=_RECENT,
+        )
+        entries = [hi_freq, hi_conf]
+        store = _make_store(entries)
+        store.search.return_value = entries
+        query = "alpha beta gamma"
+
+        conf_heavy = ScoringConfig(
+            relevance=0.15,
+            confidence=0.70,
+            recency=0.075,
+            frequency=0.075,
+        )
+        freq_heavy = ScoringConfig(
+            relevance=0.15,
+            confidence=0.10,
+            recency=0.15,
+            frequency=0.60,
+        )
+
+        r_conf = MemoryRetriever(scoring_config=conf_heavy)
+        r_freq = MemoryRetriever(scoring_config=freq_heavy)
+
+        top_conf = r_conf.search(query, store, limit=2)[0].entry.key
+        top_freq = r_freq.search(query, store, limit=2)[0].entry.key
+
+        assert top_conf == "key-a"
+        assert top_freq == "key-b"
 
     def test_apply_reranker_returns_scored_when_reranker_is_none(self) -> None:
         """_apply_reranker should not crash when reranker is None (guard replaces assert)."""

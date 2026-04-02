@@ -147,9 +147,9 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Expose **documented** profile tuning for weights with **sum-to-1** validation.
+- [x] Expose **documented** profile tuning for weights with **sum-to-1** validation — `ScoringConfig`, `SCORING_WEIGHT_SUM_*`, `composite_scoring_weight_total()`, `repo-brain.yaml` comments, `retrieval.py` module doc + retriever warning band aligned with profile (2026-04-02).
 - [ ] Spike: **min-max normalization** per channel before blend vs current BM25 normalization — measure side effects.
-- [ ] Ensure **superseded / invalid** entries never contribute to ranking (audit `list_all` / retriever filters).
+- [x] Ensure **superseded / invalid** entries never contribute to ranking (audit `list_all` / retriever filters) — documented in `retrieval.py` module doc; default `search()` filters temporally invalid, contradicted, consolidated sources (2026-04-02).
 
 ---
 

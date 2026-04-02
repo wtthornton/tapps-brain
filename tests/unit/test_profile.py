@@ -20,6 +20,7 @@ from tapps_brain.profile import (
     ScoringConfig,
     _merge_profiles,
     _resolve_inheritance,
+    composite_scoring_weight_total,
     get_builtin_profile,
     list_builtin_profiles,
     load_profile,
@@ -167,6 +168,37 @@ class TestScoringConfig:
         sc2 = ScoringConfig()
         sc1.source_trust["human"] = 0.5
         assert sc2.source_trust["human"] == 1.0
+
+    def test_six_weight_blend_valid(self) -> None:
+        """When graph/provenance are used, all six weights must sum in band."""
+        sc = ScoringConfig(
+            relevance=0.35,
+            confidence=0.25,
+            recency=0.15,
+            frequency=0.15,
+            graph_centrality=0.05,
+            provenance_trust=0.05,
+        )
+        t = composite_scoring_weight_total(
+            sc.relevance,
+            sc.confidence,
+            sc.recency,
+            sc.frequency,
+            graph_centrality=sc.graph_centrality,
+            provenance_trust=sc.provenance_trust,
+        )
+        assert abs(t - 1.0) < 0.01
+
+    def test_six_weight_blend_rejected_when_sum_out_of_band(self) -> None:
+        with pytest.raises(ValueError, match=r"sum to ~1\.0"):
+            ScoringConfig(
+                relevance=0.40,
+                confidence=0.30,
+                recency=0.15,
+                frequency=0.15,
+                graph_centrality=0.10,
+                provenance_trust=0.0,
+            )
 
 
 class TestGCConfig:

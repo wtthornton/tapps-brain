@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed)
+Last updated: 2026-04-02 (**#52** checklist reconciled + **closed** on GitHub; **#51**, **#63**, **#64** closed; **EPIC-042.5** composite-weight docs + shared sum validation on `main`)
 Owner: @wtthornton
 
 ## Purpose

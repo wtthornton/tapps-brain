@@ -71,9 +71,36 @@ _DEFAULT_SOURCE_TRUST: dict[str, float] = {
     "inferred": 0.5,
 }
 
+# EPIC-042.5 / STORY-042.5: primary blend weights (and optional graph/provenance)
+# when those are non-zero) must fall in this band so composite scores stay interpretable.
+SCORING_WEIGHT_SUM_MIN: float = 0.95
+SCORING_WEIGHT_SUM_MAX: float = 1.05
+
+
+def composite_scoring_weight_total(
+    relevance: float,
+    confidence: float,
+    recency: float,
+    frequency: float,
+    *,
+    graph_centrality: float = 0.0,
+    provenance_trust: float = 0.0,
+) -> float:
+    """Sum of composite ranking weights (same terms as ``ScoringConfig`` validation)."""
+    return relevance + confidence + recency + frequency + graph_centrality + provenance_trust
+
 
 class ScoringConfig(BaseModel):
-    """Composite scoring weight configuration."""
+    """Composite scoring weight configuration (EPIC-042.5).
+
+    Tune under ``profile.scoring`` in YAML. The four primary signals
+    (``relevance``, ``confidence``, ``recency``, ``frequency``) must sum to
+    ~1.0 together with any non-zero ``graph_centrality`` or ``provenance_trust``.
+    ``source_trust`` entries are **multipliers** applied after the linear blend,
+    not part of that sum.
+
+    Defaults match historical product behavior (40/30/15/15).
+    """
 
     relevance: float = Field(default=0.40, ge=0.0, le=1.0)
     confidence: float = Field(default=0.30, ge=0.0, le=1.0)
@@ -108,23 +135,20 @@ class ScoringConfig(BaseModel):
         ),
     )
 
-    _WEIGHT_SUM_LO: float = 0.95
-    _WEIGHT_SUM_HI: float = 1.05
-
     @model_validator(mode="after")
     def _weights_sum_check(self) -> ScoringConfig:
         using_new_signals = self.graph_centrality > 0.0 or self.provenance_trust > 0.0
         if using_new_signals:
             # All 6 weights must sum to ~1.0
-            total = (
-                self.relevance
-                + self.confidence
-                + self.recency
-                + self.frequency
-                + self.graph_centrality
-                + self.provenance_trust
+            total = composite_scoring_weight_total(
+                self.relevance,
+                self.confidence,
+                self.recency,
+                self.frequency,
+                graph_centrality=self.graph_centrality,
+                provenance_trust=self.provenance_trust,
             )
-            if not (self._WEIGHT_SUM_LO <= total <= self._WEIGHT_SUM_HI):
+            if not (SCORING_WEIGHT_SUM_MIN <= total <= SCORING_WEIGHT_SUM_MAX):
                 msg = (
                     f"Scoring weights must sum to ~1.0 (got {total:.3f}). "
                     f"relevance={self.relevance}, confidence={self.confidence}, "
@@ -135,8 +159,10 @@ class ScoringConfig(BaseModel):
                 raise ValueError(msg)
         else:
             # Original 4 weights must sum to ~1.0
-            total = self.relevance + self.confidence + self.recency + self.frequency
-            if not (self._WEIGHT_SUM_LO <= total <= self._WEIGHT_SUM_HI):
+            total = composite_scoring_weight_total(
+                self.relevance, self.confidence, self.recency, self.frequency
+            )
+            if not (SCORING_WEIGHT_SUM_MIN <= total <= SCORING_WEIGHT_SUM_MAX):
                 msg = (
                     f"Scoring weights must sum to ~1.0 (got {total:.3f}). "
                     f"relevance={self.relevance}, confidence={self.confidence}, "

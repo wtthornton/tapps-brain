@@ -57,6 +57,9 @@ profile:
         min_confidence: 0.5
       demotion_to: null
 
+  # Composite retrieval blend (STORY-042.5): relevance + confidence + recency + frequency
+  # must sum to ~1.0 (0.95–1.05). Optional graph_centrality / provenance_trust count when > 0.
+  # source_trust is applied after the blend (multipliers), not part of that sum.
   scoring:
     relevance: 0.40
     confidence: 0.30
