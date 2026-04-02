@@ -3,12 +3,24 @@
 Provides a helper that retrieves relevant memories and formats them
 for injection into tool responses. RAG safety is applied as a
 defense-in-depth measure before injection.
+
+**Ordering:** Injected memories follow the retriever's ranking: composite score
+**descending** (same order as ``MemoryRetriever.search``). There is no
+diversity re-ranking in this helper.
+
+**Token counts:** By default, ``estimate_tokens`` (char heuristic) sizes each
+candidate line for the injection budget. Pass ``InjectionConfig.count_tokens``
+for tokenizer-aligned weights (optional explicit dependency — e.g. tiktoken —
+stays in the caller's environment).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import structlog
 
@@ -68,13 +80,16 @@ def _injection_empty(
     empty_reason: str | None,
     retriever_hits: int = 0,
     visible_entries: int | None = None,
+    injection_telemetry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    telem = injection_telemetry or _default_injection_telemetry("heuristic")
     return {
         "memory_section": "",
         "memory_injected": 0,
         "memories": [],
         "truncated": False,
         "injected_tokens": 0,
+        "injection_telemetry": telem,
         "recall_diagnostics": _recall_diag_payload(
             empty_reason=empty_reason,
             retriever_hits=retriever_hits,
@@ -83,12 +98,37 @@ def _injection_empty(
     }
 
 
+def _default_injection_telemetry(token_counter: str) -> dict[str, Any]:
+    """Stable shape for metrics on every ``inject_memories`` return path."""
+    return {
+        "dropped_below_min_score": 0,
+        "dropped_by_safety": 0,
+        "omitted_by_token_budget": 0,
+        "token_counter": token_counter,
+    }
+
+
+def _entry_token_cost(text: str, count_tokens: Callable[[str], int] | None) -> int:
+    """Token weight for one formatted line; always at least 1 for non-empty budgeting."""
+    if count_tokens is None:
+        return estimate_tokens(text)
+    return max(1, int(count_tokens(text)))
+
+
+def _telemetry_token_label(count_tokens: Callable[[str], int] | None) -> str:
+    return "custom" if count_tokens is not None else "heuristic"
+
+
 @dataclass
 class InjectionConfig:
     """Configuration for memory injection.
 
     Standalone replacement for reading TappsMCP settings.
     Consumers pass this to control reranker and token budget behavior.
+
+    ``count_tokens``: optional callable ``(text) -> int`` for tokenizer-aligned
+    budgets (caller supplies tiktoken or another backend). When ``None``, the
+    built-in ``estimate_tokens`` heuristic is used.
     """
 
     reranker_enabled: bool = True
@@ -96,6 +136,7 @@ class InjectionConfig:
     reranker_top_k: int = 10
     reranker_api_key: str | None = None
     injection_max_tokens: int = 2000
+    count_tokens: Callable[[str], int] | None = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -126,7 +167,8 @@ def inject_memories(  # noqa: PLR0915
         store: The memory store to search.
         engagement_level: "high", "medium", or "low".
         decay_config: Optional decay configuration.
-        config: Optional injection configuration. Defaults to InjectionConfig().
+        config: Optional injection configuration (token budget, reranker, optional
+            ``count_tokens`` callable). Defaults to ``InjectionConfig()``.
         scoring_config: Optional scoring configuration (weights + source_trust
             multipliers). When ``None``, the store's active profile scoring
             config is used if available, otherwise module defaults apply.
@@ -139,10 +181,19 @@ def inject_memories(  # noqa: PLR0915
         Dict with:
         - ``memory_section``: Formatted markdown section (or empty string).
         - ``memory_injected``: Number of memories injected.
-        - ``memories``: List of injected memory summaries.
+        - ``memories``: List of injected memory summaries (same order as ranking).
+        - ``truncated``: True if any candidate within the per-engagement cap was
+          omitted due to the token budget.
+        - ``injected_tokens``: Sum of token weights for included lines.
+        - ``injection_telemetry``: Counts — ``dropped_below_min_score``,
+          ``dropped_by_safety``, ``omitted_by_token_budget``, and
+          ``token_counter`` (``\"heuristic\"`` or ``\"custom\"``).
         - ``recall_diagnostics``: ``empty_reason`` (code or null), ``retriever_hits``,
           ``visible_entries`` — for agents when recall is empty.
     """
+    config = config or InjectionConfig()
+    tlabel = _telemetry_token_label(config.count_tokens)
+
     # Low engagement: never inject
     if engagement_level == "low":
         vis = _visible_entry_count(store, memory_group)
@@ -150,9 +201,8 @@ def inject_memories(  # noqa: PLR0915
             empty_reason=RECALL_EMPTY_ENGAGEMENT_LOW,
             retriever_hits=0,
             visible_entries=vis,
+            injection_telemetry=_default_injection_telemetry(tlabel),
         )
-
-    config = config or InjectionConfig()
 
     # Resolve scoring_config: prefer explicit arg, fall back to store profile.
     # This ensures source_trust multipliers and scoring weights from the active
@@ -219,12 +269,14 @@ def inject_memories(  # noqa: PLR0915
             empty_reason=RECALL_EMPTY_SEARCH_FAILED,
             retriever_hits=0,
             visible_entries=vis_err,
+            injection_telemetry=_default_injection_telemetry(tlabel),
         )
 
     visible = _visible_entry_count(store, memory_group)
     n_retriever = len(results)
 
     # Filter by minimum score
+    dropped_below_min_score = n_retriever - sum(1 for r in results if r.score >= _MIN_SCORE)
     results = [r for r in results if r.score >= _MIN_SCORE]
 
     if not results:
@@ -235,10 +287,13 @@ def inject_memories(  # noqa: PLR0915
                 reason = RECALL_EMPTY_NO_RANKED_MATCHES
         else:
             reason = RECALL_EMPTY_BELOW_SCORE_THRESHOLD
+        telem = _default_injection_telemetry(tlabel)
+        telem["dropped_below_min_score"] = dropped_below_min_score
         return _injection_empty(
             empty_reason=reason,
             retriever_hits=n_retriever,
             visible_entries=visible,
+            injection_telemetry=telem,
         )
 
     # RAG safety check on values before injection (defense-in-depth)
@@ -254,31 +309,39 @@ def inject_memories(  # noqa: PLR0915
                 patterns=safety.flagged_patterns,
             )
 
+    dropped_by_safety = len(results) - len(safe_results)
+
     if not safe_results:
+        telem = _default_injection_telemetry(tlabel)
+        telem["dropped_below_min_score"] = dropped_below_min_score
+        telem["dropped_by_safety"] = dropped_by_safety
         return _injection_empty(
             empty_reason=RECALL_EMPTY_RAG_BLOCKED,
-            retriever_hits=len(results),
+            retriever_hits=n_retriever,
             visible_entries=visible,
+            injection_telemetry=telem,
         )
 
-    # Context budget enforcement
+    # Context budget enforcement (order = retriever score descending, capped by max_inject)
     max_tokens = config.injection_max_tokens
     budgeted_results: list[Any] = []
     used_tokens = 0
-    for scored in safe_results[:max_inject]:
+    candidates = safe_results[:max_inject]
+    for scored in candidates:
         entry = scored.entry
         tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
         entry_text = (
             f"- **{entry.key}** (confidence: {scored.effective_confidence:.2f}, "
             f"tier: {tier}): {entry.value}"
         )
-        entry_tokens = estimate_tokens(entry_text)
+        entry_tokens = _entry_token_cost(entry_text, config.count_tokens)
         if used_tokens + entry_tokens > max_tokens and budgeted_results:
             break
         budgeted_results.append(scored)
         used_tokens += entry_tokens
 
-    truncated = len(budgeted_results) < len(safe_results[:max_inject])
+    truncated = len(budgeted_results) < len(candidates)
+    omitted_by_token_budget = len(candidates) - len(budgeted_results)
 
     # Format the injection section
     lines = ["### Project Memory"]
@@ -307,6 +370,12 @@ def inject_memories(  # noqa: PLR0915
         "memories": summaries,
         "truncated": truncated,
         "injected_tokens": used_tokens,
+        "injection_telemetry": {
+            "dropped_below_min_score": dropped_below_min_score,
+            "dropped_by_safety": dropped_by_safety,
+            "omitted_by_token_budget": omitted_by_token_budget,
+            "token_counter": tlabel,
+        },
         "recall_diagnostics": _recall_diag_payload(
             empty_reason=None,
             retriever_hits=n_retriever,

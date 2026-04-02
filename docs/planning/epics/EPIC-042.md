@@ -197,9 +197,9 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Optional **tokenizer backend** hook (offline, explicit dep) for accurate budgets.
-- [ ] Injection **telemetry**: truncated count, dropped-below-min-score count (metrics).
-- [ ] Document **order** of memories in injected block (score desc vs diversity).
+- [x] Optional **tokenizer backend** hook (offline, explicit dep) for accurate budgets — ``InjectionConfig.count_tokens`` + ``_entry_token_cost`` (2026-04-02).
+- [x] Injection **telemetry**: ``injection_telemetry`` dict (``dropped_below_min_score``, ``dropped_by_safety``, ``omitted_by_token_budget``, ``token_counter``) (2026-04-02).
+- [x] Document **order** of memories in injected block (score desc vs diversity) — module doc + ``inject_memories`` returns (2026-04-02).
 
 ---
 
