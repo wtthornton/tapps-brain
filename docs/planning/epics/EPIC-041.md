@@ -17,16 +17,16 @@ Design references: [`design-issue-49-multi-scope-memory.md`](../design-issue-49-
 
 ## Success criteria
 
-- [x] **#51** — Hub `federated_memories` stores `memory_group`; publish/subscribe round-trip restores it on subscriber projects (shipped 2026-04-02; close GitHub issue when verified).
-- [x] **#52** — Hive `group:<name>` semantics (membership, propagation, recall union); shipped in repo 2026-03-31 — close GitHub when verified.
-- [x] **#63** — `StoreHealth.retrieval_effective_mode` + `retrieval_summary`; CLI diagnostics health + MCP JSON; `optional-features-matrix.md` pointer (shipped 2026-04-02).
-- [x] **#64** — `docs/guides/hive-vs-federation.md` + links from `hive.md` / `federation.md` (shipped 2026-04-02).
+- [x] **#51** — Hub `federated_memories` stores `memory_group`; publish/subscribe round-trip restores it on subscriber projects (shipped 2026-04-02; GitHub **closed** 2026-03-31).
+- [x] **#52** — Hive `group:<name>` semantics (membership, propagation, recall union); GitHub **closed** 2026-04-02.
+- [x] **#63** — `StoreHealth.retrieval_effective_mode` + `retrieval_summary`; CLI diagnostics health + MCP JSON; `optional-features-matrix.md` pointer (shipped 2026-04-02; GitHub **closed** 2026-04-02).
+- [x] **#64** — `docs/guides/hive-vs-federation.md` + links from `hive.md` / `federation.md` (shipped 2026-04-02; GitHub **closed** 2026-04-02).
 
 ## Stories
 
 ### STORY-041.1: Federation hub `memory_group` (GitHub #51, 49-E)
 
-**Status:** done (2026-04-02 on `main`; close **#51** on GitHub after verification).
+**Status:** done (2026-04-02 on `main`; **#51** closed on GitHub).
 
 **Scope:** SQLite migration on `federated.db`, `FederatedStore.publish` / `search` / `get_project_entries`, `sync_from_hub` → `MemoryStore.save(memory_group=…)`; `FederatedSearchResult.memory_group`; [`docs/guides/federation.md`](../../guides/federation.md) + engineering schema note.
 
@@ -34,7 +34,7 @@ Design references: [`design-issue-49-multi-scope-memory.md`](../design-issue-49-
 
 ### STORY-041.2: Hive `agent_scope` `group:<name>` + membership (GitHub #52)
 
-**Status:** done (2026-03-31 on `main`; close **#52** on GitHub after verification).
+**Status:** done (2026-03-31 on `main`; **#52** closed on GitHub 2026-04-02).
 
 **Scope:** `agent_scope` `group:<name>` normalization (`agent_scope.py`); `PropagationEngine` → Hive namespace *name* with `agent_is_group_member`; recall merges universal + profile + member group namespaces; MCP/CLI validation; relay import; [`docs/guides/hive.md`](../../guides/hive.md).
 
@@ -54,4 +54,4 @@ Design references: [`design-issue-49-multi-scope-memory.md`](../design-issue-49-
 
 ## Priority order
 
-1. **041.1** / **041.2** / **041.3** / **041.4** — shipped on `main`; close GitHub **#51**, **#52**, **#63**, **#64** when verified.
+1. **041.1** / **041.2** / **041.3** / **041.4** — shipped on `main`; GitHub **#51**–**#64** closed (2026-03-31 / 2026-04-02).

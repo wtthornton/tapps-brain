@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-01 (**EPIC-041** complete in repo — **#51**, **#52**, **#63**, **#64** ready for GitHub close after maintainer verify)
+Last updated: 2026-04-02 (**#51**, **#52**, **#63**, **#64** closed on GitHub — EPIC-041)
 Owner: @wtthornton
 
 ## Purpose
@@ -21,12 +21,12 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Shipped / closed on GitHub:** #30, #15, #45, #12, #23, #17, #19, #18, #40, #21, #20, **#46**, **#48**, **#47** (mitigated), **#49** (v1 `memory_group` epic complete)
 
-**Shipped in repo (close GitHub when verified):**
+**Closed on GitHub (EPIC-041):**
 
-- **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** — federation hub `memory_group` (49-E); **EPIC-041** STORY-041.1 (2026-04-02).
-- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; **EPIC-041** STORY-041.2 (2026-03-31).
-- **[#63](https://github.com/wtthornton/tapps-brain/issues/63)** — `retrieval_effective_mode` / `retrieval_summary` on native health (CLI + MCP); **EPIC-041** STORY-041.3.
-- **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); **EPIC-041** STORY-041.4.
+- **[#51](https://github.com/wtthornton/tapps-brain/issues/51)** — federation hub `memory_group` (49-E); STORY-041.1.
+- **[#52](https://github.com/wtthornton/tapps-brain/issues/52)** — Hive `agent_scope` `group:<name>` + membership + recall namespace union; STORY-041.2.
+- **[#63](https://github.com/wtthornton/tapps-brain/issues/63)** — `retrieval_effective_mode` / `retrieval_summary` on health (CLI + MCP); STORY-041.3.
+- **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); STORY-041.4.
 
 **Further backlog (no GitHub issue yet — file when scheduled):** architecture review follow-ups; clarity / observability / optional refactors—not emergency fixes.
 
@@ -117,13 +117,9 @@ Track delivery status for currently open GitHub issues, prioritized by value and
   - Status: `closed` on GitHub (2026-03-28) — `tapps-brain session end`, `session_summary.py`, MCP `tapps_brain_session_end`; optional `--daily-note`
   - Target outcome: end-of-session episodic capture (CLI + Python API + MCP)
 
-## Recommended next steps (2026-04-01)
+## Recommended next steps (2026-04-02)
 
-**Maintainer / GitHub hygiene**
-
-- **Verify and close** [#51](https://github.com/wtthornton/tapps-brain/issues/51), [#52](https://github.com/wtthornton/tapps-brain/issues/52), [#63](https://github.com/wtthornton/tapps-brain/issues/63), [#64](https://github.com/wtthornton/tapps-brain/issues/64) if acceptance matches **EPIC-041** (all stories marked done on `main`).
-
-**Next engineering (canonical queue continues below)**
+**Next engineering (canonical queue)**
 
 - **Save-path observability** (tracking row 20 / **EPIC-051** STORY-051.6): spike metrics or structured logging for save-adjacent work (consolidation, embed); avoid hot-path bloat without measurement.
 - **MemoryStore decomposition** (tracking row 22): design-first only; see **EPIC-050** / **EPIC-051** for concurrency and scale framing.
@@ -151,10 +147,10 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 13 | #48 | save tier normalization | closed | - | — | — | GitHub closed 2026-03-28 |
 | 14 | #47 | tool name conflicts | closed | mitigated | — | — | `tapps_memory_*` + openclaw.md |
 | 15 | #49 | multi-scope memory epic (v1) | closed | — | — | — | 2026-03-29; backlog → **#51**, **#52** |
-| 16 | #51 | federation hub `memory_group` (49-E) | done | — | — | — | EPIC-041 done; close GitHub when verified |
-| 17 | #52 | `agent_scope` group:<name> + membership | done | — | — | — | EPIC-041 STORY-041.2 shipped; close GitHub when verified |
-| 18 | #63 | Vector / hybrid discoverability (health & guides) | done | — | — | — | EPIC-041 STORY-041.3; close GitHub when verified |
-| 19 | #64 | Hive vs federation decision guide | done | — | — | — | EPIC-041 STORY-041.4; close GitHub when verified |
+| 16 | #51 | federation hub `memory_group` (49-E) | closed | — | — | — | EPIC-041 STORY-041.1; GitHub closed 2026-03-31 / verified |
+| 17 | #52 | `agent_scope` group:<name> + membership | closed | — | — | — | EPIC-041 STORY-041.2; GitHub closed 2026-04-02 |
+| 18 | #63 | Vector / hybrid discoverability (health & guides) | closed | — | — | — | EPIC-041 STORY-041.3; GitHub closed 2026-04-02 |
+| 19 | #64 | Hive vs federation decision guide | closed | — | — | — | EPIC-041 STORY-041.4; GitHub closed 2026-04-02 |
 | 20 | — | Save-path / consolidation observability | not_started | — | — | — | Next ops spike; **EPIC-051** 051.6 |
 | 21 | — | Concurrency expectations (docs; metrics optional) | done | — | — | — | 2026-04-01 — `system-architecture.md` § concurrency |
 | 22 | — | MemoryStore modularization epic | not_started | — | — | — | Backlog 2026-03-31; long-term refactor |
