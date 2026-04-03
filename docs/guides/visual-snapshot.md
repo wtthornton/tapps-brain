@@ -10,7 +10,11 @@ From the project directory:
 tapps-brain visual export
 tapps-brain visual export -o ./out/brain-visual.json
 tapps-brain visual export --skip-diagnostics   # faster; omits circuit/score fields
+tapps-brain visual export --privacy strict     # redact path + tampered keys in JSON
+tapps-brain visual export --privacy local      # include tag + memory_group detail (local only)
 ```
+
+**Snapshot JSON `schema_version`:** `2` is current (retrieval mode, Hive hub slice, `access_stats`, `memory_group_count`, optional `tag_stats`, **`scorecard`** operator checks for pass/warn/fail and issue templates). Older `1` files still load in the demo with reduced panels.
 
 Implementation: `src/tapps_brain/visual_snapshot.py` · CLI entry: `tapps_brain/cli.py` (`visual export`).
 

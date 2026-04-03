@@ -69,6 +69,24 @@ class GCResult(BaseModel):
     archived_count: int = Field(default=0, ge=0)
     remaining_count: int = Field(default=0, ge=0)
     archived_keys: list[str] = Field(default_factory=list)
+    dry_run: bool = Field(
+        default=False,
+        description="When True, no rows were archived; archived_keys are candidates.",
+    )
+    reason_counts: dict[str, int] = Field(
+        default_factory=dict,
+        description="Counts of archive reason codes (dry-run and live runs).",
+    )
+    archive_bytes: int = Field(
+        default=0,
+        ge=0,
+        description="UTF-8 bytes appended to archive JSONL this run (live runs only).",
+    )
+    estimated_archive_bytes: int = Field(
+        default=0,
+        ge=0,
+        description="UTF-8 size of JSONL that would be appended (dry-run only).",
+    )
 
 
 class StaleCandidateDetail(BaseModel):
@@ -84,6 +102,26 @@ class StaleCandidateDetail(BaseModel):
     days_at_floor: float | None = None
     days_since_update: float | None = None
     updated_at: str = ""
+
+
+def aggregate_gc_reason_counts(details: list[StaleCandidateDetail]) -> dict[str, int]:
+    """Count archive reason codes across stale candidates (EPIC-044 STORY-044.5)."""
+    counts: dict[str, int] = {}
+    for d in details:
+        for reason in d.reasons:
+            counts[reason] = counts.get(reason, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def archive_entries_jsonl_utf8_bytes(entries: list[MemoryEntry], archived_at_iso: str) -> int:
+    """UTF-8 byte size of JSONL lines ``append_to_archive`` would write."""
+    total = 0
+    for entry in entries:
+        record = entry.model_dump()
+        record["archived_at"] = archived_at_iso
+        line = json.dumps(record, ensure_ascii=False) + "\n"
+        total += len(line.encode("utf-8"))
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -230,19 +268,29 @@ class MemoryGarbageCollector:
     def append_to_archive(
         entries: list[MemoryEntry],
         archive_path: Path,
-    ) -> None:
-        """Append archived entries to a JSONL file for external visibility."""
+    ) -> int:
+        """Append archived entries to a JSONL file for external visibility.
+
+        Returns:
+            UTF-8 byte length appended (0 if nothing written or on I/O error).
+        """
         archive_path.parent.mkdir(parents=True, exist_ok=True)
         now_iso = datetime.now(tz=UTC).isoformat()
 
         try:
+            total = 0
             with archive_path.open("a", encoding="utf-8") as fh:
                 for entry in entries:
                     record = entry.model_dump()
                     record["archived_at"] = now_iso
-                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    line = json.dumps(record, ensure_ascii=False) + "\n"
+                    raw = line.encode("utf-8")
+                    fh.write(line)
+                    total += len(raw)
+            return total
         except OSError:
             logger.warning("archive_write_failed", path=str(archive_path), exc_info=True)
+            return 0
 
 
 # ---------------------------------------------------------------------------

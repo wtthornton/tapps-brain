@@ -3,6 +3,16 @@
 Automatically seeds the memory store with facts detected by
 ``tapps_project_profile`` on first run. Seeded memories are tagged
 with ``auto-seeded`` and ``source=system``.
+
+**Save path:** each seed uses ``MemoryStore.save(..., batch_context="seed")``.
+Save-time ``conflict_check`` runs like any other write; first-run seeding only
+fires on an **empty** store, and ``reseed_from_profile`` deletes prior
+``auto-seeded`` rows first, so collisions are rare. Custom integrators may call
+``save(..., conflict_check=False)`` for deterministic bulk seeds when they
+accept the risk (see tests).
+
+**Profile version:** when ``MemoryProfile.seeding.seed_version`` is set, seed and
+reseed summaries include ``profile_seed_version`` for operator diffing.
 """
 
 from __future__ import annotations
@@ -18,6 +28,31 @@ if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
+
+
+def _profile_seed_version(store: MemoryStore) -> str | None:
+    """Return ``MemoryProfile.seeding.seed_version`` when the store has a profile."""
+    prof = getattr(store, "_profile", None)
+    if prof is None:
+        return None
+    seeding = getattr(prof, "seeding", None)
+    if seeding is None:
+        return None
+    raw = getattr(seeding, "seed_version", None)
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
+def _with_seed_version(store: MemoryStore, payload: dict[str, Any]) -> dict[str, Any]:
+    ver = _profile_seed_version(store)
+    if ver is not None:
+        out = dict(payload)
+        out["profile_seed_version"] = ver
+        return out
+    return payload
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -57,9 +92,9 @@ def seed_from_profile(
     """
     if store.count() > 0:
         logger.info("memory_seed_skipped", reason="store not empty")
-        return {"seeded_count": 0, "skipped": True}
+        return _with_seed_version(store, {"seeded_count": 0, "skipped": True})
 
-    return _do_seed(store, profile)
+    return _with_seed_version(store, _do_seed(store, profile))
 
 
 def reseed_from_profile(
@@ -89,7 +124,7 @@ def reseed_from_profile(
 
     result = _do_seed(store, profile)
     result["deleted_old"] = deleted
-    return result
+    return _with_seed_version(store, result)
 
 
 def _do_seed(  # noqa: PLR0915

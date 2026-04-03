@@ -3,6 +3,9 @@
 Provides automatic consolidation of similar memory entries:
 - On save: Check if new entry should be consolidated with existing entries
 - On session start: Periodic scan to find and consolidate related entries
+
+EPIC-044 STORY-044.4: successful merges append JSONL audit actions
+``consolidation_merge`` and ``consolidation_source`` (see ``_append_consolidation_audit``).
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ import contextlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path  # noqa: TC003 - Used at runtime for Path operations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 
@@ -150,7 +153,13 @@ def check_consolidation_on_save(
 
     source_keys = [e.key for e in entries_to_consolidate]
 
-    _persist_consolidated_entry(store, consolidated, source_keys)
+    _persist_consolidated_entry(
+        store,
+        consolidated,
+        source_keys,
+        audit_trigger="save",
+        audit_threshold=threshold,
+    )
 
     logger.info(
         "auto_consolidation_triggered",
@@ -173,10 +182,52 @@ def _get_enum_value(obj: object) -> str:
     return obj.value if hasattr(obj, "value") else str(obj)
 
 
+def _consolidation_reason_str(consolidated: ConsolidatedEntry) -> str:
+    r = consolidated.consolidation_reason
+    return r.value if hasattr(r, "value") else str(r)
+
+
+def _append_consolidation_audit(
+    store: MemoryStore,
+    *,
+    consolidated_key: str,
+    source_keys: list[str],
+    trigger: Literal["save", "periodic_scan"],
+    threshold: float,
+    consolidation_reason: str,
+) -> None:
+    """Append merge + per-source audit rows for operator traceability (EPIC-044 STORY-044.4)."""
+    persistence = getattr(store, "_persistence", None)
+    if persistence is None:
+        return
+    merge_extra: dict[str, Any] = {
+        "consolidated_key": consolidated_key,
+        "source_keys": list(source_keys),
+        "trigger": trigger,
+        "threshold": threshold,
+        "consolidation_reason": consolidation_reason,
+    }
+    persistence.append_audit("consolidation_merge", consolidated_key, extra=merge_extra)
+    for sk in source_keys:
+        if sk != consolidated_key:
+            persistence.append_audit(
+                "consolidation_source",
+                sk,
+                extra={
+                    "superseded_by": consolidated_key,
+                    "trigger": trigger,
+                    "threshold": threshold,
+                },
+            )
+
+
 def _persist_consolidated_entry(
     store: MemoryStore,
     consolidated: ConsolidatedEntry,
     source_keys: list[str],
+    *,
+    audit_trigger: Literal["save", "periodic_scan"] | None = None,
+    audit_threshold: float | None = None,
 ) -> None:
     """Persist the consolidated entry and mark sources as consolidated.
 
@@ -216,6 +267,16 @@ def _persist_consolidated_entry(
                 invalid_at=now,
                 superseded_by=consolidated.key,
             )
+
+    if audit_trigger is not None and audit_threshold is not None:
+        _append_consolidation_audit(
+            store,
+            consolidated_key=consolidated.key,
+            source_keys=source_keys,
+            trigger=audit_trigger,
+            threshold=audit_threshold,
+            consolidation_reason=_consolidation_reason_str(consolidated),
+        )
 
 
 def run_periodic_consolidation_scan(
@@ -307,7 +368,13 @@ def run_periodic_consolidation_scan(
             )
             continue
 
-        _persist_consolidated_entry(store, consolidated, group_keys)
+        _persist_consolidated_entry(
+            store,
+            consolidated,
+            group_keys,
+            audit_trigger="periodic_scan",
+            audit_threshold=threshold,
+        )
         consolidated_keys.append(consolidated.key)
         total_entries_consolidated += len(group_entries)
 

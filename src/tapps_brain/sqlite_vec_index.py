@@ -3,6 +3,17 @@
 Loads the sqlite-vec extension when the ``sqlite-vec`` package is installed,
 maintains a ``memory_vec`` vec0 table keyed by memory ``key``, and exposes
 KNN search. Safe no-op when the extension is unavailable or fails to load.
+
+**Distance metric:** The vec0 DDL uses ``embedding float[N]`` (default *N* =
+:data:`DEFAULT_VEC_DIM`) without ``distance_metric=``, so sqlite-vec applies
+its default for float vectors — **L2 (Euclidean) distance**. :func:`knn_search` runs::
+
+    SELECT key, distance FROM memory_vec
+    WHERE embedding MATCH ? AND k = ?
+
+The ``distance`` column is that metric; **lower is better**. Default
+embeddings are L2-normalized, so L2 ranking is order-equivalent to cosine
+ranking for same-length unit vectors. Operators: ``docs/guides/sqlite-vec-operators.md``.
 """
 
 from __future__ import annotations
@@ -70,7 +81,10 @@ def delete_vec_key(conn: sqlite3.Connection, key: str) -> None:
 
 
 def upsert_vec_row(conn: sqlite3.Connection, key: str, embedding: list[float]) -> None:
-    """Replace the vector row for *key* (delete + insert with new rowid)."""
+    """Replace the vector row for *key* (DELETE then INSERT with a new ``rowid``).
+
+    Per-save sync uses this path; there is no multi-row batching (see operator doc).
+    """
     import sqlite_vec
 
     if not vec_table_exists(conn):
@@ -92,7 +106,10 @@ def knn_search(
     *,
     dim: int = DEFAULT_VEC_DIM,
 ) -> list[tuple[str, float]]:
-    """Return up to *k* nearest neighbors as (key, distance). Best = low distance."""
+    """Return up to *k* nearest neighbors as ``(key, distance)``.
+
+    ``distance`` is sqlite-vec vec0 **L2** distance from the query blob (lower = closer).
+    """
     import sqlite_vec
 
     if not vec_table_exists(conn) or k <= 0:

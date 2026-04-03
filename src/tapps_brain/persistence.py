@@ -266,7 +266,11 @@ class MemoryPersistence:
             self._sqlite_vec_enabled = False
 
     def _sqlite_vec_sync_unlocked(self, entry: MemoryEntry) -> None:
-        """Keep ``memory_vec`` in sync with ``memories.embedding`` (caller holds lock)."""
+        """Keep ``memory_vec`` in sync with ``memories.embedding`` (caller holds lock).
+
+        One upsert or delete per save; each upsert is delete+insert on the vec table
+        (incremental cost notes: ``docs/guides/sqlite-vec-operators.md``).
+        """
         if not self._sqlite_vec_enabled:
             return
         from tapps_brain.sqlite_vec_index import delete_vec_key, upsert_vec_row
@@ -280,7 +284,10 @@ class MemoryPersistence:
     def sqlite_vec_knn_search(
         self, query_embedding: list[float], k: int
     ) -> list[tuple[str, float]]:
-        """Return (key, distance) from sqlite-vec KNN, or empty if disabled."""
+        """Return ``(key, distance)`` from sqlite-vec KNN, or empty if disabled.
+
+        ``distance`` is vec0 **L2** distance (see ``sqlite_vec_index.knn_search``).
+        """
         if not self._sqlite_vec_enabled:
             return []
         from tapps_brain.sqlite_vec_index import knn_search

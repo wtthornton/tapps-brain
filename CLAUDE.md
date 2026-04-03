@@ -59,11 +59,11 @@ uv build
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, access counting, and `agent_scope` for Hive propagation. `ConsolidatedEntry` extends it for merged memories. `RecallResult` includes `hive_memory_count` for observability and optional **`quality_warning`** when the diagnostics circuit breaker is not CLOSED.
 
-**Feedback & quality loop** — `feedback.py` (`FeedbackStore`, `FeedbackEvent`) and `diagnostics.py` (composite scorecard, EWMA anomaly detection, circuit breaker) are deterministic. `evaluation.py` (BEIR-style eval harness) and `flywheel.py` (Bayesian confidence updates, gap tracking, markdown reports, optional `LLMJudge` backends) close the improvement loop without requiring LLMs at runtime.
+**Feedback & quality loop** — `feedback.py` (`FeedbackStore`, `FeedbackEvent`) and `diagnostics.py` (composite scorecard, EWMA anomaly detection, circuit breaker) are deterministic. `evaluation.py` (BEIR-style eval harness, plus deterministic `run_consolidation_threshold_sweep` for EPIC-044.4) and `flywheel.py` (Bayesian confidence updates, gap tracking, markdown reports, optional `LLMJudge` backends) close the improvement loop without requiring LLMs at runtime.
 
 **Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides pure-Python Okapi BM25 scoring. `fusion.py` implements Reciprocal Rank Fusion for hybrid BM25 + vector search. Optional hybrid pool sizes and RRF *k* are profile-tunable via `MemoryProfile.hybrid_fusion` (YAML `hybrid_fusion:`); `inject_memories` passes this into `MemoryRetriever` when present.
 
-**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives (architectural: 180d, context: 14d), evaluated lazily on read. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives (not deletes) stale memories.
+**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives (architectural: 180d, context: 14d), evaluated lazily on read. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives (not deletes) stale memories to `archive.jsonl` (EPIC-044.5: dry-run summaries, byte metrics, health `gc_*`). Max-entry eviction policy: `docs/engineering/data-stores-and-schema.md` § *Entry cap and eviction*. Profile **`seeding.seed_version`** labels auto-seed runs (`seeding.py`, EPIC-044.6).
 
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 

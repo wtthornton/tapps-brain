@@ -106,7 +106,28 @@ def _default_injection_telemetry(token_counter: str) -> dict[str, Any]:
         "dropped_by_safety": 0,
         "omitted_by_token_budget": 0,
         "token_counter": token_counter,
+        "rerank_applied": False,
+        "rerank_provider": None,
+        "rerank_candidates_in": None,
+        "rerank_top_k": None,
+        "rerank_latency_ms": None,
+        "rerank_results_out": None,
+        "rerank_error": None,
     }
+
+
+def _merge_rerank_telemetry(telem: dict[str, Any], retriever: MemoryRetriever) -> None:
+    """Copy ``retriever.last_rerank_stats`` into injection telemetry (EPIC-042.6)."""
+    stats = getattr(retriever, "last_rerank_stats", None)
+    if not stats:
+        return
+    telem["rerank_applied"] = bool(stats.get("applied"))
+    telem["rerank_provider"] = stats.get("provider")
+    telem["rerank_candidates_in"] = stats.get("candidates_in")
+    telem["rerank_top_k"] = stats.get("top_k")
+    telem["rerank_latency_ms"] = stats.get("latency_ms")
+    telem["rerank_results_out"] = stats.get("results_out")
+    telem["rerank_error"] = stats.get("error")
 
 
 def _entry_token_cost(text: str, count_tokens: Callable[[str], int] | None) -> int:
@@ -188,7 +209,10 @@ def inject_memories(  # noqa: PLR0915
         - ``injected_tokens``: Sum of token weights for included lines.
         - ``injection_telemetry``: Counts — ``dropped_below_min_score``,
           ``dropped_by_safety``, ``omitted_by_token_budget``, and
-          ``token_counter`` (``\"heuristic\"`` or ``\"custom\"``).
+          ``token_counter`` (``\"heuristic\"`` or ``\"custom\"``). When reranking
+          ran during ``search()``, also ``rerank_applied``, ``rerank_provider``,
+          ``rerank_candidates_in``, ``rerank_top_k``, ``rerank_latency_ms``,
+          ``rerank_results_out``, ``rerank_error`` (see EPIC-042.6).
         - ``recall_diagnostics``: ``empty_reason`` (code or null), ``retriever_hits``,
           ``visible_entries`` — for agents when recall is empty.
     """
@@ -219,6 +243,13 @@ def inject_memories(  # noqa: PLR0915
         if isinstance(raw_hf, HybridFusionConfig):
             hybrid_config = raw_hf
 
+    ruleset_ver: str | None = None
+    if profile is not None:
+        _safety_prof = getattr(profile, "safety", None)
+        if _safety_prof is not None:
+            ruleset_ver = getattr(_safety_prof, "ruleset_version", None)
+    injection_metrics = getattr(store, "_metrics", None)
+
     from tapps_brain.reranker import get_reranker
 
     reranker = (
@@ -236,6 +267,7 @@ def inject_memories(  # noqa: PLR0915
         semantic_enabled=True,
         hybrid_config=hybrid_config,
         reranker_enabled=config.reranker_enabled,
+        reranker_provider=config.reranker_provider,
         relations_enabled=True,
         scoring_config=scoring_config,
         lexical_config=lexical_config,
@@ -275,12 +307,16 @@ def inject_memories(  # noqa: PLR0915
             injection_telemetry=_default_injection_telemetry(tlabel),
         )
 
+    telem = _default_injection_telemetry(tlabel)
+    _merge_rerank_telemetry(telem, retriever)
+
     visible = _visible_entry_count(store, memory_group)
     n_retriever = len(results)
 
     # Filter by minimum score
     dropped_below_min_score = n_retriever - sum(1 for r in results if r.score >= _MIN_SCORE)
     results = [r for r in results if r.score >= _MIN_SCORE]
+    telem["dropped_below_min_score"] = dropped_below_min_score
 
     if not results:
         if n_retriever == 0:
@@ -290,8 +326,6 @@ def inject_memories(  # noqa: PLR0915
                 reason = RECALL_EMPTY_NO_RANKED_MATCHES
         else:
             reason = RECALL_EMPTY_BELOW_SCORE_THRESHOLD
-        telem = _default_injection_telemetry(tlabel)
-        telem["dropped_below_min_score"] = dropped_below_min_score
         return _injection_empty(
             empty_reason=reason,
             retriever_hits=n_retriever,
@@ -302,21 +336,32 @@ def inject_memories(  # noqa: PLR0915
     # RAG safety check on values before injection (defense-in-depth)
     safe_results = []
     for scored in results:
-        safety = check_content_safety(scored.entry.value)
+        safety = check_content_safety(
+            scored.entry.value,
+            ruleset_version=ruleset_ver,
+            metrics=injection_metrics,
+        )
         if safety.safe:
+            if safety.sanitised_content is not None:
+                scored = scored.model_copy(
+                    update={
+                        "entry": scored.entry.model_copy(
+                            update={"value": safety.sanitised_content},
+                        ),
+                    },
+                )
             safe_results.append(scored)
         else:
             logger.warning(
                 "memory_injection_blocked",
                 key=scored.entry.key,
                 patterns=safety.flagged_patterns,
+                ruleset_version=safety.ruleset_version,
             )
 
     dropped_by_safety = len(results) - len(safe_results)
 
     if not safe_results:
-        telem = _default_injection_telemetry(tlabel)
-        telem["dropped_below_min_score"] = dropped_below_min_score
         telem["dropped_by_safety"] = dropped_by_safety
         return _injection_empty(
             empty_reason=RECALL_EMPTY_RAG_BLOCKED,
@@ -367,18 +412,16 @@ def inject_memories(  # noqa: PLR0915
             }
         )
 
+    telem["dropped_by_safety"] = dropped_by_safety
+    telem["omitted_by_token_budget"] = omitted_by_token_budget
+
     return {
         "memory_section": "\n".join(lines),
         "memory_injected": len(budgeted_results),
         "memories": summaries,
         "truncated": truncated,
         "injected_tokens": used_tokens,
-        "injection_telemetry": {
-            "dropped_below_min_score": dropped_below_min_score,
-            "dropped_by_safety": dropped_by_safety,
-            "omitted_by_token_budget": omitted_by_token_budget,
-            "token_counter": tlabel,
-        },
+        "injection_telemetry": telem,
         "recall_diagnostics": _recall_diag_payload(
             empty_reason=None,
             retriever_hits=n_retriever,

@@ -66,11 +66,25 @@ def test_build_visual_snapshot_shape(tmp_path: Path) -> None:
         store.close()
 
     assert snap.schema_version == VISUAL_SNAPSHOT_SCHEMA_VERSION
+    assert snap.identity_schema_version == 2
+    assert snap.privacy_tier == "standard"
     assert len(snap.fingerprint_sha256) == 64
     assert snap.hive_attached is False
+    assert snap.hive_health.status in {"ok", "warn"}
     assert snap.agent_scope_counts.get("private") == 1
     assert snap.agent_scope_counts.get("hive") == 1
     assert snap.diagnostics is None
+    assert snap.access_stats is not None
+    assert len(snap.access_stats.buckets) == 4
+    assert snap.access_stats.buckets[1].label == "1-5"
+    assert snap.memory_group_count == 0
+    assert snap.memory_group_counts is None
+    assert snap.tag_stats is None
+    assert snap.retrieval_effective_mode != ""
+    assert len(snap.scorecard) >= 8
+    assert any(c.id == "store_entries" for c in snap.scorecard)
+    diag_rows = [c for c in snap.scorecard if c.id == "diagnostics_data"]
+    assert len(diag_rows) == 1 and diag_rows[0].status == "unknown"
     assert "secret" not in snapshot_to_json(snap)
     assert "k1" not in snapshot_to_json(snap)
 
@@ -84,6 +98,12 @@ def test_build_visual_snapshot_with_diagnostics(tmp_path: Path) -> None:
     assert snap.diagnostics is not None
     assert snap.diagnostics.circuit_state in {"closed", "degraded", "open", "half_open"}
     assert 0.0 <= snap.diagnostics.composite_score <= 1.0
+    ids = {c.id for c in snap.scorecard}
+    assert "diagnostics_data" in ids
+    assert "diagnostics_circuit" in ids
+    assert "diagnostics_composite" in ids
+    dd = next(c for c in snap.scorecard if c.id == "diagnostics_data")
+    assert dd.status == "ok"
 
 
 def test_snapshot_json_sort_keys(tmp_path: Path) -> None:
@@ -111,3 +131,37 @@ def test_fingerprint_changes_with_tier_distribution(tmp_path: Path) -> None:
         a.close()
         b.close()
     assert fa != fb
+
+
+def test_privacy_strict_redacts_health_path(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="strict")
+    finally:
+        store.close()
+    assert snap.health.get("store_path") == "<redacted>"
+    assert snap.health.get("integrity_tampered_keys") == []
+    assert snap.privacy_tier == "strict"
+
+
+def test_privacy_local_includes_tags_and_groups(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        store.save(
+            key="a",
+            value="body",
+            tier="pattern",
+            tags=["alpha", "beta"],
+            memory_group="team-a",
+        )
+        store.save(key="b", value="body2", tier="pattern", tags=["alpha"], memory_group="team-a")
+        snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+    finally:
+        store.close()
+    assert snap.tag_stats is not None
+    tags = {t.tag: t.count for t in snap.tag_stats}
+    assert tags.get("alpha") == 2
+    assert tags.get("beta") == 1
+    assert snap.memory_group_counts is not None
+    assert snap.memory_group_counts.get("team-a") == 2
+    assert snap.memory_group_count == 1

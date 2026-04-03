@@ -33,7 +33,21 @@
 
 ### Optional vector index
 
-- `memory_vec` (`vec0`) via sqlite-vec when extension is available.
+- `memory_vec` (`vec0`) via sqlite-vec when extension is available. Operator playbook (rebuild, VACUUM, distance metric, save-path cost): [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md).
+
+### Entry cap and eviction (runtime)
+
+The active `memories` row count is bounded by profile **`limits.max_entries`** (default **5000**). This is enforced in `MemoryStore.save`, not by a database trigger.
+
+| Aspect | Behavior |
+|--------|----------|
+| **When** | Only when inserting a **new** key (`key` not already present) and the in-memory entry count is already at the cap. |
+| **Policy** | Remove exactly **one** row: the entry with the **lowest stored `confidence`** value (the persisted field, not decay-adjusted effective confidence). |
+| **Ties** | If several entries share the minimum confidence, Python’s `min` on the key iterable returns the **first** such key in **dict iteration order** (insertion order since 3.7). |
+| **Persistence** | The evicted key is deleted from SQLite (`memory_evicted` is logged). |
+| **Not evicted on** | Updates to an existing key, deletes, or saves that only reinforce/replace the same key. |
+
+There is **no** per-`memory_group` budget in core today; the cap is global per project store (see EPIC-044 STORY-044.7 research notes).
 
 ## Hive store (`hive.db`)
 

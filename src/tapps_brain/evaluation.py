@@ -1,7 +1,8 @@
 """Offline retrieval evaluation (EPIC-031 STORY-031.3–031.4).
 
-BEIR-compatible JSONL/TSV datasets, pure-Python IR metrics, and optional
-LLM-as-judge evaluation behind optional SDK dependencies.
+BEIR-compatible JSONL/TSV datasets, pure-Python IR metrics, optional
+LLM-as-judge evaluation behind optional SDK dependencies, and deterministic
+consolidation threshold sweeps (EPIC-044 STORY-044.4).
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import importlib
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +21,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
@@ -314,6 +317,121 @@ def ndcg_at_k(ranked_doc_ids: list[str], qrels: dict[str, int], k: int) -> float
     if idcg <= 0.0:
         return 0.0
     return dcg_at_k(ranked_doc_ids, qrels, k) / idcg
+
+
+# ---------------------------------------------------------------------------
+# Consolidation threshold sweep (EPIC-044 STORY-044.4)
+# ---------------------------------------------------------------------------
+
+DEFAULT_CONSOLIDATION_SWEEP_THRESHOLDS: tuple[float, ...] = tuple(
+    round(0.40 + i * 0.05, 2) for i in range(11)
+)
+
+
+class ConsolidationThresholdSweepRow(BaseModel):
+    """One threshold step in a consolidation sensitivity sweep."""
+
+    threshold: float = Field(ge=0.0, le=1.0)
+    group_count: int = Field(ge=0)
+    entries_in_groups: int = Field(
+        ge=0,
+        description="Sum of group sizes (groups are disjoint; equals assigned entry count).",
+    )
+    largest_group_size: int = Field(ge=0)
+
+
+class ConsolidationThresholdSweepReport(BaseModel):
+    """Full sweep result for operator tuning (no store mutations)."""
+
+    generated_at: str
+    source_entry_count: int = Field(ge=0)
+    analyzed_entry_count: int = Field(ge=0)
+    min_group_size: int = Field(ge=2)
+    tag_weight: float
+    text_weight: float
+    active_only: bool
+    rows: list[ConsolidationThresholdSweepRow] = Field(default_factory=list)
+
+
+def run_consolidation_threshold_sweep(
+    entries: list[MemoryEntry],
+    *,
+    thresholds: Sequence[float] | None = None,
+    min_group_size: int = 3,
+    tag_weight: float | None = None,
+    text_weight: float | None = None,
+    active_only: bool = True,
+) -> ConsolidationThresholdSweepReport:
+    """Run :func:`~tapps_brain.similarity.find_consolidation_groups` across thresholds.
+
+    Deterministic and side-effect free: use to pick a similarity cutoff before
+    enabling auto-consolidation or to document sensitivity for an eval corpus.
+
+    Args:
+        entries: Memory rows to analyze (typically ``store.list_all()`` output).
+        thresholds: Similarity cutoffs to try; default 0.40–0.90 step 0.05.
+        min_group_size: Minimum entries per group (matches periodic scan default
+            of 3 when profiling auto-consolidation).
+        tag_weight / text_weight: Passed through to grouping (defaults match
+            ``similarity`` module defaults).
+        active_only: When True, drop :class:`~tapps_brain.models.ConsolidatedEntry`
+            subclasses and ``contradicted`` rows (same filter as periodic scan).
+    """
+    from tapps_brain.models import ConsolidatedEntry
+    from tapps_brain.similarity import (
+        DEFAULT_TAG_WEIGHT,
+        DEFAULT_TEXT_WEIGHT,
+        find_consolidation_groups,
+    )
+
+    tw = DEFAULT_TAG_WEIGHT if tag_weight is None else tag_weight
+    tx = DEFAULT_TEXT_WEIGHT if text_weight is None else text_weight
+
+    source_n = len(entries)
+    if active_only:
+        analyzed = [
+            e
+            for e in entries
+            if not isinstance(e, ConsolidatedEntry) and not e.contradicted
+        ]
+    else:
+        analyzed = list(entries)
+    analyzed_n = len(analyzed)
+
+    raw_thr = thresholds if thresholds is not None else DEFAULT_CONSOLIDATION_SWEEP_THRESHOLDS
+    thr_sorted = sorted({round(float(t), 4) for t in raw_thr})
+
+    rows: list[ConsolidationThresholdSweepRow] = []
+    for t in thr_sorted:
+        groups = find_consolidation_groups(
+            analyzed,
+            threshold=t,
+            min_group_size=min_group_size,
+            tag_weight=tw,
+            text_weight=tx,
+        )
+        group_count = len(groups)
+        entries_in_groups = sum(len(g) for g in groups)
+        largest = max((len(g) for g in groups), default=0)
+        rows.append(
+            ConsolidationThresholdSweepRow(
+                threshold=t,
+                group_count=group_count,
+                entries_in_groups=entries_in_groups,
+                largest_group_size=largest,
+            )
+        )
+
+    return ConsolidationThresholdSweepReport(
+        generated_at=datetime.now(tz=UTC).isoformat(),
+        source_entry_count=source_n,
+        analyzed_entry_count=analyzed_n,
+        min_group_size=min_group_size,
+        tag_weight=tw,
+        text_weight=tx,
+        active_only=active_only,
+        rows=rows,
+    )
 
 
 # ---------------------------------------------------------------------------

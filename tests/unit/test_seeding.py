@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
+from tapps_brain.profile import LayerDefinition, MemoryProfile, SeedingConfig
 from tapps_brain.seeding import (
     _SEEDED_FROM,
     _SEEDED_TAG,
@@ -15,10 +16,6 @@ from tapps_brain.seeding import (
     seed_from_profile,
 )
 from tapps_brain.store import ConsolidationConfig, MemoryStore
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Stub profile
@@ -203,6 +200,38 @@ class TestReseedFromProfile:
 # ---------------------------------------------------------------------------
 # Tests: _slugify helper
 # ---------------------------------------------------------------------------
+
+
+class TestProfileSeedVersion:
+    """EPIC-044 STORY-044.6 — profile_seed_version in seed summaries."""
+
+    @pytest.fixture
+    def store_versioned(self, tmp_path: Path):
+        prof = MemoryProfile(
+            name="seed-version-test",
+            layers=[LayerDefinition(name="context", half_life_days=14)],
+            seeding=SeedingConfig(seed_version="recipe-v2"),
+        )
+        return MemoryStore(
+            tmp_path,
+            profile=prof,
+            consolidation_config=ConsolidationConfig(enabled=False),
+        )
+
+    def test_seed_includes_profile_seed_version(self, store_versioned):
+        result = seed_from_profile(store_versioned, _full_profile())
+        assert result["profile_seed_version"] == "recipe-v2"
+
+    def test_skip_non_empty_includes_profile_seed_version(self, store_versioned):
+        store_versioned.save(key="x", value="y")
+        result = seed_from_profile(store_versioned, _full_profile())
+        assert result["skipped"] is True
+        assert result["profile_seed_version"] == "recipe-v2"
+
+    def test_reseed_includes_profile_seed_version(self, store_versioned):
+        seed_from_profile(store_versioned, _full_profile())
+        result = reseed_from_profile(store_versioned, _FakeProfile())
+        assert result["profile_seed_version"] == "recipe-v2"
 
 
 class TestSlugify:

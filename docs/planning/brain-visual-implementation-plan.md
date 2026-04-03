@@ -2,8 +2,8 @@
 
 Track progress here for a **modern, per-instance-unique** visual representation of tapps-brain (dashboard, marketing, OpenClaw surfaces, or docs). Scope is intentionally large; phases are ordered so early slices ship value without committing to WebGPU or full 3D.
 
-**Status:** planning  
-**Last updated:** 2026-03-30
+**Status:** planning (Phase A–E expanded dashboard spec added)  
+**Last updated:** 2026-04-02
 
 ---
 
@@ -36,6 +36,136 @@ These are the **explicit** criteria used to double-check deliverables. They synt
 
 - [W3C WCAG 3.0 Working Draft](https://www.w3.org/TR/wcag-3.0) — outcomes model; immersive/spatial scope emerging.
 - [Midrocket: UI design trends 2026](https://midrocket.com/en/guides/ui-design-trends-2026/) — bento, evolved glassmorphism, dark-first maturity, WebGPU + intentional 3D, variable/kinetic type.
+
+---
+
+## 2026 dashboard trend digest (for this surface)
+
+Use these as **design review checkpoints**, not as a mandate to ship every gimmick. They align tapps-brain’s story (**deterministic, trustworthy, local-first memory**) with what operators expect from modern analytics UIs.
+
+| Trend | What it means here | Source / further reading |
+|-------|-------------------|----------------------------|
+| **Decision-first, not data-dump** | Above the fold: *“Is this brain healthy for recall?”* (circuit, retrieval mode, capacity). Charts support a decision; they are not the hero. | [Think Design — Dashboard Design in 2026](https://think.design/blog/dashboard-design-in-2026-dos-and-donts/) |
+| **Bento / modular hierarchy** | Asymmetric grid: one **anchor tile** (fingerprint + trust), supporting tiles for retrieval, Hive, federation, storage. Already matches NLT demo direction; evolve density with **container queries**. | [Midrocket 2026 UI trends](https://midrocket.com/en/guides/ui-design-trends-2026/), [Design Signal — patterns](https://designsignal.ai/articles/dashboard-design-patterns) |
+| **Ambient / peripheral metrics** | Secondary stats (rate-limit anomalies, save-phase p50) as **muted pulses** or small spark strips—felt at a glance, not read like a spreadsheet. | [Design Signal — ambient visualization](https://designsignal.ai/articles/dashboard-design-patterns) |
+| **Glass 2.0 + solid content** | Sticky header / overlays: light blur; **card bodies stay solid** for contrast (OLED-friendly dark theme as equal citizen to light). | [Spunk — UI trends 2026](https://spunk.pics/blog/ui-design-trends-2026) |
+| **AI-era honesty** | Any future ML-heavy viz must be **labeled**; default remains **fingerprint-seeded, reproducible** chrome. Behavioral copy: *what* is aggregated, *what* never ships. | [LetsBlogItUp — AI-first dashboards 2026](https://letsblogitup.dev/articles/building-a-data-driven-dashboard-for-2026-s-ai-first-design-trends/) |
+| **Accessibility as default** | **WCAG 2.2 AA** floor; keyboard path through tabs/sections; **`prefers-reduced-motion`** turns ambient motion into static bands; optional **`prefers-reduced-data`** skips nonessential charts. | Same WCAG / trend refs above |
+
+**Inspiration parity (NLT “inside” pages):** Long-form investor interiors (e.g. rich sections, phase timelines, agent run telemetry on sibling products) set a **density expectation**. tapps-brain should feel **related** in craft (typography, section rhythm, “how it was built” transparency) while staying **smaller in scope**: one project’s memory ops, not a full PE memo. Treat Complio-style pages as **layout and narrative density** references, not as a requirement to duplicate financial content.
+
+---
+
+## Marketing & UX narrative (“why this screen exists”)
+
+**One-line promise:** *A beautiful, honest control room for your second brain—no memory text leaves the pipe unless you choose a local-trust mode.*
+
+**Audience split:**
+
+| Audience | Job-to-be-done | UX emphasis |
+|----------|----------------|-------------|
+| **Solo dev / operator** | “Is recall broken? Is Hive on? Am I full?” | Traffic-light health, retrieval mode, capacity, diagnostics circuit |
+| **Team lead** | “Are we consistent across machines?” | Fingerprint compare, export timestamp, schema/profile version |
+| **NLT / storytelling** | “This is real infrastructure, not a toy” | Density, craft, fingerprint + “deterministic identity” story |
+
+**Story beats (scroll order):**
+
+1. **Trust strip** — Fingerprint (copy), snapshot time, snapshot-format version vs DB schema (labeled unambiguously).
+2. **Pulse** — Entry count, tier mix (mini chart), agent_scope breakdown (private / domain / hive / `group:*` counts).
+3. **Retrieval & RAG reality** — `retrieval_effective_mode`, sqlite-vec rows, hybrid summary (mirror `health_check` logic so the UI matches CLI/MCP).
+4. **Hive & federation** — Attached, namespace count, agent count, federation project count (from existing health paths).
+5. **Integrity & safety** — Tamper counts, relations count, rate-limit anomaly totals (aggregated).
+6. **Activity & memory economics** — Histograms: `access_count` distribution buckets, optional tag **frequency** (privacy tiered).
+7. **Groups** — Count of distinct `memory_group` values; optional **local** mode: top groups by count (names can be sensitive—gated).
+8. **Diagnostics** — Full block when export includes it; explain *omitted* when `--skip-diagnostics`.
+9. **Privacy footer (amplified)** — Three bullets: what is always excluded, what is aggregated, what **local verbose** adds.
+
+**Microcopy principles:** Plain language, no fake “AI confidence” scores unless tied to real diagnostics; prefer *“BM25 + vector (sqlite-vec)”* over *“RAG enabled”* unless you add a tooltip defining RAG in this product.
+
+---
+
+## Telemetry → UI module map (“include everything”)
+
+Everything listed is **already available or cheap to aggregate** from `MemoryStore` / persistence / `run_health_check` / metrics. The work is **contract + UI**, not inventing new backend science.
+
+| Domain | Source (Python) | Safe aggregate (default export) | Local / verbose add-on |
+|--------|-----------------|----------------------------------|-------------------------|
+| Identity | `visual_snapshot` identity + fingerprint | Fingerprint, profile, store path, schema versions | Same |
+| Entries & capacity | `store.health()` | `entry_count`, `max_entries`, `oldest_entry_age_days` | Optional utilization % callout |
+| Tiers | `tier_distribution` | Bar / donut | Trend if time-series added later |
+| Agent scope | `list_all` → counts | `agent_scope_counts` (expand for `group:x` normalization) | Per-group rollup table |
+| Memory groups | `list_memory_groups()` + counts | **Count only** | Named groups + entry counts |
+| Tags | `list_all` → tag frequencies | **Omit** or top-N hashed buckets | Top tags by count (leakage warning in UI) |
+| Access / recall signal | `access_count`, `total_access_count`, `useful_access_count` | Sum, mean, histogram buckets, “hot vs cold” ratio | Percentiles |
+| Relations | `relation_count` | Stat + optional “density” ratio vs entries | — |
+| Retrieval / vector | `_retrieval_health_from_store`, sqlite vec helpers | Mode + summary + vec rows | Link to docs |
+| Hive | `run_health_check` hive slice | Connected, entries, agents, namespaces list | — |
+| Federation | `store.health()` | Enabled flag + project count | — |
+| Consolidation / GC | `store.health()` | Candidate counts | — |
+| Rate limits | `store.health()` | Anomaly counters | — |
+| Save path perf | `get_metrics()` / `save_phase_summary` | Compact line + optional mini bar chart | Full histograms in local JSON |
+| Integrity | `store.health()` | Verified / tampered / no_hash; cap tampered keys | Full key list local-only |
+| Diagnostics | `store.diagnostics()` | Composite + circuit + timestamp | History sparkline if exported |
+| Package | `package_version` | Visible in header | — |
+
+**Fingerprint v2 consideration:** Extending the hashed identity payload when new aggregates are added **changes** the fingerprint for the same logical store—version the rules and document migration (e.g. `identity_schema_version` inside the hashed object).
+
+---
+
+## Privacy tiers (export + UI)
+
+| Tier | CLI flag (proposed) | JSON | Who |
+|------|---------------------|------|-----|
+| **Strict** | `--privacy strict` | No store path; no tag names; group count only; minimal PII | Shareable screenshots |
+| **Standard** | default today + expansions | Aggregates + path + retrieval mode; no tag histogram | Teammates / docs |
+| **Local verbose** | `--privacy local` | Tag top-N, named groups, tampered key list cap, richer metrics | Same machine only |
+
+Implementation must **never** put raw memory `value` text in snapshot JSON unless explicitly out of scope (separate feature).
+
+---
+
+## Revised execution phases (expanded dashboard)
+
+Phases 0–5 above remain valid; this block **sequences the “everything dashboard”** without collapsing the earlier hero/3D vision.
+
+### Phase A — Snapshot schema v2 + parity with CLI health
+
+- [x] Bump `schema_version` to **2** in `VisualSnapshot` (demo still reads v1 JSON with fallbacks).
+- [x] Add **`retrieval_effective_mode`**, **`retrieval_summary`**, **`sqlite_vec_rows`**, **`sqlite_vec_enabled`** (via `retrieval_health_slice()` + store properties; properties not callables fixed in `health_check` too).
+- [x] Add **`hive_health`** slice (namespaces, agents, entries) via best-effort `HiveStore` open.
+- [x] Add **`memory_group_count`**, optional **`memory_group_counts`** (`local` only).
+- [x] Add **`access_stats`**: buckets + sum/mean (no per-key).
+- [x] Add **`tag_stats`**: `local` only (top N); omitted standard/strict.
+- [x] Add **`identity_schema_version`** on snapshot + inside hashed identity payload.
+- [x] Tests: `test_visual_snapshot.py` + CLI export assertion; strict/local coverage.
+- [x] Docs: `examples/brain-visual/README.md`, `docs/guides/visual-snapshot.md`.
+
+### Phase B — `examples/brain-visual/index.html` IA overhaul
+
+- [x] Load row + theme toggle + **Copy fingerprint**; privacy tier surfaced in KPI strip from JSON.
+- [ ] **Compare** second snapshot file (A/B diff) — not implemented.
+- [x] **Section anchor nav** + blocks: Pulse / Retrieval / Hive / Activity / Groups / Tags / Integrity / Privacy (Diagnostics remains in bento + `#diagnostics`).
+- [x] **KPI strip** (entries, DB schema, privacy tier, Hive hub, tier row sum).
+- [x] **Bar charts** (CSS): tier mix + access histogram.
+- [x] **Empty / legacy states:** v1 export messaging; Hive unreachable copy; no tag_stats copy.
+- [ ] **View Transitions API** — not implemented.
+- [ ] **Formal WCAG audit** — inherits existing reduced-motion on tiles; manual pass still open.
+
+### Phase C — Marketing polish
+
+- [ ] **Hero line** under title: rotating *value props* (deterministic, local, Hive-aware)—data-bound to real flags, not Lorem ipsum.
+- [ ] **“How to read this”** collapsible: fingerprint, diagnostics circuit, retrieval modes.
+- [ ] Optional **export poster** button: SVG or PNG card of KPI strip for slides (client-side only).
+
+### Phase D — Optional live bridge (later)
+
+- [ ] Local HTTP server or MCP tool returning snapshot JSON (behind auth/off by default).
+- [ ] **SSE or poll** for metrics refresh (aligns with streaming dashboard direction); document threat model.
+
+### Phase E — Distribution
+
+- [ ] Link from `open-issues-roadmap.md` when Phase A lands.
+- [ ] `STATUS.md` one-liner if marketed beyond examples.
 
 ---
 
@@ -158,6 +288,8 @@ Choose **one** primary metaphor (can add second later). **Intent check:** static
 | 2026-03-30 | Plan created; phases 0–5 defined. |
 | 2026-03-30 | Pass: **2026 principles** table (WCAG 3 trajectory, bento/subgrid, View Transitions, OLED-first glass, WebGPU as progressive enhancement, cognitive honesty, privacy). |
 | 2026-03-30 | **Slice shipped:** `tapps_brain.visual_snapshot` + CLI `visual export` + `tests/unit/test_visual_snapshot.py` + `examples/brain-visual/` static bento demo. |
+| 2026-04-02 | **Plan expanded:** 2026 dashboard trend digest (cited), marketing/UX narrative, full telemetry→UI map, privacy tiers (`strict` / standard / `local`), Phases A–E for “everything” dashboard + NLT inside-page density parity (craft, not financial content). |
+| 2026-04-02 | **Phase A + B executed:** `VisualSnapshot` schema **v2** (`access_stats`, `hive_health`, retrieval/sqlite-vec fields, `privacy_tier`, `memory_group_*`, optional `tag_stats`); CLI `--privacy`; `retrieval_health_slice()` public; `health_check` sqlite-vec property handling; `examples/brain-visual/` dashboard sections + KPI strip + copy fingerprint; docs/README updates. |
 
 (Add a row per milestone or PR.)
 

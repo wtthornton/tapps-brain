@@ -132,9 +132,9 @@ class TestAppendToArchive:
         archive_path = tmp_path / "archive.jsonl"
         entry = _make_entry(key="archived-key")
 
-        MemoryGarbageCollector.append_to_archive([entry], archive_path)
-
+        n = MemoryGarbageCollector.append_to_archive([entry], archive_path)
         text = archive_path.read_text(encoding="utf-8")
+        assert n == len(text.encode("utf-8"))
         lines = [line for line in text.strip().splitlines() if line.strip()]
         assert len(lines) == 1
         data = json.loads(lines[0])
@@ -146,9 +146,9 @@ class TestAppendToArchive:
         archive_path = tmp_path / "archive.jsonl"
         entries = [_make_entry(key=f"key-{i}") for i in range(3)]
 
-        MemoryGarbageCollector.append_to_archive(entries, archive_path)
-
+        n = MemoryGarbageCollector.append_to_archive(entries, archive_path)
         text = archive_path.read_text(encoding="utf-8")
+        assert n == len(text.encode("utf-8"))
         lines = [line for line in text.strip().splitlines() if line.strip()]
         assert len(lines) == 3
         # Each line is valid JSON with the expected keys
@@ -162,3 +162,38 @@ class TestGCResult:
         assert result.archived_count == 0
         assert result.remaining_count == 0
         assert result.archived_keys == []
+        assert result.dry_run is False
+        assert result.reason_counts == {}
+        assert result.archive_bytes == 0
+        assert result.estimated_archive_bytes == 0
+
+
+class TestGcReasonAggregation:
+    def test_aggregate_gc_reason_counts(self) -> None:
+        from tapps_brain.gc import StaleCandidateDetail, aggregate_gc_reason_counts
+
+        details = [
+            StaleCandidateDetail(
+                key="a",
+                tier="context",
+                reasons=["session_expired"],
+                effective_confidence=0.1,
+                stored_confidence=0.5,
+                contradicted=False,
+                scope="session",
+            ),
+            StaleCandidateDetail(
+                key="b",
+                tier="pattern",
+                reasons=["floor_retention", "contradicted_low_confidence"],
+                effective_confidence=0.02,
+                stored_confidence=0.1,
+                contradicted=True,
+                scope="project",
+            ),
+        ]
+        assert aggregate_gc_reason_counts(details) == {
+            "contradicted_low_confidence": 1,
+            "floor_retention": 1,
+            "session_expired": 1,
+        }

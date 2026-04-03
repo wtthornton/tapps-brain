@@ -100,8 +100,10 @@ from tapps_brain.retrieval import MemoryRetriever as MemoryRetriever
 from tapps_brain.retrieval import ScoredMemory as ScoredMemory
 
 # Safety
+from tapps_brain.safety import DEFAULT_SAFETY_RULESET_VERSION as DEFAULT_SAFETY_RULESET_VERSION
 from tapps_brain.safety import SafetyCheckResult as SafetyCheckResult
 from tapps_brain.safety import check_content_safety as check_content_safety
+from tapps_brain.safety import resolve_safety_ruleset_version as resolve_safety_ruleset_version
 
 # Similarity & Consolidation
 from tapps_brain.similarity import SimilarityResult as SimilarityResult
@@ -115,6 +117,7 @@ from tapps_brain.store import MemoryStore as MemoryStore
 from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 
 __all__ = [
+    "DEFAULT_SAFETY_RULESET_VERSION",
     "VALID_AGENT_SCOPES",
     "BM25Scorer",
     "ConsolidatedEntry",
@@ -164,6 +167,7 @@ __all__ = [
     "import_openclaw_workspace",
     "inject_memories",
     "is_stale",
+    "resolve_safety_ruleset_version",
     "sync_from_markdown",
     "sync_to_markdown",
     "verify_integrity_hash",

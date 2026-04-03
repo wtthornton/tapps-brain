@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-02 (**#52** closed; **EPIC-042** STORY-042.2 **done** (v17 `embedding_model_id`, int8 spike helpers); **STORY-042.4** **done** (RRF doc + `profile.hybrid_fusion`); **EPIC-050** partial; **EPIC-044.3** `exclude_key` fix; **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
+Last updated: 2026-04-02 (**#52** closed; **EPIC-042** **042.1–042.8** stories done incl. **042.6** rerank observability + **042.3** sqlite-vec ops doc; **EPIC-050** partial (050.3 WAL checkpoint runbook shipped); **EPIC-044** **044.1**/**044.2**/**044.5**/**044.6**/**044.7** shipped; **044.3**/**044.4** core shipped (NLI / merge-undo / per-group cap backlog in epic); **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
 Owner: @wtthornton
 
 ## Purpose
@@ -126,9 +126,15 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 - **Save-path observability** — tracking table row 20 **done** (`save_phase_summary` on live store health / MCP); further metrics are optional.
 - **MemoryStore decomposition** (tracking row 22): design-first only; see **EPIC-050** / **EPIC-051** for concurrency and scale framing.
-- **Retrieval epic (`EPIC-042`):** **042.2** done (int8 helpers, **v17** `embedding_model_id`, model card + **§ Performance review backlog** in [`embedding-model-card.md`](../guides/embedding-model-card.md)). **042.4** done (RRF formula + citation in `fusion.py`; `HybridFusionConfig` / YAML `hybrid_fusion` + inject path). **Recommended order:** **042.3** (sqlite-vec ops docs) → **042.6** (rerank observability).
-- **Conflicts (`EPIC-044.3`):** `exclude_key` shipped; remainder = user-visible conflict reason + profile aggressiveness for `detect_save_conflicts`.
-- **Concurrency (`EPIC-050`):** remaining — **050.1** optional async wrapper spike only; **050.2** “reduce lock scope” deferred; optional WAL **checkpoint** runbook line under **050.3** research.
+- **Retrieval epic (`EPIC-042`):** Story grid **042.1–042.8** done (including **042.6** rerank logs + `injection_telemetry` `rerank_*`; **042.3** [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md)). Epic-level success criteria (eval run, GitHub) may still be open in [`EPIC-042.md`](epics/EPIC-042.md).
+- **Auto-consolidation (`EPIC-044.4`):** `consolidation_merge` + `consolidation_source` rows in `memory_log.jsonl` (save + periodic scan); CLI/MCP `memory audit --type`; **`evaluation.run_consolidation_threshold_sweep`** for offline threshold sensitivity. Merge **undo** remains backlog in epic.
+- **GC (`EPIC-044.5`):** Dry-run **`reason_counts`** / **`estimated_archive_bytes`**; metrics **`store.gc.archived`** / **`store.gc.archive_bytes`**; health **`gc_*`**; CLI/MCP delegate to **`MemoryStore.gc`**; **`archive.jsonl`** path aligned.
+- **Seeding (`EPIC-044.6`):** **`profile.seeding.seed_version`** + **`profile_seed_version`** in seed/reseed summaries; **`seeding`** module doc for **`conflict_check`** on seed saves.
+- **Caps / eviction (`EPIC-044.7`):** Policy documented in [`data-stores-and-schema.md`](../engineering/data-stores-and-schema.md#entry-cap-and-eviction-runtime) and cross-linked from [`features-and-technologies.md`](../engineering/features-and-technologies.md) / [`profiles.md`](../guides/profiles.md). Per-group caps backlog in epic.
+- **Bloom dedup (`EPIC-044.2`):** Shipped — `normalize_for_dedup` applies **NFKC**; module/class Bloom **false-positive** documentation; `bloom_false_positive_probability`, `BloomFilter.approximate_false_positive_rate`, `bit_size` / `hash_count`.
+- **RAG safety (`EPIC-044.1`):** Shipped — `profile.safety.ruleset_version` (`SafetyConfig`); `check_content_safety(..., ruleset_version=, metrics=)`; counters `rag_safety.blocked` / `rag_safety.sanitized`; health fields `rag_safety_*`; save blocks on any `safe=False`; injection applies sanitised text when returned.
+- **Conflicts (`EPIC-044.3`):** Shipped on `main` — `exclude_key`; save-time invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig` aggressiveness or explicit `similarity_threshold`; `memory_save_conflicts_detected` log includes `similarity_threshold` and per-hit similarity. Further NLI / UX polish remains backlog in the epic.
+- **Concurrency (`EPIC-050`):** remaining — **050.1** optional async wrapper spike only; **050.2** “reduce lock scope” deferred; **050.3** WAL **checkpoint** operator note shipped (`sqlite-database-locked.md`, `openclaw-runbook.md`).
 
 **Done in repo (was backlog item 6)**
 
@@ -253,6 +259,13 @@ Copy this section at the end of each week:
 
 ## Change Log
 
+- 2026-04-02 (late): **EPIC-044** follow-on slice — **STORY-044.5** GC dry-run report + **`store.gc.archive_bytes`** + health **`gc_*`** + **`archive.jsonl`**; **STORY-044.6** **`SeedingConfig`** / **`profile_seed_version`**; **STORY-044.7** eviction doc in **`data-stores-and-schema.md`**; **STORY-044.4** **`run_consolidation_threshold_sweep`** in **`evaluation.py`**; planning docs (**`STATUS`**, **`next-session-prompt`**, roadmap, feature-tech index) synced.
+- 2026-04-02 (late): **STORY-044.4** (partial) — auto-consolidation JSONL audit `consolidation_merge` / `consolidation_source`; `auto_consolidation._persist_consolidated_entry` optional audit kwargs; CLI/MCP audit help; epic threshold-sweep theme remains backlog.
+- 2026-04-02 (late): **STORY-044.2** — Bloom nominal FP documentation + `bloom_false_positive_probability` / `BloomFilter.approximate_false_positive_rate`; `normalize_for_dedup` NFKC; `features-and-technologies.md` row updated.
+- 2026-04-02 (late): **STORY-044.1** — RAG safety ruleset semver (`SafetyConfig`, `resolve_safety_ruleset_version`); metrics `rag_safety.blocked` / `rag_safety.sanitized`; `StoreHealthReport` rag_safety fields; save/injection wiring; `SafetyCheckResult.ruleset_version`.
+- 2026-04-02 (eve): **EPIC-050** residual — WAL **checkpoint** guidance for long-lived MCP: [`sqlite-database-locked.md`](../guides/sqlite-database-locked.md) § *WAL checkpoint*; [`openclaw-runbook.md`](../guides/openclaw-runbook.md) § *Long-lived MCP and SQLite WAL*; `EPIC-050.md` research/themes synced.
+- 2026-04-02 (late): **STORY-042.6** — `memory_rerank` / `reranker_failed_fallback_to_original` (latency_ms, provider, candidates_in, top_k, results_out); `MemoryRetriever.last_rerank_stats`, `reranker_provider` ctor arg; `inject_memories` merges `rerank_*` into `injection_telemetry`; `reranker.py` PII note.
+- 2026-04-02 (late): **STORY-042.3** — [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md) (rebuild/VACUUM, incremental upsert cost, L2 default vs `MATCH` SQL); `sqlite_vec_index.py` / `persistence.py` / `retrieval.py` docstrings; engineering cross-links; sqlite_vec test asserts L2 distance ordering.
 - 2026-04-02 (late): **STORY-042.4** — RRF notation + references in `fusion.py`; `profile.HybridFusionConfig` (`top_k_lexical` / `top_k_dense` aliases); `inject_memories` passes hybrid fusion config from real profiles; commented template in `repo-brain.yaml`.
 - 2026-04-02 (handoff): Added [`next-session-prompt.md`](next-session-prompt.md) for copy-paste agent continuation; roadmap “Recommended next steps” links it.
 - 2026-04-02 (late): **EPIC-042** status sync — **042.1**/**042.5**/**042.7**/**042.8** → **done**; **042.2** → **in_progress** (model card `embedding-model-card.md`, min-max `ScoringConfig.relevance_normalization`); **EPIC-050** **STORY-050.3** → **done** (`connect_sqlite_readonly`, `TAPPS_SQLITE_MEMORY_READONLY_SEARCH`); **EPIC-044.3** note `exclude_key` conflict fix; roadmap “Next engineering” bullets refreshed.

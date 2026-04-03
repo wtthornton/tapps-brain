@@ -15,6 +15,9 @@ EPIC-042.4: Hybrid RRF pool sizes and ``k`` come from ``profile.HybridFusionConf
 (``inject_memories`` passes the store profile). See ``fusion.py`` for the RRF formula.
 Optional ``scoring.relevance_normalization: minmax`` applies per-query min-max to raw
 relevance over surviving candidates (vs default ``sigmoid`` via ``bm25_norm_k``).
+EPIC-042.6: After hybrid scoring, optional rerank emits structured logs
+(``memory_rerank`` / ``reranker_failed_fallback_to_original``) and
+``last_rerank_stats`` for callers (e.g. ``inject_memories`` telemetry).
 Default ``search()`` excludes: contradicted entries (unless ``include_contradicted``),
 consolidated source rows (unless ``include_sources``), temporally invalid /
 superseded entries (unless ``include_superseded`` / ``include_historical``), and
@@ -24,9 +27,10 @@ corpus for IDF; ranking applies the filters above.
 
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from pydantic import BaseModel, Field
@@ -142,6 +146,7 @@ class MemoryRetriever:
         hybrid_config: object | None = None,
         reranker: Reranker | None = None,
         reranker_enabled: bool = False,
+        reranker_provider: str | None = None,
         retrieval_policy: object | None = None,
         relations_enabled: bool = False,
         expand_queries: bool = True,
@@ -161,6 +166,7 @@ class MemoryRetriever:
         self._hybrid_config = hybrid_config
         self._reranker = reranker
         self._reranker_enabled = reranker_enabled
+        self._reranker_provider: str = (reranker_provider or "noop").strip().lower() or "noop"
         self._retrieval_policy = retrieval_policy
         self._relations_enabled = relations_enabled
         self._expand_queries = expand_queries
@@ -223,6 +229,9 @@ class MemoryRetriever:
             self._relevance_norm_mode = "sigmoid"
             self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
 
+        # EPIC-042.6: set by ``search()`` when rerank runs; read by injection/recall telemetry.
+        self.last_rerank_stats: dict[str, Any] | None = None
+
     def search(  # noqa: PLR0915
         self,
         query: str,
@@ -264,6 +273,7 @@ class MemoryRetriever:
         Returns:
             Scored memories sorted by composite score (descending).
         """
+        self.last_rerank_stats = None
         if not query or not query.strip():
             return []
         # include_historical is an alias for include_superseded (GitHub #29)
@@ -403,17 +413,53 @@ class MemoryRetriever:
         top_candidates = scored[:RERANKER_TOP_CANDIDATES]
         candidates = [(sm.entry.key, sm.entry.value) for sm in top_candidates]
         effective_top_k = min(limit, len(candidates))
+        candidates_in = len(candidates)
+        t0 = time.perf_counter()
 
         try:
             reranked = self._reranker.rerank(query, candidates, top_k=effective_top_k)
         except Exception as e:
+            latency_ms = round((time.perf_counter() - t0) * 1000, 3)
+            self.last_rerank_stats = {
+                "applied": False,
+                "provider": self._reranker_provider,
+                "candidates_in": candidates_in,
+                "top_k": effective_top_k,
+                "latency_ms": latency_ms,
+                "results_out": None,
+                "error": type(e).__name__,
+            }
             logger.warning(
                 "reranker_failed_fallback_to_original",
                 reason=str(e),
+                provider=self._reranker_provider,
+                candidates_in=candidates_in,
+                top_k=effective_top_k,
+                latency_ms=latency_ms,
             )
             return scored
 
+        latency_ms = round((time.perf_counter() - t0) * 1000, 3)
+        log_event = logger.info if self._reranker_provider != "noop" else logger.debug
+        log_event(
+            "memory_rerank",
+            provider=self._reranker_provider,
+            candidates_in=candidates_in,
+            top_k=effective_top_k,
+            latency_ms=latency_ms,
+            results_out=len(reranked),
+        )
+
         if not reranked:
+            self.last_rerank_stats = {
+                "applied": True,
+                "provider": self._reranker_provider,
+                "candidates_in": candidates_in,
+                "top_k": effective_top_k,
+                "latency_ms": latency_ms,
+                "results_out": 0,
+                "error": None,
+            }
             return scored
 
         key_to_scored = {sm.entry.key: sm for sm in scored}
@@ -438,7 +484,17 @@ class MemoryRetriever:
                 result.append(sm)
                 if len(result) >= limit:
                     break
-        return result[:limit]
+        out = result[:limit]
+        self.last_rerank_stats = {
+            "applied": True,
+            "provider": self._reranker_provider,
+            "candidates_in": candidates_in,
+            "top_k": effective_top_k,
+            "latency_ms": latency_ms,
+            "results_out": len(reranked),
+            "error": None,
+        }
+        return out
 
     # -----------------------------------------------------------------------
     # Relation expansion (Epic 65.13)
@@ -674,6 +730,7 @@ class MemoryRetriever:
             return empty
 
         # Prefer sqlite-vec KNN when enabled (GitHub #30) — avoids full-corpus re-embedding.
+        # Vec0 returns L2 distance; map to a bounded score for RRF (monotonic for dist >= 0).
         pv = getattr(store, "_persistence", None)
         if (
             pv is not None

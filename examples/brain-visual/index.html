@@ -86,9 +86,9 @@
     }
 
     .header-inner {
-      max-width: 1280px;
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 1rem 1.5rem;
+      padding: 1rem clamp(1rem, 4vw, 2rem);
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -104,10 +104,14 @@
       color: inherit;
     }
 
-    .brand-mark {
+    .brand-mark,
+    svg.brand-mark {
       width: 40px;
       height: 40px;
       flex-shrink: 0;
+      display: block;
+      /* Solid fill via currentColor: avoids empty renders when url(#gradient) fails in some WebViews */
+      color: var(--nlt-accent-primary);
     }
 
     .brand-text {
@@ -117,6 +121,9 @@
     }
 
     .brand-wordmark {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.4rem; /* clear “NLT” + “labs” read; avoids “NLTlabs” */
       font-size: 1.625rem;
       font-weight: 700;
       letter-spacing: -0.02em;
@@ -125,17 +132,20 @@
 
     .brand-wordmark .nlt {
       color: var(--fg);
+      letter-spacing: -0.015em;
     }
 
     .brand-wordmark .labs {
       color: var(--nlt-accent-primary);
+      font-weight: 600; /* slightly lighter than NLT; reads as second beat */
+      letter-spacing: 0.01em;
     }
 
     .brand-subtitle {
       margin: 0;
-      font-size: 7px;
-      line-height: 1.1;
-      letter-spacing: 0.32em;
+      font-size: 0.5625rem; /* ~9px; 7px was below comfortable reading */
+      line-height: 1.15;
+      letter-spacing: 0.28em;
       text-transform: uppercase;
       color: var(--fg-dim);
       font-weight: 600;
@@ -170,19 +180,26 @@
     }
 
     main {
-      padding-bottom: 3rem;
+      padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
     }
 
-    .wrap {
-      max-width: 1280px;
+    /* Single elevated surface so the page reads as a dashboard, not a readme on linen */
+    .content-shell {
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 2rem 1.5rem 0;
+      padding: clamp(1.75rem, 4vw, 2.75rem) clamp(1.25rem, 3vw, 2.25rem);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.04),
+        0 12px 40px rgba(0, 0, 0, 0.06);
     }
 
-    @media (min-width: 1024px) {
-      .wrap {
-        padding-top: 3rem;
-      }
+    html[data-theme="dark"] .content-shell {
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.06) inset,
+        0 16px 48px rgba(0, 0, 0, 0.45);
     }
 
     .product-tag {
@@ -195,14 +212,23 @@
     }
 
     .page-title {
-      margin: 0 0 0.75rem;
+      margin: 0 0 0.35rem;
       font-family: var(--font-display);
-      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-size: clamp(1.85rem, 4.2vw, 2.4rem);
       font-weight: 700;
       font-optical-sizing: auto;
       letter-spacing: -0.03em;
-      line-height: 1.15;
+      line-height: 1.12;
       color: var(--fg);
+    }
+
+    .page-subtitle {
+      margin: 0 0 1.25rem;
+      max-width: 42ch;
+      font-size: 1.05rem;
+      font-weight: 500;
+      line-height: 1.45;
+      color: var(--fg-dim);
     }
 
     .gradient-text {
@@ -212,19 +238,60 @@
       -webkit-text-fill-color: transparent;
     }
 
-    .lede {
+    .dev-details {
       margin: 0 0 1.5rem;
       max-width: 52ch;
-      color: var(--fg-dim);
-      font-size: 0.95rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+      overflow: hidden;
     }
 
-    .lede code {
+    .dev-details summary {
+      cursor: pointer;
+      padding: 0.65rem 1rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--fg-dim);
+      list-style: none;
+      user-select: none;
+    }
+
+    .dev-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .dev-details summary::after {
+      content: " ▾";
+      font-size: 0.7em;
+      opacity: 0.7;
+    }
+
+    .dev-details[open] summary::after {
+      content: " ▴";
+    }
+
+    .dev-details .dev-body {
+      padding: 0 1rem 1rem;
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: var(--fg-dim);
+    }
+
+    .dev-body p {
+      margin: 0;
+    }
+
+    .dev-body p + p {
+      margin-top: 0.75rem;
+    }
+
+    .dev-details code {
       font-family: var(--font-mono);
-      font-size: 0.88em;
-      padding: 0.1em 0.35em;
+      font-size: 0.84em;
+      padding: 0.12em 0.4em;
       border-radius: 4px;
-      background: var(--bg-alt);
+      background: var(--surface);
       border: 1px solid var(--border);
     }
 
@@ -234,10 +301,280 @@
       flex-wrap: wrap;
       gap: 1rem;
       align-items: center;
+      margin-bottom: 1.25rem;
+      padding: 1rem 1.25rem;
+      border-radius: 12px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost {
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.65rem 1.1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .btn-ghost:hover {
+      border-color: rgba(217, 119, 6, 0.35);
+    }
+
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
       margin-bottom: 1.5rem;
     }
 
-    .load-row label {
+    .kpi {
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+    }
+
+    .kpi .kpi-val {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--fg);
+      letter-spacing: -0.02em;
+    }
+
+    .kpi .kpi-lbl {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--nlt-accent-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .kpi .kpi-sub {
+      font-size: 0.75rem;
+      color: var(--fg-dim);
+      margin-top: 0.2rem;
+    }
+
+    .section-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0 0 1.25rem;
+      padding: 0;
+      list-style: none;
+    }
+
+    .section-nav a {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--fg-dim);
+      text-decoration: none;
+      transition: border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .section-nav a:hover,
+    .section-nav a:focus-visible {
+      color: var(--nlt-accent-dim);
+      border-color: rgba(217, 119, 6, 0.35);
+    }
+
+    .dash-section {
+      margin-bottom: 2rem;
+      scroll-margin-top: 5rem;
+    }
+
+    .dash-section h2 {
+      margin: 0 0 0.75rem;
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--fg);
+    }
+
+    .prose-small {
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: var(--fg-dim);
+      margin: 0 0 0.75rem;
+      max-width: 65ch;
+    }
+
+    .bar-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 4.5rem 1fr;
+      gap: 0.65rem;
+      align-items: center;
+      font-size: 0.8125rem;
+    }
+
+    .bar-row span:first-child {
+      color: var(--fg-dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bar-track {
+      height: 8px;
+      border-radius: 4px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: var(--nlt-gradient);
+      min-width: 2px;
+      transition: width 0.4s ease;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+    }
+
+    .data-table th,
+    .data-table td {
+      text-align: left;
+      padding: 0.45rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .data-table th {
+      color: var(--fg-dim);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .mono-small {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      word-break: break-all;
+    }
+
+    .scorecard-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .sc-card {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      border-left-width: 4px;
+      padding: 0.85rem 1rem;
+      background: var(--bg-alt);
+    }
+
+    .sc-card.sc-ok {
+      border-left-color: #15803d;
+    }
+
+    .sc-card.sc-warn {
+      border-left-color: var(--nlt-accent-primary);
+    }
+
+    .sc-card.sc-fail {
+      border-left-color: #b91c1c;
+    }
+
+    .sc-card.sc-info {
+      border-left-color: #0369a1;
+    }
+
+    .sc-card.sc-unknown {
+      border-left-color: #64748b;
+    }
+
+    html[data-theme="dark"] .sc-card.sc-ok {
+      border-left-color: #4ade80;
+    }
+
+    html[data-theme="dark"] .sc-card.sc-fail {
+      border-left-color: #f87171;
+    }
+
+    .sc-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .sc-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--fg);
+    }
+
+    .sc-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--fg-dim);
+    }
+
+    .sc-detail {
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      color: var(--fg-dim);
+      margin: 0;
+    }
+
+    .sc-hint {
+      font-size: 0.75rem;
+      color: var(--nlt-accent-dim);
+      margin: 0.5rem 0 0;
+    }
+
+    .issue-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 0.5rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      line-height: 1.5;
+      resize: vertical;
+      min-height: 5rem;
+    }
+
+    .issue-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 0.85rem;
+    }
+
+    .btn-load {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -253,23 +590,45 @@
       transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
     }
 
-    .load-row label:hover {
+    .btn-load:hover {
       opacity: 0.92;
       transform: translateY(-2px);
       box-shadow: 0 8px 30px rgba(217, 119, 6, 0.35);
     }
 
-    .load-row input[type="file"] {
+    /* Visually hidden but focusable; label[for] opens picker reliably across browsers */
+    .sr-only {
       position: absolute;
-      width: 0.1px;
-      height: 0.1px;
-      opacity: 0;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
       overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
     }
 
     .muted {
       font-size: 0.875rem;
       color: var(--fg-dim);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      background: rgba(217, 119, 6, 0.1);
+      color: var(--nlt-accent-dim);
+      border: 1px solid rgba(217, 119, 6, 0.22);
+    }
+
+    html[data-theme="dark"] .status-pill {
+      color: var(--nlt-accent-secondary);
+      background: rgba(217, 119, 6, 0.12);
     }
 
     /* Bento — BRAND-STYLE-GUIDE §4 */
@@ -298,12 +657,25 @@
       background: var(--surface);
       padding: 1.5rem;
       min-height: 160px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
       transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+
+    html[data-theme="dark"] .tile {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+
+    .content-shell .tile {
+      background: var(--bg-alt);
+    }
+
+    html[data-theme="dark"] .content-shell .tile {
+      background: rgba(15, 20, 25, 0.65);
     }
 
     @media (prefers-reduced-motion: reduce) {
       .tile,
-      .load-row label,
+      .btn-load,
       .theme-toggle {
         transition: none;
       }
@@ -341,10 +713,14 @@
       }
     }
 
-    .hero-mark {
+    .hero-mark,
+    svg.hero-mark {
       width: 72px;
       height: 72px;
       margin-bottom: 0.75rem;
+      display: block;
+      flex-shrink: 0;
+      color: var(--nlt-accent-primary);
     }
 
     .section-tag {
@@ -387,9 +763,9 @@
     }
 
     .site-footer {
-      max-width: 1280px;
-      margin: 3rem auto 0;
-      padding: 2rem 1.5rem 3rem;
+      max-width: 1080px;
+      margin: 2rem auto 0;
+      padding: 2rem clamp(1rem, 4vw, 2rem) 2.5rem;
       border-top: 1px solid var(--border);
     }
 
@@ -415,16 +791,24 @@
   >
     <div class="header-inner">
       <div class="brand-lockup" aria-label="NLT Labs wordmark and AN mark">
-        <img
+        <svg
           class="brand-mark"
-          src="nlt-an-mark-sm.svg"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 128 128"
           width="40"
           height="40"
-          alt=""
-          decoding="async"
-        />
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            fill="currentColor"
+            d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
+          />
+        </svg>
         <div class="brand-text">
-          <span class="brand-wordmark"><span class="nlt">NLT</span><span class="labs">labs</span></span>
+          <span class="brand-wordmark" translate="no">
+            <span class="nlt">NLT</span><span class="labs">labs</span>
+          </span>
           <p class="brand-subtitle">New Logic Tech Labs</p>
         </div>
       </div>
@@ -435,34 +819,71 @@
   </header>
 
   <main>
-    <div class="wrap">
+    <div class="content-shell">
       <p class="product-tag">tapps-brain</p>
       <h1 class="page-title">Visual <span class="gradient-text">snapshot</span></h1>
-      <p class="lede">
-        This shell uses NLT Labs tokens (amber accent, warm surfaces, Inter + Fraunces + JetBrains Mono).
-        Export JSON with <code>tapps-brain visual export -o brain-visual.json</code> (needs
-        <code>uv sync --extra cli</code>). On <code>file://</code>, use Load snapshot. Over HTTP we load
-        <code>brain-visual.json</code> from this folder when it exists.
+      <p class="page-subtitle">
+        Control-room view of this brain: retrieval mode, Hive hub, access patterns, and integrity—still
+        no raw memory text in the JSON (unless you choose a local-only export).
       </p>
 
+      <details class="dev-details">
+        <summary>Refresh data (CLI and files)</summary>
+        <div class="dev-body">
+          <p>
+            From a project with the CLI: run
+            <code>tapps-brain visual export -o brain-visual.json</code>
+            (add <code>--skip-diagnostics</code> for speed; use
+            <code>--privacy strict</code> or <code>--privacy local</code> for redaction or tag/group
+            detail).
+          </p>
+          <p>
+            Serving this folder over HTTP loads <code>brain-visual.json</code> when it sits next to
+            <code>index.html</code>. Opening the HTML as <code>file://</code> uses <strong>Load snapshot</strong>
+            instead.
+          </p>
+        </div>
+      </details>
+
       <div class="load-row">
-        <label>
-          Load snapshot
-          <input id="file" type="file" accept="application/json,.json" />
-        </label>
+        <input id="snapshot-file" class="sr-only" type="file" accept="application/json,.json" />
+        <label class="btn-load" for="snapshot-file">Load snapshot</label>
+        <button type="button" class="btn-ghost" id="copy-fp" disabled>Copy fingerprint</button>
         <span id="status" class="muted">No file loaded; placeholders shown.</span>
       </div>
 
-      <div class="bento" aria-label="Store snapshot summary">
+      <div class="kpi-strip" id="kpi-strip" aria-label="Key metrics"></div>
+
+      <ul class="section-nav" aria-label="On-page sections">
+        <li><a href="#trust">Trust</a></li>
+        <li><a href="#scorecard">Scorecard</a></li>
+        <li><a href="#pulse">Pulse</a></li>
+        <li><a href="#retrieval">Retrieval</a></li>
+        <li><a href="#hive">Hive</a></li>
+        <li><a href="#activity">Activity</a></li>
+        <li><a href="#groups">Groups</a></li>
+        <li><a href="#tags">Tags</a></li>
+        <li><a href="#integrity">Integrity</a></li>
+        <li><a href="#diagnostics">Diagnostics</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+      </ul>
+
+      <div class="bento" aria-label="Store snapshot summary" id="trust">
         <section class="tile hero" aria-label="Brain identity">
-          <img
+          <svg
             class="hero-mark"
-            src="nlt-an-mark-sm.svg"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 128 128"
             width="72"
             height="72"
-            alt=""
-            decoding="async"
-          />
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
+            />
+          </svg>
           <p class="section-tag">Fingerprint</p>
           <pre id="fp">—</pre>
         </section>
@@ -471,8 +892,8 @@
           <div class="stat" id="entries">—</div>
           <p class="sub" id="profile">profile</p>
         </section>
-        <section class="tile" aria-label="Schema">
-          <p class="section-tag">Schema</p>
+        <section class="tile" aria-label="Database schema">
+          <p class="section-tag">DB schema</p>
           <div class="stat" id="schema">—</div>
           <p class="sub" id="fed">federation</p>
         </section>
@@ -481,16 +902,103 @@
           <div class="stat" id="hive">—</div>
           <p class="sub" id="scopes">agent scopes</p>
         </section>
-        <section class="tile" aria-label="Diagnostics">
+        <section class="tile" id="diagnostics" aria-label="Diagnostics">
           <p class="section-tag">Diagnostics</p>
           <div class="stat" id="diag">—</div>
-          <p class="sub" id="circuit">circuit</p>
+          <p class="sub" id="circuit">—</p>
         </section>
-        <section class="tile tile-wide" aria-label="Privacy">
-          <p class="section-tag">Privacy</p>
-          <p class="sub" id="privacy"></p>
+        <section class="tile tile-wide" aria-label="Snapshot format">
+          <p class="section-tag">Snapshot</p>
+          <p class="sub" id="snap-fmt">—</p>
         </section>
       </div>
+
+      <section class="dash-section" id="scorecard">
+        <h2>Scorecard</h2>
+        <p class="prose-small">
+          Pass / warn / fail from this snapshot (deterministic rules in
+          <code>tapps_brain.visual_snapshot</code>). Use the draft below to paste into GitHub Issues,
+          Jira, or email.
+        </p>
+        <div class="kpi-strip" id="scorecard-summary" aria-label="Scorecard counts"></div>
+        <div id="scorecard-grid" class="scorecard-grid" aria-live="polite"></div>
+        <div class="tile tile-wide" style="margin-top: 1.5rem; min-height: auto">
+          <p class="section-tag">Issue / ticket draft</p>
+          <label for="issue-notes" class="sr-only">Your notes for the ticket</label>
+          <textarea
+            id="issue-notes"
+            class="issue-textarea"
+            placeholder="What went wrong? What did you expect? Steps to reproduce (optional)."
+            autocomplete="off"
+          ></textarea>
+          <div class="issue-actions">
+            <button type="button" class="btn-load" id="copy-issue-md">Copy GitHub issue (Markdown)</button>
+            <button type="button" class="btn-ghost" id="copy-feedback-txt">Copy plain summary</button>
+          </div>
+          <p class="sub" id="copy-issue-status" style="margin-top: 0.65rem"></p>
+        </div>
+      </section>
+
+      <section class="dash-section" id="pulse">
+        <h2>Pulse</h2>
+        <p class="prose-small">Tier mix and agent scopes for this export.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <p class="section-tag">Tier distribution</p>
+          <div id="tier-bars" class="bar-chart"></div>
+        </div>
+      </section>
+
+      <section class="dash-section" id="retrieval">
+        <h2>Retrieval &amp; vectors</h2>
+        <p class="prose-small" id="retrieval-summary">—</p>
+        <div class="tile" style="min-height: auto">
+          <p class="section-tag">Effective mode</p>
+          <div class="stat mono-small" id="retrieval-mode">—</div>
+          <p class="sub" id="sqlite-vec-line">—</p>
+        </div>
+      </section>
+
+      <section class="dash-section" id="hive">
+        <h2>Hive hub</h2>
+        <p class="prose-small">Shared store telemetry (not your project path).</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <p class="section-tag">Hub status</p>
+          <div id="hive-detail" class="prose-small">—</div>
+        </div>
+      </section>
+
+      <section class="dash-section" id="activity">
+        <h2>Activity</h2>
+        <p class="prose-small">Aggregated access counters—no per-memory keys.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <p class="section-tag">Access histogram</p>
+          <div id="access-bars" class="bar-chart"></div>
+          <p class="sub" id="access-meta">—</p>
+        </div>
+      </section>
+
+      <section class="dash-section" id="groups">
+        <h2>Memory groups</h2>
+        <p class="prose-small">Project-local <code>memory_group</code> partitions.</p>
+        <div id="groups-body" class="prose-small">—</div>
+      </section>
+
+      <section class="dash-section" id="tags">
+        <h2>Tags</h2>
+        <p class="prose-small">Shown only for <code>--privacy local</code> exports.</p>
+        <div id="tags-body"></div>
+      </section>
+
+      <section class="dash-section" id="integrity">
+        <h2>Integrity &amp; limits</h2>
+        <p class="prose-small">Relations, verification, and rate-limit anomalies.</p>
+        <div id="integrity-body" class="prose-small">—</div>
+      </section>
+
+      <section class="dash-section" id="privacy">
+        <h2>Privacy</h2>
+        <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
+      </section>
     </div>
   </main>
 
@@ -502,6 +1010,7 @@
     </p>
   </footer>
 
+  <script src="scorecard-derive.js"></script>
   <script>
     const root = document.documentElement;
     const el = (id) => document.getElementById(id);
@@ -531,35 +1040,535 @@
       localStorage.setItem(THEME_KEY, nextDark ? "dark" : "light");
     });
 
+    let lastFingerprint = "";
+    let lastSnapshotData = null;
+    let lastScorecardChecks = [];
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function mdCell(s) {
+      return String(s || "").replace(/\|/g, "/").replace(/\r?\n/g, " ");
+    }
+
+    function renderScorecard(data) {
+      lastSnapshotData = data;
+      let checks;
+      if (typeof deriveScorecardFromSnapshot === "function") {
+        checks = deriveScorecardFromSnapshot(data);
+      } else if (Array.isArray(data.scorecard) && data.scorecard.length) {
+        checks = data.scorecard;
+      } else {
+        checks = [];
+      }
+      lastScorecardChecks = checks;
+      const nOk = checks.filter((c) => c.status === "ok").length;
+      const nWarn = checks.filter((c) => c.status === "warn").length;
+      const nFail = checks.filter((c) => c.status === "fail").length;
+      const nUnk = checks.filter((c) => c.status === "unknown").length;
+      const nInfo = checks.filter((c) => c.status === "info").length;
+
+      const sumEl = el("scorecard-summary");
+      if (sumEl) {
+        const cells = [
+          { lbl: "Pass", val: String(nOk), sub: "status ok" },
+          { lbl: "Attention", val: String(nWarn + nUnk), sub: "warn + unknown" },
+          { lbl: "Blocked", val: String(nFail), sub: "fail" },
+          { lbl: "Info", val: String(nInfo), sub: "informational" },
+        ];
+        sumEl.innerHTML = cells
+          .map(
+            (x) =>
+              '<div class="kpi"><div class="kpi-lbl">' +
+              x.lbl +
+              '</div><div class="kpi-val">' +
+              x.val +
+              '</div><div class="kpi-sub">' +
+              x.sub +
+              "</div></div>",
+          )
+          .join("");
+      }
+
+      const grid = el("scorecard-grid");
+      if (grid) {
+        if (!checks.length) {
+          grid.innerHTML =
+            '<p class="prose-small">No scorecard data. Serve this folder over HTTP so <code>scorecard-derive.js</code> loads, or re-export with the latest CLI.</p>';
+        } else {
+          grid.innerHTML = checks
+            .map((c) => {
+              const st = c.status || "unknown";
+              const hint = c.ticket_hint
+                ? '<p class="sc-hint"><strong>Next:</strong> ' + escapeHtml(c.ticket_hint) + "</p>"
+                : "";
+              return (
+                '<article class="sc-card sc-' +
+                st +
+                '"><div class="sc-head"><span class="sc-title">' +
+                escapeHtml(c.title) +
+                '</span><span class="sc-badge">' +
+                st +
+                '</span></div><p class="sc-detail">' +
+                escapeHtml(c.detail) +
+                "</p>" +
+                hint +
+                "</article>"
+              );
+            })
+            .join("");
+        }
+      }
+
+      const stCopy = el("copy-issue-status");
+      if (stCopy) {
+        if (!checks.length) {
+          stCopy.textContent = "";
+        } else if (Array.isArray(data.scorecard) && data.scorecard.length) {
+          stCopy.textContent = "Scorecard from JSON export (authoritative).";
+        } else {
+          stCopy.textContent =
+            "Scorecard derived in browser (matches Python rules). Re-export for embedded scorecard[].";
+        }
+      }
+    }
+
+    function buildIssueMarkdown(data, checks, notes) {
+      const health = data.health && typeof data.health === "object" ? data.health : {};
+      const fp = data.fingerprint_sha256 || "n/a";
+      const pkg = health.package_version != null ? health.package_version : "n/a";
+      const dbv = health.schema_version != null ? health.schema_version : "n/a";
+      const snapV = data.schema_version != null ? data.schema_version : "n/a";
+      const fails = checks.filter((c) => c.status === "fail");
+      const warns = checks.filter((c) => c.status === "warn" || c.status === "unknown");
+      let body = "## tapps-brain visual scorecard\n\n";
+      body += "**Fingerprint:** `" + fp + "`\n";
+      body += "**Package:** " + pkg + " · **DB schema:** " + dbv + " · **Snapshot JSON:** v" + snapV + "\n";
+      body += "**Generated:** " + (data.generated_at || "n/a") + "\n\n";
+      body += "### Counts\n";
+      body += "- OK: " + checks.filter((c) => c.status === "ok").length + "\n";
+      body +=
+        "- Warn / unknown: " +
+        checks.filter((c) => c.status === "warn" || c.status === "unknown").length +
+        "\n";
+      body += "- Fail: " + checks.filter((c) => c.status === "fail").length + "\n";
+      body += "- Info: " + checks.filter((c) => c.status === "info").length + "\n\n";
+      if (fails.length) {
+        body += "### Failing checks\n";
+        fails.forEach((c) => {
+          body += "- **" + mdCell(c.title) + "** (" + c.status + "): " + mdCell(c.detail) + "\n";
+          if (c.ticket_hint) body += "  - *Next:* " + mdCell(c.ticket_hint) + "\n";
+        });
+        body += "\n";
+      }
+      if (warns.length) {
+        body += "### Needs attention\n";
+        warns.forEach((c) => {
+          body += "- **" + mdCell(c.title) + "** (" + c.status + "): " + mdCell(c.detail) + "\n";
+        });
+        body += "\n";
+      }
+      body += "### Full scorecard\n";
+      body += "| Status | Check | Detail |\n| --- | --- | --- |\n";
+      checks.forEach((c) => {
+        body +=
+          "| " +
+          mdCell(c.status) +
+          " | " +
+          mdCell(c.title) +
+          " | " +
+          mdCell(c.detail) +
+          " |\n";
+      });
+      body += "\n### Operator notes\n\n" + (notes.trim() || "_None provided._") + "\n";
+      body += "\n### Suggested labels\n\n`tapps-brain`, `ops`, `brain-visual`\n";
+      return body;
+    }
+
+    function buildPlainSummary(data, checks, notes) {
+      const fp = data.fingerprint_sha256 || "";
+      const fails = checks.filter((c) => c.status === "fail");
+      const warns = checks.filter((c) => c.status === "warn" || c.status === "unknown");
+      const lines = [
+        "tapps-brain scorecard (visual export)",
+        "fingerprint: " + fp,
+        "ok: " +
+          checks.filter((c) => c.status === "ok").length +
+          "  warn/unknown: " +
+          (checks.filter((c) => c.status === "warn").length +
+            checks.filter((c) => c.status === "unknown").length) +
+          "  fail: " +
+          checks.filter((c) => c.status === "fail").length,
+        "",
+        fails.length ? "FAILING:" : "FAILING: (none)",
+      ];
+      fails.forEach((c) => lines.push(" - " + c.title + ": " + c.detail));
+      lines.push("");
+      lines.push(warns.length ? "ATTENTION:" : "ATTENTION: (none)");
+      warns.forEach((c) => lines.push(" - " + c.title + ": " + c.detail));
+      lines.push("");
+      lines.push("Notes:");
+      lines.push(notes.trim() || "(none)");
+      return lines.join("\n");
+    }
+
+    function setStatus(text, loaded) {
+      const s = el("status");
+      s.textContent = text;
+      s.className = loaded ? "status-pill" : "muted";
+    }
+
+    function renderBarChart(containerId, rows) {
+      const c = el(containerId);
+      if (!c) return;
+      c.innerHTML = "";
+      if (!rows.length) {
+        c.innerHTML = '<p class="prose-small" style="margin:0">No data.</p>';
+        return;
+      }
+      const max = Math.max(1, ...rows.map((r) => r.count));
+      for (const { label, count } of rows) {
+        const row = document.createElement("div");
+        row.className = "bar-row";
+        const pct = Math.min(100, Math.round((count / max) * 100));
+        row.innerHTML =
+          "<span>" +
+          label +
+          '</span><div class="bar-track"><div class="bar-fill" style="width:' +
+          pct +
+          '%"></div></div>';
+        c.appendChild(row);
+      }
+    }
+
     function applySnapshot(data) {
+      if (!data || typeof data !== "object") return;
+
       if (data.theme && typeof data.theme.flow_angle_deg === "number") {
         root.style.setProperty("--flow-ambient", `${data.theme.flow_angle_deg}deg`);
       }
 
-      el("fp").textContent = data.fingerprint_sha256;
-      el("entries").textContent = String(data.health.entry_count ?? "—");
-      el("profile").textContent = data.health.profile_name || "(default profile)";
-      el("schema").textContent = String(data.health.schema_version ?? "—");
-      el("fed").textContent = data.health.federation_enabled ? "on" : "off";
+      const snapVer = Number(data.schema_version) || 1;
+      const isV2 = snapVer >= 2;
+      const fp = data.fingerprint_sha256;
+      const fpStr = typeof fp === "string" && fp ? fp : "";
+      el("fp").textContent = fpStr || "—";
+      lastFingerprint = fpStr;
+      const copyBtn = el("copy-fp");
+      if (copyBtn) copyBtn.disabled = !fpStr;
+
+      const health = data.health && typeof data.health === "object" ? data.health : {};
+      const entryCount =
+        health.entry_count !== undefined && health.entry_count !== null ? Number(health.entry_count) : null;
+      const maxEnt =
+        health.max_entries !== undefined && health.max_entries !== null ? Number(health.max_entries) : null;
+
+      el("entries").textContent = entryCount !== null ? String(entryCount) : "—";
+      el("profile").textContent =
+        typeof health.profile_name === "string" && health.profile_name
+          ? health.profile_name
+          : "(default profile)";
+      el("schema").textContent =
+        health.schema_version !== undefined && health.schema_version !== null
+          ? String(health.schema_version)
+          : "—";
+      el("fed").textContent = health.federation_enabled ? "on" : "off";
       el("hive").textContent = data.hive_attached ? "attached" : "local";
       el("scopes").textContent =
-        Object.entries(data.agent_scope_counts || {})
+        Object.entries(
+          data.agent_scope_counts && typeof data.agent_scope_counts === "object"
+            ? data.agent_scope_counts
+            : {},
+        )
           .map(([k, v]) => `${k}:${v}`)
           .join(" ") || "—";
 
-      if (data.diagnostics) {
-        el("diag").textContent = data.diagnostics.composite_score.toFixed(2);
-        el("circuit").textContent = data.diagnostics.circuit_state;
+      if (data.diagnostics && typeof data.diagnostics === "object") {
+        const c = data.diagnostics.composite_score;
+        el("diag").textContent = typeof c === "number" ? c.toFixed(2) : "—";
+        el("circuit").textContent =
+          typeof data.diagnostics.circuit_state === "string"
+            ? data.diagnostics.circuit_state
+            : "—";
       } else {
-        el("diag").textContent = "—";
-        el("circuit").textContent = "skipped";
+        el("diag").textContent = "Omitted";
+        el("circuit").textContent = "Full export (no --skip-diagnostics)";
       }
-      el("privacy").textContent = data.privacy || "";
 
-      el("status").textContent = `Loaded schema_version ${data.schema_version}`;
+      const idv = data.identity_schema_version;
+      el("snap-fmt").textContent =
+        "Snapshot format v" +
+        snapVer +
+        (idv !== undefined && idv !== null ? " · identity payload v" + idv : "");
+
+      el("privacy-text").textContent =
+        typeof data.privacy === "string" ? data.privacy : "";
+
+      /* KPI strip */
+      const kpi = el("kpi-strip");
+      if (kpi) {
+        const hiveH = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
+        const hiveEntries = hiveH && hiveH.connected ? Number(hiveH.entries) || 0 : "—";
+        const tierObj =
+          health.tier_distribution && typeof health.tier_distribution === "object"
+            ? health.tier_distribution
+            : {};
+        const tierN = Object.values(tierObj).reduce((a, b) => a + Number(b || 0), 0);
+        const cells = [
+          {
+            lbl: "Entries",
+            val: entryCount !== null ? String(entryCount) : "—",
+            sub: maxEnt !== null ? "of " + maxEnt + " max" : "",
+          },
+          { lbl: "DB schema", val: el("schema").textContent, sub: "SQLite migrations" },
+          {
+            lbl: "Privacy",
+            val: isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard",
+            sub: isV2 ? "export tier" : "v1 export",
+          },
+          {
+            lbl: "Hive hub",
+            val: hiveH && hiveH.connected ? "live" : "n/a",
+            sub: hiveEntries !== "—" ? hiveEntries + " shared entries" : "open CLI export v2",
+          },
+          {
+            lbl: "Tiers (rows)",
+            val: String(tierN),
+            sub: "sum of tier_distribution",
+          },
+        ];
+        kpi.innerHTML = cells
+          .map(
+            (x) =>
+              '<div class="kpi"><div class="kpi-lbl">' +
+              x.lbl +
+              '</div><div class="kpi-val">' +
+              x.val +
+              '</div><div class="kpi-sub">' +
+              x.sub +
+              "</div></div>",
+          )
+          .join("");
+      }
+
+      /* Tier bars */
+      const tiers = health.tier_distribution && typeof health.tier_distribution === "object"
+        ? health.tier_distribution
+        : {};
+      const tierRows = Object.keys(tiers)
+        .sort()
+        .map((k) => ({ label: k, count: Number(tiers[k]) || 0 }));
+      renderBarChart("tier-bars", tierRows);
+
+      /* Retrieval */
+      const rsum = el("retrieval-summary");
+      const rmode = el("retrieval-mode");
+      const svLine = el("sqlite-vec-line");
+      if (isV2 && typeof data.retrieval_effective_mode === "string") {
+        rmode.textContent = data.retrieval_effective_mode;
+        rsum.textContent =
+          typeof data.retrieval_summary === "string" ? data.retrieval_summary : "";
+        const svOn = data.sqlite_vec_enabled === true;
+        const svRows = Number(data.sqlite_vec_rows) || 0;
+        svLine.textContent = svOn
+          ? "sqlite-vec on · " + svRows + " vector row(s)"
+          : "sqlite-vec off";
+      } else {
+        rmode.textContent = "—";
+        rsum.textContent =
+          "Re-export with tapps-brain CLI (visual export schema v2) for BM25/hybrid/sqlite-vec mode.";
+        svLine.textContent = "—";
+      }
+
+      /* Hive hub detail */
+      const hd = el("hive-detail");
+      if (hd) {
+        const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
+        if (hh && hh.connected) {
+          const ns = Array.isArray(hh.namespaces) ? hh.namespaces.join(", ") : "—";
+          hd.textContent =
+            "Connected · " +
+            (Number(hh.entries) || 0) +
+            " entries · " +
+            (Number(hh.agents) || 0) +
+            " registered agents · namespaces: " +
+            (ns || "—") +
+            ".";
+        } else {
+          hd.textContent =
+            "Hub not reachable from this export, or no Hive data. Project store Hive injection: " +
+            (data.hive_attached ? "yes" : "no") +
+            ".";
+        }
+      }
+
+      /* Access */
+      const acc = data.access_stats && typeof data.access_stats === "object" ? data.access_stats : null;
+      const am = el("access-meta");
+      if (acc && Array.isArray(acc.buckets)) {
+        renderBarChart(
+          "access-bars",
+          acc.buckets.map((b) => ({ label: b.label, count: Number(b.count) || 0 })),
+        );
+        if (am) {
+          am.textContent =
+            "Σ access_count=" +
+            (Number(acc.sum_access_count) || 0) +
+            " · mean=" +
+            (typeof acc.mean_access_count === "number" ? acc.mean_access_count.toFixed(2) : "—") +
+            " · entries touched=" +
+            (Number(acc.entries_with_access) || 0) +
+            " · total_access_count Σ=" +
+            (Number(acc.sum_total_access_count) || 0);
+        }
+      } else {
+        renderBarChart("access-bars", []);
+        if (am) am.textContent = isV2 ? "No access_stats in file." : "Schema v1 export — re-export for histograms.";
+      }
+
+      /* Groups */
+      const gb = el("groups-body");
+      if (gb) {
+        if (isV2) {
+          const ng = Number(data.memory_group_count) || 0;
+          const mc = data.memory_group_counts;
+          if (mc && typeof mc === "object" && Object.keys(mc).length) {
+            const rows = Object.entries(mc)
+              .sort((a, b) => b[1] - a[1])
+              .map(
+                ([name, cnt]) =>
+                  "<tr><td class='mono-small'>" +
+                  name +
+                  "</td><td>" +
+                  cnt +
+                  "</td></tr>",
+              )
+              .join("");
+            gb.innerHTML =
+              "<p>Distinct groups: " +
+              ng +
+              ".</p><table class='data-table'><thead><tr><th>Group</th><th>Entries</th></tr></thead><tbody>" +
+              rows +
+              "</tbody></table>";
+          } else {
+            gb.textContent =
+              "Distinct memory_group values: " +
+              ng +
+              (data.privacy_tier === "local" ? "." : " (names only with --privacy local).");
+          }
+        } else {
+          gb.textContent = "Re-export with schema v2 for memory_group stats.";
+        }
+      }
+
+      /* Tags */
+      const tb = el("tags-body");
+      if (tb) {
+        const ts = Array.isArray(data.tag_stats) ? data.tag_stats : [];
+        if (ts.length) {
+          const rows = ts.map(
+            (t) =>
+              "<tr><td class='mono-small'>" +
+              t.tag +
+              "</td><td>" +
+              t.count +
+              "</td></tr>",
+          );
+          tb.innerHTML =
+            "<table class='data-table'><thead><tr><th>Tag</th><th>Count</th></tr></thead><tbody>" +
+            rows.join("") +
+            "</tbody></table>";
+        } else {
+          tb.innerHTML =
+            '<p class="prose-small" style="margin:0">No tag_stats — use <code>--privacy local</code> export.</p>';
+        }
+      }
+
+      /* Integrity */
+      const ib = el("integrity-body");
+      if (ib) {
+        const parts = [
+          "Relations: " + (health.relation_count != null ? health.relation_count : "—"),
+          "Integrity verified: " + (health.integrity_verified != null ? health.integrity_verified : "—"),
+          "Tampered: " + (health.integrity_tampered != null ? health.integrity_tampered : "—"),
+          "No hash: " + (health.integrity_no_hash != null ? health.integrity_no_hash : "—"),
+          "Rate-limit anomalies (min/session): " +
+            (health.rate_limit_minute_anomalies != null ? health.rate_limit_minute_anomalies : "—") +
+            " / " +
+            (health.rate_limit_session_anomalies != null ? health.rate_limit_session_anomalies : "—"),
+          "GC candidates: " + (health.gc_candidates != null ? health.gc_candidates : "—"),
+          "Consolidation candidates: " +
+            (health.consolidation_candidates != null ? health.consolidation_candidates : "—"),
+        ];
+        if (typeof health.save_phase_summary === "string" && health.save_phase_summary)
+          parts.push("Save phases: " + health.save_phase_summary);
+        ib.textContent = parts.join(" · ");
+      }
+
+      renderScorecard(data);
+
+      setStatus(
+        "Loaded · snapshot v" +
+          snapVer +
+          " · DB schema " +
+          (health.schema_version != null ? health.schema_version : "?") +
+          (fpStr ? " · fingerprint ready" : ""),
+        true,
+      );
     }
 
-    document.getElementById("file").addEventListener("change", (ev) => {
+    el("copy-fp").addEventListener("click", async () => {
+      if (!lastFingerprint) return;
+      try {
+        await navigator.clipboard.writeText(lastFingerprint);
+        setStatus("Fingerprint copied.", true);
+      } catch {
+        setStatus("Copy failed — select fingerprint manually.", false);
+      }
+    });
+
+    const copyIssueBtn = el("copy-issue-md");
+    if (copyIssueBtn) {
+      copyIssueBtn.addEventListener("click", async () => {
+        if (!lastSnapshotData || !lastScorecardChecks.length) return;
+        const notes = el("issue-notes").value;
+        const md = buildIssueMarkdown(lastSnapshotData, lastScorecardChecks, notes);
+        try {
+          await navigator.clipboard.writeText(md);
+          const s = el("copy-issue-status");
+          if (s) s.textContent = "GitHub Markdown copied — paste into a new issue.";
+          setStatus("Issue Markdown copied.", true);
+        } catch {
+          const s = el("copy-issue-status");
+          if (s) s.textContent = "Copy failed.";
+        }
+      });
+    }
+
+    const copyFbBtn = el("copy-feedback-txt");
+    if (copyFbBtn) {
+      copyFbBtn.addEventListener("click", async () => {
+        if (!lastSnapshotData || !lastScorecardChecks.length) return;
+        const notes = el("issue-notes").value;
+        const txt = buildPlainSummary(lastSnapshotData, lastScorecardChecks, notes);
+        try {
+          await navigator.clipboard.writeText(txt);
+          const s = el("copy-issue-status");
+          if (s) s.textContent = "Plain summary copied.";
+          setStatus("Plain summary copied.", true);
+        } catch {
+          const s = el("copy-issue-status");
+          if (s) s.textContent = "Copy failed.";
+        }
+      });
+    }
+
+    document.getElementById("snapshot-file").addEventListener("change", (ev) => {
       const f = ev.target.files && ev.target.files[0];
       if (!f) return;
       const r = new FileReader();
@@ -567,13 +1576,14 @@
         try {
           applySnapshot(JSON.parse(String(r.result)));
         } catch (e) {
-          el("status").textContent = "Invalid JSON: " + e;
+          setStatus("Invalid JSON: " + e, false);
         }
       };
       r.readAsText(f);
     });
 
-    fetch("brain-visual.json")
+    const snapshotUrl = new URL("brain-visual.json", document.baseURI).href;
+    fetch(snapshotUrl)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(applySnapshot)
       .catch(() => {});

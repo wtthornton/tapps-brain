@@ -36,7 +36,7 @@ Items below are **not committed work** — capture tradeoffs for a later design/
 | Area | Idea | Why review later |
 | --- | --- | --- |
 | **On-disk embedding format** | Store **packed int8** (or float16) blobs instead of float JSON arrays | Smaller rows and less parse/serialize CPU; must reconcile with **sqlite-vec** (currently float32 `serialize_float32`) and hybrid scoring paths — likely dequant at read or dual representation. |
-| **sqlite-vec alignment** | If int8 persistence ships, decide **index build** from quantized vs float32 copies | ANN quality vs storage; may require rebuild playbook changes (STORY-042.3). |
+| **sqlite-vec alignment** | If int8 persistence ships, decide **index build** from quantized vs float32 copies | ANN quality vs storage; operator rebuild steps: [`sqlite-vec-operators.md`](sqlite-vec-operators.md). |
 | **Save-path CPU** | **Batch** `embed_batch` for imports / bulk reindex instead of per-row `embed` | Cuts model invocation overhead when re-embedding thousands of rows. |
 | **Model lifecycle** | Explicit **singleton / lazy** embedding provider for long-lived MCP processes | Avoid duplicate model loads if multiple code paths construct providers; measure resident memory vs first-request latency. |
 | **Reindex operations** | Batched SQLite **transactions**, optional **index on `embedding_model_id`**, streaming progress | Full-store reindex is write-heavy; tune batch size and WAL checkpointing under load. |
@@ -49,4 +49,4 @@ Items below are **not committed work** — capture tradeoffs for a later design/
 
 - Engineering inventory: [`features-and-technologies.md`](../engineering/features-and-technologies.md)
 - Concurrency / contention context: [`system-architecture.md`](../engineering/system-architecture.md) § *Concurrency model*
-- SQLite vector path: `sqlite_vec_index.py`, `docs/planning/epics/EPIC-042.md` (STORY-042.3)
+- SQLite vector path: `sqlite_vec_index.py`; operator playbook [`sqlite-vec-operators.md`](sqlite-vec-operators.md); epic `docs/planning/epics/EPIC-042.md` (STORY-042.3)

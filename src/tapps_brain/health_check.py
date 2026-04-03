@@ -100,6 +100,11 @@ class HealthReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def retrieval_health_slice(store: object) -> tuple[str, str]:
+    """Public alias for dashboards/visual export: BM25 vs hybrid vs sqlite-vec (no model load)."""
+    return _retrieval_health_from_store(store)
+
+
 def _retrieval_health_from_store(store: object) -> tuple[str, str]:
     """Derive retrieval mode from installed extras and store state (GitHub #63).
 
@@ -108,10 +113,10 @@ def _retrieval_health_from_store(store: object) -> tuple[str, str]:
     from tapps_brain._feature_flags import feature_flags
 
     st_ok = feature_flags.sentence_transformers
-    sv_en = getattr(store, "sqlite_vec_enabled", None)
-    sv_on = bool(sv_en()) if callable(sv_en) else False
-    sv_rc = getattr(store, "sqlite_vec_row_count", None)
-    sv_n = int(sv_rc()) if callable(sv_rc) else 0
+    sv_raw = getattr(store, "sqlite_vec_enabled", False)
+    sv_on = bool(sv_raw() if callable(sv_raw) else sv_raw)
+    sv_n_raw = getattr(store, "sqlite_vec_row_count", 0)
+    sv_n = int(sv_n_raw() if callable(sv_n_raw) else sv_n_raw)
 
     cli_note = " CLI `memory search` default: BM25-only."
 
@@ -193,7 +198,7 @@ def run_health_check(  # noqa: PLR0915
             store_health.consolidation_candidates = report.consolidation_candidates
             store_health.sqlite_vec_enabled = ms.sqlite_vec_enabled
             store_health.sqlite_vec_rows = ms.sqlite_vec_row_count
-            mode, summary = _retrieval_health_from_store(ms)
+            mode, summary = retrieval_health_slice(ms)
             store_health.retrieval_effective_mode = mode
             store_health.retrieval_summary = summary
             store_health.save_phase_summary = getattr(report, "save_phase_summary", "") or ""

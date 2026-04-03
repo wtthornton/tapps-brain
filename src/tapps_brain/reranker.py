@@ -4,6 +4,11 @@ Cross-encoder reranking improves precision after BM25/hybrid retrieval.
 Pass top-20 candidates to reranker and return reranked top_k.
 
 Providers: noop (passthrough), cohere (API, optional dependency).
+
+Observability (EPIC-042.6): ``MemoryRetriever._apply_reranker`` logs
+``memory_rerank`` (latency, provider label, candidate counts); cloud
+rerank sends snippets to the vendor — see profile/docs before enabling
+``cohere`` in production.
 """
 
 from __future__ import annotations

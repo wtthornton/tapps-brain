@@ -65,7 +65,29 @@ If opening the read-only handle fails (platform, SQLCipher, or URI issues), the 
 
 **Not** a connection pool: one optional read handle per ``MemoryPersistence`` instance. Hive, federation, and other stores are unchanged.
 
+## WAL checkpoint (long-lived MCP and other daemons)
+
+A **long-lived** process (for example OpenClaw’s **`tapps-brain-mcp`**) keeps SQLite connections open. In **WAL** mode, commits append to the **`-wal`** file beside the main database; SQLite **auto-checkpoints** when the WAL grows past an internal threshold, but under steady writes the WAL file can remain **large on disk** for a long time.
+
+**When operators care**
+
+- The **`-wal`** file is much larger than expected after heavy or sustained writes.
+- You want **tidier on-disk state** before offline backup or forensic copy (some workflows prefer a smaller WAL or a quiescent file set).
+- Housekeeping after a known **write burst** — not required for ordinary correctness; WAL readers still see consistent snapshots.
+
+**What to do**
+
+- **Simplest:** Restart the MCP (or gateway) during a **quiet window** so connections close and SQLite can reconcile naturally before you copy files.
+- **Explicit checkpoint:** SQLite’s **[`PRAGMA wal_checkpoint`](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint)** merges WAL frames into the main DB. Modes (**`PASSIVE`**, **`FULL`**, **`RESTART`**, **`TRUNCATE`**) differ in how aggressively they reset or truncate the WAL and whether they need a quiet database — see the pragma page and **[WAL mode](https://www.sqlite.org/wal.html)** for semantics. Example (adjust path; avoid **`TRUNCATE`** while a writer is active unless you understand the tradeoffs):
+
+```bash
+sqlite3 /path/to/project/.tapps-brain/memory/memory.db "PRAGMA wal_checkpoint(PASSIVE);"
+```
+
+tapps-brain does **not** run periodic checkpoints from application code; this remains an **operator** choice when disk footprint or external tooling warrants it.
+
 ## Related documentation
 
 - Concurrency and lock timeout: [`system-architecture.md`](../engineering/system-architecture.md) § *Concurrency model* (`TAPPS_STORE_LOCK_TIMEOUT_S`).
 - Encrypted DBs: [`sqlcipher.md`](sqlcipher.md).
+- OpenClaw install / long-lived MCP context: [`openclaw-runbook.md`](openclaw-runbook.md) § *Long-lived MCP and SQLite WAL*.

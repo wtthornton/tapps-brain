@@ -124,6 +124,10 @@ Quick runtime sanity:
 - Ask the agent to recall that fact in a second prompt.
 - If needed, verify directly with `tapps-brain search`.
 
+## Long-lived MCP and SQLite WAL
+
+The memory MCP server stays up with the gateway. Project **`memory.db`** uses **WAL** mode, so a **`-wal`** file can grow on disk under steady writes even though reads remain consistent. That is normal; SQLite auto-checkpoints as needed. If you need **smaller WAL files** or calmer on-disk state before backups, see **[`sqlite-database-locked.md`](sqlite-database-locked.md)** § *WAL checkpoint* — when to checkpoint, **`PRAGMA wal_checkpoint`** modes, and links to the official SQLite **[wal_checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint)** and **[WAL](https://www.sqlite.org/wal.html)** documentation.
+
 ## Maintainers (pre-release)
 
 From a clean checkout on Linux, macOS, or WSL:

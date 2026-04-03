@@ -81,7 +81,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.3: Vector index in database (sqlite-vec)
 
-**Status:** planned  
+**Status:** done (2026-04-02) — operator playbook, incremental cost notes, L2 distance vs SQL/docs  
 **Effort:** M  
 **Depends on:** STORY-042.2 (conceptual)  
 **Context refs:** `src/tapps_brain/sqlite_vec_index.py`, `src/tapps_brain/persistence.py`, `src/tapps_brain/health_check.py`, `tests/unit/test_sqlite_vec_index.py`, `tests/unit/test_persistence_sqlite_vec.py`, `tests/unit/test_sqlite_vec_try_load.py`  
@@ -98,9 +98,9 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Operator doc: **rebuild / vacuum** playbook if index corrupts or versions drift.
-- [ ] Spike: batch **incremental** index updates vs per-save cost under consolidation churn.
-- [ ] Align **distance metric** documentation with actual SQL invoked.
+- [x] Operator doc: **rebuild / vacuum** playbook — [`docs/guides/sqlite-vec-operators.md`](../../guides/sqlite-vec-operators.md) (2026-04-02).
+- [x] Notes: **incremental** index updates vs per-save cost (delete+insert upsert, no batching) in operator doc + `persistence.py` / `sqlite_vec_index.py` docstrings (2026-04-02).
+- [x] Align **distance metric** with vec0 default **L2** and actual `MATCH` SQL + `retrieval.py` comment on `1/(1+dist)` (2026-04-02).
 
 ---
 
@@ -156,7 +156,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-042.6: Re-ranking (Cohere + alternatives)
 
-**Status:** planned  
+**Status:** done (2026-04-02) — structured logs + injection telemetry (latency, provider, counts)  
 **Effort:** M  
 **Depends on:** STORY-042.4  
 **Context refs:** `src/tapps_brain/reranker.py`, `src/tapps_brain/injection.py`, `tests/unit/test_reranker.py`, `tests/unit/test_memory_retrieval.py`  
@@ -174,8 +174,8 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 #### Implementation themes
 
 - [ ] Add **second provider** spike (local ONNX/transformers) behind protocol — same interface as `reranker.py`.
-- [ ] Structured log: **rerank latency**, **provider**, **candidates_in**.
-- [ ] Document **PII** implications of sending snippets to cloud API.
+- [x] Structured log: **rerank latency**, **provider**, **candidates_in** — ``memory_rerank`` (``info`` for non-noop provider, ``debug`` for noop); failure: ``reranker_failed_fallback_to_original`` with timing; ``MemoryRetriever.last_rerank_stats`` + ``inject_memories`` ``injection_telemetry`` keys ``rerank_*`` (2026-04-02).
+- [x] Document **PII** implications — note in ``reranker.py`` module doc (cloud rerank sends snippets).
 
 ---
 

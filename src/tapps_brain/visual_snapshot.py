@@ -1,7 +1,7 @@
 """Versioned JSON snapshot for brain visual surfaces (dashboard / hero / demos).
 
-Contract: aggregated metadata only — no memory bodies, tag lists, or keys.
-See ``docs/planning/brain-visual-implementation-plan.md``.
+Contract: aggregated metadata only — no memory bodies. Tag names and group names
+are omitted unless ``privacy="local"``. See ``docs/planning/brain-visual-implementation-plan.md``.
 """
 
 from __future__ import annotations
@@ -14,13 +14,36 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from tapps_brain.metrics import StoreHealthReport
     from tapps_brain.store import MemoryStore
 
 _THEME_SEED_BYTE_LEN = 8
 
-VISUAL_SNAPSHOT_SCHEMA_VERSION: Literal[1] = 1
+VISUAL_SNAPSHOT_SCHEMA_VERSION: Literal[2] = 2
 
-PRIVACY_NOTICE = "Aggregated counts and health metadata only; excludes memory text, keys, and tags."
+PrivacyTier = Literal["standard", "strict", "local"]
+
+PRIVACY_STANDARD = (
+    "Aggregated metadata; excludes memory text and keys. "
+    "Tags and named memory groups omitted unless privacy tier is local."
+)
+PRIVACY_STRICT = (
+    "Strict tier: store path and tampered key list redacted; no tag or memory_group names."
+)
+PRIVACY_LOCAL = (
+    "Local tier: includes tag frequencies and named memory_group counts. Do not share publicly."
+)
+
+# Back-compat alias for imports/tests
+PRIVACY_NOTICE = PRIVACY_STANDARD
+
+_IDENTITY_SCHEMA_VERSION = 2
+_TOP_TAGS_LIMIT = 20
+_SCORE_OK_MIN = 0.7
+_SCORE_WARN_MIN = 0.55
+_CAP_WARN_RATIO = 0.8
+_CAP_FAIL_RATIO = 0.95
+_MAINT_BACKLOG_WARN = 200
 
 
 class DiagnosticsSummary(BaseModel):
@@ -53,17 +76,100 @@ class VisualThemeTokens(BaseModel):
     )
 
 
-class VisualSnapshot(BaseModel):
-    """``brain-visual.json`` contract (schema version 1)."""
+class HiveHealthSummary(BaseModel):
+    """Hive hub telemetry (no memory text)."""
 
-    schema_version: Literal[1] = Field(default=VISUAL_SNAPSHOT_SCHEMA_VERSION)
+    connected: bool = False
+    status: str = Field(default="ok", description="ok | warn")
+    namespaces: list[str] = Field(default_factory=list)
+    entries: int = 0
+    agents: int = 0
+
+
+class AccessBucket(BaseModel):
+    """Histogram bucket for access_count on entries."""
+
+    label: str
+    count: int = Field(ge=0, description="Number of memories in this bucket.")
+
+
+class AccessStats(BaseModel):
+    """Aggregated access signals (no per-key data)."""
+
+    sum_access_count: int = Field(ge=0)
+    mean_access_count: float = Field(ge=0.0)
+    entries_with_access: int = Field(ge=0, description="Count of entries with access_count > 0.")
+    sum_total_access_count: int = Field(default=0, ge=0)
+    sum_useful_access_count: int = Field(default=0, ge=0)
+    buckets: list[AccessBucket] = Field(default_factory=list)
+
+
+class TagStat(BaseModel):
+    """Tag frequency (local privacy tier only)."""
+
+    tag: str
+    count: int = Field(ge=1)
+
+
+ScorecardStatus = Literal["ok", "warn", "fail", "info", "unknown"]
+
+
+class ScorecardCheck(BaseModel):
+    """Single row for operator scorecard / issue triage (deterministic from snapshot inputs)."""
+
+    id: str = Field(description="Stable slug for dashboards and tickets.")
+    title: str
+    status: ScorecardStatus
+    detail: str = Field(description="Human-readable evidence for this row.")
+    ticket_hint: str = Field(
+        default="",
+        description="Optional next step when filing an issue.",
+    )
+
+
+class VisualSnapshot(BaseModel):
+    """``brain-visual.json`` contract (schema version 2)."""
+
+    schema_version: Literal[2] = Field(default=VISUAL_SNAPSHOT_SCHEMA_VERSION)
     generated_at: str = Field(description="ISO-8601 UTC when the snapshot was built.")
     fingerprint_sha256: str = Field(description="SHA-256 of canonical identity payload (hex).")
-    privacy: str = Field(default=PRIVACY_NOTICE)
+    identity_schema_version: int = Field(
+        default=_IDENTITY_SCHEMA_VERSION,
+        description="Version of the hashed identity object (bump when fingerprint inputs change).",
+    )
+    privacy_tier: PrivacyTier = "standard"
+    privacy: str = Field(default=PRIVACY_STANDARD)
     health: dict[str, Any]
     agent_scope_counts: dict[str, int]
     hive_attached: bool
+    hive_health: HiveHealthSummary = Field(default_factory=HiveHealthSummary)
+    retrieval_effective_mode: str = Field(
+        default="unknown",
+        description="bm25_only | hybrid_sqlite_vec_knn | hybrid_sqlite_vec_empty | "
+        "hybrid_on_the_fly_embeddings | unknown",
+    )
+    retrieval_summary: str = ""
+    sqlite_vec_enabled: bool = False
+    sqlite_vec_rows: int = Field(default=0, ge=0)
+    memory_group_count: int = Field(
+        default=0,
+        ge=0,
+        description="Distinct non-empty memory_group values.",
+    )
+    memory_group_counts: dict[str, int] | None = Field(
+        default=None,
+        description="Named group → entry count; set only for privacy_tier=local.",
+    )
+    access_stats: AccessStats | None = None
+    tag_stats: list[TagStat] | None = Field(
+        default=None,
+        description="Top tags by frequency; set only for privacy_tier=local.",
+    )
     diagnostics: DiagnosticsSummary | None = None
+    scorecard: list[ScorecardCheck] = Field(
+        default_factory=list,
+        description="Deterministic pass/warn/fail rows for operators and issue templates.",
+    )
     theme: VisualThemeTokens
 
 
@@ -80,7 +186,8 @@ def compute_fingerprint_hex(identity: dict[str, object]) -> str:
 def theme_from_fingerprint(fingerprint_hex: str) -> VisualThemeTokens:
     """Derive theme tokens deterministically from fingerprint bytes.
 
-    Accent hues stay in ~28–48° (amber/gold) per NLT Labs brand (no blue/cyan/purple accents).
+    Accent hues stay in ~28-48 degrees (amber/gold) per NLT Labs brand
+    (no blue/cyan/purple accents).
     """
     digest = bytes.fromhex(fingerprint_hex)
     if len(digest) < _THEME_SEED_BYTE_LEN:
@@ -115,26 +222,466 @@ def _agent_scope_counts(store: MemoryStore) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
+    """Best-effort Hive hub stats (matches health_check spirit; never raises)."""
+    try:
+        from tapps_brain.hive import AgentRegistry, HiveStore
+
+        hive = HiveStore()
+        try:
+            ns_counts = hive.count_by_namespace()
+            registry = AgentRegistry()
+            return HiveHealthSummary(
+                connected=True,
+                status="ok",
+                namespaces=sorted(ns_counts.keys()),
+                entries=int(sum(ns_counts.values())),
+                agents=len(registry.list_agents()),
+            )
+        finally:
+            hive.close()
+    except Exception:
+        return HiveHealthSummary(connected=False, status="warn")
+
+
+def _memory_group_stats(
+    entries: list[Any],
+    *,
+    privacy: PrivacyTier,
+) -> tuple[int, dict[str, int] | None]:
+    counts: dict[str, int] = {}
+    for e in entries:
+        mg = getattr(e, "memory_group", None)
+        if mg:
+            counts[mg] = counts.get(mg, 0) + 1
+    n = len(counts)
+    if privacy == "local":
+        return n, dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return n, None
+
+
+_ACCESS_LO = 5
+_ACCESS_HI = 20
+
+
+def _access_stats_from_entries(entries: list[Any]) -> AccessStats:
+    if not entries:
+        return AccessStats(
+            sum_access_count=0,
+            mean_access_count=0.0,
+            entries_with_access=0,
+            sum_total_access_count=0,
+            sum_useful_access_count=0,
+            buckets=[
+                AccessBucket(label="0", count=0),
+                AccessBucket(label="1-5", count=0),
+                AccessBucket(label="6-20", count=0),
+                AccessBucket(label="21+", count=0),
+            ],
+        )
+    b0 = b1 = b2 = b3 = 0
+    sum_ac = 0
+    sum_total = 0
+    sum_useful = 0
+    with_access = 0
+    for e in entries:
+        ac = int(getattr(e, "access_count", 0) or 0)
+        sum_ac += ac
+        if ac > 0:
+            with_access += 1
+        sum_total += int(getattr(e, "total_access_count", 0) or 0)
+        sum_useful += int(getattr(e, "useful_access_count", 0) or 0)
+        if ac == 0:
+            b0 += 1
+        elif ac <= _ACCESS_LO:
+            b1 += 1
+        elif ac <= _ACCESS_HI:
+            b2 += 1
+        else:
+            b3 += 1
+    n = len(entries)
+    return AccessStats(
+        sum_access_count=sum_ac,
+        mean_access_count=round(sum_ac / n, 4),
+        entries_with_access=with_access,
+        sum_total_access_count=sum_total,
+        sum_useful_access_count=sum_useful,
+        buckets=[
+            AccessBucket(label="0", count=b0),
+            AccessBucket(label="1-5", count=b1),
+            AccessBucket(label="6-20", count=b2),
+            AccessBucket(label="21+", count=b3),
+        ],
+    )
+
+
+def _tag_stats_local(entries: list[Any], *, limit: int) -> list[TagStat]:
+    freq: dict[str, int] = {}
+    for e in entries:
+        for t in getattr(e, "tags", None) or []:
+            if isinstance(t, str) and t.strip():
+                freq[t] = freq.get(t, 0) + 1
+    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [TagStat(tag=k, count=v) for k, v in ranked[:limit]]
+
+
+def _redact_health(hdump: dict[str, Any], privacy: PrivacyTier) -> dict[str, Any]:
+    out = dict(hdump)
+    if privacy == "strict":
+        out["store_path"] = "<redacted>"
+        out["integrity_tampered_keys"] = []
+    return out
+
+
+def _privacy_copy(tier: PrivacyTier) -> str:
+    if tier == "strict":
+        return PRIVACY_STRICT
+    if tier == "local":
+        return PRIVACY_LOCAL
+    return PRIVACY_STANDARD
+
+
+def _build_scorecard(  # noqa: PLR0915
+    report: StoreHealthReport,
+    *,
+    diagnostics: DiagnosticsSummary | None,
+    hive_attached: bool,
+    hive_health: HiveHealthSummary,
+    retrieval_mode: str,
+    skip_diagnostics: bool,
+) -> list[ScorecardCheck]:
+    """Derive scorecard rows from store health and related snapshot fields."""
+    checks: list[ScorecardCheck] = []
+    entry_count = int(getattr(report, "entry_count", 0) or 0)
+    max_entries = int(getattr(report, "max_entries", 5000) or 5000)
+
+    if entry_count == 0:
+        checks.append(
+            ScorecardCheck(
+                id="store_entries",
+                title="Store contents",
+                status="info",
+                detail="No memories in this project store yet.",
+                ticket_hint="",
+            )
+        )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="store_entries",
+                title="Store contents",
+                status="ok",
+                detail=f"{entry_count} memor(y/ies) within max {max_entries}.",
+                ticket_hint="",
+            )
+        )
+
+    if skip_diagnostics or diagnostics is None:
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_data",
+                title="Diagnostics data",
+                status="unknown",
+                detail="Diagnostics omitted (export used --skip-diagnostics).",
+                ticket_hint="Re-export without --skip-diagnostics for circuit/score signals.",
+            )
+        )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_data",
+                title="Diagnostics data",
+                status="ok",
+                detail="Composite score and circuit state included in this export.",
+                ticket_hint="",
+            )
+        )
+        circuit = (diagnostics.circuit_state or "").lower()
+        if circuit == "closed":
+            cstat: ScorecardStatus = "ok"
+            cdetail = "Diagnostics circuit is closed (nominal)."
+        elif circuit in {"degraded", "half_open"}:
+            cstat = "warn"
+            cdetail = f"Circuit state: {diagnostics.circuit_state}."
+        elif circuit == "open":
+            cstat = "fail"
+            cdetail = f"Circuit state: {diagnostics.circuit_state}."
+        else:
+            cstat = "warn"
+            cdetail = f"Unknown circuit state: {diagnostics.circuit_state!r}."
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_circuit",
+                title="Diagnostics circuit",
+                status=cstat,
+                detail=cdetail,
+                ticket_hint="Run `tapps-brain diagnostics health` and review scorecard dimensions.",
+            )
+        )
+        score = float(diagnostics.composite_score)
+        if score >= _SCORE_OK_MIN:
+            sstat: ScorecardStatus = "ok"
+        elif score >= _SCORE_WARN_MIN:
+            sstat = "warn"
+        else:
+            sstat = "fail"
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_composite",
+                title="Diagnostics composite score",
+                status=sstat,
+                detail=f"Composite score {score:.2f} (0-1).",
+                ticket_hint="Inspect diagnostics history and recall quality signals.",
+            )
+        )
+
+    tampered = int(getattr(report, "integrity_tampered", 0) or 0)
+    if tampered == 0:
+        checks.append(
+            ScorecardCheck(
+                id="integrity_tampered",
+                title="Integrity (tampered)",
+                status="ok",
+                detail="No tampered integrity hashes reported.",
+                ticket_hint="",
+            )
+        )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="integrity_tampered",
+                title="Integrity (tampered)",
+                status="fail",
+                detail=f"{tampered} entr(y/ies) failed integrity verification.",
+                ticket_hint=(
+                    "Run store maintenance / verify_integrity; "
+                    "do not ignore on shared stores."
+                ),
+            )
+        )
+
+    no_hash = int(getattr(report, "integrity_no_hash", 0) or 0)
+    if no_hash > 0:
+        checks.append(
+            ScorecardCheck(
+                id="integrity_no_hash",
+                title="Integrity (missing hash)",
+                status="warn",
+                detail=(
+                    f"{no_hash} entr(y/ies) have no integrity hash "
+                    "(legacy or pending backfill)."
+                ),
+                ticket_hint="Consider re-saving or running migration path if hashes are expected.",
+            )
+        )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="integrity_no_hash",
+                title="Integrity (missing hash)",
+                status="ok",
+                detail="No entries missing integrity hashes.",
+                ticket_hint="",
+            )
+        )
+
+    if max_entries > 0:
+        ratio = entry_count / max_entries
+        if ratio >= _CAP_FAIL_RATIO:
+            cap_stat: ScorecardStatus = "fail"
+            cap_detail = (
+                f"Store at {ratio * 100:.0f}% of max_entries "
+                f"({entry_count}/{max_entries})."
+            )
+        elif ratio >= _CAP_WARN_RATIO:
+            cap_stat = "warn"
+            cap_detail = (
+                f"Store at {ratio * 100:.0f}% of max_entries "
+                f"({entry_count}/{max_entries})."
+            )
+        else:
+            cap_stat = "ok"
+            cap_detail = (
+                f"Capacity {ratio * 100:.0f}% of max_entries "
+                f"({entry_count}/{max_entries})."
+            )
+        checks.append(
+            ScorecardCheck(
+                id="store_capacity",
+                title="Store capacity",
+                status=cap_stat,
+                detail=cap_detail,
+                ticket_hint="Raise max_entries in profile or archive/GC if appropriate.",
+            )
+        )
+
+    rma = int(getattr(report, "rate_limit_minute_anomalies", 0) or 0)
+    rsa = int(getattr(report, "rate_limit_session_anomalies", 0) or 0)
+    if rma == 0 and rsa == 0:
+        checks.append(
+            ScorecardCheck(
+                id="rate_limits",
+                title="Rate limit anomalies",
+                status="ok",
+                detail="No minute/session rate-limit anomalies recorded.",
+                ticket_hint="",
+            )
+        )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="rate_limits",
+                title="Rate limit anomalies",
+                status="warn",
+                detail=f"Minute anomalies: {rma}; session anomalies: {rsa}.",
+                ticket_hint="Review burst writes and profile rate_limit settings.",
+            )
+        )
+
+    gc_c = int(getattr(report, "gc_candidates", 0) or 0)
+    cons_c = int(getattr(report, "consolidation_candidates", 0) or 0)
+    backlog = gc_c + cons_c
+    if backlog > _MAINT_BACKLOG_WARN:
+        mb_stat: ScorecardStatus = "warn"
+        mb_detail = f"Maintenance backlog: {gc_c} GC + {cons_c} consolidation candidate(s)."
+    elif backlog > 0:
+        mb_stat = "info"
+        mb_detail = f"Some maintenance candidates: {gc_c} GC, {cons_c} consolidation."
+    else:
+        mb_stat = "ok"
+        mb_detail = "No GC or consolidation candidates reported."
+    checks.append(
+        ScorecardCheck(
+            id="maintenance_backlog",
+            title="Maintenance backlog",
+            status=mb_stat,
+            detail=mb_detail,
+            ticket_hint="Run GC / consolidation when maintenance windows allow.",
+        )
+    )
+
+    if hive_attached and not hive_health.connected:
+        checks.append(
+            ScorecardCheck(
+                id="hive_hub",
+                title="Hive hub reachability",
+                status="warn",
+                detail="Store has Hive injection but hub snapshot could not connect.",
+                ticket_hint="Check ~/.tapps-brain/hive/, AgentRegistry, and Hive CLI health.",
+            )
+        )
+    elif hive_attached and hive_health.connected:
+        if hive_health.agents == 0:
+            checks.append(
+                ScorecardCheck(
+                    id="hive_hub",
+                    title="Hive hub reachability",
+                    status="warn",
+                    detail="Hub connected but no agents registered.",
+                    ticket_hint="Register agents via `tapps-brain agent register` or equivalent.",
+                )
+            )
+        else:
+            checks.append(
+                ScorecardCheck(
+                    id="hive_hub",
+                    title="Hive hub reachability",
+                    status="ok",
+                    detail=(
+                        f"Hub connected; {hive_health.agents} agent(s), "
+                        f"{hive_health.entries} shared entr(y/ies)."
+                    ),
+                    ticket_hint="",
+                )
+            )
+    else:
+        checks.append(
+            ScorecardCheck(
+                id="hive_hub",
+                title="Hive hub reachability",
+                status="info",
+                detail="Hive not injected on this store (local-only mode) or hub not queried.",
+                ticket_hint="",
+            )
+        )
+
+    if retrieval_mode == "hybrid_sqlite_vec_knn":
+        rstat: ScorecardStatus = "ok"
+        rdetail = "Hybrid BM25 + sqlite-vec KNN active."
+    elif retrieval_mode == "bm25_only":
+        rstat = "info"
+        rdetail = "BM25-only retrieval (vector stack unavailable or empty)."
+    elif retrieval_mode == "hybrid_sqlite_vec_empty":
+        rstat = "warn"
+        rdetail = "sqlite-vec on but vector index empty; embeddings may run on the fly."
+    elif retrieval_mode == "hybrid_on_the_fly_embeddings":
+        rstat = "info"
+        rdetail = "Hybrid without sqlite-vec KNN; vectors computed on demand."
+    elif retrieval_mode == "unknown":
+        rstat = "warn"
+        rdetail = "Could not classify retrieval mode."
+    else:
+        rstat = "info"
+        rdetail = f"Retrieval mode: {retrieval_mode}."
+    checks.append(
+        ScorecardCheck(
+            id="retrieval_stack",
+            title="Retrieval stack",
+            status=rstat,
+            detail=rdetail,
+            ticket_hint=(
+                "Align with `uv sync --extra vector` and sqlite-vec docs if hybrid expected."
+            ),
+        )
+    )
+
+    if bool(getattr(report, "sqlcipher_enabled", False)):
+        checks.append(
+            ScorecardCheck(
+                id="sqlcipher",
+                title="SQLCipher",
+                status="info",
+                detail="Encrypted SQLite (SQLCipher) enabled for this store.",
+                ticket_hint="",
+            )
+        )
+
+    return checks
+
+
 def build_visual_snapshot(
     store: MemoryStore,
     *,
     skip_diagnostics: bool = False,
+    privacy: PrivacyTier = "standard",
 ) -> VisualSnapshot:
     """Build a versioned visual snapshot from an open store."""
+    from tapps_brain.health_check import retrieval_health_slice
+
     report = store.health()
-    hdump = report.model_dump(mode="json")
+    hdump = _redact_health(report.model_dump(mode="json"), privacy)
+    entries = store.list_all()
     agent_scopes = _agent_scope_counts(store)
     hive_on = _hive_attached(store)
+    mg_count, mg_counts = _memory_group_stats(entries, privacy=privacy)
+
+    mode, summary = retrieval_health_slice(store)
+    _raw_sv = getattr(store, "sqlite_vec_enabled", False)
+    sv_en = bool(_raw_sv() if callable(_raw_sv) else _raw_sv)
+    _raw_n = getattr(store, "sqlite_vec_row_count", 0)
+    sv_n = int(_raw_n() if callable(_raw_n) else _raw_n)
 
     identity: dict[str, object] = {
+        "identity_schema_version": _IDENTITY_SCHEMA_VERSION,
         "agent_scope_counts": agent_scopes,
         "entry_count": report.entry_count,
         "federation_enabled": report.federation_enabled,
         "hive_attached": hive_on,
         "profile_name": report.profile_name,
         "schema_version": report.schema_version,
-        "store_path": report.store_path,
+        "store_path": report.store_path if privacy != "strict" else "<redacted>",
         "tier_distribution": dict(sorted(report.tier_distribution.items())),
+        "memory_group_count": mg_count,
     }
     fingerprint = compute_fingerprint_hex(identity)
     theme = theme_from_fingerprint(fingerprint)
@@ -148,14 +695,42 @@ def build_visual_snapshot(
             recorded_at=diag.recorded_at,
         )
 
+    access_stats = _access_stats_from_entries(entries)
+    tag_stats: list[TagStat] | None = (
+        _tag_stats_local(entries, limit=_TOP_TAGS_LIMIT) if privacy == "local" else None
+    )
+
+    hive_health = _collect_hive_health(store)
+    scorecard = _build_scorecard(
+        report,
+        diagnostics=diagnostics,
+        hive_attached=hive_on,
+        hive_health=hive_health,
+        retrieval_mode=mode,
+        skip_diagnostics=skip_diagnostics,
+    )
+
     now = datetime.now(tz=UTC).isoformat()
     return VisualSnapshot(
         generated_at=now,
         fingerprint_sha256=fingerprint,
+        identity_schema_version=_IDENTITY_SCHEMA_VERSION,
+        privacy_tier=privacy,
+        privacy=_privacy_copy(privacy),
         health=hdump,
         agent_scope_counts=agent_scopes,
         hive_attached=hive_on,
+        hive_health=hive_health,
+        retrieval_effective_mode=mode,
+        retrieval_summary=summary,
+        sqlite_vec_enabled=sv_en,
+        sqlite_vec_rows=sv_n,
+        memory_group_count=mg_count,
+        memory_group_counts=mg_counts,
+        access_stats=access_stats,
+        tag_stats=tag_stats,
         diagnostics=diagnostics,
+        scorecard=scorecard,
         theme=theme,
     )
 

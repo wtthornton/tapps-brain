@@ -1220,43 +1220,20 @@ def create_server(  # noqa: PLR0915
 
         Identifies memories that have decayed below usefulness and archives
         them. Archived entries are removed from the active store and appended
-        to the archive JSONL file.
+        to ``archive.jsonl`` under the store memory directory (same as CLI).
 
         Args:
             dry_run: If True, only identify candidates without archiving (default False).
         """
-        from tapps_brain.gc import GCResult, MemoryGarbageCollector
-
-        gc = MemoryGarbageCollector(
-            config=store._get_decay_config(),
-            gc_config=store.get_gc_config(),
-        )
-        all_entries = store.list_all()
-        candidates = gc.identify_candidates(all_entries)
-
+        raw = store.gc(dry_run=dry_run)
+        payload = raw.model_dump(mode="json")
         if dry_run:
-            return json.dumps(
-                {
-                    "dry_run": True,
-                    "candidates": len(candidates),
-                    "candidate_keys": [e.key for e in candidates],
-                }
-            )
-
-        # Archive and delete candidates
-        if candidates:
-            archive_path = resolved_dir / "memory" / "archive.jsonl"
-            gc.append_to_archive(candidates, archive_path)
-            for entry in candidates:
-                store.delete(entry.key)
-
-        remaining = store.count()
-        result = GCResult(
-            archived_count=len(candidates),
-            remaining_count=remaining,
-            archived_keys=[e.key for e in candidates],
-        )
-        return json.dumps(result.model_dump(mode="json"))
+            payload["dry_run"] = True
+            payload["candidates"] = len(raw.archived_keys)
+            payload["candidate_keys"] = raw.archived_keys
+        else:
+            payload["dry_run"] = False
+        return json.dumps(payload)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def maintenance_stale() -> str:
@@ -2226,7 +2203,8 @@ def create_server(  # noqa: PLR0915
 
         Args:
             key: Filter by memory entry key (optional).
-            event_type: Filter by event type, e.g. "save", "delete" (optional).
+            event_type: Filter by action, e.g. "save", "delete",
+                "consolidation_merge", "consolidation_source" (optional).
             since: ISO-8601 lower bound, inclusive (optional).
             until: ISO-8601 upper bound, inclusive (optional).
             limit: Maximum number of events to return (default 50, must be >= 1).

@@ -670,6 +670,7 @@ class TestRerankerIntegration:
         retriever = MemoryRetriever(
             reranker=ReverseReranker(),
             reranker_enabled=True,
+            reranker_provider="reverse",
         )
         store = _make_store(entries)
 
@@ -677,6 +678,16 @@ class TestRerankerIntegration:
         assert len(results) >= 1
         # ReverseReranker puts last candidate first
         assert results[0].entry.key == "key-c"
+        stats = retriever.last_rerank_stats
+        assert stats is not None
+        assert stats["applied"] is True
+        assert stats["provider"] == "reverse"
+        assert stats["candidates_in"] == 3
+        assert stats["top_k"] == 3
+        assert stats["results_out"] == 3
+        assert stats["error"] is None
+        assert isinstance(stats["latency_ms"], int | float)
+        assert stats["latency_ms"] >= 0.0
 
     def test_reranker_disabled_uses_composite_order(self) -> None:
         """When reranker disabled, original composite order is used."""
@@ -690,6 +701,7 @@ class TestRerankerIntegration:
         results = retriever.search("matching content", store)
         assert len(results) == 2
         assert results[0].entry.key == "high-conf"
+        assert retriever.last_rerank_stats is None
 
     def test_reranker_failure_fallback(self) -> None:
         """When reranker raises, fall back to original order."""
@@ -710,6 +722,11 @@ class TestRerankerIntegration:
         assert len(results) == 2
         # Original composite order preserved on failure
         assert results[0].entry.key in ("key-a", "key-b")
+        stats = retriever.last_rerank_stats
+        assert stats is not None
+        assert stats["applied"] is False
+        assert stats["error"] == "RuntimeError"
+        assert stats["candidates_in"] == 2
 
 
 class TestTemporalFiltering:

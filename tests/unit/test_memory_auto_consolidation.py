@@ -253,6 +253,49 @@ class TestCheckConsolidationOnSave:
         assert result.consolidated_entry is not None
         assert len(result.source_keys) >= 2
 
+    def test_consolidation_on_save_writes_audit_trail(
+        self, mock_store: MemoryStore, jwt_entries: list[MemoryEntry]
+    ) -> None:
+        """EPIC-044.4: JSONL audit records for merge + superseded sources."""
+        for entry in jwt_entries:
+            mock_store.save(
+                key=entry.key,
+                value=entry.value,
+                tier=entry.tier.value,
+                tags=entry.tags,
+                skip_consolidation=True,
+            )
+        new_entry = _make_entry(
+            "auth-jwt-new",
+            "JWT tokens use RS256 algorithm for security.",
+            tier=MemoryTier.architectural,
+            tags=["security", "jwt"],
+        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
+        assert result.triggered is True
+        assert result.consolidated_entry is not None
+        ck = result.consolidated_entry.key
+        path = mock_store._persistence.audit_path
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        merges = [r for r in records if r.get("action") == "consolidation_merge"]
+        assert merges
+        last_merge = merges[-1]
+        assert last_merge["key"] == ck
+        assert last_merge["trigger"] == "save"
+        assert last_merge["threshold"] == 0.3
+        assert set(last_merge["source_keys"]) == set(result.source_keys)
+        superseded = set(result.source_keys) - {ck}
+        src_rows = [r for r in records if r.get("action") == "consolidation_source"]
+        by_key = {r["key"]: r for r in src_rows}
+        for sk in superseded:
+            assert sk in by_key
+            assert by_key[sk]["superseded_by"] == ck
+            assert by_key[sk]["trigger"] == "save"
+
     def test_min_entries_enforcement(self, mock_store: MemoryStore) -> None:
         """min_entries is enforced (at least 2)."""
         mock_store.save(
@@ -408,6 +451,40 @@ class TestRunPeriodicConsolidationScan:
         assert result.entries_consolidated >= 0
         if result.groups_found > 0:
             assert result.entries_consolidated > 0
+
+    def test_periodic_scan_writes_audit_when_groups_merged(
+        self, mock_store: MemoryStore, temp_project_root: Path, jwt_entries: list[MemoryEntry]
+    ) -> None:
+        for entry in jwt_entries:
+            mock_store.save(
+                key=entry.key,
+                value=entry.value,
+                tier=entry.tier.value,
+                tags=entry.tags,
+                skip_consolidation=True,
+            )
+        result = run_periodic_consolidation_scan(
+            mock_store,
+            temp_project_root,
+            threshold=0.3,
+            min_group_size=2,
+            force=True,
+        )
+        assert result.scanned is True
+        assert result.consolidated_entries, "fixture should yield at least one merged group"
+        path = mock_store._persistence.audit_path
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        periodic_merges = [
+            r
+            for r in records
+            if r.get("action") == "consolidation_merge" and r.get("trigger") == "periodic_scan"
+        ]
+        assert periodic_merges
+        assert periodic_merges[-1]["key"] in result.consolidated_entries
 
     def test_not_enough_active_entries(
         self, mock_store: MemoryStore, temp_project_root: Path

@@ -11,16 +11,17 @@ from __future__ import annotations
 import re
 import subprocess
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import structlog
 from pydantic import BaseModel, Field
+
+from tapps_brain.models import MemoryEntry
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from tapps_brain._protocols import ProjectProfileLike
-    from tapps_brain.models import MemoryEntry
 
 logger = structlog.get_logger(__name__)
 
@@ -30,6 +31,27 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class SaveConflictHit(NamedTuple):
+    """One existing entry flagged as conflicting with an incoming save."""
+
+    entry: MemoryEntry
+    similarity: float
+
+
+def format_save_conflict_reason(
+    *,
+    incoming_key: str,
+    tier: str,
+    similarity: float,
+) -> str:
+    """Deterministic user-visible / audit text for save-time conflict invalidation."""
+    sim_r = round(float(similarity), 4)
+    return (
+        f"Save-time conflict: invalidated by incoming memory '{incoming_key}' "
+        f"(tier={tier}, similarity={sim_r})."
+    )
+
+
 def detect_save_conflicts(
     new_value: str,
     new_tier: str,
@@ -37,7 +59,7 @@ def detect_save_conflicts(
     similarity_threshold: float = 0.6,
     *,
     exclude_key: str | None = None,
-) -> list[MemoryEntry]:
+) -> list[SaveConflictHit]:
     """Detect existing entries that may conflict with a new value.
 
     Looks for entries in the same tier with high text similarity but
@@ -54,9 +76,9 @@ def detect_save_conflicts(
             the head then rebuilding it with the same ``valid_at``/``invalid_at``).
 
     Returns:
-        List of potentially conflicting entries, sorted by similarity descending.
+        Hits sorted by similarity descending, then key (deterministic). Each hit
+        includes the similarity score used for audit / ``contradiction_reason``.
     """
-    from tapps_brain.models import MemoryEntry as _MemoryEntry  # local import to avoid cycles
     from tapps_brain.similarity import text_similarity
 
     def _normalize(text: str) -> str:
@@ -65,13 +87,13 @@ def detect_save_conflicts(
     new_value_norm = _normalize(new_value)
 
     # Build a temporary entry for text_similarity (needs a MemoryEntry)
-    _sentinel = _MemoryEntry(
+    _sentinel = MemoryEntry(
         key="conflict-sentinel",
         value=new_value,
         tier=new_tier,
     )
 
-    scored: list[tuple[float, _MemoryEntry]] = []
+    scored: list[tuple[float, MemoryEntry]] = []
     for entry in existing_entries:
         if exclude_key is not None and entry.key == exclude_key:
             continue
@@ -90,7 +112,7 @@ def detect_save_conflicts(
 
     # Sort by similarity descending, then by key for determinism
     scored.sort(key=lambda t: (-t[0], t[1].key))
-    return [entry for _, entry in scored]
+    return [SaveConflictHit(entry=e, similarity=s) for s, e in scored]
 
 
 # ---------------------------------------------------------------------------

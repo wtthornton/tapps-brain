@@ -59,9 +59,6 @@ _MAX_ENTRIES = 5000
 # Built-in Hive propagation primitives (``group:<name>`` is also valid; see ``agent_scope``).
 VALID_AGENT_SCOPES: tuple[str, ...] = ("private", "domain", "hive")
 
-# RAG safety match count threshold for blocking content.
-# (moved up for visibility, original kept below for compat)
-
 
 def _validate_write_rules(
     key: str,
@@ -98,9 +95,6 @@ def _validate_write_rules(
 
     return None
 
-
-# RAG safety match count threshold for blocking content.
-_RAG_BLOCK_THRESHOLD = 3
 
 # Reformulation detection window in seconds (STORY-029-4b).
 # Queries issued within this window with Jaccard similarity > 0.5 are
@@ -448,9 +442,11 @@ class MemoryStore:
                 (STORY-029.3).  Used by 029-4b correction detection.
             conflict_check: When True, check for entries that may conflict with
                 the new value before saving.  Conflicting entries (same tier,
-                high similarity, different content) are logged as warnings and
+                high similarity, different content) are logged as warnings,
+                marked ``contradicted`` with a ``contradiction_reason``, and
                 their ``invalid_at`` field is set to now (GitHub #44, task 040.16).
-                Defaults to True for safer writes.
+                Similarity cutoff comes from ``profile.conflict_check`` when a
+                profile is loaded. Defaults to True for safer writes.
         """
         try:
             agent_scope = normalize_agent_scope(agent_scope)
@@ -491,14 +487,24 @@ class MemoryStore:
                 session_count=rate_result.current_session_count,
             )
 
-        # RAG safety check on value
-        safety = check_content_safety(value)
-        if not safety.safe and safety.match_count >= _RAG_BLOCK_THRESHOLD:
+        # RAG safety check on value (ruleset + metrics: EPIC-044 STORY-044.1)
+        _rs_ver: str | None = None
+        if self._profile is not None:
+            _safety_cfg = getattr(self._profile, "safety", None)
+            if _safety_cfg is not None:
+                _rs_ver = getattr(_safety_cfg, "ruleset_version", None)
+        safety = check_content_safety(
+            value,
+            ruleset_version=_rs_ver,
+            metrics=self._metrics,
+        )
+        if not safety.safe:
             logger.warning(
                 "memory_save_blocked",
                 key=key,
                 match_count=safety.match_count,
                 patterns=safety.flagged_patterns,
+                ruleset_version=safety.ruleset_version,
             )
             return {
                 "error": "content_blocked",
@@ -506,8 +512,7 @@ class MemoryStore:
                 "flagged_patterns": safety.flagged_patterns,
             }
 
-        # Sanitise if flagged but not blocked
-        if not safety.safe and safety.sanitised_content:
+        if safety.sanitised_content is not None:
             value = safety.sanitised_content
 
         # Bloom filter dedup fast-path (GitHub #31)
@@ -536,24 +541,65 @@ class MemoryStore:
         # Conflict detection (GitHub #44, task 040.16) — opt-in only.
         _conflict_valid_at: str | None = None
         if conflict_check:
-            from tapps_brain.contradictions import detect_save_conflicts
+            from tapps_brain.contradictions import (
+                detect_save_conflicts,
+                format_save_conflict_reason,
+            )
 
             with self._serialized():
                 _all_entries = list(self._entries.values())
-            _conflicts = detect_save_conflicts(value, tier, _all_entries, exclude_key=key)
+            _cc = (
+                getattr(self._profile, "conflict_check", None)
+                if self._profile is not None
+                else None
+            )
+            if _cc is not None:
+                _sim_threshold = _cc.effective_similarity_threshold()
+            else:
+                from tapps_brain.profile import ConflictCheckConfig
+
+                _sim_threshold = ConflictCheckConfig().effective_similarity_threshold()
+            _conflicts = detect_save_conflicts(
+                value,
+                tier,
+                _all_entries,
+                _sim_threshold,
+                exclude_key=key,
+            )
             if _conflicts:
-                _conflict_keys = [e.key for e in _conflicts]
+                _conflict_keys = [h.entry.key for h in _conflicts]
+                _tier_display = tier
+                _conflict_audit = [
+                    {
+                        "key": h.entry.key,
+                        "similarity": round(h.similarity, 4),
+                        "tier": (
+                            h.entry.tier.value
+                            if hasattr(h.entry.tier, "value")
+                            else str(h.entry.tier)
+                        ),
+                    }
+                    for h in _conflicts
+                ]
                 logger.warning(
                     "memory_save_conflicts_detected",
                     key=key,
                     conflicting_keys=_conflict_keys,
+                    similarity_threshold=_sim_threshold,
+                    conflicts=_conflict_audit,
                 )
                 # Mark conflicting entries as superseded (set invalid_at = now)
                 _now_conflict = _utc_now_iso()
                 _conflict_valid_at = _now_conflict
-                for _conflict_entry in _conflicts:
+                for _hit in _conflicts:
+                    _conflict_entry = _hit.entry
                     if _conflict_entry.invalid_at is None:
                         _invalidated: MemoryEntry | None = None
+                        _reason = format_save_conflict_reason(
+                            incoming_key=key,
+                            tier=_tier_display,
+                            similarity=_hit.similarity,
+                        )
                         with self._serialized():
                             _current = self._entries.get(_conflict_entry.key)
                             if _current is not None and _current.invalid_at is None:
@@ -561,6 +607,8 @@ class MemoryStore:
                                     update={
                                         "invalid_at": _now_conflict,
                                         "updated_at": _now_conflict,
+                                        "contradicted": True,
+                                        "contradiction_reason": _reason,
                                     }
                                 )
                                 self._entries[_conflict_entry.key] = _invalidated
@@ -1695,7 +1743,18 @@ class MemoryStore:
         prof = getattr(self, "_profile", None)
         prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
 
-        save_phases = compact_save_phase_summary(self._metrics.snapshot())
+        from tapps_brain.safety import resolve_safety_ruleset_version
+
+        _rs_pin: str | None = None
+        if prof is not None:
+            _sfc = getattr(prof, "safety", None)
+            if _sfc is not None:
+                _rs_pin = getattr(_sfc, "ruleset_version", None)
+        eff_ruleset = resolve_safety_ruleset_version(_rs_pin)
+
+        _snap = self._metrics.snapshot()
+        save_phases = compact_save_phase_summary(_snap)
+        _ctr = _snap.counters
 
         return StoreHealthReport(
             store_path=str(self._project_root),
@@ -1721,18 +1780,36 @@ class MemoryStore:
             relation_count=self.count_relations(),
             sqlcipher_enabled=self._persistence.sqlcipher_enabled,
             save_phase_summary=save_phases,
+            rag_safety_ruleset_version=eff_ruleset,
+            rag_safety_blocked_count=int(_ctr.get("rag_safety.blocked", 0)),
+            rag_safety_sanitized_count=int(_ctr.get("rag_safety.sanitized", 0)),
+            gc_runs_total=int(_ctr.get("store.gc", 0)),
+            gc_archived_rows_total=int(_ctr.get("store.gc.archived", 0)),
+            gc_archive_bytes_total=int(_ctr.get("store.gc.archive_bytes", 0)),
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
 
+        Appends archived rows to ``{store_dir}/archive.jsonl`` (UTF-8 JSONL).
+        Counters: ``store.gc`` (invocations), ``store.gc.archived`` (rows),
+        ``store.gc.archive_bytes`` (bytes appended).
+
         Args:
             dry_run: If True, only identify candidates without archiving.
 
         Returns:
-            ``GCResult`` with archived count and keys.
+            ``GCResult`` with keys, ``reason_counts``, and byte fields
+            (``estimated_archive_bytes`` when dry-run, ``archive_bytes`` when live).
         """
-        from tapps_brain.gc import GCResult, MemoryGarbageCollector
+        from datetime import UTC, datetime
+
+        from tapps_brain.gc import (
+            GCResult,
+            MemoryGarbageCollector,
+            aggregate_gc_reason_counts,
+            archive_entries_jsonl_utf8_bytes,
+        )
 
         self._metrics.increment("store.gc")
         gc_collector = MemoryGarbageCollector(
@@ -1741,27 +1818,40 @@ class MemoryStore:
         )
         with self._serialized():
             entries = list(self._entries.values())
-        candidates = gc_collector.identify_candidates(entries)
+        now = datetime.now(tz=UTC)
+        candidates = gc_collector.identify_candidates(entries, now=now)
+        details = gc_collector.stale_candidate_details(entries, now=now)
+        reason_counts = aggregate_gc_reason_counts(details)
         candidate_keys = [c.key for c in candidates]
+        now_iso = now.isoformat()
+        est_bytes = archive_entries_jsonl_utf8_bytes(candidates, archived_at_iso=now_iso)
 
         if dry_run:
             return GCResult(
                 archived_count=0,
                 remaining_count=len(entries),
                 archived_keys=candidate_keys,
+                dry_run=True,
+                reason_counts=reason_counts,
+                estimated_archive_bytes=est_bytes,
             )
 
-        # Archive to JSONL and delete from store
-        archive_path = self._persistence.store_dir / "gc_archive.jsonl"
-        MemoryGarbageCollector.append_to_archive(candidates, archive_path)
+        # Archive to JSONL (canonical name per docs) and delete from store
+        archive_path = self._persistence.store_dir / "archive.jsonl"
+        appended = MemoryGarbageCollector.append_to_archive(candidates, archive_path)
         for key in candidate_keys:
             self.delete(key)
 
         self._metrics.increment("store.gc.archived", len(candidate_keys))
+        if appended:
+            self._metrics.increment("store.gc.archive_bytes", appended)
         return GCResult(
             archived_count=len(candidate_keys),
             remaining_count=len(entries) - len(candidate_keys),
             archived_keys=candidate_keys,
+            dry_run=False,
+            reason_counts=reason_counts,
+            archive_bytes=appended,
         )
 
     def list_gc_stale_details(self, *, now: Any = None) -> list[Any]:  # noqa: ANN401

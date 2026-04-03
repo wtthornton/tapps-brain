@@ -367,6 +367,46 @@ class TestReturnKeyConsistency:
         assert result["recall_diagnostics"]["visible_entries"] == 1
 
 
+class TestInjectionRerankTelemetry:
+    """EPIC-042.6: rerank stats surface on injection_telemetry after search."""
+
+    def test_rerank_telemetry_when_rerank_enabled(self) -> None:
+        from tapps_brain.injection import InjectionConfig
+
+        entries = [_make_entry("k1", "python asyncio patterns for testing")]
+        store = _make_store(entries)
+        result = inject_memories(
+            "python asyncio",
+            store,
+            "high",
+            config=InjectionConfig(reranker_enabled=True, reranker_provider="noop"),
+        )
+        t = result["injection_telemetry"]
+        assert t["rerank_applied"] is True
+        assert t["rerank_provider"] == "noop"
+        assert t["rerank_candidates_in"] >= 1
+        assert t["rerank_top_k"] is not None
+        assert t["rerank_latency_ms"] is not None
+        assert t["rerank_results_out"] is not None
+        assert t["rerank_error"] is None
+
+    def test_rerank_telemetry_inactive_when_rerank_disabled(self) -> None:
+        from tapps_brain.injection import InjectionConfig
+
+        entries = [_make_entry("k1", "python asyncio patterns")]
+        store = _make_store(entries)
+        result = inject_memories(
+            "python asyncio",
+            store,
+            "high",
+            config=InjectionConfig(reranker_enabled=False),
+        )
+        t = result["injection_telemetry"]
+        assert t["rerank_applied"] is False
+        assert t["rerank_provider"] is None
+        assert t["rerank_candidates_in"] is None
+
+
 class TestInjectionTelemetryAndTokenizer:
     """EPIC-042.7: optional count_tokens hook and structured telemetry."""
 

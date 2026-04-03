@@ -76,6 +76,7 @@ def _mock_store(entries=None):
         total_count=len(entries),
     )
     store.count.return_value = len(entries)
+    store._metrics = None
     return store
 
 
@@ -703,7 +704,7 @@ class TestGCEdges:
         archive_path.mkdir()  # dir instead of file -> OSError on open
 
         # Should not raise, just log warning
-        MemoryGarbageCollector.append_to_archive([entry], archive_path)
+        assert MemoryGarbageCollector.append_to_archive([entry], archive_path) == 0
 
     def test_days_since_timestamp_bad_value(self):
         from tapps_brain.gc import _days_since_timestamp

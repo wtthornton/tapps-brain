@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.profile import (
+    ConflictCheckConfig,
     GCConfig,
     HiveConfig,
     HybridFusionConfig,
@@ -19,6 +20,7 @@ from tapps_brain.profile import (
     PromotionThreshold,
     RecallProfileConfig,
     ScoringConfig,
+    SeedingConfig,
     _merge_profiles,
     _resolve_inheritance,
     composite_scoring_weight_total,
@@ -416,6 +418,18 @@ class TestLoadProfile:
         assert profile.recall.default_token_budget == 3000
         assert profile.limits.max_entries == 1000
 
+    def test_load_seeding_section(self, tmp_path: Path) -> None:
+        data = {
+            "profile": {
+                "name": "seed-yaml",
+                "layers": [{"name": "main", "half_life_days": 30}],
+                "seeding": {"seed_version": "yaml-v1"},
+            }
+        }
+        path = _write_yaml(tmp_path / "seed.yaml", data)
+        profile = load_profile(path)
+        assert profile.seeding.seed_version == "yaml-v1"
+
 
 # ---------------------------------------------------------------------------
 # 3. Built-in profiles
@@ -591,6 +605,35 @@ class TestInheritance:
         )
         merged = _merge_profiles(child, parent)
         assert merged.description == "Child override"
+
+    def test_merge_profiles_carries_child_conflict_check(self) -> None:
+        parent = MemoryProfile(
+            name="parent",
+            layers=[LayerDefinition(name="a", half_life_days=90)],
+            conflict_check=ConflictCheckConfig(aggressiveness="low"),
+        )
+        child = MemoryProfile(
+            name="child",
+            layers=[LayerDefinition(name="b", half_life_days=7)],
+            conflict_check=ConflictCheckConfig(aggressiveness="high"),
+        )
+        merged = _merge_profiles(child, parent)
+        assert merged.conflict_check.aggressiveness == "high"
+        assert merged.conflict_check.effective_similarity_threshold() == 0.45
+
+    def test_merge_profiles_carries_child_seeding(self) -> None:
+        parent = MemoryProfile(
+            name="parent",
+            layers=[LayerDefinition(name="a", half_life_days=90)],
+            seeding=SeedingConfig(seed_version="parent-v"),
+        )
+        child = MemoryProfile(
+            name="child",
+            layers=[LayerDefinition(name="b", half_life_days=7)],
+            seeding=SeedingConfig(seed_version="child-v"),
+        )
+        merged = _merge_profiles(child, parent)
+        assert merged.seeding.seed_version == "child-v"
 
     def test_resolve_inheritance_with_extends(self) -> None:
         """A profile with extends='repo-brain' inherits repo-brain layers."""
@@ -862,6 +905,32 @@ class TestMergeProfilesLexical:
         merged = _merge_profiles(child, parent)
         assert merged.lexical.apply_stem is False
         assert merged.lexical.ascii_fold is True
+
+
+class TestConflictCheckConfig:
+    """EPIC-044.3: profile-driven save conflict similarity cutoff."""
+
+    def test_aggressiveness_tiers(self) -> None:
+        assert ConflictCheckConfig(aggressiveness="low").effective_similarity_threshold() == 0.75
+        assert ConflictCheckConfig(aggressiveness="medium").effective_similarity_threshold() == 0.6
+        assert ConflictCheckConfig(aggressiveness="high").effective_similarity_threshold() == 0.45
+
+    def test_similarity_threshold_overrides_aggressiveness(self) -> None:
+        c = ConflictCheckConfig(aggressiveness="low", similarity_threshold=0.3)
+        assert c.effective_similarity_threshold() == 0.3
+
+    def test_yaml_roundtrip_under_profile(self, tmp_path: Path) -> None:
+        data = {
+            "profile": {
+                "name": "cc-yaml",
+                "layers": [{"name": "pattern", "half_life_days": 30}],
+                "conflict_check": {"aggressiveness": "high"},
+            }
+        }
+        p = _write_yaml(tmp_path / "p.yaml", data)
+        mp = load_profile(p)
+        assert mp.conflict_check.aggressiveness == "high"
+        assert mp.conflict_check.effective_similarity_threshold() == 0.45
 
 
 class TestGetBuiltinProfileSecurity:

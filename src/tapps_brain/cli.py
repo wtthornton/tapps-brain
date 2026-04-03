@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import structlog
 
@@ -667,7 +667,13 @@ def memory_audit(
     key: Annotated[str | None, typer.Argument(help="Filter by memory entry key.")] = None,
     project_dir: ProjectDir = None,
     event_type: Annotated[
-        str | None, typer.Option("--type", help="Filter by event type (save, delete, etc.).")
+        str | None,
+        typer.Option(
+            "--type",
+            help=(
+                "Filter by action (save, delete, consolidation_merge, consolidation_source, …)."
+            ),
+        ),
     ] = None,
     since: Annotated[
         str | None, typer.Option("--since", help="Lower bound timestamp (ISO-8601, inclusive).")
@@ -1233,45 +1239,28 @@ def maintenance_gc(
     as_json: JsonFlag = False,
 ) -> None:
     """Run garbage collection to archive stale entries."""
-    from tapps_brain.gc import MemoryGarbageCollector
-
     store = _get_store(project_dir)
     try:
-        entries = store.list_all(include_superseded=True)
-        gc = MemoryGarbageCollector(
-            config=store._get_decay_config(),
-            gc_config=store.get_gc_config(),
-        )
-        candidates = gc.identify_candidates(entries)
-
-        if dry_run:
-            data = {
-                "would_archive": len(candidates),
-                "keys": [e.key for e in candidates],
-            }
-            if as_json:
-                _output(data, as_json=True)
-            else:
-                typer.echo(f"Would archive {len(candidates)} entries:")
-                for e in candidates:
-                    typer.echo(f"  - {e.key} (confidence={e.confidence:.2f})")
-            return
-
-        archived = 0
-        root = _resolve_project_dir(project_dir)
-        if candidates:
-            archive_path = root / ".tapps-brain" / "memory" / "archive.jsonl"
-            gc.append_to_archive(candidates, archive_path)
-            for entry in candidates:
-                store.delete(entry.key)
-                archived += 1
-
-        remaining = store.count()
-        data = {"archived": archived, "remaining": remaining}
+        result = store.gc(dry_run=dry_run)
+        data = result.model_dump(mode="json")
         if as_json:
             _output(data, as_json=True)
+        elif dry_run:
+            n = len(result.archived_keys)
+            typer.echo(
+                f"Would archive {n} entries "
+                f"(~{result.estimated_archive_bytes} UTF-8 bytes JSONL):"
+            )
+            if result.reason_counts:
+                typer.echo(f"  reasons: {result.reason_counts}")
+            for key in result.archived_keys:
+                typer.echo(f"  - {key}")
         else:
-            typer.echo(f"Archived {archived} entries, {remaining} remaining")
+            typer.echo(
+                f"Archived {result.archived_count} entries "
+                f"({result.archive_bytes} bytes to archive), "
+                f"{result.remaining_count} remaining"
+            )
     finally:
         store.close()
 
@@ -3121,13 +3110,27 @@ def visual_export_cmd(
             help="Skip store diagnostics (faster; omits circuit_state/composite_score).",
         ),
     ] = False,
+    privacy: Annotated[
+        str,
+        typer.Option(
+            "--privacy",
+            help=(
+                "standard (default) | strict (redact path/tampered keys) | "
+                "local (tag + group names)."
+            ),
+        ),
+    ] = "standard",
 ) -> None:
     """Write a versioned JSON snapshot for the static brain visual demo and dashboards."""
-    from tapps_brain.visual_snapshot import build_visual_snapshot, snapshot_to_json
+    from tapps_brain.visual_snapshot import PrivacyTier, build_visual_snapshot, snapshot_to_json
 
+    if privacy not in {"standard", "strict", "local"}:
+        typer.echo("Error: --privacy must be standard, strict, or local.", err=True)
+        raise typer.Exit(code=2)
+    tier = cast("PrivacyTier", privacy)
     store = _get_store(project_dir)
     try:
-        snap = build_visual_snapshot(store, skip_diagnostics=skip_diagnostics)
+        snap = build_visual_snapshot(store, skip_diagnostics=skip_diagnostics, privacy=tier)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(snapshot_to_json(snap), encoding="utf-8")
     finally:

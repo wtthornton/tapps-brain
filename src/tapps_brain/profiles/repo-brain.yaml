@@ -111,3 +111,7 @@ profile:
     max_key_length: 128
     max_value_length: 4096
     max_tags: 10
+
+  # Optional: bump when changing auto-seed facts; included in seed/reseed summaries.
+  # seeding:
+  #   seed_version: "1.0.0"

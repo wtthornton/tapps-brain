@@ -410,6 +410,8 @@ limits:
   max_tags: 10             # Max tags per entry
 ```
 
+Precise eviction semantics (new keys only, tie-breaking, stored confidence): [Data stores reference — entry cap and eviction](../engineering/data-stores-and-schema.md#entry-cap-and-eviction-runtime).
+
 ### Sizing guidance
 
 | Use case | max_entries | max_value_length | Rationale |
@@ -422,6 +424,15 @@ limits:
 | Delivery pipeline | 10,000 | 8192 | High volume, intent specs can be verbose |
 
 GC and auto-consolidation keep the active set lean — the limit is a safety net, not a target. For details on hardware performance at various entry counts, see [Profile Limits Rationale](profile-limits-rationale.md).
+
+### Seeding (optional)
+
+```yaml
+seeding:
+  seed_version: "2026-04-02"   # Opaque label; echoed in seed/reseed summary JSON
+```
+
+Bump `seed_version` when you change project-profile detection or want operators to see that auto-seeded facts should be refreshed (`reseed_from_profile`). See `tapps_brain.seeding` module docstring for `conflict_check` behavior on seed saves.
 
 ---
 
@@ -475,7 +486,7 @@ profile:
 ### Inheritance rules
 
 - **Layers**: Child layers with matching names replace parent layers. New child layers are appended.
-- **Scalars** (scoring, gc, recall, limits): Child values override parent completely.
+- **Scalars** (scoring, gc, recall, limits, seeding, safety, …): Child values override parent completely.
 - **Dicts** (source_confidence, source_ceilings): Merged — child keys override matching parent keys, parent-only keys are preserved.
 - **Depth limit**: Maximum 3 levels of inheritance.
 

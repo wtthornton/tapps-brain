@@ -111,6 +111,32 @@ class StoreHealthReport(BaseModel):
         default="",
         description="Compact p50 ms + n for store.save phase histograms (see get_metrics).",
     )
+    # RAG safety counters (EPIC-044 STORY-044.1); since process start, same collector as save phases
+    rag_safety_ruleset_version: str = Field(
+        default="",
+        description="Effective bundled RAG safety pattern ruleset semver for this store profile.",
+    )
+    rag_safety_blocked_count: int = Field(
+        default=0,
+        description="Times content was fully blocked (save or injection check).",
+    )
+    rag_safety_sanitized_count: int = Field(
+        default=0,
+        description="Times content was sanitised (redacted patterns) rather than blocked.",
+    )
+    # GC counters (EPIC-044 STORY-044.5); since process start, same collector as save phases
+    gc_runs_total: int = Field(
+        default=0,
+        description="Number of ``MemoryStore.gc`` invocations (including dry-run).",
+    )
+    gc_archived_rows_total: int = Field(
+        default=0,
+        description="Total rows archived across live GC runs.",
+    )
+    gc_archive_bytes_total: int = Field(
+        default=0,
+        description="Total UTF-8 bytes appended to archive JSONL across live GC runs.",
+    )
 
 
 # ---------------------------------------------------------------------------

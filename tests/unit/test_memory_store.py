@@ -286,15 +286,16 @@ class TestMemoryStoreRAGSafety:
             assert result["error"] == "content_blocked"
 
     def test_sanitized_content_on_flagged_but_not_blocked(self, store: MemoryStore) -> None:
-        """Content flagged but below block threshold gets sanitized."""
+        """Sanitize path: ``check_content_safety`` returns safe=True with redacted body."""
         with patch("tapps_brain.store.check_content_safety") as mock_safety:
             from tapps_brain.safety import SafetyCheckResult
 
             mock_safety.return_value = SafetyCheckResult(
-                safe=False,
+                safe=True,
                 flagged_patterns=["some_pattern"],
                 match_count=1,
                 sanitised_content="cleaned content",
+                ruleset_version="1.0.0",
             )
             result = store.save(key="sanitized-key", value="slightly risky")
             assert isinstance(result, MemoryEntry)
@@ -1032,6 +1033,48 @@ class TestStoreMetrics:
         store.gc(dry_run=True)
         snap = store.get_metrics()
         assert snap.counters.get("store.gc", 0) == 1
+
+    def test_gc_dry_run_includes_reason_counts_and_estimate(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        s = MemoryStore(tmp_path)
+        s.save(key="sess", value="tmp", tier="context", scope="session")
+        entry = s.get("sess")
+        assert entry is not None
+        old = (datetime.now(tz=UTC) - timedelta(days=10)).isoformat()
+        with s._lock:
+            s._entries["sess"] = entry.model_copy(update={"updated_at": old})
+            s._persistence.save(s._entries["sess"])
+        r = s.gc(dry_run=True)
+        assert r.dry_run is True
+        assert "session_expired" in r.reason_counts
+        assert r.estimated_archive_bytes > 0
+        assert "sess" in r.archived_keys
+        s.close()
+
+    def test_gc_live_increments_archive_bytes(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        s = MemoryStore(tmp_path)
+        s.save(key="sess2", value="tmp", tier="context", scope="session")
+        entry = s.get("sess2")
+        assert entry is not None
+        old = (datetime.now(tz=UTC) - timedelta(days=10)).isoformat()
+        with s._lock:
+            s._entries["sess2"] = entry.model_copy(update={"updated_at": old})
+            s._persistence.save(s._entries["sess2"])
+        s._metrics.reset()
+        r = s.gc(dry_run=False)
+        assert r.dry_run is False
+        assert r.archived_count == 1
+        assert r.archive_bytes > 0
+        snap = s.get_metrics()
+        assert snap.counters.get("store.gc.archived", 0) == 1
+        assert snap.counters.get("store.gc.archive_bytes", 0) == r.archive_bytes
+        h = s.health()
+        assert h.gc_archived_rows_total == 1
+        assert h.gc_archive_bytes_total == r.archive_bytes
+        s.close()
 
     def test_reinforce_increments_counter(self, store: MemoryStore) -> None:
         store.save(key="reinforce-me", value="some durable fact")

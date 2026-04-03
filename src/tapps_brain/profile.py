@@ -240,6 +240,56 @@ class HybridFusionConfig(BaseModel):
     )
 
 
+class ConflictCheckConfig(BaseModel):
+    """Save-time semantic conflict detection (EPIC-044.3 / GitHub #44).
+
+    Tune under ``profile.conflict_check`` in YAML. ``aggressiveness`` selects a
+    default Jaccard-style similarity cutoff for ``detect_save_conflicts``; set
+    ``similarity_threshold`` explicitly to override the tier.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    aggressiveness: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description=(
+            "low: fewer flags (threshold 0.75). medium: historical default (0.6). "
+            "high: more flags (0.45)."
+        ),
+    )
+    similarity_threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="When set, overrides aggressiveness-derived threshold.",
+    )
+
+    def effective_similarity_threshold(self) -> float:
+        """Similarity cutoff passed to ``detect_save_conflicts``."""
+        if self.similarity_threshold is not None:
+            return float(self.similarity_threshold)
+        tier_defaults: dict[str, float] = {"low": 0.75, "medium": 0.6, "high": 0.45}
+        return tier_defaults[self.aggressiveness]
+
+
+class SafetyConfig(BaseModel):
+    """Write-time RAG / injection pattern ruleset (EPIC-044 STORY-044.1).
+
+    Tune under ``profile.safety`` in YAML. The bundled pattern list is selected
+    by ``ruleset_version``; only versions shipped with tapps-brain are supported.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ruleset_version: str | None = Field(
+        default=None,
+        description=(
+            "Semver of the pattern ruleset (e.g. '1.0.0'). None = library default. "
+            "Unknown values log a warning and fall back to the default."
+        ),
+    )
+
+
 class LimitsConfig(BaseModel):
     """Store limits configuration."""
 
@@ -247,6 +297,21 @@ class LimitsConfig(BaseModel):
     max_key_length: int = Field(default=128, ge=1)
     max_value_length: int = Field(default=4096, ge=1)
     max_tags: int = Field(default=10, ge=1)
+
+
+class SeedingConfig(BaseModel):
+    """Auto-seed metadata (EPIC-044 STORY-044.6)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seed_version: str | None = Field(
+        default=None,
+        description=(
+            "Opaque label for the current profile-driven seed recipe. "
+            "Included in ``seed_from_profile`` / ``reseed_from_profile`` summaries "
+            "so operators can diff runs when bumping this value."
+        ),
+    )
 
 
 class DiagnosticsProfileConfig(BaseModel):
@@ -336,6 +401,10 @@ class MemoryProfile(BaseModel):
     gc: GCConfig = Field(default_factory=GCConfig)
     recall: RecallProfileConfig = Field(default_factory=RecallProfileConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    seeding: SeedingConfig = Field(
+        default_factory=SeedingConfig,
+        description="Optional auto-seed versioning (EPIC-044 STORY-044.6).",
+    )
     hive: HiveConfig = Field(default_factory=HiveConfig)
     feedback: FeedbackConfig = Field(
         default_factory=FeedbackConfig,
@@ -355,6 +424,14 @@ class MemoryProfile(BaseModel):
     hybrid_fusion: HybridFusionConfig = Field(
         default_factory=HybridFusionConfig,
         description="Hybrid search RRF pool sizes and k (STORY-042.4); see HybridFusionConfig.",
+    )
+    conflict_check: ConflictCheckConfig = Field(
+        default_factory=ConflictCheckConfig,
+        description="Save-time conflict similarity threshold / aggressiveness (EPIC-044.3).",
+    )
+    safety: SafetyConfig = Field(
+        default_factory=SafetyConfig,
+        description="RAG safety ruleset semver pin (EPIC-044.1); see tapps_brain.safety.",
     )
 
     @model_validator(mode="after")
@@ -501,6 +578,9 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         diagnostics=child.diagnostics,
         lexical=child.lexical,
         hybrid_fusion=child.hybrid_fusion,
+        conflict_check=child.conflict_check,
+        safety=child.safety,
+        seeding=child.seeding,
     )
 
 

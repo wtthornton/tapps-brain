@@ -47,6 +47,9 @@ def test_sqlite_vec_roundtrip_knn() -> None:
     hits = knn_search(conn, q, k=2, dim=4)
     assert len(hits) >= 1
     assert hits[0][0] == "k1"
+    # vec0 default metric is L2; nearer key should have strictly lower distance.
+    assert len(hits) == 2
+    assert hits[0][1] < hits[1][1]
 
 
 def test_backfill_from_memories() -> None:

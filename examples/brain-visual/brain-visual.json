@@ -1,24 +1,59 @@
 {
+  "access_stats": {
+    "buckets": [
+      {
+        "count": 0,
+        "label": "0"
+      },
+      {
+        "count": 4,
+        "label": "1-5"
+      },
+      {
+        "count": 0,
+        "label": "6-20"
+      },
+      {
+        "count": 0,
+        "label": "21+"
+      }
+    ],
+    "entries_with_access": 4,
+    "mean_access_count": 1.25,
+    "sum_access_count": 5,
+    "sum_total_access_count": 0,
+    "sum_useful_access_count": 0
+  },
   "agent_scope_counts": {
     "private": 4
   },
-  "diagnostics": null,
-  "fingerprint_sha256": "5d6246cb4e2cc7704da3a3420dd87eb3cb3db954ec481122f43a940def844c9d",
-  "generated_at": "2026-04-02T21:48:43.667690+00:00",
+  "diagnostics": {
+    "circuit_state": "closed",
+    "composite_score": 0.9927453679587191,
+    "recorded_at": "2026-04-02T23:40:01.785918+00:00"
+  },
+  "fingerprint_sha256": "2ace8aad0816ac5b7138bd11610f6e829ed76fbf2aa88c71c429b394253c0d4e",
+  "generated_at": "2026-04-02T23:40:01.829584+00:00",
   "health": {
     "consolidation_candidates": 0,
     "entry_count": 4,
     "federation_enabled": true,
     "federation_project_count": 2,
+    "gc_archive_bytes_total": 0,
+    "gc_archived_rows_total": 0,
     "gc_candidates": 0,
+    "gc_runs_total": 0,
     "integrity_no_hash": 0,
     "integrity_tampered": 0,
     "integrity_tampered_keys": [],
     "integrity_verified": 4,
     "max_entries": 5000,
-    "oldest_entry_age_days": 2.273857185636574,
+    "oldest_entry_age_days": 2.3511498984953705,
     "package_version": "2.0.3",
     "profile_name": "repo-brain",
+    "rag_safety_blocked_count": 0,
+    "rag_safety_ruleset_version": "1.0.0",
+    "rag_safety_sanitized_count": 0,
     "rate_limit_exempt_writes": 0,
     "rate_limit_minute_anomalies": 0,
     "rate_limit_session_anomalies": 0,
@@ -33,14 +68,113 @@
     }
   },
   "hive_attached": true,
-  "privacy": "Aggregated counts and health metadata only; excludes memory text, keys, and tags.",
-  "schema_version": 1,
+  "hive_health": {
+    "agents": 20,
+    "connected": true,
+    "entries": 1176,
+    "namespaces": [
+      "personal-assistant",
+      "repo-brain",
+      "universal"
+    ],
+    "status": "ok"
+  },
+  "identity_schema_version": 2,
+  "memory_group_count": 0,
+  "memory_group_counts": null,
+  "privacy": "Aggregated metadata; excludes memory text and keys. Tags and named memory groups omitted unless privacy tier is local.",
+  "privacy_tier": "standard",
+  "retrieval_effective_mode": "bm25_only",
+  "retrieval_summary": "Vector leg unavailable: sentence-transformers not installed (e.g. `uv sync --extra vector`). Hybrid recall still calls the vector path but it returns no candidates, so results are BM25-only. CLI `memory search` default: BM25-only.",
+  "schema_version": 2,
+  "scorecard": [
+    {
+      "detail": "4 memor(y/ies) within max 5000.",
+      "id": "store_entries",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Store contents"
+    },
+    {
+      "detail": "Composite score and circuit state included in this export.",
+      "id": "diagnostics_data",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Diagnostics data"
+    },
+    {
+      "detail": "Diagnostics circuit is closed (nominal).",
+      "id": "diagnostics_circuit",
+      "status": "ok",
+      "ticket_hint": "Run `tapps-brain diagnostics health` and review scorecard dimensions.",
+      "title": "Diagnostics circuit"
+    },
+    {
+      "detail": "Composite score 0.99 (0-1).",
+      "id": "diagnostics_composite",
+      "status": "ok",
+      "ticket_hint": "Inspect diagnostics history and recall quality signals.",
+      "title": "Diagnostics composite score"
+    },
+    {
+      "detail": "No tampered integrity hashes reported.",
+      "id": "integrity_tampered",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Integrity (tampered)"
+    },
+    {
+      "detail": "No entries missing integrity hashes.",
+      "id": "integrity_no_hash",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Integrity (missing hash)"
+    },
+    {
+      "detail": "Capacity 0% of max_entries (4/5000).",
+      "id": "store_capacity",
+      "status": "ok",
+      "ticket_hint": "Raise max_entries in profile or archive/GC if appropriate.",
+      "title": "Store capacity"
+    },
+    {
+      "detail": "No minute/session rate-limit anomalies recorded.",
+      "id": "rate_limits",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Rate limit anomalies"
+    },
+    {
+      "detail": "No GC or consolidation candidates reported.",
+      "id": "maintenance_backlog",
+      "status": "ok",
+      "ticket_hint": "Run GC / consolidation when maintenance windows allow.",
+      "title": "Maintenance backlog"
+    },
+    {
+      "detail": "Hub connected; 20 agent(s), 1176 shared entr(y/ies).",
+      "id": "hive_hub",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Hive hub reachability"
+    },
+    {
+      "detail": "BM25-only retrieval (vector stack unavailable or empty).",
+      "id": "retrieval_stack",
+      "status": "info",
+      "ticket_hint": "Align with `uv sync --extra vector` and sqlite-vec docs if hybrid expected.",
+      "title": "Retrieval stack"
+    }
+  ],
+  "sqlite_vec_enabled": true,
+  "sqlite_vec_rows": 0,
+  "tag_stats": null,
   "theme": {
-    "accent_chroma": 0.8,
-    "flow_angle_deg": 296,
-    "hue_accent": 192,
-    "hue_primary": 146,
-    "surface_lightness": 12,
+    "accent_chroma": 0.62,
+    "flow_angle_deg": 203,
+    "hue_accent": 38,
+    "hue_primary": 30,
+    "surface_lightness": 11,
     "text_lightness": 98
   }
 }

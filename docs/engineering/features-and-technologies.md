@@ -14,7 +14,7 @@
 |------------------|-------------|-------------------------|
 | **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
 | **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` when `[vector]` extra installed; vectors stored on entries and optionally in sqlite-vec table. **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
-| **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. |
+| **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. Ops: [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md). |
 | **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
 | **Re-ranking (cross-encoder API)** | **Cohere** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when configured; falls back to noop. |
@@ -44,12 +44,12 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **Write-time content safety** | Rule-based **RAG safety** | `safety.py` — pattern checks, sanitize/block on save and before injection. |
-| **Near-duplicate detection** | **Bloom filter** + normalized text | `bloom.py` + `normalize_for_dedup` on save path; may **reinforce** existing key instead of new row. |
-| **Contradiction / conflict handling** | Heuristic **save-time conflicts** | `contradictions.py` + `store.save(..., conflict_check=True)` — can set temporal invalidation on conflicting entries (GitHub #44). |
-| **Deterministic merge / consolidation** | **Jaccard**, **TF-IDF**, topic flags | `consolidation.py`, `similarity.py`, `auto_consolidation.py` — merge similar entries **without LLM**; auto path on save when enabled (`ConsolidationConfig`). |
+| **Near-duplicate detection** | **Bloom filter** + normalized text | `bloom.py` + `normalize_for_dedup` (NFKC, lower, whitespace) on save path; nominal FP ~`fp_rate` at `expected_items` load (see `bloom_false_positive_probability`); may **reinforce** existing key instead of new row. |
+| **Contradiction / conflict handling** | Heuristic **save-time conflicts** | `contradictions.py` (`detect_save_conflicts`, `SaveConflictHit`) + `store.save(..., conflict_check=True)` — temporal invalidation, `contradicted` + `contradiction_reason`; threshold from `profile.conflict_check` / `ConflictCheckConfig` (GitHub #44, EPIC-044.3). |
+| **Deterministic merge / consolidation** | **Jaccard**, **TF-IDF**, topic flags | `consolidation.py`, `similarity.py`, `auto_consolidation.py` — merge similar entries **without LLM**; auto path on save when enabled (`ConsolidationConfig`); JSONL audit ``consolidation_merge`` / ``consolidation_source`` (EPIC-044.4). |
 | **Garbage collection / archival** | Tier-aware GC | `gc.py`, profile `GCConfig`, CLI/MCP maintenance paths. |
 | **Profile-driven seeding** | External **project profile** shape | `seeding.py` — seeds only empty store (first run); `reseed_from_profile` updates `auto-seeded` tags only. |
-| **Caps** | Max entries per project | Default 5000; profile `limits.max_entries`; eviction by lowest confidence when over cap. |
+| **Caps** | Max entries per project | Default 5000; profile `limits.max_entries`; eviction policy: [`data-stores-and-schema.md`](data-stores-and-schema.md#entry-cap-and-eviction-runtime) (lowest stored confidence, new-key inserts only). |
 
 ---
 

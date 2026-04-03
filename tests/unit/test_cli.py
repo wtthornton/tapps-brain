@@ -924,7 +924,7 @@ class TestMaintenanceCommands:
         result = runner.invoke(app, ["maintenance", "gc", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert "archived" in data
+        assert "archived_count" in data
 
     def test_stale_json(self, project_dir):
         result = runner.invoke(
@@ -2725,7 +2725,12 @@ class TestVisualExport:
         assert r.exit_code == 0
         assert out.is_file()
         data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == 2
         assert "fingerprint_sha256" in data
         assert "theme" in data
         assert data["diagnostics"] is None
+        assert data.get("privacy_tier") == "standard"
+        assert "access_stats" in data
+        assert "hive_health" in data
+        assert isinstance(data.get("scorecard"), list)
+        assert len(data["scorecard"]) >= 1

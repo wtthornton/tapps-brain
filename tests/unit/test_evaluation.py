@@ -11,6 +11,7 @@ import pytest
 from tapps_brain.evaluation import (
     LEXICAL_GOLDEN_EVAL_SUITE_NAME,
     AnthropicJudge,
+    ConsolidationThresholdSweepReport,
     EvalCorpus,
     EvalDoc,
     EvalQrels,
@@ -30,8 +31,10 @@ from tapps_brain.evaluation import (
     precision_at_k,
     recall_at_k,
     reciprocal_rank,
+    run_consolidation_threshold_sweep,
 )
 from tapps_brain.store import MemoryStore
+from tests.factories import make_entry
 
 
 def test_precision_recall_mrr_ndcg_known() -> None:
@@ -262,6 +265,47 @@ def test_cascaded_judge_escalation() -> None:
     assert r.score == 1.0
     assert cj.escalations == 1
     assert cj.escalation_rate == 1.0
+
+
+def test_consolidation_threshold_sweep_empty() -> None:
+    rep = run_consolidation_threshold_sweep([], thresholds=[0.7], min_group_size=3)
+    assert isinstance(rep, ConsolidationThresholdSweepReport)
+    assert rep.source_entry_count == 0
+    assert rep.analyzed_entry_count == 0
+    assert len(rep.rows) == 1
+    assert rep.rows[0].group_count == 0
+    assert rep.rows[0].entries_in_groups == 0
+
+
+def test_consolidation_threshold_sweep_low_vs_high_threshold() -> None:
+    """Lower similarity cutoff should not yield fewer grouped entries than a high cutoff."""
+    e1 = make_entry(key="s-a", value="python data science", tags=["ml"])
+    e2 = make_entry(key="s-b", value="python data science ml", tags=["ml"])
+    e3 = make_entry(key="s-c", value="python data science and AI", tags=["ml"])
+    rep = run_consolidation_threshold_sweep(
+        [e1, e2, e3],
+        thresholds=[0.35, 0.95],
+        min_group_size=3,
+        active_only=False,
+    )
+    assert rep.analyzed_entry_count == 3
+    low, high = rep.rows[0], rep.rows[1]
+    assert low.threshold < high.threshold
+    assert low.entries_in_groups >= high.entries_in_groups
+    assert low.group_count >= high.group_count
+
+
+def test_consolidation_threshold_sweep_active_only_skips_contradicted() -> None:
+    ok = make_entry(key="ok", value="x")
+    bad = make_entry(key="bad", value="y", contradicted=True, contradiction_reason="t")
+    rep = run_consolidation_threshold_sweep([ok, bad], thresholds=[0.7], active_only=True)
+    assert rep.source_entry_count == 2
+    assert rep.analyzed_entry_count == 1
+
+
+def test_consolidation_threshold_sweep_dedupes_thresholds() -> None:
+    rep = run_consolidation_threshold_sweep([], thresholds=[0.7, 0.7, 0.5])
+    assert [r.threshold for r in rep.rows] == [0.5, 0.7]
 
 
 def test_evaluate_with_judge_skips(tmp_path: Path) -> None:

@@ -4,6 +4,9 @@ All content passes through this filter before being stored or injected.
 Content is *untrusted* - it may contain prompt injection attempts.
 
 Extracted from tapps_core.security.content_safety for standalone use.
+
+EPIC-044 STORY-044.1: versioned pattern rulesets (semver keys) and optional
+``MetricsCollector`` increments for block vs sanitize outcomes.
 """
 
 from __future__ import annotations
@@ -11,10 +14,18 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
+if TYPE_CHECKING:
+    from tapps_brain.metrics import MetricsCollector
+
 logger = structlog.get_logger(__name__)
+
+# Semver keys for bundled pattern sets (extend when rules change materially).
+DEFAULT_SAFETY_RULESET_VERSION: str = "1.0.0"
+SUPPORTED_SAFETY_RULESET_VERSIONS: frozenset[str] = frozenset({DEFAULT_SAFETY_RULESET_VERSION})
 
 # ------------------------------------------------------------------
 # Injection patterns
@@ -86,6 +97,21 @@ _SUSPICIOUS_DENSITY_THRESHOLD = 0.15
 _MAX_PATTERN_MATCHES = 5
 
 
+def resolve_safety_ruleset_version(requested: str | None) -> str:
+    """Return a supported ruleset semver, falling back to the default if unknown."""
+    if requested is None or not str(requested).strip():
+        return DEFAULT_SAFETY_RULESET_VERSION
+    v = str(requested).strip()
+    if v in SUPPORTED_SAFETY_RULESET_VERSIONS:
+        return v
+    logger.warning(
+        "rag_safety_unknown_ruleset_version",
+        requested=v,
+        fallback=DEFAULT_SAFETY_RULESET_VERSION,
+    )
+    return DEFAULT_SAFETY_RULESET_VERSION
+
+
 @dataclass
 class SafetyCheckResult:
     """Result of RAG safety check on retrieved content."""
@@ -95,20 +121,35 @@ class SafetyCheckResult:
     match_count: int = 0
     sanitised_content: str | None = None
     warning: str | None = None
+    ruleset_version: str = ""
 
 
-def check_content_safety(content: str) -> SafetyCheckResult:
+def check_content_safety(
+    content: str,
+    *,
+    ruleset_version: str | None = None,
+    metrics: MetricsCollector | None = None,
+) -> SafetyCheckResult:
     """Check content for prompt injection.
 
     Args:
         content: Content to check.
+        ruleset_version: Optional semver pin (profile ``safety.ruleset_version``).
+            Unknown values log a warning and fall back to
+            ``DEFAULT_SAFETY_RULESET_VERSION``.
+        metrics: When set, increments ``rag_safety.blocked`` or
+            ``rag_safety.sanitized`` on block vs sanitize outcomes (clean passes
+            do not increment).
 
     Returns:
-        ``SafetyCheckResult`` with safety assessment and optionally
-        sanitised content.
+        ``SafetyCheckResult`` with safety assessment, effective ``ruleset_version``,
+        and optionally sanitised content.
     """
+    resolved = resolve_safety_ruleset_version(ruleset_version)
+    patterns = _injection_patterns_for_version(resolved)
+
     if not content or not content.strip():
-        return SafetyCheckResult(safe=True)
+        return SafetyCheckResult(safe=True, ruleset_version=resolved)
 
     # Normalise unicode (NFKC) to defeat homograph/lookalike bypass attempts
     # e.g. "Ɨgnore" → "Ignore", "ｉgnore" → "ignore"  # noqa: RUF003
@@ -117,7 +158,7 @@ def check_content_safety(content: str) -> SafetyCheckResult:
     flagged: list[str] = []
     total_matches = 0
 
-    for pattern_name, pattern in _INJECTION_PATTERNS:
+    for pattern_name, pattern in patterns:
         matches = pattern.findall(normalised)
         if matches:
             flagged.append(pattern_name)
@@ -125,13 +166,13 @@ def check_content_safety(content: str) -> SafetyCheckResult:
 
     # Short-circuit before the more expensive per-line density scan
     if total_matches == 0:
-        return SafetyCheckResult(safe=True)
+        return SafetyCheckResult(safe=True, ruleset_version=resolved)
 
     # Check density of suspicious patterns
     lines = normalised.splitlines()
     suspicious_lines = 0
     for line in lines:
-        for _, pattern in _INJECTION_PATTERNS:
+        for _, pattern in patterns:
             if pattern.search(line):
                 suspicious_lines += 1
                 break
@@ -147,8 +188,9 @@ def check_content_safety(content: str) -> SafetyCheckResult:
             match_count=total_matches,
             patterns=flagged,
             density=round(suspicious_lines / max(len(lines), 1), 3),
+            ruleset_version=resolved,
         )
-        return SafetyCheckResult(
+        result = SafetyCheckResult(
             safe=False,
             flagged_patterns=flagged,
             match_count=total_matches,
@@ -156,28 +198,46 @@ def check_content_safety(content: str) -> SafetyCheckResult:
                 f"Content blocked: {total_matches} prompt injection patterns detected "
                 f"({', '.join(flagged)})"
             ),
+            ruleset_version=resolved,
         )
+        if metrics is not None:
+            metrics.increment("rag_safety.blocked")
+        return result
 
     # Low match count - sanitise and warn (sanitise the normalised form so
     # patterns that were detected after NFKC normalisation are also removed)
-    sanitised = _sanitise_content(normalised)
+    sanitised = _sanitise_content(normalised, patterns)
     logger.info(
         "rag_safety_warning",
         match_count=total_matches,
         patterns=flagged,
+        ruleset_version=resolved,
     )
-    return SafetyCheckResult(
+    result = SafetyCheckResult(
         safe=True,
         flagged_patterns=flagged,
         match_count=total_matches,
         sanitised_content=sanitised,
         warning=f"Minor injection patterns detected and sanitised ({', '.join(flagged)})",
+        ruleset_version=resolved,
     )
+    if metrics is not None:
+        metrics.increment("rag_safety.sanitized")
+    return result
 
 
-def _sanitise_content(content: str) -> str:
+def _injection_patterns_for_version(version: str) -> list[tuple[str, re.Pattern[str]]]:
+    """Pattern table for a resolved ruleset version (extend when adding rule bundles)."""
+    _ = version  # future: dispatch on semver
+    return _INJECTION_PATTERNS
+
+
+def _sanitise_content(
+    content: str,
+    patterns: list[tuple[str, re.Pattern[str]]],
+) -> str:
     """Remove or neutralise detected injection patterns from content."""
     result = content
-    for _name, pattern in _INJECTION_PATTERNS:
+    for _name, pattern in patterns:
         result = pattern.sub("[REDACTED]", result)
     return result

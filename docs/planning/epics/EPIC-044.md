@@ -1,7 +1,7 @@
 ---
 id: EPIC-044
 title: "Ingestion, deduplication, and lifecycle — research and upgrades"
-status: planned
+status: in_progress
 priority: high
 created: 2026-03-31
 tags: [safety, dedup, contradictions, consolidation, gc, seeding, caps]
@@ -15,8 +15,8 @@ Maps to **§3** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Success criteria
 
-- [ ] Save path **determinism** preserved for default profile (no silent LLM calls).
-- [ ] Any new heuristics behind **flags** with tests and docs.
+- [x] Save path **determinism** preserved for default profile (no silent LLM calls). *(Optional NLI/async conflict research in STORY-044.3 notes stays out of core.)*
+- [x] New heuristics behind **flags** / profile fields with tests and docs *(per stories; consolidation **undo** + per-group caps remain backlog).*
 
 ## Stories
 
@@ -24,7 +24,7 @@ Maps to **§3** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-044.1: Write-time content safety (RAG safety)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/safety.py`, `src/tapps_brain/store.py`, `tests/unit/test_safety.py`  
 **Verification:** `pytest tests/unit/test_safety.py -v --tb=short -m "not benchmark"`
 
@@ -39,14 +39,16 @@ Rule-based checks in `safety.py` on save and before injection; integrated on `Me
 
 #### Implementation themes
 
-- [ ] Versioned **ruleset** with semver in profile or config.
-- [ ] Metrics: **block** vs **sanitize** counts.
+- [x] Versioned **ruleset** with semver in profile (`profile.safety.ruleset_version` → `SafetyConfig`; `DEFAULT_SAFETY_RULESET_VERSION` / `resolve_safety_ruleset_version`; unknown pins log `rag_safety_unknown_ruleset_version` and fall back) (2026-04-02).
+- [x] Metrics: **block** vs **sanitize** — counters `rag_safety.blocked` / `rag_safety.sanitized` on optional `MetricsCollector`; `StoreHealthReport` exposes `rag_safety_ruleset_version`, `rag_safety_blocked_count`, `rag_safety_sanitized_count` (2026-04-02).
+- [x] Save path aligned with `safety.py`: any `safe=False` blocks save (removed redundant `_RAG_BLOCK_THRESHOLD` gate); sanitize when `sanitised_content` is set (2026-04-02).
+- [x] Injection uses profile ruleset + store metrics; injects **sanitised** text when the sanitize path applies (2026-04-02).
 
 ---
 
 ### STORY-044.2: Near-duplicate detection (Bloom + normalize)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/bloom.py`, `src/tapps_brain/store.py` (dedup / reinforce path), `tests/unit/test_bloom.py`  
 **Verification:** `pytest tests/unit/test_bloom.py -v --tb=short -m "not benchmark"`
 
@@ -61,14 +63,14 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 #### Implementation themes
 
-- [ ] Expose **expected error rate** in doc given default size.
-- [ ] Spike: **normalize** Unicode NFKC for dup compare.
+- [x] Expose **expected false-positive rate** — module + class docstrings; ``bloom_false_positive_probability`` and ``BloomFilter.approximate_false_positive_rate``; properties ``bit_size`` / ``hash_count`` (2026-04-02).
+- [x] **NFKC** in ``normalize_for_dedup`` before lowercase / whitespace collapse (2026-04-02).
 
 ---
 
 ### STORY-044.3: Contradiction / conflict handling
 
-**Status:** planned | **Effort:** L | **Depends on:** none  
+**Status:** in_progress (core save-path shipped 2026-04-02; NLI/async research remains backlog) | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/contradictions.py`, `src/tapps_brain/store.py` (`conflict_check`), GitHub #44, `tests/unit/test_contradictions.py`, `tests/unit/test_contradictions_detect.py`  
 **Verification:** `pytest tests/unit/test_contradictions.py tests/unit/test_contradictions_detect.py -v --tb=short -m "not benchmark"`
 
@@ -84,14 +86,14 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 #### Implementation themes
 
 - [x] **exclude_key:** the key being saved is not treated as a separate conflicting row (`detect_save_conflicts(..., exclude_key=key)`); prevents concurrent same-key updates from tripping ``valid_at``/``invalid_at`` ordering (2026-04-02).
-- [ ] User-visible **reason** on conflict (`contradiction_reason` population audit).
-- [ ] Profile: **aggressiveness** tiers for `detect_save_conflicts`.
+- [x] User-visible **reason** on conflict: invalidated rows get ``contradicted=True`` and deterministic ``contradiction_reason`` (plus structured log ``conflicts`` with per-key similarity); ``detect_save_conflicts`` returns ``SaveConflictHit`` (entry + score) (2026-04-02).
+- [x] Profile: **aggressiveness** tiers via ``MemoryProfile.conflict_check`` (`ConflictCheckConfig`: ``low`` / ``medium`` / ``high`` → thresholds 0.75 / 0.6 / 0.45, or explicit ``similarity_threshold``); wired in ``MemoryStore.save`` (2026-04-02).
 
 ---
 
 ### STORY-044.4: Deterministic merge / consolidation
 
-**Status:** planned | **Effort:** L | **Depends on:** none  
+**Status:** in_progress (audit + threshold sweep shipped 2026-04-02; undo backlog) | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/consolidation.py`, `src/tapps_brain/similarity.py`, `src/tapps_brain/auto_consolidation.py`, `src/tapps_brain/store.py`, `tests/unit/test_memory_consolidation.py`, `tests/unit/test_memory_auto_consolidation.py`, `tests/unit/test_consolidation_config.py`  
 **Verification:** `pytest tests/unit/test_memory_consolidation.py tests/unit/test_memory_auto_consolidation.py tests/unit/test_consolidation_config.py -v --tb=short -m "not benchmark"`
 
@@ -106,14 +108,15 @@ Deterministic merge (Jaccard / TF-IDF / topic); auto path on save when `Consolid
 
 #### Implementation themes
 
-- [ ] **Undo** or **audit** trail for auto-consolidated keys (operator trust).
-- [ ] Threshold **sensitivity** sweep in `evaluation.py` or benchmark.
+- [x] **Audit** trail for auto-consolidation — JSONL ``memory_log.jsonl`` actions ``consolidation_merge`` (key = merged entry; ``source_keys``, ``trigger`` ``save``/``periodic_scan``, ``threshold``, ``consolidation_reason``) and ``consolidation_source`` per superseded key (``superseded_by``, ``trigger``, ``threshold``) (2026-04-02). Query via ``tapps-brain memory audit --type …`` / ``MemoryStore.audit``.
+- [ ] **Undo** (revert merge) — not implemented; audit supports forensics only.
+- [x] Threshold **sensitivity** sweep — ``evaluation.run_consolidation_threshold_sweep`` + report models (deterministic; no store mutations) (2026-04-02).
 
 ---
 
 ### STORY-044.5: Garbage collection / archival
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/gc.py`, `src/tapps_brain/profile.py` (`GCConfig`), `src/tapps_brain/cli.py` / `src/tapps_brain/mcp_server.py` (maintenance), `tests/unit/test_memory_gc.py`, `tests/unit/test_gc_config.py`  
 **Verification:** `pytest tests/unit/test_memory_gc.py tests/unit/test_gc_config.py -v --tb=short -m "not benchmark"`
 
@@ -128,14 +131,15 @@ Tier-aware archival via `MemoryGarbageCollector`; profile-driven thresholds.
 
 #### Implementation themes
 
-- [ ] **Dry-run** GC report: what would archive with counts.
-- [ ] Metrics: **archived** bytes / rows per run.
+- [x] **Dry-run** GC report: ``GCResult`` includes ``reason_counts`` (per reason code), ``estimated_archive_bytes``, and candidate keys; CLI/MCP delegate to ``MemoryStore.gc`` (2026-04-02).
+- [x] Metrics: counters ``store.gc.archived`` (rows) and ``store.gc.archive_bytes`` (UTF-8 appended per live run); ``StoreHealthReport`` exposes ``gc_runs_total``, ``gc_archived_rows_total``, ``gc_archive_bytes_total`` (2026-04-02).
+- [x] Canonical archive path aligned to ``{store_dir}/archive.jsonl`` (was ``gc_archive.jsonl`` on ``MemoryStore.gc`` only) (2026-04-02).
 
 ---
 
 ### STORY-044.6: Profile-driven seeding
 
-**Status:** planned | **Effort:** S | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** S | **Depends on:** none  
 **Context refs:** `src/tapps_brain/seeding.py`, `tests/unit/test_seeding.py`  
 **Verification:** `pytest tests/unit/test_seeding.py -v --tb=short -m "not benchmark"`
 
@@ -149,14 +153,14 @@ Tier-aware archival via `MemoryGarbageCollector`; profile-driven thresholds.
 
 #### Implementation themes
 
-- [ ] Optional seed **version** in profile for **reseed** diff.
-- [ ] Spike: conflict_check **off** for seeds documented as intentional (already in tests).
+- [x] Optional seed **version** — ``MemoryProfile.seeding.seed_version``; summaries include ``profile_seed_version`` (2026-04-02).
+- [x] ``conflict_check`` on seed saves documented in ``seeding`` module docstring (2026-04-02).
 
 ---
 
 ### STORY-044.7: Caps and eviction
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done (2026-04-02) | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/store.py` (max entries / eviction), `src/tapps_brain/profile.py` (`limits.max_entries`), `tests/unit/test_memory_store.py`  
 **Verification:** `pytest tests/unit/test_memory_store.py -k evict -v --tb=short -m "not benchmark"`
 
@@ -171,8 +175,8 @@ Default cap 5000; lowest-confidence eviction when over `limits.max_entries`.
 
 #### Implementation themes
 
-- [ ] Document **eviction policy** formally in engineering doc.
-- [ ] Optional: **per-group caps** in profile.
+- [x] Document **eviction policy** in [`data-stores-and-schema.md`](../../engineering/data-stores-and-schema.md) (cross-linked from [`features-and-technologies.md`](../../engineering/features-and-technologies.md) + [`profiles.md`](../../guides/profiles.md)) (2026-04-02).
+- [ ] Optional: **per-group caps** in profile — backlog.
 
 ## Priority order
 
