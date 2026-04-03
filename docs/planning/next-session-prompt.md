@@ -22,16 +22,27 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 - **Roadmap tracking row 20:** `save_phase_summary` on live store health / MCP — **done**.
 - **Docs:** [`embedding-model-card.md`](../guides/embedding-model-card.md) § *Performance review backlog* — triage table, not a code mandate.
 - **Tests:** `test_concurrent_save_all_persisted` uses **60s** join / elapsed bound (Windows full-suite stability).
+- **examples/brain-visual:** Demo HTML + help UX for operators (Hive / entries / DB tiles); see `examples/brain-visual/README.md`.
+
+**Immediate next steps (pick ONE primary slice per PR):**
+
+| Priority | Slice | Outcome |
+|----------|--------|---------|
+| A | **STORY-044.4 — merge undo** | Deterministic revert of an auto-consolidation merge (restore superseded keys, fix merged row, keep `memory_log.jsonl` / SQLite consistent). Highest product gap in §3 lifecycle. |
+| B | **STORY-044.7 — per-group caps** | Optional `limits` / profile fields for max entries per `memory_group`; fair eviction vs global `max_entries`; docs in `data-stores-and-schema.md`. |
+| C | **STORY-044.3 — NLI / async conflicts** | Research or **offline** tooling only — do **not** add silent LLM calls on the sync `save` path. |
+| D | **EPIC-051.6 — save-path observability** | Metrics or structured logs correlating save latency with consolidation/GC (roadmap item 5). |
+| E | **EPIC-042 hygiene** | Close epic success criteria: offline eval evidence, GitHub/issue hygiene (`EPIC-042.md`). |
 
 **What’s next (recommended order):**
 
-1. **EPIC-044 — backlog only:** merge **undo**, **044.3** NLI/async research, optional **per-group** entry caps — see [`EPIC-044.md`](epics/EPIC-044.md). Core **044.1**–**044.7** themes shipped on `main` (2026-04-02).
+1. **EPIC-044 — backlog:** **A** or **B** above, or **C** as docs/spike — see [`EPIC-044.md`](epics/EPIC-044.md). Core **044.1**–**044.7** themes are otherwise on `main`.
 
-2. **Optional observability:** Roadmap “save-path / auto-consolidation metrics” and **EPIC-051 STORY-051.6** (*Save-path observability*) — correlate latency with consolidation/GC; structured logging or metrics only if you explicitly take this slice.
+2. **Optional:** **D** (observability) or **EPIC-050** lock-scope / async only if benchmark or explicit demand.
 
-3. **Long horizon / defer:** **EPIC-032** OTel GenAI semantic conventions. **EPIC-051** other stories (retrieval alternatives, freshness, scale, security checklist). **EPIC-050** lock-scope reduction + optional `tapps_brain_async` — deferred unless benchmark or demand. **Tracking table row 22** — MemoryStore modularization; design-first only.
+3. **Long horizon / defer:** **EPIC-032** OTel GenAI. **EPIC-051** other stories. **Tracking table row 22** — MemoryStore modularization; design-first only.
 
-4. **Hygiene (non-blocking):** **EPIC-042** epic success criteria — offline eval evidence, GitHub closure — process/docs.
+4. **Hygiene (non-blocking):** **E** above.
 
 **Your task — pick ONE primary slice** (one PR unless trivial), run the epic’s verification command, then update `docs/planning/epics/…`, `open-issues-roadmap.md` (changelog + last updated if needed), `STATUS.md` if the queue changes, and refresh **this file’s** “Already on main” if you shipped something listed above.
 
@@ -39,4 +50,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-02 — queue: EPIC-044 research/backlog → EPIC-050 lock-scope/async deferred → optional 051.6 / EPIC-032 deferred.*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-03 — queue: EPIC-044 undo or per-group caps → optional 051.6 observability → EPIC-042 hygiene → long defer (050 lock-scope, 032 OTel).*
