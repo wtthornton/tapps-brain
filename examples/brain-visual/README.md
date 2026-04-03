@@ -10,7 +10,7 @@
    - `--privacy strict` — redacts `store_path` and tampered key list in JSON.
    - `--privacy local` — includes tag frequencies and named `memory_group` counts (do not share publicly).
 
-2. Open `index.html` in a browser and use **Load snapshot** to pick `brain-visual.json`, or serve this folder so `brain-visual.json` loads automatically. Serving over HTTP also loads `scorecard-derive.js` (fallback if an older JSON lacks the `scorecard` array).
+2. Open `index.html` in a browser and use **Load snapshot** to pick `brain-visual.json`, or serve this folder so `brain-visual.json` loads automatically. Serving over HTTP also loads `scorecard-derive.js` (fallback if an older JSON lacks the `scorecard` array) and `brain-visual-help.js` (the **?** pills open detailed articles for scorecard rows and concepts).
 
 3. **Scorecard & tickets:** the page shows pass/warn/fail rows from the export’s `scorecard` field; use **Copy GitHub issue (Markdown)** to paste into GitHub/Jira.
 

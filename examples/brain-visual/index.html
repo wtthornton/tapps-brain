@@ -574,6 +574,191 @@
       margin-top: 0.85rem;
     }
 
+    body.help-drawer-open {
+      overflow: hidden;
+    }
+
+    .dash-h2-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0 0 0.75rem;
+    }
+
+    .dash-h2-row h2 {
+      margin: 0;
+    }
+
+    .section-tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0 0 0.5rem;
+    }
+
+    .section-tag-row .section-tag {
+      margin: 0;
+    }
+
+    .help-pill {
+      flex-shrink: 0;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--nlt-accent-primary);
+      font-size: 0.8rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .help-pill:hover,
+    .help-pill:focus-visible {
+      border-color: rgba(217, 119, 6, 0.45);
+      background: rgba(217, 119, 6, 0.08);
+      outline: none;
+    }
+
+    .help-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 180;
+      background: rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .help-backdrop.is-on {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .help-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 190;
+      width: min(32rem, 94vw);
+      max-width: 100%;
+      height: 100%;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
+      transform: translateX(100%);
+      transition: transform 0.28s ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    html[data-theme="dark"] .help-drawer {
+      box-shadow: -8px 0 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .help-drawer.is-open {
+      transform: translateX(0);
+    }
+
+    .help-drawer-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-alt);
+    }
+
+    .help-drawer-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--fg);
+    }
+
+    .help-drawer-close {
+      flex-shrink: 0;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .help-drawer-close:hover {
+      border-color: rgba(217, 119, 6, 0.35);
+    }
+
+    .help-drawer-body {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem 1.15rem 2rem;
+      font-size: 0.9rem;
+      line-height: 1.55;
+      color: var(--fg-dim);
+    }
+
+    .help-drawer-h4 {
+      margin: 1.15rem 0 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
+    }
+
+    .help-drawer-h4:first-child {
+      margin-top: 0;
+    }
+
+    .help-drawer-section p {
+      margin: 0 0 0.65rem;
+    }
+
+    .help-drawer-section ul {
+      margin: 0 0 0.65rem;
+      padding-left: 1.2rem;
+    }
+
+    .help-drawer-section code {
+      font-family: var(--font-mono);
+      font-size: 0.84em;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+    }
+
+    .help-drawer-ref {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--fg-dim);
+    }
+
+    .sc-head .help-pill {
+      margin-left: auto;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .help-drawer,
+      .help-backdrop {
+        transition: none;
+      }
+    }
+
     .btn-load {
       display: inline-flex;
       align-items: center;
@@ -840,7 +1025,11 @@
           <p>
             Serving this folder over HTTP loads <code>brain-visual.json</code> when it sits next to
             <code>index.html</code>. Opening the HTML as <code>file://</code> uses <strong>Load snapshot</strong>
-            instead.
+            instead. Also loads <code>scorecard-derive.js</code> and <code>brain-visual-help.js</code>.
+          </p>
+          <p>
+            <strong>?</strong> buttons open a side panel with definitions, math, and code references aligned to
+            tapps-brain (not generic marketing text).
           </p>
         </div>
       </details>
@@ -884,37 +1073,107 @@
               d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
             />
           </svg>
-          <p class="section-tag">Fingerprint</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Fingerprint</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:fingerprint"
+              aria-label="Explain fingerprint"
+            >
+              ?
+            </button>
+          </div>
           <pre id="fp">—</pre>
         </section>
         <section class="tile" aria-label="Entries">
-          <p class="section-tag">Entries</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Entries</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="scorecard:store_entries"
+              aria-label="Explain entry count"
+            >
+              ?
+            </button>
+          </div>
           <div class="stat" id="entries">—</div>
           <p class="sub" id="profile">profile</p>
         </section>
         <section class="tile" aria-label="Database schema">
-          <p class="section-tag">DB schema</p>
+          <div class="section-tag-row">
+            <p class="section-tag">DB schema</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:snapshot_json"
+              aria-label="Explain database schema version"
+            >
+              ?
+            </button>
+          </div>
           <div class="stat" id="schema">—</div>
           <p class="sub" id="fed">federation</p>
         </section>
         <section class="tile" aria-label="Hive">
-          <p class="section-tag">Hive</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Hive</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:agent_scope"
+              aria-label="Explain agent scope"
+            >
+              ?
+            </button>
+          </div>
           <div class="stat" id="hive">—</div>
           <p class="sub" id="scopes">agent scopes</p>
         </section>
         <section class="tile" id="diagnostics" aria-label="Diagnostics">
-          <p class="section-tag">Diagnostics</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Diagnostics</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:diagnostics_bento"
+              aria-label="Explain diagnostics tile"
+            >
+              ?
+            </button>
+          </div>
           <div class="stat" id="diag">—</div>
           <p class="sub" id="circuit">—</p>
         </section>
         <section class="tile tile-wide" aria-label="Snapshot format">
-          <p class="section-tag">Snapshot</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Snapshot</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:snapshot_json"
+              aria-label="Explain snapshot JSON"
+            >
+              ?
+            </button>
+          </div>
           <p class="sub" id="snap-fmt">—</p>
         </section>
       </div>
 
       <section class="dash-section" id="scorecard">
-        <h2>Scorecard</h2>
+        <div class="dash-h2-row">
+          <h2>Scorecard</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:scorecard_overview"
+            aria-label="Explain scorecard"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">
           Pass / warn / fail from this snapshot (deterministic rules in
           <code>tapps_brain.visual_snapshot</code>). Use the draft below to paste into GitHub Issues,
@@ -940,7 +1199,17 @@
       </section>
 
       <section class="dash-section" id="pulse">
-        <h2>Pulse</h2>
+        <div class="dash-h2-row">
+          <h2>Pulse</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:tier_distribution"
+            aria-label="Explain tier distribution"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Tier mix and agent scopes for this export.</p>
         <div class="tile tile-wide" style="min-height: auto">
           <p class="section-tag">Tier distribution</p>
@@ -949,7 +1218,17 @@
       </section>
 
       <section class="dash-section" id="retrieval">
-        <h2>Retrieval &amp; vectors</h2>
+        <div class="dash-h2-row">
+          <h2>Retrieval &amp; vectors</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="scorecard:retrieval_stack"
+            aria-label="Explain retrieval stack"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small" id="retrieval-summary">—</p>
         <div class="tile" style="min-height: auto">
           <p class="section-tag">Effective mode</p>
@@ -959,7 +1238,17 @@
       </section>
 
       <section class="dash-section" id="hive">
-        <h2>Hive hub</h2>
+        <div class="dash-h2-row">
+          <h2>Hive hub</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="scorecard:hive_hub"
+            aria-label="Explain Hive hub"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Shared store telemetry (not your project path).</p>
         <div class="tile tile-wide" style="min-height: auto">
           <p class="section-tag">Hub status</p>
@@ -968,7 +1257,17 @@
       </section>
 
       <section class="dash-section" id="activity">
-        <h2>Activity</h2>
+        <div class="dash-h2-row">
+          <h2>Activity</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:access_histogram"
+            aria-label="Explain access histogram"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Aggregated access counters—no per-memory keys.</p>
         <div class="tile tile-wide" style="min-height: auto">
           <p class="section-tag">Access histogram</p>
@@ -978,29 +1277,87 @@
       </section>
 
       <section class="dash-section" id="groups">
-        <h2>Memory groups</h2>
+        <div class="dash-h2-row">
+          <h2>Memory groups</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:memory_group"
+            aria-label="Explain memory groups"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Project-local <code>memory_group</code> partitions.</p>
         <div id="groups-body" class="prose-small">—</div>
       </section>
 
       <section class="dash-section" id="tags">
-        <h2>Tags</h2>
+        <div class="dash-h2-row">
+          <h2>Tags</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:tags_panel"
+            aria-label="Explain tags in export"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Shown only for <code>--privacy local</code> exports.</p>
         <div id="tags-body"></div>
       </section>
 
       <section class="dash-section" id="integrity">
-        <h2>Integrity &amp; limits</h2>
+        <div class="dash-h2-row">
+          <h2>Integrity &amp; limits</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:integrity_panel"
+            aria-label="Explain integrity and limits"
+          >
+            ?
+          </button>
+        </div>
         <p class="prose-small">Relations, verification, and rate-limit anomalies.</p>
         <div id="integrity-body" class="prose-small">—</div>
       </section>
 
       <section class="dash-section" id="privacy">
-        <h2>Privacy</h2>
+        <div class="dash-h2-row">
+          <h2>Privacy</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:privacy_notice"
+            aria-label="Explain privacy on this page"
+          >
+            ?
+          </button>
+        </div>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
       </section>
     </div>
   </main>
+
+  <div id="help-backdrop" class="help-backdrop" hidden aria-hidden="true"></div>
+  <aside
+    id="help-drawer"
+    class="help-drawer"
+    role="dialog"
+    aria-modal="true"
+    aria-hidden="true"
+    aria-labelledby="help-drawer-title"
+  >
+    <div class="help-drawer-header">
+      <h3 id="help-drawer-title">Help</h3>
+      <button type="button" class="help-drawer-close" id="help-drawer-close">
+        Close
+      </button>
+    </div>
+    <div id="help-drawer-body" class="help-drawer-body"></div>
+  </aside>
 
   <footer class="site-footer">
     <p class="footer-quote">“Intelligence is the ability to adapt to change.”</p>
@@ -1011,6 +1368,7 @@
   </footer>
 
   <script src="scorecard-derive.js"></script>
+  <script src="brain-visual-help.js"></script>
   <script>
     const root = document.documentElement;
     const el = (id) => document.getElementById(id);
@@ -1107,6 +1465,7 @@
               const hint = c.ticket_hint
                 ? '<p class="sc-hint"><strong>Next:</strong> ' + escapeHtml(c.ticket_hint) + "</p>"
                 : "";
+              const hid = String(c.id || "").replace(/[^a-z0-9_]/gi, "");
               return (
                 '<article class="sc-card sc-' +
                 st +
@@ -1114,7 +1473,11 @@
                 escapeHtml(c.title) +
                 '</span><span class="sc-badge">' +
                 st +
-                '</span></div><p class="sc-detail">' +
+                '</span><button type="button" class="help-pill" data-help="scorecard:' +
+                hid +
+                '" aria-label="Explain: ' +
+                escapeHtml(c.title) +
+                '">?</button></div><p class="sc-detail">' +
                 escapeHtml(c.detail) +
                 "</p>" +
                 hint +
@@ -1565,6 +1928,23 @@
           const s = el("copy-issue-status");
           if (s) s.textContent = "Copy failed.";
         }
+      });
+    }
+
+    const contentShell = document.querySelector(".content-shell");
+    if (contentShell && window.BRAIN_VISUAL_HELP) {
+      contentShell.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("[data-help]");
+        if (!btn) return;
+        const raw = btn.getAttribute("data-help");
+        if (!raw) return;
+        const col = raw.indexOf(":");
+        if (col <= 0) return;
+        const kind = raw.slice(0, col);
+        const rid = raw.slice(col + 1);
+        if (kind !== "scorecard" && kind !== "concept") return;
+        ev.preventDefault();
+        window.BRAIN_VISUAL_HELP.open(kind, rid);
       });
     }
 

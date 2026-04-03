@@ -1,0 +1,791 @@
+/**
+ * Long-form help for brain-visual scorecard rows and dashboard concepts.
+ * Grounded in tapps-brain source (see reference lines on each entry).
+ */
+(function () {
+  "use strict";
+
+  const HELP_SCORECARD = {
+    store_entries: {
+      title: "Store contents",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Count of <strong>memory entries</strong> in the project store (the SQLite-backed cache you use via CLI/MCP). " +
+            "Empty is normal for a new project; non-zero means facts/preferences/patterns are persisted for recall.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>No formula: it is <code>len(entries)</code> after listing all active memories. Compared against " +
+            "<code>max_entries</code> (default 5,000) in the separate capacity check.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Recall, injection, and diagnostics only operate on what is actually stored. Zero entries explains " +
+            "empty recall; very high counts stress consolidation, GC, and retrieval latency.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>MemoryStore</code> keeps an in-memory dict with SQLite write-through; saves enforce caps and tiers. " +
+            "This row only reflects <em>how many</em> rows exist, not their text.</p>",
+        },
+      ],
+      reference: "Code: <code>MemoryStore.list_all()</code> / <code>store.health().entry_count</code>",
+    },
+
+    diagnostics_data: {
+      title: "Diagnostics data",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Whether this JSON export included the <strong>diagnostics</strong> block: composite quality score and " +
+            "<strong>circuit state</strong>. If you passed <code>--skip-diagnostics</code>, those fields are omitted for speed.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>Binary signal in the UI: present vs omitted. No scoring.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Without diagnostics, the scorecard cannot judge circuit or composite from this file—you must re-export or run " +
+            "<code>tapps-brain diagnostics health</code>.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>build_visual_snapshot(..., skip_diagnostics=True)</code> skips <code>store.diagnostics()</code> so " +
+            "the export stays faster and slightly smaller.</p>",
+        },
+      ],
+      reference: "Code: <code>src/tapps_brain/visual_snapshot.py</code> · CLI <code>visual export</code>",
+    },
+
+    diagnostics_bento: {
+      title: "Diagnostics (bento tile)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The small tile shows the latest <strong>composite score</strong> (0–1) and <strong>circuit state</strong> from the same " +
+            "diagnostics run as MCP/CLI. For full rules and thresholds, open the <strong>Scorecard</strong> section and click " +
+            "<strong>?</strong> on <em>Diagnostics circuit</em> and <em>Diagnostics composite score</em>.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Same as EPIC-030: composite = weighted sum of dimension scores; circuit transitions at 0.6 and 0.3 cutoffs " +
+            "(and half-open probes after cooldown).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Quick glance while scrolling the bento; scorecard adds pass/warn/fail triage and ticket export.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>store.diagnostics(record_history=False)</code> during export when not using <code>--skip-diagnostics</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>diagnostics.py</code> · scorecard rows <code>diagnostics_*</code>",
+    },
+
+    diagnostics_circuit: {
+      title: "Diagnostics circuit",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A small <strong>finite-state machine</strong> (circuit breaker) that summarizes whether aggregate quality " +
+            "is healthy enough to treat recall as “normal.” States: <code>closed</code>, <code>degraded</code>, " +
+            "<code>open</code>, <code>half_open</code> (probe after cooldown).</p>",
+        },
+        {
+          heading: "The math / transition rules",
+          html:
+            "<p>Each diagnostics run computes a <strong>composite score</strong> in <code>[0, 1]</code>. The breaker updates from that value:</p>" +
+            "<ul>" +
+            "<li><strong>closed</strong> — composite ≥ <strong>0.6</strong></li>" +
+            "<li><strong>degraded</strong> — <strong>0.3</strong> ≤ composite &lt; 0.6</li>" +
+            "<li><strong>open</strong> — composite &lt; 0.3</li>" +
+            "</ul>" +
+            "<p>In <strong>half_open</strong> (entered after a cooldown of about <strong>3600s</strong> plus small jitter from " +
+            "<code>open</code>), the same 0.6 / 0.3 thresholds decide closed vs degraded vs open. " +
+            "Probes can accumulate: after enough probes, composite ≥ <strong>0.45</strong> can bump the state toward " +
+            "<code>degraded</code> per <code>record_probe</code>.</p>" +
+            "<p>This is deterministic given the composite; it is not ML.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Downstream features (e.g. recall summaries) can surface a <strong>quality warning</strong> when the circuit " +
+            "is not <code>closed</code>, so operators know scores/tiers/integrity may be weak before trusting RAG-style injection.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>CircuitBreaker.transition(composite)</code> runs after diagnostics. Optional auto-remediation exists when " +
+            "the circuit is <code>open</code> (tier-1 maintenance suggestions based on duplication/staleness/integrity dimensions).</p>",
+        },
+      ],
+      reference:
+        "Code: <code>src/tapps_brain/diagnostics.py</code> — <code>CircuitBreaker</code>, <code>CircuitState</code> (EPIC-030)",
+    },
+
+    diagnostics_composite: {
+      title: "Diagnostics composite score",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A single number in <strong>0–1</strong> summarizing multi-axis <strong>store health</strong>: retrieval signals, " +
+            "freshness, completeness, duplication pressure, staleness/GC pressure, and integrity. It feeds the circuit breaker.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><strong>Weighted sum</strong> of dimension scores, each also in <code>[0, 1]</code>:</p>" +
+            "<p style='font-family:ui-monospace,monospace;font-size:0.85rem'>composite = clamp01( Σ<sub>i</sub> w<sub>i</sub> · score<sub>i</sub> )</p>" +
+            "<p>Default built-in weights (re-normalized if you override in profile): " +
+            "retrieval_effectiveness <strong>0.22</strong>, freshness <strong>0.18</strong>, completeness <strong>0.12</strong>, " +
+            "duplication <strong>0.15</strong>, staleness <strong>0.15</strong>, integrity <strong>0.18</strong>.</p>" +
+            "<p>Example dimension math (retrieval_effectiveness): intrinsic = <code>0.55×hit_rate + 0.45×mean_confidence</code> " +
+            "(hit_rate = fraction of entries with access_count &gt; 0). If recall feedback events exist, they blend in.</p>" +
+            "<p>Freshness uses exponential decay vs tier half-lives; duplication/staleness map candidate ratios into scores.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>One glance at “is this brain healthy?” without reading hundreds of memories. The scorecard maps composite to " +
+            "<strong>ok / warn / fail</strong> using export thresholds (0.7 / 0.55), stricter than the breaker’s 0.6 / 0.3 bands.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>run_diagnostics()</code> evaluates each <code>HealthDimension</code>, then sums weighted scores. " +
+            "Optional history can <strong>de-correlate</strong> weights when dimensions move together (Pearson &gt; 0.7).</p>" +
+            "<p>Separately, an <strong>EWMA anomaly detector</strong> can flag when a dimension’s score drifts from its " +
+            "smoothed baseline (λ=0.2, warn/crit z vs rolling variance, confirm window). That feeds recommendations—not this tile’s number.</p>",
+        },
+      ],
+      reference: "Code: <code>run_diagnostics()</code>, <code>default_builtin_dimensions()</code> in <code>diagnostics.py</code>",
+    },
+
+    integrity_tampered: {
+      title: "Integrity (tampered)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Entries whose stored <strong>integrity hash</strong> does not match a fresh hash over key, value, tier, and source. " +
+            "Usually means the row was edited outside normal save paths or corrupted.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>HMAC-SHA256-style digest over canonical fields (see <code>compute_integrity_hash</code>). " +
+            "Verify recomputes and compares; mismatch increments tampered count.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Tampered rows break trust in audit and recall—content may not be what the system thought it saved.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>MemoryStore.verify_integrity()</code> walks entries with hashes and reports verified vs tampered counts and keys.</p>",
+        },
+      ],
+      reference: "Code: <code>src/tapps_brain/integrity.py</code> · <code>store.verify_integrity()</code>",
+    },
+
+    integrity_no_hash: {
+      title: "Integrity (missing hash)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Memories that have <strong>no</strong> <code>integrity_hash</code> yet (legacy imports, pre-migration rows, or paths that skipped hashing).</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>Count of entries with null/empty hash; not a probabilistic score.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>You cannot detect silent tampering on those rows until they are re-saved or backfilled.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>New saves compute hashes on write. Diagnostics “integrity” dimension also reflects verified vs tampered among hashed rows.</p>",
+        },
+      ],
+      reference: "Code: <code>persistence.py</code> / <code>store.save</code> integrity path",
+    },
+
+    store_capacity: {
+      title: "Store capacity",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>How full the store is relative to <code>max_entries</code> (profile-driven, default 5,000).</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><code>ratio = entry_count / max_entries</code>. Scorecard: <strong>warn</strong> if ratio ≥ 0.8; " +
+            "<strong>fail</strong> if ratio ≥ 0.95 (visual snapshot thresholds).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Near the cap, new saves may be rejected or require GC/archival policy changes.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Enforces max entries in <code>MemoryStore.save</code>; health exposes counts for monitoring.</p>",
+        },
+      ],
+      reference: "Code: <code>MemoryStore</code> · <code>_MAX_ENTRIES</code> / profile limits",
+    },
+
+    rate_limits: {
+      title: "Rate limit anomalies",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Counts from the store’s <strong>sliding-window rate limiter</strong> when writes burst harder than configured limits—" +
+            "minute- and session-scoped anomaly tallies.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Not shown as a formula in the JSON; the export surfaces integer counters incremented when limits trip. " +
+            "Zero means no anomalies recorded in current process/metrics view.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Spikes often mean runaway agent loops, bad integration, or mis-sized limits—worth investigating before users see failed saves.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>SlidingWindowRateLimiter</code> tracks writes; health copies anomaly counters into the snapshot.</p>",
+        },
+      ],
+      reference: "Code: <code>rate_limiter.py</code> · <code>StoreHealthReport</code> rate limit fields",
+    },
+
+    maintenance_backlog: {
+      title: "Maintenance backlog",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p><strong>GC candidates</strong> (stale/archivable) plus <strong>consolidation candidates</strong> (mergeable similar entries) " +
+            "reported by heuristics—not yet executed.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><code>backlog = gc_candidates + consolidation_candidates</code>. Scorecard warns if backlog &gt; <strong>200</strong>; " +
+            "otherwise info if &gt; 0, else ok.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Large backlogs mean more duplicate noise or stale facts until maintenance runs.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Deterministic similarity/consolidation and GC discovery (no LLM). Operators run maintenance commands when ready.</p>",
+        },
+      ],
+      reference: "Code: <code>consolidation.py</code>, <code>gc.py</code>, <code>store.health()</code>",
+    },
+
+    hive_hub: {
+      title: "Hive hub reachability",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p><strong>Hive</strong> is the shared cross-agent store under <code>~/.tapps-brain/hive/</code>. " +
+            "This check contrasts: (a) whether <em>this</em> project store injects a Hive client, vs (b) whether an export could " +
+            "open the hub and read namespace/agent stats.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>No numeric formula—connectivity boolean plus counts of agents and shared entries when connected.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>If you expect multi-agent propagation but the hub is down or empty, recalls stay local-only.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>HiveStore</code> + <code>AgentRegistry</code>; propagation engine routes <code>agent_scope</code> " +
+            "(private / domain / hive / group:…).</p>",
+        },
+      ],
+      reference: "Docs: <code>docs/guides/hive.md</code> · Code: <code>hive.py</code>",
+    },
+
+    retrieval_stack: {
+      title: "Retrieval stack",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Which <strong>lexical + vector</strong> path is effectively active: BM25-only, hybrid with sqlite-vec KNN, " +
+            "hybrid with empty vec index, or on-the-fly embeddings without sqlite-vec.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>BM25 uses Okapi-style scoring over tokens; hybrid fuses BM25 ranks with vector ranks (e.g. RRF). " +
+            "sqlite-vec stores embeddings for KNN in-process. Mode is derived from installed extras + extension + row counts—" +
+            "no neural model is loaded for this health signal.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Semantic recall quality and latency depend on this stack; BM25-only is fine for keyword-heavy use, weak for paraphrase.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>retrieval_health_slice(store)</code> mirrors CLI/MCP retrieval health; <code>MemoryRetriever</code> runs the actual hybrid pipeline.</p>",
+        },
+      ],
+      reference: "Code: <code>health_check.py</code> · <code>retrieval.py</code> · <code>fusion.py</code>",
+    },
+
+    sqlcipher: {
+      title: "SQLCipher",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>SQLite database file encryption at rest (optional build). When on, the memory DB requires a key to open.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>N/A (crypto provided by SQLCipher extension).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Compliance and laptop-loss scenarios; slightly different ops (key management, backups).</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Health exposes <code>sqlcipher_enabled</code>; connections go through <code>sqlcipher_util</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>sqlcipher_util.py</code> · issue #23 docs",
+    },
+  };
+
+  const HELP_CONCEPTS = {
+    fingerprint: {
+      title: "Fingerprint (SHA-256)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A <strong>64-character hex</strong> hash of a small JSON object describing store <em>identity</em>: entry count, " +
+            "tier mix, agent_scope counts, profile, DB schema version, store path (redacted in strict privacy), Hive attached, " +
+            "federation flag, memory_group count.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><code>SHA-256( UTF-8( canonical_json(identity) ) )</code> with sorted keys and compact separators. " +
+            "Same identity object → same fingerprint.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Compare exports/screenshots without sharing memory text. Theme accents on this page are seeded from the same hash for a stable look.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>compute_fingerprint_hex</code> in <code>visual_snapshot.py</code>; not the same as per-entry integrity hashes.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>identity_schema_version</code>",
+    },
+
+    snapshot_json: {
+      title: "Snapshot JSON (brain-visual.json)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A <strong>versioned</strong> export of <em>aggregated</em> metadata for dashboards. Schema version 2 adds retrieval, " +
+            "Hive hub slice, access histograms, memory groups, scorecard, and optional tag stats (local privacy only).</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>No ML. Counts, ratios, and deterministic scorecard rules only.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Lets you render ops views and file tickets without leaking memory bodies or keys in the artifact (unless you choose local tier for tags/groups).</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>tapps-brain visual export</code> → <code>build_visual_snapshot()</code>.</p>",
+        },
+      ],
+      reference: "Docs: <code>docs/guides/visual-snapshot.md</code>",
+    },
+
+    privacy_tiers: {
+      title: "Privacy tiers (export)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p><strong>standard</strong> — path + aggregates; no tag names or per-group names in JSON. " +
+            "<strong>strict</strong> — redacts <code>store_path</code> and tampered key list. " +
+            "<strong>local</strong> — adds tag frequencies and <code>memory_group</code> name→count map (do not post publicly).</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>N/A — policy filters on fields.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Tags and group names leak <em>vocabulary</em> about the project; strict protects paths in shared screenshots.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>--privacy</code> on <code>visual export</code>; fingerprint identity uses redacted path when strict.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>PrivacyTier</code>",
+    },
+
+    tier_distribution: {
+      title: "Tier distribution",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>How many memories sit in each <strong>tier</strong> (architectural, pattern, procedural, context, …). Tiers drive " +
+            "decay half-lives and retrieval priors.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Per-tier counts; bar chart is proportional to max tier count on this page.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>All-architectural vs all-context profiles behave differently in time and consolidation.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>MemoryTier</code> on each entry; decay in <code>decay.py</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>models.py</code> · <code>decay.py</code>",
+    },
+
+    access_histogram: {
+      title: "Access histogram",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Buckets of how many memories fall into each <code>access_count</code> range (0, 1–5, 6–20, 21+). " +
+            "Also sums <code>total_access_count</code> / <code>useful_access_count</code> when present.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Per entry, read <code>access_count</code>; increment one bucket. Means and sums are arithmetic aggregates—no smoothing.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Shows whether the store is “cold” (nothing recalled) or a few hot notes dominate frequency scoring.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Retrieval bumps access counters; composite retrieval_effectiveness uses hit_rate partly from access_count &gt; 0.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>_access_stats_from_entries</code>",
+    },
+
+    agent_scope: {
+      title: "Agent scope (private / domain / hive / group)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Per-memory <strong>propagation class</strong>: stay private, share in domain, push to Hive, or partition by " +
+            "<code>group:name</code> for Hive namespaces.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>Counts per scope string in this export.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Wrong scope leaks data to other agents or hides team-shared facts.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>PropagationEngine</code> routes saves; recall merges local + Hive with weights.</p>",
+        },
+      ],
+      reference: "Docs: <code>docs/guides/memory-scopes.md</code> · <code>hive.md</code>",
+    },
+
+    memory_group: {
+      title: "Memory group (project-local)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Optional <strong>project-local</strong> partition for retrieval (e.g. feature team). Not the same as Hive namespace.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Distinct group names and counts; names only in <code>--privacy local</code> exports.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Lets multiple tracks of memory in one repo without mixing retrieval contexts.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>memory_group</code> column + <code>list_memory_groups()</code>; retriever accepts <code>memory_group</code> filter.</p>",
+        },
+      ],
+      reference: "GitHub #49 / EPIC-049 docs",
+    },
+
+    integrity_panel: {
+      title: "Integrity & rate limits (panel)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>This block summarizes <strong>relation graph size</strong>, <strong>HMAC integrity</strong> outcomes, " +
+            "rate-limit anomaly counters, GC/consolidation candidates, and optional save-phase latency text from in-process metrics.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><strong>Tampered</strong> / <strong>verified</strong> / <strong>no hash</strong> are counts from " +
+            "<code>verify_integrity()</code>. Rate-limit fields are integer anomaly counters. Relations count is graph edge/row scale " +
+            "(see store API).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Together with the scorecard’s integrity rows, you can tell if the store is structurally sound before trusting recall for audits.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Integrity hashes protect key/value/tier/source tuples; relations link memories; rate limiter protects against runaway writes.</p>",
+        },
+      ],
+      reference: "Code: <code>store.verify_integrity()</code> · <code>relations</code> · <code>metrics.py</code>",
+    },
+
+    tags_panel: {
+      title: "Tags (in exports)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Tags are small labels on memories for FTS and filtering. They appear in this dashboard only when you export with " +
+            "<code>--privacy local</code> (frequency table).</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Top-N tags by total uses across entries; capped in the exporter to limit JSON size.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Tags reveal project vocabulary—treat local exports as sensitive.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>FTS5 indexes key, value, tags; retriever can filter by tag set.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>persistence.py</code> FTS",
+    },
+
+    privacy_notice: {
+      title: "Privacy (this page)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The footer and export notice describe which fields are excluded from <code>brain-visual.json</code> by design " +
+            "(no raw memory values, no keys in normal tiers).</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>N/A.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Safe to drop JSON into tickets after <code>--privacy strict</code>; local tier needs care.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Enforced in <code>build_visual_snapshot</code>; documented in <code>visual-snapshot.md</code>.</p>",
+        },
+      ],
+      reference: "Docs: <code>docs/guides/visual-snapshot.md</code>",
+    },
+
+    scorecard_overview: {
+      title: "Scorecard (how to read it)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Deterministic <strong>pass / warn / fail / info / unknown</strong> rows derived from the same numbers you see elsewhere " +
+            "on this page. It is a triage aid, not a second opinion from an LLM.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Each row applies fixed thresholds (documented in <code>visual_snapshot._build_scorecard</code>). " +
+            "The dashboard’s green/amber/red uses the same data as the GitHub issue template.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>On-call can answer “what’s wrong?” from one JSON + one page, then open a ticket with **Copy GitHub issue**.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Python builds <code>scorecard[]</code>; the browser can re-derive from older files via <code>scorecard-derive.js</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>ScorecardCheck</code>",
+    },
+  };
+
+  function openBrainVisualHelp(type, id) {
+    const map = type === "concept" ? HELP_CONCEPTS : HELP_SCORECARD;
+    const entry = map[id];
+    const drawer = document.getElementById("help-drawer");
+    const titleEl = document.getElementById("help-drawer-title");
+    const bodyEl = document.getElementById("help-drawer-body");
+    const backdrop = document.getElementById("help-backdrop");
+    if (!drawer || !titleEl || !bodyEl) return;
+
+    if (!entry) {
+      titleEl.textContent = "Help";
+      bodyEl.innerHTML = "<p>No detailed article is linked for this item yet.</p>";
+    } else {
+      titleEl.textContent = entry.title;
+      let html = "";
+      for (const s of entry.sections || []) {
+        html += "<h4 class=\"help-drawer-h4\">" + s.heading + "</h4>";
+        html += "<div class=\"help-drawer-section\">" + s.html + "</div>";
+      }
+      if (entry.reference) {
+        html += "<p class=\"help-drawer-ref\">" + entry.reference + "</p>";
+      }
+      bodyEl.innerHTML = html;
+    }
+
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    if (backdrop) {
+      backdrop.hidden = false;
+      backdrop.classList.add("is-on");
+    }
+    document.body.classList.add("help-drawer-open");
+    const closeBtn = document.getElementById("help-drawer-close");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeBrainVisualHelp() {
+    const drawer = document.getElementById("help-drawer");
+    const backdrop = document.getElementById("help-backdrop");
+    if (drawer) {
+      drawer.classList.remove("is-open");
+      drawer.setAttribute("aria-hidden", "true");
+    }
+    if (backdrop) {
+      backdrop.hidden = true;
+      backdrop.classList.remove("is-on");
+    }
+    document.body.classList.remove("help-drawer-open");
+  }
+
+  window.BRAIN_VISUAL_HELP = {
+    open: openBrainVisualHelp,
+    close: closeBrainVisualHelp,
+    scorecardIds: Object.keys(HELP_SCORECARD),
+    conceptIds: Object.keys(HELP_CONCEPTS),
+  };
+
+  function bindHelpChrome() {
+    const backdrop = document.getElementById("help-backdrop");
+    const closeBtn = document.getElementById("help-drawer-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeBrainVisualHelp);
+    if (backdrop) backdrop.addEventListener("click", closeBrainVisualHelp);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeBrainVisualHelp();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindHelpChrome);
+  } else {
+    bindHelpChrome();
+  }
+})();

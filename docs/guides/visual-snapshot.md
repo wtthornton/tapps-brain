@@ -16,7 +16,7 @@ tapps-brain visual export --privacy local      # include tag + memory_group deta
 
 **Snapshot JSON `schema_version`:** `2` is current (retrieval mode, Hive hub slice, `access_stats`, `memory_group_count`, optional `tag_stats`, **`scorecard`** operator checks for pass/warn/fail and issue templates). Older `1` files still load in the demo with reduced panels.
 
-Implementation: `src/tapps_brain/visual_snapshot.py` · CLI entry: `tapps_brain/cli.py` (`visual export`).
+Implementation: `src/tapps_brain/visual_snapshot.py` · CLI entry: `tapps_brain/cli.py` (`visual export`). The `examples/brain-visual` demo surfaces each scorecard row and several panels with **?** help articles (see `examples/brain-visual/brain-visual-help.js`).
 
 ## JSON shape
 
