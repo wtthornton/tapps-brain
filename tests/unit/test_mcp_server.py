@@ -341,6 +341,7 @@ class TestResources:
                 body = json.loads(res.fn())
                 assert "package_version" in body
                 assert "profile_name" in body
+                assert "profile_seed_version" in body
                 return
         raise AssertionError("memory://stats not found")
 

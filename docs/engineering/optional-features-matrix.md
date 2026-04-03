@@ -18,7 +18,7 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 | Toggle | Location | Effect |
 |---|---|---|
 | `limits.max_entries` | profile | Enforces local store cap (see [data-stores-and-schema](data-stores-and-schema.md#entry-cap-and-eviction-runtime)) |
-| `seeding.seed_version` | profile | Optional label included in `seed_from_profile` / `reseed_from_profile` summaries (`profile_seed_version`) |
+| `seeding.seed_version` | profile | Optional label in `seed_from_profile` / `reseed_from_profile` summaries (`profile_seed_version`); also `StoreHealthReport.profile_seed_version`, CLI `maintenance health`, native `run_health_check.store.profile_seed_version`, MCP `memory://stats` |
 | `hive.auto_propagate_tiers` | profile | Promotes matching private tiers to domain propagation |
 | `hive.private_tiers` | profile | Forces matching tiers to private (no Hive propagation) |
 | `hive.conflict_policy` | profile | Controls namespace write conflict behavior |

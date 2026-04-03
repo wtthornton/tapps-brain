@@ -83,6 +83,7 @@ This document maps the dominant runtime call paths as implemented now.
 ### Consolidation
 
 - `maintenance consolidate` -> consolidation scan/merge routines.
+- `maintenance consolidation-threshold-sweep` -> read-only report from `evaluation.run_consolidation_threshold_sweep` (no mutations; optional `--thresholds`, `--json`).
 
 ### GC
 
@@ -90,5 +91,5 @@ This document maps the dominant runtime call paths as implemented now.
 
 ### Health and diagnostics
 
-- `maintenance health` -> `store.health`
+- `maintenance health` -> `store.health` (includes `profile_seed_version` when `profile.seeding.seed_version` is set)
 - diagnostics/flywheel commands -> deterministic quality loop services

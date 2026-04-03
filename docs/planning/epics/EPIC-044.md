@@ -111,6 +111,7 @@ Deterministic merge (Jaccard / TF-IDF / topic); auto path on save when `Consolid
 - [x] **Audit** trail for auto-consolidation — JSONL ``memory_log.jsonl`` actions ``consolidation_merge`` (key = merged entry; ``source_keys``, ``trigger`` ``save``/``periodic_scan``, ``threshold``, ``consolidation_reason``) and ``consolidation_source`` per superseded key (``superseded_by``, ``trigger``, ``threshold``) (2026-04-02). Query via ``tapps-brain memory audit --type …`` / ``MemoryStore.audit``.
 - [ ] **Undo** (revert merge) — not implemented; audit supports forensics only.
 - [x] Threshold **sensitivity** sweep — ``evaluation.run_consolidation_threshold_sweep`` + report models (deterministic; no store mutations) (2026-04-02).
+- [x] CLI **read-only sweep** — ``tapps-brain maintenance consolidation-threshold-sweep`` (JSON + table; optional ``--thresholds``, ``--min-group-size``, ``--include-contradicted``) (2026-04-02).
 
 ---
 
@@ -154,6 +155,7 @@ Tier-aware archival via `MemoryGarbageCollector`; profile-driven thresholds.
 #### Implementation themes
 
 - [x] Optional seed **version** — ``MemoryProfile.seeding.seed_version``; summaries include ``profile_seed_version`` (2026-04-02).
+- [x] Operator **visibility** — ``StoreHealthReport.profile_seed_version``, ``maintenance health``, native ``run_health_check`` ``store.profile_seed_version``, ``memory://stats`` (2026-04-02).
 - [x] ``conflict_check`` on seed saves documented in ``seeding`` module docstring (2026-04-02).
 
 ---

@@ -859,7 +859,7 @@ def create_server(  # noqa: PLR0915
 
     @mcp.resource("memory://stats")  # type: ignore[untyped-decorator]
     def stats_resource() -> str:
-        """Store statistics: entry count, tier distribution, schema version."""
+        """Store stats: counts, tiers, schema, package/profile, optional profile_seed_version."""
         snap = store.snapshot()
         schema_ver = store.get_schema_version()
         h = store.health()
@@ -871,6 +871,7 @@ def create_server(  # noqa: PLR0915
                 "schema_version": schema_ver,
                 "package_version": h.package_version,
                 "profile_name": h.profile_name,
+                "profile_seed_version": h.profile_seed_version,
                 "tier_distribution": snap.tier_counts,
             }
         )

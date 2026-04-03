@@ -47,13 +47,13 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1–v17**; v16 = `memory_group`, v17 = `embedding_model_id`; full timeline in `docs/planning/STATUS.md`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `health()` returns `StoreHealthReport` (includes `profile_seed_version` when `profile.seeding.seed_version` is set). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1–v17**; v16 = `memory_group`, v17 = `embedding_model_id`; full timeline in `docs/planning/STATUS.md`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 
 **Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides Okapi BM25. `fusion.py` implements Reciprocal Rank Fusion for hybrid search. Optional `profile.hybrid_fusion` (`HybridFusionConfig`) tunes per-channel top-k and RRF *k*; used by `inject_memories` → `MemoryRetriever`.
 
-**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives stale memories to `archive.jsonl` (dry-run + metrics, EPIC-044.5). Max-entry eviction: `docs/engineering/data-stores-and-schema.md`. `evaluation.run_consolidation_threshold_sweep` (EPIC-044.4). `MemoryProfile.seeding.seed_version` (EPIC-044.6).
+**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives stale memories to `archive.jsonl` (dry-run + metrics, EPIC-044.5). Max-entry eviction: `docs/engineering/data-stores-and-schema.md`. `evaluation.run_consolidation_threshold_sweep` + CLI `maintenance consolidation-threshold-sweep` (EPIC-044.4). `MemoryProfile.seeding.seed_version` → `profile_seed_version` on health/stats (EPIC-044.6).
 
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 

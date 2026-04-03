@@ -1,6 +1,6 @@
 # Observability
 
-tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics**, and **feedback** surfaces through `MemoryStore` APIs, CLI commands, and MCP tools/resources. See `docs/engineering/call-flows.md` for where these run in recall and maintenance paths.
+tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics**, and **feedback** surfaces through `MemoryStore` APIs, CLI commands, and MCP tools/resources. `MemoryStore.health()` / `maintenance health` / `memory://health` include **`profile_seed_version`** when the active profile sets `seeding.seed_version`. See `docs/engineering/call-flows.md` for where these run in recall and maintenance paths.
 
 ## OpenTelemetry (`otel_exporter`)
 

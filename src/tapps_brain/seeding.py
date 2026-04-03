@@ -12,7 +12,9 @@ fires on an **empty** store, and ``reseed_from_profile`` deletes prior
 accept the risk (see tests).
 
 **Profile version:** when ``MemoryProfile.seeding.seed_version`` is set, seed and
-reseed summaries include ``profile_seed_version`` for operator diffing.
+reseed summaries include ``profile_seed_version`` for operator diffing. The same
+value is exposed on ``StoreHealthReport.profile_seed_version``, CLI
+``maintenance health``, native ``run_health_check``, and MCP ``memory://stats``.
 """
 
 from __future__ import annotations

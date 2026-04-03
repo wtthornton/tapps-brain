@@ -53,6 +53,10 @@ class StoreHealth(BaseModel):
         default="",
         description="Save-phase p50 latencies from in-process metrics; empty if none.",
     )
+    profile_seed_version: str | None = Field(
+        default=None,
+        description="Profile seed recipe label when ``MemoryProfile.seeding.seed_version`` is set.",
+    )
 
 
 class HiveHealth(BaseModel):
@@ -202,6 +206,7 @@ def run_health_check(  # noqa: PLR0915
             store_health.retrieval_effective_mode = mode
             store_health.retrieval_summary = summary
             store_health.save_phase_summary = getattr(report, "save_phase_summary", "") or ""
+            store_health.profile_seed_version = getattr(report, "profile_seed_version", None)
 
             # Size on disk
             db_path = root / ".tapps-brain" / "memory" / "memory.db"

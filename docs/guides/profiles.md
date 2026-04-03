@@ -432,7 +432,7 @@ seeding:
   seed_version: "2026-04-02"   # Opaque label; echoed in seed/reseed summary JSON
 ```
 
-Bump `seed_version` when you change project-profile detection or want operators to see that auto-seeded facts should be refreshed (`reseed_from_profile`). See `tapps_brain.seeding` module docstring for `conflict_check` behavior on seed saves.
+Bump `seed_version` when you change project-profile detection or want operators to see that auto-seeded facts should be refreshed (`reseed_from_profile`). When set, it also appears as **`profile_seed_version`** on `StoreHealthReport`, in `tapps-brain maintenance health` (text and `--json`), in native `run_health_check` under `store.profile_seed_version`, and in the MCP resource `memory://stats`. See `tapps_brain.seeding` module docstring for `conflict_check` behavior on seed saves.
 
 ---
 

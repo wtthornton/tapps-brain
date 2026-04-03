@@ -329,15 +329,17 @@ Federation enables cross-project memory sharing. See the [Federation Guide](fede
 | `memory_export` | Export entries as JSON (with tier/scope/confidence filters) |
 | `memory_import` | Import entries from JSON |
 
+**CLI-only (not exposed as MCP tools):** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation threshold sensitivity (`evaluation.run_consolidation_threshold_sweep`; `--json` supported).
+
 ## Resources
 
 Resources are read-only views that MCP clients can pull into context:
 
 | URI | Description |
 |-----|-------------|
-| `memory://stats` | Entry count, tier distribution, schema version, package version, profile name |
+| `memory://stats` | Entry count, tier distribution, schema version, package version, profile name, optional `profile_seed_version` (`profile.seeding.seed_version`) |
 | `memory://agent-contract` | Agent integration JSON (versions, profile layers, recall empty-reason codes); see [Agent integration](agent-integration.md) |
-| `memory://health` | Store health report |
+| `memory://health` | Full `StoreHealthReport` JSON (includes `profile_seed_version` when set) |
 | `memory://entries/{key}` | Full detail view of a single entry |
 | `memory://metrics` | Operation counters and latency histograms |
 | `memory://feedback` | Recent feedback events (up to 500); use `feedback_query` for filtered queries |

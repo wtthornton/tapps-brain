@@ -1742,6 +1742,11 @@ class MemoryStore:
 
         prof = getattr(self, "_profile", None)
         prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
+        seed_ver: str | None = None
+        if prof is not None:
+            _seed = getattr(prof, "seeding", None)
+            if _seed is not None:
+                seed_ver = getattr(_seed, "seed_version", None)
 
         from tapps_brain.safety import resolve_safety_ruleset_version
 
@@ -1763,6 +1768,7 @@ class MemoryStore:
             schema_version=schema_ver,
             package_version=pkg_ver,
             profile_name=prof_name,
+            profile_seed_version=seed_ver,
             tier_distribution=tier_counts,
             oldest_entry_age_days=oldest_age,
             consolidation_candidates=consolidation_candidates,

@@ -972,6 +972,27 @@ class TestStoreMetrics:
         assert "lock_build_ms" in h.save_phase_summary
         assert "persist_ms" in h.save_phase_summary
 
+    def test_health_includes_profile_seed_version(self, tmp_path: Path) -> None:
+        from tapps_brain.profile import LayerDefinition, MemoryProfile, SeedingConfig
+
+        prof = MemoryProfile(
+            name="seed-health",
+            layers=[
+                LayerDefinition(
+                    name="pattern",
+                    half_life_days=60,
+                    confidence_floor=0.1,
+                ),
+            ],
+            seeding=SeedingConfig(seed_version="2.4.0"),
+        )
+        s = MemoryStore(tmp_path, profile=prof)
+        try:
+            h = s.health()
+            assert h.profile_seed_version == "2.4.0"
+        finally:
+            s.close()
+
     def test_get_hit_miss_counters(self, store: MemoryStore) -> None:
         store.save(key="exists", value="hello")
         store._metrics.reset()

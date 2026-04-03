@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EPIC-044 operator surfaces:** `StoreHealthReport.profile_seed_version` (from `MemoryProfile.seeding.seed_version`); text `tapps-brain maintenance health` prints it when set; JSON health and native `run_health_check` expose `profile_seed_version`; MCP resource `memory://stats` includes `profile_seed_version`.
+- **CLI:** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation sensitivity report (`evaluation.run_consolidation_threshold_sweep`), optional `--thresholds`, `--min-group-size`, `--include-contradicted`, `--json`.
+
 ## v2.0.3 (2026-03-30)
 
 ### Changed

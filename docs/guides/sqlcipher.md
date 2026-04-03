@@ -56,7 +56,7 @@ tapps-brain maintenance rekey-db --project-dir . --old-passphrase 'old' --new-pa
 
 ## Health / observability
 
-`MemoryStore.health()` includes `sqlcipher_enabled` (bool). The text CLI `tapps-brain maintenance health` prints `SQLCipher: enabled|disabled`.
+`MemoryStore.health()` includes `sqlcipher_enabled` (bool) and, when the profile sets `seeding.seed_version`, `profile_seed_version`. The text CLI `tapps-brain maintenance health` prints `SQLCipher: enabled|disabled` and the profile seed line when present.
 
 ## Fallback behavior
 

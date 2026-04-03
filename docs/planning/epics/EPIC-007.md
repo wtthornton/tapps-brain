@@ -18,7 +18,7 @@ Partial implementation exists and is covered by tests:
 - `src/tapps_brain/metrics.py` — `MetricsCollector`, `MetricsSnapshot`, `StoreHealthReport`
 - `MemoryStore.get_metrics()` — snapshot of in-process collector (instrumentation of every operation is **not** complete; see STORY-007.2)
 - `MemoryStore.health()` — structured report (counts, schema version, tiers, consolidation/GC hints, federation summary)
-- CLI: `tapps-brain maintenance health`, `tapps-brain store metrics` (Typer)
+- CLI: `tapps-brain maintenance health` (includes `profile_seed_version` when profile sets `seeding.seed_version`), `tapps-brain store metrics` (Typer)
 
 Remaining per this epic: audit query API on JSONL, broad instrumentation, optional OpenTelemetry, and closing acceptance criteria below.
 

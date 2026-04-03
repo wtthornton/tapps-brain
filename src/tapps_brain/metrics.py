@@ -86,6 +86,13 @@ class StoreHealthReport(BaseModel):
         default=None,
         description="Active MemoryProfile name when a profile is loaded.",
     )
+    profile_seed_version: str | None = Field(
+        default=None,
+        description=(
+            "``MemoryProfile.seeding.seed_version`` when set (EPIC-044 STORY-044.6); "
+            "operators use with seed/reseed summaries."
+        ),
+    )
     tier_distribution: dict[str, int] = Field(default_factory=dict)
     oldest_entry_age_days: float = 0.0
     consolidation_candidates: int = 0

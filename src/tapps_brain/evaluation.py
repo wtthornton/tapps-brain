@@ -2,7 +2,8 @@
 
 BEIR-compatible JSONL/TSV datasets, pure-Python IR metrics, optional
 LLM-as-judge evaluation behind optional SDK dependencies, and deterministic
-consolidation threshold sweeps (EPIC-044 STORY-044.4).
+consolidation threshold sweeps (EPIC-044 STORY-044.4); CLI
+``tapps-brain maintenance consolidation-threshold-sweep``.
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@ This page is the **operator contract** for AI agents using tapps-brain: how to w
 | **PyPI / package version** | `importlib.metadata.version("tapps-brain")`, CLI `tapps-brain --version`, or `StoreHealthReport.package_version` from `maintenance health` / `memory://stats` / `memory://health` |
 | **SQLite schema** | `StoreHealthReport.schema_version`, `memory://stats` |
 | **Active profile** | `StoreHealthReport.profile_name`, MCP `profile_info`, resource `memory://agent-contract` |
+| **Profile seed recipe label** | `StoreHealthReport.profile_seed_version` (when `profile.seeding.seed_version` is set): `maintenance health`, `memory://stats`, `memory://health`, native `run_health_check` → `store.profile_seed_version` |
 
 Always pin the **package version** in your repo’s `AGENTS.md` (or equivalent) so agents do not follow stale instructions.
 

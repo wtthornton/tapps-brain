@@ -1219,6 +1219,39 @@ class TestMaintenanceConsolidationConfigCommand:
         assert data["status"] == "updated"
 
 
+class TestMaintenanceConsolidationThresholdSweepCommand:
+    """CLI maintenance consolidation-threshold-sweep (EPIC-044 STORY-044.4)."""
+
+    def test_consolidation_threshold_sweep_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "consolidation-threshold-sweep",
+                "--project-dir",
+                project_dir,
+                "--thresholds",
+                "0.7",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["min_group_size"] == 3
+        assert data["active_only"] is True
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["threshold"] == 0.7
+
+    def test_consolidation_threshold_sweep_human(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            ["maintenance", "consolidation-threshold-sweep", "--project-dir", project_dir],
+        )
+        assert result.exit_code == 0
+        assert "threshold" in result.stdout.lower()
+        assert "groups" in result.stdout.lower()
+
+
 # ===================================================================
 # Recall command
 # ===================================================================
@@ -1295,6 +1328,29 @@ class TestHealthCommand:
         assert "tier_distribution" in data
         assert data["entry_count"] == 3
         assert data.get("sqlcipher_enabled") is False
+        assert "profile_seed_version" in data
+
+    def test_maintenance_health_shows_profile_seed_version(self, tmp_path: Path) -> None:
+        """CLI resolves profile from project ``profile.yaml`` (not in-memory ctor)."""
+        cfg = tmp_path / ".tapps-brain"
+        cfg.mkdir(parents=True)
+        (cfg / "profile.yaml").write_text(
+            """
+profile:
+  name: "cli-seed-test"
+  extends: "repo-brain"
+  layers: []
+  seeding:
+    seed_version: "1.2.3"
+""",
+            encoding="utf-8",
+        )
+        s = MemoryStore(tmp_path)
+        s.save(key="k", value="v", tier="pattern")
+        s.close()
+        result = runner.invoke(app, ["maintenance", "health", "--project-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Profile seed version: 1.2.3" in result.stdout
 
 
 class TestMaintenanceSqlcipherCommands:

@@ -670,9 +670,7 @@ def memory_audit(
         str | None,
         typer.Option(
             "--type",
-            help=(
-                "Filter by action (save, delete, consolidation_merge, consolidation_source, …)."
-            ),
+            help=("Filter by action (save, delete, consolidation_merge, consolidation_source, …)."),
         ),
     ] = None,
     since: Annotated[
@@ -1205,6 +1203,83 @@ def maintenance_consolidate(
         store.close()
 
 
+@maintenance_app.command("consolidation-threshold-sweep")
+def maintenance_consolidation_threshold_sweep(
+    project_dir: ProjectDir = None,
+    min_group_size: Annotated[
+        int,
+        typer.Option(
+            "--min-group-size",
+            min=2,
+            help="Minimum entries per consolidation group (matches periodic scan default).",
+        ),
+    ] = 3,
+    tag_weight: Annotated[
+        float | None,
+        typer.Option(help="Tag vs text blend; default matches similarity module."),
+    ] = None,
+    text_weight: Annotated[
+        float | None,
+        typer.Option(help="Tag vs text blend; default matches similarity module."),
+    ] = None,
+    include_contradicted: Annotated[
+        bool,
+        typer.Option(
+            "--include-contradicted",
+            help="Include contradicted rows and consolidated subclasses (default: active-only).",
+        ),
+    ] = False,
+    thresholds: Annotated[
+        str | None,
+        typer.Option(
+            "--thresholds",
+            help="Comma-separated similarity cutoffs (default: 0.40-0.90 step 0.05).",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Report consolidation group counts across thresholds (read-only; no store mutations)."""
+    from tapps_brain.evaluation import run_consolidation_threshold_sweep
+
+    store = _get_store(project_dir)
+    try:
+        entries = store.list_all()
+        thr_list: list[float] | None = None
+        if thresholds is not None and thresholds.strip():
+            thr_list = []
+            for part in thresholds.split(","):
+                p = part.strip()
+                if p:
+                    thr_list.append(float(p))
+        report = run_consolidation_threshold_sweep(
+            entries,
+            thresholds=thr_list,
+            min_group_size=min_group_size,
+            tag_weight=tag_weight,
+            text_weight=text_weight,
+            active_only=not include_contradicted,
+        )
+        data = report.model_dump(mode="json")
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            typer.echo(
+                f"Analyzed {report.analyzed_entry_count} entries "
+                f"({report.source_entry_count} total in store); "
+                f"min_group_size={report.min_group_size} "
+                f"active_only={report.active_only} "
+                f"tag_weight={report.tag_weight} text_weight={report.text_weight}"
+            )
+            typer.echo("threshold  groups  entries_in_groups  largest_group")
+            for row in report.rows:
+                typer.echo(
+                    f"{row.threshold:>8.4f}  {row.group_count:>6}  "
+                    f"{row.entries_in_groups:>17}  {row.largest_group_size:>14}"
+                )
+    finally:
+        store.close()
+
+
 @maintenance_app.command("stale")
 def maintenance_stale(
     project_dir: ProjectDir = None,
@@ -1248,8 +1323,7 @@ def maintenance_gc(
         elif dry_run:
             n = len(result.archived_keys)
             typer.echo(
-                f"Would archive {n} entries "
-                f"(~{result.estimated_archive_bytes} UTF-8 bytes JSONL):"
+                f"Would archive {n} entries (~{result.estimated_archive_bytes} UTF-8 bytes JSONL):"
             )
             if result.reason_counts:
                 typer.echo(f"  reasons: {result.reason_counts}")
@@ -1404,7 +1478,7 @@ def maintenance_health(
     project_dir: ProjectDir = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Show store health report: entry counts, schema, federation, GC status."""
+    """Show store health: counts, schema, profile, optional seed version, GC/consolidation hints."""
     store = _get_store(project_dir)
     try:
         report = store.health()
@@ -1418,6 +1492,8 @@ def maintenance_health(
                 typer.echo(f"Package: {report.package_version}")
             if report.profile_name:
                 typer.echo(f"Profile: {report.profile_name}")
+            if report.profile_seed_version:
+                typer.echo(f"Profile seed version: {report.profile_seed_version}")
             typer.echo("Tiers:")
             for tier, count in report.tier_distribution.items():
                 typer.echo(f"  {tier}: {count}")
