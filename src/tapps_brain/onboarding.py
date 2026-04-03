@@ -73,12 +73,18 @@ def render_agent_onboarding(profile: MemoryProfile) -> str:
     )
 
     lim = profile.limits
+    _per_g = lim.max_entries_per_group
+    _cap_line = (
+        f"- Max **{lim.max_entries}** entries"
+        + (f"; per **memory_group** cap **{_per_g}**" if _per_g is not None else "")
+        + f"; key ≤ **{lim.max_key_length}** chars; "
+        f"value ≤ **{lim.max_value_length}** chars; ≤ **{lim.max_tags}** tags per entry."
+    )
     lines.extend(
         [
             "## Limits",
             "",
-            f"- Max **{lim.max_entries}** entries; key ≤ **{lim.max_key_length}** chars; "
-            f"value ≤ **{lim.max_value_length}** chars; ≤ **{lim.max_tags}** tags per entry.",
+            _cap_line,
             "",
         ]
     )

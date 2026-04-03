@@ -262,6 +262,7 @@ def store_stats(
             "project_root": str(snap.project_root),
             "total_entries": snap.total_count,
             "max_entries": store._max_entries,
+            "max_entries_per_group": store._max_entries_per_group,
             "schema_version": schema_ver,
             "tier_distribution": snap.tier_counts,
             "exported_at": snap.exported_at,
@@ -271,6 +272,9 @@ def store_stats(
         else:
             typer.echo(f"Store: {snap.project_root}")
             typer.echo(f"Entries: {snap.total_count} / {store._max_entries}")
+            cap_g = store._max_entries_per_group
+            if cap_g is not None:
+                typer.echo(f"Per memory_group cap: {cap_g}")
             typer.echo(f"Schema: v{schema_ver}")
             typer.echo("Tiers:")
             for tier, count in snap.tier_counts.items():
@@ -670,7 +674,10 @@ def memory_audit(
         str | None,
         typer.Option(
             "--type",
-            help=("Filter by action (save, delete, consolidation_merge, consolidation_source, …)."),
+            help=(
+                "Filter by action (save, delete, consolidation_merge, "
+                "consolidation_source, consolidation_merge_undo, …)."
+            ),
         ),
     ] = None,
     since: Annotated[
@@ -1276,6 +1283,38 @@ def maintenance_consolidation_threshold_sweep(
                     f"{row.threshold:>8.4f}  {row.group_count:>6}  "
                     f"{row.entries_in_groups:>17}  {row.largest_group_size:>14}"
                 )
+    finally:
+        store.close()
+
+
+@maintenance_app.command("consolidation-merge-undo")
+def maintenance_consolidation_merge_undo(
+    consolidated_key: Annotated[str, typer.Argument(help="Key of the consolidated row to undo.")],
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Revert the last auto-consolidation merge for this key (EPIC-044 STORY-044.4).
+
+    Restores superseded source rows, deletes the consolidated row, and appends
+    ``consolidation_merge_undo`` to ``memory_log.jsonl``. Requires matching audit
+    and unchanged supersede metadata on sources.
+    """
+    store = _get_store(project_dir)
+    try:
+        result = store.undo_consolidation_merge(consolidated_key)
+        data = result.to_dict()
+        if as_json:
+            _output(data, as_json=True)
+        elif result.ok:
+            typer.echo(
+                f"Undo OK: removed {result.consolidated_key}; "
+                f"restored {len(result.source_keys)} source(s)."
+            )
+            for sk in result.source_keys:
+                typer.echo(f"  <- {sk}")
+        else:
+            typer.echo(f"Undo failed: {result.reason}", err=True)
+            raise typer.Exit(code=1)
     finally:
         store.close()
 

@@ -349,6 +349,134 @@ class TestCheckConsolidationOnSave:
         assert result.reason == "no_similar_entries"
 
 
+class TestConsolidationMergeUndo:
+    """EPIC-044 STORY-044.4: deterministic merge undo."""
+
+    def test_undo_restores_sources_and_deletes_consolidated(
+        self, mock_store: MemoryStore, jwt_entries: list[MemoryEntry]
+    ) -> None:
+        for entry in jwt_entries:
+            mock_store.save(
+                key=entry.key,
+                value=entry.value,
+                tier=entry.tier.value,
+                tags=entry.tags,
+                skip_consolidation=True,
+            )
+        new_entry = _make_entry(
+            "auth-jwt-new",
+            "JWT tokens use RS256 algorithm for security.",
+            tier=MemoryTier.architectural,
+            tags=["security", "jwt"],
+        )
+        mock_store.save(
+            key=new_entry.key,
+            value=new_entry.value,
+            tier=new_entry.tier.value,
+            tags=new_entry.tags,
+            skip_consolidation=True,
+        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
+        assert result.triggered is True
+        assert result.consolidated_entry is not None
+        ck = result.consolidated_entry.key
+        n_merged = mock_store.count()
+        undo = mock_store.undo_consolidation_merge(ck)
+        assert undo.ok is True
+        assert undo.reason == "ok"
+        assert undo.consolidated_key == ck
+        assert set(undo.source_keys) == set(result.source_keys)
+        assert mock_store.get(ck) is None
+        assert mock_store.count() == n_merged - 1
+        for sk in result.source_keys:
+            e = mock_store.get(sk)
+            assert e is not None
+            assert e.contradicted is False
+            assert e.superseded_by is None
+            assert e.invalid_at is None
+        path = mock_store._persistence.audit_path
+        records = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        undos = [r for r in records if r.get("action") == "consolidation_merge_undo"]
+        assert undos
+        assert undos[-1]["key"] == ck
+        assert set(undos[-1]["source_keys"]) == set(result.source_keys)
+
+    def test_undo_no_audit_record(self, mock_store: MemoryStore) -> None:
+        mock_store.save(key="solo-key", value="solo value", skip_consolidation=True)
+        r = mock_store.undo_consolidation_merge("made-up-consolidated")
+        assert r.ok is False
+        assert r.reason == "no_consolidation_merge_audit"
+
+    def test_undo_rejects_wrong_contradiction_reason(
+        self, mock_store: MemoryStore, jwt_entries: list[MemoryEntry]
+    ) -> None:
+        for entry in jwt_entries:
+            mock_store.save(
+                key=entry.key,
+                value=entry.value,
+                tier=entry.tier.value,
+                tags=entry.tags,
+                skip_consolidation=True,
+            )
+        new_entry = _make_entry(
+            "auth-jwt-new",
+            "JWT tokens use RS256 algorithm for security.",
+            tier=MemoryTier.architectural,
+            tags=["security", "jwt"],
+        )
+        mock_store.save(
+            key=new_entry.key,
+            value=new_entry.value,
+            tier=new_entry.tier.value,
+            tags=new_entry.tags,
+            skip_consolidation=True,
+        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
+        assert result.triggered is True
+        ck = result.consolidated_entry.key
+        other = "auth-jwt-config"
+        assert other in result.source_keys
+        mock_store.update_fields(other, contradiction_reason="tampered")
+        r = mock_store.undo_consolidation_merge(ck)
+        assert r.ok is False
+        assert "source_contradiction_reason_mismatch" in r.reason
+
+    def test_second_undo_fails_after_success(
+        self, mock_store: MemoryStore, jwt_entries: list[MemoryEntry]
+    ) -> None:
+        for entry in jwt_entries:
+            mock_store.save(
+                key=entry.key,
+                value=entry.value,
+                tier=entry.tier.value,
+                tags=entry.tags,
+                skip_consolidation=True,
+            )
+        new_entry = _make_entry(
+            "auth-jwt-new",
+            "JWT tokens use RS256 algorithm for security.",
+            tier=MemoryTier.architectural,
+            tags=["security", "jwt"],
+        )
+        mock_store.save(
+            key=new_entry.key,
+            value=new_entry.value,
+            tier=new_entry.tier.value,
+            tags=new_entry.tags,
+            skip_consolidation=True,
+        )
+        result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
+        ck = result.consolidated_entry.key
+        assert mock_store.undo_consolidation_merge(ck).ok is True
+        r2 = mock_store.undo_consolidation_merge(ck)
+        assert r2.ok is False
+        assert r2.reason == "consolidated_entry_missing"
+
+
 # ---------------------------------------------------------------------------
 # run_periodic_consolidation_scan tests
 # ---------------------------------------------------------------------------

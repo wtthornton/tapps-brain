@@ -405,12 +405,13 @@ Increase `default_token_budget` for domains with long-form content (research: 40
 ```yaml
 limits:
   max_entries: 5000        # Hard cap per store (lowest-confidence evicted)
+  max_entries_per_group: null   # Optional: max keys per memory_group + one bucket for ungrouped
   max_key_length: 128      # Max characters for memory keys
   max_value_length: 4096   # Max characters for memory values
   max_tags: 10             # Max tags per entry
 ```
 
-Precise eviction semantics (new keys only, tie-breaking, stored confidence): [Data stores reference — entry cap and eviction](../engineering/data-stores-and-schema.md#entry-cap-and-eviction-runtime).
+Precise eviction semantics (global cap, optional per-group cap, fair global eviction): [Data stores reference — entry cap and eviction](../engineering/data-stores-and-schema.md#entry-cap-and-eviction-runtime).
 
 ### Sizing guidance
 

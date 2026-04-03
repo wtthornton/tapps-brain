@@ -47,7 +47,18 @@ The active `memories` row count is bounded by profile **`limits.max_entries`** (
 | **Persistence** | The evicted key is deleted from SQLite (`memory_evicted` is logged). |
 | **Not evicted on** | Updates to an existing key, deletes, or saves that only reinforce/replace the same key. |
 
-There is **no** per-`memory_group` budget in core today; the cap is global per project store (see EPIC-044 STORY-044.7 research notes).
+### Per-`memory_group` cap (optional)
+
+When profile **`limits.max_entries_per_group`** is set (integer ≥ 1), each bucket keyed by stored `memory_group` is capped independently. **`None` / empty normalization** (ungrouped rows) form one bucket, distinct from named groups.
+
+| Aspect | Behavior |
+|--------|----------|
+| **When** | Inserts of a **new** key that would raise the target bucket above the cap, or **updates** that **change** `memory_group` into a bucket that would exceed the cap after the move. |
+| **Policy** | Remove **one** row in that bucket: **lowest stored `confidence`**, same tie-breaking as the global policy (dict iteration order). Logged as `memory_evicted` with `reason=max_entries_per_group`. |
+| **Global cap interaction** | Per-bucket enforcement runs **first** for the row about to be written. When a **new** key also hits the global `limits.max_entries`, one additional eviction runs. If per-group mode is enabled, that global eviction **prefers** the incoming row’s bucket (`reason=max_entries_fair`); if that bucket has no rows (only possible when falling back), eviction uses the **store-wide** lowest confidence (`reason=max_entries`). |
+| **Sizing** | Operators should keep `max_entries_per_group` ≤ `max_entries` so both limits can be satisfiable; the store does not auto-clamp. |
+
+When `max_entries_per_group` is **unset** (`null` / omitted), behavior matches the global-only policy above.
 
 ## Hive store (`hive.db`)
 

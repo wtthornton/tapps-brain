@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import EmbeddingProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
     from tapps_brain.hive import HiveStore
@@ -383,6 +384,22 @@ class MemoryStore:
                 pass
         return _MAX_ENTRIES
 
+    @property
+    def _max_entries_per_group(self) -> int | None:
+        """Return optional per-``memory_group`` cap, or None when disabled."""
+        if self._profile is not None:
+            try:
+                raw = self._profile.limits.max_entries_per_group
+            except Exception:
+                return None
+            if raw is None:
+                return None
+            try:
+                return int(raw)
+            except Exception:
+                return None
+        return None
+
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
@@ -695,9 +712,12 @@ class MemoryStore:
                 _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
                 entry = entry.model_copy(update={"integrity_hash": _hash})
 
-                # Max entries enforcement: evict lowest-confidence entry
-                if key not in self._entries and len(self._entries) >= self._max_entries:
-                    self._evict_lowest_confidence()
+                # Per-group then global max entry enforcement (EPIC-044 STORY-044.7)
+                self._enforce_entry_caps_before_assign(
+                    key=key,
+                    new_group=entry.memory_group,
+                    existing=existing,
+                )
 
                 self._entries[key] = entry
 
@@ -1033,6 +1053,15 @@ class MemoryStore:
                 self._entries[key] = entry
             raise
         return updated
+
+    def undo_consolidation_merge(self, consolidated_key: str) -> ConsolidationUndoResult:
+        """Revert one auto-consolidation merge (EPIC-044 STORY-044.4).
+
+        See :func:`tapps_brain.auto_consolidation.undo_consolidation_merge`.
+        """
+        from tapps_brain.auto_consolidation import undo_consolidation_merge as _undo_merge
+
+        return _undo_merge(self, consolidated_key)
 
     def count(self) -> int:
         """Return the total number of memory entries."""
@@ -1765,6 +1794,7 @@ class MemoryStore:
             store_path=str(self._project_root),
             entry_count=len(entries),
             max_entries=self._max_entries,
+            max_entries_per_group=self._max_entries_per_group,
             schema_version=schema_ver,
             package_version=pkg_ver,
             profile_name=prof_name,
@@ -2809,6 +2839,68 @@ class MemoryStore:
         return targets
 
     # ---- End implicit feedback helpers ----
+
+    def _count_entries_in_memory_group(self, memory_group: str | None) -> int:
+        """Count live rows whose ``memory_group`` matches (``None`` = ungrouped)."""
+        return sum(1 for e in self._entries.values() if e.memory_group == memory_group)
+
+    def _evict_lowest_confidence_in_group(self, memory_group: str | None) -> None:
+        """Evict lowest-confidence row within one ``memory_group`` bucket."""
+        candidates = [k for k, e in self._entries.items() if e.memory_group == memory_group]
+        if not candidates:
+            return
+        lowest_key = min(candidates, key=lambda k: self._entries[k].confidence)
+        del self._entries[lowest_key]
+        self._persistence.delete(lowest_key)
+        logger.info(
+            "memory_evicted",
+            key=lowest_key,
+            reason="max_entries_per_group",
+            memory_group=memory_group,
+        )
+
+    def _evict_lowest_confidence_prefer_group(self, memory_group: str | None) -> None:
+        """Global cap: prefer evicting from the same bucket as the incoming save."""
+        if self._max_entries_per_group is not None:
+            in_group = [k for k, e in self._entries.items() if e.memory_group == memory_group]
+            if in_group:
+                lowest_key = min(in_group, key=lambda k: self._entries[k].confidence)
+                del self._entries[lowest_key]
+                self._persistence.delete(lowest_key)
+                logger.info(
+                    "memory_evicted",
+                    key=lowest_key,
+                    reason="max_entries_fair",
+                    memory_group=memory_group,
+                )
+                return
+        self._evict_lowest_confidence()
+
+    def _enforce_entry_caps_before_assign(
+        self,
+        *,
+        key: str,
+        new_group: str | None,
+        existing: MemoryEntry | None,
+    ) -> None:
+        """Evict if needed so assigning ``key`` into ``new_group`` respects caps.
+
+        Must be called while holding the store serialization lock (inside ``_serialized()``).
+        """
+        cap_g = self._max_entries_per_group
+        if cap_g is not None:
+            if existing is None:
+                if self._count_entries_in_memory_group(new_group) >= cap_g:
+                    self._evict_lowest_confidence_in_group(new_group)
+            else:
+                old_g = existing.memory_group
+                if old_g != new_group:
+                    n_in_new = self._count_entries_in_memory_group(new_group)
+                    if n_in_new + 1 > cap_g:
+                        self._evict_lowest_confidence_in_group(new_group)
+
+        if existing is None and len(self._entries) >= self._max_entries:
+            self._evict_lowest_confidence_prefer_group(new_group)
 
     def _evict_lowest_confidence(self) -> None:
         """Evict the entry with the lowest confidence to make room.

@@ -273,9 +273,18 @@ class TestLimitsConfig:
     def test_defaults(self) -> None:
         lc = LimitsConfig()
         assert lc.max_entries == 5000
+        assert lc.max_entries_per_group is None
         assert lc.max_key_length == 128
         assert lc.max_value_length == 4096
         assert lc.max_tags == 10
+
+    def test_max_entries_per_group_when_set(self) -> None:
+        lc = LimitsConfig(max_entries_per_group=200)
+        assert lc.max_entries_per_group == 200
+
+    def test_max_entries_per_group_invalid(self) -> None:
+        with pytest.raises(ValueError, match="max_entries_per_group"):
+            LimitsConfig(max_entries_per_group=0)
 
 
 class TestMemoryProfileValidation:

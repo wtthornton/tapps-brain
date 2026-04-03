@@ -329,7 +329,10 @@ Federation enables cross-project memory sharing. See the [Federation Guide](fede
 | `memory_export` | Export entries as JSON (with tier/scope/confidence filters) |
 | `memory_import` | Import entries from JSON |
 
-**CLI-only (not exposed as MCP tools):** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation threshold sensitivity (`evaluation.run_consolidation_threshold_sweep`; `--json` supported).
+**CLI-only (not exposed as MCP tools):**
+
+- `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation threshold sensitivity (`evaluation.run_consolidation_threshold_sweep`; `--json` supported).
+- `tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY` — revert one auto-consolidation merge using the last matching `consolidation_merge` audit row (`MemoryStore.undo_consolidation_merge`; appends `consolidation_merge_undo` to `memory_log.jsonl`; `--json` supported).
 
 ## Resources
 

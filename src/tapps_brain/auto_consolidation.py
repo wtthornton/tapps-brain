@@ -6,12 +6,15 @@ Provides automatic consolidation of similar memory entries:
 
 EPIC-044 STORY-044.4: successful merges append JSONL audit actions
 ``consolidation_merge`` and ``consolidation_source`` (see ``_append_consolidation_audit``).
+Deterministic **undo** reverts one merge via ``undo_consolidation_merge`` using the last
+matching ``consolidation_merge`` row and strict validation on source rows.
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path  # noqa: TC003 - Used at runtime for Path operations
 from typing import TYPE_CHECKING, Any, Literal
@@ -38,6 +41,208 @@ logger = structlog.get_logger(__name__)
 
 CONSOLIDATION_STATE_FILE = ".tapps-brain/memory/consolidation-state.json"
 MIN_CONSOLIDATION_ENTRIES = 2
+
+
+@dataclass(frozen=True)
+class ConsolidationUndoResult:
+    """Outcome of ``undo_consolidation_merge`` (EPIC-044 STORY-044.4)."""
+
+    ok: bool
+    reason: str
+    consolidated_key: str
+    source_keys: tuple[str, ...] = ()
+    trigger: str | None = None
+    threshold: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "reason": self.reason,
+            "consolidated_key": self.consolidated_key,
+            "source_keys": list(self.source_keys),
+            "trigger": self.trigger,
+            "threshold": self.threshold,
+        }
+
+
+def find_last_consolidation_merge_audit(
+    audit_path: Path,
+    consolidated_key: str,
+) -> dict[str, Any] | None:
+    """Return the last JSONL record for ``action=consolidation_merge`` and this key."""
+    if not audit_path.is_file():
+        return None
+    last: dict[str, Any] | None = None
+    try:
+        text = audit_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("action") != "consolidation_merge":
+            continue
+        if rec.get("key") != consolidated_key:
+            continue
+        last = rec
+    return last
+
+
+def undo_consolidation_merge(  # noqa: PLR0911
+    store: MemoryStore,
+    consolidated_key: str,
+) -> ConsolidationUndoResult:
+    """Revert one auto-consolidation merge (restore sources, delete consolidated row).
+
+    Uses the **last** ``consolidation_merge`` audit row for *consolidated_key*. Each
+    source row must still be ``contradicted``, ``superseded_by`` the consolidated key,
+    and ``contradiction_reason`` exactly ``consolidated into <key>`` (same string
+    auto-consolidation writes). On success, appends ``consolidation_merge_undo`` to
+    the JSONL audit log and removes relations tied to the consolidated key.
+
+    The store serialization lock is held for the full in-memory + SQLite sequence so
+    concurrent saves do not interleave with undo.
+    """
+    merge_rec = find_last_consolidation_merge_audit(store._persistence.audit_path, consolidated_key)
+    if merge_rec is None:
+        return ConsolidationUndoResult(
+            ok=False,
+            reason="no_consolidation_merge_audit",
+            consolidated_key=consolidated_key,
+        )
+
+    raw_sources = merge_rec.get("source_keys")
+    if not isinstance(raw_sources, list) or len(raw_sources) < MIN_CONSOLIDATION_ENTRIES:
+        return ConsolidationUndoResult(
+            ok=False,
+            reason="invalid_audit_source_keys",
+            consolidated_key=consolidated_key,
+        )
+    source_keys = tuple(str(x) for x in raw_sources)
+
+    trigger_raw = merge_rec.get("trigger")
+    trigger = str(trigger_raw) if isinstance(trigger_raw, str) else None
+    threshold_val = merge_rec.get("threshold")
+    threshold = float(threshold_val) if isinstance(threshold_val, (int, float)) else None
+
+    expected_reason = f"consolidated into {consolidated_key}"
+
+    with store._serialized():
+        if consolidated_key not in store._entries:
+            return ConsolidationUndoResult(
+                ok=False,
+                reason="consolidated_entry_missing",
+                consolidated_key=consolidated_key,
+                source_keys=source_keys,
+                trigger=trigger,
+                threshold=threshold,
+            )
+
+        backup_consolidated = store._entries[consolidated_key]
+        backup_sources: dict[str, MemoryEntry] = {}
+        restored: dict[str, MemoryEntry] = {}
+
+        for sk in source_keys:
+            e = store._entries.get(sk)
+            if e is None:
+                return ConsolidationUndoResult(
+                    ok=False,
+                    reason=f"source_entry_missing:{sk}",
+                    consolidated_key=consolidated_key,
+                    source_keys=source_keys,
+                    trigger=trigger,
+                    threshold=threshold,
+                )
+            if not e.contradicted:
+                return ConsolidationUndoResult(
+                    ok=False,
+                    reason=f"source_not_contradicted:{sk}",
+                    consolidated_key=consolidated_key,
+                    source_keys=source_keys,
+                    trigger=trigger,
+                    threshold=threshold,
+                )
+            if e.superseded_by != consolidated_key:
+                return ConsolidationUndoResult(
+                    ok=False,
+                    reason=f"source_superseded_by_mismatch:{sk}",
+                    consolidated_key=consolidated_key,
+                    source_keys=source_keys,
+                    trigger=trigger,
+                    threshold=threshold,
+                )
+            if e.contradiction_reason != expected_reason:
+                return ConsolidationUndoResult(
+                    ok=False,
+                    reason=f"source_contradiction_reason_mismatch:{sk}",
+                    consolidated_key=consolidated_key,
+                    source_keys=source_keys,
+                    trigger=trigger,
+                    threshold=threshold,
+                )
+            backup_sources[sk] = e
+            now = _utc_now_iso()
+            restored[sk] = e.model_copy(
+                update={
+                    "contradicted": False,
+                    "contradiction_reason": None,
+                    "invalid_at": None,
+                    "superseded_by": None,
+                    "updated_at": now,
+                }
+            )
+
+        store._entries.pop(consolidated_key, None)
+        for sk, re in restored.items():
+            store._entries[sk] = re
+
+        try:
+            for sk in source_keys:
+                store._persistence.save(store._entries[sk])
+            store._persistence.delete_relations(consolidated_key)
+            deleted = store._persistence.delete(consolidated_key)
+            if not deleted:
+                msg = "consolidated_row_delete_failed"
+                raise RuntimeError(msg)
+        except Exception:
+            store._entries[consolidated_key] = backup_consolidated
+            for sk, old in backup_sources.items():
+                store._entries[sk] = old
+            try:
+                for _sk, old in backup_sources.items():
+                    store._persistence.save(old)
+            except Exception:
+                logger.debug("undo_consolidation_merge_sqlite_rollback_failed", exc_info=True)
+            raise
+
+        store._relations.pop(consolidated_key, None)
+        for sk in source_keys:
+            store._relations[sk] = store._persistence.load_relations(sk)
+
+        store._persistence.append_audit(
+            "consolidation_merge_undo",
+            consolidated_key,
+            extra={
+                "source_keys": list(source_keys),
+                "trigger": trigger,
+                "threshold": threshold,
+            },
+        )
+        store._metrics.increment("store.consolidation_merge_undo")
+
+    return ConsolidationUndoResult(
+        ok=True,
+        reason="ok",
+        consolidated_key=consolidated_key,
+        source_keys=source_keys,
+        trigger=trigger,
+        threshold=threshold,
+    )
 
 
 class ConsolidationResult:
@@ -244,6 +449,7 @@ def _persist_consolidated_entry(
         tags=consolidated.tags,
         confidence=consolidated.confidence,
         batch_context="consolidate",
+        skip_consolidation=True,
     )
 
     # Merge relations from all source entries onto the consolidated entry.

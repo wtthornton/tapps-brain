@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tapps_brain.feedback import FeedbackConfig
 from tapps_brain.lexical import LexicalRetrievalConfig
@@ -294,9 +294,25 @@ class LimitsConfig(BaseModel):
     """Store limits configuration."""
 
     max_entries: int = Field(default=5000, ge=1)
+    max_entries_per_group: int | None = Field(
+        default=None,
+        description=(
+            "When set, each memory_group bucket (including ungrouped rows) may hold at most "
+            "this many keys; lowest-confidence eviction runs inside that bucket. None disables "
+            "per-group caps (EPIC-044 STORY-044.7)."
+        ),
+    )
     max_key_length: int = Field(default=128, ge=1)
     max_value_length: int = Field(default=4096, ge=1)
     max_tags: int = Field(default=10, ge=1)
+
+    @field_validator("max_entries_per_group")
+    @classmethod
+    def _validate_max_entries_per_group(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            msg = "max_entries_per_group must be >= 1 when set"
+            raise ValueError(msg)
+        return v
 
 
 class SeedingConfig(BaseModel):

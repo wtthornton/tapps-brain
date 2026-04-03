@@ -342,6 +342,7 @@ class TestResources:
                 assert "package_version" in body
                 assert "profile_name" in body
                 assert "profile_seed_version" in body
+                assert "max_entries_per_group" in body
                 return
         raise AssertionError("memory://stats not found")
 
@@ -419,6 +420,7 @@ class TestToolExecution:
 
         report = store.health()
         assert report.max_entries == 5000
+        assert report.max_entries_per_group is None
         assert report.schema_version >= 1
 
 

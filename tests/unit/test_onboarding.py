@@ -16,6 +16,19 @@ def test_render_agent_onboarding_repo_brain() -> None:
     assert "Hive (shared memory)" in text
 
 
+def test_render_agent_onboarding_mentions_per_group_cap() -> None:
+    from tapps_brain.profile import LayerDefinition, LimitsConfig, MemoryProfile
+
+    p = MemoryProfile(
+        name="gcap",
+        layers=[LayerDefinition(name="pattern", half_life_days=60, confidence_floor=0.1)],
+        limits=LimitsConfig(max_entries_per_group=120),
+    )
+    text = render_agent_onboarding(p)
+    assert "memory_group" in text
+    assert "120" in text
+
+
 def test_render_agent_onboarding_extended_scoring_weights() -> None:
     from tapps_brain.profile import ScoringConfig
 

@@ -20,6 +20,25 @@ def test_health_report_exit_code_ok_warn_error() -> None:
     assert r.exit_code() == 2
 
 
+def test_run_health_check_includes_max_entries_per_group(tmp_path: Path) -> None:
+    from tapps_brain.profile import LayerDefinition, LimitsConfig, MemoryProfile
+    from tapps_brain.store import MemoryStore
+
+    prof = MemoryProfile(
+        name="cap-prof",
+        layers=[
+            LayerDefinition(name="pattern", half_life_days=60, confidence_floor=0.1),
+        ],
+        limits=LimitsConfig(max_entries=500, max_entries_per_group=42),
+    )
+    ms = MemoryStore(tmp_path, profile=prof)
+    try:
+        r = run_health_check(project_root=tmp_path, check_hive=False, store=ms)
+        assert r.store.max_entries_per_group == 42
+    finally:
+        ms.close()
+
+
 def test_run_health_check_includes_profile_seed_version(tmp_path: Path) -> None:
     from tapps_brain.profile import LayerDefinition, MemoryProfile, SeedingConfig
     from tapps_brain.store import MemoryStore

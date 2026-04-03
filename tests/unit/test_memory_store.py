@@ -264,6 +264,109 @@ class TestMemoryStoreEviction:
             store.close()
 
 
+class TestMemoryStorePerGroupEviction:
+    """Per memory_group caps (EPIC-044 STORY-044.7)."""
+
+    @staticmethod
+    def _store(
+        tmp_path: Path,
+        *,
+        max_entries: int,
+        max_entries_per_group: int,
+    ) -> MemoryStore:
+        from tapps_brain.profile import LayerDefinition, LimitsConfig, MemoryProfile
+
+        prof = MemoryProfile(
+            name="cap-test",
+            layers=[
+                LayerDefinition(name="pattern", half_life_days=60, confidence_floor=0.1),
+            ],
+            limits=LimitsConfig(
+                max_entries=max_entries,
+                max_entries_per_group=max_entries_per_group,
+            ),
+        )
+        return MemoryStore(tmp_path, profile=prof)
+
+    def test_per_group_overflow_evicts_within_group_only(self, tmp_path: Path) -> None:
+        g_cap = 3
+        store = self._store(tmp_path, max_entries=100, max_entries_per_group=g_cap)
+        try:
+            for i in range(g_cap):
+                store.save(
+                    key=f"a-{i}",
+                    value=f"va{i}",
+                    memory_group="team-a",
+                    confidence=0.5 + i * 0.01,
+                )
+            for i in range(g_cap):
+                store.save(
+                    key=f"b-{i}",
+                    value=f"vb{i}",
+                    memory_group="team-b",
+                    confidence=0.8,
+                )
+            assert store.count() == 2 * g_cap
+            store.save(
+                key="a-new",
+                value="overflow a",
+                memory_group="team-a",
+                confidence=0.99,
+            )
+            assert store.count() == 2 * g_cap
+            assert store.get("a-0") is None
+            assert store.get("a-new") is not None
+            assert store.get("b-0") is not None
+        finally:
+            store.close()
+
+    def test_global_eviction_prefers_incoming_group_when_per_group_cap_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        """Fair global eviction: victim chosen from incoming row's memory_group first."""
+        store = self._store(tmp_path, max_entries=4, max_entries_per_group=10)
+        try:
+            store.save(key="g1-0", value="content g1-0", memory_group="g1", confidence=0.9)
+            store.save(key="g1-1", value="content g1-1", memory_group="g1", confidence=0.91)
+            store.save(key="g2-0", value="content g2-0", memory_group="g2", confidence=0.1)
+            store.save(key="g2-1", value="content g2-1", memory_group="g2", confidence=0.11)
+            assert store.count() == 4
+            store.save(key="g1-new", value="z", memory_group="g1", confidence=0.99)
+            assert store.count() == 4
+            assert store.get("g1-new") is not None
+            assert store.get("g2-0") is not None
+            assert store.get("g2-1") is not None
+        finally:
+            store.close()
+
+    def test_group_change_into_full_bucket_evicts_in_target_group(self, tmp_path: Path) -> None:
+        store = self._store(tmp_path, max_entries=100, max_entries_per_group=2)
+        try:
+            store.save(key="in-a", value="a", memory_group="a", confidence=0.5)
+            store.save(key="b0", value="b0", memory_group="b", confidence=0.2)
+            store.save(key="b1", value="b1", memory_group="b", confidence=0.3)
+            r = store.save(key="in-a", value="moved", memory_group="b", confidence=0.9)
+            assert isinstance(r, MemoryEntry)
+            assert r.memory_group == "b"
+            assert store.get("b0") is None
+            assert store.get("in-a") is not None
+            assert store.get("b1") is not None
+        finally:
+            store.close()
+
+    def test_ungrouped_bucket_respects_cap(self, tmp_path: Path) -> None:
+        store = self._store(tmp_path, max_entries=100, max_entries_per_group=2)
+        try:
+            store.save(key="u0", value="u0", memory_group=None, confidence=0.1)
+            store.save(key="u1", value="u1", memory_group=None, confidence=0.2)
+            store.save(key="u2", value="u2", memory_group=None, confidence=0.9)
+            assert store.count() == 2
+            assert store.get("u0") is None
+            assert store.get("u2") is not None
+        finally:
+            store.close()
+
+
 class TestMemoryStoreRAGSafety:
     """Tests for RAG safety on save."""
 

@@ -868,6 +868,7 @@ def create_server(  # noqa: PLR0915
                 "project_root": str(snap.project_root),
                 "total_entries": snap.total_count,
                 "max_entries": store._max_entries,
+                "max_entries_per_group": store._max_entries_per_group,
                 "schema_version": schema_ver,
                 "package_version": h.package_version,
                 "profile_name": h.profile_name,
@@ -2205,7 +2206,8 @@ def create_server(  # noqa: PLR0915
         Args:
             key: Filter by memory entry key (optional).
             event_type: Filter by action, e.g. "save", "delete",
-                "consolidation_merge", "consolidation_source" (optional).
+                "consolidation_merge", "consolidation_source",
+                "consolidation_merge_undo" (optional).
             since: ISO-8601 lower bound, inclusive (optional).
             until: ISO-8601 upper bound, inclusive (optional).
             limit: Maximum number of events to return (default 50, must be >= 1).

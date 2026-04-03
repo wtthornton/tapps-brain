@@ -4,7 +4,7 @@
 
 **Source map:** [`docs/engineering/features-and-technologies.md`](../../engineering/features-and-technologies.md)
 
-**Snapshot (2026-04-02):** **EPIC-042** — stories **042.1–042.8** **done** (epic success criteria / eval evidence may still be open in `EPIC-042.md`). **EPIC-044** — **044.1**/**044.2**/**044.5**/**044.6**/**044.7** **done**; **044.3**/**044.4** core shipped plus operator polish: CLI **`maintenance consolidation-threshold-sweep`**, **`profile_seed_version`** on health/stats/native health (NLI / merge-undo / per-group cap backlog in `EPIC-044.md`). **EPIC-050** is **in_progress** (**050.1**/**050.2**/**050.3** **done**; 050.3 WAL checkpoint runbook shipped; lock-scope / async wrapper deferred in epic bodies).
+**Snapshot (2026-04-04):** **EPIC-042** — stories **042.1–042.8** **done** (epic success criteria / eval evidence may still be open in `EPIC-042.md`). **EPIC-044** — **044.1**/**044.2**/**044.4**/**044.5**/**044.6**/**044.7** **done** (**044.4** includes merge undo + threshold sweep CLI); **044.3** core shipped (NLI backlog); **044.7** includes optional per-group caps (`limits.max_entries_per_group`). **EPIC-050** is **in_progress** (**050.1**/**050.2**/**050.3** **done**; 050.3 WAL checkpoint runbook shipped; lock-scope / async wrapper deferred in epic bodies).
 
 This index links **one epic per major section** of the feature/technology map. Each epic contains **stories per table row** (industry feature category), with **code baseline**, **2026-oriented research notes**, and **implementation acceptance themes** for fix/enhance/improve work.
 

@@ -77,6 +77,10 @@ class StoreHealthReport(BaseModel):
     store_path: str = Field(description="Project root path backing the store.")
     entry_count: int = 0
     max_entries: int = 5000
+    max_entries_per_group: int | None = Field(
+        default=None,
+        description="``MemoryProfile.limits.max_entries_per_group`` when set (STORY-044.7).",
+    )
     schema_version: int = 0
     package_version: str = Field(
         default="",

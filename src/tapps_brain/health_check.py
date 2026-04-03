@@ -30,6 +30,10 @@ class StoreHealth(BaseModel):
     status: str = "ok"  # ok | warn | error
     entries: int = 0
     max_entries: int = 0
+    max_entries_per_group: int | None = Field(
+        default=None,
+        description="Profile per-``memory_group`` cap when set (STORY-044.7).",
+    )
     schema_version: str = "unknown"
     size_bytes: int = 0
     tiers: dict[str, int] = Field(default_factory=dict)
@@ -196,6 +200,7 @@ def run_health_check(  # noqa: PLR0915
             report = ms.health()
             store_health.entries = report.entry_count
             store_health.max_entries = report.max_entries
+            store_health.max_entries_per_group = report.max_entries_per_group
             store_health.schema_version = str(report.schema_version)
             store_health.tiers = dict(report.tier_distribution)
             store_health.gc_candidates = report.gc_candidates

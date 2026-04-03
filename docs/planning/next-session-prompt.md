@@ -14,10 +14,10 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 - **EPIC-050 STORY-050.3 (code + triage doc):** Opt-in read-only SQLite for FTS + sqlite-vec KNN — `TAPPS_SQLITE_MEMORY_READONLY_SEARCH`, `connect_sqlite_readonly`, `MemoryPersistence`; [`sqlite-database-locked.md`](../guides/sqlite-database-locked.md) (incl. § *WAL checkpoint* for long-lived MCP); [`openclaw-runbook.md`](../guides/openclaw-runbook.md) § *Long-lived MCP and SQLite WAL*; [`system-architecture.md`](../engineering/system-architecture.md) § concurrency.
 - **EPIC-044.1 (RAG safety):** `profile.safety` / `SafetyConfig.ruleset_version`; `check_content_safety(..., ruleset_version=, metrics=)`; `DEFAULT_SAFETY_RULESET_VERSION`, `resolve_safety_ruleset_version`, `SafetyCheckResult.ruleset_version`; metrics `rag_safety.blocked` / `rag_safety.sanitized`; `StoreHealthReport` `rag_safety_*`; save blocks on any `safe=False`; injection uses sanitised text when applicable.
 - **EPIC-044.2 (Bloom + dedup normalize):** `normalize_for_dedup` applies **NFKC** + lower + whitespace; `bloom_false_positive_probability`, `BloomFilter.approximate_false_positive_rate`, `bit_size` / `hash_count`; module doc describes nominal FP at `expected_items` / `fp_rate`.
-- **EPIC-044.4 (consolidation):** JSONL `consolidation_merge` / `consolidation_source` on auto-merge (save + periodic scan); **`evaluation.run_consolidation_threshold_sweep`** + report models; CLI **`tapps-brain maintenance consolidation-threshold-sweep`** (`--json`, optional `--thresholds` / `--min-group-size` / `--include-contradicted`). Merge **undo** remains epic backlog.
+- **EPIC-044.4 (consolidation):** JSONL `consolidation_merge` / `consolidation_source` on auto-merge (save + periodic scan); **`MemoryStore.undo_consolidation_merge`** / **`undo_consolidation_merge`** + audit **`consolidation_merge_undo`**; CLI **`tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY`** (`--json`); **`evaluation.run_consolidation_threshold_sweep`** + report models; CLI **`tapps-brain maintenance consolidation-threshold-sweep`** (`--json`, optional `--thresholds` / `--min-group-size` / `--include-contradicted`). Consolidated row **`save(..., skip_consolidation=True)`** avoids recursive merge-on-save.
 - **EPIC-044.5 (GC):** `MemoryStore.gc` / CLI / MCP — dry-run **`reason_counts`**, **`estimated_archive_bytes`**, live **`archive_bytes`**; counters **`store.gc.archived`** / **`store.gc.archive_bytes`**; **`StoreHealthReport`** **`gc_runs_total`**, **`gc_archived_rows_total`**, **`gc_archive_bytes_total`**; canonical **`archive.jsonl`** under store memory dir.
 - **EPIC-044.6 (seeding):** **`MemoryProfile.seeding.seed_version`**; **`seed_from_profile`** / **`reseed_from_profile`** include **`profile_seed_version`** when set; same field on **`StoreHealthReport`**, **`maintenance health`**, native **`run_health_check.store.profile_seed_version`**, MCP **`memory://stats`**; **`seeding`** module documents **`conflict_check`** on seed saves.
-- **EPIC-044.7 (caps):** Formal eviction policy in **`docs/engineering/data-stores-and-schema.md`** (linked from features map + **`profiles.md`**). Per-group caps backlog in epic.
+- **EPIC-044.7 (caps):** Global + optional **`limits.max_entries_per_group`** (per-`memory_group` bucket + ungrouped; fair global eviction when set) in **`docs/engineering/data-stores-and-schema.md`**; **`StoreHealthReport.max_entries_per_group`**, MCP **`memory://stats`**, native health, CLI **`store stats`**.
 - **EPIC-044.3 (save-path conflicts):** `exclude_key`; `SaveConflictHit` (entry + similarity); invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig`; structured log `memory_save_conflicts_detected` includes `similarity_threshold` and `conflicts`. NLI / richer UX remains backlog inside the epic.
 - **Roadmap tracking row 20:** `save_phase_summary` on live store health / MCP — **done**.
 - **Docs:** [`embedding-model-card.md`](../guides/embedding-model-card.md) § *Performance review backlog* — triage table, not a code mandate.
@@ -26,23 +26,23 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 **Immediate next steps (pick ONE primary slice per PR):**
 
+*(STORY-044.4 merge **undo** is on `main` — see “Already on `main`” above; pick below unless you are extending that path.)*
+
 | Priority | Slice | Outcome |
 |----------|--------|---------|
-| A | **STORY-044.4 — merge undo** | Deterministic revert of an auto-consolidation merge (restore superseded keys, fix merged row, keep `memory_log.jsonl` / SQLite consistent). Highest product gap in §3 lifecycle. |
-| B | **STORY-044.7 — per-group caps** | Optional `limits` / profile fields for max entries per `memory_group`; fair eviction vs global `max_entries`; docs in `data-stores-and-schema.md`. |
-| C | **STORY-044.3 — NLI / async conflicts** | Research or **offline** tooling only — do **not** add silent LLM calls on the sync `save` path. |
-| D | **EPIC-051.6 — save-path observability** | Metrics or structured logs correlating save latency with consolidation/GC (roadmap item 5). |
-| E | **EPIC-042 hygiene** | Close epic success criteria: offline eval evidence, GitHub/issue hygiene (`EPIC-042.md`). |
+| A | **STORY-044.3 — NLI / async conflicts** | Research or **offline** tooling only — do **not** add silent LLM calls on the sync `save` path. |
+| B | **EPIC-051.6 — save-path observability** | Metrics or structured logs correlating save latency with consolidation/GC (roadmap item 5). |
+| C | **EPIC-042 hygiene** | Close epic success criteria: offline eval evidence, GitHub/issue hygiene (`EPIC-042.md`). |
 
 **What’s next (recommended order):**
 
-1. **EPIC-044 — backlog:** **A** or **B** above, or **C** as docs/spike — see [`EPIC-044.md`](epics/EPIC-044.md). Core **044.1**–**044.7** themes are otherwise on `main`.
+1. **EPIC-044 — backlog:** **044.3** NLI / async research — see [`EPIC-044.md`](epics/EPIC-044.md).
 
-2. **Optional:** **D** (observability) or **EPIC-050** lock-scope / async only if benchmark or explicit demand.
+2. **Optional:** **B** (save-path observability) or **EPIC-050** lock-scope / async only if benchmark or explicit demand.
 
 3. **Long horizon / defer:** **EPIC-032** OTel GenAI. **EPIC-051** other stories. **Tracking table row 22** — MemoryStore modularization; design-first only.
 
-4. **Hygiene (non-blocking):** **E** above.
+4. **Hygiene (non-blocking):** **C** above.
 
 **Your task — pick ONE primary slice** (one PR unless trivial), run the epic’s verification command, then update `docs/planning/epics/…`, `open-issues-roadmap.md` (changelog + last updated if needed), `STATUS.md` if the queue changes, and refresh **this file’s** “Already on main” if you shipped something listed above.
 
@@ -50,4 +50,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-03 — queue: EPIC-044 undo or per-group caps → optional 051.6 observability → EPIC-042 hygiene → long defer (050 lock-scope, 032 OTel).*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-04 — queue: EPIC-044 **044.3** NLI spike → optional 051.6 observability → EPIC-042 hygiene → long defer (050 lock-scope, 032 OTel).*

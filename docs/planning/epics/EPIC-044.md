@@ -16,7 +16,7 @@ Maps to **§3** of [`features-and-technologies.md`](../../engineering/features-a
 ## Success criteria
 
 - [x] Save path **determinism** preserved for default profile (no silent LLM calls). *(Optional NLI/async conflict research in STORY-044.3 notes stays out of core.)*
-- [x] New heuristics behind **flags** / profile fields with tests and docs *(per stories; consolidation **undo** + per-group caps remain backlog).*
+- [x] New heuristics behind **flags** / profile fields with tests and docs *(per stories, including per-group caps).*
 
 ## Stories
 
@@ -93,9 +93,9 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 ### STORY-044.4: Deterministic merge / consolidation
 
-**Status:** in_progress (audit + threshold sweep shipped 2026-04-02; undo backlog) | **Effort:** L | **Depends on:** none  
+**Status:** done (2026-04-03) — audit, threshold sweep, merge undo | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/consolidation.py`, `src/tapps_brain/similarity.py`, `src/tapps_brain/auto_consolidation.py`, `src/tapps_brain/store.py`, `tests/unit/test_memory_consolidation.py`, `tests/unit/test_memory_auto_consolidation.py`, `tests/unit/test_consolidation_config.py`  
-**Verification:** `pytest tests/unit/test_memory_consolidation.py tests/unit/test_memory_auto_consolidation.py tests/unit/test_consolidation_config.py -v --tb=short -m "not benchmark"`
+**Verification:** `pytest tests/unit/test_memory_consolidation.py tests/unit/test_memory_auto_consolidation.py tests/unit/test_consolidation_config.py -v --tb=short -m "not benchmark"` (includes `TestConsolidationMergeUndo` for merge undo).
 
 #### Code baseline
 
@@ -109,7 +109,7 @@ Deterministic merge (Jaccard / TF-IDF / topic); auto path on save when `Consolid
 #### Implementation themes
 
 - [x] **Audit** trail for auto-consolidation — JSONL ``memory_log.jsonl`` actions ``consolidation_merge`` (key = merged entry; ``source_keys``, ``trigger`` ``save``/``periodic_scan``, ``threshold``, ``consolidation_reason``) and ``consolidation_source`` per superseded key (``superseded_by``, ``trigger``, ``threshold``) (2026-04-02). Query via ``tapps-brain memory audit --type …`` / ``MemoryStore.audit``.
-- [ ] **Undo** (revert merge) — not implemented; audit supports forensics only.
+- [x] **Undo** (revert merge) — ``MemoryStore.undo_consolidation_merge`` / ``undo_consolidation_merge`` uses the last ``consolidation_merge`` audit row; restores sources (clears ``contradicted`` / temporal supersede fields), deletes the consolidated row, ``delete_relations`` for that key, appends ``consolidation_merge_undo``; CLI ``maintenance consolidation-merge-undo`` (2026-04-03). Consolidated row save uses ``skip_consolidation=True`` to avoid recursive merge-on-save.
 - [x] Threshold **sensitivity** sweep — ``evaluation.run_consolidation_threshold_sweep`` + report models (deterministic; no store mutations) (2026-04-02).
 - [x] CLI **read-only sweep** — ``tapps-brain maintenance consolidation-threshold-sweep`` (JSON + table; optional ``--thresholds``, ``--min-group-size``, ``--include-contradicted``) (2026-04-02).
 
@@ -162,9 +162,9 @@ Tier-aware archival via `MemoryGarbageCollector`; profile-driven thresholds.
 
 ### STORY-044.7: Caps and eviction
 
-**Status:** done (2026-04-02) | **Effort:** M | **Depends on:** none  
-**Context refs:** `src/tapps_brain/store.py` (max entries / eviction), `src/tapps_brain/profile.py` (`limits.max_entries`), `tests/unit/test_memory_store.py`  
-**Verification:** `pytest tests/unit/test_memory_store.py -k evict -v --tb=short -m "not benchmark"`
+**Status:** done (2026-04-02; per-group caps 2026-04-03) | **Effort:** M | **Depends on:** none  
+**Context refs:** `src/tapps_brain/store.py` (max entries / eviction), `src/tapps_brain/profile.py` (`limits.max_entries`, `limits.max_entries_per_group`), `tests/unit/test_memory_store.py`  
+**Verification:** `pytest tests/unit/test_memory_store.py::TestMemoryStoreEviction tests/unit/test_memory_store.py::TestMemoryStorePerGroupEviction -v --tb=short -m "not benchmark"`
 
 #### Code baseline
 
@@ -178,7 +178,7 @@ Default cap 5000; lowest-confidence eviction when over `limits.max_entries`.
 #### Implementation themes
 
 - [x] Document **eviction policy** in [`data-stores-and-schema.md`](../../engineering/data-stores-and-schema.md) (cross-linked from [`features-and-technologies.md`](../../engineering/features-and-technologies.md) + [`profiles.md`](../../guides/profiles.md)) (2026-04-02).
-- [ ] Optional: **per-group caps** in profile — backlog.
+- [x] Optional **per-group caps** — `MemoryProfile.limits.max_entries_per_group`; eviction within bucket; global overflow prefers incoming `memory_group` when per-group mode is enabled; health / MCP `memory://stats` / native health / CLI stats (2026-04-03).
 
 ## Priority order
 

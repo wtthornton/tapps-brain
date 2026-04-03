@@ -137,7 +137,7 @@ store = MemoryStore(Path("."))
 
 Direct access to all 38 modules. Thread-safe, synchronous, zero setup.
 
-### CLI — 42 commands
+### CLI — 43 commands
 
 ```bash
 tapps-brain recall "authentication patterns"
@@ -147,6 +147,7 @@ tapps-brain memory tags                          # list all tags
 tapps-brain memory audit --last 50               # audit trail
 tapps-brain maintenance health
 tapps-brain maintenance consolidation-threshold-sweep --json   # read-only threshold tuning report
+tapps-brain maintenance consolidation-merge-undo <consolidated-key>   # revert one auto-merge (audit-driven)
 tapps-brain hive status
 tapps-brain agent create my-agent --profile repo-brain
 tapps-brain federation status

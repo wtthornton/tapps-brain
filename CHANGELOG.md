@@ -11,8 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EPIC-044 STORY-044.4:** Deterministic **merge undo** — `MemoryStore.undo_consolidation_merge` / `auto_consolidation.undo_consolidation_merge`, JSONL audit action `consolidation_merge_undo`, CLI `tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY` (`--json`). Uses the last matching `consolidation_merge` row and strict validation on superseded sources.
 - **EPIC-044 operator surfaces:** `StoreHealthReport.profile_seed_version` (from `MemoryProfile.seeding.seed_version`); text `tapps-brain maintenance health` prints it when set; JSON health and native `run_health_check` expose `profile_seed_version`; MCP resource `memory://stats` includes `profile_seed_version`.
 - **CLI:** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation sensitivity report (`evaluation.run_consolidation_threshold_sweep`), optional `--thresholds`, `--min-group-size`, `--include-contradicted`, `--json`.
+- **EPIC-044 STORY-044.7:** Optional **`limits.max_entries_per_group`** — per-`memory_group` bucket (plus ungrouped) caps with lowest-confidence eviction inside the bucket; when set, global `max_entries` overflow prefers evicting from the incoming row’s group (`StoreHealthReport.max_entries_per_group`, MCP `memory://stats`, native health, CLI `store stats`). See `docs/engineering/data-stores-and-schema.md`.
+
+### Fixed
+
+- **Auto-consolidation:** Persisting a merged row uses `skip_consolidation=True` so saving the consolidated entry does not immediately trigger another merge pass.
 
 ## v2.0.3 (2026-03-30)
 
