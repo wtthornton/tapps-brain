@@ -1287,6 +1287,81 @@ def maintenance_consolidation_threshold_sweep(
         store.close()
 
 
+@maintenance_app.command("save-conflict-candidates")
+def maintenance_save_conflict_candidates(
+    project_dir: ProjectDir = None,
+    threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--threshold",
+            help=(
+                "Similarity cutoff for detect_save_conflicts "
+                "(default: profile conflict_check or built-in medium tier)."
+            ),
+        ),
+    ] = None,
+    include_contradicted: Annotated[
+        bool,
+        typer.Option(
+            "--include-contradicted",
+            help="Also treat contradicted / consolidated rows as hypothetical saves.",
+        ),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Export save-time conflict pairs for offline review (read-only; EPIC-044 STORY-044.3).
+
+    Does not run NLI or any LLM — output is JSON or a short table for external tooling.
+    """
+    from tapps_brain.evaluation import run_save_conflict_candidate_report
+    from tapps_brain.profile import ConflictCheckConfig
+
+    store = _get_store(project_dir)
+    try:
+        prof = store.profile
+        _cc = getattr(prof, "conflict_check", None) if prof is not None else None
+        if threshold is not None:
+            sim_thr = float(threshold)
+        elif _cc is not None:
+            sim_thr = _cc.effective_similarity_threshold()
+        else:
+            sim_thr = ConflictCheckConfig().effective_similarity_threshold()
+        entries = store.list_all()
+        report = run_save_conflict_candidate_report(
+            entries,
+            sim_thr,
+            active_only=not include_contradicted,
+        )
+        data = report.model_dump(mode="json")
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            typer.echo(
+                f"Save conflict candidates: {len(report.rows)} pair(s); "
+                f"threshold={report.similarity_threshold} "
+                f"analyzed_incoming={report.analyzed_entry_count} "
+                f"source_entries={report.source_entry_count} "
+                f"active_only={report.active_only}"
+            )
+            preview_len = 72
+            trim_to = 69
+            for row in report.rows:
+                inc_v = row.hypothetical_incoming_value.replace("\n", " ")
+                con_v = row.conflicting_value.replace("\n", " ")
+                if len(inc_v) > preview_len:
+                    inc_v = inc_v[:trim_to] + "..."
+                if len(con_v) > preview_len:
+                    con_v = con_v[:trim_to] + "..."
+                typer.echo(
+                    f"  {row.hypothetical_incoming_key} -> {row.conflicting_key} "
+                    f"tier={row.tier} sim={row.similarity:.4f}"
+                )
+                typer.echo(f"    incoming: {inc_v}")
+                typer.echo(f"    conflict: {con_v}")
+    finally:
+        store.close()
+
+
 @maintenance_app.command("consolidation-merge-undo")
 def maintenance_consolidation_merge_undo(
     consolidated_key: Annotated[str, typer.Argument(help="Key of the consolidated row to undo.")],

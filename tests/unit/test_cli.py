@@ -1252,6 +1252,38 @@ class TestMaintenanceConsolidationThresholdSweepCommand:
         assert "groups" in result.stdout.lower()
 
 
+class TestMaintenanceSaveConflictCandidatesCommand:
+    """CLI maintenance save-conflict-candidates (EPIC-044 STORY-044.3 offline tooling)."""
+
+    def test_save_conflict_candidates_json(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "save-conflict-candidates",
+                "--project-dir",
+                project_dir,
+                "--threshold",
+                "0.99",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["similarity_threshold"] == 0.99
+        assert data["active_only"] is True
+        assert "rows" in data
+        assert isinstance(data["rows"], list)
+
+    def test_save_conflict_candidates_human(self, project_dir: str) -> None:
+        result = runner.invoke(
+            app,
+            ["maintenance", "save-conflict-candidates", "--project-dir", project_dir],
+        )
+        assert result.exit_code == 0
+        assert "save conflict candidates" in result.stdout.lower()
+
+
 # ===================================================================
 # Recall command
 # ===================================================================

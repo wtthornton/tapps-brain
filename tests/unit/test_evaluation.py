@@ -32,7 +32,9 @@ from tapps_brain.evaluation import (
     recall_at_k,
     reciprocal_rank,
     run_consolidation_threshold_sweep,
+    run_save_conflict_candidate_report,
 )
+from tapps_brain.models import ConsolidatedEntry, ConsolidationReason, MemoryTier
 from tapps_brain.store import MemoryStore
 from tests.factories import make_entry
 
@@ -306,6 +308,50 @@ def test_consolidation_threshold_sweep_active_only_skips_contradicted() -> None:
 def test_consolidation_threshold_sweep_dedupes_thresholds() -> None:
     rep = run_consolidation_threshold_sweep([], thresholds=[0.7, 0.7, 0.5])
     assert [r.threshold for r in rep.rows] == [0.5, 0.7]
+
+
+def test_save_conflict_candidate_report_known_pair() -> None:
+    a = make_entry(key="a", value="the quick brown fox", tier=MemoryTier.pattern)
+    b = make_entry(key="b", value="the quick brown fox jumps", tier=MemoryTier.pattern)
+    rep = run_save_conflict_candidate_report([a, b], 0.25, active_only=True)
+    assert rep.source_entry_count == 2
+    assert rep.analyzed_entry_count == 2
+    pairs = {(r.hypothetical_incoming_key, r.conflicting_key) for r in rep.rows}
+    assert ("a", "b") in pairs
+    assert ("b", "a") in pairs
+
+
+def test_save_conflict_candidate_report_active_only_skips_contradicted_and_consolidated() -> None:
+    a = make_entry(key="a", value="the quick brown fox", tier=MemoryTier.pattern)
+    bad = make_entry(
+        key="bad",
+        value="the quick brown fox jumps",
+        tier=MemoryTier.pattern,
+        contradicted=True,
+        contradiction_reason="t",
+    )
+    base = make_entry(key="cons", value="unrelated long procedural text", tier=MemoryTier.pattern)
+    cons = ConsolidatedEntry(
+        **base.model_dump(),
+        source_ids=["x"],
+        consolidation_reason=ConsolidationReason.similarity,
+    )
+    b = make_entry(key="b", value="the quick brown fox jumps", tier=MemoryTier.pattern)
+    rep = run_save_conflict_candidate_report([a, bad, cons, b], 0.25, active_only=True)
+    assert all(r.hypothetical_incoming_key not in {"bad", "cons"} for r in rep.rows)
+
+
+def test_save_conflict_candidate_report_respects_active_only_false() -> None:
+    bad = make_entry(
+        key="bad",
+        value="the quick brown fox jumps",
+        tier=MemoryTier.pattern,
+        contradicted=True,
+        contradiction_reason="t",
+    )
+    a = make_entry(key="a", value="the quick brown fox", tier=MemoryTier.pattern)
+    rep = run_save_conflict_candidate_report([bad, a], 0.25, active_only=False)
+    assert any(r.hypothetical_incoming_key == "bad" for r in rep.rows)
 
 
 def test_evaluate_with_judge_skips(tmp_path: Path) -> None:

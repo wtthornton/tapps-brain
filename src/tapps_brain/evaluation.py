@@ -1,9 +1,11 @@
 """Offline retrieval evaluation (EPIC-031 STORY-031.3–031.4).
 
 BEIR-compatible JSONL/TSV datasets, pure-Python IR metrics, optional
-LLM-as-judge evaluation behind optional SDK dependencies, and deterministic
-consolidation threshold sweeps (EPIC-044 STORY-044.4); CLI
-``tapps-brain maintenance consolidation-threshold-sweep``.
+LLM-as-judge evaluation behind optional SDK dependencies, deterministic
+consolidation threshold sweeps (EPIC-044 STORY-044.4; CLI
+``maintenance consolidation-threshold-sweep``), and read-only save-conflict
+candidate export for offline NLI review (EPIC-044 STORY-044.3; CLI
+``maintenance save-conflict-candidates`` — no model on the sync save path).
 """
 
 from __future__ import annotations
@@ -249,7 +251,9 @@ def lexical_golden_eval_suite() -> EvalSuite:
     )
 
 
-def load_eval_suite_into_store(store: MemoryStore, suite: EvalSuite, *, tier: str = "pattern") -> None:
+def load_eval_suite_into_store(
+    store: MemoryStore, suite: EvalSuite, *, tier: str = "pattern"
+) -> None:
     """Persist each corpus document as a memory entry (``key`` = doc id, ``value`` = text)."""
     for _doc_id, doc in suite.corpus.docs.items():
         text = (doc.text or "").strip()
@@ -391,9 +395,7 @@ def run_consolidation_threshold_sweep(
     source_n = len(entries)
     if active_only:
         analyzed = [
-            e
-            for e in entries
-            if not isinstance(e, ConsolidatedEntry) and not e.contradicted
+            e for e in entries if not isinstance(e, ConsolidatedEntry) and not e.contradicted
         ]
     else:
         analyzed = list(entries)
@@ -430,6 +432,110 @@ def run_consolidation_threshold_sweep(
         min_group_size=min_group_size,
         tag_weight=tw,
         text_weight=tx,
+        active_only=active_only,
+        rows=rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Save-time conflict candidate export (EPIC-044 STORY-044.3 — offline / NLI backlog)
+# ---------------------------------------------------------------------------
+
+
+class SaveConflictCandidateRow(BaseModel):
+    """One directed pair: treating ``hypothetical_incoming_*`` as a save probes conflicts."""
+
+    hypothetical_incoming_key: str
+    conflicting_key: str
+    tier: str
+    similarity: float = Field(ge=0.0, le=1.0)
+    hypothetical_incoming_value: str
+    conflicting_value: str
+
+
+class SaveConflictCandidateReport(BaseModel):
+    """Side-effect free report mirroring :func:`~tapps_brain.contradictions.detect_save_conflicts`.
+
+    Each row corresponds to one hit that would fire if
+    ``hypothetical_incoming_key``'s value were saved with the same tier today.
+    The corpus passed to detection is the full ``entries`` list (including
+    contradicted rows), matching :meth:`~tapps_brain.store.MemoryStore.save`.
+    """
+
+    generated_at: str
+    similarity_threshold: float = Field(ge=0.0, le=1.0)
+    source_entry_count: int = Field(ge=0)
+    analyzed_entry_count: int = Field(ge=0)
+    active_only: bool
+    rows: list[SaveConflictCandidateRow] = Field(default_factory=list)
+
+
+def run_save_conflict_candidate_report(
+    entries: list[MemoryEntry],
+    similarity_threshold: float,
+    *,
+    active_only: bool = True,
+) -> SaveConflictCandidateReport:
+    """Enumerate save-time conflict hits for operator or offline NLI labeling.
+
+    For each analyzed entry (default: not ``contradicted``, not
+    :class:`~tapps_brain.models.ConsolidatedEntry`), runs
+    :func:`~tapps_brain.contradictions.detect_save_conflicts` against the full
+    entry list with ``exclude_key`` set to that entry — same probe as
+    :meth:`~tapps_brain.store.MemoryStore.save`.
+
+    Complexity is O(n * m) in entries times similarity work; intended for
+    maintenance exports, not hot paths.
+
+    Args:
+        entries: Full store snapshot (e.g. ``store.list_all()``).
+        similarity_threshold: Cutoff passed to ``detect_save_conflicts``.
+        active_only: When True, only non-contradicted, non-consolidated rows are
+            treated as hypothetical incoming saves (scan corpus is still full
+            ``entries``).
+    """
+    from tapps_brain.contradictions import detect_save_conflicts
+    from tapps_brain.models import ConsolidatedEntry
+
+    source_n = len(entries)
+    if active_only:
+        analyzed = [
+            e for e in entries if not isinstance(e, ConsolidatedEntry) and not e.contradicted
+        ]
+    else:
+        analyzed = list(entries)
+    analyzed_n = len(analyzed)
+
+    rows: list[SaveConflictCandidateRow] = []
+    for inc in analyzed:
+        tier = inc.tier.value if hasattr(inc.tier, "value") else str(inc.tier)
+        hits = detect_save_conflicts(
+            inc.value,
+            tier,
+            entries,
+            float(similarity_threshold),
+            exclude_key=inc.key,
+        )
+        for h in hits:
+            hit_tier = h.entry.tier.value if hasattr(h.entry.tier, "value") else str(h.entry.tier)
+            rows.append(
+                SaveConflictCandidateRow(
+                    hypothetical_incoming_key=inc.key,
+                    conflicting_key=h.entry.key,
+                    tier=hit_tier,
+                    similarity=float(h.similarity),
+                    hypothetical_incoming_value=inc.value,
+                    conflicting_value=h.entry.value,
+                )
+            )
+
+    rows.sort(key=lambda r: (r.hypothetical_incoming_key, -r.similarity, r.conflicting_key))
+
+    return SaveConflictCandidateReport(
+        generated_at=datetime.now(tz=UTC).isoformat(),
+        similarity_threshold=float(similarity_threshold),
+        source_entry_count=source_n,
+        analyzed_entry_count=analyzed_n,
         active_only=active_only,
         rows=rows,
     )

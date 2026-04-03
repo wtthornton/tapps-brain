@@ -70,9 +70,9 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 ### STORY-044.3: Contradiction / conflict handling
 
-**Status:** in_progress (core save-path shipped 2026-04-02; NLI/async research remains backlog) | **Effort:** L | **Depends on:** none  
+**Status:** in_progress (core save-path + offline conflict export shipped 2026-04-02 / 2026-04-04; optional product NLI/async remains backlog) | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/contradictions.py`, `src/tapps_brain/store.py` (`conflict_check`), GitHub #44, `tests/unit/test_contradictions.py`, `tests/unit/test_contradictions_detect.py`  
-**Verification:** `pytest tests/unit/test_contradictions.py tests/unit/test_contradictions_detect.py -v --tb=short -m "not benchmark"`
+**Verification:** `pytest tests/unit/test_contradictions.py tests/unit/test_contradictions_detect.py tests/unit/test_evaluation.py::test_save_conflict_candidate_report_known_pair tests/unit/test_evaluation.py::test_save_conflict_candidate_report_active_only_skips_contradicted_and_consolidated tests/unit/test_evaluation.py::test_save_conflict_candidate_report_respects_active_only_false tests/unit/test_cli.py::TestMaintenanceSaveConflictCandidatesCommand -v --tb=short -m "not benchmark"`
 
 #### Code baseline
 
@@ -80,7 +80,7 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 #### Research notes (2026-forward)
 
-- Pairwise **NLI-style** models could label entail/contradict — **offline** or **async** only to keep sync path fast.
+- Pairwise **NLI-style** models could label entail/contradict — **offline** or **async** only to keep sync path fast. Operator export: [`save-conflict-nli-offline.md`](../../guides/save-conflict-nli-offline.md).
 - **Temporal logic:** ensure **invalid_at** / **valid_at** ordering invariants under concurrency (see concurrent save tests).
 
 #### Implementation themes
@@ -88,6 +88,7 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 - [x] **exclude_key:** the key being saved is not treated as a separate conflicting row (`detect_save_conflicts(..., exclude_key=key)`); prevents concurrent same-key updates from tripping ``valid_at``/``invalid_at`` ordering (2026-04-02).
 - [x] User-visible **reason** on conflict: invalidated rows get ``contradicted=True`` and deterministic ``contradiction_reason`` (plus structured log ``conflicts`` with per-key similarity); ``detect_save_conflicts`` returns ``SaveConflictHit`` (entry + score) (2026-04-02).
 - [x] Profile: **aggressiveness** tiers via ``MemoryProfile.conflict_check`` (`ConflictCheckConfig`: ``low`` / ``medium`` / ``high`` → thresholds 0.75 / 0.6 / 0.45, or explicit ``similarity_threshold``); wired in ``MemoryStore.save`` (2026-04-02).
+- [x] **Offline tooling (NLI backlog):** ``evaluation.run_save_conflict_candidate_report`` + CLI ``tapps-brain maintenance save-conflict-candidates`` (``--json``, ``--threshold``, ``--include-contradicted``); guide [`save-conflict-nli-offline.md`](../../guides/save-conflict-nli-offline.md). No model on sync save (2026-04-02).
 
 ---
 

@@ -62,3 +62,22 @@ tapps-brain maintenance rekey-db --project-dir . --old-passphrase 'old' --new-pa
 
 - No env var and no `encryption_key` argument → standard `sqlite3` (unchanged from pre-#23 behavior).
 - Hive without hive-specific key uses the project memory key from env when set, so one passphrase can cover both; use `TAPPS_BRAIN_HIVE_ENCRYPTION_KEY` when Hive should differ.
+
+## Lost passphrase
+
+**If you lose the SQLCipher passphrase, the encrypted database cannot be recovered.** There is no escrow in the library. Store passphrases in a secrets manager or team policy with the same rigor as production credentials.
+
+## Backup and restore verification
+
+Use this checklist for **project `memory.db`** and, when encrypted, **`~/.tapps-brain/hive/hive.db`**. Repeat on a schedule that matches your compliance needs (e.g. quarterly verification on a staging host).
+
+1. **Quiesce writers** — stop or idle MCP/CLI sessions that write the target DB so the file is consistent (or snapshot at rest and accept point-in-time semantics).
+2. **Copy artifacts** — back up the encrypted `.db` file(s) and the rest of the store directory your ops standard requires (e.g. `.tapps-brain/memory/` including `memory_log.jsonl` if you rely on audit replay).
+3. **Verify restore** — on a **non-production** copy: set `TAPPS_BRAIN_ENCRYPTION_KEY` (and `TAPPS_BRAIN_HIVE_ENCRYPTION_KEY` if Hive uses a different key), open the store, run `tapps-brain maintenance health` or a read/search smoke test against known keys.
+4. **Re-key drill (optional)** — on a **copy** of production data, run `tapps-brain maintenance rekey-db` with `--old-passphrase` / `--new-passphrase` to validate rotation procedures and key material handling.
+
+After `encrypt-db`, keep the original plain file only until you have verified the encrypted copy opens with the intended key; then remove or archive the plain backup per policy.
+
+## Enterprise key handling (KMS / envelope patterns)
+
+Core tapps-brain expects a **passphrase** (env or `encryption_key=`). **Wrapping a data-encryption key with a cloud KMS or HSM**, or injecting the passphrase from a sidecar agent, is **deployment-specific** — implement in your secrets layer before the process starts. The project does not ship vendor-specific KMS integration; maintainer stance: [`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md).

@@ -2,8 +2,13 @@
 
 Compares memories against observable project state (tech stack, file
 existence, test frameworks, package managers, branches) to detect
-stale or incorrect information. All detection is deterministic -
+stale or incorrect information. All detection is deterministic —
 no LLM calls.
+
+Save-time similarity conflicts (:func:`detect_save_conflicts`) stay on that
+deterministic path. Optional neural NLI labeling belongs in offline jobs only;
+see ``docs/guides/save-conflict-nli-offline.md`` and
+:func:`tapps_brain.evaluation.run_save_conflict_candidate_report`.
 """
 
 from __future__ import annotations

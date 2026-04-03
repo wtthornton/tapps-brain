@@ -245,7 +245,9 @@ class ConflictCheckConfig(BaseModel):
 
     Tune under ``profile.conflict_check`` in YAML. ``aggressiveness`` selects a
     default Jaccard-style similarity cutoff for ``detect_save_conflicts``; set
-    ``similarity_threshold`` explicitly to override the tier.
+    ``similarity_threshold`` explicitly to override the tier. For offline review
+    of pairs at that cutoff, use CLI ``maintenance save-conflict-candidates``
+    (see ``docs/guides/save-conflict-nli-offline.md``).
     """
 
     model_config = ConfigDict(extra="forbid")

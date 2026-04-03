@@ -1,7 +1,7 @@
 ---
 id: EPIC-051
 title: "Cross-cutting architecture review — checklist-driven improvements"
-status: planned
+status: done
 priority: medium
 created: 2026-03-31
 tags: [architecture, roadmap, retrieval, scale, security, observability]
@@ -24,7 +24,13 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 ## Success criteria
 
-- [ ] Each checklist item has **decision recorded** (do / defer / wontfix) with owner date.
+- [x] Each checklist item has **decision recorded** (do / defer / wontfix) with owner date — **complete 2026-04-03** (ADRs **001**–**006** under [`adr/`](../adr/)).
+  - **10.1 Retrieval stack:** done — [`ADR-001`](../adr/ADR-001-retrieval-stack.md); owner @wtthornton; **2026-04-03**.
+  - **10.2 Freshness (lazy vs TTL):** done — [`ADR-002`](../adr/ADR-002-freshness-lazy-decay-vs-ttl.md); owner @wtthornton; **2026-04-03**.
+  - **10.3 Correctness / review queue:** done — [`ADR-003`](../adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md); owner @wtthornton; **2026-04-03**.
+  - **10.4 Scale / service extraction:** done — [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md); owner @wtthornton; **2026-04-03**.
+  - **10.5 Security (SQLCipher ops):** done — [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md); owner @wtthornton; **2026-04-03**; runbook [`sqlcipher.md`](../../guides/sqlcipher.md).
+  - **10.6 Save-path observability:** done — [`ADR-006`](../adr/ADR-006-save-path-observability.md); owner @wtthornton; **2026-04-03** (histograms + `save_phase_summary` shipped; deeper metrics per trigger **(a)**).
 
 ## Stories
 
@@ -32,8 +38,9 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 ### STORY-051.1: Retrieval stack alternatives (learned sparse, ColBERT, managed vector DB)
 
-**Status:** planned | **Effort:** XL | **Depends on:** none  
-**Context refs:** [`EPIC-042.md`](EPIC-042.md), `src/tapps_brain/retrieval.py`, `src/tapps_brain/fusion.py`, `docs/planning/` (decision / ADR target)  
+**Status:** done | **Effort:** XL | **Depends on:** none  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** [`EPIC-042.md`](EPIC-042.md), `src/tapps_brain/retrieval.py`, `src/tapps_brain/fusion.py`, [`ADR-001`](../adr/ADR-001-retrieval-stack.md)  
 **Verification:** design-only; recorded decision or ADR under `docs/planning/` (no pytest gate). Optional baseline: `pytest tests/unit/test_memory_retrieval.py tests/unit/test_memory_fusion.py -v --tb=short -m "not benchmark"`
 
 #### Research notes (2026-forward)
@@ -44,29 +51,32 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 #### Implementation themes
 
-- [ ] **ADR** (architecture decision record): stay embedded vs hybrid architecture.
-- [ ] If spike: **adapter protocol** for `VectorIndex` behind `sqlite_vec_index.py`.
+- [x] **ADR** (architecture decision record): stay embedded SQLite–first; defer learned sparse, ColBERT, managed vector DB for shipped core — [`ADR-001`](../adr/ADR-001-retrieval-stack.md).
+- [ ] **Deferred:** **adapter protocol** for `VectorIndex` behind `sqlite_vec_index.py` — not required for this story; reopen with a new ADR if external index becomes a product goal.
 
 ---
 
 ### STORY-051.2: Freshness model (lazy decay vs explicit TTL jobs)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
-**Context refs:** `src/tapps_brain/decay.py`, `src/tapps_brain/gc.py`, [`EPIC-042.md`](EPIC-042.md) (STORY-042.8), `tests/unit/test_memory_decay.py`, `tests/unit/test_memory_gc.py`  
-**Verification:** `pytest tests/unit/test_memory_decay.py tests/unit/test_memory_gc.py -v --tb=short -m "not benchmark"` (attach design doc when TTL / job shape is decided)
+**Status:** done | **Effort:** M | **Depends on:** none  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** `src/tapps_brain/decay.py`, `src/tapps_brain/gc.py`, [`EPIC-042.md`](EPIC-042.md) (STORY-042.8), [`ADR-002`](../adr/ADR-002-freshness-lazy-decay-vs-ttl.md), `tests/unit/test_memory_decay.py`, `tests/unit/test_memory_gc.py`  
+**Verification:** [`ADR-002`](../adr/ADR-002-freshness-lazy-decay-vs-ttl.md) (design gate). Baseline regression: `pytest tests/unit/test_memory_decay.py tests/unit/test_memory_gc.py -v --tb=short -m "not benchmark"` (green on **2026-04-03**).
 
 #### Implementation themes
 
-- [ ] **Scheduled** `maintenance decay-refresh` optional command (no-op if lazy kept).
-- [ ] **Metrics**: count of entries crossing stale threshold per day.
+- [ ] **Deferred:** **Scheduled** `maintenance decay-refresh` — not required while lazy decay + GC remain canonical; see [`ADR-002`](../adr/ADR-002-freshness-lazy-decay-vs-ttl.md).
+- [ ] **Deferred:** **Metrics** — count of entries crossing stale threshold per day; revisit with lifecycle observability work if needed.
+
 
 ---
 
 ### STORY-051.3: Correctness beyond heuristics (ontology, human review queue)
 
-**Status:** planned | **Effort:** XL | **Depends on:** none  
-**Context refs:** `src/tapps_brain/contradictions.py`, `src/tapps_brain/feedback.py`, `tests/unit/test_contradictions.py`, `tests/unit/test_feedback.py`  
-**Verification:** `pytest tests/unit/test_contradictions.py tests/unit/test_feedback.py -v --tb=short -m "not benchmark"` (plus written product spec / MVP checklist before new MCP surfaces ship)
+**Status:** done | **Effort:** XL | **Depends on:** none  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** `src/tapps_brain/contradictions.py`, `src/tapps_brain/feedback.py`, [`ADR-003`](../adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md), `tests/unit/test_contradictions.py`, `tests/unit/test_feedback.py`  
+**Verification:** [`ADR-003`](../adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md) (design gate). Baseline regression: `pytest tests/unit/test_contradictions.py tests/unit/test_feedback.py -v --tb=short -m "not benchmark"` (green on **2026-04-03**). **New MCP / queue surfaces** still require a separate product spec + [`PLANNING.md`](../PLANNING.md) trigger **(c)** before implementation.
 
 #### Research notes (2026-forward)
 
@@ -74,42 +84,45 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 #### Implementation themes
 
-- [ ] MVP: **flag** memories needing review (`needs_review` tag) from conflict detector.
-- [ ] MCP: **list** / **resolve** review items (deterministic state machine).
+- [ ] **Deferred:** MVP **`needs_review`** tagging from conflict detector — not in core scope; see [`ADR-003`](../adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md).
+- [ ] **Deferred:** MCP **list** / **resolve** review queue — requires explicit product requirement (trigger **(c)**) + spec; still **no** LLM on sync `save`.
 
 ---
 
 ### STORY-051.4: Scale path (single-node limits → queue / service extraction)
 
-**Status:** planned | **Effort:** XL | **Depends on:** STORY-050.2  
-**Context refs:** `docs/engineering/system-architecture.md`, `docs/planning/open-issues-roadmap.md` (MemoryStore modularization backlog), [`EPIC-042-feature-tech-index.md`](EPIC-042-feature-tech-index.md), `tests/unit/test_concurrent.py`, `tests/unit/test_memory_foundation_integration.py`  
-**Verification:** `pytest tests/unit/test_concurrent.py tests/unit/test_memory_foundation_integration.py -v --tb=short -m "not benchmark"` (add capacity doc + optional benchmark harness when publishing QPS claims)
+**Status:** done | **Effort:** XL | **Depends on:** STORY-050.2 (**satisfied** — EPIC-050 **050.2** **done** 2026-04-02)  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md), `docs/engineering/system-architecture.md`, `docs/planning/open-issues-roadmap.md` (row 22), [`EPIC-042-feature-tech-index.md`](EPIC-042-feature-tech-index.md), `tests/unit/test_concurrent.py`, `tests/unit/test_memory_foundation_integration.py`  
+**Verification:** [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) (design gate). Baseline regression: `pytest tests/unit/test_concurrent.py tests/unit/test_memory_foundation_integration.py -v --tb=short -m "not benchmark"` (green on **2026-04-03**).
 
 #### Implementation themes
 
-- [ ] Publish **supported QPS** envelope for MCP **read** vs **write**.
-- [ ] **Service extraction** ADR: which boundaries (read replica? write API?).
+- [ ] **Deferred:** Publish **supported QPS** envelope — needs benchmark harness + environment profile; see [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
+- [x] **Service extraction** boundary — **recorded** in [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) (defer mandatory extraction; single-node posture maintained).
 
 ---
 
 ### STORY-051.5: Security operations (SQLCipher key management and backup)
 
-**Status:** planned | **Effort:** L | **Depends on:** none  
-**Context refs:** `docs/guides/sqlcipher.md`, [`EPIC-043.md`](EPIC-043.md) (STORY-043.6), `tests/unit/test_sqlcipher_util.py`  
-**Verification:** `pytest -m "requires_encryption and not benchmark" -v --tb=short` (where native SQLCipher available); runbook review checklist in `docs/guides/sqlcipher.md`
+**Status:** done | **Effort:** L | **Depends on:** none  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md), [`sqlcipher.md`](../../guides/sqlcipher.md), [`EPIC-043.md`](EPIC-043.md) (STORY-043.6), `tests/unit/test_sqlcipher_util.py`, `tests/unit/test_encryption_migrate.py`  
+**Verification:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) + expanded [`sqlcipher.md`](../../guides/sqlcipher.md). `pytest -m "requires_encryption and not benchmark" -v --tb=short` when native SQLCipher available (else skipped in CI). Baseline without cipher round-trips: `pytest tests/unit/test_sqlcipher_util.py tests/unit/test_encryption_migrate.py -v --tb=short -m "not benchmark and not requires_encryption"` (green on **2026-04-03**).
 
 #### Implementation themes
 
-- [ ] **Envelope encryption** pattern doc (wrap DEK with KMS).
-- [ ] **Backup**: copy `.db` + **verify** restore procedure quarterly checklist.
+- [ ] **Deferred:** Vendor-specific **envelope encryption / KMS** how-to in-repo — host-owned; see [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) and **Enterprise key handling** in [`sqlcipher.md`](../../guides/sqlcipher.md).
+- [x] **Backup / verify** — **lost passphrase** warning + **backup and restore verification** checklist + optional re-key drill in [`sqlcipher.md`](../../guides/sqlcipher.md).
 
 ---
 
 ### STORY-051.6: Save-path observability (consolidation / conflict / embed latency)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
-**Context refs:** `docs/planning/open-issues-roadmap.md` (save-path observability backlog), `src/tapps_brain/metrics.py`, `src/tapps_brain/store.py`, `tests/unit/test_metrics.py`, `tests/unit/test_health_check.py`  
-**Verification:** `pytest tests/unit/test_metrics.py tests/unit/test_health_check.py -v --tb=short -m "not benchmark"` (extend when new save-phase metrics land)
+**Status:** done | **Effort:** M | **Depends on:** none  
+**Owner / closed:** @wtthornton — **2026-04-03**  
+**Context refs:** [`ADR-006`](../adr/ADR-006-save-path-observability.md), `docs/planning/open-issues-roadmap.md`, `src/tapps_brain/metrics.py`, `src/tapps_brain/store.py`, `tests/unit/test_metrics.py`, `tests/unit/test_health_check.py`  
+**Verification:** [`ADR-006`](../adr/ADR-006-save-path-observability.md) + `pytest tests/unit/test_metrics.py tests/unit/test_health_check.py -v --tb=short -m "not benchmark"` (green on **2026-04-03**).
 
 #### Research notes (2026-forward)
 
@@ -119,7 +132,9 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 - [x] Break down **MetricsTimer** sub-spans on save: lock/build, persist, hive, relations, consolidate, embed (`store.save.phase.*` histograms; 2026-04-02).
 - [x] Surface in `store.get_metrics()` and MCP **`memory://metrics`** resource (full snapshot includes new histograms).
-- [ ] Optional: compact save-phase summary lines on CLI **`diagnostics health`** / `HealthReport` JSON.
+- [x] **`save_phase_summary`** on live store **health** / native health (roadmap row 20).
+- [ ] **Deferred:** Richer compact save-phase lines on text **`diagnostics health`** / extra **`HealthReport`** fields — optional UX; see [`ADR-006`](../adr/ADR-006-save-path-observability.md).
+- [ ] **Deferred:** Deeper save-path / consolidation correlation metrics — trigger **(a)** in [`PLANNING.md`](../PLANNING.md) *Optional backlog gating*.
 
 ## Priority order
 

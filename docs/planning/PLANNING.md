@@ -26,6 +26,26 @@ Feature intake and triage policy for agent-created `feat` work lives in:
 
 - When starting a Ralph campaign on open-issues work, **copy or reconcile** the OPEN-ISSUES block in `fix_plan.md` from `open-issues-roadmap.md` so Ralph’s queue matches delivery intent.
 
+## Optional backlog gating
+
+**Scope:** Slices **B** (extra save-path observability), **C** (EPIC-042 hygiene), and **NLI / async conflict product wiring** (MCP, worker, or in-app model use — never sync `MemoryStore.save`; offline export is on `main`).
+
+These stay **in the backlog by default** (do not schedule implementation unless a trigger below applies):
+
+- **B — Extra save-path observability** (e.g. EPIC-051.6, metrics beyond `save_phase_summary` on health/MCP).
+- **C — EPIC-042 hygiene** (offline eval evidence, GitHub/issue closure against epic success criteria).
+- **NLI / async conflict product wiring** (explicit opt-in surface only).
+
+**Work now only if:**
+
+| Trigger | Then consider |
+|--------|----------------|
+| (a) Actively tuning or **incidenting on save latency** (or consolidation/GC correlation) | **B** — deeper observability |
+| (b) A **milestone or stakeholder** requires epic/GitHub closure | **C** — hygiene |
+| (c) An **explicit product requirement** for NLI-assisted conflict review | Scope a **separate, opt-in** surface; still **no** silent LLM on sync save |
+
+If none of (a)–(c) apply, **leave these in the backlog** and pick other roadmap or epic work.
+
 ## Directory Structure
 
 ```
@@ -33,6 +53,7 @@ docs/planning/
 ├── PLANNING.md              ← This file (conventions & templates)
 ├── open-issues-roadmap.md   ← Canonical GitHub delivery queue (humans / Cursor / releases)
 ├── STATUS.md                ← Snapshot: schema version, deps, tests, epic vs code (update with releases)
+├── adr/                     ← Architecture decision records (e.g. EPIC-051 §10 checklist — ADR-001–006)
 └── epics/
     ├── EPIC-001.md      ← Test suite quality — raise to A+ (done)
     ├── EPIC-002.md      ← Integration wiring — connect modules to runtime (done)
@@ -75,7 +96,7 @@ docs/planning/
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
     ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
     ├── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
-    └── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`)
+    └── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`; **EPIC-051** checklist decisions in `adr/ADR-00*.md`)
 ```
 
 ## Why This Structure

@@ -1,0 +1,42 @@
+# ADR-004: Scale — single-node SQLite posture (defer published QPS SLO and service extraction)
+
+**Status:** Accepted  
+**Date:** 2026-04-03  
+**Owner:** @wtthornton  
+**Epic / story:** [EPIC-051](../epics/EPIC-051.md) — STORY-051.4  
+**Depends on:** [EPIC-050](../epics/EPIC-050.md) STORY-050.2 (**done** — lock ordering / timeout / concurrency doc)  
+**Context:** [features-and-technologies.md](../../engineering/features-and-technologies.md) section 10 checklist item 4
+
+## Context
+
+Checklist item 4 asks how far **single-node SQLite** and **`threading.Lock`** can scale, and when to introduce **queues** or **extract a service**.
+
+Documented today:
+
+- [`system-architecture.md`](../../engineering/system-architecture.md) **Concurrency model** — store serialization, lock ordering, optional `TAPPS_STORE_LOCK_TIMEOUT_S`, SQLite **WAL**, **`TAPPS_SQLITE_BUSY_MS`**, optional **read-only** search connection (`TAPPS_SQLITE_MEMORY_READONLY_SEARCH`), operator triage in [`sqlite-database-locked.md`](../../guides/sqlite-database-locked.md) and [`openclaw-runbook.md`](../../guides/openclaw-runbook.md).
+- Roadmap **MemoryStore modularization** (tracking table row 22) — long-term refactor, design-first only until sustained pain or capacity.
+
+## Decision
+
+1. **Shipped / maintained posture (do):** Treat **one `MemoryStore` per process** on **local SQLite** (plus separate Hive / federation DBs where used) as the **default scale unit**. Prefer **operator tuning** (busy timeout, WAL checkpoint discipline, RO search path, lock timeout for fail-fast) and **workload separation** (multiple store directories or processes) before changing architecture.
+
+2. **Explicitly defer (not committing now):**
+   - **Published numeric QPS / SLO envelope** for MCP reads vs writes — **deferred** until a **benchmark harness**, **hardware profile**, and **release process** exist so numbers are evidence-based, not speculative.
+   - **Mandatory service extraction** (dedicated write API, read replicas, hosted multi-tenant brain) as part of **core** — **deferred**; would be a **separate** product or deployment mode with its own ADR and boundaries.
+
+3. **Backlog (unchanged intent):** **MemoryStore modularization** remains **backlog** per `open-issues-roadmap.md` — useful to reduce lock hold time **after** profiling shows benefit; not a substitute for multi-node scale-out.
+
+Revisit when **production** shows sustained **`database is locked`**, **lock timeouts**, or **latency SLO breaches** that tuning cannot fix — then re-evaluate **process fan-out**, **read-only replicas**, or **extracted service** in a new decision.
+
+## Consequences
+
+- **No** new required network topology or deployment artifacts from this ADR.
+- **Marketing / docs** continue to describe **modest concurrent sessions**, not high-QPS multi-tenant SaaS on a single embedded store.
+- **Engineering** may add benchmarks or QPS claims later **without** contradicting this ADR if labeled **environment-specific** and linked to harness revision.
+
+## References
+
+- [`system-architecture.md`](../../engineering/system-architecture.md) — *Concurrency model*, *Scaling posture*.
+- [`open-issues-roadmap.md`](../open-issues-roadmap.md) — row 22 (MemoryStore modularization).
+- [`EPIC-050.md`](../epics/EPIC-050.md) — concurrency and SQLite discipline stories.
+- [`EPIC-051.md`](../epics/EPIC-051.md) — STORY-051.4.

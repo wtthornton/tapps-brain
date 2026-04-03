@@ -18,31 +18,25 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 - **EPIC-044.5 (GC):** `MemoryStore.gc` / CLI / MCP — dry-run **`reason_counts`**, **`estimated_archive_bytes`**, live **`archive_bytes`**; counters **`store.gc.archived`** / **`store.gc.archive_bytes`**; **`StoreHealthReport`** **`gc_runs_total`**, **`gc_archived_rows_total`**, **`gc_archive_bytes_total`**; canonical **`archive.jsonl`** under store memory dir.
 - **EPIC-044.6 (seeding):** **`MemoryProfile.seeding.seed_version`**; **`seed_from_profile`** / **`reseed_from_profile`** include **`profile_seed_version`** when set; same field on **`StoreHealthReport`**, **`maintenance health`**, native **`run_health_check.store.profile_seed_version`**, MCP **`memory://stats`**; **`seeding`** module documents **`conflict_check`** on seed saves.
 - **EPIC-044.7 (caps):** Global + optional **`limits.max_entries_per_group`** (per-`memory_group` bucket + ungrouped; fair global eviction when set) in **`docs/engineering/data-stores-and-schema.md`**; **`StoreHealthReport.max_entries_per_group`**, MCP **`memory://stats`**, native health, CLI **`store stats`**.
-- **EPIC-044.3 (save-path conflicts):** `exclude_key`; `SaveConflictHit` (entry + similarity); invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig`; structured log `memory_save_conflicts_detected` includes `similarity_threshold` and `conflicts`. NLI / richer UX remains backlog inside the epic.
-- **Roadmap tracking row 20:** `save_phase_summary` on live store health / MCP — **done**.
+- **EPIC-044.3 (save-path conflicts):** `exclude_key`; `SaveConflictHit` (entry + similarity); invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig`; structured log `memory_save_conflicts_detected` includes `similarity_threshold` and `conflicts`. **Offline:** `evaluation.run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, guide [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md) (no NLI on sync save). Optional async/product NLI wiring remains backlog.
+- **EPIC-051 (complete):** Cross-cutting **§10** checklist — [`EPIC-051.md`](epics/EPIC-051.md); ADRs **001**–**006** in [`adr/`](adr/) ([`ADR-001`](adr/ADR-001-retrieval-stack.md) retrieval … [`ADR-006`](adr/ADR-006-save-path-observability.md) save-path observability stance). **051.5** expanded [`sqlcipher.md`](../guides/sqlcipher.md). **Roadmap row 20** `save_phase_summary` — **done** (see **ADR-006** for deferrals beyond shipped metrics).
 - **Docs:** [`embedding-model-card.md`](../guides/embedding-model-card.md) § *Performance review backlog* — triage table, not a code mandate.
 - **Tests:** `test_concurrent_save_all_persisted` uses **60s** join / elapsed bound (Windows full-suite stability).
 - **examples/brain-visual:** Demo HTML + help UX for operators (Hive / entries / DB tiles); see `examples/brain-visual/README.md`.
 
-**Immediate next steps (pick ONE primary slice per PR):**
+**Backlog-by-default (execute unless a trigger fires):** **B** (save-path metrics **beyond** [`ADR-006`](adr/ADR-006-save-path-observability.md) shipped surface), **C** (EPIC-042 hygiene), and **in-product NLI/async** conflict wiring stay **backlogged** until a human or milestone explicitly invokes a trigger in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating): (a) save-latency tuning/incident → B; (b) epic/GitHub closure needed → C; (c) explicit product requirement for NLI review → separate surface, never sync `save`.
 
-*(STORY-044.4 merge **undo** is on `main` — see “Already on `main`” above; pick below unless you are extending that path.)*
+**When not triggered:** Pick other roadmap/epic work (new issues, **EPIC-050** lock-scope only with benchmarks, **row 22** modularization design-first, **EPIC-032** defer, etc.).
 
-| Priority | Slice | Outcome |
-|----------|--------|---------|
-| A | **STORY-044.3 — NLI / async conflicts** | Research or **offline** tooling only — do **not** add silent LLM calls on the sync `save` path. |
-| B | **EPIC-051.6 — save-path observability** | Metrics or structured logs correlating save latency with consolidation/GC (roadmap item 5). |
-| C | **EPIC-042 hygiene** | Close epic success criteria: offline eval evidence, GitHub/issue hygiene (`EPIC-042.md`). |
+**Reference slices (do not assume scheduled):**
 
-**What’s next (recommended order):**
+| Ref | Slice | Typical outcome when pulled |
+|-----|--------|----------------------------|
+| A | **STORY-044.3 remainder** | Offline export **on `main`**; further = product NLI/async only with trigger (c). |
+| B | **Save-path observability (beyond ADR-006)** | Extra metrics/logs vs consolidation/GC — trigger **(a)** ([`ADR-006`](adr/ADR-006-save-path-observability.md) records shipped baseline). |
+| C | **EPIC-042 hygiene** | Eval evidence + GitHub — trigger (b). |
 
-1. **EPIC-044 — backlog:** **044.3** NLI / async research — see [`EPIC-044.md`](epics/EPIC-044.md).
-
-2. **Optional:** **B** (save-path observability) or **EPIC-050** lock-scope / async only if benchmark or explicit demand.
-
-3. **Long horizon / defer:** **EPIC-032** OTel GenAI. **EPIC-051** other stories. **Tracking table row 22** — MemoryStore modularization; design-first only.
-
-4. **Hygiene (non-blocking):** **C** above.
+**Long horizon / defer:** **EPIC-032** OTel GenAI. **EPIC-050** lock-scope without benchmarks. **Tracking table row 22** — MemoryStore modularization; design-first only.
 
 **Your task — pick ONE primary slice** (one PR unless trivial), run the epic’s verification command, then update `docs/planning/epics/…`, `open-issues-roadmap.md` (changelog + last updated if needed), `STATUS.md` if the queue changes, and refresh **this file’s** “Already on main” if you shipped something listed above.
 
@@ -50,4 +44,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-04 — queue: EPIC-044 **044.3** NLI spike → optional 051.6 observability → EPIC-042 hygiene → long defer (050 lock-scope, 032 OTel).*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-03 — **EPIC-051** complete (ADR-001–006); **B** = metrics beyond **ADR-006** only with trigger **(a)**; **C / NLI** gated per `PLANNING.md` § Optional backlog gating.*

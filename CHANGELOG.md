@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **EPIC-051** (complete): Section 10 checklist decisions as **ADR-001**–**ADR-006** under `docs/planning/adr/` (retrieval, freshness, correctness, scale, SQLCipher ops, save-path observability); cross-links from `docs/engineering/features-and-technologies.md` and `docs/planning/PLANNING.md` (`adr/` in directory tree). **`docs/guides/sqlcipher.md`** — key loss, backup/restore verification, enterprise KMS note (**051.5**).
+
 ### Added
 
+- **EPIC-044 STORY-044.3 (offline):** `evaluation.run_save_conflict_candidate_report` and CLI `tapps-brain maintenance save-conflict-candidates` (`--json`, `--threshold`, `--include-contradicted`) to export deterministic save-time conflict pairs for external NLI review — no model on the sync `MemoryStore.save` path. Guide: `docs/guides/save-conflict-nli-offline.md`.
 - **EPIC-044 STORY-044.4:** Deterministic **merge undo** — `MemoryStore.undo_consolidation_merge` / `auto_consolidation.undo_consolidation_merge`, JSONL audit action `consolidation_merge_undo`, CLI `tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY` (`--json`). Uses the last matching `consolidation_merge` row and strict validation on superseded sources.
 - **EPIC-044 operator surfaces:** `StoreHealthReport.profile_seed_version` (from `MemoryProfile.seeding.seed_version`); text `tapps-brain maintenance health` prints it when set; JSON health and native `run_health_check` expose `profile_seed_version`; MCP resource `memory://stats` includes `profile_seed_version`.
 - **CLI:** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation sensitivity report (`evaluation.run_consolidation_threshold_sweep`), optional `--thresholds`, `--min-group-size`, `--include-contradicted`, `--json`.
