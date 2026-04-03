@@ -686,6 +686,150 @@
       reference: "Docs: <code>docs/guides/visual-snapshot.md</code>",
     },
 
+    kpi_strip: {
+      title: "Top KPI strip",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The five boxes under the hero row: <strong>Entries</strong> (count vs max), <strong>DB schema</strong> migration " +
+            "version, <strong>Privacy</strong> export tier (v2), <strong>Hive hub</strong> reachability + shared entry count, " +
+            "and <strong>Tiers (rows)</strong> — sum of tier_distribution counts.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>All values come straight from <code>health</code> and v2 snapshot fields; tier sum is arithmetic over " +
+            "<code>tier_distribution</code> values.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Skimmable at page load before you scroll to sections; should match the bento tiles and Pulse chart.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Populated in the demo from loaded JSON; exporter is <code>build_visual_snapshot()</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · demo <code>index.html</code> KPI block",
+    },
+
+    scorecard_counts: {
+      title: "Scorecard summary counts",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Four KPIs: <strong>Pass</strong> (status ok), <strong>Attention</strong> (warn + unknown), " +
+            "<strong>Blocked</strong> (fail), <strong>Info</strong> (informational rows).</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Each scorecard row has exactly one status; the demo counts them after merge of embedded <code>scorecard[]</code> " +
+            "or browser-derived rules.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Triages how many checks need human follow-up vs are clean, before reading every card.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Python emits authoritative rows; <code>scorecard-derive.js</code> reproduces them for older JSON files.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot._build_scorecard</code> · <code>scorecard-derive.js</code>",
+    },
+
+    issue_ticket_draft: {
+      title: "Issue / ticket draft",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Free-text notes plus one-click <strong>Copy GitHub issue (Markdown)</strong> or <strong>Copy plain summary</strong>. " +
+            "The clipboard body includes fingerprint, package/DB/snapshot versions, failing and attention rows, and full table.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>No scoring — template assembly only.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Turns the deterministic scorecard into a paste-ready ops ticket without retyping metrics.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Client-side only in <code>index.html</code>; data never leaves your browser except when you paste elsewhere.</p>",
+        },
+      ],
+      reference: "Demo: <code>buildIssueMarkdown</code> / <code>buildPlainSummary</code> in <code>index.html</code>",
+    },
+
+    memory_profile: {
+      title: "Memory profile (YAML)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The <strong>named profile</strong> loaded for this store (e.g. limits, decay, hybrid fusion, diagnostics retention). " +
+            "Shown under the entry count as <code>(default profile)</code> when none is set.</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>N/A — configuration label from store health.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Same machine can behave differently with different profiles; compare fingerprints only when profile matches intent.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>MemoryProfile</code> from YAML; <code>health().profile_name</code> surfaces in the snapshot.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>src/tapps_brain/profile.py</code> (<code>MemoryProfile</code>) · " +
+        "<code>StoreHealthReport.profile_name</code> in <code>metrics.py</code>",
+    },
+
+    federation_snapshot: {
+      title: "Federation (export flag)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Whether <strong>cross-project federation</strong> is enabled for this store — the “federation on/off” line under DB schema. " +
+            "Separate from Hive (agent shared store).</p>",
+        },
+        {
+          heading: "The math",
+          html: "<p>Boolean from <code>health.federation_enabled</code>.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Federated hubs pull/push memories across projects; operators need to know if this instance participates.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>federation.py</code> hub at <code>~/.tapps-brain/memory/federated.db</code>; optional opt-in per store.</p>",
+        },
+      ],
+      reference:
+        "Docs: <code>docs/guides/hive-vs-federation.md</code> · <code>docs/engineering/system-architecture.md</code> · " +
+        "<code>src/tapps_brain/federation.py</code>",
+    },
+
     scorecard_overview: {
       title: "Scorecard (how to read it)",
       sections: [

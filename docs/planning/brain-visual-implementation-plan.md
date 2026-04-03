@@ -290,6 +290,7 @@ Choose **one** primary metaphor (can add second later). **Intent check:** static
 | 2026-03-30 | **Slice shipped:** `tapps_brain.visual_snapshot` + CLI `visual export` + `tests/unit/test_visual_snapshot.py` + `examples/brain-visual/` static bento demo. |
 | 2026-04-02 | **Plan expanded:** 2026 dashboard trend digest (cited), marketing/UX narrative, full telemetry→UI map, privacy tiers (`strict` / standard / `local`), Phases A–E for “everything” dashboard + NLT inside-page density parity (craft, not financial content). |
 | 2026-04-02 | **Phase A + B executed:** `VisualSnapshot` schema **v2** (`access_stats`, `hive_health`, retrieval/sqlite-vec fields, `privacy_tier`, `memory_group_*`, optional `tag_stats`); CLI `--privacy`; `retrieval_health_slice()` public; `health_check` sqlite-vec property handling; `examples/brain-visual/` dashboard sections + KPI strip + copy fingerprint; docs/README updates. |
+| 2026-04-02 | **Help coverage:** KPI + scorecard summary strips, inner tiles (Pulse chart, retrieval mode, Hive hub detail, access histogram, issue draft), dual pills on Entries / DB schema / Hive / Pulse / Privacy; new `HELP_CONCEPTS` articles (`kpi_strip`, `scorecard_counts`, `issue_ticket_draft`, `memory_profile`, `federation_snapshot`); **fix:** Diagnostics bento `data-help` uses `scorecard:diagnostics_bento` (article lives in `HELP_SCORECARD`). Documented in `visual-snapshot.md` and `examples/brain-visual/README.md`. |
 
 (Add a row per milestone or PR.)
 

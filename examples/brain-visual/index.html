@@ -325,6 +325,34 @@
       border-color: rgba(217, 119, 6, 0.35);
     }
 
+    .kpi-strip-outer {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .kpi-strip-outer .kpi-strip {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .kpi-strip-outer > .help-pill {
+      margin-top: 0.35rem;
+      flex-shrink: 0;
+    }
+
+    .help-pill-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .dash-h2-row .help-pill-group {
+      margin-left: auto;
+    }
+
     .kpi-strip {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1029,7 +1057,8 @@
           </p>
           <p>
             <strong>?</strong> buttons open a side panel with definitions, math, and code references aligned to
-            tapps-brain (not generic marketing text).
+            tapps-brain (not generic marketing text). KPI strips, section headers, bento tiles, and each scorecard row can
+            link to an article; some tiles expose two topics (e.g. Hive hub vs agent scope).
           </p>
         </div>
       </details>
@@ -1041,7 +1070,17 @@
         <span id="status" class="muted">No file loaded; placeholders shown.</span>
       </div>
 
-      <div class="kpi-strip" id="kpi-strip" aria-label="Key metrics"></div>
+      <div class="kpi-strip-outer" aria-label="Key metrics">
+        <div class="kpi-strip" id="kpi-strip"></div>
+        <button
+          type="button"
+          class="help-pill"
+          data-help="concept:kpi_strip"
+          aria-label="Explain top KPI strip"
+        >
+          ?
+        </button>
+      </div>
 
       <ul class="section-nav" aria-label="On-page sections">
         <li><a href="#trust">Trust</a></li>
@@ -1089,14 +1128,24 @@
         <section class="tile" aria-label="Entries">
           <div class="section-tag-row">
             <p class="section-tag">Entries</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="scorecard:store_entries"
-              aria-label="Explain entry count"
-            >
-              ?
-            </button>
+            <span class="help-pill-group">
+              <button
+                type="button"
+                class="help-pill"
+                data-help="scorecard:store_entries"
+                aria-label="Explain entry count"
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                class="help-pill"
+                data-help="concept:memory_profile"
+                aria-label="Explain active memory profile"
+              >
+                ?
+              </button>
+            </span>
           </div>
           <div class="stat" id="entries">—</div>
           <p class="sub" id="profile">profile</p>
@@ -1104,14 +1153,24 @@
         <section class="tile" aria-label="Database schema">
           <div class="section-tag-row">
             <p class="section-tag">DB schema</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="concept:snapshot_json"
-              aria-label="Explain database schema version"
-            >
-              ?
-            </button>
+            <span class="help-pill-group">
+              <button
+                type="button"
+                class="help-pill"
+                data-help="concept:snapshot_json"
+                aria-label="Explain database schema version"
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                class="help-pill"
+                data-help="concept:federation_snapshot"
+                aria-label="Explain federation flag"
+              >
+                ?
+              </button>
+            </span>
           </div>
           <div class="stat" id="schema">—</div>
           <p class="sub" id="fed">federation</p>
@@ -1119,14 +1178,24 @@
         <section class="tile" aria-label="Hive">
           <div class="section-tag-row">
             <p class="section-tag">Hive</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="concept:agent_scope"
-              aria-label="Explain agent scope"
-            >
-              ?
-            </button>
+            <span class="help-pill-group">
+              <button
+                type="button"
+                class="help-pill"
+                data-help="scorecard:hive_hub"
+                aria-label="Explain Hive hub reachability"
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                class="help-pill"
+                data-help="concept:agent_scope"
+                aria-label="Explain agent scope"
+              >
+                ?
+              </button>
+            </span>
           </div>
           <div class="stat" id="hive">—</div>
           <p class="sub" id="scopes">agent scopes</p>
@@ -1137,7 +1206,7 @@
             <button
               type="button"
               class="help-pill"
-              data-help="concept:diagnostics_bento"
+              data-help="scorecard:diagnostics_bento"
               aria-label="Explain diagnostics tile"
             >
               ?
@@ -1179,10 +1248,30 @@
           <code>tapps_brain.visual_snapshot</code>). Use the draft below to paste into GitHub Issues,
           Jira, or email.
         </p>
-        <div class="kpi-strip" id="scorecard-summary" aria-label="Scorecard counts"></div>
+        <div class="kpi-strip-outer" aria-label="Scorecard counts">
+          <div class="kpi-strip" id="scorecard-summary"></div>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:scorecard_counts"
+            aria-label="Explain scorecard count summary"
+          >
+            ?
+          </button>
+        </div>
         <div id="scorecard-grid" class="scorecard-grid" aria-live="polite"></div>
         <div class="tile tile-wide" style="margin-top: 1.5rem; min-height: auto">
-          <p class="section-tag">Issue / ticket draft</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Issue / ticket draft</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:issue_ticket_draft"
+              aria-label="Explain issue and ticket copy helpers"
+            >
+              ?
+            </button>
+          </div>
           <label for="issue-notes" class="sr-only">Your notes for the ticket</label>
           <textarea
             id="issue-notes"
@@ -1201,18 +1290,38 @@
       <section class="dash-section" id="pulse">
         <div class="dash-h2-row">
           <h2>Pulse</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:tier_distribution"
-            aria-label="Explain tier distribution"
-          >
-            ?
-          </button>
+          <span class="help-pill-group" aria-label="Help topics for Pulse">
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:tier_distribution"
+              aria-label="Explain tier distribution"
+            >
+              ?
+            </button>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:agent_scope"
+              aria-label="Explain agent scope counts"
+            >
+              ?
+            </button>
+          </span>
         </div>
         <p class="prose-small">Tier mix and agent scopes for this export.</p>
         <div class="tile tile-wide" style="min-height: auto">
-          <p class="section-tag">Tier distribution</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Tier distribution</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:tier_distribution"
+              aria-label="Explain tier distribution chart"
+            >
+              ?
+            </button>
+          </div>
           <div id="tier-bars" class="bar-chart"></div>
         </div>
       </section>
@@ -1231,7 +1340,17 @@
         </div>
         <p class="prose-small" id="retrieval-summary">—</p>
         <div class="tile" style="min-height: auto">
-          <p class="section-tag">Effective mode</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Effective mode</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="scorecard:retrieval_stack"
+              aria-label="Explain retrieval mode"
+            >
+              ?
+            </button>
+          </div>
           <div class="stat mono-small" id="retrieval-mode">—</div>
           <p class="sub" id="sqlite-vec-line">—</p>
         </div>
@@ -1251,7 +1370,17 @@
         </div>
         <p class="prose-small">Shared store telemetry (not your project path).</p>
         <div class="tile tile-wide" style="min-height: auto">
-          <p class="section-tag">Hub status</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Hub status</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="scorecard:hive_hub"
+              aria-label="Explain Hive hub status"
+            >
+              ?
+            </button>
+          </div>
           <div id="hive-detail" class="prose-small">—</div>
         </div>
       </section>
@@ -1270,7 +1399,17 @@
         </div>
         <p class="prose-small">Aggregated access counters—no per-memory keys.</p>
         <div class="tile tile-wide" style="min-height: auto">
-          <p class="section-tag">Access histogram</p>
+          <div class="section-tag-row">
+            <p class="section-tag">Access histogram</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:access_histogram"
+              aria-label="Explain access histogram"
+            >
+              ?
+            </button>
+          </div>
           <div id="access-bars" class="bar-chart"></div>
           <p class="sub" id="access-meta">—</p>
         </div>
@@ -1327,14 +1466,24 @@
       <section class="dash-section" id="privacy">
         <div class="dash-h2-row">
           <h2>Privacy</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:privacy_notice"
-            aria-label="Explain privacy on this page"
-          >
-            ?
-          </button>
+          <span class="help-pill-group" aria-label="Privacy help topics">
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:privacy_notice"
+              aria-label="Explain privacy on this page"
+            >
+              ?
+            </button>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:privacy_tiers"
+              aria-label="Explain export privacy tiers"
+            >
+              ?
+            </button>
+          </span>
         </div>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
       </section>
