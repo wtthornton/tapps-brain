@@ -752,6 +752,15 @@ class MemoryStore:
             try:
                 with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
                     self._persistence.save(entry)
+            except sqlite3.OperationalError as exc:
+                if "database is locked" in str(exc):
+                    self._metrics.increment("store.sqlite_busy_count")
+                with self._serialized():
+                    if existing is not None:
+                        self._entries[key] = existing
+                    else:
+                        self._entries.pop(key, None)
+                raise
             except Exception:
                 with self._serialized():
                     if existing is not None:

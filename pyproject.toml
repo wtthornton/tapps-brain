@@ -23,6 +23,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    # Pin <3 — Pydantic v3 may change serialization; bump after compat review
     "pydantic>=2.12.5,<3",
     "structlog>=25.5.0,<26",
     "pyyaml>=6.0.3,<7",

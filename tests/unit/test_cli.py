@@ -1139,6 +1139,52 @@ class TestFlywheelCli:
         assert "mrr" in data
 
 
+class TestMaintenanceVerifyIntegrityCommand:
+    """Tests for maintenance verify-integrity CLI command."""
+
+    def test_verify_integrity_clean_store(self, project_dir: str) -> None:
+        """All entries should verify cleanly on a fresh store."""
+        result = runner.invoke(
+            app, ["maintenance", "verify-integrity", "--project-dir", project_dir]
+        )
+        assert result.exit_code == 0
+        assert "Verified:" in result.stdout
+        assert "Tampered:      0" in result.stdout
+
+    def test_verify_integrity_json(self, project_dir: str) -> None:
+        """JSON output includes expected keys."""
+        result = runner.invoke(
+            app,
+            ["maintenance", "verify-integrity", "--project-dir", project_dir, "--json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "total" in data
+        assert "verified" in data
+        assert "tampered" in data
+        assert "no_hash" in data
+        assert data["tampered"] == 0
+
+    def test_verify_integrity_tampered_exits_1(self, tmp_path: Path) -> None:
+        """When an entry is tampered with, exit code should be 1."""
+        s = MemoryStore(tmp_path)
+        s.save(key="test-entry", value="original value", tier="context")
+        # Tamper with the value directly in the database
+        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
+        s.close()
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE memories SET value = 'tampered value' WHERE key = 'test-entry'")
+        conn.commit()
+        conn.close()
+
+        result = runner.invoke(
+            app, ["maintenance", "verify-integrity", "--project-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 1
+        assert "Tampered" in result.stdout
+
+
 class TestMaintenanceGcConfigCommand:
     """Tests for maintenance gc-config CLI command."""
 

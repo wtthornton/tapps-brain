@@ -225,6 +225,84 @@ save_federation_config(config)
 | `projects`      | `list[FederationProject]`    | Registered projects                |
 | `subscriptions` | `list[FederationSubscription]`| Active subscriptions              |
 
+## Filtering
+
+### Publish filtering
+
+When publishing to the hub, you can control which memories are shared:
+
+- **Scope filter**: Only entries with `scope="shared"` are eligible for `sync_to_hub()`. Project-scoped and branch-scoped entries are never published.
+- **Key filter**: Pass `keys=[...]` to `sync_to_hub()` to publish a specific subset of shared entries.
+- **Tag-based selection**: Use `FederatedStore.search(..., tags=[...])` on the hub side to query by tags.
+- **Confidence threshold**: Hub search accepts `min_confidence` to skip low-confidence entries.
+- **Memory group**: `FederatedStore.search(..., memory_group="...")` restricts results to entries with a specific partition label.
+
+Currently, publish filtering is performed by the caller (select entries, then call `publish()`). A declarative filter DSL is planned for future releases that would allow specifying publish rules in `federation.yaml`:
+
+```yaml
+# Planned (not yet implemented):
+publish_filter:
+  min_confidence: 0.7
+  tags_require_any: ["shared", "core"]
+  tiers_exclude: ["context", "ephemeral"]
+  memory_groups: ["team-a"]
+```
+
+### Subscribe filtering
+
+Subscriptions already support declarative filtering:
+
+- **`sources`**: Limit which projects to pull from (empty = all).
+- **`tag_filter`**: Only import entries with at least one matching tag.
+- **`min_confidence`**: Skip entries below a confidence threshold.
+
+These filters are applied during `sync_from_hub()` before any data enters the local store.
+
+---
+
+## Conflict Handling
+
+### Current behavior: local-wins
+
+When `sync_from_hub()` encounters a key that already exists in the local store, the local version is always kept. The hub entry is skipped and counted as a `conflict` in the sync result:
+
+```python
+result = sync_from_hub(store, hub, project_id="my-api")
+# result: {"imported": 3, "skipped": 1, "conflicts": 2}
+#                                       ^^^^^^^^^^^^
+#                           2 hub keys already existed locally
+```
+
+This is a deliberate design choice: **local data is authoritative**. Federation is a supplement, not a replacement for local decisions.
+
+### What happens when a subscriber edits a federated row locally
+
+Once an entry is imported from the hub, it becomes a normal local entry (tagged with `"federated"` and `"from:<project>"`). If the subscriber edits it locally:
+
+1. **The local edit is preserved** -- the hub version will not overwrite it on the next sync (local-wins rule).
+2. **The hub retains the original** -- the publisher's version remains unchanged in the hub.
+3. **No write-back** -- local edits are never pushed back to the hub automatically. The subscriber's changes stay local.
+
+### Detecting divergence
+
+To detect when local federated entries have diverged from the hub:
+
+```python
+# Compare local federated entries with hub versions
+local_entries = store.search("", tags=["federated"])
+for entry in local_entries:
+    hub_versions = hub.search(entry.key, project_ids=[source_project])
+    if hub_versions and hub_versions[0]["value"] != entry.value:
+        print(f"Diverged: {entry.key}")
+```
+
+### Future considerations
+
+- **Merge policies** (analogous to Hive conflict policies) may be added to allow subscribers to choose between local-wins, hub-wins, or confidence-max semantics.
+- **Bi-directional sync** with conflict markers would enable collaborative editing of shared knowledge, but adds significant complexity.
+
+---
+
 ## Design Decisions
 
 1. **Explicit-only sharing** -- memories are never published automatically.

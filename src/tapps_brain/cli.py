@@ -1744,6 +1744,41 @@ def maintenance_rekey_db(
     typer.echo("Passphrase rotated. Update TAPPS_BRAIN_ENCRYPTION_KEY to the new value.")
 
 
+@maintenance_app.command("verify-integrity")
+def maintenance_verify_integrity(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Verify HMAC-SHA256 integrity hashes for all memory entries.
+
+    Scans every entry in the store, recomputes its integrity hash, and
+    reports any tampered or missing-hash entries.  Exit code 0 when all
+    entries verify, 1 when tampered entries are found.
+    """
+    store = _get_store(project_dir)
+    try:
+        result = store.verify_integrity()
+        if as_json:
+            _output(result, as_json=True)
+        else:
+            typer.echo(f"Total entries: {result['total']}")
+            typer.echo(f"Verified:      {result['verified']}")
+            typer.echo(f"Tampered:      {result['tampered']}")
+            typer.echo(f"No hash:       {result['no_hash']}")
+            if result["tampered_keys"]:
+                typer.echo("\nTampered keys:")
+                for key in result["tampered_keys"]:
+                    typer.echo(f"  - {key}")
+            if result["missing_hash_keys"]:
+                typer.echo("\nMissing hash keys:")
+                for key in result["missing_hash_keys"]:
+                    typer.echo(f"  - {key}")
+        if result["tampered"] > 0:
+            raise typer.Exit(code=1)
+    finally:
+        store.close()
+
+
 @store_app.command("metrics")
 def store_metrics(
     project_dir: ProjectDir = None,

@@ -68,6 +68,14 @@ class HiveHealth(BaseModel):
 
     status: str = "ok"  # ok | warn | error
     connected: bool = False
+    hive_reachable: bool = Field(
+        default=False,
+        description=(
+            "True when the hive.db file exists on disk, even if the store "
+            "cannot be opened (e.g. encryption mismatch). Distinguishes "
+            "'file missing' from 'file present but connection failed'."
+        ),
+    )
     namespaces: list[str] = Field(default_factory=list)
     entries: int = 0
     agents: int = 0
@@ -244,7 +252,11 @@ def run_health_check(  # noqa: PLR0915
     hive_health = HiveHealth()
     if check_hive:
         try:
-            from tapps_brain.hive import AgentRegistry, HiveStore
+            from tapps_brain.hive import _DEFAULT_HIVE_DIR, AgentRegistry, HiveStore
+
+            # Check if the hive.db file exists on disk (reachable vs connected)
+            hive_db_path = _DEFAULT_HIVE_DIR / "hive.db"
+            hive_health.hive_reachable = hive_db_path.exists()
 
             hive = HiveStore()
             try:

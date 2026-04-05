@@ -199,39 +199,34 @@ class MemoryPersistence:
 
             if current_version < 1:
                 self._create_v1_schema(cur)
+                logger.debug("schema_migration_applied", from_version=0, to_version=1)
 
-            if current_version < _SCHEMA_V2:
-                self._migrate_v1_to_v2(cur)
-            if current_version < _SCHEMA_V3:
-                self._migrate_v2_to_v3(cur)
-            if current_version < _SCHEMA_V4:
-                self._migrate_v3_to_v4(cur)
-            if current_version < _SCHEMA_V5:
-                self._migrate_v4_to_v5(cur)
-            if current_version < _SCHEMA_V6:
-                self._migrate_v5_to_v6(cur)
-            if current_version < _SCHEMA_V7:
-                self._migrate_v6_to_v7(cur)
-            if current_version < _SCHEMA_V8:
-                self._migrate_v7_to_v8(cur)
-            if current_version < _SCHEMA_V9:
-                self._migrate_v8_to_v9(cur)
-            if current_version < _SCHEMA_V10:
-                self._migrate_v9_to_v10(cur)
-            if current_version < _SCHEMA_V11:
-                self._migrate_v10_to_v11(cur)
-            if current_version < _SCHEMA_V12:
-                self._migrate_v11_to_v12(cur)
-            if current_version < _SCHEMA_V13:
-                self._migrate_v12_to_v13(cur)
-            if current_version < _SCHEMA_V14:
-                self._migrate_v13_to_v14(cur)
-            if current_version < _SCHEMA_V15:
-                self._migrate_v14_to_v15(cur)
-            if current_version < _SCHEMA_V16:
-                self._migrate_v15_to_v16(cur)
-            if current_version < _SCHEMA_V17:
-                self._migrate_v16_to_v17(cur)
+            _migration_steps: list[tuple[int, str]] = [
+                (_SCHEMA_V2, "_migrate_v1_to_v2"),
+                (_SCHEMA_V3, "_migrate_v2_to_v3"),
+                (_SCHEMA_V4, "_migrate_v3_to_v4"),
+                (_SCHEMA_V5, "_migrate_v4_to_v5"),
+                (_SCHEMA_V6, "_migrate_v5_to_v6"),
+                (_SCHEMA_V7, "_migrate_v6_to_v7"),
+                (_SCHEMA_V8, "_migrate_v7_to_v8"),
+                (_SCHEMA_V9, "_migrate_v8_to_v9"),
+                (_SCHEMA_V10, "_migrate_v9_to_v10"),
+                (_SCHEMA_V11, "_migrate_v10_to_v11"),
+                (_SCHEMA_V12, "_migrate_v11_to_v12"),
+                (_SCHEMA_V13, "_migrate_v12_to_v13"),
+                (_SCHEMA_V14, "_migrate_v13_to_v14"),
+                (_SCHEMA_V15, "_migrate_v14_to_v15"),
+                (_SCHEMA_V16, "_migrate_v15_to_v16"),
+                (_SCHEMA_V17, "_migrate_v16_to_v17"),
+            ]
+            for target_version, method_name in _migration_steps:
+                if current_version < target_version:
+                    getattr(self, method_name)(cur)
+                    logger.debug(
+                        "schema_migration_applied",
+                        from_version=target_version - 1,
+                        to_version=target_version,
+                    )
 
             self._conn.commit()
 

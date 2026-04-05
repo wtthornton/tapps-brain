@@ -82,6 +82,82 @@ See the [Profile Catalog](profile-catalog.md) for full details and the [Profile 
 
 ---
 
+## Minimal installation
+
+The base package (`pip install tapps-brain`) includes only the core library with `pydantic`, `structlog`, and `pyyaml`. No CLI, no MCP server, no native extensions. This is the lightest install path for embedding tapps-brain as a library in your own Python agent:
+
+```bash
+pip install tapps-brain
+```
+
+Use the library API directly (`MemoryStore`, `recall()`, `save()`) without pulling in Typer, the MCP SDK, or any ML dependencies. Add extras incrementally as needed:
+
+```bash
+# Add CLI support
+pip install tapps-brain[cli]
+
+# Add MCP server
+pip install tapps-brain[mcp]
+
+# Add everything (cli + mcp + vector + reranker)
+pip install tapps-brain[all]
+```
+
+> **Note:** The `[all]` extra does not include `[encryption]` or `[otel]` because they require platform-specific system libraries. Install those explicitly when needed.
+
+---
+
+## Vector search setup
+
+The `[vector]` extra enables semantic (embedding-based) search alongside the default BM25 keyword retrieval:
+
+```bash
+pip install tapps-brain[vector]
+```
+
+This installs `faiss-cpu`, `numpy`, `sentence-transformers`, and `sqlite-vec`.
+
+**Platform notes:**
+
+- **faiss-cpu** ships pre-built wheels for Linux and macOS (x86_64 and arm64). Windows users may need to install from conda-forge.
+- **sqlite-vec** requires a C compiler on some platforms if no pre-built wheel is available. On Ubuntu: `apt install build-essential`.
+- **sentence-transformers** downloads model weights on first use (~90 MB for the default model). Ensure network access or pre-download for air-gapped environments.
+
+**GPU acceleration:** The `[vector]` extra installs `faiss-cpu`. For GPU-accelerated FAISS, install `faiss-gpu` separately from the [PyPI faiss-gpu package](https://pypi.org/project/faiss-gpu/) or via conda. The tapps-brain API is the same regardless of backend.
+
+> **Future work:** Splitting `[vector]` into `[vector-embed]` (sentence-transformers only) and `[vector-index]` (sqlite-vec only) is under consideration for users who want embeddings without the native sqlite-vec build, or vice versa.
+
+---
+
+## Reranker configuration
+
+The `[reranker]` extra adds cross-encoder reranking via the Cohere API to improve precision after BM25/hybrid retrieval:
+
+```bash
+pip install tapps-brain[reranker]
+```
+
+**Configuration** (via `InjectionConfig` or profile settings):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `reranker_enabled` | `True` | Enable reranking in the retrieval pipeline |
+| `reranker_provider` | `"noop"` | Provider: `"noop"` (passthrough) or `"cohere"` |
+| `reranker_api_key` | `None` | Cohere API key (also reads `COHERE_API_KEY` env) |
+| `reranker_top_k` | `10` | Number of results to return after reranking |
+
+**API key management:**
+
+- Set `COHERE_API_KEY` in your environment or pass `reranker_api_key=` programmatically.
+- Rotate keys by updating the environment variable; no restart is required for new `MemoryStore` instances.
+- If the API key is missing or empty when `provider="cohere"`, the reranker silently falls back to noop (position-based scoring) and logs a debug message.
+
+**Timeouts and errors:** The Cohere client uses its default HTTP timeout. If the API call fails (network error, rate limit, invalid key), the reranker falls back to the original BM25/hybrid ranking order and logs a warning (`reranker_failed_fallback_to_original`). No data is lost.
+
+**Privacy note:** When `provider="cohere"`, memory entry values (text snippets) are sent to the Cohere API for reranking. Review your profile and compliance requirements before enabling cloud reranking in production.
+
+---
+
 ## Next steps
 
 - **Hive (multi-agent):** Share memories across agents → [Hive Guide](hive.md)

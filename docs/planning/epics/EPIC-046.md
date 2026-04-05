@@ -1,7 +1,7 @@
 ---
 id: EPIC-046
 title: "Agent / tool integration — research and upgrades"
-status: planned
+status: done
 priority: medium
 created: 2026-03-31
 tags: [mcp, cli, typer, relay, interoperability]
@@ -15,7 +15,7 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Success criteria
 
-- [ ] MCP manifest and **OpenClaw** docs stay consistent when tool surface changes (`docs/generated/mcp-tools-manifest.json`).
+- [x] MCP manifest and **OpenClaw** docs stay consistent when tool surface changes (`docs/generated/mcp-tools-manifest.json`).
 
 ## Stories
 
@@ -23,7 +23,7 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-046.1: MCP server (`mcp` SDK)
 
-**Status:** planned | **Effort:** L | **Depends on:** none  
+**Status:** done | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/mcp_server.py`, `docs/generated/mcp-tools-manifest.json`, `docs/guides/openclaw.md`, `tests/unit/test_mcp_server.py`  
 **Verification:** `pytest tests/unit/test_mcp_server.py -v --tb=short -m "not benchmark"`
 
@@ -34,15 +34,15 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] **Tool metadata**: deprecations, stability field per tool.
-- [ ] **Batch** APIs for multi-save where latency dominates (design review).
-- [ ] Rate limit **per tool** telemetry.
+- [x] **Tool metadata**: deprecations, stability field per tool.
+- [x] **Batch** APIs for multi-save where latency dominates (design review).
+- [x] Rate limit **per tool** telemetry.
 
 ---
 
 ### STORY-046.2: CLI (Typer)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/cli.py`, `tests/unit/test_cli.py`  
 **Verification:** `pytest tests/unit/test_cli.py -v --tb=short -m "not benchmark"`
 
@@ -53,14 +53,14 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] `tapps-brain --version` / **build metadata** in JSON health.
-- [ ] Spike: **single binary** distribution (PyInstaller) — ops ask.
+- [x] `tapps-brain --version` / **build metadata** in JSON health.
+- [x] Spike: **single binary** distribution (PyInstaller) — ops ask.
 
 ---
 
 ### STORY-046.3: Portable interchange (YAML + JSON relay)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/memory_relay.py`, `docs/guides/memory-relay.md`, `profiles/` (YAML profiles), `tests/unit/test_memory_relay.py`  
 **Verification:** `pytest tests/unit/test_memory_relay.py -v --tb=short -m "not benchmark"`
 
@@ -71,8 +71,8 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] **Forward-compatible** unknown field policy documented.
-- [ ] **Validate** relay against schema in CLI before import.
+- [x] **Forward-compatible** unknown field policy documented.
+- [x] **Validate** relay against schema in CLI before import.
 
 ## Priority order
 

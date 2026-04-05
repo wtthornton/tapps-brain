@@ -1060,3 +1060,171 @@ class TestTemporalMigration:
         assert loaded.invalid_at is None
         assert loaded.superseded_by is None
         p.close()
+
+
+class TestFreshDBSchemaVersion:
+    """STORY-043.2: Verify fresh DB reaches current schema version."""
+
+    def test_fresh_db_reaches_v17(self, tmp_path: Path) -> None:
+        """A brand-new MemoryPersistence should initialize at schema v17."""
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 17
+        # Verify key tables exist
+        tables = [
+            r[0]
+            for r in p._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        ]
+        for expected in (
+            "memories",
+            "archived_memories",
+            "session_index",
+            "relations",
+            "feedback_events",
+            "diagnostics_history",
+            "flywheel_meta",
+            "schema_version",
+        ):
+            assert expected in tables, f"Expected table {expected!r} missing"
+        p.close()
+
+    def test_v1_fixture_migrates_to_v17(self, tmp_path: Path) -> None:
+        """A manually-created v1 DB migrates all the way to v17."""
+        store_dir = tmp_path / ".tapps-brain" / "memory"
+        store_dir.mkdir(parents=True)
+        db_path = str(store_dir / "memory.db")
+
+        # Create minimal v1 schema
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE schema_version "
+            "(version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
+        )
+        conn.execute("""
+            CREATE TABLE memories (
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                tier TEXT NOT NULL DEFAULT 'pattern',
+                confidence REAL NOT NULL DEFAULT 0.6,
+                source TEXT NOT NULL DEFAULT 'agent',
+                source_agent TEXT NOT NULL DEFAULT 'unknown',
+                scope TEXT NOT NULL DEFAULT 'project',
+                tags TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_accessed TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                branch TEXT,
+                last_reinforced TEXT,
+                reinforce_count INTEGER NOT NULL DEFAULT 0,
+                contradicted INTEGER NOT NULL DEFAULT 0,
+                contradiction_reason TEXT,
+                seeded_from TEXT,
+                PRIMARY KEY (key)
+            )
+        """)
+        conn.execute("""
+            CREATE VIRTUAL TABLE memories_fts
+            USING fts5(key, value, tags, content=memories, content_rowid=rowid)
+        """)
+        conn.execute("""
+            CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+                INSERT INTO memories_fts(rowid, key, value, tags)
+                VALUES (new.rowid, new.key, new.value, new.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
+                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
+                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
+                INSERT INTO memories_fts(rowid, key, value, tags)
+                VALUES (new.rowid, new.key, new.value, new.tags);
+            END
+        """)
+        conn.execute("""
+            CREATE TABLE archived_memories (
+                key TEXT NOT NULL, value TEXT NOT NULL, tier TEXT NOT NULL,
+                confidence REAL NOT NULL, source TEXT NOT NULL,
+                source_agent TEXT NOT NULL, scope TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, last_accessed TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0, branch TEXT,
+                last_reinforced TEXT, reinforce_count INTEGER NOT NULL DEFAULT 0,
+                contradicted INTEGER NOT NULL DEFAULT 0, contradiction_reason TEXT,
+                seeded_from TEXT, archived_at TEXT NOT NULL
+            )
+        """)
+        now = datetime.now(tz=UTC).isoformat()
+        conn.execute(
+            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
+            (1, now),
+        )
+        conn.commit()
+        conn.close()
+
+        p = MemoryPersistence(tmp_path)
+        assert p.get_schema_version() == 17
+
+        # Verify key columns from later migrations exist
+        row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
+        columns = [r[1] for r in row]
+        assert "embedding" in columns  # v2
+        assert "valid_at" in columns  # v5
+        assert "agent_scope" in columns  # v7
+        assert "integrity_hash" in columns  # v8
+        assert "memory_group" in columns  # v16
+        assert "embedding_model_id" in columns  # v17
+        p.close()
+
+
+class TestFTSTriggerConsistency:
+    """STORY-043.3: Verify FTS triggers fire correctly on insert."""
+
+    def test_insert_immediately_searchable_via_fts(self, tmp_path: Path) -> None:
+        """Saving an entry makes it immediately findable via FTS search."""
+        p = MemoryPersistence(tmp_path)
+        unique_term = "xylophoneTestUniqueToken"
+        p.save(MemoryEntry(key="fts-consistency", value=f"The {unique_term} is working"))
+
+        results = p.search(unique_term)
+        assert len(results) >= 1
+        assert any(r.key == "fts-consistency" for r in results)
+        p.close()
+
+    def test_update_reflects_in_fts(self, tmp_path: Path) -> None:
+        """Updating a value updates the FTS index via triggers."""
+        p = MemoryPersistence(tmp_path)
+        p.save(MemoryEntry(key="fts-update", value="original platypus content"))
+        p.save(MemoryEntry(key="fts-update", value="replacement narwhal content"))
+
+        # Old term should not match
+        old_results = p.search("platypus")
+        assert not any(r.key == "fts-update" for r in old_results)
+
+        # New term should match
+        new_results = p.search("narwhal")
+        assert len(new_results) >= 1
+        assert any(r.key == "fts-update" for r in new_results)
+        p.close()
+
+    def test_delete_removes_from_fts(self, tmp_path: Path) -> None:
+        """Deleting an entry removes it from FTS index via triggers."""
+        p = MemoryPersistence(tmp_path)
+        p.save(MemoryEntry(key="fts-delete", value="ephemeral walrus data"))
+
+        # Confirm it's searchable
+        assert len(p.search("walrus")) >= 1
+
+        p.delete("fts-delete")
+
+        # Should no longer be searchable
+        results = p.search("walrus")
+        assert not any(r.key == "fts-delete" for r in results)
+        p.close()

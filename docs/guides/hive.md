@@ -19,6 +19,11 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents on the sam
 - [MCP Tools](#mcp-tools)
 - [Python API](#python-api)
 - [Best Practices](#best-practices)
+- [Scope Resolution](#scope-resolution)
+- [Backup & Restore](#backup--restore)
+- [Quotas](#quotas)
+- [Propagation Denial Logging](#propagation-denial-logging)
+- [Change Notification](#change-notification)
 
 ---
 
@@ -525,6 +530,207 @@ Use `hive_status` to check entry counts per namespace. If a namespace grows much
 ### 6. Hive is not a replacement for the local store
 
 The Hive is a sharing layer, not a primary store. Each agent should have its own `MemoryStore` for local operations. The Hive supplements recall with cross-agent knowledge.
+
+---
+
+## Scope Resolution
+
+When a query arrives, the recall orchestrator resolves which Hive namespaces to search. The resolution order determines where results come from:
+
+```
+Query arrives
+  │
+  ▼
+┌─────────────────────────────────────────────────────┐
+│  1. Check agent_scope on incoming save / propagate  │
+│     ┌─────────────┬─────────────────────────────┐   │
+│     │  "private"   → stays local, no Hive write │   │
+│     │  "domain"    → agent's profile namespace  │   │
+│     │  "hive"      → "universal" namespace      │   │
+│     │  "group:<n>" → Hive namespace <n>         │   │
+│     │               (requires group membership) │   │
+│     └─────────────┴─────────────────────────────┘   │
+│                                                     │
+│  Profile overrides (applied before scope routing):  │
+│     private_tiers  → force scope to "private"       │
+│     auto_propagate_tiers → upgrade "private"→"domain"│
+└─────────────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────────────┐
+│  2. Recall: build namespace list for Hive search    │
+│     ┌───────────────────────────────────────────┐   │
+│     │  a) "universal"            (always)       │   │
+│     │  b) agent's profile name   (domain ns)    │   │
+│     │  c) each Hive group the agent belongs to  │   │
+│     └───────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────────────┐
+│  3. Hive lookup order                               │
+│     Search all resolved namespaces in one query     │
+│     → Deduplicate (local wins on key collision)     │
+│     → Apply hive recall_weight to Hive scores       │
+│     → Merge with local results, sort by score desc  │
+└─────────────────────────────────────────────────────┘
+```
+
+`normalize_agent_scope()` (in `agent_scope.py`) validates and canonicalizes the scope string. The `group:` prefix is case-insensitive (`GROUP:FOO` becomes `group:FOO`); the group name itself preserves case. Empty or whitespace-only group names are rejected. Group names longer than 64 characters or containing ASCII control characters are rejected (same rules as `memory_group`).
+
+---
+
+## Backup & Restore
+
+### Database location
+
+The Hive database is stored at `~/.tapps-brain/hive/hive.db`. Related files:
+
+| File | Description |
+|------|-------------|
+| `~/.tapps-brain/hive/hive.db` | Main SQLite database |
+| `~/.tapps-brain/hive/hive.db-wal` | Write-Ahead Log (WAL) file; contains uncommitted transactions |
+| `~/.tapps-brain/hive/hive.db-shm` | Shared memory file for WAL mode |
+| `~/.tapps-brain/hive/agents.yaml` | Agent registry (YAML) |
+| `~/.tapps-brain/hive/.hive_write_notify` | Sidecar file for file-based write watchers |
+
+### Backup procedure
+
+1. **Stop all agents** that write to the Hive (or accept brief inconsistency for read-only backups).
+
+2. **Copy the database and WAL together** -- both files must be copied atomically to avoid corruption:
+
+```bash
+# Safe backup using sqlite3 .backup command (handles WAL correctly)
+sqlite3 ~/.tapps-brain/hive/hive.db ".backup '/path/to/backup/hive-$(date +%Y%m%d).db'"
+
+# Also back up the agent registry
+cp ~/.tapps-brain/hive/agents.yaml /path/to/backup/agents-$(date +%Y%m%d).yaml
+```
+
+3. **Alternative: filesystem copy** (only when no writer is active):
+
+```bash
+cp ~/.tapps-brain/hive/hive.db /path/to/backup/
+cp ~/.tapps-brain/hive/hive.db-wal /path/to/backup/  # if it exists
+```
+
+### Restore procedure
+
+1. Stop all agents.
+2. Replace the database file (and WAL if present):
+
+```bash
+cp /path/to/backup/hive-20260404.db ~/.tapps-brain/hive/hive.db
+rm -f ~/.tapps-brain/hive/hive.db-wal ~/.tapps-brain/hive/hive.db-shm
+cp /path/to/backup/agents-20260404.yaml ~/.tapps-brain/hive/agents.yaml
+```
+
+3. Restart agents. The Hive schema migration runs on connect and is idempotent.
+
+### Encrypted Hive databases
+
+If SQLCipher encryption is enabled (see [SQLCipher Guide](sqlcipher.md)), the `sqlite3` CLI backup command will not work. Use the SQLCipher CLI or the Python `sqlcipher_util` module instead.
+
+---
+
+## Quotas
+
+### Current state
+
+There are currently **no server-wide or per-namespace quotas** enforced on Hive writes. Any registered agent can write an unlimited number of entries to any namespace it has access to.
+
+Profile-level `limits.max_entries` applies to the **local** project store only, not to the Hive.
+
+### Planned improvements
+
+- **Per-namespace entry cap**: limit the number of entries per namespace to prevent a single agent from flooding `universal`.
+- **Rate limiting**: throttle write frequency per agent to prevent hot loops from overwhelming the shared store.
+- **Namespace size alerts**: `hive_status` will report namespaces approaching configurable thresholds.
+
+Until quotas are implemented, use `hive_status` to monitor namespace growth and review `private_tiers` configuration to limit what gets propagated.
+
+---
+
+## Propagation Denial Logging
+
+When a propagation is denied, structured log events are emitted with the reason:
+
+| Log event | Reason | Description |
+|-----------|--------|-------------|
+| `hive.propagate.group_denied` | `not_a_member` | Agent tried to write to a `group:<name>` namespace but is not a registered member of that group. |
+| `hive.conflict.source_authority_rejected` | source mismatch | Under `source_authority` conflict policy, a non-original author tried to update an existing entry. |
+| `hive.conflict.confidence_max_kept_existing` | lower confidence | Under `confidence_max` policy, the new write had lower confidence than the existing entry. |
+
+These events are emitted at `warning` (denials) or `info` (kept-existing) level via structlog. To collect denial metrics, configure your observability pipeline to count occurrences of these event names. The `details` fields include `agent_id`, `key`, `namespace`, and `reason` for filtering and alerting.
+
+---
+
+## Change Notification
+
+The Hive supports lightweight change notification via a **monotonic revision counter** stored in the `hive_write_notify` table. Every successful write increments the revision.
+
+### Polling with `hive_write_revision`
+
+Query the current revision without blocking:
+
+```python
+state = hive.get_write_notify_state()
+# {"revision": 42, "updated_at": "2026-04-04T12:00:00+00:00"}
+```
+
+MCP tool: `hive_write_revision` returns the same dict.
+
+### Blocking wait with `hive_wait_write`
+
+Block until a new write occurs or a timeout elapses:
+
+```python
+result = hive.wait_for_write_notify(
+    since_revision=42,
+    timeout_sec=30.0,
+    poll_interval_sec=0.25,   # default
+)
+# result: {"revision": 43, "updated_at": "...", "changed": True, "timed_out": False}
+```
+
+MCP tool: `hive_wait_write` exposes the same interface.
+
+### Sidecar file
+
+Each write also updates `~/.tapps-brain/hive/.hive_write_notify` (plain text: `revision\nupdated_at\n`) so external tools can watch for changes via filesystem events without opening the SQLite database.
+
+### Backoff policy
+
+When using `hive_wait_write` in a client loop:
+
+1. **Start with the default poll interval** (`poll_interval_sec=0.25`).
+2. **Use reasonable timeouts** -- 10-60 seconds per call. The MCP tool defaults to 30s.
+3. **On timeout (no change), increase the next call's timeout** -- double it up to a cap (e.g., 60s) to avoid hot-spinning when the Hive is idle.
+4. **On change, reset to the base timeout** -- the Hive is active, so poll frequently.
+5. **Avoid sub-100ms poll intervals** -- the SQLite read is cheap but filesystem thrashing on the WAL is not.
+
+```
+timeout = 10s  (initial)
+loop:
+    result = hive_wait_write(since_revision=last_rev, timeout_sec=timeout)
+    if result.changed:
+        process(result)
+        last_rev = result.revision
+        timeout = 10s          # reset on activity
+    else:
+        timeout = min(timeout * 2, 60s)  # exponential backoff on idle
+```
+
+### Future: filesystem watch (inotify / ReadDirectoryChangesW)
+
+For lower-latency notification than polling, a future release may add optional filesystem-watch support:
+
+- **Linux**: `inotify` on `~/.tapps-brain/hive/.hive_write_notify` (the sidecar file is designed for this).
+- **macOS**: `FSEvents` or `kqueue` on the same sidecar file.
+- **Windows**: `ReadDirectoryChangesW` on the `~/.tapps-brain/hive/` directory.
+
+This would be an **optional sidecar process**, not a change to the core library. The sidecar file format is stable and designed to be watched. The polling API will remain the primary interface for cross-platform compatibility.
 
 ---
 

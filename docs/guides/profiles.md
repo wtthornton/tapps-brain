@@ -426,6 +426,20 @@ Precise eviction semantics (global cap, optional per-group cap, fair global evic
 
 GC and auto-consolidation keep the active set lean — the limit is a safety net, not a target. For details on hardware performance at various entry counts, see [Profile Limits Rationale](profile-limits-rationale.md).
 
+### Default memory_group
+
+You can set a default `memory_group` in the profile so that MCP and CLI saves that do not explicitly specify `--group` are automatically assigned to a partition:
+
+```yaml
+profile:
+  name: "my-team-profile"
+  default_memory_group: "team-a"    # all saves default to group "team-a"
+```
+
+When `default_memory_group` is `null` (the default), saves without an explicit group remain ungrouped. This is **opt-in** -- setting a default does not retroactively change existing ungrouped entries.
+
+The `memory_group` field is indexed in the project SQLite store (`idx_memories_memory_group`) for efficient `list_groups()` and group-filtered queries. Groups are project-local partitions; they are distinct from Hive `group:<name>` namespaces (which are cross-agent).
+
 ### Seeding (optional)
 
 ```yaml
@@ -653,6 +667,9 @@ profile:
     max_key_length: 128             # >= 1
     max_value_length: 4096          # >= 1
     max_tags: 10                    # >= 1
+
+  default_memory_group: null          # Optional. When set (e.g. "team-a"), MCP/CLI saves
+                                      # that omit --group use this value. null = ungrouped.
 
   hive:                             # Optional (runtime attach depends on interface config).
     auto_propagate_tiers: ["architectural", "pattern"]  # Current code defaults.

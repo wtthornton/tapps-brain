@@ -108,6 +108,40 @@ Or run as a Python module:
 python -m tapps_brain.mcp_server --project-dir /path/to/project
 ```
 
+## Transport
+
+tapps-brain's MCP server supports the **stdio** transport, which is the default and only transport available today.
+
+### stdio (default)
+
+The server communicates over standard input/output using JSON-RPC messages. This is the transport used by Claude Code, Cursor, VS Code Copilot, and most MCP clients:
+
+```bash
+tapps-brain-mcp --project-dir /path/to/project
+```
+
+All client configuration examples in this guide use stdio. The server process is launched by the client and communicates via stdin/stdout pipes.
+
+### SSE (Server-Sent Events)
+
+SSE transport is **not currently supported** by the tapps-brain MCP server. SSE would allow the server to run as a long-lived HTTP service that clients connect to over the network, which is useful for:
+
+- Remote/shared server deployments
+- Multi-client access to a single server instance
+- Environments where subprocess spawning is restricted
+
+SSE transport support depends on the upstream MCP SDK. Track the [MCP SDK changelog](https://github.com/modelcontextprotocol/python-sdk/releases) for SSE availability.
+
+### MCP SDK version compatibility
+
+| tapps-brain | MCP SDK | Transport | Notes |
+|-------------|---------|-----------|-------|
+| 2.0.x | `mcp >=1.2.0,<2` | stdio | Current supported range |
+
+The MCP SDK pin (`>=1.2.0,<2`) in `pyproject.toml` allows compatible minor/patch updates within the 1.x series. If the MCP SDK releases 2.0, a tapps-brain update will be required; check the changelog for migration notes.
+
+---
+
 ## Available Tools
 
 ### Core Memory Operations
@@ -397,6 +431,34 @@ Use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) to
 ```bash
 npx @modelcontextprotocol/inspector tapps-brain-mcp --project-dir /path/to/project
 ```
+
+## Tool stability and versioning
+
+All MCP tools shipped in the current release are **stable (v1)**. Clients can rely on their parameter shapes and return types remaining backward-compatible within the v1 series.
+
+### Deprecation policy
+
+When a tool is scheduled for removal or replacement:
+
+1. A `deprecated` annotation is added to the tool's metadata in `mcp_server.py` at least **one minor release** before removal.
+2. The tool continues to function normally during the deprecation window; callers receive a `deprecated` field in responses where applicable.
+3. Migration guidance is included in the release notes and in this guide.
+4. After the deprecation window, the tool is removed in the next major version bump.
+
+No tools are currently deprecated.
+
+### Batch save (future)
+
+A dedicated `memory_save_batch` tool is planned for use cases where per-item round-trip latency dominates (e.g., relay import, bulk seed). Until then, callers that need multi-save should use the relay import path (`tapps_brain_relay_export` or `tapps-brain relay import`), which already processes items in a single store transaction.
+
+### Rate limiting in MCP context
+
+The MCP server inherits the store-level sliding-window rate limiter (`SlidingWindowRateLimiter`). Key behaviors:
+
+- **Default limits:** 20 writes per minute, 100 writes per session. Configurable via `RateLimiterConfig`.
+- **Warn-only:** Rate limit violations emit structured log warnings but do **not** block the write. This prevents anomalous bursts from silently corrupting workflow without hard-failing legitimate automation.
+- **Batch exemptions:** Certain batch contexts are exempt from per-minute counting: `import_markdown`, `memory_relay`, `seed`, `federation_sync`, `consolidate`. MCP tools that perform bulk operations set the appropriate batch context automatically.
+- **Per-tool telemetry (future):** Per-tool write counters are a planned addition to the `memory://metrics` resource so operators can identify which MCP tools generate the most write traffic.
 
 ## Maintainers: release gate and doc consistency
 

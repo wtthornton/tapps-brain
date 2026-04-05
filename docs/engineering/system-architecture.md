@@ -72,3 +72,18 @@ All three stores are SQLite-backed today.
   - MCP resources
   - CLI reports
   - JSON/Markdown export
+
+## CLI distribution
+
+The CLI is distributed as a Python package (`tapps-brain[cli]`) installed via pip or uv. The `tapps-brain --version` flag prints the installed package version.
+
+### Single-binary distribution (future)
+
+A single-binary build (e.g., via PyInstaller or Nuitka) has been requested by operations teams to simplify deployment on hosts without a Python toolchain. This is tracked as a spike in EPIC-046 (STORY-046.2) and is **not yet scheduled**. Key considerations:
+
+- SQLite and optional native extensions (sqlite-vec) must be bundled correctly.
+- Binary size target: under 50 MB compressed.
+- Signing and notarization for macOS distribution.
+- CI matrix: Linux x86_64, macOS arm64, Windows x86_64.
+
+Until a single-binary approach is validated, the recommended installation path remains `uv pip install tapps-brain[all]`.

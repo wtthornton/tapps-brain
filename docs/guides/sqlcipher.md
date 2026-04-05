@@ -1,5 +1,7 @@
 # SQLCipher (optional at-rest encryption)
 
+> **WARNING: Lost key = data loss.** If you lose the SQLCipher passphrase, the encrypted database **cannot be recovered**. There is no key escrow, no backdoor, and no recovery mechanism in the library. Treat your passphrase with the same rigor as production database credentials. Store it in a secrets manager.
+
 `tapps-brain` can open project `memory.db`, feedback/diagnostics tables on that file, and the Hive `hive.db` with **SQLCipher** when a passphrase is configured. Plain SQLite remains the default so CI and minimal installs stay dependency-light.
 
 ## Install
@@ -81,3 +83,26 @@ After `encrypt-db`, keep the original plain file only until you have verified th
 ## Enterprise key handling (KMS / envelope patterns)
 
 Core tapps-brain expects a **passphrase** (env or `encryption_key=`). **Wrapping a data-encryption key with a cloud KMS or HSM**, or injecting the passphrase from a sidecar agent, is **deployment-specific** — implement in your secrets layer before the process starts. The project does not ship vendor-specific KMS integration; maintainer stance: [`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md).
+
+The recommended pattern for KMS integration:
+
+1. A wrapper script or init container retrieves the data-encryption key from the KMS (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault, etc.).
+2. The wrapper exports `TAPPS_BRAIN_ENCRYPTION_KEY` into the process environment.
+3. `tapps-brain` reads the passphrase from the environment variable as usual.
+
+This keeps the KMS-specific logic outside the library boundary and avoids vendor lock-in.
+
+## CI test matrix
+
+Tests marked with `@pytest.mark.requires_encryption` exercise SQLCipher-specific code paths (encrypt, decrypt, rekey, encrypted open). These tests are **skipped automatically** when `pysqlcipher3` is not installed, which is the typical CI configuration since building `pysqlcipher3` requires a system SQLCipher library.
+
+To run encryption tests in CI, add a job variant that installs the system SQLCipher library and the `[encryption]` extra:
+
+```yaml
+# Example GitHub Actions step
+- run: sudo apt-get install -y libsqlcipher-dev
+- run: uv sync --extra dev --extra encryption
+- run: uv run pytest -m requires_encryption -v
+```
+
+All non-encryption tests pass without `pysqlcipher3` installed.
