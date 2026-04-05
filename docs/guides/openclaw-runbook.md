@@ -124,6 +124,45 @@ Quick runtime sanity:
 - Ask the agent to recall that fact in a second prompt.
 - If needed, verify directly with `tapps-brain search`.
 
+## Troubleshooting
+
+### Repeated provenance warning in `openclaw logs`
+
+You may see `openclaw logs` emit repeated lines like:
+
+```text
+[plugins] tapps-brain-memory: loaded without install/load-path provenance; treat as untracked local code and pin trust via plugins.allow or install records (~/.openclaw/extensions/tapps-brain-memory/dist/index.js)
+```
+
+**Cause:** OpenClaw loaded the plugin directory directly from `~/.openclaw/extensions/tapps-brain-memory/` without a matching install record. This typically happens when the directory was created manually (copied, `git clone`'d, or built in place) instead of being registered through `openclaw plugin install`.
+
+**Fix — reinstall through OpenClaw so an install record is written:**
+
+```bash
+cd tapps-brain/openclaw-plugin
+npm install
+npm run build
+openclaw plugin install .
+openclaw gateway restart
+```
+
+`openclaw plugin install .` records install provenance so subsequent loads are trusted and the warning goes away.
+
+**Alternative — pin trust explicitly** (useful for CI or vendored checkouts where you intentionally load from a known path):
+
+Add an allow entry to your OpenClaw config so the untracked load path is trusted without reinstalling:
+
+```yaml
+plugins:
+  allow:
+    - id: tapps-brain-memory
+      path: ~/.openclaw/extensions/tapps-brain-memory/dist/index.js
+```
+
+Restart the gateway after editing the config.
+
+Tracked in [GitHub #65](https://github.com/wtthornton/tapps-brain/issues/65).
+
 ## Long-lived MCP and SQLite WAL
 
 The memory MCP server stays up with the gateway. Project **`memory.db`** uses **WAL** mode, so a **`-wal`** file can grow on disk under steady writes even though reads remain consistent. That is normal; SQLite auto-checkpoints as needed. If you need **smaller WAL files** or calmer on-disk state before backups, see **[`sqlite-database-locked.md`](sqlite-database-locked.md)** § *WAL checkpoint* — when to checkpoint, **`PRAGMA wal_checkpoint`** modes, and links to the official SQLite **[wal_checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint)** and **[WAL](https://www.sqlite.org/wal.html)** documentation.

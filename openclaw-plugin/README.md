@@ -36,6 +36,11 @@ openclaw plugin install .
 Canonical operator runbook (install + upgrade, PyPI + Git-only):
 `docs/guides/openclaw-runbook.md`
 
+If `openclaw logs` shows repeated
+`tapps-brain-memory: loaded without install/load-path provenance` warnings,
+see the runbook's *Troubleshooting → Repeated provenance warning* section
+(reinstall via `openclaw plugin install .` or pin via `plugins.allow`).
+
 ## Activate
 
 Add to your OpenClaw config (`openclaw.yaml` or equivalent):

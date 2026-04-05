@@ -131,6 +131,15 @@ tapps-brain migrates its project database **automatically** on open when the bun
 
 If you install from Git **before** running `openclaw skill install …`, the skill’s automated `pip` step may try PyPI again; prefer **manual** Git install (steps 1–3) or adjust your local `openclaw.plugin.json` `install.pip` to the same `git+https://…` URL your environment supports.
 
+## Troubleshooting
+
+If `openclaw logs` emits repeated
+`tapps-brain-memory: loaded without install/load-path provenance` warnings,
+the plugin dir was loaded without an install record. Resolve by running
+`openclaw plugin install .` from `openclaw-plugin/` (writes provenance), or
+pin trust via `plugins.allow` in your OpenClaw config. Full details:
+[openclaw-runbook.md → Repeated provenance warning](./openclaw-runbook.md#repeated-provenance-warning-in-openclaw-logs).
+
 ## Requirements
 
 - Python **3.12+**
