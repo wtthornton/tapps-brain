@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Documentation
+## v2.0.4 (2026-04-05)
 
-- **EPIC-051** (complete): Section 10 checklist decisions as **ADR-001**–**ADR-006** under `docs/planning/adr/` (retrieval, freshness, correctness, scale, SQLCipher ops, save-path observability); cross-links from `docs/engineering/features-and-technologies.md` and `docs/planning/PLANNING.md` (`adr/` in directory tree). **`docs/guides/sqlcipher.md`** — key loss, backup/restore verification, enterprise KMS note (**051.5**).
+### Fixed
+
+- **EPIC-052** — 2026-Q2 full codebase code review sweep landed all 18 stories. Patched issues:
+  - **Write-through consistency (store.py):** `MemoryStore.reinforce()` and `MemoryStore.record_access()` persisted updates without rolling back the in-memory cache on exception; now wrap `self._persistence.save(updated)` in try/except and restore the prior entry on failure, matching the invariant already held by `get()`, `delete()`, and `update_fields()`.
+  - **Pydantic validator consistency (models.py):** `_validate_memory_group` now raises `ValueError` (not `TypeError`) for non-string input, matching every other Pydantic validator in `MemoryEntry`.
+  - **Feature-flag docstring (_feature_flags.py):** `as_dict()` now documents all 8 flags evaluated (faiss, numpy, sentence_transformers, sqlite_vec, memory_semantic_search, anthropic_sdk, openai_sdk, otel); previously listed only 5.
+  - **CLI exit-code drift (cli.py):** `tapps-brain visual export --privacy <invalid>` now exits with code 1 (user error) instead of 2, matching the file-wide convention.
+- **Auto-consolidation:** Persisting a merged row uses `skip_consolidation=True` so saving the consolidated entry does not immediately trigger another merge pass.
 
 ### Added
 
@@ -19,11 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EPIC-044 STORY-044.4:** Deterministic **merge undo** — `MemoryStore.undo_consolidation_merge` / `auto_consolidation.undo_consolidation_merge`, JSONL audit action `consolidation_merge_undo`, CLI `tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY` (`--json`). Uses the last matching `consolidation_merge` row and strict validation on superseded sources.
 - **EPIC-044 operator surfaces:** `StoreHealthReport.profile_seed_version` (from `MemoryProfile.seeding.seed_version`); text `tapps-brain maintenance health` prints it when set; JSON health and native `run_health_check` expose `profile_seed_version`; MCP resource `memory://stats` includes `profile_seed_version`.
 - **CLI:** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation sensitivity report (`evaluation.run_consolidation_threshold_sweep`), optional `--thresholds`, `--min-group-size`, `--include-contradicted`, `--json`.
-- **EPIC-044 STORY-044.7:** Optional **`limits.max_entries_per_group`** — per-`memory_group` bucket (plus ungrouped) caps with lowest-confidence eviction inside the bucket; when set, global `max_entries` overflow prefers evicting from the incoming row’s group (`StoreHealthReport.max_entries_per_group`, MCP `memory://stats`, native health, CLI `store stats`). See `docs/engineering/data-stores-and-schema.md`.
+- **EPIC-044 STORY-044.7:** Optional **`limits.max_entries_per_group`** — per-`memory_group` bucket (plus ungrouped) caps with lowest-confidence eviction inside the bucket; when set, global `max_entries` overflow prefers evicting from the incoming row's group (`StoreHealthReport.max_entries_per_group`, MCP `memory://stats`, native health, CLI `store stats`). See `docs/engineering/data-stores-and-schema.md`.
 
-### Fixed
+### Changed
 
-- **Auto-consolidation:** Persisting a merged row uses `skip_consolidation=True` so saving the consolidated entry does not immediately trigger another merge pass.
+- Version and distribution alignment: Python package, OpenClaw plugin/skill manifests, MCP `server.json`, and SKILL.md bumped to **2.0.4** (no API changes).
+- Pre-existing `ruff format` drift cleared in `visual_snapshot.py`, `test_federation.py`, `test_memory_persistence.py`, `test_mcp_server.py`.
+
+### Documentation
+
+- **EPIC-051** (complete): Section 10 checklist decisions as **ADR-001**–**ADR-006** under `docs/planning/adr/` (retrieval, freshness, correctness, scale, SQLCipher ops, save-path observability); cross-links from `docs/engineering/features-and-technologies.md` and `docs/planning/PLANNING.md` (`adr/` in directory tree). **`docs/guides/sqlcipher.md`** — key loss, backup/restore verification, enterprise KMS note (**051.5**).
+- EPIC-052 findings notes landed per story in [`docs/planning/epics/EPIC-052.md`](docs/planning/epics/EPIC-052.md) with close-out summary; `persistence.delete_relations` O(n) cleanup path deferred to the open-issues roadmap as a non-blocking optimization candidate.
 
 ## v2.0.3 (2026-03-30)
 

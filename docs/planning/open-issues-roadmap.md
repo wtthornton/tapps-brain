@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-03 (**#52** closed; **EPIC-042** **042.1–042.8** stories done incl. **042.6** rerank observability + **042.3** sqlite-vec ops doc; **EPIC-050** partial (050.3 WAL checkpoint runbook shipped); **EPIC-044** **044.1**/**044.2**/**044.4** (incl. merge **undo**)/**044.5**/**044.6**/**044.7** (incl. optional **per-group** caps) shipped; **044.3** core + **offline** conflict export (`maintenance save-conflict-candidates`, `run_save_conflict_candidate_report`, `save-conflict-nli-offline.md`); **EPIC-051** **done** — §10 checklist ADRs **001**–**006**; **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
+Last updated: 2026-04-05 (**EPIC-052** **done** — 2026-Q2 code review sweep, 6 fixes landed in v2.0.4; **#52** closed; **EPIC-042** **042.1–042.8** stories done incl. **042.6** rerank observability + **042.3** sqlite-vec ops doc; **EPIC-050** partial (050.3 WAL checkpoint runbook shipped); **EPIC-044** **044.1**/**044.2**/**044.4** (incl. merge **undo**)/**044.5**/**044.6**/**044.7** (incl. optional **per-group** caps) shipped; **044.3** core + **offline** conflict export (`maintenance save-conflict-candidates`, `run_save_conflict_candidate_report`, `save-conflict-nli-offline.md`); **EPIC-051** **done** — §10 checklist ADRs **001**–**006**; **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
 Owner: @wtthornton
 
 ## Purpose
@@ -29,6 +29,9 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 - **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); STORY-041.4.
 
 **Further backlog (no GitHub issue yet — file when scheduled):** architecture review follow-ups; clarity / observability / optional refactors—not emergency fixes.
+
+**EPIC-052 deferred follow-up (not blocking):**
+- **`persistence.delete_relations` O(n) cleanup path** — currently loads all relations, JSON-parses `source_entry_keys` per row in Python, and issues one `DELETE` per match. Called only when deleting a single entry's related rows (low frequency). Optimization candidate: single SQL `DELETE` with `JSON_EACH` / `LIKE` on a canonicalized key string. Kept out of scope for EPIC-052 per non-goals (no structural refactor). File a GitHub issue when relation volume becomes a bottleneck.
 
 **Gating:** Optional slices **B** (save-path metrics **beyond** [`ADR-006`](adr/ADR-006-save-path-observability.md) — histograms + `save_phase_summary` + `memory://metrics` already shipped), **C** (EPIC-042 hygiene), and **in-product NLI/async** conflicts are **backlogged by default** until a trigger in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) applies.
 
