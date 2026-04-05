@@ -3276,7 +3276,7 @@ def relay_import_cmd(
     Invalid items are skipped with warnings; the command exits 0 unless the
     envelope JSON is unusable.
     """
-    import sys
+    import sys as _sys
 
     from tapps_brain.memory_relay import import_relay_to_store, parse_relay_document
 
@@ -3292,7 +3292,7 @@ def relay_import_cmd(
             raise typer.Exit(code=1)
         raw = file.read_text(encoding="utf-8")
     else:
-        raw = sys.stdin.read()
+        raw = _sys.stdin.read()
 
     payload, err = parse_relay_document(raw)
     if payload is None:
@@ -3351,7 +3351,7 @@ def visual_export_cmd(
 
     if privacy not in {"standard", "strict", "local"}:
         typer.echo("Error: --privacy must be standard, strict, or local.", err=True)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=1)
     tier = cast("PrivacyTier", privacy)
     store = _get_store(project_dir)
     try:

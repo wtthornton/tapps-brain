@@ -1072,9 +1072,7 @@ class TestFreshDBSchemaVersion:
         # Verify key tables exist
         tables = [
             r[0]
-            for r in p._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
         for expected in (
             "memories",
@@ -1098,8 +1096,7 @@ class TestFreshDBSchemaVersion:
         # Create minimal v1 schema
         conn = sqlite3.connect(db_path)
         conn.execute(
-            "CREATE TABLE schema_version "
-            "(version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
         )
         conn.execute("""
             CREATE TABLE memories (

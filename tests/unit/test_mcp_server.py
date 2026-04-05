@@ -32,7 +32,7 @@ def store_dir(tmp_path):
 
 @pytest.fixture
 def mcp_server(store_dir):
-    """Create a FastMCP server backed by a temp store (Hive off — matches tests that expect no shared Hive)."""
+    """Create a FastMCP server backed by a temp store (Hive off — tests expect no shared Hive)."""
     from tapps_brain.mcp_server import create_server
 
     server = create_server(store_dir, enable_hive=False)
@@ -1909,7 +1909,8 @@ class TestHiveToolsReuseSharedStore:
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, enable_hive=False)  # no --enable-hive → uses temp HiveStore
+        # no --enable-hive → uses temp HiveStore
+        server = create_server(store_dir, enable_hive=False)
         assert server._tapps_store._hive_store is None
 
         close_called = []
@@ -1948,7 +1949,8 @@ class TestHiveToolsReuseSharedStore:
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, enable_hive=False)  # no --enable-hive → uses temp HiveStore
+        # no --enable-hive → uses temp HiveStore
+        server = create_server(store_dir, enable_hive=False)
         assert server._tapps_store._hive_store is None
 
         close_called = []

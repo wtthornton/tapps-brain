@@ -313,9 +313,7 @@ class TestFederatedStore:
     def test_schema_has_memory_group_column(self, hub_store: FederatedStore) -> None:
         cols = {
             row[1]
-            for row in hub_store._conn.execute(
-                "PRAGMA table_info(federated_memories)"
-            ).fetchall()
+            for row in hub_store._conn.execute("PRAGMA table_info(federated_memories)").fetchall()
         }
         assert "memory_group" in cols
 

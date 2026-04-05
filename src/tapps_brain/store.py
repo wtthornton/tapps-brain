@@ -1166,7 +1166,14 @@ class MemoryStore:
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated
 
-        self._persistence.save(updated)
+        # Persist reinforcement — rollback in-memory cache on failure to
+        # maintain write-through consistency (matches get() / update_fields()).
+        try:
+            self._persistence.save(updated)
+        except Exception:
+            with self._serialized():
+                self._entries[key] = entry
+            raise
 
         # EPIC-010: Check promotion after reinforcement
         final: MemoryEntry = updated
@@ -1268,7 +1275,14 @@ class MemoryStore:
             updated = entry.model_copy(update=updates)
             self._entries[key] = updated
 
-        self._persistence.save(updated)
+        # Persist access metadata — rollback in-memory cache on failure to
+        # maintain write-through consistency (matches get() / update_fields()).
+        try:
+            self._persistence.save(updated)
+        except Exception:
+            with self._serialized():
+                self._entries[key] = entry
+            raise
         logger.debug(
             "memory_access_recorded",
             key=key,

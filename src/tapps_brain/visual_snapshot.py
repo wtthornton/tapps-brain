@@ -454,8 +454,7 @@ def _build_scorecard(  # noqa: PLR0915
                 status="fail",
                 detail=f"{tampered} entr(y/ies) failed integrity verification.",
                 ticket_hint=(
-                    "Run store maintenance / verify_integrity; "
-                    "do not ignore on shared stores."
+                    "Run store maintenance / verify_integrity; do not ignore on shared stores."
                 ),
             )
         )
@@ -468,8 +467,7 @@ def _build_scorecard(  # noqa: PLR0915
                 title="Integrity (missing hash)",
                 status="warn",
                 detail=(
-                    f"{no_hash} entr(y/ies) have no integrity hash "
-                    "(legacy or pending backfill)."
+                    f"{no_hash} entr(y/ies) have no integrity hash (legacy or pending backfill)."
                 ),
                 ticket_hint="Consider re-saving or running migration path if hashes are expected.",
             )
@@ -490,20 +488,17 @@ def _build_scorecard(  # noqa: PLR0915
         if ratio >= _CAP_FAIL_RATIO:
             cap_stat: ScorecardStatus = "fail"
             cap_detail = (
-                f"Store at {ratio * 100:.0f}% of max_entries "
-                f"({entry_count}/{max_entries})."
+                f"Store at {ratio * 100:.0f}% of max_entries ({entry_count}/{max_entries})."
             )
         elif ratio >= _CAP_WARN_RATIO:
             cap_stat = "warn"
             cap_detail = (
-                f"Store at {ratio * 100:.0f}% of max_entries "
-                f"({entry_count}/{max_entries})."
+                f"Store at {ratio * 100:.0f}% of max_entries ({entry_count}/{max_entries})."
             )
         else:
             cap_stat = "ok"
             cap_detail = (
-                f"Capacity {ratio * 100:.0f}% of max_entries "
-                f"({entry_count}/{max_entries})."
+                f"Capacity {ratio * 100:.0f}% of max_entries ({entry_count}/{max_entries})."
             )
         checks.append(
             ScorecardCheck(

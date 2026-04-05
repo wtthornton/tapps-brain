@@ -89,7 +89,7 @@ class FeatureFlags:
 
         All flags are evaluated and cached before returning, so the result
         always contains entries for: faiss, numpy, sentence_transformers,
-        memory_semantic_search, and otel.
+        sqlite_vec, memory_semantic_search, anthropic_sdk, openai_sdk, and otel.
         """
         # Trigger evaluation so every flag is cached.
         _ = (

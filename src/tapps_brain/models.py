@@ -283,7 +283,7 @@ class MemoryEntry(BaseModel):
             return None
         if not isinstance(v, str):
             msg = f"memory_group must be a string or None. Got: {type(v).__name__}"
-            raise TypeError(msg)
+            raise ValueError(msg)
         from tapps_brain.memory_group import normalize_memory_group
 
         return normalize_memory_group(v)
