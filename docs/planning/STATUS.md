@@ -108,6 +108,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
 | EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (major v2.0 stories shipped; see `epics/EPIC-040.md`, `open-issues-roadmap.md`) |
 | EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** checklist closed on GitHub; **#51**/**#63**/**#64** closed |
+| EPIC-052 | Full Codebase Code Review — 2026-Q2 Sweep | planned | — |
 | EPIC-042 … EPIC-051 | Feature / technology improvement program | **051 done**; 050 partial; 042 story grid done; 044 mostly shipped | **EPIC-051** **2026-04-03** — [`EPIC-051.md`](epics/EPIC-051.md); ADR **001**–**006** in [`adr/`](adr/) (§10 checklist + [`sqlcipher.md`](../guides/sqlcipher.md) ops for **051.5**). **EPIC-042** — **042.1**–**042.8** done. **EPIC-044** — **044.1**/**044.2**/**044.4**/**044.5**/**044.6**/**044.7** + **044.3** core/offline export. **EPIC-050** — **050.2**/**050.3** + WAL checkpoint note; **050.1** doc done. Index: `epics/EPIC-042-feature-tech-index.md` |
 
 ## Current focus
