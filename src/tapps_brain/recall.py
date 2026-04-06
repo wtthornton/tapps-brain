@@ -61,6 +61,10 @@ class RecallConfig:
     dedupe_window: list[str] = field(default_factory=list)
     use_graph_boost: bool = False
     graph_boost_factor: float = 0.15
+    # Temporal range filtering (Issue #70)
+    since: str | None = None
+    until: str | None = None
+    time_field: str = "created_at"
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +137,9 @@ class RecallOrchestrator:
             config=injection_config,
             scoring_config=scoring_config,
             memory_group=cfg.memory_group,
+            since=cfg.since,
+            until=cfg.until,
+            time_field=cfg.time_field,
         )
 
         diag_raw = result.get("recall_diagnostics")

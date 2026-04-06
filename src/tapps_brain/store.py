@@ -219,7 +219,17 @@ class MemoryStore:
             )
         else:
             self._lock_timeout_sec = _env_lock_timeout_seconds()
-        self._consolidation_config = consolidation_config or ConsolidationConfig()
+        if consolidation_config is not None:
+            self._consolidation_config = consolidation_config
+        elif self._profile is not None and hasattr(self._profile, "consolidation"):
+            _pc = self._profile.consolidation
+            self._consolidation_config = ConsolidationConfig(
+                enabled=_pc.enabled,
+                threshold=_pc.threshold,
+                min_entries=_pc.min_entries,
+            )
+        else:
+            self._consolidation_config = ConsolidationConfig()
         self._embedding_provider = embedding_provider
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
@@ -1001,6 +1011,9 @@ class MemoryStore:
         memory_group: str | None = None,
         as_of: str | None = None,
         include_historical: bool = False,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
     ) -> list[MemoryEntry]:
         """Search via FTS5, with optional post-filters.
 
@@ -1017,10 +1030,20 @@ class MemoryStore:
             include_historical: When True, include expired/superseded entries
                 (GitHub #29, task 040.3). When False (default), entries whose
                 ``invalid_at`` or ``valid_until`` is in the past are excluded.
+            since: ISO-8601 UTC lower bound (inclusive) on *time_field* (Issue #70).
+            until: ISO-8601 UTC upper bound (exclusive) on *time_field* (Issue #70).
+            time_field: Column to filter on — ``created_at``, ``updated_at``,
+                or ``last_accessed``. Defaults to ``created_at``.
         """
         self._metrics.increment("store.search")
         with MetricsTimer(self._metrics, "store.search_ms"):
-            results = self._persistence.search(query, memory_group=memory_group)
+            results = self._persistence.search(
+                query,
+                memory_group=memory_group,
+                since=since,
+                until=until,
+                time_field=time_field,
+            )
 
             if tier is not None:
                 results = [r for r in results if r.tier == tier]
@@ -1321,7 +1344,8 @@ class MemoryStore:
         """
         from tapps_brain.extraction import extract_durable_facts
 
-        facts = extract_durable_facts(context, capture_prompt)
+        _profile_name = getattr(self._profile, "name", None) if self._profile else None
+        facts = extract_durable_facts(context, capture_prompt, profile=_profile_name)
         created_keys: list[str] = []
 
         for fact in facts:

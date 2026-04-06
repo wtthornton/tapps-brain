@@ -245,6 +245,9 @@ class MemoryRetriever:
         include_superseded: bool = False,
         include_historical: bool = False,
         memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
@@ -288,12 +291,22 @@ class MemoryRetriever:
             effective_query = self._expand_query_via_relations(query, store)
 
         # Epic 65.8: hybrid path when semantic enabled
+        _temporal_kw: dict[str, Any] = {}
+        if since is not None:
+            _temporal_kw["since"] = since
+        if until is not None:
+            _temporal_kw["until"] = until
+        if time_field != "created_at":
+            _temporal_kw["time_field"] = time_field
+
         if self._semantic_enabled:
             candidates = self._get_hybrid_candidates(
-                effective_query, store, memory_group=memory_group
+                effective_query, store, memory_group=memory_group, **_temporal_kw
             )
         else:
-            candidates = self._get_candidates(effective_query, store, memory_group=memory_group)
+            candidates = self._get_candidates(
+                effective_query, store, memory_group=memory_group, **_temporal_kw
+            )
 
         # Score and filter (two phases when min-max relevance is enabled)
         pending: list[
@@ -590,6 +603,9 @@ class MemoryRetriever:
         store: MemoryStore,
         *,
         memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
@@ -600,7 +616,13 @@ class MemoryRetriever:
         """
         # Try FTS5 via store.search() for candidate filtering
         try:
-            fts_results = store.search(query, memory_group=memory_group)
+            fts_results = store.search(
+                query,
+                memory_group=memory_group,
+                since=since,
+                until=until,
+                time_field=time_field,
+            )
             if fts_results:
                 return self._bm25_score_entries(query, fts_results, store)
         except Exception:
@@ -615,6 +637,9 @@ class MemoryRetriever:
         store: MemoryStore,
         *,
         memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
     ) -> list[tuple[MemoryEntry, float]]:
         """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
 
@@ -647,7 +672,10 @@ class MemoryRetriever:
 
         def run_bm25() -> None:
             nonlocal bm25_keys
-            candidates = self._get_candidates(query, store, memory_group=memory_group)
+            candidates = self._get_candidates(
+                query, store, memory_group=memory_group,
+                since=since, until=until, time_field=time_field,
+            )
             # Take top top_bm25 by score
             sorted_cands = sorted(
                 candidates,

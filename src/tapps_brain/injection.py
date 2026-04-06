@@ -181,6 +181,9 @@ def inject_memories(  # noqa: PLR0915
     scoring_config: ScoringConfig | None = None,
     lexical_config: LexicalRetrievalConfig | None = None,
     memory_group: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    time_field: str = "created_at",
 ) -> dict[str, Any]:
     """Search for and format relevant memories for injection.
 
@@ -288,6 +291,9 @@ def inject_memories(  # noqa: PLR0915
             limit=max_inject,
             min_confidence=min_confidence,
             memory_group=memory_group,
+            since=since,
+            until=until,
+            time_field=time_field,
         )
     except Exception:
         logger.warning(

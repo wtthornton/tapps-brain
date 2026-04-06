@@ -156,9 +156,9 @@ class TestDemotionIntegration:
         engine = PromotionEngine(config)
         demotion_target = engine.check_demotion(entry, profile, now=now)
 
-        # personal-assistant long-term layer has demotion_to="short-term"
-        assert demotion_target == "short-term", (
-            f"Expected demotion to 'short-term', got '{demotion_target}'"
+        # personal-assistant long-term layer has demotion_to="procedural" (Issue #68)
+        assert demotion_target == "procedural", (
+            f"Expected demotion to 'procedural', got '{demotion_target}'"
         )
 
 

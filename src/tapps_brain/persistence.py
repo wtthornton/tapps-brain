@@ -972,15 +972,34 @@ class MemoryPersistence:
             self._audit_log("delete", key)
         return deleted
 
-    def search(self, query: str, *, memory_group: str | None = None) -> list[MemoryEntry]:
+    # Allowed time_field values for temporal filtering (Issue #70).
+    _TEMPORAL_FIELDS: frozenset[str] = frozenset({"created_at", "updated_at", "last_accessed"})
+
+    def search(
+        self,
+        query: str,
+        *,
+        memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
+    ) -> list[MemoryEntry]:
         """Full-text search via FTS5 across key, value, and tags.
 
         Args:
             query: FTS query text.
             memory_group: When set, restrict to entries in this project-local group.
+            since: ISO-8601 UTC lower bound (inclusive) on *time_field*.
+            until: ISO-8601 UTC upper bound (exclusive) on *time_field*.
+            time_field: Column to filter on (``created_at``, ``updated_at``,
+                or ``last_accessed``). Defaults to ``created_at``.
         """
         if not query.strip():
             return []
+
+        if time_field not in self._TEMPORAL_FIELDS:
+            msg = f"time_field must be one of {sorted(self._TEMPORAL_FIELDS)}, got {time_field!r}"
+            raise ValueError(msg)
 
         # Escape FTS5 special characters for safety
         safe_query = self._escape_fts_query_text(query)
@@ -996,6 +1015,12 @@ class MemoryPersistence:
         if memory_group is not None and self._schema_version >= _SCHEMA_V16:
             sql += " AND m.memory_group = ?"
             params.append(memory_group)
+        if since is not None:
+            sql += f" AND m.{time_field} >= ?"
+            params.append(since)
+        if until is not None:
+            sql += f" AND m.{time_field} < ?"
+            params.append(until)
 
         read_conn = self._get_read_connection()
         if read_conn is not None:

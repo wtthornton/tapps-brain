@@ -21,6 +21,10 @@ _TIER_ALIASES: dict[str, str] = {
     "notes": MemoryTier.pattern.value,
     "working": MemoryTier.context.value,
     "scratch": MemoryTier.context.value,
+    "how-to": MemoryTier.procedural.value,
+    "how_to": MemoryTier.procedural.value,
+    "routine": MemoryTier.procedural.value,
+    "workflow": MemoryTier.procedural.value,
 }
 
 

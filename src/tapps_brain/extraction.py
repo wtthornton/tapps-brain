@@ -39,6 +39,43 @@ _DECISION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bwe\s+use\b", re.I), "pattern"),
 ]
 
+# Personal-assistant extraction patterns (Issue #67).
+# Tier names match personal-assistant.yaml layer names; normalized at save time.
+_PA_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # Identity
+    (re.compile(r"\bmy\s+name\s+is\b", re.I), "identity"),
+    (re.compile(r"\bi(?:'m|\s+am)\s+(?:a|an)\b", re.I), "identity"),
+    (re.compile(r"\bi\s+live\s+in\b", re.I), "identity"),
+    (re.compile(r"\bi\s+work\s+(?:at|for)\b", re.I), "identity"),
+    (re.compile(r"\bmy\s+(?:wife|husband|partner|spouse)\b", re.I), "identity"),
+    (re.compile(r"\bmy\s+(?:son|daughter|child|children|kids?)\b", re.I), "identity"),
+    (re.compile(r"\bmy\s+(?:mom|dad|mother|father|parents?)\b", re.I), "identity"),
+    (re.compile(r"\bi\s+(?:am\s+)?allergic\s+to\b", re.I), "identity"),
+    (re.compile(r"\bmy\s+allerg(?:y|ies)\b", re.I), "identity"),
+    # Long-term preferences
+    (re.compile(r"\bi\s+prefer\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+(?:like|love|enjoy)\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+(?:dislike|hate|don't\s+like|do\s+not\s+like)\b", re.I), "long-term"),
+    (re.compile(r"\bmy\s+(?:favorite|favourite)\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+always\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+never\b", re.I), "long-term"),
+    (re.compile(r"\bmy\s+(?:friend|colleague|boss|manager)\b", re.I), "long-term"),
+    (re.compile(r"\bmy\s+(?:doctor|dentist|physician|therapist)\b", re.I), "long-term"),
+    (re.compile(r"\bmy\s+(?:medication|medicine|prescription)\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+can't\s+eat\b", re.I), "long-term"),
+    (re.compile(r"\bi\s+don't\s+(?:eat|drink)\b", re.I), "long-term"),
+    # Procedural / routines
+    (re.compile(r"\bevery\s+(?:morning|evening|night|day|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I), "procedural"),
+    (re.compile(r"\bon\s+(?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|weekends?)\b", re.I), "procedural"),
+    (re.compile(r"\bmy\s+(?:routine|schedule|habit|workout)\b", re.I), "procedural"),
+    (re.compile(r"\bi\s+usually\b", re.I), "procedural"),
+    # Short-term / context
+    (re.compile(r"\btoday\s+i\b", re.I), "short-term"),
+    (re.compile(r"\bright\s+now\b", re.I), "short-term"),
+    (re.compile(r"\bthis\s+week\b", re.I), "short-term"),
+    (re.compile(r"\bremind\s+me\b", re.I), "short-term"),
+]
+
 # Sentence boundary for splitting
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n+")
 
@@ -75,6 +112,7 @@ def extract_durable_facts(
     *,
     max_facts: int = 10,
     max_value_chars: int = 4096,
+    profile: str | None = None,
 ) -> list[dict[str, str]]:
     """Extract durable fact candidates from context using rule-based patterns.
 
@@ -83,12 +121,17 @@ def extract_durable_facts(
     [{key, value, tier}]. Tier is inferred from pattern (architectural, pattern,
     context).
 
+    When *profile* is ``"personal-assistant"``, additional patterns are used
+    for preferences, relationships, health, routines, and short-term context.
+
     Args:
         context: Raw session/transcript text to scan.
         capture_prompt: Optional guidance (Epic 65.3); currently unused but
             reserved for future filtering.
         max_facts: Maximum number of facts to return (default 10).
         max_value_chars: Maximum characters per value (default 4096).
+        profile: Profile name (e.g. ``"personal-assistant"``). When set,
+            profile-specific extraction patterns are activated.
 
     Returns:
         List of dicts with keys: key, value, tier.
@@ -96,6 +139,12 @@ def extract_durable_facts(
     """
     if not context or not context.strip():
         return []
+
+    # Select pattern set based on active profile.
+    if profile == "personal-assistant":
+        patterns = _PA_PATTERNS + _DECISION_PATTERNS
+    else:
+        patterns = _DECISION_PATTERNS
 
     facts: list[dict[str, str]] = []
     seen_values: set[str] = set()
@@ -108,7 +157,7 @@ def extract_durable_facts(
         text = chunk.strip()
         if len(text) < _MIN_CHUNK_CHARS:
             continue
-        for pattern, tier in _DECISION_PATTERNS:
+        for pattern, tier in patterns:
             if pattern.search(text):
                 value = _truncate(text, max_value_chars)
                 if value in seen_values:

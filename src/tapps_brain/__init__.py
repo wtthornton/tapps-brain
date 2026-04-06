@@ -9,6 +9,9 @@ try:
 except importlib.metadata.PackageNotFoundError:  # pragma: no cover
     __version__ = "0.0.0-dev"
 
+# Async (Issue #66)
+from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
+
 # BM25
 from tapps_brain.bm25 import BM25Scorer as BM25Scorer
 from tapps_brain.consolidation import consolidate as consolidate
@@ -117,6 +120,7 @@ from tapps_brain.store import MemoryStore as MemoryStore
 from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 
 __all__ = [
+    "AsyncMemoryStore",
     "DEFAULT_SAFETY_RULESET_VERSION",
     "VALID_AGENT_SCOPES",
     "BM25Scorer",

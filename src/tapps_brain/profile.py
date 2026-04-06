@@ -382,6 +382,18 @@ class HiveConfig(BaseModel):
 # Main profile model
 # ---------------------------------------------------------------------------
 
+class ConsolidationProfileConfig(BaseModel):
+    """Profile-driven auto-consolidation defaults (Issue #71)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=True, description="Enable auto-consolidation on save.")
+    threshold: float = Field(
+        default=0.7, ge=0.0, le=1.0, description="Similarity threshold for merging."
+    )
+    min_entries: int = Field(default=3, ge=1, description="Minimum entries before consolidation.")
+
+
 _DEFAULT_SOURCE_CONFIDENCE: dict[str, float] = {
     "human": 0.95,
     "agent": 0.60,
@@ -450,6 +462,10 @@ class MemoryProfile(BaseModel):
     safety: SafetyConfig = Field(
         default_factory=SafetyConfig,
         description="RAG safety ruleset semver pin (EPIC-044.1); see tapps_brain.safety.",
+    )
+    consolidation: ConsolidationProfileConfig = Field(
+        default_factory=ConsolidationProfileConfig,
+        description="Auto-consolidation defaults (Issue #71).",
     )
 
     @model_validator(mode="after")

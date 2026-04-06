@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.1.0 (2026-04-06)
+
+### Added
+
+- **Issue #66 — Async API wrapper:** New `AsyncMemoryStore` class in `tapps_brain.aio` wraps every public `MemoryStore` method via `asyncio.to_thread()`. Supports `async with await AsyncMemoryStore.open(root)` context manager. Exported from `tapps_brain.__init__`.
+- **Issue #67 — Personal-assistant extraction patterns:** 28 new rule-based extraction patterns for preferences, relationships, health/allergies, routines, and short-term context. Activated when profile is `personal-assistant`; repo-brain extraction is unchanged. Patterns route to appropriate PA tiers (identity, long-term, procedural, short-term).
+- **Issue #68 — Procedural tier for personal-assistant profile:** New `procedural` layer (30-day half-life) between `long-term` and `short-term`. Fills the 7d→90d decay gap for routines, how-to knowledge, and workflows. Promotion/demotion chain updated: `ephemeral → short-term → procedural → long-term → identity`. Tier aliases added: `how-to`, `routine`, `workflow` → `procedural`.
+- **Issue #70 — Temporal query filtering:** `search()`, `recall()`, and the retrieval pipeline accept `since`, `until`, and `time_field` parameters for time-range filtering. SQL-level WHERE clauses on `created_at`/`updated_at`/`last_accessed` for efficient filtering. `RecallConfig` includes temporal fields.
+- **Issue #71 — Profile-driven consolidation threshold:** New `ConsolidationProfileConfig` model on `MemoryProfile`. Personal-assistant profile defaults to threshold 0.65 (more conservative than the 0.7 default) to reduce false merges on semantically varied personal data. Precedence: explicit parameter > profile config > hardcoded default.
+
+### Changed
+
+- Version bumped to **2.1.0** (new features, no breaking changes).
+- Personal-assistant profile now has **5 layers** (was 4).
+- `long-term` layer demotes to `procedural` (was `short-term`); `short-term` promotes to `procedural` (was `long-term`).
+
+### Documentation
+
+- Updated `docs/guides/profile-catalog.md`: personal-assistant layer table, importance tags, and design decisions reflect the procedural tier, consolidation threshold, and 5-layer architecture.
+
 ## v2.0.4 (2026-04-05)
 
 ### Fixed

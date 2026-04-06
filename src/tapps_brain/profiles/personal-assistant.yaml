@@ -30,6 +30,23 @@ profile:
         min_access_count: 20
         min_age_days: 60
         min_confidence: 0.8
+      demotion_to: "procedural"
+
+    - name: "procedural"
+      description: "How-to knowledge, routines, workflows, recurring processes"
+      half_life_days: 30
+      decay_model: "exponential"
+      decay_exponent: 1.0
+      confidence_floor: 0.10
+      importance_tags:
+        routine: 1.5
+        how-to: 1.3
+        workflow: 1.3
+      promotion_to: "long-term"
+      promotion_threshold:
+        min_access_count: 10
+        min_age_days: 30
+        min_confidence: 0.6
       demotion_to: "short-term"
 
     - name: "short-term"
@@ -38,7 +55,7 @@ profile:
       decay_model: "exponential"
       decay_exponent: 1.0
       confidence_floor: 0.10
-      promotion_to: "long-term"
+      promotion_to: "procedural"
       promotion_threshold:
         min_access_count: 5
         min_age_days: 3
@@ -94,6 +111,11 @@ profile:
     default_engagement: "high"
     min_score: 0.2
     min_confidence: 0.1
+
+  consolidation:
+    enabled: true
+    threshold: 0.65
+    min_entries: 3
 
   limits:
     max_entries: 5000

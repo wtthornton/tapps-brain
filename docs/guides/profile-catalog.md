@@ -7,7 +7,7 @@ tapps-brain ships with 6 built-in profiles covering common AI agent use cases. E
 | Profile | Layers | Longest half-life | Decay model | Max entries | Token budget | Best for |
 |---------|--------|-------------------|-------------|-------------|-------------|----------|
 | [repo-brain](#repo-brain) | 4 | 180d | exponential | 5,000 | 3,000 | Code repos, coding assistants |
-| [personal-assistant](#personal-assistant) | 4 | 365d | power_law | 5,000 | 4,000 | Personal AI assistants |
+| [personal-assistant](#personal-assistant) | 5 | 365d | power_law | 5,000 | 4,000 | Personal AI assistants |
 | [customer-support](#customer-support) | 4 | 120d | exponential | 5,000 | 3,000 | Support agents, ticketing |
 | [research-knowledge](#research-knowledge) | 4 | 365d | power_law | 10,000 | 4,000 | Research, knowledge management |
 | [project-management](#project-management) | 4 | 180d | exponential | 5,000 | 3,000 | PM tools, sprint planning |
@@ -84,8 +84,9 @@ Memory for personal AI assistants, general-purpose agents, and OpenClaw.
 | Layer | Half-life | Decay model | Description | Promotes to | Demotes to |
 |-------|-----------|-------------|-------------|-------------|------------|
 | `identity` | 365 days | **power_law (0.5)** | User identity, core preferences, goals | — | `long-term` |
-| `long-term` | 90 days | exponential | Durable facts, relationships, learned preferences | `identity` | `short-term` |
-| `short-term` | 7 days | exponential | Recent conversations, active tasks | `long-term` | `ephemeral` |
+| `long-term` | 90 days | exponential | Durable facts, relationships, learned preferences | `identity` | `procedural` |
+| `procedural` | 30 days | exponential | How-to knowledge, routines, workflows | `long-term` | `short-term` |
+| `short-term` | 7 days | exponential | Recent conversations, active tasks | `procedural` | `ephemeral` |
 | `ephemeral` | 1 day | exponential | Current conversation state | `short-term` | — |
 
 ### Scoring
@@ -99,9 +100,11 @@ Recency-heavy — what the user said recently matters as much as keyword relevan
 ### Key design decisions
 
 - **Power-law on `identity`**: Core user preferences (name, role, allergies, communication style) decay negligibly. After 2 years, confidence drops only ~11% vs. 75% with exponential.
+- **Procedural tier bridges the 7d–90d gap**: Routines, how-to knowledge, and workflows persist for 30 days without requiring the 20-access bar for long-term promotion.
 - **Highest token budget (4000)**: Personal assistants need more context for nuanced responses.
 - **Low promotion bar for `ephemeral` → `short-term`**: Just 2 accesses and 1 day. If you mention something twice, it persists.
 - **High promotion bar for `long-term` → `identity`**: 20 accesses, 60 days, 0.8 confidence. Only truly core information reaches identity.
+- **Conservative consolidation threshold (0.65)**: Lower than the default 0.7 to reduce false merges on semantically varied personal data.
 
 ### Importance tags
 
@@ -111,6 +114,9 @@ Recency-heavy — what the user said recently matters as much as keyword relevan
 | `preference` | 1.5x | 547-day effective half-life in identity layer |
 | `important` | 1.5x | 135-day effective half-life in long-term layer |
 | `recurring` | 1.3x | 117-day effective half-life in long-term layer |
+| `routine` | 1.5x | 45-day effective half-life in procedural layer |
+| `how-to` | 1.3x | 39-day effective half-life in procedural layer |
+| `workflow` | 1.3x | 39-day effective half-life in procedural layer |
 
 ---
 
