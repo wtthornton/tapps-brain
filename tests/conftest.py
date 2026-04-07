@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from typing import TYPE_CHECKING
 
 import pytest
+
+# Disable auto-embedding in tests by default — avoids loading the heavy
+# sentence-transformers model for every MemoryStore() call.  Tests that
+# explicitly need embeddings can pass their own provider.
+os.environ.setdefault("TAPPS_SEMANTIC_SEARCH", "0")
 
 if TYPE_CHECKING:
     from pathlib import Path

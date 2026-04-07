@@ -1,6 +1,6 @@
 # sqlite-vec index — operator playbook
 
-This guide covers the optional **`memory_vec`** virtual table (**vec0** from [sqlite-vec](https://github.com/asg017/sqlite-vec)) used for KNN retrieval when the `[vector]` extra is installed and the extension loads successfully. Implementation: `src/tapps_brain/sqlite_vec_index.py`, wired from `MemoryPersistence` in `persistence.py`.
+This guide covers the **`memory_vec`** virtual table (**vec0** from [sqlite-vec](https://github.com/asg017/sqlite-vec)) used for KNN retrieval. sqlite-vec is a core dependency since v2.2.0 and is enabled by default. Implementation: `src/tapps_brain/sqlite_vec_index.py`, wired from `MemoryPersistence` in `persistence.py`.
 
 ## What gets indexed
 

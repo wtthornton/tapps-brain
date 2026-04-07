@@ -99,7 +99,7 @@ pip install tapps-brain[cli]
 # Add MCP server
 pip install tapps-brain[mcp]
 
-# Add everything (cli + mcp + vector + reranker)
+# Add everything (cli + mcp + faiss + reranker)
 pip install tapps-brain[all]
 ```
 
@@ -107,25 +107,18 @@ pip install tapps-brain[all]
 
 ---
 
-## Vector search setup
+## Vector search (built-in)
 
-The `[vector]` extra enables semantic (embedding-based) search alongside the default BM25 keyword retrieval:
-
-```bash
-pip install tapps-brain[vector]
-```
-
-This installs `faiss-cpu`, `numpy`, `sentence-transformers`, and `sqlite-vec`.
+Semantic (embedding-based) search is built into the core install. The base `pip install tapps-brain` includes `sqlite-vec`, `sentence-transformers`, and `numpy` — no extra needed.
 
 **Platform notes:**
 
-- **faiss-cpu** ships pre-built wheels for Linux and macOS (x86_64 and arm64). Windows users may need to install from conda-forge.
 - **sqlite-vec** requires a C compiler on some platforms if no pre-built wheel is available. On Ubuntu: `apt install build-essential`.
 - **sentence-transformers** downloads model weights on first use (~90 MB for the default model). Ensure network access or pre-download for air-gapped environments.
 
-**GPU acceleration:** The `[vector]` extra installs `faiss-cpu`. For GPU-accelerated FAISS, install `faiss-gpu` separately from the [PyPI faiss-gpu package](https://pypi.org/project/faiss-gpu/) or via conda. The tapps-brain API is the same regardless of backend.
+**Optional FAISS:** For FAISS-based vector indexing (alternative to sqlite-vec), install the `[faiss]` extra: `pip install tapps-brain[faiss]`. For GPU-accelerated FAISS, install `faiss-gpu` separately from the [PyPI faiss-gpu package](https://pypi.org/project/faiss-gpu/) or via conda.
 
-> **Future work:** Splitting `[vector]` into `[vector-embed]` (sentence-transformers only) and `[vector-index]` (sqlite-vec only) is under consideration for users who want embeddings without the native sqlite-vec build, or vice versa.
+**Disabling vector search:** Set `TAPPS_SEMANTIC_SEARCH=0` to disable automatic embedding computation (e.g. for lightweight or test environments).
 
 ---
 

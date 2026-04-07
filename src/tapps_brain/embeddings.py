@@ -170,7 +170,8 @@ class SentenceTransformerProvider:
         if SentenceTransformer is None:
             msg = (
                 "sentence-transformers is required for vector semantic search. "
-                "Install with: pip install tapps-brain[vector]"
+                "It should be installed as a core dependency — "
+                "try: pip install --force-reinstall tapps-brain"
             )
             raise ImportError(msg)
 
@@ -202,14 +203,18 @@ class SentenceTransformerProvider:
 
 
 def get_embedding_provider(
-    semantic_search_enabled: bool,
+    semantic_search_enabled: bool = True,
     provider: str = "sentence_transformers",
     model: str = _DEFAULT_MODEL,
 ) -> EmbeddingProvider | None:
     """Return an EmbeddingProvider when semantic search is enabled, else None.
 
+    Semantic search is enabled by default since sqlite-vec is a core
+    dependency.  Pass ``semantic_search_enabled=False`` to disable.
+
     Args:
         semantic_search_enabled: Whether semantic search is turned on (config).
+            Defaults to True.
         provider: Provider name; only "sentence_transformers" supported.
         model: Model name for sentence-transformers (e.g. all-MiniLM-L6-v2).
 

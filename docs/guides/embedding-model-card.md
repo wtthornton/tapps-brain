@@ -1,6 +1,6 @@
 # Embedding model card (default semantic search)
 
-This page documents the **default** dense embedding stack for optional vector / hybrid retrieval (**EPIC-042** STORY-042.2). It is the operator-facing counterpart to `src/tapps_brain/embeddings.py`.
+This page documents the **default** dense embedding stack for built-in vector / hybrid retrieval (**EPIC-042** STORY-042.2). It is the operator-facing counterpart to `src/tapps_brain/embeddings.py`.
 
 ## Default model
 
@@ -16,7 +16,7 @@ This page documents the **default** dense embedding stack for optional vector / 
 
 ## Install surface
 
-- **Extra:** `pip install tapps-brain[vector]` (see `pyproject.toml` `[project.optional-dependencies]`).
+- **Install:** Included in core `pip install tapps-brain` (sentence-transformers, numpy, sqlite-vec are core dependencies since v2.2.0). Optional FAISS: `pip install tapps-brain[faiss]`.
 - **Provider:** `get_embedding_provider(..., provider="sentence_transformers", model=...)` — only this provider is wired today; unknown providers return `None`.
 
 ## Storage and precision

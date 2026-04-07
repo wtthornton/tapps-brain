@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.2.0 (2026-04-07)
+
+### Changed
+
+- **sqlite-vec promoted to core dependency:** `sqlite-vec`, `sentence-transformers`, and `numpy` moved from the `[vector]` optional extra to core `dependencies`. Semantic vector search is now enabled by default on every install — no extra needed.
+- **`[vector]` extra renamed to `[faiss]`:** Now contains only `faiss-cpu` for optional FAISS vector indexing.
+- **MemoryStore auto-enables embeddings:** `MemoryStore()` automatically creates an embedding provider when none is passed. Pass `embedding_provider=None` to explicitly disable, or set `TAPPS_SEMANTIC_SEARCH=0`.
+- **`get_embedding_provider()` defaults to enabled:** `semantic_search_enabled` parameter now defaults to `True`.
+- Version bumped to **2.2.0** (new defaults, no breaking API changes).
+
+### Fixed
+
+- **AsyncMemoryStore.reinforce():** Fixed positional argument bug — `confidence_boost` is keyword-only on `MemoryStore.reinforce()` but was passed positionally by the async wrapper.
+- **AsyncMemoryStore.audit():** Fixed positional argument bug — `key` is keyword-only on `MemoryStore.audit()` but was passed positionally by the async wrapper.
+- **aio.py lint cleanup:** Removed unused imports (`inspect`, `ConsolidationConfig`), moved `Path` to `TYPE_CHECKING` block, added `ANN401` per-file-ignore for the inherently dynamic async wrapper.
+
+### Added
+
+- **AsyncMemoryStore test suite:** 27 new tests in `tests/unit/test_aio.py` covering CRUD, search, recall, lifecycle, maintenance, properties, context manager, and `__getattr__` auto-wrapping.
+
+### Documentation
+
+- Updated README, getting-started guide, embedding model card, sqlite-vec operator playbook, features-and-technologies, ADR-001, EPIC-042, EPIC-049, next-session-prompt, and open-issues-roadmap to reflect sqlite-vec as a core dependency and `[vector]` → `[faiss]` rename.
+- README version badge updated to 2.2.0; test count badge updated to 2900+.
+
 ## v2.1.0 (2026-04-06)
 
 ### Added

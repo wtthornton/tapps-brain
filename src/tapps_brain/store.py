@@ -166,6 +166,9 @@ class ConsolidationConfig:
         }
 
 
+_UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
+
+
 class MemoryStore:
     """In-memory cache with SQLite write-through persistence.
 
@@ -174,6 +177,9 @@ class MemoryStore:
     contended acquires fail fast with :exc:`MemoryStoreLockTimeout` instead of blocking.
     Write-through: every mutation updates both the in-memory dict and SQLite synchronously.
     Auto-consolidation triggers on save when enabled (Epic 58).
+
+    Semantic search via sqlite-vec is enabled by default.  Pass
+    ``embedding_provider=None`` to explicitly disable it.
     """
 
     def __init__(
@@ -182,7 +188,7 @@ class MemoryStore:
         *,
         store_dir: str = ".tapps-brain",
         consolidation_config: ConsolidationConfig | None = None,
-        embedding_provider: EmbeddingProvider | None = None,
+        embedding_provider: EmbeddingProvider | None = _UNSET_EMBEDDING,
         write_rules: Any = None,  # noqa: ANN401
         lookup_engine: Any = None,  # noqa: ANN401
         profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
@@ -230,7 +236,15 @@ class MemoryStore:
             )
         else:
             self._consolidation_config = ConsolidationConfig()
-        self._embedding_provider = embedding_provider
+        if embedding_provider is _UNSET_EMBEDDING:
+            if os.environ.get("TAPPS_SEMANTIC_SEARCH") == "0":
+                self._embedding_provider = None
+            else:
+                from tapps_brain.embeddings import get_embedding_provider
+
+                self._embedding_provider = get_embedding_provider()
+        else:
+            self._embedding_provider = embedding_provider
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False

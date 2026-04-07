@@ -62,7 +62,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 ### Week 1 - Core Retrieval Foundation
 
 - [x] **#30** `feat: integrate sqlite-vec for local vector search`
-  - Status: `done` (optional `sqlite-vec` in `[vector]` + dev; `memory_vec` vec0; hybrid prefers KNN when enabled)
+  - Status: `done` (`sqlite-vec` promoted to core dependency in v2.2.0; `memory_vec` vec0; hybrid KNN enabled by default)
   - Target outcome: local semantic search available without external API dependency
   - Notes: establish optional dependency + safe fallback path; begin with schema + embedding write path
 

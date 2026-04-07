@@ -56,12 +56,12 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 **Status:** done (2026-04-02) — model card, int8 quantization spike helpers, ``embedding_model_id`` (schema v17), store wiring  
 **Effort:** L  
 **Depends on:** none  
-**Context refs:** `src/tapps_brain/embeddings.py`, `src/tapps_brain/_feature_flags.py`, `pyproject.toml` `[vector]`, `tests/unit/test_memory_embeddings.py`, `tests/unit/test_memory_embeddings_persistence.py`  
+**Context refs:** `src/tapps_brain/embeddings.py`, `src/tapps_brain/_feature_flags.py`, `pyproject.toml` (core deps since v2.2.0), `tests/unit/test_memory_embeddings.py`, `tests/unit/test_memory_embeddings_persistence.py`  
 **Verification:** `pytest tests/unit/test_memory_embeddings.py tests/unit/test_memory_embeddings_persistence.py -v --tb=short -m "not benchmark"`
 
 #### Code baseline
 
-- **`sentence-transformers`** + **`numpy`** when `[vector]` installed; **`faiss-cpu`** optional for some paths.
+- **`sentence-transformers`** + **`numpy`** are core dependencies (since v2.2.0); **`faiss-cpu`** optional via `[faiss]` extra.
 - Embeddings stored on entries and used when hybrid config enables semantic search.
 
 #### Research notes (2026-forward)

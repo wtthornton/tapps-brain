@@ -5,13 +5,13 @@
 **Universal persistent memory for AI agents**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Version 2.0.4](https://img.shields.io/badge/version-2.0.4-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
+[![Version 2.2.0](https://img.shields.io/badge/version-2.2.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![Tests 2800+](https://img.shields.io/badge/tests-2800%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
+[![Tests 2900+](https://img.shields.io/badge/tests-2900%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![Coverage 95%+](https://img.shields.io/badge/coverage-95%25%2B-brightgreen?style=for-the-badge)](pyproject.toml)
 [![mypy strict](https://img.shields.io/badge/mypy-strict-blue?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 
-A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 ranking, dual decay models, automatic consolidation,<br>cross-project federation, and pluggable vector search.
+A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 + sqlite-vec hybrid search, dual decay models, automatic consolidation,<br>cross-project federation, and built-in semantic vector search.
 
 [Getting Started](docs/guides/getting-started.md) · [Engineering baseline](docs/engineering/README.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md) · [Visual snapshot](docs/guides/visual-snapshot.md) · [OpenClaw](docs/guides/openclaw.md) · [OpenClaw runbook](docs/guides/openclaw-runbook.md)
 
@@ -108,9 +108,9 @@ chain = store.history("pricing-plan")
 ## Installation
 
 ```bash
-pip install tapps-brain                 # core library
+pip install tapps-brain                 # core library (includes sqlite-vec + sentence-transformers)
 pip install tapps-brain[mcp]            # + MCP server for Claude Code, Cursor, VS Code Copilot
-pip install tapps-brain[vector]         # + hybrid search (FAISS + sentence-transformers)
+pip install tapps-brain[faiss]          # + optional FAISS vector index
 pip install tapps-brain[reranker]       # + Cohere semantic reranking
 pip install tapps-brain[otel]           # + OpenTelemetry types/helpers (not wired to CLI/MCP yet — see docs/guides/observability.md)
 pip install tapps-brain[all]            # everything above (except otel)

@@ -74,7 +74,6 @@ def _get_store(
     When *enable_hive* is ``True``, a shared :class:`HiveStore` is
     created and wired into the store together with *agent_id*.
     """
-    from tapps_brain.embeddings import get_embedding_provider
     from tapps_brain.store import MemoryStore
 
     hive_store = None
@@ -85,7 +84,6 @@ def _get_store(
 
     return MemoryStore(
         project_dir,
-        embedding_provider=get_embedding_provider(semantic_search_enabled=True),
         hive_store=hive_store,
         hive_agent_id=agent_id,
     )

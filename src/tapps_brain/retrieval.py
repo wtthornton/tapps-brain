@@ -742,7 +742,7 @@ class MemoryRetriever:
         try:
             from tapps_brain.embeddings import get_embedding_provider
 
-            embedder = get_embedding_provider(semantic_search_enabled=True)
+            embedder = get_embedding_provider()
         except ImportError:
             logger.debug("vector_search_embedder_unavailable")
             return empty

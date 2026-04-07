@@ -142,14 +142,12 @@ def _resolve_project_dir(project_dir: Path | None) -> Path:
 
 def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
     """Open a MemoryStore from the resolved project dir."""
-    from tapps_brain.embeddings import get_embedding_provider
     from tapps_brain.hive import HiveStore
     from tapps_brain.store import MemoryStore
 
     root = _resolve_project_dir(project_dir)
     return MemoryStore(
         root,
-        embedding_provider=get_embedding_provider(semantic_search_enabled=True),
         hive_store=HiveStore(),
         hive_agent_id="cli",
     )

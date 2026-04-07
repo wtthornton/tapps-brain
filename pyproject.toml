@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tapps-brain"
-version = "2.1.0"
+version = "2.2.0"
 description = "Persistent cross-session memory system for AI coding assistants"
 license = "MIT"
 requires-python = ">=3.12"
@@ -27,6 +27,10 @@ dependencies = [
     "pydantic>=2.12.5,<3",
     "structlog>=25.5.0,<26",
     "pyyaml>=6.0.3,<7",
+    # Vector semantic search — sqlite-vec is the default ANN index.
+    "numpy>=2.4.2,<3",
+    "sentence-transformers>=5.2.3,<6",
+    "sqlite-vec>=0.1.6,<0.2",
 ]
 
 [project.urls]
@@ -47,11 +51,8 @@ cli = [
 mcp = [
     "mcp>=1.2.0,<2",
 ]
-vector = [
+faiss = [
     "faiss-cpu>=1.13.2,<2",
-    "numpy>=2.4.2,<3",
-    "sentence-transformers>=5.2.3,<6",
-    "sqlite-vec>=0.1.6,<0.2",
 ]
 reranker = [
     "cohere>=5.0,<6",
@@ -64,7 +65,7 @@ otel = [
     "opentelemetry-sdk>=1.20,<3",
 ]
 all = [
-    "tapps-brain[cli,mcp,vector,reranker]",
+    "tapps-brain[cli,mcp,faiss,reranker]",
 ]
 dev = [
     "pytest>=8.0,<9",
@@ -75,7 +76,6 @@ dev = [
     "ruff>=0.9,<1",
     "mcp>=1.2.0,<2",
     "typer>=0.12.3,<1",
-    "sqlite-vec>=0.1.6,<0.2",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -157,6 +157,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ANN", "PLR", "TCH", "E402", "F841", "E741", "RUF002"]
 "src/tapps_brain/_protocols.py" = ["ANN401"]
+"src/tapps_brain/aio.py" = ["ANN401"]
 "src/tapps_brain/diagnostics.py" = ["RUF001", "RUF002", "TC003", "PLR2004", "SIM108", "SIM105"]
 "src/tapps_brain/evaluation.py" = ["RUF002", "TC003", "N818", "PLR2004", "E501"]
 "src/tapps_brain/flywheel.py" = ["TC001", "N815", "N814", "ANN401", "SIM108", "SIM102", "PLR2004"]

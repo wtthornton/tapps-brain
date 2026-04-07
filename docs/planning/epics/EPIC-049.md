@@ -19,7 +19,7 @@ Maps to **§8** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Stories
 
-**§8 / `pyproject.toml` order:** **049.1** `cli` → **049.2** `mcp` → **049.3** `vector` → **049.4** `reranker` → **049.5** `encryption` → **049.6** `otel` → **049.7** core deps (pydantic, structlog, pyyaml).
+**§8 / `pyproject.toml` order:** **049.1** `cli` → **049.2** `mcp` → **049.3** `faiss` (was `vector`; sqlite-vec/ST/numpy moved to core in v2.2.0) → **049.4** `reranker` → **049.5** `encryption` → **049.6** `otel` → **049.7** core deps (pydantic, structlog, pyyaml, numpy, sentence-transformers, sqlite-vec).
 
 ### STORY-049.1: `cli` extra (Typer)
 
@@ -47,11 +47,11 @@ Maps to **§8** of [`features-and-technologies.md`](../../engineering/features-a
 
 ---
 
-### STORY-049.3: `vector` extra (FAISS, numpy, sentence-transformers, sqlite-vec)
+### STORY-049.3: `faiss` extra (was `vector`; sqlite-vec/ST/numpy moved to core in v2.2.0)
 
 **Status:** done | **Effort:** L | **Depends on:** none  
 **Context refs:** `pyproject.toml`, `src/tapps_brain/_feature_flags.py`, `src/tapps_brain/embeddings.py`, `tests/unit/test_memory_embeddings.py`, `tests/unit/test_sqlite_vec_index.py`, `tests/unit/test_persistence_sqlite_vec.py`, `tests/unit/test_sqlite_vec_try_load.py`  
-**Verification:** `pytest tests/unit/test_memory_embeddings.py tests/unit/test_sqlite_vec_index.py tests/unit/test_persistence_sqlite_vec.py tests/unit/test_sqlite_vec_try_load.py -v --tb=short -m "not benchmark"` (skip or narrow if optional native/`[vector]` deps absent locally; document CI matrix separately)
+**Verification:** `pytest tests/unit/test_memory_embeddings.py tests/unit/test_sqlite_vec_index.py tests/unit/test_persistence_sqlite_vec.py tests/unit/test_sqlite_vec_try_load.py -v --tb=short -m "not benchmark"` (sqlite-vec and sentence-transformers are core deps since v2.2.0; FAISS tests require `[faiss]` extra)
 
 #### Research notes (2026-forward)
 

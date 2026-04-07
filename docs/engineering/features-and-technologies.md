@@ -13,7 +13,7 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
-| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` when `[vector]` extra installed; vectors stored on entries and optionally in sqlite-vec table. **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
+| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` (core dependency since v2.2.0); vectors stored on entries and in sqlite-vec table by default. Optional FAISS via `[faiss]` extra. **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
 | **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. Ops: [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md). |
 | **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
@@ -21,7 +21,7 @@
 | **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
 | **Stale / decayed relevance** | **Exponential decay** + optional **FSRS-like fields** | `decay.py` lazy decay on read; `models.py` carries `stability` / `difficulty`; hybrid model + recall vs reinforce updates in [`memory-decay-and-fsrs.md`](../guides/memory-decay-and-fsrs.md). **Checklist 10.2:** lazy decay + operator GC — no mandatory wall-clock TTL jobs in core; [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md). |
 
-**Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± vectors ± fixed formulas. **Maintainer decision (checklist item 10.1 / EPIC-051):** shipped stack stays **embedded SQLite–first** (BM25 + optional `[vector]` / sqlite-vec hybrid); **learned sparse**, **ColBERT-style** late interaction, and **managed external vector DB** as first-class backends are **out of scope for core** until revisited — see [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
+**Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± vectors ± fixed formulas. **Maintainer decision (checklist item 10.1 / EPIC-051):** shipped stack stays **embedded SQLite–first** (BM25 + built-in sqlite-vec hybrid); **learned sparse**, **ColBERT-style** late interaction, and **managed external vector DB** as first-class backends are **out of scope for core** until revisited — see [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
 
 ---
 
@@ -108,11 +108,11 @@
 |--------------------------|----------|---------|
 | `cli` | `typer` | Command-line interface. |
 | `mcp` | `mcp` | MCP server. |
-| `vector` | `faiss-cpu`, `numpy`, `sentence-transformers`, `sqlite-vec` | Embeddings, optional FAISS, sqlite-vec extension binding. |
+| `faiss` | `faiss-cpu` | Optional FAISS vector index (alternative to built-in sqlite-vec). |
 | `reranker` | `cohere` | API re-ranking. |
 | `encryption` | `pysqlcipher3` | SQLCipher. |
 | `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
-| **Core** | `pydantic`, `structlog`, `pyyaml` | Always installed. |
+| **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers`, `sqlite-vec` | Always installed (vector search built-in since v2.2.0). |
 
 Lazy detection: `_feature_flags.py` probes importability for vector, sqlite_vec, otel, optional LLM SDKs.
 
@@ -133,7 +133,7 @@ Lazy detection: `_feature_flags.py` probes importability for vector, sqlite_vec,
 
 Use this list when comparing to industry alternatives:
 
-1. **Retrieval:** **Decision (2026-04-03):** BM25 + optional dense (`[vector]` / sqlite-vec) + RRF **is the maintained stack** for core; learned sparse, ColBERT, and managed vector DB are **deferred / out of scope for shipped core** — [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
+1. **Retrieval:** **Decision (2026-04-03, updated 2026-04-07):** BM25 + built-in dense (sqlite-vec, core since v2.2.0) + RRF **is the maintained stack** for core; learned sparse, ColBERT, and managed vector DB are **deferred / out of scope for shipped core** — [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
 2. **Freshness:** **Decision (2026-04-03):** **Lazy decay on read** + **profile / consolidation tuning** + **operator-invoked GC** (`gc.py`, `maintenance gc` / `maintenance stale`) **are the maintained model**; mandatory wall-clock TTL workers, `maintenance decay-refresh`, and daily “crossed stale threshold” metrics **deferred** — [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md).
 3. **Correctness:** **Decision (2026-04-03):** **Heuristic save-time conflicts** + **offline** candidate export / opt-in external review ([`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md)) **are the maintained model** for core; **curated ontology**, automatic **`needs_review` queues**, and **MCP list/resolve review** workflows **deferred** until explicit product spec + planning trigger **(c)** — [`ADR-003`](../planning/adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md).
 4. **Scale:** **Decision (2026-04-03):** **Single-node SQLite + lock** + documented operator tuning (**WAL**, `busy_timeout`, optional RO search, lock timeout) **is the maintained posture**; **published QPS SLO** and **mandatory service extraction** **deferred** until evidence (benchmarks / production pain) — [`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
