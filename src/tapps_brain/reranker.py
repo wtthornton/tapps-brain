@@ -118,23 +118,13 @@ class CohereReranker:
         effective_top_k = min(top_k, len(candidates))
 
         try:
-            # Support both Client (v1) and ClientV2
-            if hasattr(cohere, "ClientV2"):
-                client = cohere.ClientV2(api_key=self._api_key)
-                response = client.rerank(
-                    model=self._model,
-                    query=query,
-                    documents=documents,
-                    top_n=effective_top_k,
-                )
-            else:
-                client = cohere.Client(api_key=self._api_key)
-                response = client.rerank(
-                    model=self._model,
-                    query=query,
-                    documents=documents,
-                    top_n=effective_top_k,
-                )
+            client = cohere.ClientV2(api_key=self._api_key)
+            response = client.rerank(
+                model=self._model,
+                query=query,
+                documents=documents,
+                top_n=effective_top_k,
+            )
         except Exception as e:
             logger.warning(
                 "cohere_reranker_failed",

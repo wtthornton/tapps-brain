@@ -1,8 +1,7 @@
-"""Optional sqlite-vec ANN index for semantic retrieval (GitHub #30).
+"""sqlite-vec ANN index for semantic retrieval (GitHub #30).
 
-Loads the sqlite-vec extension when the ``sqlite-vec`` package is installed,
-maintains a ``memory_vec`` vec0 table keyed by memory ``key``, and exposes
-KNN search. Safe no-op when the extension is unavailable or fails to load.
+Loads the sqlite-vec extension (core dependency), maintains a ``memory_vec``
+vec0 table keyed by memory ``key``, and exposes KNN search.
 
 **Distance metric:** The vec0 DDL uses ``embedding float[N]`` (default *N* =
 :data:`DEFAULT_VEC_DIM`) without ``distance_metric=``, so sqlite-vec applies
@@ -34,20 +33,12 @@ DEFAULT_VEC_DIM = 384
 _VEC_TABLE = "memory_vec"
 
 
-def try_load_extension(conn: sqlite3.Connection) -> bool:
-    """Load sqlite-vec into *conn*. Returns False if unavailable or load fails."""
-    try:
-        import sqlite_vec
-    except ImportError:
-        logger.debug("sqlite_vec_package_missing")
-        return False
-    try:
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-    except (AttributeError, OSError, sqlite3.OperationalError) as e:
-        logger.debug("sqlite_vec_load_failed", error=str(e))
-        return False
-    return True
+def load_extension(conn: sqlite3.Connection) -> None:
+    """Load sqlite-vec into *conn*. Raises on failure (core dependency)."""
+    import sqlite_vec
+
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
 
 
 def vec_table_exists(conn: sqlite3.Connection) -> bool:

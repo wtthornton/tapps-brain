@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tapps_brain.feedback import FeedbackConfig
 from tapps_brain.lexical import LexicalRetrievalConfig
@@ -218,19 +218,17 @@ class HybridFusionConfig(BaseModel):
             "When False, equal 1:1 RRF weights."
         ),
     )
-    top_bm25: int = Field(
+    top_k_lexical: int = Field(
         default=20,
         ge=1,
         le=500,
-        validation_alias=AliasChoices("top_bm25", "top_k_lexical"),
-        description="Max BM25 candidates fed into RRF (YAML alias: top_k_lexical).",
+        description="Max BM25 candidates fed into RRF.",
     )
-    top_vector: int = Field(
+    top_k_dense: int = Field(
         default=20,
         ge=1,
         le=500,
-        validation_alias=AliasChoices("top_vector", "top_k_dense"),
-        description="Max vector/KNN candidates fed into RRF (YAML alias: top_k_dense).",
+        description="Max vector/KNN candidates fed into RRF.",
     )
     rrf_k: int = Field(
         default=60,

@@ -208,14 +208,14 @@ def create_server(  # noqa: PLR0915
 
         tier = normalize_save_tier(tier, store.profile)
 
-        # Build valid tier set: all enum tiers + active profile layer names (issue #16, #48)
-        _legacy_tiers: frozenset[str] = frozenset(m.value for m in MemoryTier)
-        _profile_tiers: frozenset[str] = (
-            frozenset(store.profile.layer_names) if store.profile is not None else frozenset()
+        # Validate tier against profile layers (or default enum values when no profile)
+        _valid_tiers: frozenset[str] = (
+            frozenset(store.profile.layer_names)
+            if store.profile is not None
+            else frozenset(m.value for m in MemoryTier)
         )
-        _all_valid_tiers: frozenset[str] = _legacy_tiers | _profile_tiers
-        if tier not in _all_valid_tiers:
-            _sorted_valid = sorted(_all_valid_tiers)
+        if tier not in _valid_tiers:
+            _sorted_valid = sorted(_valid_tiers)
             return json.dumps(
                 {
                     "error": "invalid_tier",

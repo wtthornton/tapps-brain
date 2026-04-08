@@ -1544,25 +1544,21 @@ class TestProfileAwareTierValidation:
         assert result.get("error") != "invalid_tier"
         assert result.get("status") == "saved"
 
-    def test_unknown_tier_coerces_to_pattern_with_profile(self, mcp_server_with_profile_v2):
-        """Unknown tiers coerce to pattern even when a profile is active (GitHub #48)."""
+    def test_unknown_tier_rejected_with_profile(self, mcp_server_with_profile_v2):
+        """Unknown tiers are rejected when not in the active profile's layers."""
         save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
         result = json.loads(
             save_fn(key="bad-tier-profile", value="test", tier="totally-invalid-tier-xyz")
         )
-        assert result.get("status") == "saved"
-        ent = mcp_server_with_profile_v2._tapps_store.get("bad-tier-profile")
-        assert ent is not None
-        assert str(ent.tier) == "pattern"
+        assert result.get("error") == "invalid_tier"
 
-    def test_legacy_tier_still_accepted_with_profile(self, mcp_server_with_profile_v2):
-        """Legacy enum tiers still work even when a profile is active."""
+    def test_non_profile_enum_tier_rejected_with_profile(self, mcp_server_with_profile_v2):
+        """Enum tiers not in the active profile's layers are rejected."""
         save_fn = _tool_fn(mcp_server_with_profile_v2, "memory_save")
         result = json.loads(
             save_fn(key="legacy-tier-arch", value="Core service architecture", tier="architectural")
         )
-        assert result.get("error") != "invalid_tier"
-        assert result.get("status") == "saved"
+        assert result.get("error") == "invalid_tier"
 
 
 class TestMemoryReinforceValidation:

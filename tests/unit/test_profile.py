@@ -123,26 +123,26 @@ class TestHybridFusionConfig:
     def test_defaults_match_retriever_historical(self) -> None:
         h = HybridFusionConfig()
         assert h.adaptive_fusion is True
-        assert h.top_bm25 == 20
-        assert h.top_vector == 20
+        assert h.top_k_lexical == 20
+        assert h.top_k_dense == 20
         assert h.rrf_k == 60
 
-    def test_yaml_aliases_top_k_lexical_dense(self) -> None:
+    def test_validate_top_k_fields(self) -> None:
         h = HybridFusionConfig.model_validate(
             {"top_k_lexical": 40, "top_k_dense": 35, "rrf_k": 48, "adaptive_fusion": False}
         )
-        assert h.top_bm25 == 40
-        assert h.top_vector == 35
+        assert h.top_k_lexical == 40
+        assert h.top_k_dense == 35
         assert h.rrf_k == 48
         assert h.adaptive_fusion is False
 
     def test_rejects_unknown_keys(self) -> None:
         with pytest.raises(ValidationError):
-            HybridFusionConfig.model_validate({"top_bm25": 10, "typo": 1})
+            HybridFusionConfig.model_validate({"top_k_lexical": 10, "typo": 1})
 
     def test_builtin_repo_brain_has_hybrid_fusion_defaults(self) -> None:
         p = get_builtin_profile("repo-brain")
-        assert p.hybrid_fusion.top_bm25 == 20
+        assert p.hybrid_fusion.top_k_lexical == 20
         assert p.hybrid_fusion.rrf_k == 60
 
 

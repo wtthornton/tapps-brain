@@ -147,13 +147,8 @@ def _get_half_life(tier: MemoryTier | str, config: DecayConfig) -> int:
     except ValueError:
         pass
 
-    # Unknown tier: use the shortest default half-life (context=14)
-    logger.warning(
-        "unknown_tier_fallback",
-        tier=tier_str,
-        fallback_days=config.context_half_life_days,
-    )
-    return config.context_half_life_days
+    msg = f"Unknown tier {tier_str!r} — not in profile layers or MemoryTier enum"
+    raise ValueError(msg)
 
 
 def _get_ceiling(source: MemorySource | str, config: DecayConfig) -> float:
@@ -175,15 +170,11 @@ def _get_ceiling(source: MemorySource | str, config: DecayConfig) -> float:
 
     try:
         source_enum = MemorySource(source_str)
-        attr = _SOURCE_CEILING_ATTR.get(source_enum, "agent_confidence_ceiling")
-        return float(getattr(config, attr))
     except ValueError:
-        logger.warning(
-            "unknown_source_fallback",
-            source=source_str,
-            fallback_ceiling=config.agent_confidence_ceiling,
-        )
-        return config.agent_confidence_ceiling
+        msg = f"Unknown source {source_str!r} — not in profile ceilings or MemorySource enum"
+        raise ValueError(msg) from None
+    attr = _SOURCE_CEILING_ATTR.get(source_enum, "agent_confidence_ceiling")
+    return float(getattr(config, attr))
 
 
 def _get_confidence_floor(tier: MemoryTier | str, config: DecayConfig) -> float:
@@ -387,10 +378,6 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
     Populates ``layer_half_lives``, ``layer_confidence_floors``,
     ``profile_source_ceilings``, and per-layer decay model overrides
     from the profile's layer definitions.
-
-    The four legacy ``*_half_life_days`` fields are set from matching
-    layer names (architectural/pattern/procedural/context) so that code
-    using the old enum-based lookup still works.
     """
     from tapps_brain.profile import MemoryProfile
 
@@ -413,20 +400,6 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         if layer.importance_tags:
             layer_importance_tags[layer.name] = dict(layer.importance_tags)
 
-    # Map legacy fields from matching layer names (values are always int)
-    legacy: dict[str, int] = {}
-    legacy_map = {
-        "architectural": "architectural_half_life_days",
-        "pattern": "pattern_half_life_days",
-        "procedural": "procedural_half_life_days",
-        "context": "context_half_life_days",
-        "ephemeral": "ephemeral_half_life_days",
-        "session": "session_half_life_days",
-    }
-    for name, attr in legacy_map.items():
-        if name in layer_half_lives:
-            legacy[attr] = layer_half_lives[name]
-
     # Source ceilings from profile
     ceilings = dict(profile.source_ceilings)
 
@@ -434,12 +407,6 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
     global_floor = min(layer_floors.values()) if layer_floors else 0.1
 
     return DecayConfig(
-        architectural_half_life_days=legacy.get("architectural_half_life_days", 180),
-        pattern_half_life_days=legacy.get("pattern_half_life_days", 60),
-        procedural_half_life_days=legacy.get("procedural_half_life_days", 30),
-        context_half_life_days=legacy.get("context_half_life_days", 14),
-        ephemeral_half_life_days=legacy.get("ephemeral_half_life_days", 1),
-        session_half_life_days=legacy.get("session_half_life_days", 1),
         confidence_floor=global_floor,
         human_confidence_ceiling=ceilings.get("human", 0.95),
         agent_confidence_ceiling=ceilings.get("agent", 0.85),

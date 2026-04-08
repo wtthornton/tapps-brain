@@ -298,14 +298,14 @@ class TestDecayConfigFromProfile:
         assert isinstance(config.procedural_half_life_days, int)
         assert isinstance(config.context_half_life_days, int)
 
-    def test_legacy_fields_match_profile_layers(self) -> None:
-        """Values from profile layers are propagated to legacy fields."""
+    def test_layer_half_lives_populated(self) -> None:
+        """Profile layer half-lives are populated in layer_half_lives dict."""
         profile = self._make_profile()
         config = decay_config_from_profile(profile)
-        assert config.architectural_half_life_days == 200
-        assert config.pattern_half_life_days == 70
-        assert config.procedural_half_life_days == 45
-        assert config.context_half_life_days == 10
+        assert config.layer_half_lives["architectural"] == 200
+        assert config.layer_half_lives["pattern"] == 70
+        assert config.layer_half_lives["procedural"] == 45
+        assert config.layer_half_lives["context"] == 10
 
     def test_default_legacy_fields_when_layers_absent(self) -> None:
         """When profile has no standard layers, defaults are used."""
@@ -338,34 +338,16 @@ class TestDecayConfigFromProfile:
         assert isinstance(config.confidence_floor, float)
 
 
-class TestUnknownTierFallbackWarning:
-    """Tests for unknown tier fallback warning in _get_half_life (BUG-001-D)."""
+class TestUnknownTierRaisesValueError:
+    """Tests for unknown tier ValueError in _get_half_life."""
 
-    def test_unknown_tier_returns_context_half_life(self) -> None:
-        """Unknown tier string falls back to context_half_life_days."""
+    def test_unknown_tier_raises_value_error(self) -> None:
+        """Unknown tier string raises ValueError instead of falling back."""
         from tapps_brain.decay import _get_half_life
 
         config = DecayConfig()
-        result = _get_half_life("totally_unknown_tier", config)
-        assert result == config.context_half_life_days
-
-    def test_unknown_tier_logs_warning(self) -> None:
-        """Unknown tier string triggers a structlog warning with tier and fallback_days."""
-        from unittest.mock import MagicMock, patch
-
-        from tapps_brain.decay import _get_half_life
-
-        config = DecayConfig()
-        mock_logger = MagicMock()
-        with patch("tapps_brain.decay.logger", mock_logger):
-            result = _get_half_life("totally_unknown_tier", config)
-
-        assert result == config.context_half_life_days
-        mock_logger.warning.assert_called_once_with(
-            "unknown_tier_fallback",
-            tier="totally_unknown_tier",
-            fallback_days=config.context_half_life_days,
-        )
+        with pytest.raises(ValueError, match="Unknown tier"):
+            _get_half_life("totally_unknown_tier", config)
 
     def test_known_enum_tier_does_not_log_warning(self) -> None:
         """Known MemoryTier enum values do not trigger the fallback warning."""
@@ -409,34 +391,16 @@ class TestUnknownTierFallbackWarning:
         mock_logger.warning.assert_not_called()
 
 
-class TestUnknownSourceFallbackWarning:
-    """Tests for unknown source fallback warning in _get_ceiling (review 019-A)."""
+class TestUnknownSourceRaisesValueError:
+    """Tests for unknown source ValueError in _get_ceiling."""
 
-    def test_unknown_source_returns_agent_ceiling(self) -> None:
-        """Unknown source string falls back to agent_confidence_ceiling."""
+    def test_unknown_source_raises_value_error(self) -> None:
+        """Unknown source string raises ValueError instead of falling back."""
         from tapps_brain.decay import _get_ceiling
 
         config = DecayConfig()
-        result = _get_ceiling("totally_unknown_source", config)
-        assert result == config.agent_confidence_ceiling
-
-    def test_unknown_source_logs_warning(self) -> None:
-        """Unknown source string triggers a structlog warning with source and fallback_ceiling."""
-        from unittest.mock import MagicMock, patch
-
-        from tapps_brain.decay import _get_ceiling
-
-        config = DecayConfig()
-        mock_logger = MagicMock()
-        with patch("tapps_brain.decay.logger", mock_logger):
-            result = _get_ceiling("totally_unknown_source", config)
-
-        assert result == config.agent_confidence_ceiling
-        mock_logger.warning.assert_called_once_with(
-            "unknown_source_fallback",
-            source="totally_unknown_source",
-            fallback_ceiling=config.agent_confidence_ceiling,
-        )
+        with pytest.raises(ValueError, match="Unknown source"):
+            _get_ceiling("totally_unknown_source", config)
 
     def test_known_enum_source_does_not_log_warning(self) -> None:
         """Known MemorySource enum values do not trigger the fallback warning."""

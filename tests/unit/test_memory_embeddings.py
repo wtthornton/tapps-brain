@@ -8,8 +8,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tapps_brain.embeddings import (
-    EmbeddingProvider,
-    NoopProvider,
     SentenceTransformerProvider,
     dequantize_embedding_int8,
     embedding_cosine_similarity,
@@ -24,33 +22,26 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class TestNoopProvider:
-    """Tests for NoopProvider."""
+class _StubProvider:
+    """Minimal stub embedding provider for tests (replaces removed NoopProvider)."""
 
-    def test_embed_returns_zeros(self) -> None:
-        provider = NoopProvider(dimension=4)
-        result = provider.embed("hello world")
-        assert result == [0.0, 0.0, 0.0, 0.0]
+    def __init__(self, dimension: int = 384, *, model_id: str | None = None) -> None:
+        self._dimension = dimension
+        self._model_id = model_id
 
-    def test_embed_batch_returns_zeros(self) -> None:
-        provider = NoopProvider(dimension=384)
-        texts = ["a", "b", "c"]
-        results = provider.embed_batch(texts)
-        assert len(results) == 3
-        for r in results:
-            assert r == [0.0] * 384
+    @property
+    def dimension(self) -> int:
+        return self._dimension
 
-    def test_embed_batch_empty_returns_empty(self) -> None:
-        provider = NoopProvider(dimension=4)
-        assert provider.embed_batch([]) == []
+    @property
+    def model_id(self) -> str | None:
+        return self._model_id
 
-    def test_dimension_property(self) -> None:
-        provider = NoopProvider(dimension=128)
-        assert provider.dimension == 128
+    def embed(self, text: str) -> list[float]:
+        return [0.0] * self._dimension
 
-    def test_model_id_optional(self) -> None:
-        assert NoopProvider(dimension=4).model_id is None
-        assert NoopProvider(dimension=4, model_id="m").model_id == "m"
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0] * self._dimension for _ in texts]
 
 
 class TestQuantizeEmbeddingInt8:
@@ -107,34 +98,21 @@ class TestQuantizeEmbeddingInt8:
 class TestGetEmbeddingProvider:
     """Tests for get_embedding_provider factory."""
 
-    def test_returns_none_when_disabled(self) -> None:
-        result = get_embedding_provider(
-            semantic_search_enabled=False,
-            provider="sentence_transformers",
-        )
+    def test_returns_none_when_st_unavailable(self) -> None:
+        """Returns None when SentenceTransformerProvider init fails."""
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformerProvider",
+            side_effect=ImportError("no st"),
+        ):
+            result = get_embedding_provider()
         assert result is None
-
-    def test_returns_none_when_unknown_provider(self) -> None:
-        result = get_embedding_provider(
-            semantic_search_enabled=True,
-            provider="unknown",
-        )
-        assert result is None
-
-    def test_protocol_compliance(self) -> None:
-        """NoopProvider satisfies EmbeddingProvider protocol."""
-        provider = NoopProvider(dimension=4)
-        assert hasattr(provider, "dimension")
-        assert hasattr(provider, "embed")
-        assert hasattr(provider, "embed_batch")
-        assert provider.embed("x") == [0.0, 0.0, 0.0, 0.0]
 
 
 class TestStoreWithEmbeddingProvider:
     """Integration: MemoryStore with embedding provider stores embeddings."""
 
     def test_save_with_provider_stores_embedding(self, tmp_path: Path) -> None:
-        provider = NoopProvider(dimension=384)
+        provider = _StubProvider(dimension=384)
         store = MemoryStore(tmp_path, embedding_provider=provider)
         result = store.save("embed-key", "Some value", tier="pattern")
         assert isinstance(result, MemoryEntry)
@@ -149,14 +127,14 @@ class TestStoreWithEmbeddingProvider:
         store.close()
 
     def test_save_with_model_id_persisted(self, tmp_path: Path) -> None:
-        provider = NoopProvider(dimension=384, model_id="noop-test-model")
+        provider = _StubProvider(dimension=384, model_id="stub-test-model")
         store = MemoryStore(tmp_path, embedding_provider=provider)
         result = store.save("mid-key", "text", tier="pattern")
         assert isinstance(result, MemoryEntry)
-        assert result.embedding_model_id == "noop-test-model"
+        assert result.embedding_model_id == "stub-test-model"
         loaded = store.get("mid-key")
         assert loaded is not None
-        assert loaded.embedding_model_id == "noop-test-model"
+        assert loaded.embedding_model_id == "stub-test-model"
         store.close()
 
     def test_save_without_provider_no_embedding(self, tmp_path: Path) -> None:
@@ -244,14 +222,6 @@ class TestSentenceTransformerProvider:
         result = provider.embed_batch([])
         assert result == []
 
-    def test_protocol_compliance(self) -> None:
-        """SentenceTransformerProvider satisfies EmbeddingProvider protocol."""
-        mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 4
-        with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
-            provider = SentenceTransformerProvider(model_name="test-model")
-        assert isinstance(provider, EmbeddingProvider)
-
 
 # ---------------------------------------------------------------------------
 # get_embedding_provider — additional factory paths
@@ -267,10 +237,7 @@ class TestGetEmbeddingProviderFactoryPaths:
             "tapps_brain.embeddings.SentenceTransformerProvider",
             side_effect=OSError("disk error"),
         ):
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-            )
+            result = get_embedding_provider()
         assert result is None
 
     def test_st_init_runtime_error_returns_none(self) -> None:
@@ -279,10 +246,7 @@ class TestGetEmbeddingProviderFactoryPaths:
             "tapps_brain.embeddings.SentenceTransformerProvider",
             side_effect=RuntimeError("cuda fail"),
         ):
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-            )
+            result = get_embedding_provider()
         assert result is None
 
     def test_st_init_value_error_returns_none(self) -> None:
@@ -291,10 +255,7 @@ class TestGetEmbeddingProviderFactoryPaths:
             "tapps_brain.embeddings.SentenceTransformerProvider",
             side_effect=ValueError("bad model"),
         ):
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-            )
+            result = get_embedding_provider()
         assert result is None
 
     def test_st_success_returns_provider(self) -> None:
@@ -304,11 +265,7 @@ class TestGetEmbeddingProviderFactoryPaths:
             "tapps_brain.embeddings.SentenceTransformerProvider",
             return_value=mock_provider,
         ):
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-                model="custom-model",
-            )
+            result = get_embedding_provider(model="custom-model")
         assert result is mock_provider
 
 

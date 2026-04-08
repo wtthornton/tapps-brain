@@ -222,30 +222,6 @@ class TestCohereReranker:
         assert result[0] == ("c", 0.95)
         assert result[1] == ("a", 0.80)
 
-    def test_cohere_v1_client_fallback(self) -> None:
-        """When ClientV2 is not available, falls back to Client (v1)."""
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("x", "val x"), ("y", "val y")]
-
-        mock_result = MagicMock()
-        mock_result.index = 1
-        mock_result.relevance_score = 0.9
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        mock_cohere = MagicMock(spec=[])  # No ClientV2 attribute
-        mock_cohere.Client = MagicMock(return_value=mock_client)
-
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            result = reranker.rerank("query", candidates, top_k=2)
-
-        assert len(result) == 1
-        assert result[0] == ("y", 0.9)
-
     def test_top_k_limits_cohere_call(self) -> None:
         reranker = CohereReranker(api_key="sk-test")
         candidates = [("a", "va"), ("b", "vb"), ("c", "vc")]

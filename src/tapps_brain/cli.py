@@ -416,11 +416,11 @@ def memory_save_cmd(  # noqa: PLR0915
             raise typer.Exit(code=1) from None
 
         norm_tier = normalize_save_tier(tier, store.profile)
-        legacy = frozenset(m.value for m in MemoryTier)
-        prof_layers = (
-            frozenset(store.profile.layer_names) if store.profile is not None else frozenset()
+        valid_tiers = (
+            frozenset(store.profile.layer_names)
+            if store.profile is not None
+            else frozenset(m.value for m in MemoryTier)
         )
-        valid_tiers = legacy | prof_layers
         if norm_tier not in valid_tiers:
             ordered = sorted(valid_tiers)
             tier_err: dict[str, Any] = {

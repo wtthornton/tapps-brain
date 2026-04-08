@@ -17,7 +17,7 @@ from tapps_brain.sqlite_vec_index import (
     ensure_memory_vec_table,
     knn_search,
     maybe_backfill_if_empty,
-    try_load_extension,
+    load_extension,
     upsert_vec_row,
     vec_row_count,
 )
@@ -36,7 +36,7 @@ def _entry(key: str, emb: list[float]) -> MemoryEntry:
 
 def test_sqlite_vec_roundtrip_knn() -> None:
     conn = sqlite3.connect(":memory:")
-    assert try_load_extension(conn)
+    load_extension(conn)
     ensure_memory_vec_table(conn, dim=4)
     emb = [1.0, 0.0, 0.0, 0.0]
     upsert_vec_row(conn, "k1", emb)
@@ -54,7 +54,7 @@ def test_sqlite_vec_roundtrip_knn() -> None:
 
 def test_backfill_from_memories() -> None:
     conn = sqlite3.connect(":memory:")
-    assert try_load_extension(conn)
+    load_extension(conn)
     ensure_memory_vec_table(conn, dim=DEFAULT_VEC_DIM)
     emb = [0.1] * DEFAULT_VEC_DIM
     entries = [_entry("a", emb), _entry("b", emb)]
@@ -66,14 +66,14 @@ def test_backfill_from_memories() -> None:
 
 def test_knn_search_wrong_embedding_dim() -> None:
     conn = sqlite3.connect(":memory:")
-    assert try_load_extension(conn)
+    load_extension(conn)
     ensure_memory_vec_table(conn, dim=4)
     assert knn_search(conn, [0.0, 0.0, 0.0], k=3, dim=4) == []
     assert knn_search(conn, [1.0, 0.0, 0.0, 0.0], k=0, dim=4) == []
     conn.close()
 
 
-def test_try_load_extension_when_load_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_extension_raises_when_load_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     import sqlite_vec
 
     def _boom(_conn: sqlite3.Connection) -> None:
@@ -83,7 +83,8 @@ def test_try_load_extension_when_load_raises(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(sqlite_vec, "load", _boom)
     conn = sqlite3.connect(":memory:")
     conn.enable_load_extension(True)
-    assert try_load_extension(conn) is False
+    with pytest.raises(OSError, match="load failed"):
+        load_extension(conn)
     conn.close()
 
 
@@ -117,7 +118,7 @@ def test_backfill_from_memories_no_table() -> None:
 
 def test_backfill_skips_wrong_embedding_length() -> None:
     conn = sqlite3.connect(":memory:")
-    assert try_load_extension(conn)
+    load_extension(conn)
     ensure_memory_vec_table(conn, dim=DEFAULT_VEC_DIM)
     short = [0.1] * 10
     n = backfill_from_memories(conn, [_entry("a", short)], dim=DEFAULT_VEC_DIM)
@@ -147,7 +148,7 @@ def test_knn_search_operational_error_on_match(
 
 def test_maybe_backfill_if_empty_noop_when_already_populated() -> None:
     conn = sqlite3.connect(":memory:")
-    assert try_load_extension(conn)
+    load_extension(conn)
     ensure_memory_vec_table(conn, dim=DEFAULT_VEC_DIM)
     emb = [0.1] * DEFAULT_VEC_DIM
     entries = [_entry("only", emb)]

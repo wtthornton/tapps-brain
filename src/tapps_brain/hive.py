@@ -801,7 +801,7 @@ class HiveStore:
         min_confidence: float = 0.0,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Search across namespaces using FTS5, falling back to LIKE.
+        """Search across namespaces using FTS5.
 
         Args:
             query: Full-text search query.
@@ -819,9 +819,9 @@ class HiveStore:
                     rows = self._conn.execute(
                         f"""
                         SELECT hm.*, rank
-                        FROM hive_fts fts
-                        JOIN hive_memories hm ON fts.rowid = hm.rowid
-                        WHERE fts MATCH ?
+                        FROM hive_fts
+                        JOIN hive_memories hm ON hive_fts.rowid = hm.rowid
+                        WHERE hive_fts MATCH ?
                         AND hm.confidence >= ?
                         AND hm.namespace IN ({placeholders})
                         ORDER BY rank
@@ -833,9 +833,9 @@ class HiveStore:
                     rows = self._conn.execute(
                         """
                         SELECT hm.*, rank
-                        FROM hive_fts fts
-                        JOIN hive_memories hm ON fts.rowid = hm.rowid
-                        WHERE fts MATCH ?
+                        FROM hive_fts
+                        JOIN hive_memories hm ON hive_fts.rowid = hm.rowid
+                        WHERE hive_fts MATCH ?
                         AND hm.confidence >= ?
                         ORDER BY rank
                         LIMIT ?
@@ -843,31 +843,7 @@ class HiveStore:
                         (query, min_confidence, limit),
                     ).fetchall()
             except sqlite3.OperationalError:
-                # FTS5 fallback: simple LIKE search
-                if namespaces:
-                    placeholders = ",".join("?" * len(namespaces))
-                    rows = self._conn.execute(
-                        f"""
-                        SELECT *, 0.0 as rank
-                        FROM hive_memories
-                        WHERE (key LIKE ? OR value LIKE ?)
-                        AND confidence >= ?
-                        AND namespace IN ({placeholders})
-                        LIMIT ?
-                        """,
-                        (f"%{query}%", f"%{query}%", min_confidence, *namespaces, limit),
-                    ).fetchall()
-                else:
-                    rows = self._conn.execute(
-                        """
-                        SELECT *, 0.0 as rank
-                        FROM hive_memories
-                        WHERE (key LIKE ? OR value LIKE ?)
-                        AND confidence >= ?
-                        LIMIT ?
-                        """,
-                        (f"%{query}%", f"%{query}%", min_confidence, limit),
-                    ).fetchall()
+                rows = []
 
         return [self._row_to_dict(row) for row in rows]
 

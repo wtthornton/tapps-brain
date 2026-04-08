@@ -75,11 +75,11 @@ profile:
       inferred: 0.5
 
   # Hybrid BM25 + vector RRF (STORY-042.4). Defaults match code; widen recall with e.g.
-  # top_k_lexical / top_k_dense (aliases for top_bm25 / top_vector) or tune rrf_k.
+  # top_k_lexical / top_k_dense or tune rrf_k.
   # hybrid_fusion:
   #   adaptive_fusion: true
-  #   top_bm25: 20
-  #   top_vector: 20
+  #   top_k_lexical: 20
+  #   top_k_dense: 20
   #   rrf_k: 60
 
   source_confidence:

@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
-    from tapps_brain.embeddings import EmbeddingProvider
+    from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
     from tapps_brain.hive import HiveStore
 
@@ -188,7 +188,7 @@ class MemoryStore:
         *,
         store_dir: str = ".tapps-brain",
         consolidation_config: ConsolidationConfig | None = None,
-        embedding_provider: EmbeddingProvider | None = _UNSET_EMBEDDING,
+        embedding_provider: SentenceTransformerProvider | None = _UNSET_EMBEDDING,
         write_rules: Any = None,  # noqa: ANN401
         lookup_engine: Any = None,  # noqa: ANN401
         profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
@@ -237,12 +237,9 @@ class MemoryStore:
         else:
             self._consolidation_config = ConsolidationConfig()
         if embedding_provider is _UNSET_EMBEDDING:
-            if os.environ.get("TAPPS_SEMANTIC_SEARCH") == "0":
-                self._embedding_provider = None
-            else:
-                from tapps_brain.embeddings import get_embedding_provider
+            from tapps_brain.embeddings import get_embedding_provider
 
-                self._embedding_provider = get_embedding_provider()
+            self._embedding_provider = get_embedding_provider()
         else:
             self._embedding_provider = embedding_provider
         self._write_rules = write_rules
@@ -2019,8 +2016,6 @@ class MemoryStore:
             return
         from tapps_brain.diagnostics import DiagnosticsHistoryStore
 
-        if self._persistence.get_schema_version() < 10:
-            return
         self._diagnostics_history_store = DiagnosticsHistoryStore(
             self._persistence.db_path,
             encryption_key=self._persistence.encryption_key,

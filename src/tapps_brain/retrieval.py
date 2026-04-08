@@ -648,16 +648,15 @@ class MemoryRetriever:
         to ``False`` for equal 1:1 weighting (legacy behavior).
 
         Pool sizes and ``rrf_k`` default to 20/20/60; override via
-        ``profile.hybrid_fusion`` (``top_bm25`` / ``top_vector`` / ``rrf_k``, or YAML
-        aliases ``top_k_lexical`` / ``top_k_dense``) on the object passed as
-        ``hybrid_config``.
+        ``profile.hybrid_fusion`` (``top_k_lexical`` / ``top_k_dense`` / ``rrf_k``)
+        on the object passed as ``hybrid_config``.
         """
-        top_bm25 = 20
-        top_vector = 20
+        top_k_lexical = 20
+        top_k_dense = 20
         rrf_k = 60
         if self._hybrid_config is not None:
-            top_bm25 = getattr(self._hybrid_config, "top_bm25", 20)
-            top_vector = getattr(self._hybrid_config, "top_vector", 20)
+            top_k_lexical = getattr(self._hybrid_config, "top_k_lexical", 20)
+            top_k_dense = getattr(self._hybrid_config, "top_k_dense", 20)
             rrf_k = getattr(self._hybrid_config, "rrf_k", 60)
 
         from tapps_brain.fusion import hybrid_rrf_weights_for_query, reciprocal_rank_fusion_weighted
@@ -676,18 +675,18 @@ class MemoryRetriever:
                 query, store, memory_group=memory_group,
                 since=since, until=until, time_field=time_field,
             )
-            # Take top top_bm25 by score
+            # Take top top_k_lexical by score
             sorted_cands = sorted(
                 candidates,
                 key=lambda x: x[1],
                 reverse=True,
-            )[:top_bm25]
+            )[:top_k_lexical]
             bm25_keys = [e.key for e, _ in sorted_cands]
 
         def run_vector() -> None:
             nonlocal vector_keys
             vector_results = self._vector_search(
-                query, store, limit=top_vector, memory_group=memory_group
+                query, store, limit=top_k_dense, memory_group=memory_group
             )
             vector_keys = [k for k, _ in vector_results]
 

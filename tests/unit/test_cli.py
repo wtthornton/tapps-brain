@@ -22,7 +22,7 @@ runner = CliRunner()
 @pytest.fixture()
 def store(tmp_path: Path):
     """Create a MemoryStore with some test data."""
-    s = MemoryStore(tmp_path)
+    s = MemoryStore(tmp_path, embedding_provider=None)
     s.save(key="tech-stack", value="We use PostgreSQL and Python", tier="architectural")
     s.save(key="deploy-process", value="We deploy via GitHub Actions", tier="procedural")
     s.save(key="api-pattern", value="All APIs use REST with JSON", tier="pattern")

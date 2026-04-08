@@ -1,8 +1,8 @@
-"""Pluggable embedding provider for optional semantic search (Epic 65.7).
+"""Embedding utilities for semantic search (Epic 65.7).
 
-Defines EmbeddingProvider protocol and implementations:
-- NoopProvider: returns zeros when semantic search is disabled (testing/placeholder).
-- SentenceTransformerProvider: optional sentence-transformers backend (behind feature_flags).
+Provides ``SentenceTransformerProvider`` backed by sentence-transformers
+(core dependency) and pure-Python helpers for quantization, normalization,
+and cosine similarity.
 
 Used by Epic 65.8 hybrid search (BM25 + vector).
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import cast
 
 import structlog
 
@@ -100,62 +100,8 @@ def embedding_cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-@runtime_checkable
-class EmbeddingProvider(Protocol):
-    """Protocol for pluggable embedding providers.
-
-    Used for optional semantic search. Implementations must provide
-    single-text and batch embedding, plus dimension.
-    """
-
-    @property
-    def dimension(self) -> int:
-        """Embedding vector dimension."""
-        ...
-
-    def embed(self, text: str) -> list[float]:
-        """Embed a single text into a vector."""
-        ...
-
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts into vectors."""
-        ...
-
-
-class NoopProvider:
-    """Placeholder provider that returns zero vectors.
-
-    Used when semantic search is disabled or for testing. Dimension
-    matches all-MiniLM-L6-v2 (384) for schema consistency.
-    """
-
-    def __init__(self, dimension: int = 384, *, model_id: str | None = None) -> None:
-        self._dimension = dimension
-        self._model_id = model_id
-
-    @property
-    def dimension(self) -> int:
-        return self._dimension
-
-    @property
-    def model_id(self) -> str | None:
-        """Optional Hugging Face / sentence-transformers model id for provenance."""
-        return self._model_id
-
-    def embed(self, text: str) -> list[float]:
-        """Return a zero vector of dimension length."""
-        return [0.0] * self._dimension
-
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Return zero vectors for each text."""
-        return [[0.0] * self._dimension for _ in texts]
-
-
 class SentenceTransformerProvider:
-    """Embedding provider backed by sentence-transformers.
-
-    Requires sentence-transformers package (core dependency).
-    """
+    """Embedding provider backed by sentence-transformers (core dependency)."""
 
     def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
         if SentenceTransformer is None:
@@ -192,33 +138,18 @@ class SentenceTransformerProvider:
 
 
 def get_embedding_provider(
-    semantic_search_enabled: bool = True,
-    provider: str = "sentence_transformers",
     model: str = _DEFAULT_MODEL,
-) -> EmbeddingProvider | None:
-    """Return an EmbeddingProvider when semantic search is enabled, else None.
+) -> SentenceTransformerProvider | None:
+    """Return a ``SentenceTransformerProvider``, or None if unavailable.
 
-    Semantic search is enabled by default since sqlite-vec is a core
-    dependency.  Pass ``semantic_search_enabled=False`` to disable.
-
-    Args:
-        semantic_search_enabled: Whether semantic search is turned on (config).
-            Defaults to True.
-        provider: Provider name; only "sentence_transformers" supported.
-        model: Model name for sentence-transformers (e.g. all-MiniLM-L6-v2).
-
-    Returns:
-        EmbeddingProvider when enabled and provider available, else None.
+    Returns None (with a warning) when sentence-transformers is not installed
+    or the model fails to load — e.g. in test environments.
     """
-    if not semantic_search_enabled:
+    try:
+        return SentenceTransformerProvider(model_name=model)
+    except ImportError:
+        logger.debug("embedding_provider_unavailable", reason="sentence-transformers not installed")
         return None
-
-    if provider == "sentence_transformers":
-        try:
-            return SentenceTransformerProvider(model_name=model)
-        except (OSError, RuntimeError, ValueError) as e:
-            logger.warning("embedding_provider_init_failed", error=str(e))
-            return None
-
-    logger.debug("embedding_provider_unknown", provider=provider)
-    return None
+    except (OSError, RuntimeError, ValueError) as e:
+        logger.warning("embedding_provider_init_failed", error=str(e))
+        return None

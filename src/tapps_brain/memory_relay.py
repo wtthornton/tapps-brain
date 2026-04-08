@@ -54,37 +54,41 @@ def normalize_relay_tier(raw: str | None) -> str:
 
 
 def resolve_relay_scopes(item: dict[str, Any]) -> tuple[str, str] | None:
-    """Return ``(memory_scope, agent_scope)`` or None if configuration is invalid."""
+    """Return ``(memory_scope, agent_scope)`` or None if configuration is invalid.
+
+    Accepts ``visibility`` (preferred), ``memory_scope``, or ``scope`` for the
+    memory scope dimension, and ``agent_scope`` for the agent scope dimension.
+    When ``scope`` contains a valid agent scope value (e.g. "hive") rather than
+    a memory scope, it is interpreted as agent_scope with default memory scope.
+    """
     vis = item.get("visibility") or item.get("memory_scope")
     ag = item.get("agent_scope")
-    legacy = item.get("scope")
+    scope_val = item.get("scope")
 
     ag_norm: str | None = None
+
+    # "scope" field: interpret as memory_scope if valid, else as agent_scope
+    if scope_val is not None and vis is None:
+        sv = str(scope_val).strip().lower()
+        if sv in _MEMORY_SCOPES:
+            vis = sv
+        else:
+            try:
+                ag_norm = normalize_agent_scope(str(scope_val).strip())
+            except ValueError:
+                return None
 
     if vis is not None:
         vs = str(vis).strip().lower()
         if vs not in _MEMORY_SCOPES:
             return None
         vis = vs
+
     if ag is not None:
         try:
-            ag_norm = normalize_agent_scope(str(ag).strip())
+            ag_norm = ag_norm or normalize_agent_scope(str(ag).strip())
         except ValueError:
             return None
-
-    if legacy is not None:
-        raw_legacy = str(legacy).strip()
-        ls = raw_legacy.lower()
-        if ls in _MEMORY_SCOPES:
-            vis = vis or ls
-            ag_norm = ag_norm or "private"
-        else:
-            try:
-                legacy_ag = normalize_agent_scope(raw_legacy)
-            except ValueError:
-                return None
-            ag_norm = ag_norm or legacy_ag
-            vis = vis or MemoryScope.project.value
 
     return (vis or MemoryScope.project.value), (ag_norm or "private")
 

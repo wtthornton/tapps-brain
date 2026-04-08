@@ -556,8 +556,8 @@ class TestRetrievalHybridConfig:
         from tapps_brain.retrieval import MemoryRetriever
 
         config = MagicMock()
-        config.top_bm25 = 10
-        config.top_vector = 10
+        config.top_k_lexical = 10
+        config.top_k_dense = 10
         config.rrf_k = 30
 
         entries = [_entry("a", "content")]

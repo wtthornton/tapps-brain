@@ -187,25 +187,17 @@ class TestSourceTrustRanking:
         # Agent has trust=1.0, human has trust=0.5 — agent wins
         assert results[0].entry.key == "from-agent"
 
-    def test_unknown_source_defaults_to_1(self) -> None:
-        """An entry with an unrecognized source string gets trust=1.0 (no penalty)."""
+    def test_unknown_source_raises_value_error(self) -> None:
+        """An entry with an unrecognized source string raises ValueError during decay."""
         entry = _make_entry("custom-source", "test data")
         # Manually set source to a string not in the trust dict
         entry = entry.model_copy(update={"source": "custom"})
 
-        # Use all-1.0 trust as reference — unknown source should behave identically
-        config_all_one = ScoringConfig(
-            source_trust={"human": 1.0, "agent": 1.0, "system": 1.0, "inferred": 1.0}
-        )
-        retriever_default = MemoryRetriever()
-        retriever_all_one = MemoryRetriever(scoring_config=config_all_one)
+        retriever = MemoryRetriever()
         store = _make_store([entry])
 
-        results_default = retriever_default.search("test data", store)
-        results_all_one = retriever_all_one.search("test data", store)
-        assert len(results_default) == 1
-        # Unknown source falls back to trust=1.0 — score must match the all-1.0 retriever
-        assert results_default[0].score == pytest.approx(results_all_one[0].score, rel=1e-6)
+        with pytest.raises(ValueError, match="Unknown source"):
+            retriever.search("test data", store)
 
     def test_empty_source_trust_dict_uses_no_penalty(self) -> None:
         """Empty source_trust dict causes all sources to get trust=1.0 (get default)."""

@@ -14,13 +14,15 @@ from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.sqlite_vec_index import DEFAULT_VEC_DIM
 
 
-def test_setup_sqlite_vec_noop_when_extension_will_not_load(
+def test_setup_sqlite_vec_raises_when_extension_fails(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(sqlite_vec_mod, "try_load_extension", lambda c: False)
-    mp = MemoryPersistence(tmp_path)
-    assert mp._sqlite_vec_enabled is False
-    mp.close()
+    def _boom(_conn: object) -> None:
+        raise OSError("extension load failed")
+
+    monkeypatch.setattr(sqlite_vec_mod, "load_extension", _boom)
+    with pytest.raises(OSError, match="extension load failed"):
+        MemoryPersistence(tmp_path)
 
 
 def test_persistence_sqlite_vec_knn_after_save(tmp_path) -> None:

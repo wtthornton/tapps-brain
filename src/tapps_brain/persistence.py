@@ -172,9 +172,9 @@ class MemoryPersistence:
                         check_same_thread=False,
                     )
                     if self._sqlite_vec_enabled:
-                        from tapps_brain.sqlite_vec_index import try_load_extension
+                        from tapps_brain.sqlite_vec_index import load_extension
 
-                        try_load_extension(self._read_conn)
+                        load_extension(self._read_conn)
                 except (OSError, sqlite3.Error):
                     logger.debug("memory_readonly_conn_failed", exc_info=True)
                     self._readonly_conn_failed = True
@@ -239,26 +239,21 @@ class MemoryPersistence:
         from tapps_brain.sqlite_vec_index import (
             DEFAULT_VEC_DIM,
             ensure_memory_vec_table,
+            load_extension,
             maybe_backfill_if_empty,
-            try_load_extension,
         )
 
         self._sqlite_vec_dim = DEFAULT_VEC_DIM
-        if not try_load_extension(self._conn):
-            return
-        try:
-            with self._lock:
-                ensure_memory_vec_table(self._conn, dim=self._sqlite_vec_dim)
-                rows = self._conn.execute(
-                    "SELECT * FROM memories WHERE embedding IS NOT NULL AND TRIM(embedding) != ''"
-                ).fetchall()
-                entries = [self._row_to_entry(r) for r in rows]
-                maybe_backfill_if_empty(self._conn, entries)
-                self._conn.commit()
-            self._sqlite_vec_enabled = True
-        except (OSError, sqlite3.OperationalError, TypeError, ValueError):
-            logger.debug("sqlite_vec_setup_failed", exc_info=True)
-            self._sqlite_vec_enabled = False
+        load_extension(self._conn)
+        with self._lock:
+            ensure_memory_vec_table(self._conn, dim=self._sqlite_vec_dim)
+            rows = self._conn.execute(
+                "SELECT * FROM memories WHERE embedding IS NOT NULL AND TRIM(embedding) != ''"
+            ).fetchall()
+            entries = [self._row_to_entry(r) for r in rows]
+            maybe_backfill_if_empty(self._conn, entries)
+            self._conn.commit()
+        self._sqlite_vec_enabled = True
 
     def _sqlite_vec_sync_unlocked(self, entry: MemoryEntry) -> None:
         """Keep ``memory_vec`` in sync with ``memories.embedding`` (caller holds lock).
@@ -840,74 +835,62 @@ class MemoryPersistence:
             entry.seeded_from,
         )
 
-        # Include embedding if schema supports it (v2+, column added in _migrate_v1_to_v2)
-        schema_ver = self.get_schema_version()
-        if schema_ver >= _SCHEMA_V2:
-            columns.append("embedding")
-            values = (*values, embedding_json)
+        # Embedding
+        columns.append("embedding")
+        values = (*values, embedding_json)
 
-        # Include temporal fields if schema supports it (v5+)
-        if schema_ver >= _SCHEMA_V5:
-            columns.extend(["valid_at", "invalid_at", "superseded_by"])
-            values = (*values, entry.valid_at, entry.invalid_at, entry.superseded_by)
+        # Temporal fields
+        columns.extend(["valid_at", "invalid_at", "superseded_by"])
+        values = (*values, entry.valid_at, entry.invalid_at, entry.superseded_by)
 
-        # Include agent_scope if schema supports it (v7+)
-        if schema_ver >= _SCHEMA_V7:
-            columns.append("agent_scope")
-            values = (*values, entry.agent_scope)
+        # Agent scope
+        columns.append("agent_scope")
+        values = (*values, entry.agent_scope)
 
-        # Compute and include integrity hash if schema supports it (v8+)
-        if schema_ver >= _SCHEMA_V8:
-            from tapps_brain.integrity import compute_integrity_hash
+        # Integrity hash
+        from tapps_brain.integrity import compute_integrity_hash
 
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            integrity_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
-            columns.append("integrity_hash")
-            values = (*values, integrity_hash)
+        tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+        integrity_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
+        columns.append("integrity_hash")
+        values = (*values, integrity_hash)
 
-        # Flywheel feedback tallies (v11+)
-        if schema_ver >= _SCHEMA_V11:
-            columns.extend(["positive_feedback_count", "negative_feedback_count"])
-            values = (*values, entry.positive_feedback_count, entry.negative_feedback_count)
+        # Flywheel feedback tallies
+        columns.extend(["positive_feedback_count", "negative_feedback_count"])
+        values = (*values, entry.positive_feedback_count, entry.negative_feedback_count)
 
-        # Provenance metadata (v12+, GitHub #38)
-        if schema_ver >= _SCHEMA_V12:
-            columns.extend(
-                ["source_session_id", "source_channel", "source_message_id", "triggered_by"]
-            )
-            values = (
-                *values,
-                entry.source_session_id,
-                entry.source_channel,
-                entry.source_message_id,
-                entry.triggered_by,
-            )
+        # Provenance metadata (GitHub #38)
+        columns.extend(
+            ["source_session_id", "source_channel", "source_message_id", "triggered_by"]
+        )
+        values = (
+            *values,
+            entry.source_session_id,
+            entry.source_channel,
+            entry.source_message_id,
+            entry.triggered_by,
+        )
 
-        # Temporal validity window (v13+, GitHub #29)
-        if schema_ver >= _SCHEMA_V13:
-            columns.extend(["valid_from", "valid_until"])
-            values = (*values, entry.valid_from, entry.valid_until)
+        # Temporal validity window (GitHub #29)
+        columns.extend(["valid_from", "valid_until"])
+        values = (*values, entry.valid_from, entry.valid_until)
 
-        # Adaptive stability and difficulty (v14+, GitHub #28)
-        if schema_ver >= _SCHEMA_V14:
-            columns.extend(["stability", "difficulty"])
-            values = (*values, entry.stability, entry.difficulty)
+        # Adaptive stability and difficulty (GitHub #28)
+        columns.extend(["stability", "difficulty"])
+        values = (*values, entry.stability, entry.difficulty)
 
-        # Bayesian confidence update counters (v15+, GitHub #35)
-        if schema_ver >= _SCHEMA_V15:
-            columns.extend(["useful_access_count", "total_access_count"])
-            values = (*values, entry.useful_access_count, entry.total_access_count)
+        # Bayesian confidence update counters (GitHub #35)
+        columns.extend(["useful_access_count", "total_access_count"])
+        values = (*values, entry.useful_access_count, entry.total_access_count)
 
-        # Project-local partition (v16+, GitHub #49)
-        if schema_ver >= _SCHEMA_V16:
-            columns.append("memory_group")
-            values = (*values, entry.memory_group)
+        # Project-local partition (GitHub #49)
+        columns.append("memory_group")
+        values = (*values, entry.memory_group)
 
-        # Dense embedding model id (v17+, STORY-042.2)
-        if schema_ver >= _SCHEMA_V17:
-            columns.append("embedding_model_id")
-            values = (*values, entry.embedding_model_id)
+        # Dense embedding model id (STORY-042.2)
+        columns.append("embedding_model_id")
+        values = (*values, entry.embedding_model_id)
 
         placeholders = ", ".join("?" * len(columns))
 
@@ -1012,7 +995,7 @@ class MemoryPersistence:
                     WHERE memories_fts MATCH ?
         """
         params: list[Any] = [safe_query]
-        if memory_group is not None and self._schema_version >= _SCHEMA_V16:
+        if memory_group is not None:
             sql += " AND m.memory_group = ?"
             params.append(memory_group)
         if since is not None:
@@ -1057,9 +1040,7 @@ class MemoryPersistence:
         return self._schema_version
 
     def flywheel_meta_get(self, key: str) -> str | None:
-        """Read a flywheel_meta value (EPIC-031); None if missing or pre-v11."""
-        if self._schema_version < _SCHEMA_V11:
-            return None
+        """Read a flywheel_meta value (EPIC-031); None if missing."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT value FROM flywheel_meta WHERE key = ?",
@@ -1069,8 +1050,6 @@ class MemoryPersistence:
 
     def flywheel_meta_set(self, key: str, value: str) -> None:
         """Upsert a flywheel_meta key (EPIC-031)."""
-        if self._schema_version < _SCHEMA_V11:
-            return
         with self._lock:
             self._conn.execute(
                 """

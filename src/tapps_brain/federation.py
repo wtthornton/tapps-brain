@@ -502,24 +502,21 @@ class FederatedStore:
         # since tags are stored as JSON arrays and can't be filtered in SQL cheaply.
         sql_limit = limit * 3 if tags else limit
 
-        like_mg = mg_filter.replace("fm.", "") if mg_filter else ""
-
         with self._lock:
-            # Try FTS5 first
+            fts_params: list[Any] = [
+                query,
+                min_confidence,
+                *project_params,
+                *mg_params,
+                sql_limit,
+            ]
             try:
-                fts_params: list[Any] = [
-                    query,
-                    min_confidence,
-                    *project_params,
-                    *mg_params,
-                    sql_limit,
-                ]
                 rows = self._conn.execute(
                     f"""
                     SELECT fm.*, rank
-                    FROM federated_fts fts
-                    JOIN federated_memories fm ON fts.rowid = fm.rowid
-                    WHERE fts MATCH ?
+                    FROM federated_fts
+                    JOIN federated_memories fm ON federated_fts.rowid = fm.rowid
+                    WHERE federated_fts MATCH ?
                     AND fm.confidence >= ?
                     {project_filter}
                     {mg_filter}
@@ -529,28 +526,7 @@ class FederatedStore:
                     fts_params,
                 ).fetchall()
             except sqlite3.OperationalError:
-                # FTS5 fallback: simple LIKE search
-                like_filter = project_filter.replace("fm.project_id", "project_id")
-                fallback_params: list[Any] = [
-                    f"%{query}%",
-                    f"%{query}%",
-                    min_confidence,
-                    *project_params,
-                    *mg_params,
-                    sql_limit,
-                ]
-                rows = self._conn.execute(
-                    f"""
-                    SELECT *, 0.0 as rank
-                    FROM federated_memories
-                    WHERE (key LIKE ? OR value LIKE ?)
-                    AND confidence >= ?
-                    {like_filter}
-                    {like_mg}
-                    LIMIT ?
-                    """,
-                    fallback_params,
-                ).fetchall()
+                rows = []
 
         results: list[dict[str, Any]] = []
         for row in rows:
