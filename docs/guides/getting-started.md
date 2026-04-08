@@ -121,30 +121,24 @@ Semantic (embedding-based) search is built into the core install. The base `pip 
 
 ## Reranker configuration
 
-The `[reranker]` extra adds cross-encoder reranking via the Cohere API to improve precision after BM25/hybrid retrieval:
+The `[reranker]` extra adds local cross-encoder reranking via FlashRank to improve precision after BM25/hybrid retrieval:
 
 ```bash
 pip install tapps-brain[reranker]
 ```
+
+FlashRank runs entirely on-device (CPU, ~4MB model). No API key needed. No data leaves the machine.
 
 **Configuration** (via `InjectionConfig` or profile settings):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `reranker_enabled` | `True` | Enable reranking in the retrieval pipeline |
-| `reranker_provider` | `"noop"` | Provider: `"noop"` (passthrough) or `"cohere"` |
-| `reranker_api_key` | `None` | Cohere API key (also reads `COHERE_API_KEY` env) |
 | `reranker_top_k` | `10` | Number of results to return after reranking |
 
-**API key management:**
+When `reranker_enabled=True` and flashrank is installed, reranking is automatic. If flashrank is not installed, the reranker falls back to noop (position-based scoring).
 
-- Set `COHERE_API_KEY` in your environment or pass `reranker_api_key=` programmatically.
-- Rotate keys by updating the environment variable; no restart is required for new `MemoryStore` instances.
-- If the API key is missing or empty when `provider="cohere"`, the reranker silently falls back to noop (position-based scoring) and logs a debug message.
-
-**Timeouts and errors:** The Cohere client uses its default HTTP timeout. If the API call fails (network error, rate limit, invalid key), the reranker falls back to the original BM25/hybrid ranking order and logs a warning (`reranker_failed_fallback_to_original`). No data is lost.
-
-**Privacy note:** When `provider="cohere"`, memory entry values (text snippets) are sent to the Cohere API for reranking. Review your profile and compliance requirements before enabling cloud reranking in production.
+**Errors:** If the FlashRank model fails at runtime, the reranker falls back to the original BM25/hybrid ranking order and logs a warning. No data is lost.
 
 ---
 

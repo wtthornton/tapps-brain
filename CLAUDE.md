@@ -71,7 +71,7 @@ uv build
 
 **Hive** — `hive.py` (EPIC-011) enables cross-agent memory sharing via `~/.tapps-brain/hive/hive.db`. `HiveStore` (SQLite, WAL, FTS5, namespace-aware) stores shared memories. `AgentRegistry` (YAML-backed) tracks agent registrations. `PropagationEngine` routes entries to the Hive based on `agent_scope` (`private`/`domain`/`hive`). `ConflictPolicy` resolves concurrent writes (supersede, source_authority, confidence_max, last_write_wins). Hive-aware recall in `recall.py` merges local + Hive results with configurable weight (default 0.8). Library use is opt-in via `hive_store=`; CLI and MCP attach a `HiveStore` by default (see `docs/guides/hive.md`).
 
-**Pluggable extensions** — `_protocols.py` defines Protocol interfaces. Optional deps (cohere, anthropic, openai) detected lazily via `_feature_flags.py`. Embeddings (`embeddings.py`) and reranking (`reranker.py`) are opt-in.
+**Pluggable extensions** — `_protocols.py` defines Protocol interfaces. Optional deps (flashrank, anthropic, openai) detected lazily. Embeddings (`embeddings.py`) and reranking (`reranker.py`) are opt-in.
 
 ### Key design decisions
 

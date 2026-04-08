@@ -17,7 +17,7 @@
 | **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. Ops: [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md). |
 | **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
-| **Re-ranking (cross-encoder API)** | **Cohere** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when configured; falls back to noop. |
+| **Re-ranking (local cross-encoder)** | **FlashRank** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when installed; falls back to noop. Runs entirely on-device, no API key needed. |
 | **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
 | **Stale / decayed relevance** | **Exponential decay** + optional **FSRS-like fields** | `decay.py` lazy decay on read; `models.py` carries `stability` / `difficulty`; hybrid model + recall vs reinforce updates in [`memory-decay-and-fsrs.md`](../guides/memory-decay-and-fsrs.md). **Checklist 10.2:** lazy decay + operator GC — no mandatory wall-clock TTL jobs in core; [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md). |
 
@@ -108,7 +108,7 @@
 |--------------------------|----------|---------|
 | `cli` | `typer` | Command-line interface. |
 | `mcp` | `mcp` | MCP server. |
-| `reranker` | `cohere` | API re-ranking. |
+| `reranker` | `flashrank` | Local cross-encoder re-ranking. |
 | `encryption` | `pysqlcipher3` | SQLCipher. |
 | `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
 | **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers`, `sqlite-vec` | Always installed (vector search built-in since v2.2.0). |

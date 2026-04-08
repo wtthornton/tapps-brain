@@ -379,7 +379,7 @@ class TestInjectionRerankTelemetry:
             "python asyncio",
             store,
             "high",
-            config=InjectionConfig(reranker_enabled=True, reranker_provider="noop"),
+            config=InjectionConfig(reranker_enabled=True),
         )
         t = result["injection_telemetry"]
         assert t["rerank_applied"] is True

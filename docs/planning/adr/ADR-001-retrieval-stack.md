@@ -18,7 +18,7 @@ Constraints for tapps-brain include: **synchronous** core, **deterministic** sco
    - **Lexical:** FTS5 plus in-process Okapi BM25 (`bm25.py`).
    - **Dense (built-in):** `sentence-transformers`, `numpy`, and `sqlite-vec` are core dependencies — embeddings in `embeddings.py`, vectors on entries and in **`sqlite-vec`** (`memory_vec`) by default.
    - **Hybrid:** **Reciprocal Rank Fusion** in `fusion.py`, including weighted RRF and profile-driven pool sizes via `HybridFusionConfig` / `profile.hybrid_fusion`.
-   - **Post-retrieval:** Composite scoring in `retrieval.py` (fixed weights + profile hooks where wired); optional **Cohere** rerank behind `[reranker]`.
+   - **Post-retrieval:** Composite scoring in `retrieval.py` (fixed weights + profile hooks where wired); optional **FlashRank** local cross-encoder rerank behind `[reranker]`.
 
 2. **Out of scope for core product / v2 delivery as mandatory or default paths (defer / wontfix for now):**
    - **Learned sparse** neural retrievers as a built-in encoding path.

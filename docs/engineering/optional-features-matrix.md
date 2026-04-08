@@ -9,7 +9,7 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 | MCP server | `mcp` extra | MCP runtime in `mcp_server.py` | Startup error with install hint |
 | Vector embeddings | `vector` extra (`sentence-transformers`) | Hybrid retrieval and embedding writes | Falls back to non-vector retrieval |
 | sqlite-vec | `vector` extra (`sqlite-vec`) | `memory_vec` ANN path | Silent no-op; retrieval falls back |
-| Reranker | `reranker` extra (`cohere`) | Re-ranking in injection pipeline | No-op reranker path |
+| Reranker | `reranker` extra (`flashrank`) | Local cross-encoder re-ranking in injection pipeline | No-op reranker path |
 | SQLCipher | `encryption` extra (`pysqlcipher3`) | Encrypted SQLite connections | Plain sqlite when no key set; error if key set and dependency missing |
 | OTel exporter | `otel` extra | exporter creation path | exporter disabled (`None`) |
 

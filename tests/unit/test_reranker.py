@@ -8,12 +8,12 @@ import pytest
 
 from tapps_brain.reranker import (
     RERANKER_TOP_CANDIDATES,
-    CohereReranker,
+    FlashRankReranker,
     NoopReranker,
     Reranker,
-    _create_cohere_reranker,
     _noop_fallback,
     get_reranker,
+    reranker_provider_label,
 )
 
 # ---------------------------------------------------------------------------
@@ -64,52 +64,168 @@ class TestNoopReranker:
 
 
 # ---------------------------------------------------------------------------
+# FlashRankReranker (mocked — no real flashrank needed)
+# ---------------------------------------------------------------------------
+
+
+class TestFlashRankReranker:
+    """Tests for FlashRankReranker with mocked flashrank library."""
+
+    def test_empty_candidates_returns_empty(self) -> None:
+        reranker = FlashRankReranker()
+        result = reranker.rerank("query", [], top_k=5)
+        assert result == []
+
+    def test_flashrank_success(self) -> None:
+        reranker = FlashRankReranker()
+        candidates = [("a", "val a"), ("b", "val b"), ("c", "val c")]
+
+        mock_results = [
+            {"id": 2, "text": "val c", "score": 0.95},
+            {"id": 0, "text": "val a", "score": 0.80},
+        ]
+
+        mock_ranker = MagicMock()
+        mock_ranker.rerank.return_value = mock_results
+
+        mock_flashrank = MagicMock()
+        mock_flashrank.Ranker.return_value = mock_ranker
+
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=2)
+
+        assert len(result) == 2
+        assert result[0] == ("c", 0.95)
+        assert result[1] == ("a", 0.80)
+
+    def test_top_k_limits_results(self) -> None:
+        reranker = FlashRankReranker()
+        candidates = [("a", "va"), ("b", "vb"), ("c", "vc")]
+
+        mock_results = [
+            {"id": 2, "text": "vc", "score": 0.9},
+            {"id": 1, "text": "vb", "score": 0.8},
+            {"id": 0, "text": "va", "score": 0.7},
+        ]
+
+        mock_ranker = MagicMock()
+        mock_ranker.rerank.return_value = mock_results
+
+        mock_flashrank = MagicMock()
+        mock_flashrank.Ranker.return_value = mock_ranker
+
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=1)
+
+        assert len(result) == 1
+        assert result[0] == ("c", 0.9)
+
+    def test_scores_clamped_to_unit_interval(self) -> None:
+        """Scores outside [0.0, 1.0] are clamped."""
+        reranker = FlashRankReranker()
+        candidates = [("a", "val a"), ("b", "val b")]
+
+        mock_results = [
+            {"id": 0, "text": "val a", "score": 1.5},
+            {"id": 1, "text": "val b", "score": -0.3},
+        ]
+
+        mock_ranker = MagicMock()
+        mock_ranker.rerank.return_value = mock_results
+
+        mock_flashrank = MagicMock()
+        mock_flashrank.Ranker.return_value = mock_ranker
+
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=2)
+
+        assert result[0] == ("a", 1.0)
+        assert result[1] == ("b", 0.0)
+
+    def test_out_of_range_id_skipped(self) -> None:
+        """If flashrank returns an id out of range, it is skipped."""
+        reranker = FlashRankReranker()
+        candidates = [("a", "va")]
+
+        mock_results = [
+            {"id": 99, "text": "va", "score": 0.5},
+            {"id": 0, "text": "va", "score": 0.8},
+        ]
+
+        mock_ranker = MagicMock()
+        mock_ranker.rerank.return_value = mock_results
+
+        mock_flashrank = MagicMock()
+        mock_flashrank.Ranker.return_value = mock_ranker
+
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=5)
+
+        assert len(result) == 1
+        assert result[0] == ("a", 0.8)
+
+    def test_rerank_error_falls_back_to_noop(self) -> None:
+        reranker = FlashRankReranker()
+        candidates = [("a", "val a"), ("b", "val b")]
+
+        mock_flashrank = MagicMock()
+        mock_flashrank.RerankRequest.side_effect = Exception("model failed")
+
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=2)
+
+        assert len(result) == 2
+        assert [r[0] for r in result] == ["a", "b"]
+
+    def test_lazy_ranker_init(self) -> None:
+        """Ranker is not created until first rerank() call."""
+        reranker = FlashRankReranker()
+        assert reranker._ranker is None
+
+    def test_protocol_compliance(self) -> None:
+        """FlashRankReranker satisfies Reranker protocol."""
+        reranker = FlashRankReranker()
+        assert isinstance(reranker, Reranker)
+
+
+# ---------------------------------------------------------------------------
 # get_reranker
 # ---------------------------------------------------------------------------
 
 
 class TestGetReranker:
     def test_disabled_returns_noop(self) -> None:
-        r = get_reranker(enabled=False, provider="cohere", api_key="x")
+        r = get_reranker(enabled=False)
         assert isinstance(r, NoopReranker)
 
-    def test_provider_noop_returns_noop(self) -> None:
-        r = get_reranker(enabled=True, provider="noop")
+    def test_enabled_flashrank_available(self) -> None:
+        with patch("tapps_brain.reranker._flashrank_available", return_value=True):
+            r = get_reranker(enabled=True)
+        assert isinstance(r, FlashRankReranker)
+
+    def test_enabled_flashrank_unavailable_returns_noop(self) -> None:
+        with patch("tapps_brain.reranker._flashrank_available", return_value=False):
+            r = get_reranker(enabled=True)
         assert isinstance(r, NoopReranker)
 
-    def test_provider_cohere_no_key_returns_noop(self) -> None:
-        r = get_reranker(enabled=True, provider="cohere", api_key=None)
-        assert isinstance(r, NoopReranker)
+    def test_model_override(self) -> None:
+        with patch("tapps_brain.reranker._flashrank_available", return_value=True):
+            r = get_reranker(enabled=True, model="ms-marco-MiniLM-L-12-v2")
+        assert isinstance(r, FlashRankReranker)
+        assert r._model_name == "ms-marco-MiniLM-L-12-v2"
 
-    def test_unknown_provider_returns_noop(self) -> None:
-        r = get_reranker(enabled=True, provider="bert", api_key=None)
-        assert isinstance(r, NoopReranker)
 
-    def test_provider_cohere_unavailable_returns_noop(self) -> None:
-        with patch(
-            "tapps_brain.reranker._create_cohere_reranker",
-            return_value=None,
-        ):
-            r = get_reranker(
-                enabled=True,
-                provider="cohere",
-                api_key="sk-test",
-            )
-        assert isinstance(r, NoopReranker)
+# ---------------------------------------------------------------------------
+# reranker_provider_label
+# ---------------------------------------------------------------------------
 
-    def test_provider_cohere_with_key_and_package_returns_cohere(self) -> None:
-        try:
-            import cohere  # noqa: F401
-        except ImportError:
-            pytest.skip("cohere not installed")
-        r = get_reranker(
-            enabled=True,
-            provider="cohere",
-            api_key="sk-test",
-        )
-        from tapps_brain.reranker import CohereReranker
 
-        assert isinstance(r, CohereReranker)
+class TestRerankerProviderLabel:
+    def test_noop(self) -> None:
+        assert reranker_provider_label(NoopReranker()) == "noop"
+
+    def test_flashrank(self) -> None:
+        assert reranker_provider_label(FlashRankReranker()) == "flashrank"
 
 
 # ---------------------------------------------------------------------------
@@ -138,191 +254,18 @@ class TestNoopFallback:
 
 
 # ---------------------------------------------------------------------------
-# _create_cohere_reranker
+# FlashRankReranker with real library (skipped if not installed)
 # ---------------------------------------------------------------------------
 
 
-class TestCreateCohereReranker:
-    def test_returns_none_when_cohere_not_installed(self) -> None:
-        with patch("tapps_brain.reranker.importlib.util.find_spec", return_value=None):
-            result = _create_cohere_reranker(api_key="sk-test")
-        assert result is None
-
-    def test_returns_cohere_reranker_when_available(self) -> None:
-        mock_spec = MagicMock()
-        with patch("tapps_brain.reranker.importlib.util.find_spec", return_value=mock_spec):
-            result = _create_cohere_reranker(api_key="sk-test", model="rerank-v3.5")
-        assert isinstance(result, CohereReranker)
-
-
-# ---------------------------------------------------------------------------
-# CohereReranker (mocked — no real API calls)
-# ---------------------------------------------------------------------------
-
-
-class TestCohereReranker:
-    """Tests for CohereReranker with mocked cohere library."""
-
-    def test_empty_candidates_returns_empty(self) -> None:
-        reranker = CohereReranker(api_key="sk-test")
-        result = reranker.rerank("query", [], top_k=5)
-        assert result == []
-
-    def test_no_api_key_falls_back_to_noop(self) -> None:
-        reranker = CohereReranker(api_key="")
-        candidates = [("a", "val a"), ("b", "val b")]
-        result = reranker.rerank("query", candidates, top_k=2)
-        assert len(result) == 2
-        assert [r[0] for r in result] == ["a", "b"]
-
-    def test_cohere_import_error_falls_back(self) -> None:
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("a", "val a"), ("b", "val b")]
-        with patch.dict("sys.modules", {"cohere": None}):
-            result = reranker.rerank("query", candidates, top_k=2)
-        assert len(result) == 2
-        assert [r[0] for r in result] == ["a", "b"]
-
-    def test_cohere_api_error_falls_back(self) -> None:
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("a", "val a"), ("b", "val b")]
-        mock_cohere = MagicMock()
-        mock_cohere.ClientV2.side_effect = Exception("API error")
-        mock_cohere.Client.side_effect = Exception("API error")
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            result = reranker.rerank("query", candidates, top_k=2)
-        assert len(result) == 2
-        assert [r[0] for r in result] == ["a", "b"]
-
-    def test_cohere_v2_client_success(self) -> None:
-        reranker = CohereReranker(api_key="sk-test", model="rerank-v3.5")
-        candidates = [("a", "val a"), ("b", "val b"), ("c", "val c")]
-
-        # Mock response results
-        mock_result_0 = MagicMock()
-        mock_result_0.index = 2
-        mock_result_0.relevance_score = 0.95
-        mock_result_1 = MagicMock()
-        mock_result_1.index = 0
-        mock_result_1.relevance_score = 0.80
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result_0, mock_result_1]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        mock_cohere = MagicMock()
-        mock_cohere.ClientV2.return_value = mock_client
-
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            result = reranker.rerank("query", candidates, top_k=2)
-
-        assert len(result) == 2
-        assert result[0] == ("c", 0.95)
-        assert result[1] == ("a", 0.80)
-
-    def test_top_k_limits_cohere_call(self) -> None:
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("a", "va"), ("b", "vb"), ("c", "vc")]
-
-        mock_response = MagicMock()
-        mock_response.results = []
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        mock_cohere = MagicMock()
-        mock_cohere.ClientV2.return_value = mock_client
-
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            reranker.rerank("query", candidates, top_k=1)
-
-        # Verify top_n was set to min(top_k, len(candidates)) = 1
-        call_kwargs = mock_client.rerank.call_args
-        assert call_kwargs.kwargs["top_n"] == 1
-
-    def test_scores_clamped_to_unit_interval(self) -> None:
-        """Cohere scores outside [0.0, 1.0] are clamped."""
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("a", "val a"), ("b", "val b")]
-
-        mock_result_high = MagicMock()
-        mock_result_high.index = 0
-        mock_result_high.relevance_score = 1.5  # above 1.0
-
-        mock_result_low = MagicMock()
-        mock_result_low.index = 1
-        mock_result_low.relevance_score = -0.3  # below 0.0
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result_high, mock_result_low]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        mock_cohere = MagicMock()
-        mock_cohere.ClientV2.return_value = mock_client
-
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            result = reranker.rerank("query", candidates, top_k=2)
-
-        assert result[0] == ("a", 1.0)
-        assert result[1] == ("b", 0.0)
-
-    def test_out_of_range_index_skipped(self) -> None:
-        """If cohere returns an index out of range, it is skipped."""
-        reranker = CohereReranker(api_key="sk-test")
-        candidates = [("a", "va")]
-
-        mock_result_bad = MagicMock()
-        mock_result_bad.index = 99  # out of range
-        mock_result_bad.relevance_score = 0.5
-
-        mock_result_good = MagicMock()
-        mock_result_good.index = 0
-        mock_result_good.relevance_score = 0.8
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result_bad, mock_result_good]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        mock_cohere = MagicMock()
-        mock_cohere.ClientV2.return_value = mock_client
-
-        with patch.dict("sys.modules", {"cohere": mock_cohere}):
-            result = reranker.rerank("query", candidates, top_k=5)
-
-        assert len(result) == 1
-        assert result[0] == ("a", 0.8)
-
-    def test_protocol_compliance(self) -> None:
-        """CohereReranker satisfies Reranker protocol."""
-        reranker = CohereReranker(api_key="sk-test")
-        assert isinstance(reranker, Reranker)
-
-
-# ---------------------------------------------------------------------------
-# CohereReranker with real library (skipped if not installed)
-# ---------------------------------------------------------------------------
-
-
-class TestCohereRerankerReal:
-    """Tests using real cohere library (skipped if not installed)."""
+class TestFlashRankRerankerReal:
+    """Tests using real flashrank library (skipped if not installed)."""
 
     @pytest.fixture(autouse=True)
-    def _skip_if_no_cohere(self) -> None:
-        pytest.importorskip("cohere")
+    def _skip_if_no_flashrank(self) -> None:
+        pytest.importorskip("flashrank")
 
-    def test_rerank_reorders_candidates(self) -> None:
-        """Verify rerank call shape (will fail without valid API key)."""
-        # We can at least verify the object is created correctly
-        reranker = CohereReranker(api_key="test-invalid-key")
-        candidates = [("a", "Python programming"), ("b", "Java programming")]
-        # With invalid key, should fall back to noop
-        result = reranker.rerank("Python", candidates, top_k=2)
-        assert len(result) == 2
-        assert all(isinstance(r, tuple) for r in result)
-        assert all(isinstance(r[1], float) for r in result)
+    def test_reranker_can_be_created(self) -> None:
+        reranker = FlashRankReranker()
+        assert isinstance(reranker, Reranker)
+        assert reranker._ranker is None  # lazy — not loaded yet

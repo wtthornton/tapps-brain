@@ -54,7 +54,7 @@ mcp = [
     "mcp>=1.25.0,<2",
 ]
 reranker = [
-    "cohere>=5.0,<6",
+    "flashrank>=0.2.9,<0.3",
 ]
 encryption = [
     "pysqlcipher3>=1.2.0,<2",
@@ -114,8 +114,8 @@ module = [
     "sentence_transformers.*",
     "sqlite_vec",
     "sqlite_vec.*",
-    "cohere",
-    "cohere.*",
+    "flashrank",
+    "flashrank.*",
     "yaml",
     "mcp",
     "mcp.*",

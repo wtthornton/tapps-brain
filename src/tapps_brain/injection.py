@@ -154,9 +154,7 @@ class InjectionConfig:
     """
 
     reranker_enabled: bool = True
-    reranker_provider: str = "noop"
     reranker_top_k: int = 10
-    reranker_api_key: str | None = None
     injection_max_tokens: int = 2000
     count_tokens: Callable[[str], int] | None = None
 
@@ -253,14 +251,10 @@ def inject_memories(  # noqa: PLR0915
             ruleset_ver = getattr(_safety_prof, "ruleset_version", None)
     injection_metrics = getattr(store, "_metrics", None)
 
-    from tapps_brain.reranker import get_reranker
+    from tapps_brain.reranker import get_reranker, reranker_provider_label
 
     reranker = (
-        get_reranker(
-            enabled=config.reranker_enabled,
-            provider=config.reranker_provider,
-            api_key=config.reranker_api_key,
-        )
+        get_reranker(enabled=config.reranker_enabled)
         if config.reranker_enabled
         else None
     )
@@ -270,7 +264,7 @@ def inject_memories(  # noqa: PLR0915
         semantic_enabled=True,
         hybrid_config=hybrid_config,
         reranker_enabled=config.reranker_enabled,
-        reranker_provider=config.reranker_provider,
+        reranker_provider=reranker_provider_label(reranker) if reranker else "noop",
         relations_enabled=True,
         scoring_config=scoring_config,
         lexical_config=lexical_config,

@@ -3,18 +3,19 @@
 Cross-encoder reranking improves precision after BM25/hybrid retrieval.
 Pass top-20 candidates to reranker and return reranked top_k.
 
-Providers: noop (passthrough), cohere (API, optional dependency).
+Providers: noop (passthrough), flashrank (local cross-encoder, recommended).
+
+Install: ``pip install tapps-brain[reranker]`` for FlashRank.
 
 Observability (EPIC-042.6): ``MemoryRetriever._apply_reranker`` logs
-``memory_rerank`` (latency, provider label, candidate counts); cloud
-rerank sends snippets to the vendor — see profile/docs before enabling
-``cohere`` in production.
+``memory_rerank`` (latency, provider label, candidate counts). FlashRank
+runs entirely on-device — no data leaves the machine.
 """
 
 from __future__ import annotations
 
 import importlib.util
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
@@ -22,6 +23,9 @@ logger = structlog.get_logger(__name__)
 
 # Top candidates to pass to reranker (Epic 65.9)
 RERANKER_TOP_CANDIDATES = 20
+
+# Default FlashRank model — ~4MB, fast on CPU.
+_DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
 
 
 @runtime_checkable
@@ -72,27 +76,26 @@ class NoopReranker:
         return result
 
 
-def _create_cohere_reranker(
-    api_key: str,
-    model: str = "rerank-v3.5",
-) -> CohereReranker | None:
-    """Create CohereReranker if cohere is available."""
-    if importlib.util.find_spec("cohere") is None:
-        logger.debug("cohere_reranker_unavailable", reason="cohere package not installed")
-        return None
-    return CohereReranker(api_key=api_key, model=model)
+class FlashRankReranker:
+    """Local cross-encoder reranker using FlashRank.
 
-
-class CohereReranker:
-    """Cohere API reranker for memory retrieval.
-
-    Requires: pip install cohere
-    API key: memory.reranker.api_key or COHERE_API_KEY env.
+    Requires: ``pip install tapps-brain[reranker]``
+    No API key needed. Runs entirely on CPU.
+    Default model: ``ms-marco-TinyBERT-L-2-v2`` (~4MB).
     """
 
-    def __init__(self, api_key: str, model: str = "rerank-v3.5") -> None:
-        self._api_key = api_key
-        self._model = model
+    def __init__(self, model: str = _DEFAULT_FLASHRANK_MODEL) -> None:
+        self._model_name = model
+        self._ranker: Any = None  # lazy init — avoid model load at factory time
+
+    def _get_ranker(self) -> Any:
+        """Lazy-initialize the FlashRank Ranker on first use."""
+        if self._ranker is None:
+            from flashrank import Ranker
+
+            self._ranker = Ranker(model_name=self._model_name)
+            logger.info("flashrank_ranker_loaded", model=self._model_name)
+        return self._ranker
 
     def rerank(
         self,
@@ -100,49 +103,37 @@ class CohereReranker:
         candidates: list[tuple[str, str]],
         top_k: int,
     ) -> list[tuple[str, float]]:
-        """Rerank candidates using Cohere Rerank API."""
+        """Rerank candidates using FlashRank local cross-encoder."""
         if not candidates:
             return []
-        if not self._api_key:
-            logger.debug("cohere_reranker_skipped", reason="no_api_key")
-            return _noop_fallback(candidates, top_k)
-
-        try:
-            import cohere
-        except ImportError:
-            logger.debug("cohere_reranker_fallback", reason="cohere not installed")
-            return _noop_fallback(candidates, top_k)
 
         keys = [k for k, _ in candidates]
-        documents = [v for _, v in candidates]
+        passages = [{"id": i, "text": v} for i, (_, v) in enumerate(candidates)]
         effective_top_k = min(top_k, len(candidates))
 
         try:
-            client = cohere.ClientV2(api_key=self._api_key)
-            response = client.rerank(
-                model=self._model,
-                query=query,
-                documents=documents,
-                top_n=effective_top_k,
-            )
+            from flashrank import RerankRequest
+
+            ranker = self._get_ranker()
+            request = RerankRequest(query=query, passages=passages)
+            results = ranker.rerank(request)
         except Exception as e:
             logger.warning(
-                "cohere_reranker_failed",
+                "flashrank_reranker_failed",
                 reason=str(e),
                 fallback="noop",
             )
             return _noop_fallback(candidates, top_k)
 
-        # Cohere returns results with index and relevance_score.
-        # Clamp scores to [0.0, 1.0] — Cohere scores are nominally in this range
-        # but clamping guards against unexpected values from future API changes.
         result: list[tuple[str, float]] = []
-        for item in response.results:
-            idx = item.index
+        for item in results:
+            idx = int(item["id"])
             if 0 <= idx < len(keys):
-                raw_score = float(getattr(item, "relevance_score", 1.0))
+                raw_score = float(item["score"])
                 score = max(0.0, min(1.0, raw_score))
                 result.append((keys[idx], round(score, 4)))
+                if len(result) >= effective_top_k:
+                    break
         return result
 
 
@@ -154,29 +145,37 @@ def _noop_fallback(
     return NoopReranker().rerank("", candidates, top_k)
 
 
+def _flashrank_available() -> bool:
+    """Return True if flashrank is importable."""
+    return importlib.util.find_spec("flashrank") is not None
+
+
 def get_reranker(
     enabled: bool,
-    provider: str,
-    api_key: str | None = None,
+    model: str | None = None,
 ) -> Reranker:
-    """Create a Reranker from config.
+    """Create a Reranker based on availability.
 
     Args:
         enabled: Whether reranking is enabled.
-        provider: "noop" or "cohere".
-        api_key: API key for Cohere (required when provider=cohere).
+        model: Optional FlashRank model name override.
 
     Returns:
-        NoopReranker when disabled or provider=noop; CohereReranker when
-        provider=cohere and api_key set; otherwise NoopReranker.
+        FlashRankReranker when enabled and flashrank installed;
+        NoopReranker otherwise.
     """
     if not enabled:
         return NoopReranker()
 
-    if provider == "cohere" and api_key:
-        cohere_reranker = _create_cohere_reranker(api_key)
-        if cohere_reranker is not None:
-            return cohere_reranker
-        logger.debug("cohere_reranker_fallback_to_noop", reason="unavailable")
+    if _flashrank_available():
+        return FlashRankReranker(model=model or _DEFAULT_FLASHRANK_MODEL)
 
+    logger.debug("flashrank_not_installed", fallback="noop")
     return NoopReranker()
+
+
+def reranker_provider_label(reranker: Reranker) -> str:
+    """Return a short label for observability logging."""
+    if isinstance(reranker, FlashRankReranker):
+        return "flashrank"
+    return "noop"

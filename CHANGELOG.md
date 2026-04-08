@@ -14,12 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Default embedding model:** Switched from `all-MiniLM-L6-v2` to `BAAI/bge-small-en-v1.5` (~10% better retrieval quality, same 384 dimensions).
+- **Reranker: FlashRank replaces Cohere:** The `[reranker]` extra now installs FlashRank (local cross-encoder, ~4MB model, CPU-only, no API key). Cohere reranker has been removed. Reranking is automatic when flashrank is installed; falls back to noop otherwise.
+- **Simplified reranker config:** `InjectionConfig` no longer has `reranker_provider` or `reranker_api_key` fields. Reranking is controlled by `reranker_enabled` (bool) only.
 - **FTS5 tokenizer:** All FTS5 tables now use `porter unicode61` tokenizer for English stemming and Unicode normalization.
 - **SQLite pragma audit:** Added `PRAGMA synchronous=NORMAL` to federation connections (was already set for memory and hive).
 - **SQLite version warning:** Logs a warning on startup if SQLite < 3.51.3 (WAL-reset corruption bug).
 
 ### Removed
 
+- **CohereReranker and `cohere` dependency:** Replaced by local FlashRank. No memory data is sent to external APIs for reranking.
 - **`TAPPS_SEMANTIC_SEARCH` env var:** Semantic search is now always enabled (sentence-transformers is a core dependency). The opt-out env var has been removed.
 - **`[faiss]` optional extra:** FAISS was never used in any code path; sqlite-vec is the sole vector backend. All FAISS references removed from docs.
 - **Schema migration history:** 16 incremental migration methods replaced by a single `_create_schema()`. Schema version reset to 1.
