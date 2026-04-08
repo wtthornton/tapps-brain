@@ -273,37 +273,31 @@ class TestScoringHelpers:
         retriever = MemoryRetriever()
         assert retriever._normalize_relevance(0.0) == 0.0
 
-    def test_normalize_relevance_positive(self) -> None:
-        # BM25 normalization: score / (score + 5.0)
+    def test_normalize_relevance_no_bounds_positive(self) -> None:
+        """Without bounds (single candidate), positive scores map to 1.0."""
         retriever = MemoryRetriever()
-        score = retriever._normalize_relevance(5.0)
-        assert 0.0 < score < 1.0
-        assert score == pytest.approx(0.5)
+        assert retriever._normalize_relevance(5.0) == 1.0
+        assert retriever._normalize_relevance(100.0) == 1.0
 
-    def test_normalize_relevance_large(self) -> None:
-        retriever = MemoryRetriever()
-        score = retriever._normalize_relevance(100.0)
-        assert score > 0.9
-
-    def test_normalize_relevance_sigmoid_ignores_minmax_bounds(self) -> None:
-        """Default sigmoid path must not use per-query rmin/rmax."""
+    def test_normalize_relevance_minmax_with_bounds(self) -> None:
+        """Min-max normalization uses per-query rmin/rmax."""
         retriever = MemoryRetriever()
         score = retriever._normalize_relevance(5.0, rmin=0.0, rmax=10.0)
         assert score == pytest.approx(0.5)
 
     def test_normalize_relevance_minmax_spread(self) -> None:
-        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        r = MemoryRetriever()
         assert r._normalize_relevance(1.0, rmin=1.0, rmax=5.0) == pytest.approx(0.0)
         assert r._normalize_relevance(5.0, rmin=1.0, rmax=5.0) == pytest.approx(1.0)
         assert r._normalize_relevance(3.0, rmin=1.0, rmax=5.0) == pytest.approx(0.5)
 
     def test_normalize_relevance_minmax_clamps(self) -> None:
-        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        r = MemoryRetriever()
         assert r._normalize_relevance(10.0, rmin=1.0, rmax=5.0) == 1.0
         assert r._normalize_relevance(-2.0, rmin=1.0, rmax=5.0) == 0.0
 
     def test_normalize_relevance_minmax_degenerate(self) -> None:
-        r = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        r = MemoryRetriever()
         assert r._normalize_relevance(2.0, rmin=2.0, rmax=2.0) == 1.0
 
     def test_recency_score_recent(self) -> None:
@@ -328,13 +322,13 @@ class TestScoringHelpers:
 
 
 class TestRelevanceNormalizationMinmax:
-    """STORY-042.5: optional per-query min-max relevance before composite blend."""
+    """Min-max relevance normalization is always active."""
 
     def test_minmax_orders_by_raw_when_other_signals_equal(self) -> None:
         base = _RECENT
         e_low = _make_entry("low-rel", "alpha beta gamma", updated_at=base, access_count=5)
         e_high = _make_entry("high-rel", "alpha beta gamma", updated_at=base, access_count=5)
-        retriever = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        retriever = MemoryRetriever()
         store = _make_store([e_low, e_high])
         with patch.object(
             retriever,
@@ -351,7 +345,7 @@ class TestRelevanceNormalizationMinmax:
     def test_minmax_equal_raw_scores_use_degenerate_one(self) -> None:
         e1 = _make_entry("a", "same text", updated_at=_RECENT, access_count=5)
         e2 = _make_entry("b", "same text", updated_at=_RECENT, access_count=5)
-        retriever = MemoryRetriever(scoring_config=ScoringConfig(relevance_normalization="minmax"))
+        retriever = MemoryRetriever()
         store = _make_store([e1, e2])
         with patch.object(
             retriever,
@@ -386,24 +380,39 @@ class TestBM25Integration:
         assert results[0].entry.key == "test-framework"
 
     def test_idf_rare_term_scores_higher(self) -> None:
-        """A rare term should produce higher BM25 relevance than a common one."""
+        """A rare term should produce a higher raw BM25 score than a common one.
+
+        Both entries match "setup" equally, but rust-setup also matches
+        the rare term "rust" while python-setup matches the common "python",
+        so rust-setup gets a higher composite score.
+        """
         entries = [
-            _make_entry("python-setup", "python setup guide", confidence=0.8),
-            _make_entry("python-web", "python web framework", confidence=0.8),
-            _make_entry("python-data", "python data science", confidence=0.8),
-            _make_entry("rust-setup", "rust setup guide", confidence=0.8),
+            _make_entry(
+                "python-setup", "python setup guide",
+                confidence=0.8, updated_at=_RECENT, access_count=5,
+            ),
+            _make_entry(
+                "python-web", "python web framework",
+                confidence=0.8, updated_at=_RECENT, access_count=5,
+            ),
+            _make_entry(
+                "python-data", "python data science",
+                confidence=0.8, updated_at=_RECENT, access_count=5,
+            ),
+            _make_entry(
+                "rust-setup", "rust setup guide",
+                confidence=0.8, updated_at=_RECENT, access_count=5,
+            ),
         ]
         retriever = MemoryRetriever()
         store = _make_store(entries)
 
-        # "rust" is rare (1 doc), "python" is common (3 docs)
-        rust_results = retriever.search("rust", store)
-        python_results = retriever.search("python", store)
-
-        # The rust match should have higher BM25 relevance
-        assert len(rust_results) >= 1
-        assert len(python_results) >= 1
-        assert rust_results[0].bm25_relevance > python_results[0].bm25_relevance
+        # Search for "rust setup" — rust-setup matches both terms (rare + common),
+        # python-setup only matches "setup" (common), so rust-setup ranks higher.
+        results = retriever.search("rust setup", store)
+        assert len(results) >= 2
+        keys = [r.entry.key for r in results]
+        assert keys[0] == "rust-setup"
 
     def test_composite_scoring_still_works(self) -> None:
         """BM25 integration preserves composite scoring formula."""
@@ -847,7 +856,6 @@ class TestScoringCorrectnessReview:
         scoring_cfg.recency = 0.5  # sum = 1.5, clearly off
         scoring_cfg.frequency = 0.5
         scoring_cfg.frequency_cap = 20.0
-        scoring_cfg.bm25_norm_k = 5.0
         scoring_cfg.source_trust = None
 
         mock_logger = MagicMock()

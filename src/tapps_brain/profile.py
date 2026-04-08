@@ -127,15 +127,6 @@ class ScoringConfig(BaseModel):
             "Defaults to 0.0 (disabled)."
         ),
     )
-    bm25_norm_k: float = Field(default=5.0, ge=0.1)
-    relevance_normalization: Literal["sigmoid", "minmax"] = Field(
-        default="sigmoid",
-        description=(
-            "Map raw relevance (BM25 or hybrid RRF) into [0, 1] before the composite blend. "
-            "'sigmoid' uses score/(score+bm25_norm_k). 'minmax' rescales the **filtered** "
-            "candidate set per query (best=1, worst=0; equal raw scores → 1.0)."
-        ),
-    )
     frequency_cap: int = Field(default=20, ge=1)
     source_trust: dict[str, float] = Field(
         default_factory=lambda: dict(_DEFAULT_SOURCE_TRUST),

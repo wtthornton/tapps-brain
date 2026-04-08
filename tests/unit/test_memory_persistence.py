@@ -172,7 +172,7 @@ class TestMemoryPersistence:
 
     def test_schema_version(self, persistence: MemoryPersistence) -> None:
         # v17 embedding_model_id (STORY-042.2)
-        assert persistence.get_schema_version() == 17
+        assert persistence.get_schema_version() == 1
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         p = MemoryPersistence(tmp_path)
@@ -265,296 +265,54 @@ class TestMemoryPersistence:
         assert loaded.embedding is None
 
 
-class TestSchemaMigrations:
-    """Tests for schema migration paths."""
+class TestSchemaCreation:
+    """Tests for production schema creation."""
 
-    def _create_v1_db(self, db_path: str) -> None:
-        """Manually create a v1 schema database."""
-        conn = sqlite3.connect(db_path)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_version "
-            "(version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                tier TEXT NOT NULL DEFAULT 'pattern',
-                confidence REAL NOT NULL DEFAULT 0.6,
-                source TEXT NOT NULL DEFAULT 'agent',
-                source_agent TEXT NOT NULL DEFAULT 'unknown',
-                scope TEXT NOT NULL DEFAULT 'project',
-                tags TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                last_accessed TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                branch TEXT,
-                last_reinforced TEXT,
-                reinforce_count INTEGER NOT NULL DEFAULT 0,
-                contradicted INTEGER NOT NULL DEFAULT 0,
-                contradiction_reason TEXT,
-                seeded_from TEXT,
-                PRIMARY KEY (key)
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence)")
-        conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-            USING fts5(key, value, tags, content=memories, content_rowid=rowid)
-        """)
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(rowid, key, value, tags)
-                VALUES (new.rowid, new.key, new.value, new.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
-                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
-                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
-                INSERT INTO memories_fts(rowid, key, value, tags)
-                VALUES (new.rowid, new.key, new.value, new.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS archived_memories (
-                key TEXT NOT NULL, value TEXT NOT NULL, tier TEXT NOT NULL,
-                confidence REAL NOT NULL, source TEXT NOT NULL,
-                source_agent TEXT NOT NULL, scope TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL, last_accessed TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0, branch TEXT,
-                last_reinforced TEXT, reinforce_count INTEGER NOT NULL DEFAULT 0,
-                contradicted INTEGER NOT NULL DEFAULT 0, contradiction_reason TEXT,
-                seeded_from TEXT, archived_at TEXT NOT NULL
-            )
-        """)
-        now = datetime.now(tz=UTC).isoformat()
-        conn.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (1, now),
-        )
-        conn.commit()
-        conn.close()
-
-    def test_migrate_v1_to_current(self, tmp_path: Path) -> None:
-        """Opening a v1 DB should migrate it all the way to current schema."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-        self._create_v1_db(db_path)
-
+    def test_fresh_db_creates_all_tables_and_columns(self, tmp_path: Path) -> None:
+        """A fresh DB should have the full production schema at version 1."""
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
+        assert p.get_schema_version() == 1
 
-        # Verify v2 migration: embedding column exists
+        # Verify all memories columns exist
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
         columns = [r[1] for r in row]
-        assert "embedding" in columns
+        for col in (
+            "key", "value", "tier", "confidence", "source", "source_agent",
+            "scope", "tags", "created_at", "updated_at", "last_accessed",
+            "access_count", "branch", "last_reinforced", "reinforce_count",
+            "contradicted", "contradiction_reason", "seeded_from",
+            "embedding", "valid_at", "invalid_at", "superseded_by",
+            "agent_scope", "integrity_hash",
+            "positive_feedback_count", "negative_feedback_count",
+            "source_session_id", "source_channel", "source_message_id", "triggered_by",
+            "valid_from", "valid_until", "stability", "difficulty",
+            "useful_access_count", "total_access_count",
+            "memory_group", "embedding_model_id",
+        ):
+            assert col in columns, f"Missing column: {col}"
 
-        # Verify v3 migration: session_index table exists
+        # Verify all tables exist
         tables = [
             r[0]
-            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            for r in p._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
         ]
-        assert "session_index" in tables
+        for table in (
+            "memories", "archived_memories", "session_index", "relations",
+            "feedback_events", "diagnostics_history", "flywheel_meta",
+        ):
+            assert table in tables, f"Missing table: {table}"
 
-        # Verify v5 migration: temporal columns exist
-        assert "valid_at" in columns
-        assert "invalid_at" in columns
-        assert "superseded_by" in columns
-
-        # Verify v4 migration: relations table exists
-        assert "relations" in tables
-
-        # Verify v8 migration: integrity_hash column exists
-        assert "integrity_hash" in columns
-
-        # Verify v9 migration: feedback_events table exists
-        assert "feedback_events" in tables
-        # Verify v10+ migration: diagnostics_history table exists
-        assert "diagnostics_history" in tables
-        # Verify v16: project-local memory_group column (GitHub #49)
-        assert "memory_group" in columns
-        # Verify v17: embedding_model_id (STORY-042.2)
-        assert "embedding_model_id" in columns
         p.close()
 
-    def test_migrate_v2_to_v4(self, tmp_path: Path) -> None:
-        """A v2 DB (with embedding column) should migrate to current version."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        # Create v1, then manually add v2 migration
-        self._create_v1_db(db_path)
-        conn = sqlite3.connect(db_path)
-        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
-        now = datetime.now(tz=UTC).isoformat()
-        conn.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (2, now),
-        )
-        conn.commit()
-        conn.close()
-
-        p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
-
-        tables = [
-            r[0]
-            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        ]
-        assert "session_index" in tables
-        assert "relations" in tables
-        p.close()
-
-    def test_migrate_v3_to_v4(self, tmp_path: Path) -> None:
-        """A v3 DB should migrate to current version (adds relations table and beyond)."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        self._create_v1_db(db_path)
-        conn = sqlite3.connect(db_path)
-        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
-        now = datetime.now(tz=UTC).isoformat()
-        conn.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (2, now),
-        )
-        # Create session_index for v3
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS session_index (
-                session_id TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (session_id, chunk_index)
-            )
-        """)
-        conn.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (3, now),
-        )
-        conn.commit()
-        conn.close()
-
-        p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
-        tables = [
-            r[0]
-            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        ]
-        assert "relations" in tables
-        p.close()
-
-    def test_v1_to_v2_duplicate_column_is_idempotent(self, tmp_path: Path) -> None:
-        """Re-running v1->v2 migration when embedding column already exists."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        self._create_v1_db(db_path)
-        # Pre-add embedding column to simulate partial migration
-        conn = sqlite3.connect(db_path)
-        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
-        conn.commit()
-        conn.close()
-
-        # Opening should not raise even though column already exists
-        p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
-        p.close()
-
-    def test_v1_data_survives_migration(self, tmp_path: Path) -> None:
-        """Data inserted at v1 is still readable after migration to v4."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        self._create_v1_db(db_path)
-
-        # Insert a row into the v1 schema
-        conn = sqlite3.connect(db_path)
-        now = datetime.now(tz=UTC).isoformat()
-        conn.execute(
-            "INSERT INTO memories "
-            "(key, value, tier, confidence, source, source_agent, scope, tags, "
-            "created_at, updated_at, last_accessed, access_count) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "old-key",
-                "old value",
-                "pattern",
-                0.6,
-                "agent",
-                "unknown",
-                "project",
-                "[]",
-                now,
-                now,
-                now,
-                0,
-            ),
-        )
-        conn.commit()
-        conn.close()
-
-        p = MemoryPersistence(tmp_path)
-        loaded = p.get("old-key")
-        assert loaded is not None
-        assert loaded.value == "old value"
-        assert loaded.embedding is None
-        p.close()
-
-    def test_migrate_v7_to_v8(self, tmp_path: Path) -> None:
-        """A v7 DB should migrate through v8–v11 (integrity, feedback, diagnostics, flywheel)."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        # Build a v7 DB by creating from v1 and recording version 7 directly.
-        self._create_v1_db(db_path)
-        conn = sqlite3.connect(db_path)
-        now = datetime.now(tz=UTC).isoformat()
-        # Apply v2-v7 columns manually so the schema is in a real v7 state.
-        conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
-        conn.execute("ALTER TABLE memories ADD COLUMN valid_at TEXT")
-        conn.execute("ALTER TABLE memories ADD COLUMN invalid_at TEXT")
-        conn.execute("ALTER TABLE memories ADD COLUMN superseded_by TEXT")
-        conn.execute("ALTER TABLE memories ADD COLUMN agent_scope TEXT DEFAULT 'private'")
-        for ver in range(2, 8):
-            conn.execute(
-                "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-                (ver, now),
-            )
-        conn.commit()
-        conn.close()
-
-        p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
-
-        # Verify the integrity_hash column was added by the v7→v8 migration.
-        row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
-        columns = [r[1] for r in row]
-        assert "integrity_hash" in columns
-        tables = [
-            r[0]
-            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        ]
-        assert "feedback_events" in tables
-        assert "diagnostics_history" in tables
-        p.close()
+    def test_idempotent_open(self, tmp_path: Path) -> None:
+        """Re-opening an existing DB should not raise or duplicate tables."""
+        p1 = MemoryPersistence(tmp_path)
+        p1.close()
+        p2 = MemoryPersistence(tmp_path)
+        assert p2.get_schema_version() == 1
+        p2.close()
 
 
 class TestSessionIndex:
@@ -1063,12 +821,12 @@ class TestTemporalMigration:
 
 
 class TestFreshDBSchemaVersion:
-    """STORY-043.2: Verify fresh DB reaches current schema version."""
+    """Verify fresh DB creates the production schema."""
 
-    def test_fresh_db_reaches_v17(self, tmp_path: Path) -> None:
-        """A brand-new MemoryPersistence should initialize at schema v17."""
+    def test_fresh_db_reaches_v1(self, tmp_path: Path) -> None:
+        """A brand-new MemoryPersistence should initialize at schema v1."""
         p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
+        assert p.get_schema_version() == 1
         # Verify key tables exist
         tables = [
             r[0]
@@ -1085,99 +843,6 @@ class TestFreshDBSchemaVersion:
             "schema_version",
         ):
             assert expected in tables, f"Expected table {expected!r} missing"
-        p.close()
-
-    def test_v1_fixture_migrates_to_v17(self, tmp_path: Path) -> None:
-        """A manually-created v1 DB migrates all the way to v17."""
-        store_dir = tmp_path / ".tapps-brain" / "memory"
-        store_dir.mkdir(parents=True)
-        db_path = str(store_dir / "memory.db")
-
-        # Create minimal v1 schema
-        conn = sqlite3.connect(db_path)
-        conn.execute(
-            "CREATE TABLE schema_version (version INTEGER NOT NULL, migrated_at TEXT NOT NULL)"
-        )
-        conn.execute("""
-            CREATE TABLE memories (
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                tier TEXT NOT NULL DEFAULT 'pattern',
-                confidence REAL NOT NULL DEFAULT 0.6,
-                source TEXT NOT NULL DEFAULT 'agent',
-                source_agent TEXT NOT NULL DEFAULT 'unknown',
-                scope TEXT NOT NULL DEFAULT 'project',
-                tags TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                last_accessed TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                branch TEXT,
-                last_reinforced TEXT,
-                reinforce_count INTEGER NOT NULL DEFAULT 0,
-                contradicted INTEGER NOT NULL DEFAULT 0,
-                contradiction_reason TEXT,
-                seeded_from TEXT,
-                PRIMARY KEY (key)
-            )
-        """)
-        conn.execute("""
-            CREATE VIRTUAL TABLE memories_fts
-            USING fts5(key, value, tags, content=memories, content_rowid=rowid)
-        """)
-        conn.execute("""
-            CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(rowid, key, value, tags)
-                VALUES (new.rowid, new.key, new.value, new.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
-                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, key, value, tags)
-                VALUES ('delete', old.rowid, old.key, old.value, old.tags);
-                INSERT INTO memories_fts(rowid, key, value, tags)
-                VALUES (new.rowid, new.key, new.value, new.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TABLE archived_memories (
-                key TEXT NOT NULL, value TEXT NOT NULL, tier TEXT NOT NULL,
-                confidence REAL NOT NULL, source TEXT NOT NULL,
-                source_agent TEXT NOT NULL, scope TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL, last_accessed TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0, branch TEXT,
-                last_reinforced TEXT, reinforce_count INTEGER NOT NULL DEFAULT 0,
-                contradicted INTEGER NOT NULL DEFAULT 0, contradiction_reason TEXT,
-                seeded_from TEXT, archived_at TEXT NOT NULL
-            )
-        """)
-        now = datetime.now(tz=UTC).isoformat()
-        conn.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (1, now),
-        )
-        conn.commit()
-        conn.close()
-
-        p = MemoryPersistence(tmp_path)
-        assert p.get_schema_version() == 17
-
-        # Verify key columns from later migrations exist
-        row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
-        columns = [r[1] for r in row]
-        assert "embedding" in columns  # v2
-        assert "valid_at" in columns  # v5
-        assert "agent_scope" in columns  # v7
-        assert "integrity_hash" in columns  # v8
-        assert "memory_group" in columns  # v16
-        assert "embedding_model_id" in columns  # v17
         p.close()
 
 

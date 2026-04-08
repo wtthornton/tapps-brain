@@ -205,14 +205,14 @@ class TestStoreCommands:
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
         assert "Entries: 3 / 5000" in result.stdout
-        assert "Schema: v17" in result.stdout
+        assert "Schema: v1" in result.stdout
 
     def test_stats_json(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir, "--json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["total_entries"] == 3
-        assert data["schema_version"] == 17
+        assert data["schema_version"] == 1
 
     def test_list(self, project_dir):
         result = runner.invoke(app, ["store", "list", "--project-dir", project_dir])
@@ -976,14 +976,14 @@ class TestMaintenanceCommands:
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "v17" in result.stdout
+        assert "v1" in result.stdout
 
     def test_migrate_dry_run(self, project_dir):
         result = runner.invoke(
             app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
         )
         assert result.exit_code == 0
-        assert "v17" in result.stdout
+        assert "v1" in result.stdout
 
     def test_migrate_json(self, project_dir):
         result = runner.invoke(
@@ -991,7 +991,7 @@ class TestMaintenanceCommands:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["schema_version"] == 17
+        assert data["schema_version"] == 1
 
 
 class TestFlywheelCli:
@@ -2185,7 +2185,7 @@ class TestDiagnosticsCommands:
                     status="ok",
                     entries=2,
                     max_entries=100,
-                    schema_version="17",
+                    schema_version="1",
                     size_bytes=4096,
                     tiers={"pattern": 2},
                     sqlite_vec_enabled=True,
@@ -2220,7 +2220,7 @@ class TestDiagnosticsCommands:
                     status="ok",
                     entries=1,
                     max_entries=5000,
-                    schema_version="17",
+                    schema_version="1",
                     sqlite_vec_enabled=False,
                     sqlite_vec_rows=0,
                 ),

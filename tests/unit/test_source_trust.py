@@ -103,7 +103,6 @@ class TestRetrieverSourceTrust:
             confidence = 0.30
             recency = 0.15
             frequency = 0.15
-            bm25_norm_k = 5.0
             frequency_cap = 20
 
         retriever = MemoryRetriever(scoring_config=BareConfig())

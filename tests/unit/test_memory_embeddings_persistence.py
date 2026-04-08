@@ -56,9 +56,9 @@ class TestEmbeddingPersistence:
         assert loaded is not None
         assert loaded.embedding is None
 
-    def test_schema_version_2_after_init(self, persistence: MemoryPersistence) -> None:
-        # Schema v2+ has embedding column; v17+ adds embedding_model_id (STORY-042.2)
-        assert persistence.get_schema_version() >= 2
+    def test_schema_version_after_init(self, persistence: MemoryPersistence) -> None:
+        # Production schema v1 includes all columns (embedding, embedding_model_id, etc.)
+        assert persistence.get_schema_version() >= 1
 
     def test_save_and_load_embedding_model_id(self, persistence: MemoryPersistence) -> None:
         embedding = [0.1, 0.2, 0.3] * 128

@@ -247,9 +247,8 @@ class FeedbackStore:
     Shares the project's ``memory.db`` file via its own WAL-mode connection.
     Thread-safe via ``threading.Lock``.
 
-    The ``feedback_events`` table is created on first use (idempotent DDL).
-    The migration that adds this table to an existing database is handled by
-    ``MemoryPersistence._migrate_v8_to_v9`` (persistence.py).
+    The ``feedback_events`` table is created by ``MemoryPersistence._create_schema``
+    (persistence.py) and also idempotently on first use here.
 
     Args:
         db_path: Path to the SQLite database file (usually ``memory.db``).

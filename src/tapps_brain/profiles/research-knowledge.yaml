@@ -64,7 +64,6 @@ profile:
     confidence: 0.25
     recency: 0.10
     frequency: 0.15
-    bm25_norm_k: 5.0
     frequency_cap: 20
     source_trust:
       human: 1.0

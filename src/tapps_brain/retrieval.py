@@ -13,8 +13,7 @@ see ``SCORING_WEIGHT_SUM_MIN`` / ``SCORING_WEIGHT_SUM_MAX`` in ``profile.py``.
 EPIC-042.4: Hybrid RRF pool sizes and ``k`` come from ``profile.HybridFusionConfig``
 (YAML ``hybrid_fusion:``) when the retriever is constructed with ``hybrid_config``
 (``inject_memories`` passes the store profile). See ``fusion.py`` for the RRF formula.
-Optional ``scoring.relevance_normalization: minmax`` applies per-query min-max to raw
-relevance over surviving candidates (vs default ``sigmoid`` via ``bm25_norm_k``).
+Raw relevance is normalized via per-query min-max over surviving candidates.
 EPIC-042.6: After hybrid scoring, optional rerank emits structured logs
 (``memory_rerank`` / ``reranker_failed_fallback_to_original``) and
 ``last_rerank_stats`` for callers (e.g. ``inject_memories`` telemetry).
@@ -59,9 +58,6 @@ _MAX_RESULTS = 50
 _DEFAULT_RESULTS = 10
 _MIN_CONFIDENCE_FLOOR = 0.1
 
-# BM25 relevance normalization constant: score / (score + K)
-# Chosen so that a BM25 score of 5.0 maps to ~0.5 normalized.
-_BM25_NORM_K = 5.0
 
 
 class ScoredMemory(BaseModel):
@@ -179,17 +175,6 @@ class MemoryRetriever:
             self._w_recency = getattr(scoring_config, "recency", _W_RECENCY)
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
             self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
-            self._bm25_norm_k = float(getattr(scoring_config, "bm25_norm_k", _BM25_NORM_K))
-            _rel_norm = getattr(scoring_config, "relevance_normalization", "sigmoid")
-            self._relevance_norm_mode: str = (
-                _rel_norm
-                if _rel_norm
-                in (
-                    "sigmoid",
-                    "minmax",
-                )
-                else "sigmoid"
-            )
             self._w_graph = float(getattr(scoring_config, "graph_centrality", 0.0))
             self._w_provenance = float(getattr(scoring_config, "provenance_trust", 0.0))
             raw_trust = getattr(scoring_config, "source_trust", None)
@@ -225,8 +210,6 @@ class MemoryRetriever:
             self._w_graph = 0.0
             self._w_provenance = 0.0
             self._frequency_cap = _FREQUENCY_CAP
-            self._bm25_norm_k = _BM25_NORM_K
-            self._relevance_norm_mode = "sigmoid"
             self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
 
         # EPIC-042.6: set by ``search()`` when rerank runs; read by injection/recall telemetry.
@@ -308,7 +291,7 @@ class MemoryRetriever:
                 effective_query, store, memory_group=memory_group, **_temporal_kw
             )
 
-        # Score and filter (two phases when min-max relevance is enabled)
+        # Score and filter (two phases: collect candidates, then min-max normalize)
         pending: list[
             tuple[MemoryEntry, float, float, bool, bool]
         ] = []  # entry, relevance_raw, eff_conf, stale_flag, temporally_valid
@@ -344,7 +327,7 @@ class MemoryRetriever:
 
         rmin: float | None = None
         rmax: float | None = None
-        if self._relevance_norm_mode == "minmax" and pending:
+        if pending:
             rels = [p[1] for p in pending]
             rmin = min(rels)
             rmax = max(rels)
@@ -906,24 +889,19 @@ class MemoryRetriever:
         rmin: float | None = None,
         rmax: float | None = None,
     ) -> float:
-        """Normalize relevance score to 0.0-1.0 range.
+        """Normalize relevance score to 0.0-1.0 range using per-query min-max.
 
-        **minmax** (``ScoringConfig.relevance_normalization``): when *rmin* and
-        *rmax* are provided (per-query extrema over filtered candidates),
-        returns ``(raw - rmin) / (rmax - rmin)`` clamped to [0, 1], or ``1.0``
-        when ``rmax <= rmin`` (degenerate spread).
-
-        **sigmoid** (default): ``score / (score + K)`` where *K* is
-        ``bm25_norm_k`` (default 5.0). Non-positive raw scores map to ``0.0``.
+        Returns ``(raw - rmin) / (rmax - rmin)`` clamped to [0, 1], or ``1.0``
+        when ``rmax <= rmin`` (degenerate spread) or bounds are not provided.
         """
-        if self._relevance_norm_mode == "minmax" and rmin is not None and rmax is not None:
+        if rmin is not None and rmax is not None:
             if rmax > rmin:
                 scaled = (raw_score - rmin) / (rmax - rmin)
                 return min(1.0, max(0.0, scaled))
             return 1.0
         if raw_score <= 0:
             return 0.0
-        return raw_score / (raw_score + self._bm25_norm_k)
+        return 1.0
 
     @staticmethod
     def _recency_score(entry: MemoryEntry, now: datetime) -> float:

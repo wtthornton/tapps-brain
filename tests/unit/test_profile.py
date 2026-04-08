@@ -178,25 +178,15 @@ class TestScoringConfig:
         sc = ScoringConfig(relevance=0.45, confidence=0.30, recency=0.15, frequency=0.15)
         assert sc.relevance == 0.45
 
-    def test_default_bm25_norm_k(self) -> None:
-        sc = ScoringConfig()
-        assert sc.bm25_norm_k == 5.0
-
     def test_default_frequency_cap(self) -> None:
         sc = ScoringConfig()
         assert sc.frequency_cap == 20
 
-    def test_default_relevance_normalization_sigmoid(self) -> None:
+    def test_relevance_normalization_field_removed(self) -> None:
+        """relevance_normalization and bm25_norm_k removed; min-max is always used."""
         sc = ScoringConfig()
-        assert sc.relevance_normalization == "sigmoid"
-
-    def test_relevance_normalization_minmax(self) -> None:
-        sc = ScoringConfig(relevance_normalization="minmax")
-        assert sc.relevance_normalization == "minmax"
-
-    def test_relevance_normalization_invalid(self) -> None:
-        with pytest.raises(ValidationError):
-            ScoringConfig(relevance_normalization="invalid")  # type: ignore[arg-type]
+        assert not hasattr(sc, "relevance_normalization")
+        assert not hasattr(sc, "bm25_norm_k")
 
     def test_default_source_trust_values(self) -> None:
         """source_trust defaults match _DEFAULT_SOURCE_TRUST."""

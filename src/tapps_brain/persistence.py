@@ -1,7 +1,7 @@
 """SQLite-backed persistence layer for the shared memory subsystem.
 
 Uses WAL journal mode for concurrent reads during writes, FTS5 for
-full-text search, and schema versioning with forward migrations.
+full-text search, and schema versioning.
 A JSONL audit log is maintained for debugging/compliance (append-only).
 
 When ``TAPPS_SQLITE_MEMORY_READONLY_SEARCH`` is enabled, FTS ``search()`` and
@@ -38,26 +38,8 @@ from tapps_brain.sqlcipher_util import (
 
 logger = structlog.get_logger(__name__)
 
-# Current schema version - bump when adding migrations.
-_SCHEMA_VERSION = 17
-
-# Previous schema versions for migration checks.
-_SCHEMA_V2 = 2
-_SCHEMA_V3 = 3
-_SCHEMA_V4 = 4
-_SCHEMA_V5 = 5
-_SCHEMA_V6 = 6
-_SCHEMA_V7 = 7
-_SCHEMA_V8 = 8
-_SCHEMA_V9 = 9
-_SCHEMA_V10 = 10
-_SCHEMA_V11 = 11
-_SCHEMA_V12 = 12
-_SCHEMA_V13 = 13
-_SCHEMA_V14 = 14
-_SCHEMA_V15 = 15
-_SCHEMA_V16 = 16
-_SCHEMA_V17 = 17
+# Production schema version — first release starts at 1.
+_SCHEMA_VERSION = 1
 
 # Maximum JSONL audit log lines before truncation.
 _MAX_AUDIT_LINES = 10_000
@@ -183,7 +165,7 @@ class MemoryPersistence:
             return self._read_conn
 
     def _ensure_schema(self) -> None:
-        """Create tables if absent and apply forward migrations."""
+        """Create tables if absent (single production schema, no migrations)."""
         with self._lock:
             cur = self._conn.cursor()
 
@@ -198,35 +180,8 @@ class MemoryPersistence:
             current_version: int = row[0] if row[0] is not None else 0
 
             if current_version < 1:
-                self._create_v1_schema(cur)
-                logger.debug("schema_migration_applied", from_version=0, to_version=1)
-
-            _migration_steps: list[tuple[int, str]] = [
-                (_SCHEMA_V2, "_migrate_v1_to_v2"),
-                (_SCHEMA_V3, "_migrate_v2_to_v3"),
-                (_SCHEMA_V4, "_migrate_v3_to_v4"),
-                (_SCHEMA_V5, "_migrate_v4_to_v5"),
-                (_SCHEMA_V6, "_migrate_v5_to_v6"),
-                (_SCHEMA_V7, "_migrate_v6_to_v7"),
-                (_SCHEMA_V8, "_migrate_v7_to_v8"),
-                (_SCHEMA_V9, "_migrate_v8_to_v9"),
-                (_SCHEMA_V10, "_migrate_v9_to_v10"),
-                (_SCHEMA_V11, "_migrate_v10_to_v11"),
-                (_SCHEMA_V12, "_migrate_v11_to_v12"),
-                (_SCHEMA_V13, "_migrate_v12_to_v13"),
-                (_SCHEMA_V14, "_migrate_v13_to_v14"),
-                (_SCHEMA_V15, "_migrate_v14_to_v15"),
-                (_SCHEMA_V16, "_migrate_v15_to_v16"),
-                (_SCHEMA_V17, "_migrate_v16_to_v17"),
-            ]
-            for target_version, method_name in _migration_steps:
-                if current_version < target_version:
-                    getattr(self, method_name)(cur)
-                    logger.debug(
-                        "schema_migration_applied",
-                        from_version=target_version - 1,
-                        to_version=target_version,
-                    )
+                self._create_schema(cur)
+                logger.debug("schema_created", version=_SCHEMA_VERSION)
 
             self._conn.commit()
 
@@ -308,12 +263,12 @@ class MemoryPersistence:
         with self._lock:
             return vec_row_count(self._conn)
 
-    def _create_v1_schema(self, cur: sqlite3.Cursor) -> None:
-        """Create the initial v1 schema."""
-        # Main memories table
+    def _create_schema(self, cur: sqlite3.Cursor) -> None:
+        """Create the production v1 schema (all tables, indexes, triggers)."""
+        # Main memories table — all columns from the final schema
         cur.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                key TEXT NOT NULL,
+                key TEXT NOT NULL PRIMARY KEY,
                 value TEXT NOT NULL,
                 tier TEXT NOT NULL DEFAULT 'pattern',
                 confidence REAL NOT NULL DEFAULT 0.6,
@@ -331,14 +286,43 @@ class MemoryPersistence:
                 contradicted INTEGER NOT NULL DEFAULT 0,
                 contradiction_reason TEXT,
                 seeded_from TEXT,
-                PRIMARY KEY (key)
+                embedding TEXT,
+                valid_at TEXT,
+                invalid_at TEXT,
+                superseded_by TEXT,
+                agent_scope TEXT DEFAULT 'private',
+                integrity_hash TEXT,
+                positive_feedback_count REAL NOT NULL DEFAULT 0,
+                negative_feedback_count REAL NOT NULL DEFAULT 0,
+                source_session_id TEXT NOT NULL DEFAULT '',
+                source_channel TEXT NOT NULL DEFAULT '',
+                source_message_id TEXT NOT NULL DEFAULT '',
+                triggered_by TEXT NOT NULL DEFAULT '',
+                valid_from TEXT NOT NULL DEFAULT '',
+                valid_until TEXT NOT NULL DEFAULT '',
+                stability REAL NOT NULL DEFAULT 0.0,
+                difficulty REAL NOT NULL DEFAULT 0.0,
+                useful_access_count INTEGER NOT NULL DEFAULT 0,
+                total_access_count INTEGER NOT NULL DEFAULT 0,
+                memory_group TEXT,
+                embedding_model_id TEXT
             )
         """)
 
-        # Indexes for common queries
+        # Indexes
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence)")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_temporal ON memories(valid_at, invalid_at)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_valid_window "
+            "ON memories(valid_from, valid_until)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_memory_group ON memories(memory_group)"
+        )
 
         # FTS5 full-text search index
         cur.execute("""
@@ -368,7 +352,7 @@ class MemoryPersistence:
             END
         """)
 
-        # Reserved for Epic 24 GC
+        # Archived memories (GC)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS archived_memories (
                 key TEXT NOT NULL,
@@ -389,36 +373,13 @@ class MemoryPersistence:
                 contradicted INTEGER NOT NULL DEFAULT 0,
                 contradiction_reason TEXT,
                 seeded_from TEXT,
-                archived_at TEXT NOT NULL
+                archived_at TEXT NOT NULL,
+                memory_group TEXT,
+                embedding_model_id TEXT
             )
         """)
 
-        # Record schema version
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (1, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v1_to_v2(self, cur: sqlite3.Cursor) -> None:
-        """Add optional embedding column for semantic search (Epic 65.7).
-
-        Stores JSON array of floats. Existing rows get NULL.
-        """
-        try:
-            cur.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" in str(e).lower():
-                pass  # Column already exists
-            else:
-                raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (2, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v2_to_v3(self, cur: sqlite3.Cursor) -> None:
-        """Add session_index table for searchable session chunks (Epic 65.10)."""
+        # Session index (searchable session chunks)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS session_index (
                 session_id TEXT NOT NULL,
@@ -455,13 +416,8 @@ class MemoryPersistence:
                 VALUES (new.rowid, new.session_id, new.content);
             END
         """)
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (3, datetime.now(tz=UTC).isoformat()),
-        )
 
-    def _migrate_v3_to_v4(self, cur: sqlite3.Cursor) -> None:
-        """Add relations table for entity/relationship extraction (Epic 65.12)."""
+        # Relations (entity/relationship extraction)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS relations (
                 subject TEXT NOT NULL,
@@ -475,85 +431,8 @@ class MemoryPersistence:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_entity)")
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (4, datetime.now(tz=UTC).isoformat()),
-        )
 
-    def _migrate_v4_to_v5(self, cur: sqlite3.Cursor) -> None:
-        """Add bi-temporal columns for validity windows (EPIC-004).
-
-        Adds ``valid_at``, ``invalid_at``, ``superseded_by`` to memories
-        and creates an index for temporal queries.
-        """
-        for col in ("valid_at", "invalid_at", "superseded_by"):
-            try:
-                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memories_temporal ON memories(valid_at, invalid_at)"
-        )
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (5, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v5_to_v6(self, cur: sqlite3.Cursor) -> None:
-        """Schema v6 — observability hooks / version bump (EPIC-007).
-
-        No SQLite shape changes; bumps version so tooling can detect v6 stores.
-        """
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (6, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v6_to_v7(self, cur: sqlite3.Cursor) -> None:
-        """Add agent_scope column for Hive propagation (EPIC-011).
-
-        Adds ``agent_scope TEXT DEFAULT 'private'`` to memories table.
-        Existing entries default to ``'private'`` (no Hive propagation).
-        """
-        try:
-            cur.execute("ALTER TABLE memories ADD COLUMN agent_scope TEXT DEFAULT 'private'")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (7, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v7_to_v8(self, cur: sqlite3.Cursor) -> None:
-        """Add integrity_hash column for tamper detection (H4a).
-
-        Stores HMAC-SHA256 hex digest computed over key|value|tier|source.
-        Existing rows get NULL (hash computed on next save/update).
-        """
-        try:
-            cur.execute("ALTER TABLE memories ADD COLUMN integrity_hash TEXT")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (8, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v8_to_v9(self, cur: sqlite3.Cursor) -> None:
-        """Add feedback_events table for EPIC-029 Feedback Collection.
-
-        Creates ``feedback_events`` with columns for event_type, entry_key,
-        session_id, utility_score, details (JSON), and timestamp.
-        Indexes on event_type, timestamp, entry_key, and session_id for
-        efficient query filtering.
-        """
+        # Feedback events
         cur.execute("""
             CREATE TABLE IF NOT EXISTS feedback_events (
                 id            TEXT NOT NULL PRIMARY KEY,
@@ -577,13 +456,8 @@ class MemoryPersistence:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_feedback_session_id ON feedback_events(session_id)"
         )
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (9, datetime.now(tz=UTC).isoformat()),
-        )
 
-    def _migrate_v9_to_v10(self, cur: sqlite3.Cursor) -> None:
-        """Add diagnostics_history for EPIC-030 quality scorecard."""
+        # Diagnostics history (quality scorecard)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS diagnostics_history (
                 id                TEXT NOT NULL PRIMARY KEY,
@@ -597,149 +471,19 @@ class MemoryPersistence:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_diag_hist_recorded ON diagnostics_history(recorded_at)"
         )
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (10, datetime.now(tz=UTC).isoformat()),
-        )
 
-    def _migrate_v10_to_v11(self, cur: sqlite3.Cursor) -> None:
-        """EPIC-031 flywheel: feedback counts on memories + flywheel_meta KV."""
+        # Flywheel metadata KV store
         cur.execute("""
             CREATE TABLE IF NOT EXISTS flywheel_meta (
                 key   TEXT NOT NULL PRIMARY KEY,
                 value TEXT NOT NULL
             )
         """)
-        cur.execute(
-            "ALTER TABLE memories ADD COLUMN positive_feedback_count REAL NOT NULL DEFAULT 0"
-        )
-        cur.execute(
-            "ALTER TABLE memories ADD COLUMN negative_feedback_count REAL NOT NULL DEFAULT 0"
-        )
+
+        # Record schema version
         cur.execute(
             "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (11, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v11_to_v12(self, cur: sqlite3.Cursor) -> None:
-        """Add provenance metadata columns to memories (GitHub #38).
-
-        Tracks WHERE each memory came from: session, channel, message, trigger.
-        Existing rows default to empty string (no provenance).
-        """
-        for col in (
-            "source_session_id",
-            "source_channel",
-            "source_message_id",
-            "triggered_by",
-        ):
-            try:
-                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (12, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v12_to_v13(self, cur: sqlite3.Cursor) -> None:
-        """Add valid_from / valid_until for temporal fact validity (#29, task 040.3).
-
-        These are human-friendly aliases for the existing valid_at/invalid_at bi-temporal fields.
-        They represent the validity window of a fact as reported by the user or source.
-        """
-        for col in ("valid_from", "valid_until"):
-            try:
-                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memories_valid_window "
-            "ON memories(valid_from, valid_until)"
-        )
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (13, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v13_to_v14(self, cur: sqlite3.Cursor) -> None:
-        """Add stability and difficulty columns for FSRS-style adaptive decay (GitHub #28).
-
-        stability: per-memory effective half-life in days (0.0 = use tier default).
-        difficulty: memory difficulty score 1-10 (0.0 = auto from tier).
-        """
-        for col in ("stability", "difficulty"):
-            try:
-                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} REAL NOT NULL DEFAULT 0.0")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (14, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v14_to_v15(self, cur: sqlite3.Cursor) -> None:
-        """Add Bayesian confidence update counters (GitHub #35, task 040.6).
-
-        useful_access_count: times this memory was retrieved and proved useful.
-        total_access_count: total times this memory was retrieved.
-        """
-        for col in ("useful_access_count", "total_access_count"):
-            try:
-                cur.execute(f"ALTER TABLE memories ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (15, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v15_to_v16(self, cur: sqlite3.Cursor) -> None:
-        """Add project-local memory_group column (GitHub #49).
-
-        Optional TEXT: NULL = ungrouped within the project. Used for SQL filters;
-        not indexed in FTS5 (filter-only).
-        """
-        try:
-            cur.execute("ALTER TABLE memories ADD COLUMN memory_group TEXT")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-        try:
-            cur.execute("ALTER TABLE archived_memories ADD COLUMN memory_group TEXT")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memories_memory_group ON memories(memory_group)"
-        )
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (16, datetime.now(tz=UTC).isoformat()),
-        )
-
-    def _migrate_v16_to_v17(self, cur: sqlite3.Cursor) -> None:
-        """Add ``embedding_model_id`` for dense provenance / reindex (STORY-042.2).
-
-        Nullable TEXT: NULL = unknown or pre-migration row.
-        """
-        for table in ("memories", "archived_memories"):
-            try:
-                cur.execute(f"ALTER TABLE {table} ADD COLUMN embedding_model_id TEXT")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-        cur.execute(
-            "INSERT INTO schema_version (version, migrated_at) VALUES (?, ?)",
-            (17, datetime.now(tz=UTC).isoformat()),
+            (_SCHEMA_VERSION, datetime.now(tz=UTC).isoformat()),
         )
 
     def migrate_contradicted_to_temporal(self) -> int:
