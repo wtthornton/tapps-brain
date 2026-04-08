@@ -18,21 +18,13 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 import structlog
 
-from tapps_brain._feature_flags import feature_flags
-
 logger = structlog.get_logger(__name__)
 
-# Optional dependency — sentence-transformers
-SentenceTransformer: type[Any] | None
-if feature_flags.sentence_transformers:
-    try:
-        from sentence_transformers import SentenceTransformer as _SentenceTransformer
-    except ImportError:
-        SentenceTransformer = None
-    else:
-        SentenceTransformer = _SentenceTransformer
-else:
-    SentenceTransformer = None
+# sentence-transformers is a core dependency.
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:  # pragma: no cover — should not happen with correct install
+    SentenceTransformer = None  # type: ignore[assignment, misc]
 
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"
 
@@ -162,19 +154,16 @@ class NoopProvider:
 class SentenceTransformerProvider:
     """Embedding provider backed by sentence-transformers.
 
-    Requires sentence-transformers package. Use feature_flags.sentence_transformers
-    to check availability before instantiation.
+    Requires sentence-transformers package (core dependency).
     """
 
     def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
         if SentenceTransformer is None:
             msg = (
-                "sentence-transformers is required for vector semantic search. "
-                "It should be installed as a core dependency — "
-                "try: pip install --force-reinstall tapps-brain"
+                "sentence-transformers is required but not installed. "
+                "Install with: pip install tapps-brain"
             )
             raise ImportError(msg)
-
         self._model_name = model_name
         self._model = SentenceTransformer(model_name)
         raw_dim = self._model.get_sentence_embedding_dimension()
@@ -225,18 +214,11 @@ def get_embedding_provider(
         return None
 
     if provider == "sentence_transformers":
-        if not feature_flags.sentence_transformers:
-            logger.debug(
-                "embedding_provider_unavailable",
-                reason="sentence_transformers not installed",
-            )
-            return None
         try:
             return SentenceTransformerProvider(model_name=model)
-        except (ImportError, OSError, RuntimeError, ValueError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.warning("embedding_provider_init_failed", error=str(e))
             return None
 
-    # Unknown provider or future "openai" etc — return None
     logger.debug("embedding_provider_unknown", provider=provider)
     return None

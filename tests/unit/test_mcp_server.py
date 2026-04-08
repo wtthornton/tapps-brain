@@ -136,7 +136,6 @@ class TestCoreTools:
             "profile_info",
             "memory_profile_onboarding",
             "profile_switch",
-            "profile_tier_migrate",
             # Hive tools
             "hive_status",
             "hive_search",
@@ -159,8 +158,6 @@ class TestCoreTools:
             "memory_list_tags",
             "memory_update_tags",
             "memory_entries_by_tag",
-            # OpenClaw migration tool
-            "openclaw_migrate",
             # Feedback tools (EPIC-029)
             "feedback_rate",
             "feedback_gap",
@@ -820,19 +817,6 @@ class TestFederationAndMaintenance:
         result = json.loads(fn())
         assert result["count"] == 0
         assert result["entries"] == []
-
-    def test_profile_tier_migrate_dry_run(self, mcp_server):
-        store = mcp_server._tapps_store
-        store.save(key="mtp1", value="x", tier="pattern")
-        fn = _tool_fn(mcp_server, "profile_tier_migrate")
-        result = json.loads(fn(tier_map_json=json.dumps({"pattern": "procedural"}), dry_run=True))
-        assert result["dry_run"] is True
-        assert result["would_update"] == 1
-
-    def test_profile_tier_migrate_invalid_json(self, mcp_server):
-        fn = _tool_fn(mcp_server, "profile_tier_migrate")
-        result = json.loads(fn(tier_map_json="not json {", dry_run=True))
-        assert result.get("error") == "invalid_tier_map"
 
     def test_memory_export(self, mcp_server):
         store = mcp_server._tapps_store

@@ -126,9 +126,6 @@ def _retrieval_health_from_store(store: object) -> tuple[str, str]:
 
     Does not load sentence-transformers models — uses feature detection only.
     """
-    from tapps_brain._feature_flags import feature_flags
-
-    st_ok = feature_flags.sentence_transformers
     sv_raw = getattr(store, "sqlite_vec_enabled", False)
     sv_on = bool(sv_raw() if callable(sv_raw) else sv_raw)
     sv_n_raw = getattr(store, "sqlite_vec_row_count", 0)
@@ -136,13 +133,6 @@ def _retrieval_health_from_store(store: object) -> tuple[str, str]:
 
     cli_note = " CLI `memory search` default: BM25-only."
 
-    if not st_ok:
-        return (
-            "bm25_only",
-            "Vector leg unavailable: sentence-transformers not installed "
-            "(e.g. `uv sync --extra vector`). Hybrid recall still calls the vector "
-            "path but it returns no candidates, so results are BM25-only." + cli_note,
-        )
     if sv_on and sv_n > 0:
         return (
             "hybrid_sqlite_vec_knn",

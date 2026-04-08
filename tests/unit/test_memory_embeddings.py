@@ -261,42 +261,12 @@ class TestSentenceTransformerProvider:
 class TestGetEmbeddingProviderFactoryPaths:
     """Cover remaining branches in get_embedding_provider."""
 
-    def test_st_flag_off_returns_none(self) -> None:
-        """When feature flag says ST not installed, returns None."""
-        with patch("tapps_brain.embeddings.feature_flags") as mock_flags:
-            mock_flags.sentence_transformers = False
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-            )
-        assert result is None
-
-    def test_st_init_import_error_returns_none(self) -> None:
-        """When SentenceTransformerProvider raises ImportError, returns None."""
-        with (
-            patch("tapps_brain.embeddings.feature_flags") as mock_flags,
-            patch(
-                "tapps_brain.embeddings.SentenceTransformerProvider",
-                side_effect=ImportError("no module"),
-            ),
-        ):
-            mock_flags.sentence_transformers = True
-            result = get_embedding_provider(
-                semantic_search_enabled=True,
-                provider="sentence_transformers",
-            )
-        assert result is None
-
     def test_st_init_os_error_returns_none(self) -> None:
         """When SentenceTransformerProvider raises OSError, returns None."""
-        with (
-            patch("tapps_brain.embeddings.feature_flags") as mock_flags,
-            patch(
-                "tapps_brain.embeddings.SentenceTransformerProvider",
-                side_effect=OSError("disk error"),
-            ),
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformerProvider",
+            side_effect=OSError("disk error"),
         ):
-            mock_flags.sentence_transformers = True
             result = get_embedding_provider(
                 semantic_search_enabled=True,
                 provider="sentence_transformers",
@@ -305,14 +275,10 @@ class TestGetEmbeddingProviderFactoryPaths:
 
     def test_st_init_runtime_error_returns_none(self) -> None:
         """When SentenceTransformerProvider raises RuntimeError, returns None."""
-        with (
-            patch("tapps_brain.embeddings.feature_flags") as mock_flags,
-            patch(
-                "tapps_brain.embeddings.SentenceTransformerProvider",
-                side_effect=RuntimeError("cuda fail"),
-            ),
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformerProvider",
+            side_effect=RuntimeError("cuda fail"),
         ):
-            mock_flags.sentence_transformers = True
             result = get_embedding_provider(
                 semantic_search_enabled=True,
                 provider="sentence_transformers",
@@ -321,14 +287,10 @@ class TestGetEmbeddingProviderFactoryPaths:
 
     def test_st_init_value_error_returns_none(self) -> None:
         """When SentenceTransformerProvider raises ValueError, returns None."""
-        with (
-            patch("tapps_brain.embeddings.feature_flags") as mock_flags,
-            patch(
-                "tapps_brain.embeddings.SentenceTransformerProvider",
-                side_effect=ValueError("bad model"),
-            ),
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformerProvider",
+            side_effect=ValueError("bad model"),
         ):
-            mock_flags.sentence_transformers = True
             result = get_embedding_provider(
                 semantic_search_enabled=True,
                 provider="sentence_transformers",
@@ -338,14 +300,10 @@ class TestGetEmbeddingProviderFactoryPaths:
     def test_st_success_returns_provider(self) -> None:
         """When ST is available and init succeeds, returns provider."""
         mock_provider = MagicMock()
-        with (
-            patch("tapps_brain.embeddings.feature_flags") as mock_flags,
-            patch(
-                "tapps_brain.embeddings.SentenceTransformerProvider",
-                return_value=mock_provider,
-            ),
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformerProvider",
+            return_value=mock_provider,
         ):
-            mock_flags.sentence_transformers = True
             result = get_embedding_provider(
                 semantic_search_enabled=True,
                 provider="sentence_transformers",

@@ -144,18 +144,16 @@ class TestOTelExporter:
 class TestCreateExporter:
     """Test create_exporter() graceful behavior."""
 
-    def test_returns_none_without_otel(self) -> None:
+    def test_returns_none_without_otel_sdk(self) -> None:
         from tapps_brain.otel_exporter import create_exporter
 
-        with patch("tapps_brain.otel_exporter.feature_flags") as ff:
-            ff.otel = False
+        with patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=False):
             result = create_exporter()
             assert result is None
 
     def test_returns_exporter_with_mock_meter(self) -> None:
         from tapps_brain.otel_exporter import OTelExporter, create_exporter
 
-        with patch("tapps_brain.otel_exporter.feature_flags") as ff:
-            ff.otel = True
+        with patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True):
             result = create_exporter(meter=MagicMock())
             assert isinstance(result, OTelExporter)

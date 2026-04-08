@@ -5,8 +5,7 @@ Tests the complete memory replacement flow:
 - memory_get tool backed by tapps-brain returns single entries from the store
 - save → search → get round-trip via the store's public API
 - bidirectional MEMORY.md sync (export then re-import)
-- migration from a mock workspace (MEMORY.md, daily notes, memory-core SQLite)
-- memory slot active: all data comes from tapps-brain (memory-core not invoked)
+- memory slot active: all data comes from tapps-brain
 
 Story: STORY-026.6 from EPIC-026
 """
@@ -14,13 +13,11 @@ Story: STORY-026.6 from EPIC-026
 from __future__ import annotations
 
 import json
-import sqlite3
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tapps_brain.markdown_sync import get_sync_state, sync_from_markdown, sync_to_markdown
-from tapps_brain.migration import migrate_from_workspace
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -53,19 +50,6 @@ def workspace(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _make_memory_core_sqlite(path: Path, rows: list[tuple[str, str]]) -> Path:
-    """Create a minimal memory-core SQLite database at *path* with *rows*.
-
-    The table schema mirrors the most common memory-core layout:
-    ``memories(id TEXT, value TEXT)``.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
-    conn.execute("CREATE TABLE memories (id TEXT, value TEXT)")
-    conn.executemany("INSERT INTO memories VALUES (?, ?)", rows)
-    conn.commit()
-    conn.close()
-    return path
 
 
 # ---------------------------------------------------------------------------
@@ -404,169 +388,13 @@ class TestBidirectionalSync:
 # ---------------------------------------------------------------------------
 
 
-class TestMigrationFromMockData:
-    """migrate_from_workspace imports MEMORY.md, daily notes, and memory-core SQLite."""
-
-    def test_migrate_memory_md_only(self, store: MemoryStore, workspace: Path) -> None:
-        memory_md_content = (
-            "# Memory\n\n## arch-decision\n\nUse WAL mode.\n\n"
-            "### naming-convention\n\nCamelCase for TS.\n"
-        )
-        (workspace / "MEMORY.md").write_text(memory_md_content, encoding="utf-8")
-
-        result = migrate_from_workspace(store, workspace)
-
-        assert result["imported"] == 2
-        assert result["memory_md"] == 2
-        assert result["daily_notes"] == 0
-        assert result["memory_core_sqlite"] == 0
-
-        assert store.get("arch-decision") is not None
-        assert store.get("naming-convention") is not None
-
-    def test_migrate_daily_notes(self, store: MemoryStore, workspace: Path) -> None:
-        memory_dir = workspace / "memory"
-        memory_dir.mkdir()
-        (memory_dir / "2026-03-22.md").write_text("Today: reviewed code.\n", encoding="utf-8")
-        (memory_dir / "2026-03-21.md").write_text("Yesterday: wrote tests.\n", encoding="utf-8")
-
-        result = migrate_from_workspace(store, workspace)
-
-        assert result["daily_notes"] == 2
-        assert store.get("daily-2026-03-22") is not None
-        assert store.get("daily-2026-03-21") is not None
-
-    def test_migrate_memory_core_sqlite(
-        self, store: MemoryStore, workspace: Path, tmp_path: Path
-    ) -> None:
-        db_path = tmp_path / "mock_mc.sqlite"
-        _make_memory_core_sqlite(
-            db_path,
-            [
-                ("mc-key-one", "Memory-core entry one."),
-                ("mc-key-two", "Memory-core entry two."),
-            ],
-        )
-
-        result = _import_memory_core_sqlite_direct(store, db_path)
-
-        assert result["imported"] == 2
-        assert result["errors"] == 0
-        assert store.get("mc-key-one") is not None
-        assert store.get("mc-key-two") is not None
-
-    def test_migrate_idempotent(self, store: MemoryStore, workspace: Path) -> None:
-        """Running migration twice produces no duplicates."""
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## idem-arch\n\nIdempotent arch entry.\n",
-            encoding="utf-8",
-        )
-
-        result1 = migrate_from_workspace(store, workspace)
-        result2 = migrate_from_workspace(store, workspace)
-
-        assert result1["imported"] == 1
-        assert result2["imported"] == 0
-        assert result2["skipped"] == 1
-
-        # Only one entry in store
-        all_entries = store.list_all()
-        idem_entries = [e for e in all_entries if e.key == "idem-arch"]
-        assert len(idem_entries) == 1
-
-    def test_migrate_dry_run_does_not_write(self, workspace: Path) -> None:
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## dry-key\n\nDry-run entry.\n",
-            encoding="utf-8",
-        )
-
-        result = migrate_from_workspace(None, workspace, dry_run=True)
-
-        assert result["dry_run"] is True
-        assert result["imported"] == 1  # count only, not written
-        # No store — no writes happened
-
-    def test_migrate_combined_sources(self, store: MemoryStore, workspace: Path) -> None:
-        """MEMORY.md + daily notes imported together."""
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## combined-arch\n\nArchitecture decision.\n",
-            encoding="utf-8",
-        )
-        memory_dir = workspace / "memory"
-        memory_dir.mkdir()
-        (memory_dir / "2026-01-01.md").write_text("New year context.\n", encoding="utf-8")
-
-        result = migrate_from_workspace(store, workspace)
-
-        assert result["memory_md"] == 1
-        assert result["daily_notes"] == 1
-        assert result["imported"] == 2
-
-    def test_migrate_tapps_brain_wins_existing_entries(
-        self, store: MemoryStore, workspace: Path
-    ) -> None:
-        """Existing store entries are never overwritten during migration."""
-        store.save("pre-existing", "ORIGINAL VALUE", tier="pattern")
-
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n### pre-existing\n\nOVERWRITTEN VALUE.\n",
-            encoding="utf-8",
-        )
-
-        result = migrate_from_workspace(store, workspace)
-        assert result["skipped"] == 1
-
-        entry = store.get("pre-existing")
-        assert entry is not None
-        assert entry.value == "ORIGINAL VALUE"
-
-
-# ---------------------------------------------------------------------------
-# 6. Memory slot active — all data from tapps-brain (memory-core not invoked)
-# ---------------------------------------------------------------------------
-
-
 class TestMemorySlotFromTappsBrain:
     """When tapps-brain is the active memory slot, all data comes from its store.
 
     Since the TS plugin is not testable in Python, these tests verify the
     underlying Python API that the plugin calls: the store's search/get are the
-    sole source of truth, and the migration path cleanly transfers memory-core
-    data into tapps-brain so that subsequent searches only hit the store.
+    sole source of truth.
     """
-
-    def test_after_migration_search_uses_tapps_brain_only(
-        self, store: MemoryStore, workspace: Path
-    ) -> None:
-        """After migrating memory-core data, search returns results from tapps-brain."""
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## migrated-fact\n\nFact from memory-core workspace.\n",
-            encoding="utf-8",
-        )
-
-        migrate_from_workspace(store, workspace)
-
-        results = store.search("fact memory-core workspace")
-        assert any(e.key == "migrated-fact" for e in results)
-
-        entry = store.get("migrated-fact")
-        assert entry is not None
-        assert "Fact from memory-core workspace." in entry.value
-
-    def test_memory_slot_source_is_system_after_migration(
-        self, store: MemoryStore, workspace: Path
-    ) -> None:
-        """Migrated entries are tagged with source=system (not user or agent)."""
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## system-sourced\n\nMigrated system entry.\n",
-            encoding="utf-8",
-        )
-
-        migrate_from_workspace(store, workspace)
-
-        entry = store.get("system-sourced")
-        assert entry is not None
-        assert str(entry.source) == "system"
 
     def test_memory_slot_agent_save_takes_precedence(self, store: MemoryStore) -> None:
         """Agent-saved entries override imported entries if they already exist."""
@@ -593,32 +421,13 @@ class TestMemorySlotFromTappsBrain:
         """memory_get graceful degradation: returns None for missing keys."""
         assert store.get("missing-key") is None
 
-    def test_memory_slot_list_shows_all_sources(self, store: MemoryStore, workspace: Path) -> None:
-        """After migration + agent save, list_all returns entries from both sources."""
-        # Agent-saved entry
+    def test_memory_slot_list_shows_all_sources(self, store: MemoryStore) -> None:
+        """list_all returns entries from all sources."""
         store.save("agent-entry", "Agent saved this.", tier="pattern", source="agent")
-
-        # Import a new entry from workspace
-        (workspace / "MEMORY.md").write_text(
-            "# Memory\n\n## imported-entry\n\nImported from workspace.\n",
-            encoding="utf-8",
-        )
-        migrate_from_workspace(store, workspace)
+        store.save("system-entry", "System saved this.", tier="pattern", source="system")
 
         all_entries = store.list_all()
         keys = [e.key for e in all_entries]
 
         assert "agent-entry" in keys
-        assert "imported-entry" in keys
-
-
-# ---------------------------------------------------------------------------
-# Internal helper (import directly from migration module for SQLite test)
-# ---------------------------------------------------------------------------
-
-
-def _import_memory_core_sqlite_direct(store: MemoryStore, db_path: Path) -> dict[str, Any]:
-    """Thin wrapper to call the internal migration helper for testing."""
-    from tapps_brain.migration import _import_memory_core_sqlite
-
-    return _import_memory_core_sqlite(store, db_path, dry_run=False)
+        assert "system-entry" in keys

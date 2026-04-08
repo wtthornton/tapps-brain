@@ -165,67 +165,36 @@ class TestProtocols:
 
 
 class TestFeatureFlags:
-    def test_faiss_flag_cached(self):
+    def test_anthropic_sdk_flag_cached(self):
         from tapps_brain._feature_flags import FeatureFlags
 
         ff = FeatureFlags()
         # Access twice — second should use cache
-        _ = ff.faiss
-        result = ff.faiss
+        _ = ff.anthropic_sdk
+        result = ff.anthropic_sdk
         assert isinstance(result, bool)
 
-    def test_numpy_flag(self):
+    def test_openai_sdk_flag(self):
         from tapps_brain._feature_flags import FeatureFlags
 
         ff = FeatureFlags()
-        result = ff.numpy
+        result = ff.openai_sdk
         assert isinstance(result, bool)
-
-    def test_sentence_transformers_flag(self):
-        from tapps_brain._feature_flags import FeatureFlags
-
-        ff = FeatureFlags()
-        result = ff.sentence_transformers
-        assert isinstance(result, bool)
-
-    def test_memory_semantic_search_delegates(self):
-        from tapps_brain._feature_flags import FeatureFlags
-
-        ff = FeatureFlags()
-        assert ff.memory_semantic_search == ff.sentence_transformers
-
-    def test_otel_flag(self):
-        from tapps_brain._feature_flags import FeatureFlags
-
-        ff = FeatureFlags()
-        result = ff.otel
-        assert isinstance(result, bool)
-
-    def test_memory_semantic_search_cached(self):
-        """memory_semantic_search must be stored in _cache under its own key."""
-        from tapps_brain._feature_flags import FeatureFlags
-
-        ff = FeatureFlags()
-        _ = ff.memory_semantic_search
-        assert "memory_semantic_search" in ff._cache
 
     def test_as_dict_returns_all(self):
         from tapps_brain._feature_flags import FeatureFlags
 
         ff = FeatureFlags()
         d = ff.as_dict()
-        assert "faiss" in d
-        assert "numpy" in d
-        assert "sentence_transformers" in d
-        assert "otel" in d
-        assert "memory_semantic_search" in d
+        assert "anthropic_sdk" in d
+        assert "openai_sdk" in d
 
     def test_reset_clears_cache(self):
         from tapps_brain._feature_flags import FeatureFlags
 
         ff = FeatureFlags()
-        _ = ff.faiss
-        assert "faiss" in ff._cache
+        _ = ff.anthropic_sdk
+        assert "anthropic_sdk" in ff._cache
         ff.reset()
         assert len(ff._cache) == 0
 

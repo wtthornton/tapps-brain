@@ -1,18 +1,23 @@
 """Optional OpenTelemetry exporter for tapps-brain metrics (STORY-007.5).
 
 Converts ``MetricsSnapshot`` counters and histograms into OpenTelemetry
-metrics. Requires the ``opentelemetry-api`` and ``opentelemetry-sdk``
-packages — install via ``pip install tapps-brain[otel]``.
+metrics. The ``opentelemetry-api`` package is a core dependency (no-op
+when no SDK is configured). Install ``pip install tapps-brain[otel]``
+to get the SDK for actual metric export.
 
-When OpenTelemetry is not installed, :func:`create_exporter` returns
-``None`` and no metrics are exported.
+When the OpenTelemetry SDK is not installed, :func:`create_exporter`
+returns ``None`` and no metrics are exported.
 """
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING, Any
 
-from tapps_brain._feature_flags import feature_flags
+try:
+    from opentelemetry.metrics import get_meter
+except ImportError:  # pragma: no cover — opentelemetry-api is a core dependency
+    get_meter = None  # type: ignore[assignment, misc]
 
 if TYPE_CHECKING:
     from tapps_brain.metrics import MetricsSnapshot
@@ -37,12 +42,7 @@ class OTelExporter:
         If *meter* is ``None``, a default meter named ``tapps_brain``
         is created from the global meter provider.
         """
-        if meter is not None:
-            self._meter = meter
-        else:
-            from opentelemetry.metrics import get_meter
-
-            self._meter = get_meter("tapps_brain")
+        self._meter = meter if meter is not None else get_meter("tapps_brain")
 
         self._counters: dict[str, Any] = {}
         self._histograms: dict[str, Any] = {}
@@ -103,11 +103,20 @@ class OTelExporter:
             pass
 
 
-def create_exporter(meter: Any = None) -> OTelExporter | None:  # noqa: ANN401
-    """Create an exporter if OpenTelemetry is available.
+def _has_otel_sdk() -> bool:
+    """Return True when ``opentelemetry.sdk`` is importable."""
+    try:
+        return importlib.util.find_spec("opentelemetry.sdk") is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
 
-    Returns ``None`` when the ``opentelemetry`` SDK is not installed.
+
+def create_exporter(meter: Any = None) -> OTelExporter | None:  # noqa: ANN401
+    """Create an exporter if the OpenTelemetry SDK is available.
+
+    Returns ``None`` when ``opentelemetry-sdk`` is not installed.
+    The API package (always available) is a no-op without the SDK.
     """
-    if not feature_flags.otel:
+    if not _has_otel_sdk():
         return None
     return OTelExporter(meter=meter)

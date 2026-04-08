@@ -1618,29 +1618,6 @@ def create_server(  # noqa: PLR0915
             logger.exception("profile_switch_error", profile=name)
             return json.dumps({"error": "profile_switch_error", "message": str(exc)})
 
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def profile_tier_migrate(tier_map_json: str, dry_run: bool = False) -> str:
-        """Remap stored memory tiers (GitHub #20).
-
-        *tier_map_json* is a JSON object mapping source tier strings to targets,
-        e.g. ``{"old_layer":"pattern","context":"ephemeral"}``. Targets must be
-        valid ``MemoryTier`` values or layer names in the active profile.
-
-        When *dry_run* is True, no rows are updated; the response lists planned
-        changes. Successful applies append ``tier_migrate`` rows to the JSONL audit log.
-
-        Args:
-            tier_map_json: JSON object of from_tier -> to_tier.
-            dry_run: If True, plan only (default False).
-        """
-        try:
-            from tapps_brain.profile_migrate import parse_tier_map_json
-
-            mapping = parse_tier_map_json(tier_map_json)
-            result = store.migrate_entry_tiers(mapping, dry_run=dry_run)
-            return json.dumps(result.model_dump(mode="json"))
-        except (json.JSONDecodeError, ValueError) as exc:
-            return json.dumps({"error": "invalid_tier_map", "message": str(exc)})
 
     # ------------------------------------------------------------------
     # Hive tools (EPIC-011)
@@ -2303,51 +2280,6 @@ def create_server(  # noqa: PLR0915
             }
         )
 
-    # ------------------------------------------------------------------
-    # OpenClaw migration tool
-    # ------------------------------------------------------------------
-
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def openclaw_migrate(
-        workspace_dir: str,
-        agent_id: str = "",
-        dry_run: bool = False,
-    ) -> str:
-        """Migrate memories from an OpenClaw workspace to tapps-brain.
-
-        Imports MEMORY.md sections (with tier inference), daily notes
-        (memory/YYYY-MM-DD.md as context-tier), and memory-core's SQLite
-        database (~/.openclaw/memory/<agentId>.sqlite) if found.
-
-        Existing entries are never overwritten (tapps-brain wins).  The
-        operation is idempotent — running it twice produces no duplicates.
-
-        Args:
-            workspace_dir: Path to the OpenClaw workspace root.
-            agent_id: Agent ID for locating memory-core SQLite (optional).
-            dry_run: If true, count what would be imported without writing.
-
-        Returns:
-            JSON with keys: imported, skipped, errors, memory_md,
-            daily_notes, memory_core_sqlite, memory_core_db.
-            In dry-run mode the key ``dry_run`` is also present (true).
-        """
-        from tapps_brain.migration import migrate_from_workspace
-
-        resolved = Path(workspace_dir).resolve() if workspace_dir else Path.cwd().resolve()
-        aid: str | None = agent_id.strip() or None
-
-        try:
-            result = migrate_from_workspace(
-                None if dry_run else store,
-                resolved,
-                agent_id=aid,
-                dry_run=dry_run,
-            )
-            return json.dumps(result)
-        except (OSError, ValueError) as exc:
-            logger.exception("openclaw_migrate_error", workspace=workspace_dir)
-            return json.dumps({"error": str(exc), "imported": 0, "skipped": 0, "errors": 1})
 
     # ------------------------------------------------------------------
     # Session end tool (Issue #17 — episodic memory capture)
