@@ -1,19 +1,41 @@
 name: CI
 
 on:
+  schedule:
+    # Weekly cross-platform test: Sundays at 06:00 UTC
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
   push:
     branches: [main, master]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "openclaw-skill/**"
+      - "LICENSE"
   pull_request:
     branches: [main, master]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "openclaw-skill/**"
+      - "LICENSE"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
+          enable-cache: true
       - run: uv sync --extra dev
       - run: uv run python scripts/check_openclaw_docs_consistency.py
       - run: uv run ruff check src/ tests/
@@ -23,43 +45,69 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
         python-version: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
+          enable-cache: true
+      - run: uv sync --extra dev --python ${{ matrix.python-version }}
+      - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
+
+  # Weekly cross-platform sanity check (macOS + Windows).
+  # Runs on schedule and can be triggered manually; not required for PRs.
+  test-cross-platform:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          enable-cache: true
       - run: uv sync --extra dev --python ${{ matrix.python-version }}
       - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
+          enable-cache: true
       - run: uv build
       - run: uv venv .venv-build
       - run: uv pip install dist/*.whl --python .venv-build
       - run: .venv-build/bin/python -c "from tapps_brain import MemoryStore, __version__; print(f'tapps-brain v{__version__}')"
 
-  # Full production gate (packaging, version tests, ruff/mypy, plugin build/test).
-  # SKIP_FULL_PYTEST=1 avoids duplicating the full matrix pytest run.
+  # Production gate: packaging, version tests, plugin build/test.
+  # Lint and full pytest are handled by dedicated jobs above;
+  # SKIP_LINT=1 and SKIP_FULL_PYTEST=1 avoid duplicating that work.
   release-ready:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
+          enable-cache: true
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: openclaw-plugin/package-lock.json
-      - run: SKIP_FULL_PYTEST=1 bash scripts/release-ready.sh
+      - run: SKIP_FULL_PYTEST=1 SKIP_LINT=1 bash scripts/release-ready.sh

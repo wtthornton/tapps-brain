@@ -18,6 +18,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 SKIP_FULL_PYTEST="${SKIP_FULL_PYTEST:-0}"
+SKIP_LINT="${SKIP_LINT:-0}"
 
 fail() {
   echo "release-ready: FAILED — $*" >&2
@@ -66,10 +67,14 @@ else
     || fail "pytest"
 fi
 
-echo "==> [7/8] Ruff + format + mypy"
-uv run ruff check src/ tests/ || fail "ruff check"
-uv run ruff format --check src/ tests/ || fail "ruff format"
-uv run mypy --strict src/tapps_brain/ || fail "mypy"
+if [[ "$SKIP_LINT" == "1" ]]; then
+  echo "==> [7/8] Ruff + format + mypy (skipped: SKIP_LINT=1)"
+else
+  echo "==> [7/8] Ruff + format + mypy"
+  uv run ruff check src/ tests/ || fail "ruff check"
+  uv run ruff format --check src/ tests/ || fail "ruff format"
+  uv run mypy --strict src/tapps_brain/ || fail "mypy"
+fi
 
 echo "==> [8/8] OpenClaw plugin (npm ci, build, test)"
 need_node
