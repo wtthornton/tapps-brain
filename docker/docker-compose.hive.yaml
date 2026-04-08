@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  tapps-hive-db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: tapps_hive
+      POSTGRES_USER: tapps
+      POSTGRES_PASSWORD_FILE: /run/secrets/tapps_hive_password
+    volumes:
+      - tapps-hive-pgdata:/var/lib/postgresql/data
+      - ./init-hive.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_hive"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${TAPPS_HIVE_PORT:-5432}:5432"
+    secrets:
+      - tapps_hive_password
+    restart: unless-stopped
+
+  tapps-hive-migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.migrate
+    environment:
+      TAPPS_BRAIN_HIVE_DSN: "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"
+    depends_on:
+      tapps-hive-db:
+        condition: service_healthy
+    command: ["tapps-brain", "maintenance", "migrate-hive", "--dsn", "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"]
+
+volumes:
+  tapps-hive-pgdata:
+
+secrets:
+  tapps_hive_password:
+    file: ./secrets/tapps_hive_password.txt

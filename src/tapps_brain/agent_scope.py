@@ -14,13 +14,14 @@ from tapps_brain.memory_group import normalize_memory_group
 # Canonical prefix for cross-agent Hive groups (namespace = *name*).
 GROUP_AGENT_SCOPE_PREFIX: str = "group:"
 
-_VALID_PRIMITIVE_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive"})
+_VALID_PRIMITIVE_SCOPES: frozenset[str] = frozenset({"private", "domain", "hive", "group"})
 
 # Documented valid_values for API error responses (stable order for tests).
 _AGENT_SCOPE_DOC_VALUES: tuple[str, ...] = (
     "private",
     "domain",
     "hive",
+    "group",
     "group:<name>",
 )
 

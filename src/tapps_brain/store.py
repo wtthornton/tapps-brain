@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from tapps_brain._protocols import HiveBackend
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
@@ -187,18 +188,25 @@ class MemoryStore:
         project_root: Path,
         *,
         store_dir: str = ".tapps-brain",
+        agent_id: str | None = None,
+        groups: list[str] | None = None,
+        expert_domains: list[str] | None = None,
         consolidation_config: ConsolidationConfig | None = None,
         embedding_provider: SentenceTransformerProvider | None = _UNSET_EMBEDDING,
         write_rules: Any = None,  # noqa: ANN401
         lookup_engine: Any = None,  # noqa: ANN401
         profile: Any = None,  # noqa: ANN401  # MemoryProfile | None (EPIC-010)
-        hive_store: HiveStore | None = None,
+        hive_store: HiveBackend | None = None,
         hive_agent_id: str = "unknown",
         rate_limiter_config: RateLimiterConfig | None = None,
         encryption_key: str | None = None,
         lock_timeout_seconds: float | None = None,
+        auto_register: bool = True,
     ) -> None:
         self._project_root = project_root
+        self._agent_id = agent_id
+        self._groups = groups or []
+        self._expert_domains = expert_domains or []
         self._rate_limiter = SlidingWindowRateLimiter(rate_limiter_config)
         # Profile before persistence so lexical FTS/BM25 settings apply at open.
         self._profile = self._resolve_profile(project_root, profile)
@@ -207,11 +215,15 @@ class MemoryStore:
             self._persistence = MemoryPersistence(
                 project_root,
                 store_dir=store_dir,
+                agent_id=agent_id,
                 encryption_key=encryption_key,
                 lexical_config=_lexical,
             )
         except sqlite3.DatabaseError:
-            _db_path = project_root / store_dir / "memory" / "memory.db"
+            if agent_id is not None:
+                _db_path = project_root / store_dir / "agents" / agent_id / "memory.db"
+            else:
+                _db_path = project_root / store_dir / "memory" / "memory.db"
             logger.error(
                 "database_corrupt",
                 path=str(_db_path),
@@ -302,6 +314,14 @@ class MemoryStore:
         self._zero_result_queries: deque[tuple[str, str]] = deque(maxlen=2000)
         self._latest_quality_report: dict[str, Any] | None = None
 
+        # Auto-register agent in Hive registry (STORY-053.3)
+        if auto_register and self._agent_id is not None and self._hive_store is not None:
+            self._auto_register_agent()
+
+        # Auto-join declared groups (STORY-056.1)
+        if self._groups and self._hive_store is not None:
+            self._setup_group_memberships()
+
         logger.info(
             "memory_store_initialized",
             project_root=str(project_root),
@@ -309,6 +329,43 @@ class MemoryStore:
             relation_count=len(all_relations),
             auto_consolidation=self._consolidation_config.enabled,
         )
+
+    def _auto_register_agent(self) -> None:
+        """Register this agent in the Hive registry if not already present."""
+        if self._hive_store is None or self._agent_id is None:
+            return
+        from tapps_brain.hive import AgentRegistration, AgentRegistry
+
+        registry_path = self._hive_store._db_path.parent / "agents.yaml"
+        registry = AgentRegistry(registry_path=registry_path)
+        if registry.get(self._agent_id) is not None:
+            return  # already registered
+        profile_name = ""
+        if self._profile is not None:
+            profile_name = getattr(self._profile, "name", "")
+        agent = AgentRegistration(
+            id=self._agent_id,
+            name=self._agent_id,
+            profile=profile_name or "repo-brain",
+            project_root=str(self._project_root),
+        )
+        registry.register(agent)
+
+    def _setup_group_memberships(self) -> None:
+        """Auto-create and join declared groups in the Hive (STORY-056.1)."""
+        if self._hive_store is None or not self._agent_id:
+            return
+        for group_name in self._groups:
+            try:
+                self._hive_store.create_group(group_name)
+                self._hive_store.add_group_member(group_name, self._agent_id)
+            except Exception:
+                logger.debug(
+                    "group_auto_join_failed",
+                    group_name=group_name,
+                    agent_id=self._agent_id,
+                    exc_info=True,
+                )
 
     @contextmanager
     def _serialized(self) -> Iterator[None]:
@@ -332,6 +389,21 @@ class MemoryStore:
                 yield
             finally:
                 lock.release()
+
+    @property
+    def agent_id(self) -> str | None:
+        """Return the agent identity used for storage isolation, or ``None``."""
+        return self._agent_id
+
+    @property
+    def groups(self) -> list[str]:
+        """Return declared group memberships (EPIC-056)."""
+        return list(self._groups)
+
+    @property
+    def expert_domains(self) -> list[str]:
+        """Return declared expert domains (EPIC-056)."""
+        return list(self._expert_domains)
 
     @property
     def project_root(self) -> Path:
@@ -448,6 +520,7 @@ class MemoryStore:
         session_id: str | None = None,
         dedup: bool = True,
         conflict_check: bool = True,
+        auto_publish: bool = True,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -494,6 +567,19 @@ class MemoryStore:
                 "message": str(exc),
                 "valid_values": agent_scope_valid_values_for_errors(),
             }
+
+        # STORY-056.3: Validate group membership for group-scoped saves
+        if agent_scope.startswith("group:") and agent_scope != "group":
+            group_name = agent_scope[6:]
+            if group_name not in self._groups:
+                return {
+                    "error": "invalid_agent_scope",
+                    "message": f"Agent not a member of group '{group_name}'",
+                }
+
+        # Auto-fill source_agent from store identity (STORY-053.2)
+        if source_agent == "unknown" and self._agent_id is not None:
+            source_agent = self._agent_id
 
         tier = normalize_save_tier(tier, self._profile)
 
@@ -795,6 +881,95 @@ class MemoryStore:
                 with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
                     self._propagate_to_hive(entry)
 
+            # STORY-056.3: Group-scoped save routing
+            if self._hive_store is not None and self._groups:
+                _tier_str_056 = (
+                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                )
+                _source_str_056 = (
+                    entry.source.value
+                    if hasattr(entry.source, "value")
+                    else str(entry.source)
+                )
+                if agent_scope == "group" and self._groups:
+                    # Propagate to ALL declared groups
+                    for _gn in self._groups:
+                        try:
+                            self._hive_store.save(
+                                namespace=f"group:{_gn}",
+                                key=entry.key,
+                                value=entry.value,
+                                tier=_tier_str_056,
+                                confidence=entry.confidence,
+                                source=_source_str_056,
+                                source_agent=entry.source_agent,
+                                tags=entry.tags,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "group_save_propagation_failed",
+                                group=_gn,
+                                key=entry.key,
+                                exc_info=True,
+                            )
+                elif agent_scope.startswith("group:"):
+                    # Propagate to specific group (already validated above)
+                    _target_group = agent_scope[6:]
+                    try:
+                        self._hive_store.save(
+                            namespace=f"group:{_target_group}",
+                            key=entry.key,
+                            value=entry.value,
+                            tier=_tier_str_056,
+                            confidence=entry.confidence,
+                            source=_source_str_056,
+                            source_agent=entry.source_agent,
+                            tags=entry.tags,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "group_save_propagation_failed",
+                            group=_target_group,
+                            key=entry.key,
+                            exc_info=True,
+                        )
+
+            # STORY-056.2: Expert domain auto-publishing
+            if (
+                auto_publish
+                and self._expert_domains
+                and self._hive_store is not None
+                and tier in ("architectural", "pattern")
+                and agent_scope == "private"
+            ):
+                _tier_str_exp = (
+                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                )
+                _source_str_exp = (
+                    entry.source.value
+                    if hasattr(entry.source, "value")
+                    else str(entry.source)
+                )
+                expert_tags = [f"expert:{d}" for d in self._expert_domains]
+                all_tags = list(entry.tags or []) + expert_tags
+                try:
+                    self._hive_store.save(
+                        namespace="universal",
+                        key=entry.key,
+                        value=entry.value,
+                        tier=_tier_str_exp,
+                        confidence=entry.confidence,
+                        source=_source_str_exp,
+                        source_agent=entry.source_agent,
+                        tags=all_tags,
+                    )
+                except Exception:
+                    logger.debug(
+                        "expert_auto_publish_failed",
+                        key=entry.key,
+                        exc_info=True,
+                    )
+
             # Extract and persist relations (EPIC-006)
             with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
                 relations = extract_relations(key, value)
@@ -1025,6 +1200,8 @@ class MemoryStore:
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
+        include_group_memories: bool = False,
+        max_group_results: int = 20,
     ) -> list[MemoryEntry]:
         """Search via FTS5, with optional post-filters.
 
@@ -1045,6 +1222,9 @@ class MemoryStore:
             until: ISO-8601 UTC upper bound (exclusive) on *time_field* (Issue #70).
             time_field: Column to filter on — ``created_at``, ``updated_at``,
                 or ``last_accessed``. Defaults to ``created_at``.
+            include_group_memories: When True and the store has declared groups,
+                also search group namespaces in the Hive (STORY-056.5).
+            max_group_results: Maximum results per group namespace (STORY-056.5).
         """
         self._metrics.increment("store.search")
         with MetricsTimer(self._metrics, "store.search_ms"):
@@ -1069,6 +1249,49 @@ class MemoryStore:
             # Temporal filtering (EPIC-004 + GitHub #29)
             if not include_historical:
                 results = [r for r in results if r.is_temporally_valid(as_of)]
+
+            # STORY-056.5: Group-aware recall — search group namespaces in Hive
+            if include_group_memories and self._groups and self._hive_store is not None:
+                _seen_keys = {r.key for r in results}
+                for _gn in self._groups:
+                    try:
+                        group_results = self._hive_store.search(
+                            query,
+                            namespaces=[f"group:{_gn}"],
+                            limit=max_group_results,
+                        )
+                        for _gr in group_results:
+                            _gk = _gr.get("key", "")
+                            if _gk and _gk not in _seen_keys:
+                                _seen_keys.add(_gk)
+                                # Convert hive dict to MemoryEntry for uniform return
+                                try:
+                                    _ge = MemoryEntry(
+                                        key=_gk,
+                                        value=_gr.get("value", ""),
+                                        tier=_gr.get("tier", "pattern"),
+                                        confidence=_gr.get("confidence", 0.5),
+                                        source=_gr.get("source", "agent"),
+                                        source_agent=_gr.get("source_agent", "unknown"),
+                                        tags=_gr.get("tags", [])
+                                        if isinstance(_gr.get("tags"), list)
+                                        else [],
+                                        agent_scope=f"group:{_gn}",
+                                    )
+                                    results.append(_ge)
+                                except Exception:
+                                    logger.debug(
+                                        "group_search_entry_convert_failed",
+                                        group=_gn,
+                                        key=_gk,
+                                        exc_info=True,
+                                    )
+                    except Exception:
+                        logger.debug(
+                            "group_search_failed",
+                            group=_gn,
+                            exc_info=True,
+                        )
 
             self._metrics.increment("store.search.results", len(results))
             return results

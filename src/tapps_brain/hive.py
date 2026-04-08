@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import types
 
+    from tapps_brain._protocols import HiveBackend
     from tapps_brain.store import MemoryStore
 
 import structlog
@@ -1008,7 +1009,7 @@ class PropagationEngine:
         confidence: float,
         source: str,
         tags: list[str] | None,
-        hive_store: HiveStore,
+        hive_store: HiveBackend,
         auto_propagate_tiers: list[str] | None = None,
         private_tiers: list[str] | None = None,
         bypass_profile_hive_rules: bool = False,
@@ -1157,7 +1158,7 @@ def select_local_entries_for_hive_push(
 def push_memory_entries_to_hive(
     entries: Sequence[Any],
     *,
-    hive_store: HiveStore,
+    hive_store: HiveBackend,
     agent_id: str,
     agent_profile: str,
     agent_scope: str,

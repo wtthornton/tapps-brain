@@ -365,6 +365,22 @@ class HiveConfig(BaseModel):
         le=1.0,
         description="Weight multiplier for Hive results in recall (0.0-1.0).",
     )
+    groups: list[str] = Field(
+        default_factory=list,
+        description="Declarative group memberships for the agent (EPIC-056).",
+    )
+    expert_domains: list[str] = Field(
+        default_factory=list,
+        description="Expert domains for auto-publishing (EPIC-056).",
+    )
+    recall_weights: dict[str, float] = Field(
+        default_factory=lambda: {"local": 0.5, "group": 0.3, "hive": 0.2},
+        description="Recall weight distribution across local, group, and hive scopes (EPIC-056).",
+    )
+    auto_publish_tiers: list[str] = Field(
+        default_factory=lambda: ["architectural", "pattern"],
+        description="Tiers eligible for expert auto-publishing (EPIC-056).",
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -65,10 +65,15 @@ class MemoryPersistence:
         project_root: Path,
         *,
         store_dir: str = ".tapps-brain",
+        agent_id: str | None = None,
         encryption_key: str | None = None,
         lexical_config: LexicalRetrievalConfig | None = None,
     ) -> None:
-        self._store_dir = project_root / store_dir / "memory"
+        self._agent_id = agent_id
+        if agent_id is not None:
+            self._store_dir = project_root / store_dir / "agents" / agent_id
+        else:
+            self._store_dir = project_root / store_dir / "memory"
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = self._store_dir / "memory.db"
         self._audit_path = self._store_dir / "memory_log.jsonl"
@@ -103,6 +108,11 @@ class MemoryPersistence:
     # ------------------------------------------------------------------
     # Public accessors
     # ------------------------------------------------------------------
+
+    @property
+    def agent_id(self) -> str | None:
+        """Return the agent identity used for storage isolation, or ``None``."""
+        return self._agent_id
 
     @property
     def store_dir(self) -> Path:

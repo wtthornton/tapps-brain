@@ -131,6 +131,29 @@ JsonFlag = Annotated[
 
 
 # ---------------------------------------------------------------------------
+# Global state for agent-id (STORY-053.4)
+# ---------------------------------------------------------------------------
+
+_cli_agent_id: str | None = None
+
+
+@app.callback()
+def _main_callback(
+    agent_id: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-id",
+            envvar="TAPPS_BRAIN_AGENT_ID",
+            help="Agent identifier for per-agent storage isolation.",
+        ),
+    ] = None,
+) -> None:
+    """Global options applied before any sub-command."""
+    global _cli_agent_id  # noqa: PLW0603
+    _cli_agent_id = agent_id
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -148,8 +171,9 @@ def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
     root = _resolve_project_dir(project_dir)
     return MemoryStore(
         root,
+        agent_id=_cli_agent_id,
         hive_store=HiveStore(),
-        hive_agent_id="cli",
+        hive_agent_id=_cli_agent_id or "cli",
     )
 
 
@@ -1677,6 +1701,213 @@ def maintenance_verify_integrity(
         store.close()
 
 
+@maintenance_app.command("split-by-agent")
+def maintenance_split_by_agent(
+    project_dir: Annotated[
+        str, typer.Argument(help="Project root directory.")
+    ] = ".",
+    store_dir: Annotated[
+        str, typer.Option(help="Store directory name.")
+    ] = ".tapps-brain",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report what would happen without writing.")
+    ] = False,
+) -> None:
+    """Split a shared memory.db into per-agent stores based on source_agent field."""
+    from pathlib import Path
+
+    from tapps_brain.persistence import MemoryPersistence
+
+    project_root = Path(project_dir).resolve()
+
+    # Open the shared store (legacy path — no agent_id)
+    shared = MemoryPersistence(project_root, store_dir=store_dir, encryption_key="")
+    all_entries = shared.load_all()
+
+    # Group by source_agent
+    by_agent: dict[str, list] = {}
+    for entry in all_entries:
+        agent = (
+            entry.source_agent
+            if entry.source_agent and entry.source_agent != "unknown"
+            else "_legacy"
+        )
+        by_agent.setdefault(agent, []).append(entry)
+
+    if not by_agent:
+        typer.echo("No memories found in shared store.")
+        raise typer.Exit()
+
+    # Report
+    typer.echo(
+        f"Found {sum(len(v) for v in by_agent.values())} memories "
+        f"across {len(by_agent)} agents:"
+    )
+    for agent_name, entries in sorted(by_agent.items()):
+        typer.echo(f"  {agent_name}: {len(entries)} memories")
+
+    if dry_run:
+        typer.echo("\n[dry-run] No changes written.")
+        raise typer.Exit()
+
+    # Create per-agent stores and copy entries
+    for agent_name, entries in by_agent.items():
+        agent_store = MemoryPersistence(
+            project_root, store_dir=store_dir, agent_id=agent_name, encryption_key=""
+        )
+        for entry in entries:
+            agent_store.save(entry)
+        typer.echo(
+            f"  \u2713 {agent_name}: {len(entries)} memories written to {agent_store.db_path}"
+        )
+
+    typer.echo(f"\nDone. Original {shared.db_path} was NOT modified.")
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL Hive migration commands (EPIC-055)
+# ---------------------------------------------------------------------------
+
+_PG_DSN_OPT = Annotated[
+    str,
+    typer.Option(
+        "--dsn",
+        envvar="TAPPS_BRAIN_HIVE_POSTGRES_DSN",
+        help="PostgreSQL connection string (or set TAPPS_BRAIN_HIVE_POSTGRES_DSN).",
+    ),
+]
+
+
+@maintenance_app.command("migrate-hive")
+def maintenance_migrate_hive(
+    dsn: _PG_DSN_OPT = "",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show pending migrations without applying.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Apply pending PostgreSQL Hive schema migrations."""
+    if not dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_POSTGRES_DSN is required.", err=True)
+        raise typer.Exit(code=1)
+
+    from tapps_brain.postgres_migrations import apply_hive_migrations
+
+    applied = apply_hive_migrations(dsn, dry_run=dry_run)
+    data = {
+        "applied_versions": applied,
+        "dry_run": dry_run,
+        "status": "dry-run" if dry_run else ("up-to-date" if not applied else "applied"),
+    }
+    if as_json:
+        _output(data, as_json=True)
+    else:
+        if not applied:
+            typer.echo("Hive schema is up-to-date.")
+        else:
+            action = "Would apply" if dry_run else "Applied"
+            typer.echo(f"{action} migrations: {applied}")
+
+
+@maintenance_app.command("hive-schema-status")
+def maintenance_hive_schema_status(
+    dsn: _PG_DSN_OPT = "",
+    as_json: JsonFlag = False,
+) -> None:
+    """Show current PostgreSQL Hive schema version and pending migrations."""
+    if not dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_POSTGRES_DSN is required.", err=True)
+        raise typer.Exit(code=1)
+
+    from tapps_brain.postgres_migrations import get_hive_schema_status
+
+    status = get_hive_schema_status(dsn)
+    data = {
+        "current_version": status.current_version,
+        "applied_versions": status.applied_versions,
+        "pending_migrations": [
+            {"version": v, "filename": f} for v, f in status.pending_migrations
+        ],
+    }
+    if as_json:
+        _output(data, as_json=True)
+    else:
+        typer.echo(f"Current version: {status.current_version}")
+        if status.pending_migrations:
+            typer.echo("Pending migrations:")
+            for v, fname in status.pending_migrations:
+                typer.echo(f"  v{v}: {fname}")
+        else:
+            typer.echo("No pending migrations.")
+
+
+# ---------------------------------------------------------------------------
+# Hive backup / restore commands (EPIC-058 STORY-058.4)
+# ---------------------------------------------------------------------------
+
+
+@maintenance_app.command("backup-hive")
+def maintenance_backup_hive(
+    output: Annotated[str | None, typer.Option(help="Output file path.")] = None,
+    dsn: Annotated[str | None, typer.Option(help="Hive Postgres DSN.")] = None,
+    format: Annotated[str, typer.Option(help="Backup format: sql or custom.")] = "sql",
+) -> None:
+    """Backup Hive Postgres data using pg_dump."""
+    import os
+    import subprocess
+    from datetime import UTC, datetime
+
+    effective_dsn = dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+    if not effective_dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_DSN required.", err=True)
+        raise typer.Exit(1)
+
+    if output is None:
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%S")
+        output = f"hive-backup-{ts}.sql"
+
+    fmt_flag = "--format=custom" if format == "custom" else "--format=plain"
+    cmd = ["pg_dump", effective_dsn, fmt_flag, f"--file={output}"]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        typer.echo(f"Backup written to {output}")
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"Error: {e.stderr}", err=True)
+        raise typer.Exit(1)
+    except FileNotFoundError:
+        typer.echo("Error: pg_dump not found. Install PostgreSQL client tools.", err=True)
+        raise typer.Exit(1)
+
+
+@maintenance_app.command("restore-hive")
+def maintenance_restore_hive(
+    input: Annotated[str, typer.Argument(help="Backup file to restore.")],
+    dsn: Annotated[str | None, typer.Option(help="Hive Postgres DSN.")] = None,
+) -> None:
+    """Restore Hive Postgres data from a backup."""
+    import os
+    import subprocess
+
+    effective_dsn = dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+    if not effective_dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_DSN required.", err=True)
+        raise typer.Exit(1)
+
+    # Detect format
+    if input.endswith(".sql"):
+        cmd = ["psql", effective_dsn, "-f", input]
+    else:
+        cmd = ["pg_restore", "--dbname", effective_dsn, "--clean", "--if-exists", input]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        typer.echo(f"Restored from {input}")
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"Error: {e.stderr}", err=True)
+        raise typer.Exit(1)
+
+
 @store_app.command("metrics")
 def store_metrics(
     project_dir: ProjectDir = None,
@@ -1745,6 +1976,123 @@ def recall_cmd(
             if result.memory_section:
                 typer.echo("")
                 typer.echo(result.memory_section)
+    finally:
+        store.close()
+
+
+# ===================================================================
+# SIMPLIFIED AGENT BRAIN COMMANDS (EPIC-057)
+# ===================================================================
+
+
+@app.command("remember")
+def cli_remember(
+    fact: Annotated[str, typer.Argument(help="The memory to save.")],
+    tier: Annotated[str, typer.Option(help="Memory tier.")] = "procedural",
+    share: Annotated[bool, typer.Option("--share", help="Share with all groups.")] = False,
+    project_dir: ProjectDir = None,
+) -> None:
+    """Save a memory to the agent's brain."""
+    from tapps_brain.agent_brain import _content_key
+
+    store = _get_store(project_dir)
+    try:
+        key = _content_key(fact)
+        agent_scope = "group" if share else "private"
+        store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        typer.echo(f"Remembered: {key}")
+    finally:
+        store.close()
+
+
+@app.command("brain-recall")
+def cli_brain_recall(
+    query: Annotated[str, typer.Argument(help="What to search for.")],
+    max_results: Annotated[int, typer.Option(help="Max results.")] = 5,
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Recall memories matching a query (simplified)."""
+    store = _get_store(project_dir)
+    try:
+        entries = store.search(query)
+        results = []
+        for entry in entries[:max_results]:
+            results.append(
+                {
+                    "key": entry.key,
+                    "value": entry.value[:120],
+                    "tier": str(entry.tier),
+                    "confidence": f"{entry.confidence:.2f}",
+                }
+            )
+        if as_json:
+            _output(results, as_json=True)
+        else:
+            if not results:
+                typer.echo("  (no results)")
+            else:
+                _print_table(results)
+    finally:
+        store.close()
+
+
+@app.command("forget")
+def cli_forget(
+    key: Annotated[str, typer.Argument(help="Memory key to archive.")],
+    project_dir: ProjectDir = None,
+) -> None:
+    """Archive a memory."""
+    store = _get_store(project_dir)
+    try:
+        entry = store.get(key)
+        if entry is None:
+            typer.echo(f"Not found: {key}")
+            raise typer.Exit(code=1)
+        store.delete(key)
+        typer.echo(f"Forgotten: {key}")
+    finally:
+        store.close()
+
+
+@app.command("status")
+def cli_status(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show agent identity, groups, and store stats."""
+    store = _get_store(project_dir)
+    try:
+        status = {
+            "agent_id": getattr(store, "agent_id", None),
+            "groups": getattr(store, "groups", []),
+            "expert_domains": getattr(store, "expert_domains", []),
+            "memory_count": len(store.list_all()),
+            "hive_connected": store._hive_store is not None,
+        }
+        if as_json:
+            _output(status, as_json=True)
+        else:
+            for k, v in status.items():
+                typer.echo(f"  {k}: {v}")
+    finally:
+        store.close()
+
+
+@app.command("who-am-i")
+def cli_who_am_i(
+    project_dir: ProjectDir = None,
+) -> None:
+    """Show current agent identity and configuration."""
+    store = _get_store(project_dir)
+    try:
+        typer.echo(f"  agent_id: {getattr(store, 'agent_id', None)}")
+        typer.echo(f"  project_root: {store.project_root}")
+        typer.echo(f"  groups: {getattr(store, 'groups', [])}")
+        typer.echo(f"  expert_domains: {getattr(store, 'expert_domains', [])}")
+        profile = getattr(store, "profile", None)
+        typer.echo(f"  profile: {getattr(profile, 'name', 'default')}")
+        typer.echo(f"  hive_connected: {store._hive_store is not None}")
     finally:
         store.close()
 
@@ -2430,7 +2778,7 @@ def openclaw_upgrade(
     from tapps_brain.store import MemoryStore
 
     root = Path(project_dir)
-    store = MemoryStore(root)
+    store = MemoryStore(root, agent_id=_cli_agent_id)
     entries = store.list_all()
 
     # Export identity + long-term entries to MEMORY.md

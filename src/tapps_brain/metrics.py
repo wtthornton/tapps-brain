@@ -148,6 +148,13 @@ class StoreHealthReport(BaseModel):
         default=0,
         description="Total UTF-8 bytes appended to archive JSONL across live GC runs.",
     )
+    # Hive Postgres health (EPIC-058 STORY-058.3)
+    hive_connected: bool = False
+    hive_schema_version: int = 0
+    hive_schema_current: bool = True
+    hive_pool_size: int = 0
+    hive_pool_available: int = 0
+    hive_latency_ms: float = 0.0
 
 
 # ---------------------------------------------------------------------------
