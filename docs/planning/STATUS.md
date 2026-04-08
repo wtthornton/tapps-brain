@@ -45,7 +45,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 - **Runtime (core):** `pydantic`, `structlog`, `pyyaml` — no typer/mcp in core.
 - **Extras:** `[cli]` adds `typer`; `[mcp]` adds `mcp`; `[all]` includes both.
-- **Optional:** `vector` (faiss, sentence_transformers), `reranker` (cohere).
+- **Optional:** `reranker` (cohere); `anthropic_sdk` and `openai_sdk` for LLM-as-judge evaluation.
 - **Dev:** test stack + `mcp` so MCP unit tests run under `uv sync --extra dev`.
 
 Install for contributors:

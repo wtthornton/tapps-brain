@@ -357,7 +357,7 @@ def _run_hdbscan_clustering(  # pragma: no cover
 ) -> list[tuple[list[tuple[str, str, float, list[str]]], str]]:
     """Embedding + HDBSCAN path (optional vector extra; not exercised in default CI)."""
     texts = [t[0] for t in instances]
-    model = sentence_transformer_cls("all-MiniLM-L6-v2")
+    model = sentence_transformer_cls("BAAI/bge-small-en-v1.5")
     emb = model.encode(texts, convert_to_numpy=True)
     clusterer = hdbscan_mod.HDBSCAN(min_cluster_size=3, metric="euclidean")
     labels = clusterer.fit_predict(emb)

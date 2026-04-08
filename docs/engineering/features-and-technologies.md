@@ -13,7 +13,7 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
-| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + optional **`faiss-cpu`** | Embeddings computed in `embeddings.py` (core dependency since v2.2.0); vectors stored on entries and in sqlite-vec table by default. Optional FAISS via `[faiss]` extra. **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
+| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + **`sqlite-vec`** | Embeddings computed in `embeddings.py` (core dependency); vectors stored on entries and in sqlite-vec table (`memory_vec`). **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
 | **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. Ops: [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md). |
 | **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
@@ -108,13 +108,12 @@
 |--------------------------|----------|---------|
 | `cli` | `typer` | Command-line interface. |
 | `mcp` | `mcp` | MCP server. |
-| `faiss` | `faiss-cpu` | Optional FAISS vector index (alternative to built-in sqlite-vec). |
 | `reranker` | `cohere` | API re-ranking. |
 | `encryption` | `pysqlcipher3` | SQLCipher. |
 | `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
 | **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers`, `sqlite-vec` | Always installed (vector search built-in since v2.2.0). |
 
-Lazy detection: `_feature_flags.py` probes importability for vector, sqlite_vec, otel, optional LLM SDKs.
+Lazy detection: `_feature_flags.py` probes importability for optional LLM SDKs (`anthropic_sdk`, `openai_sdk`).
 
 ---
 

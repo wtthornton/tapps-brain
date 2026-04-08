@@ -273,6 +273,7 @@ class FederatedStore:
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         busy_ms = resolve_sqlite_busy_timeout_ms()
         conn.execute(f"PRAGMA busy_timeout={busy_ms}")
         conn.execute("PRAGMA foreign_keys=ON")
@@ -316,7 +317,7 @@ class FederatedStore:
             with contextlib.suppress(sqlite3.OperationalError):
                 self._conn.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS federated_fts
-                    USING fts5(key, value, tags, content=federated_memories, content_rowid=rowid)
+                    USING fts5(key, value, tags, content=federated_memories, content_rowid=rowid, tokenize='porter unicode61')
                 """)
 
             self._migrate_federated_memory_group()

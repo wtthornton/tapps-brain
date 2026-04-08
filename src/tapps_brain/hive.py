@@ -231,7 +231,8 @@ class HiveStore:
                     USING fts5(
                         key, value, tags,
                         content=hive_memories,
-                        content_rowid=rowid
+                        content_rowid=rowid,
+                        tokenize='porter unicode61'
                     )
                 """)
 

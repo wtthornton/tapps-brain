@@ -4,7 +4,7 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-**Project:** tapps-brain (SQLite-backed memory for AI assistants; sync Python core; built-in sqlite-vec hybrid search; optional `[faiss]`, `[encryption]`).
+**Project:** tapps-brain (SQLite-backed memory for AI assistants; sync Python core; built-in sqlite-vec hybrid search; optional `[encryption]`).
 
 **Start by reading:** `CLAUDE.md`, `docs/planning/open-issues-roadmap.md`, `docs/planning/STATUS.md`, then the epic you implement. Canonical product queue is the **open-issues roadmap**, not `.ralph/fix_plan.md`, unless you are explicitly running Ralph.
 

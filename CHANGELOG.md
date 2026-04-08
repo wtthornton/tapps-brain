@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v3.0.0 (2026-04-08)
+
+### Changed
+
+- **Default embedding model:** Switched from `all-MiniLM-L6-v2` to `BAAI/bge-small-en-v1.5` (~10% better retrieval quality, same 384 dimensions).
+- **FTS5 tokenizer:** All FTS5 tables now use `porter unicode61` tokenizer for English stemming and Unicode normalization.
+- **SQLite pragma audit:** Added `PRAGMA synchronous=NORMAL` to federation connections (was already set for memory and hive).
+- **SQLite version warning:** Logs a warning on startup if SQLite < 3.51.3 (WAL-reset corruption bug).
+
+### Removed
+
+- **`TAPPS_SEMANTIC_SEARCH` env var:** Semantic search is now always enabled (sentence-transformers is a core dependency). The opt-out env var has been removed.
+- **`[faiss]` optional extra:** FAISS was never used in any code path; sqlite-vec is the sole vector backend. All FAISS references removed from docs.
+- **Schema migration history:** 16 incremental migration methods replaced by a single `_create_schema()`. Schema version reset to 1.
+- **Sigmoid relevance normalization:** Min-max is the only normalization path.
+- **NoopProvider / EmbeddingProvider protocol:** `SentenceTransformerProvider` is the only embedding implementation.
+- **Legacy backwards compatibility:** Removed tier enum union logic, decay config legacy field mapping, FTS5 LIKE fallbacks, Cohere v1/v2 shim, schema version guards, and BM25/vector alias fields.
+
 ## v2.2.0 (2026-04-07)
 
 ### Changed

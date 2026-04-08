@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# Default embedding width (sentence-transformers all-MiniLM-L6-v2).
+# Default embedding width (sentence-transformers BAAI/bge-small-en-v1.5).
 DEFAULT_VEC_DIM = 384
 
 _VEC_TABLE = "memory_vec"

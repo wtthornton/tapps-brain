@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover — should not happen with correct install
     SentenceTransformer = None  # type: ignore[assignment, misc]
 
-_DEFAULT_MODEL = "all-MiniLM-L6-v2"
+_DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 
 # Symmetric int8 scale for components in [-1, 1] (L2-normalized sentence embeddings).
 _INT8_QUANT_SCALE = 127.0

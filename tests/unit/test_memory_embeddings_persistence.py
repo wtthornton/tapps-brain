@@ -68,12 +68,12 @@ class TestEmbeddingPersistence:
             tier=MemoryTier.pattern,
             source=MemorySource.agent,
             embedding=embedding,
-            embedding_model_id="all-MiniLM-L6-v2",
+            embedding_model_id="BAAI/bge-small-en-v1.5",
         )
         persistence.save(entry)
         loaded = persistence.get("emid")
         assert loaded is not None
-        assert loaded.embedding_model_id == "all-MiniLM-L6-v2"
+        assert loaded.embedding_model_id == "BAAI/bge-small-en-v1.5"
         assert loaded.embedding == embedding
 
     def test_existing_entries_null_embedding(self, tmp_path: Path) -> None:

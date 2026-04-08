@@ -5,7 +5,7 @@
 **Universal persistent memory for AI agents**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Version 2.2.0](https://img.shields.io/badge/version-2.2.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
+[![Version 3.0.0](https://img.shields.io/badge/version-3.0.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Tests 2900+](https://img.shields.io/badge/tests-2900%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![Coverage 95%+](https://img.shields.io/badge/coverage-95%25%2B-brightgreen?style=for-the-badge)](pyproject.toml)
@@ -110,7 +110,6 @@ chain = store.history("pricing-plan")
 ```bash
 pip install tapps-brain                 # core library (includes sqlite-vec + sentence-transformers)
 pip install tapps-brain[mcp]            # + MCP server for Claude Code, Cursor, VS Code Copilot
-pip install tapps-brain[faiss]          # + optional FAISS vector index
 pip install tapps-brain[reranker]       # + Cohere semantic reranking
 pip install tapps-brain[otel]           # + OpenTelemetry types/helpers (not wired to CLI/MCP yet — see docs/guides/observability.md)
 pip install tapps-brain[all]            # everything above (except otel)
@@ -507,7 +506,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Safety** | `safety` | Prompt injection detection, content sanitization |
 | **Federation** | `federation` | Cross-project pub/sub via central SQLite hub |
 | **Relations** | `relations`, `contradictions` | Entity/relation extraction, contradiction detection |
-| **Extensions** | `embeddings`, `reranker`, `similarity` | Optional FAISS vectors, Cohere reranking, TF-IDF similarity |
+| **Extensions** | `embeddings`, `reranker`, `similarity` | sqlite-vec vectors, Cohere reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
 | **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (counts in `docs/generated/mcp-tools-manifest.json`) |

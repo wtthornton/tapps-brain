@@ -327,7 +327,7 @@ class MemoryPersistence:
         # FTS5 full-text search index
         cur.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-            USING fts5(key, value, tags, content=memories, content_rowid=rowid)
+            USING fts5(key, value, tags, content=memories, content_rowid=rowid, tokenize='porter unicode61')
         """)
 
         # Triggers to keep FTS in sync
@@ -394,7 +394,7 @@ class MemoryPersistence:
         )
         cur.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS session_index_fts
-            USING fts5(session_id, content, content=session_index, content_rowid=rowid)
+            USING fts5(session_id, content, content=session_index, content_rowid=rowid, tokenize='porter unicode61')
         """)
         cur.execute("""
             CREATE TRIGGER IF NOT EXISTS session_index_ai AFTER INSERT ON session_index BEGIN

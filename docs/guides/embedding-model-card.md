@@ -6,17 +6,18 @@ This page documents the **default** dense embedding stack for built-in vector / 
 
 | Field | Value |
 | --- | --- |
-| **Hugging Face / ST id** | `sentence-transformers/all-MiniLM-L6-v2` |
-| **Code default** | `all-MiniLM-L6-v2` (`embeddings._DEFAULT_MODEL`) |
+| **Hugging Face / ST id** | `BAAI/bge-small-en-v1.5` |
+| **Code default** | `BAAI/bge-small-en-v1.5` (`embeddings._DEFAULT_MODEL`) |
 | **Output dimension** | **384** |
-| **Pooling** | Mean pooling (model-defined) |
+| **Pooling** | CLS pooling (model-defined) |
 | **Normalization** | **L2-normalized** float vectors (`normalize_embeddings=True` in `SentenceTransformerProvider`) — aligns cosine similarity with dot product on stored vectors. |
-| **Typical max sequence length** | **256** subword tokens (model config; do not rely on long-context paste without a different model). |
-| **License** | Apache-2.0 (sentence-transformers model card; verify upstream before redistribution). |
+| **Typical max sequence length** | **512** subword tokens (model config). |
+| **MTEB score** | ~62 (vs 56.3 for prior default all-MiniLM-L6-v2) |
+| **License** | MIT (BAAI model card; verify upstream before redistribution). |
 
 ## Install surface
 
-- **Install:** Included in core `pip install tapps-brain` (sentence-transformers, numpy, sqlite-vec are core dependencies since v2.2.0). Optional FAISS: `pip install tapps-brain[faiss]`.
+- **Install:** Included in core `pip install tapps-brain` (sentence-transformers, numpy, sqlite-vec are core dependencies).
 - **Provider:** `get_embedding_provider(..., provider="sentence_transformers", model=...)` — only this provider is wired today; unknown providers return `None`.
 
 ## Storage and precision

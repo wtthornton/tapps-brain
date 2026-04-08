@@ -99,7 +99,7 @@ pip install tapps-brain[cli]
 # Add MCP server
 pip install tapps-brain[mcp]
 
-# Add everything (cli + mcp + faiss + reranker)
+# Add everything (cli + mcp + reranker)
 pip install tapps-brain[all]
 ```
 
@@ -116,9 +116,6 @@ Semantic (embedding-based) search is built into the core install. The base `pip 
 - **sqlite-vec** requires a C compiler on some platforms if no pre-built wheel is available. On Ubuntu: `apt install build-essential`.
 - **sentence-transformers** downloads model weights on first use (~90 MB for the default model). Ensure network access or pre-download for air-gapped environments.
 
-**Optional FAISS:** For FAISS-based vector indexing (alternative to sqlite-vec), install the `[faiss]` extra: `pip install tapps-brain[faiss]`. For GPU-accelerated FAISS, install `faiss-gpu` separately from the [PyPI faiss-gpu package](https://pypi.org/project/faiss-gpu/) or via conda.
-
-**Disabling vector search:** Set `TAPPS_SEMANTIC_SEARCH=0` to disable automatic embedding computation (e.g. for lightweight or test environments).
 
 ---
 

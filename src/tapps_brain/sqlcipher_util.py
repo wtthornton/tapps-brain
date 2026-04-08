@@ -20,11 +20,18 @@ Environment:
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
+
+logger = logging.getLogger(__name__)
+
+# SQLite 3.51.3 fixed a WAL-reset bug that can cause database corruption.
+_MIN_SQLITE_VERSION = (3, 51, 3)
+_sqlite_version_warned = False
 
 # pysqlcipher3.dbapi2 mirrors sqlite3 for connections used here.
 _ConnectFactory = Callable[..., sqlite3.Connection]
@@ -103,6 +110,22 @@ def _require_sqlcipher() -> _ConnectFactory:
     return c
 
 
+def _warn_sqlite_version_once() -> None:
+    """Log a warning once if the SQLite version has the WAL-reset corruption bug."""
+    global _sqlite_version_warned  # noqa: PLW0603
+    if _sqlite_version_warned:
+        return
+    _sqlite_version_warned = True
+    ver = sqlite3.sqlite_version_info
+    if ver < _MIN_SQLITE_VERSION:
+        logger.warning(
+            "SQLite %s detected; versions before 3.51.3 have a WAL-reset "
+            "bug that can cause database corruption in rare cases. "
+            "Upgrade to SQLite 3.51.3+ is recommended.",
+            sqlite3.sqlite_version,
+        )
+
+
 def connect_sqlite(
     path: str | os.PathLike[str],
     *,
@@ -110,6 +133,7 @@ def connect_sqlite(
     check_same_thread: bool = False,
 ) -> sqlite3.Connection:
     """Open SQLite or SQLCipher with the same pragmas as ``MemoryPersistence``."""
+    _warn_sqlite_version_once()
     path_str = str(path)
     if encryption_key:
         connect_fn = _require_sqlcipher()
