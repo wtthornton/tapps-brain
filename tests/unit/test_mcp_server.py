@@ -150,6 +150,7 @@ class TestCoreTools:
             "agent_delete",
             # Knowledge graph tools
             "memory_relations",
+            "memory_relations_get_batch",
             "memory_find_related",
             "memory_query_relations",
             # Audit tool

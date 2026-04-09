@@ -50,6 +50,7 @@ class TestGCConfig:
             "floor_retention_days": 45,
             "session_expiry_days": 3,
             "contradicted_threshold": 0.15,
+            "session_index_ttl_days": 90,
         }
 
     def test_zero_threshold_is_valid(self) -> None:
