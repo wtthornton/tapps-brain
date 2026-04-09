@@ -183,9 +183,12 @@ class RecallOrchestrator:
         # Recompute token count from the final section so Hive additions are reflected.
         # inject_memories() token count only covers local results; _rebuild_section()
         # changes the section text, so we re-estimate to keep the count accurate.
-        token_count = (
-            estimate_tokens(memory_section) if memory_section else result.get("injected_tokens", 0)
-        )
+        if not memories:
+            token_count = 0
+        elif memory_section:
+            token_count = estimate_tokens(memory_section)
+        else:
+            token_count = result.get("injected_tokens", 0)
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
