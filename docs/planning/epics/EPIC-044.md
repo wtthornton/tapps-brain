@@ -1,9 +1,10 @@
 ---
 id: EPIC-044
 title: "Ingestion, deduplication, and lifecycle — research and upgrades"
-status: in_progress
+status: done
 priority: high
 created: 2026-03-31
+completed: 2026-04-09
 tags: [safety, dedup, contradictions, consolidation, gc, seeding, caps]
 ---
 
@@ -70,7 +71,7 @@ Bloom filter + `normalize_for_dedup` fast path; may reinforce existing key inste
 
 ### STORY-044.3: Contradiction / conflict handling
 
-**Status:** in_progress (core save-path + offline conflict export shipped 2026-04-02 / 2026-04-04; optional product NLI/async remains backlog) | **Effort:** L | **Depends on:** none  
+**Status:** done (2026-04-04 — core + offline conflict export shipped; optional product NLI/async remains backlog per PLANNING.md trigger c) | **Effort:** L | **Depends on:** none  
 **Context refs:** `src/tapps_brain/contradictions.py`, `src/tapps_brain/store.py` (`conflict_check`), GitHub #44, `tests/unit/test_contradictions.py`, `tests/unit/test_contradictions_detect.py`  
 **Verification:** `pytest tests/unit/test_contradictions.py tests/unit/test_contradictions_detect.py tests/unit/test_evaluation.py::test_save_conflict_candidate_report_known_pair tests/unit/test_evaluation.py::test_save_conflict_candidate_report_active_only_skips_contradicted_and_consolidated tests/unit/test_evaluation.py::test_save_conflict_candidate_report_respects_active_only_false tests/unit/test_cli.py::TestMaintenanceSaveConflictCandidatesCommand -v --tb=short -m "not benchmark"`
 

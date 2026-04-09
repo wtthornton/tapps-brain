@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-05 (**EPIC-052** **done** — 2026-Q2 code review sweep, 6 fixes landed in v2.0.4; **#52** closed; **EPIC-042** **042.1–042.8** stories done incl. **042.6** rerank observability + **042.3** sqlite-vec ops doc; **EPIC-050** partial (050.3 WAL checkpoint runbook shipped); **EPIC-044** **044.1**/**044.2**/**044.4** (incl. merge **undo**)/**044.5**/**044.6**/**044.7** (incl. optional **per-group** caps) shipped; **044.3** core + **offline** conflict export (`maintenance save-conflict-candidates`, `run_save_conflict_candidate_report`, `save-conflict-nli-offline.md`); **EPIC-051** **done** — §10 checklist ADRs **001**–**006**; **next-session handoff prompt:** [`next-session-prompt.md`](next-session-prompt.md))
+Last updated: 2026-04-09 — **v3.1.0** shipped: **EPIC-053–058** done (per-agent brain identity, Hive backend abstraction, PostgreSQL Hive/Federation, declarative groups + expert publishing, unified `AgentBrain` API, Docker deployment); epic status hygiene sweep: **EPIC-040/042/044/050** marked done; 2984 tests collected, ruff + mypy clean
 Owner: @wtthornton
 
 ## Purpose
@@ -122,24 +122,21 @@ Track delivery status for currently open GitHub issues, prioritized by value and
   - Status: `closed` on GitHub (2026-03-28) — `tapps-brain session end`, `session_summary.py`, MCP `tapps_brain_session_end`; optional `--daily-note`
   - Target outcome: end-of-session episodic capture (CLI + Python API + MCP)
 
-## Recommended next steps (2026-04-03)
+## Recommended next steps (2026-04-09)
 
-- **#52** — done (GitHub issue body checklist updated + issue closed).
+- **EPIC-053–058** — all done in v3.1.0; epic status files updated to reflect.
+- **EPIC-040 / 042 / 044 / 050** — all marked done (status files updated 2026-04-09).
 - **Agent / Cursor handoff:** paste-ready task prompt in [`next-session-prompt.md`](next-session-prompt.md); numbered queue mirrored in [`STATUS.md`](STATUS.md) § *Current focus*.
 
 **Next engineering (canonical queue)**
 
-- **EPIC-051** — **complete** ([`EPIC-051.md`](epics/EPIC-051.md)): §10 checklist decisions **ADR-001**–**ADR-006** in [`adr/`](adr/); tracking row 20 **`save_phase_summary`** + phase histograms / **`memory://metrics`** baseline per [`ADR-006`](adr/ADR-006-save-path-observability.md).
+- **EPIC-048** — Optional auxiliary capabilities: session index retention, relations batch API, markdown round-trip, eval CI golden set, doc-validation guide, visual PNG capture. Pick a story when a product need arises.
+- **EPIC-032** — OTel GenAI semantic conventions. Low priority; defer until stakeholder request.
 - **MemoryStore decomposition** (tracking row 22): design-first only; concurrency/scale ADR: [`adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md`](adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
-- **Retrieval epic (`EPIC-042`):** Story grid **042.1–042.8** done (including **042.6** rerank logs + `injection_telemetry` `rerank_*`; **042.3** [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md)). Epic-level success criteria (eval run, GitHub) may still be open in [`EPIC-042.md`](epics/EPIC-042.md).
-- **Auto-consolidation (`EPIC-044.4`):** `consolidation_merge` + `consolidation_source` + **`consolidation_merge_undo`** in `memory_log.jsonl`; **`MemoryStore.undo_consolidation_merge`**; CLI **`tapps-brain maintenance consolidation-merge-undo`**; CLI/MCP `memory audit --type`; **`evaluation.run_consolidation_threshold_sweep`**; CLI **`tapps-brain maintenance consolidation-threshold-sweep`** (`--json`, optional `--thresholds` / `--min-group-size` / `--include-contradicted`). Persisted merge rows use **`skip_consolidation=True`** so consolidated saves do not recurse.
-- **GC (`EPIC-044.5`):** Dry-run **`reason_counts`** / **`estimated_archive_bytes`**; metrics **`store.gc.archived`** / **`store.gc.archive_bytes`**; health **`gc_*`**; CLI/MCP delegate to **`MemoryStore.gc`**; **`archive.jsonl`** path aligned.
-- **Seeding (`EPIC-044.6`):** **`profile.seeding.seed_version`** + **`profile_seed_version`** in seed/reseed summaries, **`StoreHealthReport`**, **`maintenance health`**, native **`run_health_check`**, MCP **`memory://stats`**; **`seeding`** module doc for **`conflict_check`** on seed saves.
-- **Caps / eviction (`EPIC-044.7`):** Global + optional **`limits.max_entries_per_group`** (per-bucket eviction, fair global eviction when per-group mode is on) in [`data-stores-and-schema.md`](../engineering/data-stores-and-schema.md#entry-cap-and-eviction-runtime); cross-linked from [`features-and-technologies.md`](../engineering/features-and-technologies.md) / [`profiles.md`](../guides/profiles.md).
-- **Bloom dedup (`EPIC-044.2`):** Shipped — `normalize_for_dedup` applies **NFKC**; module/class Bloom **false-positive** documentation; `bloom_false_positive_probability`, `BloomFilter.approximate_false_positive_rate`, `bit_size` / `hash_count`.
-- **RAG safety (`EPIC-044.1`):** Shipped — `profile.safety.ruleset_version` (`SafetyConfig`); `check_content_safety(..., ruleset_version=, metrics=)`; counters `rag_safety.blocked` / `rag_safety.sanitized`; health fields `rag_safety_*`; save blocks on any `safe=False`; injection applies sanitised text when returned.
-- **Conflicts (`EPIC-044.3`):** Shipped on `main` — `exclude_key`; save-time invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig` aggressiveness or explicit `similarity_threshold`; `memory_save_conflicts_detected` log includes `similarity_threshold` and per-hit similarity. **Offline:** `evaluation.run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, guide [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md) (no NLI on sync save). Richer async/UX polish remains optional backlog.
-- **Concurrency (`EPIC-050`):** remaining — **050.1** optional async wrapper spike only; **050.2** “reduce lock scope” deferred; **050.3** WAL **checkpoint** operator note shipped (`sqlite-database-locked.md`, `openclaw-runbook.md`).
+- **Backlog-gated slices** (per [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating)):
+  - Extra save-path observability beyond ADR-006 — trigger (a) only.
+  - EPIC-042 eval/GitHub hygiene — trigger (b) only.
+  - NLI/async conflict wiring — trigger (c) only.
 
 **Done in repo (was backlog item 6)**
 
@@ -266,6 +263,7 @@ Copy this section at the end of each week:
 
 - 2026-04-04: **Optional backlog gating** — `PLANNING.md` § *Optional backlog gating*; backlog-by-default for extra save-path observability, EPIC-042 hygiene, and in-product NLI/async unless triggers (a)–(c); `next-session-prompt` + roadmap Priority Order + `STATUS` aligned.
 - 2026-04-04: **STORY-044.3** offline slice — `run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md); roadmap + `STATUS` + `next-session-prompt` + `EPIC-044.md` synced.
+- 2026-04-09: **v3.1.0** — EPIC-053–058 shipped; epic status hygiene sweep (EPIC-040/042/044/050 marked done); roadmap + STATUS + next-session-prompt updated.
 - 2026-04-04: Planning **doc sync** — `STATUS` / `next-session-prompt` / `mcp.md` aligned with **044.4** merge undo + CLI-only maintenance commands; snapshot dates refreshed.
 - 2026-04-03: **STORY-044.4** — merge **undo** (`undo_consolidation_merge`, `consolidation_merge_undo` audit, CLI **`maintenance consolidation-merge-undo`**); consolidated row **`skip_consolidation=True`**; planning docs + **`CHANGELOG`** [Unreleased].
 - 2026-04-03: **EPIC-051** — epic **complete**; **STORY-051.6** / checklist **10.6** [`adr/ADR-006-save-path-observability.md`](adr/ADR-006-save-path-observability.md) (save-phase histograms + `save_phase_summary` + metrics MCP maintained; deeper observability per trigger **(a)**); `features-and-technologies.md` item 6 + section 6 health row; **PLANNING.md** `adr/` in directory tree; **STATUS** / **next-session-prompt** / roadmap gating copy aligned.

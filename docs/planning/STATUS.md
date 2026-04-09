@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-05 (America/Chicago) — **v2.0.4** (EPIC-052 full codebase review sweep: write-through rollback fixes on `reinforce`/`record_access`, validator + docstring + CLI exit-code + README badge hygiene; 2892 tests green); **EPIC-041** done; **#51**–**#64** closed; **EPIC-042** stories **042.1–042.8** done (epic success criteria / eval note still in `EPIC-042.md`); **EPIC-050** partial (050.3 + WAL checkpoint runbook); **EPIC-044** **044.1**–**044.2** RAG safety + Bloom dedup, **044.3** save-path conflicts + **offline** export (`run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md); async/NLI product wiring still optional), **044.4** audit + threshold sweep + **merge undo** (`undo_consolidation_merge`, CLI `maintenance consolidation-merge-undo`, `consolidation_merge_undo` audit) + consolidated save **`skip_consolidation=True`**, **044.5** GC dry-run/metrics/`archive.jsonl`, **044.6** `seeding.seed_version` + `profile_seed_version` on health/stats/native health, **044.7** global + optional **`limits.max_entries_per_group`** eviction (health / stats / CLI); **EPIC-051** **done** — §10 checklist ADRs **001**–**006** in [`adr/`](adr/) ([`EPIC-051.md`](epics/EPIC-051.md)); **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-09 (America/Chicago) — **v3.1.0** (EPIC-053–058: per-agent brain identity, Hive backend abstraction, PostgreSQL Hive/Federation, declarative groups + expert publishing, unified `AgentBrain` API, Docker deployment; 2984 tests collected; ruff + mypy clean); epic status hygiene sweep: EPIC-040/042/044/050 marked done; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
-**Package version (PyPI / `pyproject.toml`):** **2.0.4**
+**Package version (PyPI / `pyproject.toml`):** **3.1.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -106,22 +106,44 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
 | EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
-| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | active | — (major v2.0 stories shipped; see `epics/EPIC-040.md`, `open-issues-roadmap.md`) |
+| EPIC-040 | tapps-brain v2.0 — research-driven upgrades | done | 2026-04-09 — all v2.0 phases shipped |
 | EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** checklist closed on GitHub; **#51**/**#63**/**#64** closed |
+| EPIC-042 | Retrieval stack — lexical, dense, rerank, fusion improvements | done | 2026-04-09 — all 8 stories shipped; eval/hygiene backlog-gated per PLANNING.md trigger (b) |
+| EPIC-043 | Operator docs, observability, verify-integrity CLI | done | 2026-04-03 |
+| EPIC-044 | Ingestion, deduplication, and lifecycle improvements | done | 2026-04-09 — all 7 stories shipped; NLI/async slice gated per trigger (c) |
+| EPIC-045 | Operator docs and observability | done | 2026-04-03 |
+| EPIC-046 | Operator docs | done | 2026-04-03 |
+| EPIC-047 | Operator docs | done | 2026-04-03 |
+| EPIC-048 | Optional / auxiliary capabilities — research and upgrades | planned | — (modules exist; enhancement themes remain future work) |
+| EPIC-049 | multi-scope memory epic v1 | done | 2026-03-29 |
+| EPIC-050 | Concurrency and runtime model | done | 2026-04-09 — all 3 stories done; lock-scope + async wrapper deferred per ADR |
+| EPIC-051 | Cross-cutting §10 checklist, ADRs 001–006 | done | 2026-04-03 |
 | EPIC-052 | Full Codebase Code Review — 2026-Q2 Sweep | done | 2026-04-05 — all 18 stories closed; 6 fixes landed in v2.0.4 ([`EPIC-052.md`](epics/EPIC-052.md)) |
-| EPIC-042 … EPIC-051 | Feature / technology improvement program | **051 done**; 050 partial; 042 story grid done; 044 mostly shipped | **EPIC-051** **2026-04-03** — [`EPIC-051.md`](epics/EPIC-051.md); ADR **001**–**006** in [`adr/`](adr/) (§10 checklist + [`sqlcipher.md`](../guides/sqlcipher.md) ops for **051.5**). **EPIC-042** — **042.1**–**042.8** done. **EPIC-044** — **044.1**/**044.2**/**044.4**/**044.5**/**044.6**/**044.7** + **044.3** core/offline export. **EPIC-050** — **050.2**/**050.3** + WAL checkpoint note; **050.1** doc done. Index: `epics/EPIC-042-feature-tech-index.md` |
+| EPIC-053 | Per-Agent Brain Identity — isolated storage + auto-registration | done | 2026-04-09 — v3.1.0 |
+| EPIC-054 | Hive Backend Abstraction Layer — pluggable storage | done | 2026-04-09 — v3.1.0 |
+| EPIC-055 | PostgreSQL Hive & Federation Backend | done | 2026-04-09 — v3.1.0 |
+| EPIC-056 | Declarative Group Membership & Expert Publishing | done | 2026-04-09 — v3.1.0 |
+| EPIC-057 | Unified Agent API — AgentBrain facade | done | 2026-04-09 — v3.1.0 |
+| EPIC-058 | Docker & Deployment Support — Postgres Hive infrastructure | done | 2026-04-09 — v3.1.0 |
 
 ## Current focus
 
-**Shipped:** EPIC-040 bulk delivery (v2.0.x; **2.0.3** version alignment; **2.0.2** agent-integration + relay docs; **2.0.1** OpenClaw MCP unwrap + tier normalization), optional **SQLCipher** (`[encryption]` extra, GitHub **#23**), **sub-agent memory relay** (GitHub **#19**), adaptive hybrid fusion (**#40**), hive push (**#18**), maintenance stale / profile tier migrate (**#21**, **#20**), OpenClaw **#46** / **#48** / mitigated **#47**, and **#49** v1 project-local **`memory_group`** (schema **v16**, MCP/CLI, docs — GitHub **#49** **closed** 2026-03-29). MCP server tool/resource **counts** and URI list: `docs/generated/mcp-tools-manifest.json` (source: `mcp_server.py`). OpenClaw plugin uses the official `@modelcontextprotocol/sdk` transport (EPIC-039). **Recent `main` (through 2026-04-03):** [`embedding-model-card.md`](../guides/embedding-model-card.md) (includes **§ Performance review backlog** for deferred dense-path / save-path ideas); optional `scoring.relevance_normalization: minmax`; **STORY-042.4** — RRF formula + citations in `fusion.py`, `profile.hybrid_fusion` / `HybridFusionConfig` (`top_k_lexical` / `top_k_dense`, `rrf_k`) wired through `inject_memories`; **STORY-042.3** — [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md); **STORY-042.6** — `memory_rerank` / `reranker_failed_fallback_to_original` structured logs, `MemoryRetriever.last_rerank_stats`, `inject_memories` `rerank_*` telemetry; opt-in `TAPPS_SQLITE_MEMORY_READONLY_SEARCH` read connection for FTS + sqlite-vec KNN; **WAL checkpoint** operator note for long-lived MCP (`sqlite-database-locked.md`, `openclaw-runbook.md`); **STORY-044.1** — `profile.safety` / `SafetyConfig`, `rag_safety.*` metrics, health `rag_safety_*`, injection sanitised path; **STORY-044.2** — `normalize_for_dedup` NFKC, Bloom FP helpers + docs; **STORY-044.4** — `consolidation_merge` / `consolidation_source` / `consolidation_merge_undo` audit; `undo_consolidation_merge` + CLI `maintenance consolidation-merge-undo`; consolidated save `skip_consolidation=True`; `evaluation.run_consolidation_threshold_sweep` + CLI `maintenance consolidation-threshold-sweep`; **EPIC-044.3** — save-time conflicts: `exclude_key`; invalidated rows get `contradicted` + deterministic `contradiction_reason`; `profile.conflict_check` (`ConflictCheckConfig` aggressiveness or `similarity_threshold`); `detect_save_conflicts` → `SaveConflictHit` list; offline `run_save_conflict_candidate_report` + CLI `maintenance save-conflict-candidates` + [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md); **STORY-044.5** — GC `GCResult` dry-run reason counts + `store.gc.archive_bytes`, health `gc_*`, CLI/MCP via `MemoryStore.gc`, canonical `archive.jsonl`; **STORY-044.6** — `MemoryProfile.seeding.seed_version`, `profile_seed_version` in seed summaries and on `StoreHealthReport` / `maintenance health` / `run_health_check` / `memory://stats`; **STORY-044.7** — eviction policy + optional **`limits.max_entries_per_group`** in [`data-stores-and-schema.md`](../engineering/data-stores-and-schema.md). **Schema v17** + int8 quantization spike helpers + `embedding_model_id` on embed path (**STORY-042.2** done). Concurrent save stress test wall-clock bound **60s** for stable full-suite runs on loaded Windows hosts.
+**Shipped in v3.1.0 (2026-04-09):**
+- **EPIC-053** — Per-agent brain identity: `MemoryStore(agent_id=)` routes to `{project_dir}/.tapps-brain/agents/{id}/memory.db`; auto-registration; `source_agent` auto-fill; CLI/MCP `--agent-id` passthrough; `maintenance split-by-agent` migration tool.
+- **EPIC-054** — Hive backend abstraction: `HiveBackend` / `FederationBackend` / `AgentRegistryBackend` protocols in `_protocols.py`; `SqliteHiveBackend` / `SqliteFederationBackend` adapters in `backends.py`; `create_hive_backend()` / `create_federation_backend()` factories; `TAPPS_BRAIN_HIVE_DSN` / `TAPPS_BRAIN_FEDERATION_DSN` env vars; `PropagationEngine` uses `HiveBackend` protocol.
+- **EPIC-055** — PostgreSQL Hive & Federation: `PostgresHiveBackend` / `PostgresConnectionManager` in `postgres_hive.py`; `pgvector` semantic search + `tsvector` FTS + `LISTEN/NOTIFY`; SQL migrations in `src/tapps_brain/migrations/hive/` and `migrations/federation/`; `PostgresFederationBackend`; conformance test suite; CLI `maintenance migrate-hive` / `hive-schema-status`.
+- **EPIC-056** — Declarative groups + expert publishing: `MemoryStore(groups=[…], expert_domains=[…])` auto-creates/joins groups; expert auto-publish on `architectural`/`pattern` tiers; `save(agent_scope="group")` routing; cross-project group resolution; profile YAML `hive.groups` / `hive.expert_domains` / `hive.recall_weights`.
+- **EPIC-057** — Unified `AgentBrain` API: `src/tapps_brain/agent_brain.py`; `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`, `set_task_context()`; context manager; simplified `brain_*` MCP tools; top-level CLI aliases; `docs/guides/llm-brain-guide.md` + `docs/guides/agent-integration.md`.
+- **EPIC-058** — Docker deployment: `docker/docker-compose.hive.yaml` (pgvector/pgvector:pg17), `docker/init-hive.sql`, `docker/Dockerfile.migrate`, `docker/README.md`; `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` auto-migration; Hive-aware health checks (`hive_connected`, `hive_latency_ms`, pool stats); `maintenance backup-hive` / `restore-hive`; `docs/guides/hive-deployment.md` + `docs/guides/hive-operations.md`.
+
+**Previously shipped (still on `main`):** All EPIC-040–052 stories — see epic files and git log.
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
-**Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md); Ralph mirror: `.ralph/fix_plan.md` OPEN-ISSUES):**
-1. **Gating:** **Further** save-path metrics **beyond** [`ADR-006`](adr/ADR-006-save-path-observability.md) (histograms + `save_phase_summary` + `memory://metrics`), **EPIC-042** hygiene, and in-product **NLI/async** conflict wiring are **backlogged by default** — see [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) for triggers (a)–(c).
-2. **EPIC-044** — **044.1**–**044.7** shipped on `main` (including **044.3** core + offline export); optional product NLI only with trigger (c).
-3. **EPIC-050** — lock-scope reduction still deferred unless benchmark-driven; async wrapper (`tapps_brain_async`) optional spike only.
-4. **EPIC-032** — OTel GenAI semantic conventions (deferred).
+**Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md)):**
+1. **EPIC-048** — Optional auxiliary capabilities (session retention, relations batch API, markdown round-trip, eval CI job, doc-validation guide, visual PNG capture) — pick a story when product needs it.
+2. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask).
+3. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
 
 ## READY-036 release gate (2026-03-24)
 

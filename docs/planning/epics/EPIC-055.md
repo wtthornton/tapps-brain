@@ -1,10 +1,11 @@
 ---
 id: EPIC-055
 title: "PostgreSQL Hive & Federation Backend"
-status: planned
+status: done
 priority: high
 created: 2026-04-08
 tags: [postgres, hive, federation, pgvector, scaling, multi-host]
+completed: 2026-04-09
 ---
 
 # EPIC-055: PostgreSQL Hive & Federation Backend
@@ -35,22 +36,22 @@ EPIC-054 introduced backend protocols for `HiveBackend` and `FederationBackend` 
 
 ## Success Criteria
 
-- [ ] `create_hive_backend("postgres://...")` returns a working `PostgresHiveBackend`
-- [ ] All `HiveBackend` protocol methods implemented and passing protocol conformance tests
-- [ ] `pgvector` 384-dim index for semantic search across Hive memories
-- [ ] `tsvector` GIN index for full-text search
-- [ ] `LISTEN/NOTIFY` for real-time write notifications (replacing file polling)
-- [ ] Connection pooling with configurable min/max connections
-- [ ] Schema migration tooling (versioned, forward-only)
-- [ ] All existing Hive behavioral tests pass against Postgres backend
-- [ ] Federation backend implemented with same coverage
-- [ ] Graceful fallback: if Postgres is unreachable, agent local memory still works
+- [x] `create_hive_backend("postgres://...")` returns a working `PostgresHiveBackend`
+- [x] All `HiveBackend` protocol methods implemented and passing protocol conformance tests
+- [x] `pgvector` 384-dim index for semantic search across Hive memories
+- [x] `tsvector` GIN index for full-text search
+- [x] `LISTEN/NOTIFY` for real-time write notifications (replacing file polling)
+- [x] Connection pooling with configurable min/max connections
+- [x] Schema migration tooling (versioned, forward-only)
+- [x] All existing Hive behavioral tests pass against Postgres backend
+- [x] Federation backend implemented with same coverage
+- [x] Graceful fallback: if Postgres is unreachable, agent local memory still works
 
 ## Stories
 
 ### STORY-055.1: PostgreSQL schema design for Hive
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** EPIC-054 (protocols defined)
 **Context refs:** `src/tapps_brain/hive.py` (SQLite schema in `_ensure_schema`), `src/tapps_brain/persistence.py` (local schema for reference)
@@ -62,7 +63,7 @@ The Hive SQLite schema uses FTS5 triggers, `json_each()` for tag queries, and cu
 
 #### Acceptance Criteria
 
-- [ ] `hive_memories` table with columns matching `HiveStore.save()` parameters:
+- [x] `hive_memories` table with columns matching `HiveStore.save()` parameters:
   - `namespace`, `key`, `value`, `source_agent`, `tier`, `confidence`, `source`
   - `tags` as `JSONB` (not TEXT) for native array queries
   - `valid_at`, `invalid_at`, `superseded_by` (temporal)
@@ -70,23 +71,23 @@ The Hive SQLite schema uses FTS5 triggers, `json_each()` for tag queries, and cu
   - `embedding` as `vector(384)` via pgvector
   - `created_at`, `updated_at` timestamps with timezone
   - `search_vector` as `tsvector` (auto-updated via trigger)
-- [ ] `hive_groups` and `hive_group_members` tables for group management
-- [ ] `hive_feedback_events` table for cross-agent feedback
-- [ ] `agent_registry` table (replaces YAML file):
+- [x] `hive_groups` and `hive_group_members` tables for group management
+- [x] `hive_feedback_events` table for cross-agent feedback
+- [x] `agent_registry` table (replaces YAML file):
   - `id` (PK), `name`, `profile`, `skills` (JSONB), `project_root`, `groups` (JSONB)
   - `registered_at`, `last_seen_at` timestamps
-- [ ] GIN index on `tags` for `@>` containment queries
-- [ ] GIN index on `search_vector` for full-text search
-- [ ] IVFFlat or HNSW index on `embedding` via pgvector
-- [ ] Composite index on `(namespace, confidence)` for filtered scans
-- [ ] Schema version tracking table (`hive_schema_version`)
-- [ ] SQL migration files in `src/tapps_brain/migrations/hive/` (numbered, forward-only)
+- [x] GIN index on `tags` for `@>` containment queries
+- [x] GIN index on `search_vector` for full-text search
+- [x] IVFFlat or HNSW index on `embedding` via pgvector
+- [x] Composite index on `(namespace, confidence)` for filtered scans
+- [x] Schema version tracking table (`hive_schema_version`)
+- [x] SQL migration files in `src/tapps_brain/migrations/hive/` (numbered, forward-only)
 
 ---
 
 ### STORY-055.2: Connection management and pooling
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-055.1
 **Context refs:** `src/tapps_brain/sqlcipher_util.py` (existing SQLite connection patterns)
@@ -98,25 +99,25 @@ SQLite connections are trivial (open file). Postgres connections are expensive (
 
 #### Acceptance Criteria
 
-- [ ] `psycopg` (sync) with `psycopg_pool.ConnectionPool` for connection management
-- [ ] `PostgresConnectionManager` class:
+- [x] `psycopg` (sync) with `psycopg_pool.ConnectionPool` for connection management
+- [x] `PostgresConnectionManager` class:
   - Constructor takes DSN string + pool config (min_size, max_size, timeout)
   - `get_connection()` context manager for transactional operations
   - `close()` for graceful shutdown
-- [ ] Environment variables:
+- [x] Environment variables:
   - `TAPPS_BRAIN_HIVE_DSN` — Postgres connection string
   - `TAPPS_BRAIN_HIVE_POOL_MIN` — minimum pool connections (default 2)
   - `TAPPS_BRAIN_HIVE_POOL_MAX` — maximum pool connections (default 10)
   - `TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT` — connection timeout seconds (default 5)
-- [ ] SSL support via DSN parameters (`sslmode=require`)
-- [ ] Connection health checking (pool validates before lending)
-- [ ] Graceful behavior on pool exhaustion (wait with timeout, then raise)
+- [x] SSL support via DSN parameters (`sslmode=require`)
+- [x] Connection health checking (pool validates before lending)
+- [x] Graceful behavior on pool exhaustion (wait with timeout, then raise)
 
 ---
 
 ### STORY-055.3: PostgresHiveBackend — core CRUD operations
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** STORY-055.1, STORY-055.2
 **Context refs:** `src/tapps_brain/hive.py` (`HiveStore.save`, `get`, `search`, `patch_confidence`)
@@ -128,25 +129,25 @@ This is the core implementation — save, get, search, and confidence updates ag
 
 #### Acceptance Criteria
 
-- [ ] `PostgresHiveBackend` satisfies `HiveBackend` protocol
-- [ ] `save()` — INSERT with ON CONFLICT (namespace, key) upsert; applies `conflict_policy`
-- [ ] `get()` — SELECT by key + namespace
-- [ ] `search()` — hybrid query combining:
+- [x] `PostgresHiveBackend` satisfies `HiveBackend` protocol
+- [x] `save()` — INSERT with ON CONFLICT (namespace, key) upsert; applies `conflict_policy`
+- [x] `get()` — SELECT by key + namespace
+- [x] `search()` — hybrid query combining:
   - `tsvector @@ plainto_tsquery()` for full-text relevance
   - `embedding <-> query_embedding` for semantic similarity (pgvector)
   - `confidence >= min_confidence` filter
   - Results ranked by composite score (same weights as SQLite backend)
-- [ ] `patch_confidence()` — UPDATE confidence with optimistic concurrency
-- [ ] `get_confidence()` — SELECT confidence by namespace + key
-- [ ] All operations use connection pool (no raw connection creation)
-- [ ] Parameterized queries throughout (no SQL injection)
-- [ ] Behavioral parity with `SqliteHiveBackend` — same test suite passes against both
+- [x] `patch_confidence()` — UPDATE confidence with optimistic concurrency
+- [x] `get_confidence()` — SELECT confidence by namespace + key
+- [x] All operations use connection pool (no raw connection creation)
+- [x] Parameterized queries throughout (no SQL injection)
+- [x] Behavioral parity with `SqliteHiveBackend` — same test suite passes against both
 
 ---
 
 ### STORY-055.4: PostgresHiveBackend — group operations
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-055.3
 **Context refs:** `src/tapps_brain/hive.py` (group methods)
@@ -158,19 +159,19 @@ Groups are the mechanism for workflow-scoped sharing (dev-pipeline, frontend-gui
 
 #### Acceptance Criteria
 
-- [ ] `create_group()`, `add_group_member()`, `remove_group_member()` — standard CRUD
-- [ ] `list_groups()`, `get_group_members()`, `get_agent_groups()` — read operations
-- [ ] `agent_is_group_member()` — membership check
-- [ ] `search_with_groups()` — search across all groups the agent belongs to, merged with namespace results
-- [ ] Group membership is many-to-many (agent can be in multiple groups)
-- [ ] Foreign key from `hive_group_members` to `agent_registry`
-- [ ] Cascading behavior: unregistering an agent removes group memberships
+- [x] `create_group()`, `add_group_member()`, `remove_group_member()` — standard CRUD
+- [x] `list_groups()`, `get_group_members()`, `get_agent_groups()` — read operations
+- [x] `agent_is_group_member()` — membership check
+- [x] `search_with_groups()` — search across all groups the agent belongs to, merged with namespace results
+- [x] Group membership is many-to-many (agent can be in multiple groups)
+- [x] Foreign key from `hive_group_members` to `agent_registry`
+- [x] Cascading behavior: unregistering an agent removes group memberships
 
 ---
 
 ### STORY-055.5: PostgresHiveBackend — feedback and notifications
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-055.3
 **Context refs:** `src/tapps_brain/hive.py` (feedback_event methods, write_notify)
@@ -182,20 +183,20 @@ Feedback events track cross-agent quality signals. Write notifications enable ag
 
 #### Acceptance Criteria
 
-- [ ] `record_feedback_event()` — INSERT into `hive_feedback_events`
-- [ ] `query_feedback_events()` — SELECT with namespace/key filters
-- [ ] `get_write_notify_state()` — returns current notification sequence number
-- [ ] `wait_for_write_notify()` — uses Postgres `LISTEN` channel instead of file polling:
+- [x] `record_feedback_event()` — INSERT into `hive_feedback_events`
+- [x] `query_feedback_events()` — SELECT with namespace/key filters
+- [x] `get_write_notify_state()` — returns current notification sequence number
+- [x] `wait_for_write_notify()` — uses Postgres `LISTEN` channel instead of file polling:
   - `NOTIFY hive_writes` fired by trigger on `hive_memories` INSERT/UPDATE
   - `LISTEN hive_writes` with timeout for waiting callers
   - Falls back to polling if LISTEN is not available (connection pool constraints)
-- [ ] Notification payload includes namespace and key for selective wake-up
+- [x] Notification payload includes namespace and key for selective wake-up
 
 ---
 
 ### STORY-055.6: PostgresHiveBackend — agent registry in Postgres
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-055.3
 **Context refs:** `src/tapps_brain/hive.py` (`AgentRegistry`, `AgentRegistration`)
@@ -207,20 +208,20 @@ The YAML-based `AgentRegistry` at `~/.tapps-brain/hive/agents.yaml` is a single-
 
 #### Acceptance Criteria
 
-- [ ] `PostgresAgentRegistry` satisfies `AgentRegistryBackend` protocol
-- [ ] `register()` — UPSERT into `agent_registry` table
-- [ ] `unregister()` — DELETE with cascading group membership cleanup
-- [ ] `get()` — SELECT by agent_id
-- [ ] `list_agents()` — SELECT all with optional profile/project filters
-- [ ] `agents_for_domain()` — SELECT WHERE profile = domain
-- [ ] `last_seen_at` updated on every `register()` or store access (heartbeat)
-- [ ] Migration from YAML: CLI command to import existing `agents.yaml` into Postgres table
+- [x] `PostgresAgentRegistry` satisfies `AgentRegistryBackend` protocol
+- [x] `register()` — UPSERT into `agent_registry` table
+- [x] `unregister()` — DELETE with cascading group membership cleanup
+- [x] `get()` — SELECT by agent_id
+- [x] `list_agents()` — SELECT all with optional profile/project filters
+- [x] `agents_for_domain()` — SELECT WHERE profile = domain
+- [x] `last_seen_at` updated on every `register()` or store access (heartbeat)
+- [x] Migration from YAML: CLI command to import existing `agents.yaml` into Postgres table
 
 ---
 
 ### STORY-055.7: PostgresFederationBackend
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** STORY-055.2
 **Context refs:** `src/tapps_brain/federation.py` (full public API)
@@ -232,21 +233,21 @@ Federation enables cross-project knowledge sharing. With Postgres, projects on d
 
 #### Acceptance Criteria
 
-- [ ] `PostgresFederationBackend` satisfies `FederationBackend` protocol
-- [ ] `federated_memories` table with `project_id`, entries, `tsvector`, `vector(384)`
-- [ ] `federation_subscriptions` table (replaces YAML config)
-- [ ] `publish()` — bulk INSERT with ON CONFLICT handling
-- [ ] `unpublish()` — DELETE by project_id + keys
-- [ ] `search()` — hybrid tsvector + pgvector search with project/tag/confidence filters
-- [ ] `get_project_entries()`, `get_stats()` — read operations
-- [ ] `sync_to_hub()` and `sync_from_hub()` work with Postgres backend
-- [ ] Schema migration files in `src/tapps_brain/migrations/federation/`
+- [x] `PostgresFederationBackend` satisfies `FederationBackend` protocol
+- [x] `federated_memories` table with `project_id`, entries, `tsvector`, `vector(384)`
+- [x] `federation_subscriptions` table (replaces YAML config)
+- [x] `publish()` — bulk INSERT with ON CONFLICT handling
+- [x] `unpublish()` — DELETE by project_id + keys
+- [x] `search()` — hybrid tsvector + pgvector search with project/tag/confidence filters
+- [x] `get_project_entries()`, `get_stats()` — read operations
+- [x] `sync_to_hub()` and `sync_from_hub()` work with Postgres backend
+- [x] Schema migration files in `src/tapps_brain/migrations/federation/`
 
 ---
 
 ### STORY-055.8: Backend conformance test suite
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** STORY-055.3, STORY-055.4, STORY-055.5, STORY-055.6, STORY-055.7
 **Context refs:** `tests/unit/test_hive.py`, `tests/unit/test_federation.py`
@@ -258,19 +259,19 @@ Both SQLite and Postgres backends must produce identical behavior. A shared conf
 
 #### Acceptance Criteria
 
-- [ ] `tests/integration/test_backend_conformance.py` with pytest parametrize over `[SqliteHiveBackend, PostgresHiveBackend]`
-- [ ] Covers: save/get/search, groups, feedback, notifications, agent registry
-- [ ] Federation conformance: `[SqliteFederationBackend, PostgresFederationBackend]`
-- [ ] Postgres tests require `TAPPS_TEST_POSTGRES_DSN` env var (skipped if unset — CI provides it)
-- [ ] SQLite tests always run (no external dependency)
-- [ ] Test fixtures handle schema creation and teardown per test
-- [ ] Semantic search parity: same query returns same top-k results (order may vary within same score)
+- [x] `tests/integration/test_backend_conformance.py` with pytest parametrize over `[SqliteHiveBackend, PostgresHiveBackend]`
+- [x] Covers: save/get/search, groups, feedback, notifications, agent registry
+- [x] Federation conformance: `[SqliteFederationBackend, PostgresFederationBackend]`
+- [x] Postgres tests require `TAPPS_TEST_POSTGRES_DSN` env var (skipped if unset — CI provides it)
+- [x] SQLite tests always run (no external dependency)
+- [x] Test fixtures handle schema creation and teardown per test
+- [x] Semantic search parity: same query returns same top-k results (order may vary within same score)
 
 ---
 
 ### STORY-055.9: Schema migration tooling
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-055.1
 **Context refs:** `src/tapps_brain/persistence.py` (existing SQLite migration pattern)
@@ -282,14 +283,14 @@ SQLite schema migrations are embedded in `persistence.py` as inline `ALTER TABLE
 
 #### Acceptance Criteria
 
-- [ ] Migration files: `src/tapps_brain/migrations/hive/001_initial.sql`, `002_*.sql`, etc.
-- [ ] Migration runner: `apply_hive_migrations(dsn)` — reads current version, applies pending migrations in order
-- [ ] Version tracking: `hive_schema_version` table with `version`, `applied_at`, `checksum`
-- [ ] CLI command: `tapps-brain maintenance migrate-hive` (applies pending migrations)
-- [ ] CLI command: `tapps-brain maintenance hive-schema-status` (shows current version and pending)
-- [ ] Dry-run support: `--dry-run` shows SQL without executing
-- [ ] Migrations are idempotent (re-running a completed migration is a no-op)
-- [ ] Federation migrations follow the same pattern in `src/tapps_brain/migrations/federation/`
+- [x] Migration files: `src/tapps_brain/migrations/hive/001_initial.sql`, `002_*.sql`, etc.
+- [x] Migration runner: `apply_hive_migrations(dsn)` — reads current version, applies pending migrations in order
+- [x] Version tracking: `hive_schema_version` table with `version`, `applied_at`, `checksum`
+- [x] CLI command: `tapps-brain maintenance migrate-hive` (applies pending migrations)
+- [x] CLI command: `tapps-brain maintenance hive-schema-status` (shows current version and pending)
+- [x] Dry-run support: `--dry-run` shows SQL without executing
+- [x] Migrations are idempotent (re-running a completed migration is a no-op)
+- [x] Federation migrations follow the same pattern in `src/tapps_brain/migrations/federation/`
 
 ## Priority Order
 

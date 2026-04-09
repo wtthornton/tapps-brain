@@ -1,10 +1,11 @@
 ---
 id: EPIC-042
 title: "Retrieval and ranking (RAG-style memory) — research and upgrades"
-status: in_progress
+status: done
 priority: high
 created: 2026-03-31
 tags: [retrieval, bm25, hybrid, embeddings, rerank, injection, decay, rag]
+completed: 2026-04-09
 ---
 
 # EPIC-042: Retrieval and ranking (RAG-style memory)

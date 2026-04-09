@@ -1,10 +1,11 @@
 ---
 id: EPIC-054
 title: "Hive Backend Abstraction Layer — pluggable storage for shared state"
-status: planned
+status: done
 priority: high
 created: 2026-04-08
 tags: [hive, federation, abstraction, postgres, sqlite]
+completed: 2026-04-09
 ---
 
 # EPIC-054: Hive Backend Abstraction Layer
@@ -22,19 +23,19 @@ The target architecture keeps **local agent memory on SQLite** (fast, embedded, 
 
 ## Success Criteria
 
-- [ ] `HiveBackend` protocol defined with all current `HiveStore` public methods
-- [ ] `FederationBackend` protocol defined with all current `FederatedStore` public methods
-- [ ] `SqliteHiveBackend` wraps existing `HiveStore` — zero behavior change
-- [ ] `SqliteFederationBackend` wraps existing `FederatedStore` — zero behavior change
-- [ ] `create_hive_backend(dsn_or_path)` factory returns correct backend based on input
-- [ ] All existing tests pass without modification (backends are transparent)
-- [ ] `PropagationEngine`, MCP server, and CLI use the protocol, not the concrete class
+- [x] `HiveBackend` protocol defined with all current `HiveStore` public methods
+- [x] `FederationBackend` protocol defined with all current `FederatedStore` public methods
+- [x] `SqliteHiveBackend` wraps existing `HiveStore` — zero behavior change
+- [x] `SqliteFederationBackend` wraps existing `FederatedStore` — zero behavior change
+- [x] `create_hive_backend(dsn_or_path)` factory returns correct backend based on input
+- [x] All existing tests pass without modification (backends are transparent)
+- [x] `PropagationEngine`, MCP server, and CLI use the protocol, not the concrete class
 
 ## Stories
 
 ### STORY-054.1: Define HiveBackend protocol
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** none
 **Context refs:** `src/tapps_brain/hive.py` (full public API), `src/tapps_brain/_protocols.py`
@@ -46,22 +47,22 @@ The `HiveStore` class has 20+ public methods covering saves, searches, groups, f
 
 #### Acceptance Criteria
 
-- [ ] `HiveBackend` protocol in `_protocols.py` with all public methods from `HiveStore`:
+- [x] `HiveBackend` protocol in `_protocols.py` with all public methods from `HiveStore`:
   - `save()`, `get()`, `search()`, `patch_confidence()`, `get_confidence()`
   - `create_group()`, `add_group_member()`, `remove_group_member()`, `list_groups()`, `get_group_members()`, `get_agent_groups()`, `agent_is_group_member()`, `search_with_groups()`
   - `record_feedback_event()`, `query_feedback_events()`
   - `list_namespaces()`, `count_by_namespace()`, `count_by_agent()`
   - `get_write_notify_state()`, `wait_for_write_notify()`
   - `close()`
-- [ ] Protocol is `@runtime_checkable`
-- [ ] Method signatures match existing `HiveStore` exactly (return types, parameter types)
-- [ ] `AgentRegistry` protocol defined separately (it may live in Postgres or YAML depending on backend)
+- [x] Protocol is `@runtime_checkable`
+- [x] Method signatures match existing `HiveStore` exactly (return types, parameter types)
+- [x] `AgentRegistry` protocol defined separately (it may live in Postgres or YAML depending on backend)
 
 ---
 
 ### STORY-054.2: Define FederationBackend protocol
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** S
 **Depends on:** none
 **Context refs:** `src/tapps_brain/federation.py` (full public API), `src/tapps_brain/_protocols.py`
@@ -73,17 +74,17 @@ The `HiveStore` class has 20+ public methods covering saves, searches, groups, f
 
 #### Acceptance Criteria
 
-- [ ] `FederationBackend` protocol in `_protocols.py` with methods:
+- [x] `FederationBackend` protocol in `_protocols.py` with methods:
   - `publish()`, `unpublish()`, `search()`, `get_project_entries()`, `get_stats()`, `close()`
-- [ ] Protocol is `@runtime_checkable`
-- [ ] Method signatures match existing `FederatedStore`
-- [ ] `sync_to_hub()` and `sync_from_hub()` module functions accept `FederationBackend` (not concrete `FederatedStore`)
+- [x] Protocol is `@runtime_checkable`
+- [x] Method signatures match existing `FederatedStore`
+- [x] `sync_to_hub()` and `sync_from_hub()` module functions accept `FederationBackend` (not concrete `FederatedStore`)
 
 ---
 
 ### STORY-054.3: SqliteHiveBackend adapter
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-054.1
 **Context refs:** `src/tapps_brain/hive.py`
@@ -95,17 +96,17 @@ The existing `HiveStore` must be wrapped (or made to satisfy) the `HiveBackend` 
 
 #### Acceptance Criteria
 
-- [ ] `SqliteHiveBackend` class satisfies `HiveBackend` protocol (verified by `isinstance` check)
-- [ ] Either: `HiveStore` itself is made to satisfy the protocol (rename to `SqliteHiveBackend`), or a thin adapter wraps it
-- [ ] All 100% of existing `HiveStore` tests pass against `SqliteHiveBackend`
-- [ ] `AgentRegistry` wrapped in `AgentRegistryBackend` protocol adapter
-- [ ] No caller code changes — `PropagationEngine` and MCP tools work as before
+- [x] `SqliteHiveBackend` class satisfies `HiveBackend` protocol (verified by `isinstance` check)
+- [x] Either: `HiveStore` itself is made to satisfy the protocol (rename to `SqliteHiveBackend`), or a thin adapter wraps it
+- [x] All 100% of existing `HiveStore` tests pass against `SqliteHiveBackend`
+- [x] `AgentRegistry` wrapped in `AgentRegistryBackend` protocol adapter
+- [x] No caller code changes — `PropagationEngine` and MCP tools work as before
 
 ---
 
 ### STORY-054.4: SqliteFederationBackend adapter
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** S
 **Depends on:** STORY-054.2
 **Context refs:** `src/tapps_brain/federation.py`
@@ -117,15 +118,15 @@ Same rationale as STORY-054.3 — wrap `FederatedStore` to satisfy `FederationBa
 
 #### Acceptance Criteria
 
-- [ ] `SqliteFederationBackend` satisfies `FederationBackend` protocol
-- [ ] All existing federation tests pass
-- [ ] `sync_to_hub()`, `sync_from_hub()`, `federated_search()` accept the protocol type
+- [x] `SqliteFederationBackend` satisfies `FederationBackend` protocol
+- [x] All existing federation tests pass
+- [x] `sync_to_hub()`, `sync_from_hub()`, `federated_search()` accept the protocol type
 
 ---
 
 ### STORY-054.5: Backend factory and DSN-based routing
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-054.3, STORY-054.4
 **Context refs:** `src/tapps_brain/hive.py`, `src/tapps_brain/federation.py`, `src/tapps_brain/mcp_server.py`, `src/tapps_brain/cli.py`
@@ -137,22 +138,22 @@ Callers should not decide which backend to use. A factory function inspects conf
 
 #### Acceptance Criteria
 
-- [ ] `create_hive_backend(dsn_or_path: str | None) -> HiveBackend` factory:
+- [x] `create_hive_backend(dsn_or_path: str | None) -> HiveBackend` factory:
   - `None` or file path → `SqliteHiveBackend`
   - `postgres://...` → raises `NotImplementedError` (until EPIC-055)
-- [ ] `create_federation_backend(dsn_or_path: str | None) -> FederationBackend` factory
-- [ ] `TAPPS_BRAIN_HIVE_DSN` env var supported (path or postgres URI)
-- [ ] `TAPPS_BRAIN_FEDERATION_DSN` env var supported
-- [ ] MCP server uses factory instead of direct `HiveStore()` construction
-- [ ] CLI uses factory instead of direct construction
-- [ ] `PropagationEngine.propagate()` accepts `HiveBackend` (not `HiveStore`)
-- [ ] Existing behavior unchanged when env vars are unset (SQLite default)
+- [x] `create_federation_backend(dsn_or_path: str | None) -> FederationBackend` factory
+- [x] `TAPPS_BRAIN_HIVE_DSN` env var supported (path or postgres URI)
+- [x] `TAPPS_BRAIN_FEDERATION_DSN` env var supported
+- [x] MCP server uses factory instead of direct `HiveStore()` construction
+- [x] CLI uses factory instead of direct construction
+- [x] `PropagationEngine.propagate()` accepts `HiveBackend` (not `HiveStore`)
+- [x] Existing behavior unchanged when env vars are unset (SQLite default)
 
 ---
 
 ### STORY-054.6: Update PropagationEngine and callers to use protocols
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-054.5
 **Context refs:** `src/tapps_brain/hive.py` (`PropagationEngine`), `src/tapps_brain/store.py`, `src/tapps_brain/mcp_server.py`
@@ -164,13 +165,13 @@ Callers should not decide which backend to use. A factory function inspects conf
 
 #### Acceptance Criteria
 
-- [ ] `PropagationEngine.propagate()` type signature uses `HiveBackend` not `HiveStore`
-- [ ] `MemoryStore.__init__` accepts `hive_store: HiveBackend | None`
-- [ ] `select_local_entries_for_hive_push()` and `push_memory_entries_to_hive()` accept `HiveBackend`
-- [ ] MCP server tool handlers use `HiveBackend` type
-- [ ] CLI hive commands use `HiveBackend` type
-- [ ] mypy passes with updated signatures
-- [ ] All tests pass — SQLite backend is transparent
+- [x] `PropagationEngine.propagate()` type signature uses `HiveBackend` not `HiveStore`
+- [x] `MemoryStore.__init__` accepts `hive_store: HiveBackend | None`
+- [x] `select_local_entries_for_hive_push()` and `push_memory_entries_to_hive()` accept `HiveBackend`
+- [x] MCP server tool handlers use `HiveBackend` type
+- [x] CLI hive commands use `HiveBackend` type
+- [x] mypy passes with updated signatures
+- [x] All tests pass — SQLite backend is transparent
 
 ## Priority Order
 

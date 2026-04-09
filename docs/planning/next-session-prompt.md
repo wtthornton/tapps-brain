@@ -4,44 +4,41 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-**Project:** tapps-brain (SQLite-backed memory for AI assistants; sync Python core; built-in sqlite-vec hybrid search; optional `[encryption]`).
+**Project:** tapps-brain (SQLite-backed memory for AI assistants; sync Python core; built-in sqlite-vec hybrid search; optional `[encryption]`; unified `AgentBrain` API; PostgreSQL Hive/Federation backend; Docker deployment support).
 
 **Start by reading:** `CLAUDE.md`, `docs/planning/open-issues-roadmap.md`, `docs/planning/STATUS.md`, then the epic you implement. Canonical product queue is the **open-issues roadmap**, not `.ralph/fix_plan.md`, unless you are explicitly running Ralph.
 
-**Already on `main` (do not redo):**
+**Already on `main` — do not redo:**
 
-- **EPIC-042:** Stories **042.1–042.8** = **done** (rerank observability, sqlite-vec ops doc, `HybridFusionConfig`, v17 `embedding_model_id`, etc.). Epic-level success criteria in `EPIC-042.md` may still list open checkboxes (eval / GitHub hygiene).
-- **EPIC-050 STORY-050.3 (code + triage doc):** Opt-in read-only SQLite for FTS + sqlite-vec KNN — `TAPPS_SQLITE_MEMORY_READONLY_SEARCH`, `connect_sqlite_readonly`, `MemoryPersistence`; [`sqlite-database-locked.md`](../guides/sqlite-database-locked.md) (incl. § *WAL checkpoint* for long-lived MCP); [`openclaw-runbook.md`](../guides/openclaw-runbook.md) § *Long-lived MCP and SQLite WAL*; [`system-architecture.md`](../engineering/system-architecture.md) § concurrency.
-- **EPIC-044.1 (RAG safety):** `profile.safety` / `SafetyConfig.ruleset_version`; `check_content_safety(..., ruleset_version=, metrics=)`; `DEFAULT_SAFETY_RULESET_VERSION`, `resolve_safety_ruleset_version`, `SafetyCheckResult.ruleset_version`; metrics `rag_safety.blocked` / `rag_safety.sanitized`; `StoreHealthReport` `rag_safety_*`; save blocks on any `safe=False`; injection uses sanitised text when applicable.
-- **EPIC-044.2 (Bloom + dedup normalize):** `normalize_for_dedup` applies **NFKC** + lower + whitespace; `bloom_false_positive_probability`, `BloomFilter.approximate_false_positive_rate`, `bit_size` / `hash_count`; module doc describes nominal FP at `expected_items` / `fp_rate`.
-- **EPIC-044.4 (consolidation):** JSONL `consolidation_merge` / `consolidation_source` on auto-merge (save + periodic scan); **`MemoryStore.undo_consolidation_merge`** / **`undo_consolidation_merge`** + audit **`consolidation_merge_undo`**; CLI **`tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY`** (`--json`); **`evaluation.run_consolidation_threshold_sweep`** + report models; CLI **`tapps-brain maintenance consolidation-threshold-sweep`** (`--json`, optional `--thresholds` / `--min-group-size` / `--include-contradicted`). Consolidated row **`save(..., skip_consolidation=True)`** avoids recursive merge-on-save.
-- **EPIC-044.5 (GC):** `MemoryStore.gc` / CLI / MCP — dry-run **`reason_counts`**, **`estimated_archive_bytes`**, live **`archive_bytes`**; counters **`store.gc.archived`** / **`store.gc.archive_bytes`**; **`StoreHealthReport`** **`gc_runs_total`**, **`gc_archived_rows_total`**, **`gc_archive_bytes_total`**; canonical **`archive.jsonl`** under store memory dir.
-- **EPIC-044.6 (seeding):** **`MemoryProfile.seeding.seed_version`**; **`seed_from_profile`** / **`reseed_from_profile`** include **`profile_seed_version`** when set; same field on **`StoreHealthReport`**, **`maintenance health`**, native **`run_health_check.store.profile_seed_version`**, MCP **`memory://stats`**; **`seeding`** module documents **`conflict_check`** on seed saves.
-- **EPIC-044.7 (caps):** Global + optional **`limits.max_entries_per_group`** (per-`memory_group` bucket + ungrouped; fair global eviction when set) in **`docs/engineering/data-stores-and-schema.md`**; **`StoreHealthReport.max_entries_per_group`**, MCP **`memory://stats`**, native health, CLI **`store stats`**.
-- **EPIC-044.3 (save-path conflicts):** `exclude_key`; `SaveConflictHit` (entry + similarity); invalidation sets `contradicted` + `contradiction_reason` (`format_save_conflict_reason`); `profile.conflict_check` / `ConflictCheckConfig`; structured log `memory_save_conflicts_detected` includes `similarity_threshold` and `conflicts`. **Offline:** `evaluation.run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, guide [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md) (no NLI on sync save). Optional async/product NLI wiring remains backlog.
-- **EPIC-051 (complete):** Cross-cutting **§10** checklist — [`EPIC-051.md`](epics/EPIC-051.md); ADRs **001**–**006** in [`adr/`](adr/) ([`ADR-001`](adr/ADR-001-retrieval-stack.md) retrieval … [`ADR-006`](adr/ADR-006-save-path-observability.md) save-path observability stance). **051.5** expanded [`sqlcipher.md`](../guides/sqlcipher.md). **Roadmap row 20** `save_phase_summary` — **done** (see **ADR-006** for deferrals beyond shipped metrics).
-- **Docs:** [`embedding-model-card.md`](../guides/embedding-model-card.md) § *Performance review backlog* — triage table, not a code mandate.
-- **Tests:** `test_concurrent_save_all_persisted` uses **60s** join / elapsed bound (Windows full-suite stability).
-- **examples/brain-visual:** Demo HTML + help UX for operators (Hive / entries / DB tiles); see `examples/brain-visual/README.md`.
+- **EPIC-042:** Stories **042.1–042.8** = **done** (rerank observability, sqlite-vec ops doc, `HybridFusionConfig`, v17 `embedding_model_id`, etc.). Epic-level eval/hygiene backlog-gated per PLANNING.md trigger (b).
+- **EPIC-044:** All 7 stories **done** — RAG safety, Bloom dedup, conflicts (core + offline export), consolidation merge undo, GC dry-run/metrics/archive, seeding seed_version, per-group caps. Optional NLI/async conflict wiring gated per trigger (c).
+- **EPIC-050:** All 3 stories **done** — sync API philosophy doc, lock timeout + `threading.Lock` discipline, WAL checkpoint + opt-in read connection. Lock-scope reduction and async wrapper deferred per ADR-004.
+- **EPIC-051:** **done** — §10 checklist decisions ADR-001–006 in `adr/`.
+- **EPIC-052:** **done** — 2026-Q2 code review sweep, 6 fixes in v2.0.4.
+- **EPIC-053:** **done** (v3.1.0) — `MemoryStore(agent_id=)` routes to `{project_dir}/.tapps-brain/agents/{id}/memory.db`; auto-registration on `HiveStore`; `source_agent` auto-fill on save; CLI/MCP `--agent-id` + `TAPPS_BRAIN_AGENT_ID` env var; `maintenance split-by-agent` migration.
+- **EPIC-054:** **done** (v3.1.0) — `HiveBackend` / `FederationBackend` / `AgentRegistryBackend` protocols in `_protocols.py`; `SqliteHiveBackend` / `SqliteFederationBackend` adapters; `create_hive_backend()` / `create_federation_backend()` factories with `TAPPS_BRAIN_HIVE_DSN` / `TAPPS_BRAIN_FEDERATION_DSN` env vars; `PropagationEngine` typed to `HiveBackend`.
+- **EPIC-055:** **done** (v3.1.0) — `PostgresHiveBackend` + `PostgresConnectionManager` (`psycopg` sync pool); `pgvector` 384-dim ANN + `tsvector` GIN FTS + `LISTEN/NOTIFY`; SQL migrations in `src/tapps_brain/migrations/hive/` and `migrations/federation/`; `PostgresFederationBackend`; conformance tests (`TAPPS_TEST_POSTGRES_DSN` skipped if unset); CLI `maintenance migrate-hive` / `hive-schema-status`.
+- **EPIC-056:** **done** (v3.1.0) — `MemoryStore(groups=[…], expert_domains=[…])` declarative membership; auto group create/join; expert auto-publish on `architectural`/`pattern` tiers; `save(agent_scope="group")` routing; cross-project group resolution; profile YAML `hive.groups` / `hive.expert_domains` / `hive.recall_weights`.
+- **EPIC-057:** **done** (v3.1.0) — `AgentBrain` in `src/tapps_brain/agent_brain.py`; `remember()` / `recall()` / `forget()` / `learn_from_success()` / `learn_from_failure()` / `set_task_context()`; context manager `__enter__`/`__exit__`; simplified `brain_*` MCP tools; top-level CLI `tapps-brain remember / recall / forget / status / who-am-i`; `docs/guides/llm-brain-guide.md` + `docs/guides/agent-integration.md`.
+- **EPIC-058:** **done** (v3.1.0) — `docker/docker-compose.hive.yaml` (pgvector/pgvector:pg17 + secrets), `docker/init-hive.sql`, `docker/Dockerfile.migrate`, `docker/README.md`; `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` auto-migration with `pg_advisory_lock`; Hive health fields (`hive_connected`, `hive_latency_ms`, pool stats, schema version); `maintenance backup-hive` / `restore-hive`; `docs/guides/hive-deployment.md` + `docs/guides/hive-operations.md`.
 
-**Backlog-by-default (execute unless a trigger fires):** **B** (save-path metrics **beyond** [`ADR-006`](adr/ADR-006-save-path-observability.md) shipped surface), **C** (EPIC-042 hygiene), and **in-product NLI/async** conflict wiring stay **backlogged** until a human or milestone explicitly invokes a trigger in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating): (a) save-latency tuning/incident → B; (b) epic/GitHub closure needed → C; (c) explicit product requirement for NLI review → separate surface, never sync `save`.
+**Backlog-by-default (execute only if a trigger fires):**
+- **Extra save-path observability** beyond ADR-006 — trigger (a): save-latency incident.
+- **EPIC-042 eval/GitHub hygiene** — trigger (b): milestone or stakeholder requires epic closure.
+- **In-product NLI/async conflict wiring** — trigger (c): explicit product requirement (never on sync `save`).
 
-**When not triggered:** Pick other roadmap/epic work (new issues, **EPIC-050** lock-scope only with benchmarks, **row 22** modularization design-first, **EPIC-032** defer, etc.).
+**Open work (pick when product needs it):**
 
-**Reference slices (do not assume scheduled):**
+| Epic | What | Notes |
+|------|------|-------|
+| **EPIC-048** | Optional auxiliary improvements | Session retention, relations batch API, markdown round-trip, eval CI, doc-validation guide, visual PNG — pick a story |
+| **EPIC-032** | OTel GenAI semantic conventions | Low priority; defer unless stakeholder asks |
+| Row 22 | MemoryStore modularization | Design-first only; long-term refactor |
 
-| Ref | Slice | Typical outcome when pulled |
-|-----|--------|----------------------------|
-| A | **STORY-044.3 remainder** | Offline export **on `main`**; further = product NLI/async only with trigger (c). |
-| B | **Save-path observability (beyond ADR-006)** | Extra metrics/logs vs consolidation/GC — trigger **(a)** ([`ADR-006`](adr/ADR-006-save-path-observability.md) records shipped baseline). |
-| C | **EPIC-042 hygiene** | Eval evidence + GitHub — trigger (b). |
+**Your task — pick ONE primary slice,** run the epic's verification command, then update `docs/planning/epics/…`, `open-issues-roadmap.md` (changelog + last updated), `STATUS.md` if queue changes, and refresh **this file's** "Already on main" if you ship something.
 
-**Long horizon / defer:** **EPIC-032** OTel GenAI. **EPIC-050** lock-scope without benchmarks. **Tracking table row 22** — MemoryStore modularization; design-first only.
-
-**Your task — pick ONE primary slice** (one PR unless trivial), run the epic’s verification command, then update `docs/planning/epics/…`, `open-issues-roadmap.md` (changelog + last updated if needed), `STATUS.md` if the queue changes, and refresh **this file’s** “Already on main” if you shipped something listed above.
-
-**Quality bar:** `ruff check` / `ruff format` on touched paths; `mypy --strict src/tapps_brain/` on touched modules; full gate as in `CLAUDE.md` if you touch core widely.
+**Quality bar:** `ruff check` / `ruff format` on touched paths; `mypy --strict src/tapps_brain/` on touched modules; full gate in `CLAUDE.md` if you touch core widely. Tests: `.venv/bin/python -m pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-fail-under=95`.
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-03 — **EPIC-051** complete (ADR-001–006); **B** = metrics beyond **ADR-006** only with trigger **(a)**; **C / NLI** gated per `PLANNING.md` § Optional backlog gating.*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); epic status hygiene sweep done; EPIC-048 + EPIC-032 are the open queue.*

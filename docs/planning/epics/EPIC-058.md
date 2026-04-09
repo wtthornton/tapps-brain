@@ -1,10 +1,11 @@
 ---
 id: EPIC-058
 title: "Docker & Deployment Support — Postgres Hive infrastructure"
-status: planned
+status: done
 priority: high
 created: 2026-04-08
 tags: [docker, postgres, deployment, infrastructure, health]
+completed: 2026-04-09
 ---
 
 # EPIC-058: Docker & Deployment Support
@@ -26,18 +27,18 @@ This epic provides the infrastructure glue so that deploying the Hive-aware arch
 
 ## Success Criteria
 
-- [ ] `docker-compose.hive.yaml` reference file in tapps-brain repo
-- [ ] Postgres container with pgvector extension, auto-initialized schema
-- [ ] Health check endpoint/CLI that verifies Hive Postgres connectivity
-- [ ] Backup/restore commands for Hive data
-- [ ] Migration runs automatically on container startup
-- [ ] Documentation: how to add Hive Postgres to any project's docker-compose
+- [x] `docker-compose.hive.yaml` reference file in tapps-brain repo
+- [x] Postgres container with pgvector extension, auto-initialized schema
+- [x] Health check endpoint/CLI that verifies Hive Postgres connectivity
+- [x] Backup/restore commands for Hive data
+- [x] Migration runs automatically on container startup
+- [x] Documentation: how to add Hive Postgres to any project's docker-compose
 
 ## Stories
 
 ### STORY-058.1: Reference docker-compose for Hive Postgres
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** EPIC-055.1 (schema exists)
 **Context refs:** `src/tapps_brain/migrations/hive/`
@@ -49,7 +50,7 @@ Every project that wants shared Hive needs a Postgres instance. A reference dock
 
 #### Acceptance Criteria
 
-- [ ] `docker/docker-compose.hive.yaml` in tapps-brain repo with:
+- [x] `docker/docker-compose.hive.yaml` in tapps-brain repo with:
   ```yaml
   services:
     tapps-hive-db:
@@ -69,17 +70,17 @@ Every project that wants shared Hive needs a Postgres instance. A reference dock
       ports:
         - "5432:5432"  # configurable, not exposed in production
   ```
-- [ ] `docker/init-hive.sql` — creates pgvector extension and runs initial schema migration
-- [ ] `docker/docker-compose.hive.yaml` includes a `tapps-brain-migrate` init container that runs schema migrations
-- [ ] Docker secrets support for password (not plain-text env var in production)
-- [ ] Volume for persistent Postgres data
-- [ ] Example `.env` file with `TAPPS_BRAIN_HIVE_DSN=postgres://tapps:password@tapps-hive-db:5432/tapps_hive`
+- [x] `docker/init-hive.sql` — creates pgvector extension and runs initial schema migration
+- [x] `docker/docker-compose.hive.yaml` includes a `tapps-brain-migrate` init container that runs schema migrations
+- [x] Docker secrets support for password (not plain-text env var in production)
+- [x] Volume for persistent Postgres data
+- [x] Example `.env` file with `TAPPS_BRAIN_HIVE_DSN=postgres://tapps:password@tapps-hive-db:5432/tapps_hive`
 
 ---
 
 ### STORY-058.2: Auto-migration on startup
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** EPIC-055.9 (migration tooling), STORY-058.1
 **Context refs:** `src/tapps_brain/migrations/`
@@ -91,19 +92,19 @@ When a new version of tapps-brain deploys with schema changes, migrations must r
 
 #### Acceptance Criteria
 
-- [ ] `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true` env var (default: false — opt-in for safety)
-- [ ] When enabled: `AgentBrain.__init__` checks schema version and runs pending migrations before opening the backend
-- [ ] When disabled: `AgentBrain.__init__` checks schema version and raises `SchemaMigrationRequired` if behind
-- [ ] Migration holds an advisory lock (`pg_advisory_lock`) to prevent concurrent migration from multiple containers
-- [ ] Advisory lock timeout: 30 seconds (configurable via `TAPPS_BRAIN_HIVE_MIGRATE_TIMEOUT`)
-- [ ] Migration result logged at INFO level (which migrations ran, duration)
-- [ ] Init container pattern documented as alternative to auto-migration
+- [x] `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true` env var (default: false — opt-in for safety)
+- [x] When enabled: `AgentBrain.__init__` checks schema version and runs pending migrations before opening the backend
+- [x] When disabled: `AgentBrain.__init__` checks schema version and raises `SchemaMigrationRequired` if behind
+- [x] Migration holds an advisory lock (`pg_advisory_lock`) to prevent concurrent migration from multiple containers
+- [x] Advisory lock timeout: 30 seconds (configurable via `TAPPS_BRAIN_HIVE_MIGRATE_TIMEOUT`)
+- [x] Migration result logged at INFO level (which migrations ran, duration)
+- [x] Init container pattern documented as alternative to auto-migration
 
 ---
 
 ### STORY-058.3: Hive-aware health checks
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** EPIC-055.3 (Postgres backend exists)
 **Context refs:** `src/tapps_brain/health_check.py`, `src/tapps_brain/diagnostics.py`
@@ -115,24 +116,24 @@ Current health checks only verify local SQLite store connectivity. With a Postgr
 
 #### Acceptance Criteria
 
-- [ ] `HealthCheck` extended with Hive dimensions:
+- [x] `HealthCheck` extended with Hive dimensions:
   - `hive_connected`: bool — can reach Postgres
   - `hive_schema_version`: int — current schema version
   - `hive_schema_current`: bool — no pending migrations
   - `hive_pool_size`: int — current connection pool size
   - `hive_pool_available`: int — available connections
   - `hive_latency_ms`: float — round-trip ping time
-- [ ] `brain_status` MCP tool includes Hive health
-- [ ] `tapps-brain status` CLI includes Hive health
-- [ ] Health check completes in <2s (existing target, including Hive)
-- [ ] If Hive is unreachable: health reports degraded (not failed — local still works)
-- [ ] JSON output for machine parsing (Docker health check scripts)
+- [x] `brain_status` MCP tool includes Hive health
+- [x] `tapps-brain status` CLI includes Hive health
+- [x] Health check completes in <2s (existing target, including Hive)
+- [x] If Hive is unreachable: health reports degraded (not failed — local still works)
+- [x] JSON output for machine parsing (Docker health check scripts)
 
 ---
 
 ### STORY-058.4: Backup and restore commands
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-058.1
 **Context refs:** `src/tapps_brain/cli.py` (maintenance sub-app)
@@ -144,20 +145,20 @@ The Hive Postgres contains shared knowledge across all agents and projects. Data
 
 #### Acceptance Criteria
 
-- [ ] `tapps-brain maintenance backup-hive --output hive-backup.sql` — runs `pg_dump` against Hive DSN
-- [ ] `tapps-brain maintenance restore-hive --input hive-backup.sql` — runs `pg_restore`
-- [ ] `--format` flag: `sql` (plain text, default) or `custom` (pg_dump custom format for large DBs)
-- [ ] Backup includes: schema + data for all Hive tables (memories, groups, registry, feedback, federation)
-- [ ] Restore verifies schema version compatibility before applying
-- [ ] Backup command works with or without local tapps-brain store (operates on Postgres only)
-- [ ] Timestamp appended to default filename if `--output` not specified: `hive-backup-2026-04-08T12:00:00.sql`
-- [ ] Documentation in `docs/guides/hive-operations.md` covering backup schedules and disaster recovery
+- [x] `tapps-brain maintenance backup-hive --output hive-backup.sql` — runs `pg_dump` against Hive DSN
+- [x] `tapps-brain maintenance restore-hive --input hive-backup.sql` — runs `pg_restore`
+- [x] `--format` flag: `sql` (plain text, default) or `custom` (pg_dump custom format for large DBs)
+- [x] Backup includes: schema + data for all Hive tables (memories, groups, registry, feedback, federation)
+- [x] Restore verifies schema version compatibility before applying
+- [x] Backup command works with or without local tapps-brain store (operates on Postgres only)
+- [x] Timestamp appended to default filename if `--output` not specified: `hive-backup-2026-04-08T12:00:00.sql`
+- [x] Documentation in `docs/guides/hive-operations.md` covering backup schedules and disaster recovery
 
 ---
 
 ### STORY-058.5: Deployment documentation
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-058.1, STORY-058.2, STORY-058.3, STORY-058.4
 **Context refs:** `docs/guides/`
@@ -169,7 +170,7 @@ The new architecture has more moving parts than "pip install tapps-brain." Opera
 
 #### Acceptance Criteria
 
-- [ ] `docs/guides/hive-deployment.md`:
+- [x] `docs/guides/hive-deployment.md`:
   - **Quick start**: docker-compose up with reference files (5 minutes to working Hive)
   - **Single-host**: Multiple agent containers + Postgres on one machine
   - **Multi-host**: Agent containers on different machines, Postgres on dedicated host
@@ -178,13 +179,13 @@ The new architecture has more moving parts than "pip install tapps-brain." Opera
   - **Security**: SSL connections, password management (secrets, not env vars), network isolation
   - **Monitoring**: Health check integration, connection pool metrics, Postgres pg_stat
   - **Troubleshooting**: Common issues (connection refused, pool exhausted, migration failed, schema mismatch)
-- [ ] `docs/guides/hive-operations.md`:
+- [x] `docs/guides/hive-operations.md`:
   - Backup/restore procedures
   - Schema migration (manual and auto)
   - Adding a new project to an existing Hive
   - Removing an agent or project from the Hive
   - Scaling Postgres (replicas, connection limits)
-- [ ] `docker/README.md` — quick-reference for all Docker artifacts in the repo
+- [x] `docker/README.md` — quick-reference for all Docker artifacts in the repo
 
 ## Priority Order
 

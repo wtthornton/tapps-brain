@@ -1,10 +1,11 @@
 ---
 id: EPIC-056
 title: "Declarative Group Membership & Expert Publishing"
-status: planned
+status: done
 priority: high
 created: 2026-04-08
 tags: [groups, experts, hive, declarative, propagation]
+completed: 2026-04-09
 ---
 
 # EPIC-056: Declarative Group Membership & Expert Publishing
@@ -26,21 +27,21 @@ The target architecture requires:
 
 ## Success Criteria
 
-- [ ] `MemoryStore` accepts `groups=["dev-pipeline", "frontend-guild"]` at construction
-- [ ] `MemoryStore` accepts `expert_domains=["css", "react"]` at construction
-- [ ] Groups are auto-created in Hive if they don't exist
-- [ ] Agent is auto-added to declared groups on store initialization
-- [ ] Saves with `agent_scope="group:dev-pipeline"` are automatically routed to that group's namespace
-- [ ] Expert agent saves with tier `architectural` or `pattern` are auto-published to Hive with `agent_scope="hive"`
-- [ ] Recall merges local + group + hive results transparently (weighted)
-- [ ] Group membership persists across store restarts (stored in Hive backend, not in-memory)
-- [ ] Profile YAML supports `groups` and `expert_domains` fields
+- [x] `MemoryStore` accepts `groups=["dev-pipeline", "frontend-guild"]` at construction
+- [x] `MemoryStore` accepts `expert_domains=["css", "react"]` at construction
+- [x] Groups are auto-created in Hive if they don't exist
+- [x] Agent is auto-added to declared groups on store initialization
+- [x] Saves with `agent_scope="group:dev-pipeline"` are automatically routed to that group's namespace
+- [x] Expert agent saves with tier `architectural` or `pattern` are auto-published to Hive with `agent_scope="hive"`
+- [x] Recall merges local + group + hive results transparently (weighted)
+- [x] Group membership persists across store restarts (stored in Hive backend, not in-memory)
+- [x] Profile YAML supports `groups` and `expert_domains` fields
 
 ## Stories
 
 ### STORY-056.1: Declarative group membership on MemoryStore
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** EPIC-053 (agent identity), EPIC-054.5 (backend factory)
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/hive.py`, `src/tapps_brain/profile.py`
@@ -52,19 +53,19 @@ AgentForge's `AGENT.md` will declare `groups: [dev-pipeline, frontend-guild]`. t
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore(agent_id="frontend-dev", groups=["dev-pipeline", "frontend-guild"], hive_store=hive)` accepted
-- [ ] On construction: for each declared group, call `hive.create_group()` if not exists, then `hive.add_group_member()`
-- [ ] Idempotent — re-constructing with same groups does not duplicate membership
-- [ ] Groups stored on `AgentRegistration.groups` field in the registry
-- [ ] `MemoryStore.groups` property returns the declared list
-- [ ] Profile YAML `hive.groups` field supported as alternative to constructor param
-- [ ] If `hive_store` is None (no Hive), `groups` param is accepted but no-op (local-only mode)
+- [x] `MemoryStore(agent_id="frontend-dev", groups=["dev-pipeline", "frontend-guild"], hive_store=hive)` accepted
+- [x] On construction: for each declared group, call `hive.create_group()` if not exists, then `hive.add_group_member()`
+- [x] Idempotent — re-constructing with same groups does not duplicate membership
+- [x] Groups stored on `AgentRegistration.groups` field in the registry
+- [x] `MemoryStore.groups` property returns the declared list
+- [x] Profile YAML `hive.groups` field supported as alternative to constructor param
+- [x] If `hive_store` is None (no Hive), `groups` param is accepted but no-op (local-only mode)
 
 ---
 
 ### STORY-056.2: Expert domain declaration and auto-publishing
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** STORY-056.1
 **Context refs:** `src/tapps_brain/store.py`, `src/tapps_brain/hive.py` (`PropagationEngine`)
@@ -76,22 +77,22 @@ When a security expert agent saves an `architectural` memory about "always use p
 
 #### Acceptance Criteria
 
-- [ ] `MemoryStore(agent_id="sql-expert", expert_domains=["sql", "database"], hive_store=hive)` accepted
-- [ ] `expert_domains` stored on `AgentRegistration` in registry
-- [ ] When an expert agent saves a memory with tier `architectural` or `pattern`:
+- [x] `MemoryStore(agent_id="sql-expert", expert_domains=["sql", "database"], hive_store=hive)` accepted
+- [x] `expert_domains` stored on `AgentRegistration` in registry
+- [x] When an expert agent saves a memory with tier `architectural` or `pattern`:
   - Memory is auto-propagated to Hive with `agent_scope="hive"`
   - Memory is tagged with expert domains (e.g., `tags=["expert:sql", "expert:database"]`)
   - Propagation uses existing `PropagationEngine` — no new code path
-- [ ] Tiers `procedural`, `context`, `ephemeral` are NOT auto-published (too noisy)
-- [ ] Auto-publish can be disabled per-save via `auto_publish=False` parameter
-- [ ] Profile YAML `hive.expert_domains` field supported
-- [ ] Non-expert agents (empty `expert_domains`) never auto-publish — they use explicit `agent_scope`
+- [x] Tiers `procedural`, `context`, `ephemeral` are NOT auto-published (too noisy)
+- [x] Auto-publish can be disabled per-save via `auto_publish=False` parameter
+- [x] Profile YAML `hive.expert_domains` field supported
+- [x] Non-expert agents (empty `expert_domains`) never auto-publish — they use explicit `agent_scope`
 
 ---
 
 ### STORY-056.3: Group-scoped save routing
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-056.1
 **Context refs:** `src/tapps_brain/store.py` (`save` method), `src/tapps_brain/agent_scope.py`
@@ -103,20 +104,20 @@ Today an agent must explicitly specify `agent_scope="group:dev-pipeline"` on eve
 
 #### Acceptance Criteria
 
-- [ ] `save(agent_scope="group")` (without group name) propagates to ALL declared groups
-- [ ] `save(agent_scope="group:dev-pipeline")` propagates to that specific group only
-- [ ] `save(agent_scope="group:unknown")` raises `ValueError` if agent is not a member
-- [ ] `save(agent_scope="private")` stays local only (default, unchanged)
-- [ ] `save(agent_scope="hive")` propagates to org-wide Hive (unchanged)
-- [ ] `save(agent_scope="domain")` propagates to all agents with same profile (unchanged)
-- [ ] Group saves include `source_agent` and `memory_group` for provenance
-- [ ] Group saves respect conflict policy (per-group or global default)
+- [x] `save(agent_scope="group")` (without group name) propagates to ALL declared groups
+- [x] `save(agent_scope="group:dev-pipeline")` propagates to that specific group only
+- [x] `save(agent_scope="group:unknown")` raises `ValueError` if agent is not a member
+- [x] `save(agent_scope="private")` stays local only (default, unchanged)
+- [x] `save(agent_scope="hive")` propagates to org-wide Hive (unchanged)
+- [x] `save(agent_scope="domain")` propagates to all agents with same profile (unchanged)
+- [x] Group saves include `source_agent` and `memory_group` for provenance
+- [x] Group saves respect conflict policy (per-group or global default)
 
 ---
 
 ### STORY-056.4: Cross-project group resolution
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** M
 **Depends on:** STORY-056.1, EPIC-055.4 (Postgres groups)
 **Context refs:** `src/tapps_brain/hive.py` (group methods), `src/tapps_brain/federation.py`
@@ -128,18 +129,18 @@ Today an agent must explicitly specify `agent_scope="group:dev-pipeline"` on eve
 
 #### Acceptance Criteria
 
-- [ ] Group membership is by `(agent_id, project_root)` — same agent_id in different projects are distinct members
-- [ ] `search_with_groups("frontend-guild")` returns memories from all members across projects
-- [ ] Agent registry tracks `project_root` per registration — distinguishes same-name agents across projects
-- [ ] Group-scoped search supports `project_filter` to scope results to specific projects if desired
-- [ ] Memory provenance includes `project_root` so consumers know origin
-- [ ] Works with both SQLite backend (same host) and Postgres backend (multi-host)
+- [x] Group membership is by `(agent_id, project_root)` — same agent_id in different projects are distinct members
+- [x] `search_with_groups("frontend-guild")` returns memories from all members across projects
+- [x] Agent registry tracks `project_root` per registration — distinguishes same-name agents across projects
+- [x] Group-scoped search supports `project_filter` to scope results to specific projects if desired
+- [x] Memory provenance includes `project_root` so consumers know origin
+- [x] Works with both SQLite backend (same host) and Postgres backend (multi-host)
 
 ---
 
 ### STORY-056.5: Group-aware and expert-aware recall
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** L
 **Depends on:** STORY-056.2, STORY-056.3, STORY-056.4
 **Context refs:** `src/tapps_brain/retrieval.py`, `src/tapps_brain/fusion.py`, `src/tapps_brain/recall.py`
@@ -157,23 +158,23 @@ The agent never thinks about scopes — it just asks a question and gets the bes
 
 #### Acceptance Criteria
 
-- [ ] `recall()` automatically searches: local → groups → hive (in that order)
-- [ ] Results fused via `ReciprocaRankFusion` (existing `fusion.py`) with scope-based weights:
+- [x] `recall()` automatically searches: local → groups → hive (in that order)
+- [x] Results fused via `ReciprocaRankFusion` (existing `fusion.py`) with scope-based weights:
   - Local weight: configurable, default 0.5 (most relevant — agent's own context)
   - Group weight: configurable, default 0.3 (workflow knowledge)
   - Hive weight: configurable, default 0.2 (expert knowledge, broader but less specific)
-- [ ] Weights configurable via profile YAML `hive.recall_weights: {local: 0.5, group: 0.3, hive: 0.2}`
-- [ ] Duplicate suppression: if same memory exists in local and group (e.g., via propagation), highest-scoring instance wins
-- [ ] Expert memories tagged with `expert:*` get a relevance boost when query matches the domain
-- [ ] Recall result includes `source_scope` field (`local`, `group:<name>`, `hive`) for transparency
-- [ ] Agent can opt out of group/hive recall via `recall(scope="local")` for isolated queries
-- [ ] Performance: group+hive recall adds <50ms to local-only recall (connection reuse, not new connections)
+- [x] Weights configurable via profile YAML `hive.recall_weights: {local: 0.5, group: 0.3, hive: 0.2}`
+- [x] Duplicate suppression: if same memory exists in local and group (e.g., via propagation), highest-scoring instance wins
+- [x] Expert memories tagged with `expert:*` get a relevance boost when query matches the domain
+- [x] Recall result includes `source_scope` field (`local`, `group:<name>`, `hive`) for transparency
+- [x] Agent can opt out of group/hive recall via `recall(scope="local")` for isolated queries
+- [x] Performance: group+hive recall adds <50ms to local-only recall (connection reuse, not new connections)
 
 ---
 
 ### STORY-056.6: Profile YAML schema extension
 
-**Status:** planned
+**Status:** done (2026-04-09)
 **Effort:** S
 **Depends on:** STORY-056.1
 **Context refs:** `src/tapps_brain/profile.py`, `src/tapps_brain/profiles/repo-brain.yaml`
@@ -185,7 +186,7 @@ The profile system already configures decay, scoring, and hive behavior. Groups 
 
 #### Acceptance Criteria
 
-- [ ] Profile YAML schema extended with:
+- [x] Profile YAML schema extended with:
   ```yaml
   hive:
     groups: ["dev-pipeline", "frontend-guild"]  # declared group memberships
@@ -196,11 +197,11 @@ The profile system already configures decay, scoring, and hive behavior. Groups 
       hive: 0.2
     auto_publish_tiers: ["architectural", "pattern"]  # tiers that experts auto-publish
   ```
-- [ ] Built-in profiles set sensible defaults (e.g., `repo-brain` has empty groups/domains)
-- [ ] Project-level `profile.yaml` can override groups and domains
-- [ ] `MemoryStore` constructor params override profile values (runtime > config)
-- [ ] Profile validation: `groups` must be list of strings, `expert_domains` must be list of strings
-- [ ] `recall_weights` must sum to 1.0 (validated with clear error message)
+- [x] Built-in profiles set sensible defaults (e.g., `repo-brain` has empty groups/domains)
+- [x] Project-level `profile.yaml` can override groups and domains
+- [x] `MemoryStore` constructor params override profile values (runtime > config)
+- [x] Profile validation: `groups` must be list of strings, `expert_domains` must be list of strings
+- [x] `recall_weights` must sum to 1.0 (validated with clear error message)
 
 ## Priority Order
 

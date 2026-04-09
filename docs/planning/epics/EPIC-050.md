@@ -1,10 +1,11 @@
 ---
 id: EPIC-050
 title: "Concurrency and runtime model — research and upgrades"
-status: in_progress
+status: done
 priority: medium
 created: 2026-03-31
 tags: [concurrency, sqlite, threading, performance, wal]
+completed: 2026-04-09
 ---
 
 # EPIC-050: Concurrency and runtime model

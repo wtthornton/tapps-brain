@@ -1,10 +1,11 @@
 ---
 id: EPIC-040
 title: "tapps-brain v2.0 — Research-Driven Upgrades"
-status: active
+status: done
 priority: critical
 created: 2026-03-25
 tags: [memory, retrieval, v2, hybrid-search]
+completed: 2026-04-09
 ---
 
 # EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades
