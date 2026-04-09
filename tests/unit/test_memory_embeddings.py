@@ -138,7 +138,7 @@ class TestStoreWithEmbeddingProvider:
         store.close()
 
     def test_save_without_provider_no_embedding(self, tmp_path: Path) -> None:
-        store = MemoryStore(tmp_path)
+        store = MemoryStore(tmp_path, embedding_provider=None)
         result = store.save("no-embed-key", "Value")
         assert isinstance(result, MemoryEntry)
         assert result.embedding is None
