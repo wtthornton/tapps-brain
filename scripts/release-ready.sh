@@ -37,9 +37,9 @@ need_node() {
 echo "==> [1/8] OpenClaw docs consistency"
 python3 scripts/check_openclaw_docs_consistency.py || fail "docs consistency checker"
 
-echo "==> [2/8] uv sync --extra dev"
+echo "==> [2/8] uv sync --group dev"
 need_uv
-uv sync --extra dev
+uv sync --group dev
 
 echo "==> [3/8] Packaging build (clean dist/)"
 rm -rf dist/
