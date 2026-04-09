@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from tapps_brain.metrics import StoreHealthReport
 from tapps_brain.store import MemoryStore
 from tapps_brain.visual_snapshot import (
     VISUAL_SNAPSHOT_SCHEMA_VERSION,
+    DiagnosticsSummary,
+    HiveHealthSummary,
+    _access_stats_from_entries,
+    _build_scorecard,
     build_visual_snapshot,
+    capture_png,
     compute_fingerprint_hex,
     snapshot_to_json,
     theme_from_fingerprint,
@@ -165,3 +175,419 @@ def test_privacy_local_includes_tags_and_groups(tmp_path: Path) -> None:
     assert snap.memory_group_counts is not None
     assert snap.memory_group_counts.get("team-a") == 2
     assert snap.memory_group_count == 1
+
+
+# ---------------------------------------------------------------------------
+# PNG capture — unit tests (no live browser required)
+# ---------------------------------------------------------------------------
+
+
+def test_capture_png_importable() -> None:
+    """capture_png is exported from the module."""
+    from tapps_brain.visual_snapshot import capture_png as _cp
+
+    assert callable(_cp)
+
+
+def test_capture_png_raises_when_playwright_missing(tmp_path: Path) -> None:
+    """RuntimeError with install hint when playwright is not available."""
+    blocked = {"playwright": None, "playwright.sync_api": None}
+    with patch.dict(sys.modules, blocked), pytest.raises(RuntimeError, match="playwright"):
+        capture_png(
+            html_path=tmp_path / "index.html",
+            json_path=tmp_path / "snap.json",
+            output=tmp_path / "out.png",
+        )
+
+
+def test_capture_png_raises_file_not_found_html(tmp_path: Path) -> None:
+    """FileNotFoundError when html_path does not exist (after playwright import)."""
+    # Only test this when playwright is actually installed; skip otherwise.
+    pytest.importorskip("playwright")
+    (tmp_path / "snap.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match=r"index\.html"):
+        capture_png(
+            html_path=tmp_path / "index.html",
+            json_path=tmp_path / "snap.json",
+            output=tmp_path / "out.png",
+        )
+
+
+def test_capture_png_raises_file_not_found_json(tmp_path: Path) -> None:
+    """FileNotFoundError when json_path does not exist (after playwright import)."""
+    pytest.importorskip("playwright")
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match=r"snap\.json"):
+        capture_png(
+            html_path=tmp_path / "index.html",
+            json_path=tmp_path / "snap.json",
+            output=tmp_path / "out.png",
+        )
+
+
+# ---------------------------------------------------------------------------
+# _access_stats_from_entries — branch coverage
+# ---------------------------------------------------------------------------
+
+
+def test_access_stats_nonzero_buckets() -> None:
+    """Entries with various access_count values fill all buckets."""
+    entries = []
+    for ac in [0, 1, 3, 5, 6, 15, 20, 25, 100]:
+        e = MagicMock()
+        e.access_count = ac
+        e.total_access_count = ac + 1
+        e.useful_access_count = max(0, ac - 1)
+        entries.append(e)
+    stats = _access_stats_from_entries(entries)
+    assert stats.sum_access_count == sum([0, 1, 3, 5, 6, 15, 20, 25, 100])
+    assert stats.entries_with_access == 8
+    b = {b.label: b.count for b in stats.buckets}
+    assert b["0"] == 1
+    assert b["1-5"] == 3  # 1, 3, 5
+    assert b["6-20"] == 3  # 6, 15, 20
+    assert b["21+"] == 2  # 25, 100
+    assert stats.sum_total_access_count > 0
+    assert stats.sum_useful_access_count >= 0
+
+
+# ---------------------------------------------------------------------------
+# _build_scorecard — branch coverage via mocked StoreHealthReport
+# ---------------------------------------------------------------------------
+
+
+def _make_report(**kwargs: object) -> StoreHealthReport:
+    defaults: dict[str, object] = {
+        "store_path": "/tmp/test",
+        "entry_count": 10,
+        "max_entries": 5000,
+    }
+    defaults.update(kwargs)
+    return StoreHealthReport(**defaults)  # type: ignore[arg-type]
+
+
+def _scorecard_ids(checks: list) -> dict:
+    return {c.id: c for c in checks}
+
+
+def test_scorecard_empty_store() -> None:
+    report = _make_report(entry_count=0)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["store_entries"].status == "info"
+
+
+def test_scorecard_diagnostics_degraded_circuit() -> None:
+    report = _make_report()
+    diag = DiagnosticsSummary(composite_score=0.8, circuit_state="degraded", recorded_at="now")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=diag,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=False,
+        )
+    )
+    assert checks["diagnostics_circuit"].status == "warn"
+
+
+def test_scorecard_diagnostics_open_circuit() -> None:
+    report = _make_report()
+    diag = DiagnosticsSummary(composite_score=0.8, circuit_state="open", recorded_at="now")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=diag,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=False,
+        )
+    )
+    assert checks["diagnostics_circuit"].status == "fail"
+
+
+def test_scorecard_diagnostics_unknown_circuit() -> None:
+    report = _make_report()
+    diag = DiagnosticsSummary(composite_score=0.8, circuit_state="weird_state", recorded_at="now")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=diag,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=False,
+        )
+    )
+    assert checks["diagnostics_circuit"].status == "warn"
+
+
+def test_scorecard_diagnostics_warn_score() -> None:
+    report = _make_report()
+    diag = DiagnosticsSummary(composite_score=0.6, circuit_state="closed", recorded_at="now")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=diag,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=False,
+        )
+    )
+    assert checks["diagnostics_composite"].status == "warn"
+
+
+def test_scorecard_diagnostics_fail_score() -> None:
+    report = _make_report()
+    diag = DiagnosticsSummary(composite_score=0.3, circuit_state="closed", recorded_at="now")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=diag,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=False,
+        )
+    )
+    assert checks["diagnostics_composite"].status == "fail"
+
+
+def test_scorecard_integrity_tampered() -> None:
+    report = _make_report(integrity_tampered=3)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["integrity_tampered"].status == "fail"
+
+
+def test_scorecard_integrity_no_hash_warn() -> None:
+    report = _make_report(integrity_no_hash=5)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["integrity_no_hash"].status == "warn"
+
+
+def test_scorecard_capacity_warn() -> None:
+    report = _make_report(entry_count=4200, max_entries=5000)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["store_capacity"].status == "warn"
+
+
+def test_scorecard_capacity_fail() -> None:
+    report = _make_report(entry_count=4800, max_entries=5000)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["store_capacity"].status == "fail"
+
+
+def test_scorecard_rate_limit_anomalies() -> None:
+    report = _make_report(rate_limit_minute_anomalies=2, rate_limit_session_anomalies=1)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["rate_limits"].status == "warn"
+
+
+def test_scorecard_maintenance_backlog_warn() -> None:
+    report = _make_report(gc_candidates=100, consolidation_candidates=150)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["maintenance_backlog"].status == "warn"
+
+
+def test_scorecard_maintenance_backlog_info() -> None:
+    report = _make_report(gc_candidates=5, consolidation_candidates=0)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["maintenance_backlog"].status == "info"
+
+
+def test_scorecard_hive_attached_not_connected() -> None:
+    report = _make_report()
+    hive = HiveHealthSummary(connected=False, status="warn")
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=True,
+            hive_health=hive,
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["hive_hub"].status == "warn"
+
+
+def test_scorecard_hive_attached_connected_no_agents() -> None:
+    report = _make_report()
+    hive = HiveHealthSummary(connected=True, status="ok", agents=0)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=True,
+            hive_health=hive,
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["hive_hub"].status == "warn"
+
+
+def test_scorecard_hive_attached_connected_with_agents() -> None:
+    report = _make_report()
+    hive = HiveHealthSummary(connected=True, status="ok", agents=3, entries=100)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=True,
+            hive_health=hive,
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["hive_hub"].status == "ok"
+
+
+def test_scorecard_retrieval_hybrid_sqlite_vec_empty() -> None:
+    report = _make_report()
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="hybrid_sqlite_vec_empty",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["retrieval_stack"].status == "warn"
+
+
+def test_scorecard_retrieval_hybrid_on_the_fly() -> None:
+    report = _make_report()
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="hybrid_on_the_fly_embeddings",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["retrieval_stack"].status == "info"
+
+
+def test_scorecard_retrieval_unknown() -> None:
+    report = _make_report()
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="unknown",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["retrieval_stack"].status == "warn"
+
+
+def test_scorecard_retrieval_other_mode() -> None:
+    report = _make_report()
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="custom_mode",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["retrieval_stack"].status == "info"
+
+
+def test_scorecard_sqlcipher_enabled() -> None:
+    report = _make_report(sqlcipher_enabled=True)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    assert checks["sqlcipher"].status == "info"

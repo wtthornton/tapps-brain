@@ -34,6 +34,62 @@ The payload is produced by `build_visual_snapshot()` and serialized with `snapsh
 - `docs/planning/brain-visual-implementation-plan.md`
 - `examples/brain-visual/README.md`
 
+## PNG capture (headless)
+
+Export a static PNG poster of the dashboard — useful for slides, README headers, or visual regression baselines.
+
+### Setup
+
+```bash
+uv sync --extra visual
+playwright install chromium
+```
+
+### Usage
+
+```bash
+# 1. Generate the snapshot JSON
+tapps-brain visual export -o brain-visual.json
+
+# 2. Capture PNG (defaults: 1280×900, light theme)
+tapps-brain visual capture --json brain-visual.json --output brain-visual.png
+
+# Dark theme, wider viewport
+tapps-brain visual capture --json brain-visual.json --output brain-visual-dark.png \
+    --theme dark --width 1440 --height 960
+
+# Custom HTML path (if not running from repo root)
+tapps-brain visual capture --json brain-visual.json \
+    --html /path/to/examples/brain-visual/index.html \
+    --output brain-visual.png
+```
+
+### Manual checklist
+
+- [ ] `uv sync --extra visual && playwright install chromium` completed without errors.
+- [ ] `tapps-brain visual export -o brain-visual.json` produces a valid JSON file.
+- [ ] `tapps-brain visual capture --json brain-visual.json --output out.png` exits 0 and writes a PNG.
+- [ ] Open `out.png` — KPI strip, scorecard rows, tier chart, and fingerprint are all visible.
+- [ ] Repeat with `--theme dark` — dark background renders correctly.
+- [ ] Verify no memory body text appears in the PNG (only aggregated stats).
+
+### Programmatic use
+
+```python
+from pathlib import Path
+from tapps_brain.visual_snapshot import capture_png
+
+capture_png(
+    html_path=Path("examples/brain-visual/index.html"),
+    json_path=Path("brain-visual.json"),
+    output=Path("out/brain-visual.png"),
+    theme="dark",
+    width=1440,
+)
+```
+
+`capture_png` raises `RuntimeError` with an install hint when `playwright` is not available, so it is safe to call conditionally.
+
 ## Related
 
 - `MemoryStore.health()` / MCP `tapps_brain_health` — overlapping health data inside the live store API.

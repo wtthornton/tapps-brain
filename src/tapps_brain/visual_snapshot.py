@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tapps_brain.metrics import StoreHealthReport
     from tapps_brain.store import MemoryStore
 
@@ -734,3 +736,71 @@ def snapshot_to_json(snapshot: VisualSnapshot) -> str:
     """Serialize snapshot with stable key order for diff-friendly exports."""
     data = snapshot.model_dump(mode="json")
     return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def capture_png(  # pragma: no cover
+    html_path: Path,
+    json_path: Path,
+    output: Path,
+    *,
+    width: int = 1280,
+    height: int = 900,
+    theme: str = "light",
+    wait_ms: int = 600,
+) -> None:
+    """Capture a headless PNG of the brain-visual dashboard.
+
+    Opens ``html_path`` (the static demo's ``index.html``) in a headless
+    Chromium browser, injects the snapshot from ``json_path`` via
+    ``applySnapshot()``, and writes a full-page screenshot to ``output``.
+
+    Requires the ``visual`` optional extra (Playwright)::
+
+        uv sync --extra visual
+        playwright install chromium
+
+    Args:
+        html_path: Path to ``examples/brain-visual/index.html``.
+        json_path: Path to a ``brain-visual.json`` snapshot.
+        output: Destination PNG file path.
+        width: Viewport width in pixels (default 1280).
+        height: Viewport height in pixels (default 900).
+        theme: ``"light"`` (default) or ``"dark"``.
+        wait_ms: Extra settle time after snapshot injection (default 600 ms).
+
+    Raises:
+        RuntimeError: When Playwright is not installed.
+        FileNotFoundError: When ``html_path`` or ``json_path`` do not exist.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as err:
+        raise RuntimeError(
+            "PNG capture requires Playwright. "
+            "Install with: uv sync --extra visual && playwright install chromium"
+        ) from err
+
+    if not html_path.exists():
+        raise FileNotFoundError(f"HTML not found: {html_path}")
+    if not json_path.exists():
+        raise FileNotFoundError(f"Snapshot JSON not found: {json_path}")
+
+    snap_data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": width, "height": height})
+            page.goto(
+                f"file://{html_path.resolve()}",
+                wait_until="domcontentloaded",
+                timeout=15_000,
+            )
+            if theme == "dark":
+                page.evaluate("document.documentElement.setAttribute('data-theme','dark')")
+            page.evaluate("(d) => applySnapshot(d)", snap_data)
+            page.wait_for_timeout(wait_ms)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(output), full_page=True)
+        finally:
+            browser.close()

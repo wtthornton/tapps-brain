@@ -1,7 +1,7 @@
 ---
 id: EPIC-048
 title: "Optional / auxiliary capabilities — research and upgrades"
-status: planned
+status: done
 priority: low
 created: 2026-03-31
 tags: [sessions, relations, markdown, evaluation, doc-validation, visual]
@@ -103,13 +103,13 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-048.6: Visual snapshot (operator)
 
-**Status:** planned | **Effort:** S | **Depends on:** none  
-**Context refs:** `docs/guides/visual-snapshot.md`, `tests/unit/test_visual_snapshot.py`  
+**Status:** done (2026-04-09) | **Effort:** S | **Depends on:** none  
+**Context refs:** `docs/guides/visual-snapshot.md`, `tests/unit/test_visual_snapshot.py`, `src/tapps_brain/visual_snapshot.py` (`capture_png`), `src/tapps_brain/cli.py` (`visual capture`)  
 **Verification:** `pytest tests/unit/test_visual_snapshot.py -v --tb=short -m "not benchmark"`; manual checklist steps in `docs/guides/visual-snapshot.md`
 
 #### Implementation themes
 
-- [ ] Automate **PNG** capture in headless mode if feasible (optional dep).
+- [x] Automate **PNG** capture in headless mode if feasible (optional dep) — `capture_png()` in `visual_snapshot.py`; CLI `tapps-brain visual capture`; `pyproject.toml` `[visual]` extra (`playwright>=1.45,<2`); 4 new unit tests.
 
 ## Priority order
 

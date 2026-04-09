@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-09 — **STORY-048.2 shipped** (`memory_relations_get_batch`, `detect_relation_cycles`, `MAX_EDGES_PER_KEY`, SKILL.md synced to 69 tools); **STORY-048.1 shipped** (session GC retention + `max_chars` budget); **STORY-048.4 shipped** (eval CI); issue hygiene: **#66/#69/#70/#71/#72** closed
+Last updated: 2026-04-09 — **EPIC-048 complete** — all 6 stories done; last shipped: **STORY-048.6** (`capture_png()`, `tapps-brain visual capture`, `[visual]` extra w/ playwright, manual checklist in visual-snapshot.md)
 Owner: @wtthornton
 
 ## Purpose
@@ -130,7 +130,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Next engineering (canonical queue)**
 
-- **EPIC-048** — Optional auxiliary capabilities. Story priority order: **048.4** (eval CI golden set) → **048.1** (session retention) → **048.2** (relations batch API) → **048.3** (markdown round-trip) → **048.5** (doc-validation guide) → **048.6** (visual PNG). Pick a story when a product need arises.
+- **EPIC-048** — ✅ **Complete (2026-04-09).** All 6 stories done: 048.1 session GC + token budget, 048.2 relations batch + cycle detection, 048.3 markdown round-trip, 048.4 eval CI, 048.5 doc validation, 048.6 visual PNG capture.
 - **EPIC-032** — OTel GenAI semantic conventions. Low priority; defer until stakeholder request.
 - **MemoryStore decomposition** (tracking row 22): design-first only; concurrency/scale ADR: [`adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md`](adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
 - **Backlog-gated slices** (per [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating)):
@@ -270,6 +270,7 @@ Copy this section at the end of each week:
 - 2026-04-04: **STORY-044.3** offline slice — `run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md); roadmap + `STATUS` + `next-session-prompt` + `EPIC-044.md` synced.
 - 2026-04-09: **#70 shipped** — `MemoryStore._parse_relative_time()` expands `7d`/`2w`/`1m` shorthands before SQL layer; MCP `memory_search` gains `since`/`until`/`time_field` params; 11 new tests in `TestMemoryStoreTemporalSearch`; ruff + mypy clean; GitHub **#70** closed.
 - 2026-04-09: **#71 verified + closed** — `ConsolidationProfileConfig.threshold` fully wired from profile YAML through `store.py` to `auto_consolidation.py`; `personal-assistant.yaml` ships `consolidation.threshold: 0.65`; GitHub **#71** closed.
+- 2026-04-09: **STORY-048.6** — `capture_png()` in `visual_snapshot.py`; `tapps-brain visual capture` CLI; `[visual]` optional extra (playwright); 4 new tests; manual checklist in `docs/guides/visual-snapshot.md`; **EPIC-048 complete** (all 6 stories done).
 - 2026-04-09: **Issue hygiene** — closed **#66** (async wrapper shipped as `tapps_brain.aio.AsyncMemoryStore`), **#69** (sqlite-vec core), **#72** (5K eviction/GC already handled); EPIC-048 story order documented; next-session-prompt updated.
 - 2026-04-09: **v3.1.0** — EPIC-053–058 shipped; epic status hygiene sweep (EPIC-040/042/044/050 marked done); roadmap + STATUS + next-session-prompt updated.
 - 2026-04-04: Planning **doc sync** — `STATUS` / `next-session-prompt` / `mcp.md` aligned with **044.4** merge undo + CLI-only maintenance commands; snapshot dates refreshed.

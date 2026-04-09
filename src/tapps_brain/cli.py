@@ -3497,6 +3497,74 @@ def visual_export_cmd(
     typer.echo(f"Wrote {output.resolve()}")
 
 
+@visual_app.command("capture")
+def visual_capture_cmd(  # pragma: no cover
+    json_path: Annotated[
+        Path,
+        typer.Option(
+            "--json",
+            "-j",
+            help="Path to brain-visual.json snapshot (required).",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Destination PNG path (default: brain-visual.png).",
+        ),
+    ] = Path("brain-visual.png"),
+    html: Annotated[
+        Path,
+        typer.Option(
+            "--html",
+            help="Path to examples/brain-visual/index.html.",
+        ),
+    ] = Path("examples/brain-visual/index.html"),
+    width: Annotated[
+        int,
+        typer.Option("--width", help="Viewport width in px (default 1280)."),
+    ] = 1280,
+    height: Annotated[
+        int,
+        typer.Option("--height", help="Viewport height in px (default 900)."),
+    ] = 900,
+    theme: Annotated[
+        str,
+        typer.Option("--theme", help="light (default) or dark."),
+    ] = "light",
+) -> None:
+    """Capture a headless PNG of the brain-visual dashboard.
+
+    Requires the [visual] optional extra:
+
+        uv sync --extra visual
+        playwright install chromium
+    """
+    from tapps_brain.visual_snapshot import capture_png
+
+    if theme not in {"light", "dark"}:
+        typer.echo("Error: --theme must be light or dark.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        capture_png(
+            html_path=html,
+            json_path=json_path,
+            output=output,
+            width=width,
+            height=height,
+            theme=theme,
+        )
+    except RuntimeError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except FileNotFoundError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Wrote {output.resolve()}")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

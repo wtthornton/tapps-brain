@@ -62,6 +62,9 @@ encryption = [
 otel = [
     "opentelemetry-sdk>=1.20,<2",
 ]
+visual = [
+    "playwright>=1.45,<2",
+]
 all = [
     "tapps-brain[cli,mcp,reranker]",
 ]
@@ -121,6 +124,8 @@ module = [
     "mcp.*",
     "opentelemetry",
     "opentelemetry.*",
+    "playwright",
+    "playwright.*",
     "pysqlcipher3",
     "pysqlcipher3.*",
 ]

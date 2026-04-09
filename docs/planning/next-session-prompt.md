@@ -10,9 +10,13 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 **Already on `main` — do not redo:**
 
-- **STORY-048.4** (eval CI golden set) — **done**; `scripts/run_eval_golden.py` runs `lexical_golden_eval_suite()` + `evaluate()` and writes `eval-report.json`; `eval-golden` CI job in `.github/workflows/ci.yml` runs on every PR and uploads the JSON artifact via `actions/upload-artifact@v4`.
-- **STORY-048.2** (relations) — **done**; `detect_relation_cycles()` in `relations.py`; `RelationEntry.MAX_EDGES_PER_KEY = 20` enforced in `store.save()`; `store.get_relations_batch(keys)` + MCP `memory_relations_get_batch(keys_json)`; `SKILL.md` synced to 69 tools (added `brain_*` tools, removed stale entries); 60 tests pass.
-- **STORY-048.1** (session memory) — **done**; `GCConfig.session_index_ttl_days` (default 90) added to `gc.py`; `store.gc()` calls `cleanup_sessions()` on live runs and returns `GCResult.session_chunks_deleted`; `maintenance gc-config --session-index-ttl-days` CLI flag; `session_summary_save(max_chars=)` truncates at word boundary with `" …"` and returns `truncated=True`; 46 tests pass.
+- **EPIC-048 — all 6 stories done (2026-04-09):**
+  - **048.6** (visual PNG capture) — `capture_png()` in `visual_snapshot.py`; CLI `tapps-brain visual capture --json ... --output ... [--theme dark]`; `[visual]` optional extra (`playwright>=1.45`); `playwright install chromium` required; manual checklist in `docs/guides/visual-snapshot.md`.
+  - **048.5** (doc validation) — `StrictValidationError`, `validate_batch(strict=True)`, `store.validate_entries(strict=True)`, `scripts/run_doc_validation.py --strict`; `docs/guides/doc-validation-lookup-engine.md`.
+  - **048.3** (markdown round-trip) — `MEMORY_MD_SCHEMA_VERSION = 1` in front matter; import skips block; round-trip test passes.
+  - **048.4** (eval CI) — `scripts/run_eval_golden.py`; `eval-golden` CI job; JSON artifact upload.
+  - **048.2** (relations) — `detect_relation_cycles()`, `MAX_EDGES_PER_KEY=20`, `store.get_relations_batch()`, MCP `memory_relations_get_batch`.
+  - **048.1** (session memory) — `GCConfig.session_index_ttl_days`, `session_summary_save(max_chars=)`.
 
 - **EPIC-042:** Stories **042.1–042.8** = **done** (rerank observability, sqlite-vec ops doc, `HybridFusionConfig`, v17 `embedding_model_id`, etc.). Epic-level eval/hygiene backlog-gated per PLANNING.md trigger (b).
 - **EPIC-044:** All 7 stories **done** — RAG safety, Bloom dedup, conflicts (core + offline export), consolidation merge undo, GC dry-run/metrics/archive, seeding seed_version, per-group caps. Optional NLI/async conflict wiring gated per trigger (c).
@@ -38,7 +42,7 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 | Issue/Epic | What | Notes |
 |------|------|-------|
-| **EPIC-048** | Optional auxiliary improvements | **048.1 + 048.2 + 048.4 done**; remaining order: **048.3** (markdown) → 048.5 (doc validation) → 048.6 (visual snapshot) |
+| **EPIC-048** | Optional auxiliary improvements | ✅ **Complete** (2026-04-09) — all 6 stories done |
 | **EPIC-032** | OTel GenAI semantic conventions | Low priority; defer unless stakeholder asks |
 | Row 22 | MemoryStore modularization | Design-first only; long-term refactor |
 
@@ -48,4 +52,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; EPIC-048 in progress (048.1 + 048.2 + 048.4 done).*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; **EPIC-048 complete** (all 6 stories done, including 048.6 visual PNG capture).*

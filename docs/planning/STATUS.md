@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-09 (America/Chicago) — **STORY-048.2 shipped** (`memory_relations_get_batch` MCP, `detect_relation_cycles`, `MAX_EDGES_PER_KEY=20`; SKILL.md synced to 69 tools); **STORY-048.1 shipped** (`GCConfig.session_index_ttl_days`, `store.gc()` prunes session index, `session_summary_save(max_chars=)`); **STORY-048.4 shipped** (eval CI golden set: `scripts/run_eval_golden.py`, `eval-golden` CI job, JSON artifact upload); **#70 shipped** (`_parse_relative_time`, MCP `memory_search` params, 11 tests); **#71 verified + closed** (`ConsolidationProfileConfig` fully wired); issue hygiene: **#66/#69/#72 closed**; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-09 (America/Chicago) — **EPIC-048 complete** — all 6 stories done: 048.1 (session GC + token budget), 048.2 (relations batch + cycle detection), 048.3 (markdown round-trip + schema version), 048.4 (eval CI golden set), 048.5 (doc validation strict mode + guide), **048.6 (visual snapshot PNG capture** — `capture_png()`, `tapps-brain visual capture`, `[visual]` extra); **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
 **Package version (PyPI / `pyproject.toml`):** **3.1.0**
 
@@ -114,7 +114,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-045 | Operator docs and observability | done | 2026-04-03 |
 | EPIC-046 | Operator docs | done | 2026-04-03 |
 | EPIC-047 | Operator docs | done | 2026-04-03 |
-| EPIC-048 | Optional / auxiliary capabilities — research and upgrades | in_progress | STORY-048.1 + 048.2 + 048.4 done (2026-04-09); 048.3, 048.5, 048.6 planned |
+| EPIC-048 | Optional / auxiliary capabilities — research and upgrades | done | 2026-04-09 — all 6 stories done (048.1–048.6) |
 | EPIC-049 | multi-scope memory epic v1 | done | 2026-03-29 |
 | EPIC-050 | Concurrency and runtime model | done | 2026-04-09 — all 3 stories done; lock-scope + async wrapper deferred per ADR |
 | EPIC-051 | Cross-cutting §10 checklist, ADRs 001–006 | done | 2026-04-03 |
@@ -141,9 +141,8 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md)):**
-1. **EPIC-048** — Optional auxiliary capabilities. **048.1 + 048.2 + 048.4 done**; remaining order: **048.3** (markdown) → 048.5 (doc validation) → 048.6 (visual snapshot).
-2. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask).
-3. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
+1. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask).
+2. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
 
 ## READY-036 release gate (2026-03-24)
 

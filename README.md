@@ -111,9 +111,12 @@ chain = store.history("pricing-plan")
 pip install tapps-brain                 # core library (includes sqlite-vec + sentence-transformers)
 pip install tapps-brain[mcp]            # + MCP server for Claude Code, Cursor, VS Code Copilot
 pip install tapps-brain[reranker]       # + FlashRank local reranking (no API key needed)
+pip install tapps-brain[visual]         # + Playwright headless PNG capture (tapps-brain visual capture)
 pip install tapps-brain[otel]           # + OpenTelemetry types/helpers (not wired to CLI/MCP yet — see docs/guides/observability.md)
-pip install tapps-brain[all]            # everything above (except otel)
+pip install tapps-brain[all]            # everything above (except visual and otel)
 ```
+
+> **Visual PNG capture:** after `pip install tapps-brain[visual]`, also run `playwright install chromium` once to download the browser binary. See [Visual snapshot guide](docs/guides/visual-snapshot.md).
 
 > **Contributors:** `uv sync --extra dev` installs the full dev stack (pytest, ruff, mypy, mcp, typer).
 
@@ -151,10 +154,13 @@ tapps-brain hive status
 tapps-brain agent create my-agent --profile repo-brain
 tapps-brain federation status
 tapps-brain flywheel report --period-days 7
+tapps-brain visual export -o brain-visual.json          # JSON snapshot for dashboard
+tapps-brain visual capture --json brain-visual.json \   # headless PNG poster [visual] extra
+    --output brain-visual.png --theme dark
 tapps-brain export --format json --output backup.json
 ```
 
-Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, …). Many commands support `--json` output.
+Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, `visual`, …). Many commands support `--json` output.
 
 ### MCP server
 
