@@ -1183,6 +1183,32 @@ class MemoryStore:
             raise
         return True
 
+    @staticmethod
+    def _parse_relative_time(value: str) -> str:
+        """Expand a relative time shorthand to an ISO-8601 UTC string.
+
+        Accepts shorthands of the form ``Nd`` (days), ``Nw`` (weeks), or
+        ``Nm`` (months, approximated as 30 days each).  Any other string is
+        returned unchanged so that callers can pass ISO-8601 strings through
+        transparently.
+
+        Examples::
+
+            "7d"  -> ISO string 7 days ago
+            "2w"  -> ISO string 14 days ago
+            "1m"  -> ISO string 30 days ago
+            "2026-01-01T00:00:00Z" -> "2026-01-01T00:00:00Z" (passthrough)
+        """
+        import re
+        from datetime import UTC, datetime, timedelta
+
+        m = re.fullmatch(r"(\d+)([dwm])", value.strip())
+        if m is None:
+            return value
+        n, unit = int(m.group(1)), m.group(2)
+        days = n if unit == "d" else n * 7 if unit == "w" else n * 30
+        return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
     def search(
         self,
         query: str,
@@ -1223,6 +1249,11 @@ class MemoryStore:
         """
         self._metrics.increment("store.search")
         with MetricsTimer(self._metrics, "store.search_ms"):
+            # Expand relative shorthands ("7d", "2w", "1m") to ISO-8601 strings.
+            if since is not None:
+                since = self._parse_relative_time(since)
+            if until is not None:
+                until = self._parse_relative_time(until)
             results = self._persistence.search(
                 query,
                 memory_group=memory_group,

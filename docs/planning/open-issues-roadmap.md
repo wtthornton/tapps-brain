@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-09 — **v3.1.0** shipped: **EPIC-053–058** done (per-agent brain identity, Hive backend abstraction, PostgreSQL Hive/Federation, declarative groups + expert publishing, unified `AgentBrain` API, Docker deployment); epic status hygiene sweep: **EPIC-040/042/044/050** marked done; 2984 tests collected, ruff + mypy clean
+Last updated: 2026-04-09 — issue hygiene sweep: **#66/#69/#72** closed; **#70** (temporal query filtering — relative shorthand `7d/2w/1m`, MCP params, 11 tests) and **#71** (consolidation threshold profile-configurable — `ConsolidationProfileConfig`, `personal-assistant.yaml` 0.65) both shipped and **closed**
 Owner: @wtthornton
 
 ## Purpose
@@ -130,7 +130,7 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 
 **Next engineering (canonical queue)**
 
-- **EPIC-048** — Optional auxiliary capabilities: session index retention, relations batch API, markdown round-trip, eval CI golden set, doc-validation guide, visual PNG capture. Pick a story when a product need arises.
+- **EPIC-048** — Optional auxiliary capabilities. Story priority order: **048.4** (eval CI golden set) → **048.1** (session retention) → **048.2** (relations batch API) → **048.3** (markdown round-trip) → **048.5** (doc-validation guide) → **048.6** (visual PNG). Pick a story when a product need arises.
 - **EPIC-032** — OTel GenAI semantic conventions. Low priority; defer until stakeholder request.
 - **MemoryStore decomposition** (tracking row 22): design-first only; concurrency/scale ADR: [`adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md`](adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
 - **Backlog-gated slices** (per [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating)):
@@ -168,6 +168,11 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 | 20 | — | Save-path / consolidation observability | done | — | — | — | Phase histograms + `save_phase_summary` on `store.health()` / MCP health (live store); `memory://metrics` unchanged |
 | 21 | — | Concurrency expectations (docs; metrics optional) | done | — | — | — | 2026-04-01 — `system-architecture.md` § concurrency |
 | 22 | — | MemoryStore modularization epic | not_started | — | — | — | Backlog 2026-03-31; long-term refactor |
+| 23 | #66 | Async wrapper (`AsyncMemoryStore`) | closed | — | — | — | `tapps_brain/aio.py` + `test_aio.py`; GitHub closed 2026-04-09 |
+| 24 | #69 | Default semantic search enabled | closed | — | — | — | sqlite-vec now core dep; GitHub closed 2026-04-09 |
+| 25 | #72 | Entry archival strategy for 5K cap | closed | — | — | — | GC + eviction already handles; GitHub closed 2026-04-09 |
+| 26 | #70 | Temporal query filtering (`since` / `until` / relative shorthands) | closed | — | — | — | `_parse_relative_time`, MCP params, 11 tests; GitHub closed 2026-04-09 |
+| 27 | #71 | Consolidation threshold profile-configurable | closed | — | — | — | `ConsolidationProfileConfig.threshold` wired; `personal-assistant.yaml` 0.65; GitHub closed 2026-04-09 |
 
 ## Weekly Update Template
 
@@ -263,6 +268,9 @@ Copy this section at the end of each week:
 
 - 2026-04-04: **Optional backlog gating** — `PLANNING.md` § *Optional backlog gating*; backlog-by-default for extra save-path observability, EPIC-042 hygiene, and in-product NLI/async unless triggers (a)–(c); `next-session-prompt` + roadmap Priority Order + `STATUS` aligned.
 - 2026-04-04: **STORY-044.3** offline slice — `run_save_conflict_candidate_report`, CLI `maintenance save-conflict-candidates`, [`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md); roadmap + `STATUS` + `next-session-prompt` + `EPIC-044.md` synced.
+- 2026-04-09: **#70 shipped** — `MemoryStore._parse_relative_time()` expands `7d`/`2w`/`1m` shorthands before SQL layer; MCP `memory_search` gains `since`/`until`/`time_field` params; 11 new tests in `TestMemoryStoreTemporalSearch`; ruff + mypy clean; GitHub **#70** closed.
+- 2026-04-09: **#71 verified + closed** — `ConsolidationProfileConfig.threshold` fully wired from profile YAML through `store.py` to `auto_consolidation.py`; `personal-assistant.yaml` ships `consolidation.threshold: 0.65`; GitHub **#71** closed.
+- 2026-04-09: **Issue hygiene** — closed **#66** (async wrapper shipped as `tapps_brain.aio.AsyncMemoryStore`), **#69** (sqlite-vec core), **#72** (5K eviction/GC already handled); EPIC-048 story order documented; next-session-prompt updated.
 - 2026-04-09: **v3.1.0** — EPIC-053–058 shipped; epic status hygiene sweep (EPIC-040/042/044/050 marked done); roadmap + STATUS + next-session-prompt updated.
 - 2026-04-04: Planning **doc sync** — `STATUS` / `next-session-prompt` / `mcp.md` aligned with **044.4** merge undo + CLI-only maintenance commands; snapshot dates refreshed.
 - 2026-04-03: **STORY-044.4** — merge **undo** (`undo_consolidation_merge`, `consolidation_merge_undo` audit, CLI **`maintenance consolidation-merge-undo`**); consolidated row **`skip_consolidation=True`**; planning docs + **`CHANGELOG`** [Unreleased].

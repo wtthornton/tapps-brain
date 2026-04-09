@@ -12,7 +12,10 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 - **EPIC-042:** Stories **042.1–042.8** = **done** (rerank observability, sqlite-vec ops doc, `HybridFusionConfig`, v17 `embedding_model_id`, etc.). Epic-level eval/hygiene backlog-gated per PLANNING.md trigger (b).
 - **EPIC-044:** All 7 stories **done** — RAG safety, Bloom dedup, conflicts (core + offline export), consolidation merge undo, GC dry-run/metrics/archive, seeding seed_version, per-group caps. Optional NLI/async conflict wiring gated per trigger (c).
-- **EPIC-050:** All 3 stories **done** — sync API philosophy doc, lock timeout + `threading.Lock` discipline, WAL checkpoint + opt-in read connection. Lock-scope reduction and async wrapper deferred per ADR-004.
+- **EPIC-050:** All 3 stories **done** — sync API philosophy doc, lock timeout + `threading.Lock` discipline, WAL checkpoint + opt-in read connection. Lock-scope reduction deferred per ADR-004.
+- **#66 async wrapper** — **done** (shipped post-EPIC-050); `src/tapps_brain/aio.py` `AsyncMemoryStore` wraps all public `MemoryStore` methods via `asyncio.to_thread()`; context manager + auto-proxy fallback; 27+ tests in `tests/unit/test_aio.py`; import as `from tapps_brain.aio import AsyncMemoryStore`. GitHub #66 closed.
+- **#70 temporal query filtering** — **done**; `MemoryStore._parse_relative_time()` expands `7d`/`2w`/`1m` shorthands; `store.search(since=, until=, time_field=)` wired to SQL pre-filter; MCP `memory_search` gains those params; 11 tests in `TestMemoryStoreTemporalSearch`. GitHub #70 closed.
+- **#71 consolidation threshold** — **done**; `ConsolidationProfileConfig.threshold` (profile.py) wired through `store.py` → `auto_consolidation.py`; `personal-assistant.yaml` ships `consolidation.threshold: 0.65`. GitHub #71 closed.
 - **EPIC-051:** **done** — §10 checklist decisions ADR-001–006 in `adr/`.
 - **EPIC-052:** **done** — 2026-Q2 code review sweep, 6 fixes in v2.0.4.
 - **EPIC-053:** **done** (v3.1.0) — `MemoryStore(agent_id=)` routes to `{project_dir}/.tapps-brain/agents/{id}/memory.db`; auto-registration on `HiveStore`; `source_agent` auto-fill on save; CLI/MCP `--agent-id` + `TAPPS_BRAIN_AGENT_ID` env var; `maintenance split-by-agent` migration.
@@ -29,9 +32,9 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 **Open work (pick when product needs it):**
 
-| Epic | What | Notes |
+| Issue/Epic | What | Notes |
 |------|------|-------|
-| **EPIC-048** | Optional auxiliary improvements | Session retention, relations batch API, markdown round-trip, eval CI, doc-validation guide, visual PNG — pick a story |
+| **EPIC-048** | Optional auxiliary improvements | Story order: **048.4** (eval CI) → 048.1 → 048.2 → 048.3 → 048.5 → 048.6 |
 | **EPIC-032** | OTel GenAI semantic conventions | Low priority; defer unless stakeholder asks |
 | Row 22 | MemoryStore modularization | Design-first only; long-term refactor |
 
@@ -41,4 +44,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); epic status hygiene sweep done; EPIC-048 + EPIC-032 are the open queue.*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; EPIC-048 is the open queue.*

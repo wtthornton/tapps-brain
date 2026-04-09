@@ -395,6 +395,9 @@ def create_server(  # noqa: PLR0915
         scope: str | None = None,
         as_of: str | None = None,
         group: str | None = None,
+        since: str = "",
+        until: str = "",
+        time_field: str = "created_at",
     ) -> str:
         """Search memory entries using full-text search.
 
@@ -404,6 +407,11 @@ def create_server(  # noqa: PLR0915
             scope: Optional scope filter (project, branch, session).
             as_of: Optional ISO-8601 timestamp for point-in-time query.
             group: Optional project-local memory group filter (GitHub #49).
+            since: Lower bound on time_field. ISO-8601 string or relative shorthand
+                (e.g. "7d" = last 7 days, "2w" = last 2 weeks, "1m" = last month).
+            until: Upper bound on time_field. Same format as since.
+            time_field: Column to filter on: created_at (default), updated_at,
+                or last_accessed (Issue #70).
         """
         if as_of is not None:
             try:
@@ -417,7 +425,16 @@ def create_server(  # noqa: PLR0915
                         "message": f"as_of must be a valid ISO-8601 timestamp, got {as_of!r}",
                     }
                 )
-        results = store.search(query, tier=tier, scope=scope, as_of=as_of, memory_group=group)
+        results = store.search(
+            query,
+            tier=tier,
+            scope=scope,
+            as_of=as_of,
+            memory_group=group,
+            since=since.strip() or None,
+            until=until.strip() or None,
+            time_field=time_field,
+        )
         return json.dumps(
             [
                 {

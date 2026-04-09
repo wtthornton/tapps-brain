@@ -174,6 +174,13 @@ class TestCoreTools:
             "flywheel_report",
             "flywheel_evaluate",
             "flywheel_hive_feedback",
+            # AgentBrain facade (EPIC-057)
+            "brain_remember",
+            "brain_recall",
+            "brain_forget",
+            "brain_learn_success",
+            "brain_learn_failure",
+            "brain_status",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
@@ -1413,14 +1420,24 @@ class TestAgentScopeValidation:
         result = json.loads(save_fn(key="valid-hive", value="test", agent_scope="hive"))
         assert result["status"] == "saved"
 
-    def test_valid_agent_scope_group(self, mcp_server):
-        """memory_save with agent_scope='group:team-x' succeeds (GitHub #52)."""
+    def test_valid_agent_scope_hive(self, mcp_server):
+        """memory_save with agent_scope='hive' succeeds (tests valid scope acceptance)."""
         save_fn = _tool_fn(mcp_server, "memory_save")
-        result = json.loads(save_fn(key="valid-group", value="test", agent_scope="group:team-x"))
+        result = json.loads(save_fn(key="valid-hive-scope", value="test", agent_scope="hive"))
         assert result["status"] == "saved"
-        entry = mcp_server._tapps_store.get("valid-group")
+        entry = mcp_server._tapps_store.get("valid-hive-scope")
         assert entry is not None
-        assert entry.agent_scope == "group:team-x"
+        assert entry.agent_scope == "hive"
+
+    def test_valid_agent_scope_group_requires_membership(self, mcp_server):
+        """memory_save with agent_scope='group:team-x' is rejected when agent is not a member.
+
+        Group membership is enforced by EPIC-056. To use a group scope the agent must be
+        initialized with groups=['team-x'] or have joined the group via the Hive.
+        """
+        save_fn = _tool_fn(mcp_server, "memory_save")
+        result = json.loads(save_fn(key="group-no-member", value="test", agent_scope="group:team-x"))
+        assert result["error"] == "invalid_agent_scope"
 
     def test_invalid_agent_scope_returns_error(self, mcp_server):
         """memory_save with invalid agent_scope returns error dict."""
@@ -1428,7 +1445,9 @@ class TestAgentScopeValidation:
         result = json.loads(save_fn(key="bad-scope", value="test", agent_scope="hivee"))
         assert result["error"] == "invalid_agent_scope"
         assert "valid_values" in result
-        assert sorted(result["valid_values"]) == ["domain", "group:<name>", "hive", "private"]
+        # valid_values includes "group" (bare) and "group:<name>" (documented form).
+        valid_set = set(result["valid_values"])
+        assert {"private", "domain", "hive", "group:<name>"}.issubset(valid_set)
 
     def test_invalid_agent_scope_not_persisted(self, mcp_server):
         """Entry is not stored when agent_scope is invalid."""

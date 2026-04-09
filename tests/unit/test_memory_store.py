@@ -568,6 +568,90 @@ class TestMemoryStoreSearchFilters:
         assert all("db" in r.tags for r in results)
 
 
+class TestMemoryStoreTemporalSearch:
+    """Tests for temporal filtering on search() — Issue #70."""
+
+    def test_search_since_iso_excludes_old_entries(self, store: MemoryStore) -> None:
+        """Entries created before 'since' are excluded."""
+        store.save(key="old", value="SQLite old entry")
+        # A far-future since timestamp should exclude everything.
+        future = "2099-01-01T00:00:00+00:00"
+        results = store.search("SQLite", since=future)
+        assert results == []
+
+    def test_search_since_includes_recent_entries(self, store: MemoryStore) -> None:
+        """Entries created after 'since' are included."""
+        store.save(key="recent", value="SQLite recent entry")
+        past = "2000-01-01T00:00:00+00:00"
+        results = store.search("SQLite", since=past)
+        assert any(r.key == "recent" for r in results)
+
+    def test_search_until_excludes_future_entries(self, store: MemoryStore) -> None:
+        """until in the past excludes all entries (created_at is now)."""
+        store.save(key="now_entry", value="SQLite current entry")
+        past = "2000-01-01T00:00:00+00:00"
+        results = store.search("SQLite", until=past)
+        assert results == []
+
+    def test_search_since_and_until_range(self, store: MemoryStore) -> None:
+        """Both bounds together form a range filter."""
+        store.save(key="inrange", value="SQLite range test entry")
+        past = "2000-01-01T00:00:00+00:00"
+        future = "2099-01-01T00:00:00+00:00"
+        results = store.search("SQLite", since=past, until=future)
+        assert any(r.key == "inrange" for r in results)
+
+    def test_search_since_relative_shorthand_7d(self, store: MemoryStore) -> None:
+        """Relative shorthand '7d' includes entries created within the last week."""
+        store.save(key="recent_rel", value="SQLite relative time test")
+        results = store.search("SQLite", since="7d")
+        assert any(r.key == "recent_rel" for r in results)
+
+    def test_search_since_relative_shorthand_2w(self, store: MemoryStore) -> None:
+        """Relative shorthand '2w' (2 weeks) includes recent entries."""
+        store.save(key="twoweeks", value="SQLite two weeks test")
+        results = store.search("SQLite", since="2w")
+        assert any(r.key == "twoweeks" for r in results)
+
+    def test_search_since_relative_shorthand_1m(self, store: MemoryStore) -> None:
+        """Relative shorthand '1m' (30 days) includes recent entries."""
+        store.save(key="onemonth", value="SQLite one month test")
+        results = store.search("SQLite", since="1m")
+        assert any(r.key == "onemonth" for r in results)
+
+    def test_parse_relative_time_passthrough(self) -> None:
+        """ISO-8601 strings are returned unchanged."""
+        iso = "2026-01-01T00:00:00+00:00"
+        assert MemoryStore._parse_relative_time(iso) == iso
+
+    def test_parse_relative_time_days(self) -> None:
+        """'Nd' expands to an ISO string N days before now."""
+        from datetime import UTC, datetime, timedelta
+
+        before = datetime.now(UTC) - timedelta(days=5)
+        result = MemoryStore._parse_relative_time("5d")
+        parsed = datetime.fromisoformat(result)
+        assert abs((parsed - before).total_seconds()) < 2
+
+    def test_parse_relative_time_weeks(self) -> None:
+        """'Nw' expands to N*7 days before now."""
+        from datetime import UTC, datetime, timedelta
+
+        before = datetime.now(UTC) - timedelta(days=14)
+        result = MemoryStore._parse_relative_time("2w")
+        parsed = datetime.fromisoformat(result)
+        assert abs((parsed - before).total_seconds()) < 2
+
+    def test_parse_relative_time_months(self) -> None:
+        """'Nm' expands to N*30 days before now."""
+        from datetime import UTC, datetime, timedelta
+
+        before = datetime.now(UTC) - timedelta(days=30)
+        result = MemoryStore._parse_relative_time("1m")
+        parsed = datetime.fromisoformat(result)
+        assert abs((parsed - before).total_seconds()) < 2
+
+
 class TestMemoryStoreConsolidation:
     """Tests for auto-consolidation behavior."""
 

@@ -1,6 +1,6 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-09 (America/Chicago) — **v3.1.0** (EPIC-053–058: per-agent brain identity, Hive backend abstraction, PostgreSQL Hive/Federation, declarative groups + expert publishing, unified `AgentBrain` API, Docker deployment; 2984 tests collected; ruff + mypy clean); epic status hygiene sweep: EPIC-040/042/044/050 marked done; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-09 (America/Chicago) — **#70 shipped** (`_parse_relative_time`, MCP `memory_search` params, 11 tests); **#71 verified + closed** (`ConsolidationProfileConfig` fully wired); issue hygiene: **#66/#69/#72 closed**; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
 **Package version (PyPI / `pyproject.toml`):** **3.1.0**
 
@@ -141,7 +141,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
 **Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md)):**
-1. **EPIC-048** — Optional auxiliary capabilities (session retention, relations batch API, markdown round-trip, eval CI job, doc-validation guide, visual PNG capture) — pick a story when product needs it.
+1. **EPIC-048** — Optional auxiliary capabilities. Story order: **048.4** (eval CI) → 048.1 → 048.2 → 048.3 → 048.5 → 048.6.
 2. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask).
 3. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
 
