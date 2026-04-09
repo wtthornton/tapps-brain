@@ -216,6 +216,24 @@ class ApplyResult:
     dry_run: bool = False
 
 
+class StrictValidationError(Exception):
+    """Raised by ``validate_batch(strict=True)`` when flagged entries are found.
+
+    Carries the full ``ValidationReport`` so callers can inspect which entries
+    were flagged without re-running validation.
+
+    Intended for CI pipelines where any doc-contradicted entry should be a
+    hard failure (e.g. ``--strict`` flag in ``scripts/run_doc_validation.py``).
+    """
+
+    def __init__(self, report: ValidationReport) -> None:
+        self.report = report
+        super().__init__(
+            f"Doc validation strict mode: {report.flagged} flagged "
+            f"{'entry' if report.flagged == 1 else 'entries'}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Story 62.1 — Claim Extractor
 # ---------------------------------------------------------------------------
@@ -651,15 +669,22 @@ class MemoryDocValidator:
         entries: list[MemoryEntry],
         *,
         max_lookups: int = 20,
+        strict: bool = False,
     ) -> ValidationReport:
         """Validate multiple entries with rate-limited doc lookups.
 
         Args:
             entries: Memory entries to validate.
             max_lookups: Maximum unique library+topic doc lookups.
+            strict: If ``True`` and any entries are flagged as doc-contradicted,
+                raise :class:`StrictValidationError` instead of returning the
+                report.  Useful for CI pipelines that must fail on contradictions.
 
         Returns:
             ValidationReport with counts and per-entry details.
+
+        Raises:
+            StrictValidationError: When ``strict=True`` and ``report.flagged > 0``.
         """
         start = time.monotonic()
         report = ValidationReport()
@@ -706,6 +731,8 @@ class MemoryDocValidator:
                 report.skipped += 1
 
         report.elapsed_ms = round((time.monotonic() - start) * 1000, 1)
+        if strict and report.flagged > 0:
+            raise StrictValidationError(report)
         return report
 
     async def validate_stale(

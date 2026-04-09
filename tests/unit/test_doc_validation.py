@@ -22,6 +22,7 @@ from tapps_brain.doc_validation import (
     EntryValidation,
     LibraryClaim,
     MemoryDocValidator,
+    StrictValidationError,
     ValidationReport,
     ValidationStatus,
     _infer_topic,
@@ -479,6 +480,51 @@ class TestMemoryDocValidator:
         # "fresh" must not be skipped due to budget (budget was preserved by "recent" fast-path)
         fresh_ev = next(e for e in report.entries if e.entry_key == "fresh")
         assert fresh_ev.reason != "Lookup budget exhausted"
+
+    @pytest.mark.asyncio()
+    async def test_strict_mode_raises_when_flagged(self) -> None:
+        """validate_batch(strict=True) raises StrictValidationError when any entry is flagged."""
+        # Use deprecation path: docs explicitly mark the library as deprecated, and the
+        # claim text contains the library name so _check_deprecation fires.
+        engine = _make_lookup_engine(
+            docs={
+                "oldlib": (
+                    "## oldlib\n"
+                    "oldlib is deprecated and removed in v2. Use newlib instead."
+                ),
+            }
+        )
+        validator = MemoryDocValidator(engine)
+        entry = _make_entry(value="from oldlib import Widget\nWe use oldlib for widgets.")
+        with pytest.raises(StrictValidationError) as exc_info:
+            await validator.validate_batch([entry], strict=True)
+        assert exc_info.value.report.flagged >= 1
+
+    @pytest.mark.asyncio()
+    async def test_strict_mode_no_raise_when_no_flags(
+        self,
+        validator: MemoryDocValidator,
+    ) -> None:
+        """validate_batch(strict=True) returns normally when no entries are flagged."""
+        entry = _make_entry(value="The project uses a monorepo structure.")
+        # No flaggable claims — should not raise
+        report = await validator.validate_batch([entry], strict=True)
+        assert report.flagged == 0
+
+    @pytest.mark.asyncio()
+    async def test_strict_mode_error_carries_report(self) -> None:
+        """StrictValidationError.report contains the full ValidationReport."""
+        engine = _make_lookup_engine(
+            docs={
+                "oldlib": "## oldlib\noldlib is deprecated and removed in v2. Use newlib instead.",
+            }
+        )
+        validator = MemoryDocValidator(engine)
+        entry = _make_entry(value="from oldlib import Widget\nWe use oldlib for widgets.")
+        with pytest.raises(StrictValidationError) as exc_info:
+            await validator.validate_batch([entry], strict=True)
+        assert isinstance(exc_info.value.report, ValidationReport)
+        assert exc_info.value.report.flagged >= 1
 
     @pytest.mark.asyncio()
     async def test_doc_cache_avoids_duplicate_lookups(

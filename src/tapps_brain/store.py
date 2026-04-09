@@ -1713,6 +1713,7 @@ class MemoryStore:
         self,
         *,
         keys: list[str] | None = None,
+        strict: bool = False,
     ) -> Any:  # noqa: ANN401
         """Validate memory entries against authoritative documentation.
 
@@ -1722,10 +1723,18 @@ class MemoryStore:
         Args:
             keys: Optional list of entry keys to validate. If None,
                 validates all entries.
+            strict: If ``True``, raise
+                :class:`~tapps_brain.doc_validation.StrictValidationError`
+                when any entries are flagged as doc-contradicted.  Intended
+                for CI pipelines on markdown repos that must fail on
+                contradictions.
 
         Returns:
             A ``ValidationReport`` with per-entry results. Changes are
             applied back to the store automatically.
+
+        Raises:
+            StrictValidationError: When ``strict=True`` and flagged > 0.
         """
         import asyncio
 
@@ -1747,7 +1756,7 @@ class MemoryStore:
         # (store is synchronous by design — two asyncio.run() calls would create
         # two separate event loops, which is unnecessary overhead).
         async def _run_validation() -> Any:  # noqa: ANN401
-            rep = await validator.validate_batch(entries)
+            rep = await validator.validate_batch(entries, strict=strict)
             await validator.apply_results(rep, self)
             return rep
 

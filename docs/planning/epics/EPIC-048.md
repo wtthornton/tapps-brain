@@ -90,14 +90,14 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-048.5: Doc validation (pluggable lookup)
 
-**Status:** planned | **Effort:** S | **Depends on:** none  
-**Context refs:** `src/tapps_brain/doc_validation.py` (`LookupEngineLike`), `tests/unit/test_doc_validation.py`, `tests/integration/test_doc_validation_integration.py`  
+**Status:** done (2026-04-09) | **Effort:** S | **Depends on:** none  
+**Context refs:** `src/tapps_brain/doc_validation.py` (`LookupEngineLike`, `StrictValidationError`), `tests/unit/test_doc_validation.py`, `tests/integration/test_doc_validation_integration.py`, `docs/guides/doc-validation-lookup-engine.md`, `scripts/run_doc_validation.py`  
 **Verification:** `pytest tests/unit/test_doc_validation.py tests/integration/test_doc_validation_integration.py -v --tb=short -m "not benchmark"`
 
 #### Implementation themes
 
-- [ ] Example **third-party** lookup engine in `docs/guides/`.
-- [ ] **Strict** mode for CI on markdown repos.
+- [x] Example **third-party** lookup engine in `docs/guides/` — `docs/guides/doc-validation-lookup-engine.md` (stub, HTTP, Context7-style, wiring, caching).
+- [x] **Strict** mode for CI on markdown repos — `StrictValidationError` raised by `validate_batch(strict=True)` / `store.validate_entries(strict=True)`; `scripts/run_doc_validation.py --strict` exits 1 on flagged entries.
 
 ---
 

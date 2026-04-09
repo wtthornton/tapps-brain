@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tapps_brain.doc_validation import ValidationReport, ValidationStatus
+from tapps_brain.doc_validation import StrictValidationError, ValidationReport, ValidationStatus
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -400,6 +400,44 @@ class TestRoundTrip:
                 assert updated.contradicted is True
                 assert updated.contradiction_reason is not None
                 assert updated.confidence < 0.7
+        finally:
+            s.close()
+
+    def test_strict_mode_raises_on_flagged_entry(self, tmp_path: Path) -> None:
+        """validate_entries(strict=True) raises StrictValidationError when entries are flagged."""
+        # Deprecation trigger: docs say "badlib deprecated", claim text contains "badlib"
+        docs = {
+            "badlib": (
+                "## badlib\n\n"
+                "badlib is deprecated and removed in v3. Use newlib instead."
+            )
+        }
+        engine = StubLookupEngine(docs=docs)
+        s = MemoryStore(tmp_path, lookup_engine=engine)
+        try:
+            _save(
+                s,
+                "bad-strict",
+                "from badlib import Client\nWe use badlib for request handling.",
+                tags=["badlib"],
+                confidence=0.7,
+                source="agent",
+            )
+            with pytest.raises(StrictValidationError) as exc_info:
+                s.validate_entries(strict=True)
+            assert isinstance(exc_info.value.report, ValidationReport)
+        finally:
+            s.close()
+
+    def test_strict_mode_no_raise_when_all_pass(self, tmp_path: Path) -> None:
+        """validate_entries(strict=True) does not raise when no entries are flagged."""
+        engine = StubLookupEngine(docs={})  # no docs → inconclusive, not flagged
+        s = MemoryStore(tmp_path, lookup_engine=engine)
+        try:
+            _save(s, "clean-entry", "The project uses a monorepo layout.", confidence=0.7)
+            # Should not raise — inconclusive is not a failure in strict mode
+            report = s.validate_entries(strict=True)
+            assert isinstance(report, ValidationReport)
         finally:
             s.close()
 
