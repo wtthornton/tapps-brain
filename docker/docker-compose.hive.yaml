@@ -30,7 +30,7 @@ services:
     depends_on:
       tapps-hive-db:
         condition: service_healthy
-    command: ["tapps-brain", "maintenance", "migrate-hive", "--dsn", "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"]
+    command: ["maintenance", "migrate-hive", "--dsn", "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"]
 
 volumes:
   tapps-hive-pgdata:

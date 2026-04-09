@@ -1,3 +1,4 @@
 FROM python:3.12-slim
-RUN pip install --no-cache-dir tapps-brain[cli]
+COPY dist/tapps_brain-3.2.0-py3-none-any.whl /tmp/
+RUN pip install --no-cache-dir /tmp/tapps_brain-3.2.0-py3-none-any.whl[cli] "psycopg[binary]"
 ENTRYPOINT ["tapps-brain"]
