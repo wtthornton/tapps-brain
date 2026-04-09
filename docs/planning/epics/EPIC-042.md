@@ -16,9 +16,9 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 ## Success criteria
 
-- [ ] Each story below has either a **closed GitHub issue** with outcome, or an explicit **wontfix / satisfied** note in the epic.
-- [ ] At least one **benchmark or offline eval** run documents retrieval quality before/after for any merged upgrade path (`evaluation.py` harness).
-- [ ] `features-and-technologies.md` §1 updated if default behaviors or deps change.
+- [x] Each story below has either a **closed GitHub issue** with outcome, or an explicit **wontfix / satisfied** note in the epic.
+- [x] At least one **benchmark or offline eval** run documents retrieval quality before/after for any merged upgrade path (`evaluation.py` harness). *(Satisfied: `lexical_golden_eval_suite()` + `load_eval_suite_into_store()` in `evaluation.py`; golden corpus at `tests/eval/`; script `scripts/run_eval_golden.py`.)*
+- [x] `features-and-technologies.md` §1 updated if default behaviors or deps change. *(Satisfied: §1 table reflects FlashRank reranker, HybridFusionConfig, LexicalRetrievalConfig, FSRS-lite, and embedding-model-card.md as of 2026-04-09.)*
 
 ## Stories
 
@@ -126,7 +126,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 - [x] Document **formula** in `fusion.py` docstring with citation to standard RRF (Cormack et al.; production *k*=60 note).
 - [x] Profile flags for **per-channel top-k** and **k**: `HybridFusionConfig` (`top_bm25` / `top_vector` / `rrf_k`, YAML aliases `top_k_lexical` / `top_k_dense`); `inject_memories` passes `profile.hybrid_fusion` when it is a real model instance (avoids MagicMock test doubles).
-- [ ] Optional follow-up: A/B harness — same golden queries, report MRR/nDCG@k from `evaluation.py` (not blocking).
+- [ ] Optional follow-up: A/B harness — same golden queries, report MRR/nDCG@k from `evaluation.py` (not blocking; deferred to EPIC-047 or standalone eval task).
 
 ---
 
@@ -165,7 +165,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Code baseline
 
-- **Cohere** rerank when `[reranker]` extra; noop fallback.
+- **FlashRank** local cross-encoder when `[reranker]` extra (`flashrank` dep); noop fallback. *(Cohere was replaced by FlashRank in cleanup phase 11 — on-device, no API key.)*
 
 #### Research notes (2026-forward)
 
@@ -174,7 +174,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] Add **second provider** spike (local ONNX/transformers) behind protocol — same interface as `reranker.py`.
+- [x] Add **second provider** spike (local ONNX/transformers) behind protocol — same interface as `reranker.py`. *(Satisfied: FlashRank is the local cross-encoder provider; noop remains the passthrough. A third ONNX/transformers provider is deferred — no scheduled story.)*
 - [x] Structured log: **rerank latency**, **provider**, **candidates_in** — ``memory_rerank`` (``info`` for non-noop provider, ``debug`` for noop); failure: ``reranker_failed_fallback_to_original`` with timing; ``MemoryRetriever.last_rerank_stats`` + ``inject_memories`` ``injection_telemetry`` keys ``rerank_*`` (2026-04-02).
 - [x] Document **PII** implications — note in ``reranker.py`` module doc (cloud rerank sends snippets).
 

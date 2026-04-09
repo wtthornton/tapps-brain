@@ -173,6 +173,29 @@ def test_run_health_check_hive_no_agents_warning(
     assert any("agents" in w.lower() for w in report.warnings)
 
 
+def test_run_health_check_hive_store_parameter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Explicit hive_store parameter (e.g. Postgres backend) is used directly."""
+    mock_hive = MagicMock()
+    mock_hive.count_by_namespace.return_value = {"pg-ns": 5}
+    mock_reg = MagicMock()
+    mock_reg.list_agents.return_value = ["agent-a"]
+
+    # Ensure default SQLite HiveStore is never called
+    monkeypatch.setattr("tapps_brain.hive.HiveStore", MagicMock(side_effect=RuntimeError("SQLite should not be opened")))
+    monkeypatch.setattr("tapps_brain.hive.AgentRegistry", lambda: mock_reg)
+
+    report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
+
+    assert report.hive.connected is True
+    assert report.hive.hive_reachable is True
+    assert report.hive.entries == 5
+    assert report.hive.namespaces == ["pg-ns"]
+    assert report.hive.agents == 1
+    assert report.hive.status == "ok"
+
+
 def test_run_health_check_integrity_corrupted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

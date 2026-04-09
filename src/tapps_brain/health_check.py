@@ -164,6 +164,7 @@ def run_health_check(  # noqa: PLR0915
     *,
     check_hive: bool = True,
     store: object | None = None,
+    hive_store: object | None = None,
 ) -> HealthReport:
     """Run all health checks and return a structured report.
 
@@ -174,6 +175,12 @@ def run_health_check(  # noqa: PLR0915
             health slice so fields like ``save_phase_summary`` reflect in-process
             metrics. Caller must not close it. When omitted, a temporary store is
             opened and closed.
+        hive_store: Optional pre-configured Hive backend (``HiveBackend`` protocol).
+            When provided, this backend is used to probe Hive health instead of
+            creating a default SQLite ``HiveStore``.  Pass the backend configured
+            for the active deployment (SQLite *or* Postgres).  When omitted the
+            function checks ``store._hive_store``, then ``TAPPS_BRAIN_HIVE_DSN``,
+            then falls back to the default SQLite path.
 
     Returns:
         HealthReport with structured results.
@@ -242,16 +249,45 @@ def run_health_check(  # noqa: PLR0915
     hive_health = HiveHealth()
     if check_hive:
         try:
+            import os
+
             from tapps_brain.hive import _DEFAULT_HIVE_DIR, AgentRegistry, HiveStore
 
-            # Check if the hive.db file exists on disk (reachable vs connected)
-            hive_db_path = _DEFAULT_HIVE_DIR / "hive.db"
-            hive_health.hive_reachable = hive_db_path.exists()
+            # Resolve which backend to probe:
+            #   1. Explicit hive_store parameter
+            #   2. store._hive_store (already-configured backend from MemoryStore)
+            #   3. TAPPS_BRAIN_HIVE_DSN env var → Postgres or SQLite via create_hive_backend
+            #   4. Default SQLite HiveStore (legacy local path)
+            _hive_dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            _resolved_hive: object | None = (
+                hive_store
+                or getattr(store, "_hive_store", None)
+            )
+            _owns_hive = False  # whether we opened it and must close it
 
-            hive = HiveStore()
+            if _resolved_hive is None:
+                if _hive_dsn:
+                    from tapps_brain.backends import create_hive_backend
+
+                    _resolved_hive = create_hive_backend(_hive_dsn)
+                    _owns_hive = True
+                else:
+                    # Default SQLite path — check file exists before opening
+                    hive_db_path = _DEFAULT_HIVE_DIR / "hive.db"
+                    hive_health.hive_reachable = hive_db_path.exists()
+                    _resolved_hive = HiveStore()
+                    _owns_hive = True
+
+            # For Postgres backends there is no local file to probe for reachability;
+            # mark as True optimistically (connectivity is tested by the query below).
+            if hive_health.hive_reachable is False and _hive_dsn:
+                hive_health.hive_reachable = True
+
+            hive = _resolved_hive
             try:
-                ns_counts = hive.count_by_namespace()
+                ns_counts = hive.count_by_namespace()  # type: ignore[attr-defined]
                 hive_health.connected = True
+                hive_health.hive_reachable = True
                 hive_health.namespaces = sorted(ns_counts.keys())
                 hive_health.entries = sum(ns_counts.values())
 
@@ -261,7 +297,8 @@ def run_health_check(  # noqa: PLR0915
                 if hive_health.agents == 0:
                     warnings.append("No agents registered in Hive")
             finally:
-                hive.close()
+                if _owns_hive and hasattr(hive, "close"):
+                    hive.close()
             hive_health.status = "ok"
         except Exception as exc:
             hive_health.status = "warn"

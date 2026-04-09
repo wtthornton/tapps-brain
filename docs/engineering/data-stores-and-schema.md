@@ -2,9 +2,14 @@
 
 ## Store locations
 
-- **Project store**: `{project_root}/.tapps-brain/memory/memory.db`
-- **Hive store**: `~/.tapps-brain/hive/hive.db`
-- **Federation hub**: `~/.tapps-brain/memory/federated.db`
+| Store | Backend | Location |
+|-------|---------|----------|
+| **Agent store** (EPIC-053) | SQLite (per-agent, isolated) | `{project}/.tapps-brain/agents/{agent_id}/memory.db` |
+| **Legacy project store** | SQLite | `{project}/.tapps-brain/memory/memory.db` |
+| **Hive** (EPIC-054/055) | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_HIVE_DSN` or `~/.tapps-brain/hive/hive.db` |
+| **Federation** (EPIC-054/055) | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_FEDERATION_DSN` or `~/.tapps-brain/memory/federated.db` |
+
+For Postgres Hive schema and migrations, see `src/tapps_brain/migrations/hive/`. For deployment, see [`hive-deployment.md`](../guides/hive-deployment.md).
 
 ## Project store (`memory.db`)
 
@@ -60,9 +65,11 @@ When profile **`limits.max_entries_per_group`** is set (integer ≥ 1), each buc
 
 When `max_entries_per_group` is **unset** (`null` / omitted), behavior matches the global-only policy above.
 
-## Hive store (`hive.db`)
+## Hive store (PostgreSQL or SQLite)
 
-### Core tables
+The Hive supports two backends (EPIC-054/055). Production deployments use **PostgreSQL** (`TAPPS_BRAIN_HIVE_DSN`). Local dev uses **SQLite** (`hive.db`).
+
+### Core tables (shared across backends)
 
 - `hive_memories`
 - `hive_feedback_events`
@@ -70,20 +77,37 @@ When `max_entries_per_group` is **unset** (`null` / omitted), behavior matches t
 - `hive_group_members`
 - `hive_write_notify`
 
-### FTS
+### Full-text search
 
-- `hive_fts` + sync triggers (`hive_fts_ai`, `hive_fts_ad`, `hive_fts_au`)
+- **PostgreSQL:** `tsvector` column + GIN index + `plainto_tsquery()`
+- **SQLite:** `hive_fts` FTS5 table + sync triggers (`hive_fts_ai`, `hive_fts_ad`, `hive_fts_au`)
 
-## Federation hub (`federated.db`)
+### Semantic search
+
+- **PostgreSQL:** `pgvector` extension, 384-dim `vector` column, L2 distance index
+- **SQLite:** `sqlite-vec` `memory_vec` table (when extension available)
+
+### Postgres schema migrations
+
+SQL migration files in `src/tapps_brain/migrations/hive/`. Managed by `postgres_migrations.py` (`apply_hive_migrations()`). Version tracked in `hive_schema_version` table. Auto-migrate on startup: `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=1`. CLI: `tapps-brain maintenance migrate-hive` / `hive-schema-status`.
+
+## Federation hub (PostgreSQL or SQLite)
+
+Same backend abstraction as Hive (EPIC-054/055). PostgreSQL when `TAPPS_BRAIN_FEDERATION_DSN` is set, SQLite (`federated.db`) otherwise.
 
 ### Core tables
 
 - `federated_memories` (includes optional `memory_group` — publisher project-local partition on the hub; GitHub **#51** / 49-E)
 - `federation_meta`
 
-### FTS
+### Full-text search
 
-- `federated_fts` content-linked to `federated_memories`
+- **PostgreSQL:** `tsvector` + GIN index
+- **SQLite:** `federated_fts` content-linked to `federated_memories`
+
+### Postgres schema migrations
+
+SQL files in `src/tapps_brain/migrations/federation/`. Managed by `apply_federation_migrations()`. Version tracked in `federation_schema_version` table.
 
 ## Schema version timeline (`memory.db`)
 
