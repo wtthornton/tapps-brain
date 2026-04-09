@@ -49,6 +49,7 @@ def session_summary_save(
     tier: str = "short-term",
     scope: str = "project",
     source_agent: str = "agent",
+    max_chars: int | None = None,
 ) -> dict[str, Any]:
     """Save an end-of-session episodic memory entry.
 
@@ -75,14 +76,29 @@ def session_summary_save(
             preferred value is not available.
         scope: Visibility scope (default: ``project``).
         source_agent: Agent identifier saved with the entry.
+        max_chars: Optional character budget for the summary text.  When
+            set and ``summary`` exceeds this length, the text is
+            truncated at the last whitespace boundary before the limit
+            and ``" …"`` is appended.  ``None`` (default) disables
+            truncation.
 
     Returns:
         A dict with ``key``, ``status``, ``tags``, ``tier``, and
         ``scope`` fields on success, or an ``error`` field on failure.
+        A ``truncated`` key is present (and ``True``) when the summary
+        was shortened by the budget.
     """
     from tapps_brain.store import MemoryStore
 
     root = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
+
+    # Apply token/character budget before persisting.
+    truncated = False
+    if max_chars is not None and len(summary) > max_chars:
+        head = summary[:max_chars]
+        cut = head.rsplit(None, 1)[0] if " " in head else head
+        summary = cut + " …"
+        truncated = True
 
     today = datetime.date.today().isoformat()
     now_ts = datetime.datetime.now(tz=datetime.UTC).strftime("%H%M%S")
@@ -116,7 +132,16 @@ def session_summary_save(
         ws = Path(workspace_dir).resolve() if workspace_dir else root
         _append_daily_note(ws, today, summary)
 
-    return {"key": key, "status": "saved", "tags": all_tags, "tier": resolved_tier, "scope": scope}
+    out: dict[str, Any] = {
+        "key": key,
+        "status": "saved",
+        "tags": all_tags,
+        "tier": resolved_tier,
+        "scope": scope,
+    }
+    if truncated:
+        out["truncated"] = True
+    return out
 
 
 def _append_daily_note(workspace: Path, today: str, summary: str) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from tapps_brain.relations import (
     RelationEntry,
     _clean_entity,
+    detect_relation_cycles,
     expand_via_relations,
     extract_relations,
     extract_relations_from_entries,
@@ -257,3 +258,123 @@ class TestExpandViaRelations:
         # "auth" is the target, should not appear in expanded results from hop2
         # (hop1 may include it if subject matches target, but that's by design)
         assert "Service" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests: detect_relation_cycles (STORY-048.2)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectRelationCycles:
+    def test_no_cycles_returns_empty(self):
+        rels = [
+            _rel("A", "uses", "B"),
+            _rel("B", "uses", "C"),
+        ]
+        assert detect_relation_cycles(rels) == []
+
+    def test_self_loop_detected(self):
+        rels = [_rel("A", "uses", "A")]
+        cycles = detect_relation_cycles(rels)
+        assert len(cycles) == 1
+        assert cycles[0] == ("A", "uses", "A")
+
+    def test_direct_cycle_detected(self):
+        rels = [
+            _rel("A", "manages", "B"),
+            _rel("B", "manages", "A"),
+        ]
+        cycles = detect_relation_cycles(rels)
+        assert len(cycles) == 1
+
+    def test_different_predicates_not_a_cycle(self):
+        rels = [
+            _rel("A", "manages", "B"),
+            _rel("B", "uses", "A"),
+        ]
+        # Different predicates — not a direct cycle
+        assert detect_relation_cycles(rels) == []
+
+    def test_case_insensitive_self_loop(self):
+        rels = [_rel("Service", "uses", "service")]
+        cycles = detect_relation_cycles(rels)
+        assert len(cycles) == 1
+
+    def test_multiple_cycles(self):
+        rels = [
+            _rel("X", "owns", "X"),  # self-loop
+            _rel("A", "handles", "B"),
+            _rel("B", "handles", "A"),  # direct cycle
+        ]
+        cycles = detect_relation_cycles(rels)
+        assert len(cycles) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: MAX_EDGES_PER_KEY constant (STORY-048.2)
+# ---------------------------------------------------------------------------
+
+
+class TestMaxEdgesPerKey:
+    def test_constant_exists_with_expected_value(self):
+        assert RelationEntry.MAX_EDGES_PER_KEY == 20
+
+    def test_store_caps_edges_per_key(self, tmp_path):
+        """Saving many entries for the same key never exceeds MAX_EDGES_PER_KEY."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        try:
+            # Save enough entries to trigger the cap.
+            for i in range(10):
+                store.save(
+                    "cap-test",
+                    f"Service{i} manages Resource{i}",
+                    tier="pattern",
+                    source="agent",
+                )
+            rels = store.get_relations("cap-test")
+            assert len(rels) <= RelationEntry.MAX_EDGES_PER_KEY
+        finally:
+            store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests: get_relations_batch (STORY-048.2)
+# ---------------------------------------------------------------------------
+
+
+class TestGetRelationsBatch:
+    def test_batch_returns_all_keys(self, tmp_path):
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        try:
+            store.save("k1", "Alice manages billing", tier="pattern", source="agent")
+            store.save("k2", "Bob handles payments", tier="pattern", source="agent")
+            result = store.get_relations_batch(["k1", "k2", "k3"])
+            assert set(result.keys()) == {"k1", "k2", "k3"}
+            assert isinstance(result["k1"], list)
+            assert isinstance(result["k2"], list)
+            assert result["k3"] == []
+        finally:
+            store.close()
+
+    def test_batch_empty_keys(self, tmp_path):
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        try:
+            assert store.get_relations_batch([]) == {}
+        finally:
+            store.close()
+
+    def test_batch_unknown_keys_return_empty_list(self, tmp_path):
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        try:
+            result = store.get_relations_batch(["nonexistent"])
+            assert result == {"nonexistent": []}
+        finally:
+            store.close()

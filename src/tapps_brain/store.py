@@ -969,10 +969,39 @@ class MemoryStore:
             with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
                 relations = extract_relations(key, value)
                 if relations:
-                    self._persistence.save_relations(key, relations)
-                    # Reload from persistence to keep timestamps consistent
-                    with self._serialized():
-                        self._relations[key] = self._persistence.load_relations(key)
+                    from tapps_brain.relations import (
+                        RelationEntry,
+                        detect_relation_cycles,
+                    )
+
+                    # Warn on detected cycles (self-loops / direct reversals).
+                    cycles = detect_relation_cycles(relations)
+                    if cycles:
+                        logger.warning(
+                            "relations.cycles_detected",
+                            entry_key=key,
+                            cycle_count=len(cycles),
+                            cycles=[
+                                {"subject": s, "predicate": p, "object": o}
+                                for s, p, o in cycles
+                            ],
+                        )
+
+                    # Cap total edges per key to MAX_EDGES_PER_KEY.
+                    existing_count = len(self._relations.get(key, []))
+                    budget = RelationEntry.MAX_EDGES_PER_KEY - existing_count
+                    if budget <= 0:
+                        logger.debug(
+                            "relations.max_edges_reached",
+                            entry_key=key,
+                            limit=RelationEntry.MAX_EDGES_PER_KEY,
+                        )
+                    else:
+                        relations_to_save = relations[:budget]
+                        self._persistence.save_relations(key, relations_to_save)
+                        # Reload from persistence to keep timestamps consistent
+                        with self._serialized():
+                            self._relations[key] = self._persistence.load_relations(key)
 
             # Auto-consolidation check (Epic 58)
             if (
@@ -2188,6 +2217,14 @@ class MemoryStore:
         self._metrics.increment("store.gc.archived", len(candidate_keys))
         if appended:
             self._metrics.increment("store.gc.archive_bytes", appended)
+
+        # Prune session index (FTS5) rows aligned with GC retention policy.
+        session_chunks_deleted = self.cleanup_sessions(
+            ttl_days=self._gc_config.session_index_ttl_days
+        )
+        if session_chunks_deleted:
+            self._metrics.increment("store.gc.session_chunks_deleted", session_chunks_deleted)
+
         return GCResult(
             archived_count=len(candidate_keys),
             remaining_count=len(entries) - len(candidate_keys),
@@ -2195,6 +2232,7 @@ class MemoryStore:
             dry_run=False,
             reason_counts=reason_counts,
             archive_bytes=appended,
+            session_chunks_deleted=session_chunks_deleted,
         )
 
     def list_gc_stale_details(self, *, now: Any = None) -> list[Any]:  # noqa: ANN401
@@ -2356,6 +2394,20 @@ class MemoryStore:
             source_entry_keys, confidence, and created_at.
         """
         return list(self._relations.get(key, []))
+
+    def get_relations_batch(
+        self, keys: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return relations for multiple keys in one call (STORY-048.2).
+
+        Args:
+            keys: Memory entry keys to look up.
+
+        Returns:
+            Dict mapping each requested key to its list of relation dicts.
+            Keys with no relations map to an empty list.
+        """
+        return {key: list(self._relations.get(key, [])) for key in keys}
 
     def find_related(
         self,

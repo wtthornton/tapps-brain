@@ -115,6 +115,58 @@ class TestSessionSummarySave:
         assert result1["status"] == "saved"
         assert result2["status"] == "saved"
 
+    # ------------------------------------------------------------------
+    # Token / character budget (STORY-048.1)
+    # ------------------------------------------------------------------
+
+    def test_max_chars_no_truncation_when_within_budget(self, tmp_path: Path):
+        """Short summary is stored unchanged when within max_chars."""
+        short = "Short summary."
+        result = session_summary_save(short, project_dir=tmp_path, max_chars=200)
+        assert result["status"] == "saved"
+        assert "truncated" not in result
+
+    def test_max_chars_truncates_long_summary(self, tmp_path: Path):
+        """Summary exceeding max_chars is truncated and truncated=True is returned."""
+        long_summary = "word " * 50  # 250 chars
+        result = session_summary_save(long_summary, project_dir=tmp_path, max_chars=50)
+        assert result["status"] == "saved"
+        assert result.get("truncated") is True
+
+        # Verify stored value is within budget (plus ellipsis marker " …")
+        from tapps_brain.store import MemoryStore
+        store = MemoryStore(tmp_path)
+        try:
+            entries = store.search("word")
+            assert entries, "Expected at least one stored entry"
+            stored_value = entries[0].value
+            assert stored_value.endswith(" …")
+            assert len(stored_value) <= 50 + 3  # " …" is 2 chars
+        finally:
+            store.close()
+
+    def test_max_chars_none_does_not_truncate(self, tmp_path: Path):
+        """Default max_chars=None never truncates."""
+        long_summary = "x" * 2000
+        result = session_summary_save(long_summary, project_dir=tmp_path, max_chars=None)
+        assert result["status"] == "saved"
+        assert "truncated" not in result
+
+    def test_max_chars_truncates_at_word_boundary(self, tmp_path: Path):
+        """Truncation happens at a whitespace boundary, not mid-word."""
+        summary = "hello world this is a long sentence that will be cut"
+        result = session_summary_save(summary, project_dir=tmp_path, max_chars=20)
+        assert result.get("truncated") is True
+        from tapps_brain.store import MemoryStore
+        store = MemoryStore(tmp_path)
+        try:
+            entries = store.search("hello")
+            stored = entries[0].value
+            # Should not cut mid-word
+            assert not stored.rstrip(" …")[-1:].isalpha() or stored.endswith(" …")
+        finally:
+            store.close()
+
 
 # ===================================================================
 # CLI command

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tapps_brain.markdown_sync import (
+    MEMORY_MD_SCHEMA_VERSION,
     _parse_memory_md_sections,
     get_sync_state,
     sync_from_markdown,
@@ -125,6 +126,16 @@ class TestSyncToMarkdown:
         result = sync_to_markdown(tmp_store, workspace)
         expected = str(workspace / "MEMORY.md")
         assert result["path"] == expected
+
+    def test_memory_md_contains_schema_version_front_matter(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Exported MEMORY.md starts with YAML front matter containing schema_version."""
+        tmp_store.save("k", "v", tier="pattern")
+        sync_to_markdown(tmp_store, workspace)
+        content = (workspace / "MEMORY.md").read_text(encoding="utf-8")
+        assert content.startswith("---\n"), "MEMORY.md must start with YAML front matter"
+        assert f"schema_version: {MEMORY_MD_SCHEMA_VERSION}" in content
 
     def test_superseded_entries_excluded(self, tmp_store: MemoryStore, workspace: Path) -> None:
         tmp_store.save("active", "active value", tier="pattern")
@@ -352,6 +363,30 @@ class TestRoundTrip:
         result = sync_from_markdown(store2, workspace)
         assert result["imported"] == 1  # Not 2
 
+    def test_lossless_round_trip_key_value_tier(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Round-trip is lossless for the (key, value, tier) subset of fields."""
+        entries = [
+            ("rt-arch", "Architectural constant.", "architectural"),
+            ("rt-pat", "Pattern note.", "pattern"),
+            ("rt-proc", "Procedural step.", "procedural"),
+            ("rt-ctx", "Session context.", "context"),
+        ]
+        for key, value, tier in entries:
+            tmp_store.save(key, value, tier=tier)
+
+        sync_to_markdown(tmp_store, workspace)
+
+        store2 = MemoryStore(workspace / "store2")
+        sync_from_markdown(store2, workspace)
+
+        for key, value, tier in entries:
+            entry = store2.get(key)
+            assert entry is not None, f"key {key!r} missing after round-trip"
+            assert entry.value == value, f"value mismatch for {key!r}"
+            assert str(entry.tier) == tier, f"tier mismatch for {key!r}"
+
     def test_state_file_tracks_both_timestamps(
         self, tmp_store: MemoryStore, workspace: Path
     ) -> None:
@@ -426,6 +461,23 @@ class TestParseMemoryMdSections:
         assert len(sections) == 1
         key, _, _ = sections[0]
         assert key == "my-arch-key"
+
+    def test_yaml_front_matter_skipped(self) -> None:
+        text = "---\nschema_version: 1\n---\n\n## arch-key\n\nArch value.\n"
+        sections = _parse_memory_md_sections(text)
+        keys = [s[0] for s in sections]
+        assert "arch-key" in keys
+        # Front matter fields must not leak into sections
+        assert "schema-version" not in keys
+        assert "schema_version" not in [s[0] for s in sections]
+
+    def test_yaml_front_matter_content_excluded_from_values(self) -> None:
+        text = "---\nschema_version: 1\ngenerated_by: tapps-brain\n---\n\n## k\n\nreal value\n"
+        sections = _parse_memory_md_sections(text)
+        assert len(sections) == 1
+        _, value, _ = sections[0]
+        assert "schema_version" not in value
+        assert "real value" in value
 
 
 # ---------------------------------------------------------------------------

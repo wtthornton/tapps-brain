@@ -40,6 +40,9 @@ _SESSION_EXPIRY_DAYS = 7
 # Confidence threshold for contradicted memory archival.
 _CONTRADICTED_ARCHIVE_THRESHOLD = 0.2
 
+# Default TTL for session index (FTS5) rows — pruned during gc().
+_SESSION_INDEX_TTL_DAYS = 90
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -53,6 +56,7 @@ class GCConfig:
     floor_retention_days: int = field(default=_FLOOR_RETENTION_DAYS)
     session_expiry_days: int = field(default=_SESSION_EXPIRY_DAYS)
     contradicted_threshold: float = field(default=_CONTRADICTED_ARCHIVE_THRESHOLD)
+    session_index_ttl_days: int = field(default=_SESSION_INDEX_TTL_DAYS)
 
     def to_dict(self) -> dict[str, object]:
         """Return config as a plain dict."""
@@ -60,6 +64,7 @@ class GCConfig:
             "floor_retention_days": self.floor_retention_days,
             "session_expiry_days": self.session_expiry_days,
             "contradicted_threshold": self.contradicted_threshold,
+            "session_index_ttl_days": self.session_index_ttl_days,
         }
 
 
@@ -86,6 +91,11 @@ class GCResult(BaseModel):
         default=0,
         ge=0,
         description="UTF-8 size of JSONL that would be appended (dry-run only).",
+    )
+    session_chunks_deleted: int = Field(
+        default=0,
+        ge=0,
+        description="Session index (FTS5) rows pruned by TTL this run (live runs only).",
     )
 
 

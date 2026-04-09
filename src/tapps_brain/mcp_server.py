@@ -2239,6 +2239,25 @@ def create_server(  # noqa: PLR0915
         return json.dumps({"key": key, "relations": relations, "count": len(relations)})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_relations_get_batch(keys_json: str) -> str:
+        """Return relations for multiple memory keys in one call (STORY-048.2).
+
+        Args:
+            keys_json: JSON array of memory entry keys, e.g. '["key1","key2"]'.
+        """
+        try:
+            keys = json.loads(keys_json)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return json.dumps({"error": "invalid_keys_json", "message": str(exc)})
+        if not isinstance(keys, list):
+            return json.dumps(
+                {"error": "invalid_keys_json", "message": "Expected a JSON array of strings."}
+            )
+        results = store.get_relations_batch([str(k) for k in keys])
+        total = sum(len(v) for v in results.values())
+        return json.dumps({"results": results, "total_count": total})
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_find_related(key: str, max_hops: int = 2) -> str:
         """Find entries related to a key via BFS traversal of the relation graph.
 

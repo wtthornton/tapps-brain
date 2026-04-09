@@ -10,6 +10,10 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 **Already on `main` — do not redo:**
 
+- **STORY-048.4** (eval CI golden set) — **done**; `scripts/run_eval_golden.py` runs `lexical_golden_eval_suite()` + `evaluate()` and writes `eval-report.json`; `eval-golden` CI job in `.github/workflows/ci.yml` runs on every PR and uploads the JSON artifact via `actions/upload-artifact@v4`.
+- **STORY-048.2** (relations) — **done**; `detect_relation_cycles()` in `relations.py`; `RelationEntry.MAX_EDGES_PER_KEY = 20` enforced in `store.save()`; `store.get_relations_batch(keys)` + MCP `memory_relations_get_batch(keys_json)`; `SKILL.md` synced to 69 tools (added `brain_*` tools, removed stale entries); 60 tests pass.
+- **STORY-048.1** (session memory) — **done**; `GCConfig.session_index_ttl_days` (default 90) added to `gc.py`; `store.gc()` calls `cleanup_sessions()` on live runs and returns `GCResult.session_chunks_deleted`; `maintenance gc-config --session-index-ttl-days` CLI flag; `session_summary_save(max_chars=)` truncates at word boundary with `" …"` and returns `truncated=True`; 46 tests pass.
+
 - **EPIC-042:** Stories **042.1–042.8** = **done** (rerank observability, sqlite-vec ops doc, `HybridFusionConfig`, v17 `embedding_model_id`, etc.). Epic-level eval/hygiene backlog-gated per PLANNING.md trigger (b).
 - **EPIC-044:** All 7 stories **done** — RAG safety, Bloom dedup, conflicts (core + offline export), consolidation merge undo, GC dry-run/metrics/archive, seeding seed_version, per-group caps. Optional NLI/async conflict wiring gated per trigger (c).
 - **EPIC-050:** All 3 stories **done** — sync API philosophy doc, lock timeout + `threading.Lock` discipline, WAL checkpoint + opt-in read connection. Lock-scope reduction deferred per ADR-004.
@@ -34,7 +38,7 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 | Issue/Epic | What | Notes |
 |------|------|-------|
-| **EPIC-048** | Optional auxiliary improvements | Story order: **048.4** (eval CI) → 048.1 → 048.2 → 048.3 → 048.5 → 048.6 |
+| **EPIC-048** | Optional auxiliary improvements | **048.1 + 048.2 + 048.4 done**; remaining order: **048.3** (markdown) → 048.5 (doc validation) → 048.6 (visual snapshot) |
 | **EPIC-032** | OTel GenAI semantic conventions | Low priority; defer unless stakeholder asks |
 | Row 22 | MemoryStore modularization | Design-first only; long-term refactor |
 
@@ -44,4 +48,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; EPIC-048 is the open queue.*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; EPIC-048 in progress (048.1 + 048.2 + 048.4 done).*

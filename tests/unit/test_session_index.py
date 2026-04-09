@@ -14,6 +14,100 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+# ---------------------------------------------------------------------------
+# GCConfig — session_index_ttl_days (STORY-048.1)
+# ---------------------------------------------------------------------------
+
+
+def test_gcconfig_has_session_index_ttl_days() -> None:
+    """GCConfig exposes session_index_ttl_days with a sensible default."""
+    from tapps_brain.gc import GCConfig
+
+    cfg = GCConfig()
+    assert cfg.session_index_ttl_days == 90
+
+
+def test_gcconfig_to_dict_includes_session_index_ttl_days() -> None:
+    """GCConfig.to_dict() serialises session_index_ttl_days."""
+    from tapps_brain.gc import GCConfig
+
+    cfg = GCConfig(session_index_ttl_days=30)
+    d = cfg.to_dict()
+    assert d["session_index_ttl_days"] == 30
+
+
+def test_gc_result_has_session_chunks_deleted() -> None:
+    """GCResult carries a session_chunks_deleted field defaulting to 0."""
+    from tapps_brain.gc import GCResult
+
+    result = GCResult()
+    assert result.session_chunks_deleted == 0
+
+
+def test_store_gc_prunes_session_index(tmp_path: Path) -> None:
+    """store.gc() deletes session index rows older than session_index_ttl_days."""
+    import sqlite3
+
+    from tapps_brain.gc import GCConfig
+    from tapps_brain.store import MemoryStore
+
+    store = MemoryStore(tmp_path)
+    try:
+        store.index_session("sess-stale", ["stale content to prune"])
+        store.index_session("sess-fresh", ["fresh content to keep"])
+
+        # Backdate sess-stale to 200 days ago.
+        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE session_index SET created_at = datetime('now', '-200 days') "
+            "WHERE session_id = 'sess-stale'"
+        )
+        conn.commit()
+        conn.close()
+
+        store.set_gc_config(GCConfig(session_index_ttl_days=30))
+        result = store.gc()
+        assert result.session_chunks_deleted >= 1  # type: ignore[union-attr]
+
+        # Verify stale session is gone but fresh one remains.
+        remaining = store.search_sessions("content")
+        ids = [r["session_id"] for r in remaining]
+        assert "sess-stale" not in ids
+        assert "sess-fresh" in ids
+    finally:
+        store.close()
+
+
+def test_store_gc_dry_run_does_not_prune_session_index(tmp_path: Path) -> None:
+    """store.gc(dry_run=True) does not delete session index rows."""
+    import sqlite3
+
+    from tapps_brain.gc import GCConfig
+    from tapps_brain.store import MemoryStore
+
+    store = MemoryStore(tmp_path)
+    try:
+        store.index_session("sess-old", ["old content"])
+        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE session_index SET created_at = datetime('now', '-200 days') "
+            "WHERE session_id = 'sess-old'"
+        )
+        conn.commit()
+        conn.close()
+
+        store.set_gc_config(GCConfig(session_index_ttl_days=30))
+        store.gc(dry_run=True)
+
+        # Session index rows must still be there after a dry run.
+        results = store.search_sessions("old content")
+        assert any(r["session_id"] == "sess-old" for r in results)
+    finally:
+        store.close()
+
+
 def test_index_session_stores_chunks(tmp_path: Path) -> None:
     """index_session stores chunks and they are searchable."""
     chunks = [

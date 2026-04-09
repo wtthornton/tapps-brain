@@ -103,8 +103,6 @@ tools:
     description: Active profile name, layers, scoring config
   - name: profile_switch
     description: Switch to different built-in profile
-  - name: profile_tier_migrate
-    description: Remap stored tiers with dry-run and audit support
   - name: memory_profile_onboarding
     description: Markdown onboarding guide for the active profile (tiers, scoring, recall)
   # Hive (Multi-Agent Sharing)
@@ -137,6 +135,8 @@ tools:
   # Knowledge Graph
   - name: memory_relations
     description: Return all relations for a memory entry key
+  - name: memory_relations_get_batch
+    description: Return relations for multiple memory keys in one call
   - name: memory_find_related
     description: BFS traversal — find entries related within N hops
   - name: memory_query_relations
@@ -178,9 +178,19 @@ tools:
     description: Offline BEIR-style retrieval evaluation
   - name: flywheel_hive_feedback
     description: Aggregate Hive feedback and apply confidence penalties
-  # OpenClaw migration
-  - name: openclaw_migrate
-    description: Migrate OpenClaw workspace memories into tapps-brain
+  # Agent Brain facade (EPIC-057)
+  - name: brain_remember
+    description: Save a memory to the agent's brain with tier and sharing options
+  - name: brain_recall
+    description: Recall memories matching a query from agent, group, and org knowledge
+  - name: brain_forget
+    description: Archive a memory by key (non-destructive delete)
+  - name: brain_learn_success
+    description: Record a successful task outcome and reinforce recalled memories
+  - name: brain_learn_failure
+    description: Record a failed task outcome to avoid repeating mistakes
+  - name: brain_status
+    description: Show agent identity, group memberships, store stats, and Hive connectivity
 resources:
   - uri: memory://stats
     description: Entry count, tier distribution, schema version, package version, profile name, capacity
@@ -302,7 +312,7 @@ Available groups:
 | `admin`      | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
 | `hive`       | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_create`, `agent_list`, `agent_delete` |
 | `federation` | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
-| `graph`      | `memory_relations`, `memory_find_related`, `memory_query_relations`            |
+| `graph`      | `memory_relations`, `memory_relations_get_batch`, `memory_find_related`, `memory_query_relations` |
 
 **Example — coder agent (recall and capture only):**
 

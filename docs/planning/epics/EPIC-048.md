@@ -23,8 +23,8 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 ### STORY-048.1: Session memory (index + FTS + summaries)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
-**Context refs:** `src/tapps_brain/session_index.py`, `src/tapps_brain/session_summary.py`, `src/tapps_brain/cli.py` / `src/tapps_brain/mcp_server.py` (session end), `tests/unit/test_session_index.py`, `tests/unit/test_session_summary.py`, `tests/integration/test_session_index_integration.py`  
+**Status:** done (2026-04-09) | **Effort:** M | **Depends on:** none  
+**Context refs:** `src/tapps_brain/session_index.py`, `src/tapps_brain/session_summary.py`, `src/tapps_brain/gc.py` (`GCConfig.session_index_ttl_days`, `GCResult.session_chunks_deleted`), `src/tapps_brain/store.py` (`gc()` prunes session index), `src/tapps_brain/cli.py` (`maintenance gc-config --session-index-ttl-days`), `tests/unit/test_session_index.py`, `tests/unit/test_session_summary.py`, `tests/integration/test_session_index_integration.py`  
 **Verification:** `pytest tests/unit/test_session_index.py tests/unit/test_session_summary.py tests/integration/test_session_index_integration.py -v --tb=short -m "not benchmark"`
 
 #### Research notes (2026-forward)
@@ -34,15 +34,15 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] **Retention** policy for session index rows aligned with GC.
-- [ ] Token **budget** for `session end` summary generation (deterministic templates already).
+- [x] **Retention** policy for session index rows aligned with GC — `GCConfig.session_index_ttl_days` (default 90); `store.gc()` calls `cleanup_sessions(ttl_days=...)` on live runs; `GCResult.session_chunks_deleted`; `maintenance gc-config --session-index-ttl-days`.
+- [x] Token **budget** for `session end` summary generation — `session_summary_save(max_chars=)` truncates at word boundary and appends `" …"`; `truncated=True` returned when applied.
 
 ---
 
 ### STORY-048.2: Graph-like links (relations)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
-**Context refs:** `src/tapps_brain/relations.py`, `src/tapps_brain/store.py` (`extract_relations` on save), `tests/unit/test_relations.py`, `tests/integration/test_graph_integration.py`  
+**Status:** done (2026-04-09) | **Effort:** M | **Depends on:** none  
+**Context refs:** `src/tapps_brain/relations.py` (`detect_relation_cycles`, `RelationEntry.MAX_EDGES_PER_KEY`), `src/tapps_brain/store.py` (`get_relations_batch`, cycle warning + edge cap in `save()`), `src/tapps_brain/mcp_server.py` (`memory_relations_get_batch`), `tests/unit/test_relations.py`, `tests/integration/test_graph_integration.py`  
 **Verification:** `pytest tests/unit/test_relations.py tests/integration/test_graph_integration.py -v --tb=short -m "not benchmark"`
 
 #### Research notes (2026-forward)
@@ -52,28 +52,28 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] MCP: **relations_get** batch API.
-- [ ] **Cycle** detection and max edge count per key.
+- [x] MCP: `memory_relations_get_batch(keys_json)` batch API — returns `{results: {key: [...]}, total_count: N}`; store `get_relations_batch(keys)`.
+- [x] **Cycle** detection — `detect_relation_cycles()` finds self-loops and direct reversals; warnings logged at save time; `RelationEntry.MAX_EDGES_PER_KEY = 20` caps edges per key.
 
 ---
 
 ### STORY-048.3: Markdown round-trip (import / sync)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
+**Status:** done (2026-04-09) | **Effort:** M | **Depends on:** none  
 **Context refs:** `src/tapps_brain/markdown_import.py`, `src/tapps_brain/markdown_sync.py`, `tests/unit/test_markdown_import.py`, `tests/integration/test_markdown_sync_integration.py`  
 **Verification:** `pytest tests/unit/test_markdown_import.py tests/integration/test_markdown_sync_integration.py -v --tb=short -m "not benchmark"`
 
 #### Implementation themes
 
-- [ ] **Round-trip** test: memory → md → memory (lossless for subset of fields).
-- [ ] **Front matter** schema version.
+- [x] **Round-trip** test: memory → md → memory (lossless for subset of fields).
+- [x] **Front matter** schema version — `MEMORY_MD_SCHEMA_VERSION = 1` embedded as YAML front matter at the top of every exported `MEMORY.md`; parser skips the block on import.
 
 ---
 
 ### STORY-048.4: Evaluation harness (BEIR-style)
 
-**Status:** planned | **Effort:** M | **Depends on:** none  
-**Context refs:** `src/tapps_brain/evaluation.py`, `tests/unit/test_evaluation.py`  
+**Status:** done (2026-04-09) | **Effort:** M | **Depends on:** none  
+**Context refs:** `src/tapps_brain/evaluation.py`, `tests/unit/test_evaluation.py`, `scripts/run_eval_golden.py`, `.github/workflows/ci.yml` (`eval-golden` job)  
 **Verification:** `pytest tests/unit/test_evaluation.py -v --tb=short -m "not benchmark"`; benchmarks optional via `pytest tests/benchmarks/ -m benchmark` when tuning
 
 #### Research notes (2026-forward)
@@ -83,8 +83,8 @@ Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [ ] CI job (optional) running **small** golden set on PR for retrieval regressions.
-- [ ] Export results as **JSON** artifact for dashboards.
+- [x] CI job (`eval-golden`) running **small** lexical golden set on every PR for retrieval regressions — `scripts/run_eval_golden.py`, uploads `eval-report.json` artifact.
+- [x] Export results as **JSON** artifact for dashboards (`actions/upload-artifact@v4`).
 
 ---
 

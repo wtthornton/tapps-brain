@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-09 — issue hygiene sweep: **#66/#69/#72** closed; **#70** (temporal query filtering — relative shorthand `7d/2w/1m`, MCP params, 11 tests) and **#71** (consolidation threshold profile-configurable — `ConsolidationProfileConfig`, `personal-assistant.yaml` 0.65) both shipped and **closed**
+Last updated: 2026-04-09 — **STORY-048.2 shipped** (`memory_relations_get_batch`, `detect_relation_cycles`, `MAX_EDGES_PER_KEY`, SKILL.md synced to 69 tools); **STORY-048.1 shipped** (session GC retention + `max_chars` budget); **STORY-048.4 shipped** (eval CI); issue hygiene: **#66/#69/#70/#71/#72** closed
 Owner: @wtthornton
 
 ## Purpose

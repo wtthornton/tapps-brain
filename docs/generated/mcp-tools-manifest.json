@@ -1,6 +1,6 @@
 {
   "source": "src/tapps_brain/mcp_server.py",
-  "tool_count": 64,
+  "tool_count": 69,
   "resource_count": 8,
   "tools": [
     {
@@ -18,6 +18,30 @@
     {
       "name": "agent_register",
       "description": "Register an agent in the Hive."
+    },
+    {
+      "name": "brain_forget",
+      "description": "Archive a memory by key. The memory is not permanently deleted."
+    },
+    {
+      "name": "brain_learn_failure",
+      "description": "Record a failed task outcome to avoid repeating mistakes."
+    },
+    {
+      "name": "brain_learn_success",
+      "description": "Record a successful task outcome."
+    },
+    {
+      "name": "brain_recall",
+      "description": "Recall memories matching a query."
+    },
+    {
+      "name": "brain_remember",
+      "description": "Save a memory to the agent's brain."
+    },
+    {
+      "name": "brain_status",
+      "description": "Show agent identity, group memberships, store stats, and Hive connectivity."
     },
     {
       "name": "diagnostics_history",
@@ -212,6 +236,10 @@
       "description": "Return all relations associated with a memory entry key."
     },
     {
+      "name": "memory_relations_get_batch",
+      "description": "Return relations for multiple memory keys in one call (STORY-048.2)."
+    },
+    {
       "name": "memory_save",
       "description": "Save or update a memory entry."
     },
@@ -232,20 +260,12 @@
       "description": "Atomically add and/or remove tags on an existing memory entry."
     },
     {
-      "name": "openclaw_migrate",
-      "description": "Migrate memories from an OpenClaw workspace to tapps-brain."
-    },
-    {
       "name": "profile_info",
       "description": "Return the active profile name, layers, and scoring config."
     },
     {
       "name": "profile_switch",
       "description": "Switch to a different built-in memory profile."
-    },
-    {
-      "name": "profile_tier_migrate",
-      "description": "Remap stored memory tiers (GitHub #20)."
     },
     {
       "name": "tapps_brain_health",
@@ -291,7 +311,7 @@
     },
     {
       "uri": "memory://stats",
-      "description": "Store statistics: entry count, tier distribution, schema version."
+      "description": "Store stats: counts, tiers, schema, package/profile, optional profile_seed_version."
     }
   ]
 }

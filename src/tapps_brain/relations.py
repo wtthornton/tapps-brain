@@ -52,6 +52,7 @@ class RelationEntry(BaseModel):
     # -- Constants ----------------------------------------------------------
     MAX_RELATIONS_PER_ENTRY: ClassVar[int] = 5
     MIN_ENTITY_LENGTH: ClassVar[int] = 2
+    MAX_EDGES_PER_KEY: ClassVar[int] = 20
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +301,45 @@ def expand_via_relations(
         expanded_count=len(expanded),
     )
     return expanded
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection (STORY-048.2)
+# ---------------------------------------------------------------------------
+
+
+def detect_relation_cycles(
+    relations: list[RelationEntry],
+) -> list[tuple[str, str, str]]:
+    """Detect self-loop and direct-cycle edges in a set of relations.
+
+    A *self-loop* is a triple where ``subject == object_entity`` (case-insensitive).
+    A *direct cycle* is a pair of triples (A→B, B→A) with the same predicate.
+
+    Args:
+        relations: Relations to inspect.
+
+    Returns:
+        List of ``(subject, predicate, object_entity)`` tuples for each
+        detected cycle.  Empty list when no cycles exist.
+    """
+    cycles: list[tuple[str, str, str]] = []
+    seen_directed: set[tuple[str, str, str]] = set()
+
+    for rel in relations:
+        subj = rel.subject.lower()
+        pred = rel.predicate.lower()
+        obj = rel.object_entity.lower()
+
+        # Self-loop
+        if subj == obj:
+            cycles.append((rel.subject, rel.predicate, rel.object_entity))
+            continue
+
+        # Direct cycle: reverse edge already seen
+        if (obj, pred, subj) in seen_directed:
+            cycles.append((rel.subject, rel.predicate, rel.object_entity))
+        else:
+            seen_directed.add((subj, pred, obj))
+
+    return cycles

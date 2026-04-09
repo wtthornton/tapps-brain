@@ -1495,6 +1495,13 @@ def maintenance_gc_config(
             "--contradicted-threshold", help="Confidence threshold for contradicted archival."
         ),
     ] = None,
+    set_session_index_ttl: Annotated[
+        int | None,
+        typer.Option(
+            "--session-index-ttl-days",
+            help="Days before session index (FTS5) rows are pruned during gc().",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Show or update garbage collection configuration."""
@@ -1504,8 +1511,14 @@ def maintenance_gc_config(
     try:
         current: GCConfig = store.get_gc_config()
 
+        _any_set = (
+            set_floor is not None
+            or set_session is not None
+            or set_threshold is not None
+            or set_session_index_ttl is not None
+        )
         # If any --set flags given, update and save back to store
-        if set_floor is not None or set_session is not None or set_threshold is not None:
+        if _any_set:
             new_cfg = GCConfig(
                 floor_retention_days=(
                     set_floor if set_floor is not None else current.floor_retention_days
@@ -1515,6 +1528,11 @@ def maintenance_gc_config(
                 ),
                 contradicted_threshold=(
                     set_threshold if set_threshold is not None else current.contradicted_threshold
+                ),
+                session_index_ttl_days=(
+                    set_session_index_ttl
+                    if set_session_index_ttl is not None
+                    else current.session_index_ttl_days
                 ),
             )
             store.set_gc_config(new_cfg)
@@ -1526,10 +1544,11 @@ def maintenance_gc_config(
             _output(data, as_json=True)
         else:
             cfg = store.get_gc_config()
-            typer.echo(f"floor_retention_days:   {cfg.floor_retention_days}")
-            typer.echo(f"session_expiry_days:    {cfg.session_expiry_days}")
-            typer.echo(f"contradicted_threshold: {cfg.contradicted_threshold}")
-            if set_floor is not None or set_session is not None or set_threshold is not None:
+            typer.echo(f"floor_retention_days:    {cfg.floor_retention_days}")
+            typer.echo(f"session_expiry_days:     {cfg.session_expiry_days}")
+            typer.echo(f"contradicted_threshold:  {cfg.contradicted_threshold}")
+            typer.echo(f"session_index_ttl_days:  {cfg.session_index_ttl_days}")
+            if _any_set:
                 typer.echo("Configuration updated.")
     finally:
         store.close()

@@ -69,7 +69,7 @@
 
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
-| **MCP server** | **`mcp`** SDK (`[mcp]` extra) | `mcp_server.py` — tool/resource/prompt surface; manifest: `docs/generated/mcp-tools-manifest.json` (64 tools, 8 resources as of generation). |
+| **MCP server** | **`mcp`** SDK (`[mcp]` extra) | `mcp_server.py` — tool/resource/prompt surface; manifest: `docs/generated/mcp-tools-manifest.json` (69 tools, 8 resources as of 2026-04-09). |
 | **CLI** | **Typer** (`[cli]` extra) | `cli.py` — `tapps-brain` entry point; store helper attaches embedding provider + `HiveStore` for typical commands. |
 | **Portable interchange** | **YAML** + **JSON** | Agent registry YAML; relay JSON (`memory_relay.py`); profile YAML under `profiles/`. |
 

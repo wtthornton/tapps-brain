@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **STORY-048.4 — Eval CI golden set:** `scripts/run_eval_golden.py` runs the lexical golden retrieval suite and writes `eval-report.json` (MRR/nDCG/Recall@k); new `eval-golden` CI job in `.github/workflows/ci.yml` executes on every PR and uploads the report as a build artifact via `actions/upload-artifact@v4`.
+- **STORY-048.1 — Session index retention policy:** `GCConfig.session_index_ttl_days` (default 90) added; `store.gc()` now prunes session FTS5 rows aligned with memory GC and returns `GCResult.session_chunks_deleted`; `maintenance gc-config --session-index-ttl-days` CLI flag exposed.
+- **STORY-048.1 — Session summary token budget:** `session_summary_save(max_chars=)` truncates the summary at the last word boundary before the limit and appends `" …"`; returns `truncated=True` when applied.
+- **STORY-048.2 — `memory_relations_get_batch` MCP tool:** Batch relations lookup — accepts a JSON array of keys, returns `{results: {key: [...]}, total_count: N}`; `store.get_relations_batch(keys)` method added.
+- **STORY-048.2 — Cycle detection:** `detect_relation_cycles(relations)` in `relations.py` identifies self-loops and direct-reversal pairs; structured warning logged at save time.
+- **STORY-048.2 — Max edges per key:** `RelationEntry.MAX_EDGES_PER_KEY = 20`; `store.save()` caps new relations per key to this limit.
+- **SKILL.md sync:** MCP surface updated to 69 tools — added `memory_relations_get_batch` and six `brain_*` tools (EPIC-057 gap); removed two stale entries (`openclaw_migrate`, `profile_tier_migrate`).
+
 ## v3.1.0 (2026-04-08)
 
 ### Changed
