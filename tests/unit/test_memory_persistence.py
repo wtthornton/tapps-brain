@@ -277,30 +277,60 @@ class TestSchemaCreation:
         row = p._conn.execute("PRAGMA table_info(memories)").fetchall()
         columns = [r[1] for r in row]
         for col in (
-            "key", "value", "tier", "confidence", "source", "source_agent",
-            "scope", "tags", "created_at", "updated_at", "last_accessed",
-            "access_count", "branch", "last_reinforced", "reinforce_count",
-            "contradicted", "contradiction_reason", "seeded_from",
-            "embedding", "valid_at", "invalid_at", "superseded_by",
-            "agent_scope", "integrity_hash",
-            "positive_feedback_count", "negative_feedback_count",
-            "source_session_id", "source_channel", "source_message_id", "triggered_by",
-            "valid_from", "valid_until", "stability", "difficulty",
-            "useful_access_count", "total_access_count",
-            "memory_group", "embedding_model_id",
+            "key",
+            "value",
+            "tier",
+            "confidence",
+            "source",
+            "source_agent",
+            "scope",
+            "tags",
+            "created_at",
+            "updated_at",
+            "last_accessed",
+            "access_count",
+            "branch",
+            "last_reinforced",
+            "reinforce_count",
+            "contradicted",
+            "contradiction_reason",
+            "seeded_from",
+            "embedding",
+            "valid_at",
+            "invalid_at",
+            "superseded_by",
+            "agent_scope",
+            "integrity_hash",
+            "positive_feedback_count",
+            "negative_feedback_count",
+            "source_session_id",
+            "source_channel",
+            "source_message_id",
+            "triggered_by",
+            "valid_from",
+            "valid_until",
+            "stability",
+            "difficulty",
+            "useful_access_count",
+            "total_access_count",
+            "memory_group",
+            "embedding_model_id",
         ):
             assert col in columns, f"Missing column: {col}"
 
         # Verify all tables exist
         tables = [
             r[0]
-            for r in p._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in p._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
         for table in (
-            "memories", "archived_memories", "session_index", "relations",
-            "feedback_events", "diagnostics_history", "flywheel_meta",
+            "memories",
+            "archived_memories",
+            "session_index",
+            "relations",
+            "feedback_events",
+            "diagnostics_history",
+            "flywheel_meta",
         ):
             assert table in tables, f"Missing table: {table}"
 

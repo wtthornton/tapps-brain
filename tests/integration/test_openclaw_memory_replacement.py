@@ -13,7 +13,7 @@ Story: STORY-026.6 from EPIC-026
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -48,8 +48,6 @@ def workspace(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Helper builders
 # ---------------------------------------------------------------------------
-
-
 
 
 # ---------------------------------------------------------------------------

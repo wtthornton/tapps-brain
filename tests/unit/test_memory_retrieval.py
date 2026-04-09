@@ -388,20 +388,32 @@ class TestBM25Integration:
         """
         entries = [
             _make_entry(
-                "python-setup", "python setup guide",
-                confidence=0.8, updated_at=_RECENT, access_count=5,
+                "python-setup",
+                "python setup guide",
+                confidence=0.8,
+                updated_at=_RECENT,
+                access_count=5,
             ),
             _make_entry(
-                "python-web", "python web framework",
-                confidence=0.8, updated_at=_RECENT, access_count=5,
+                "python-web",
+                "python web framework",
+                confidence=0.8,
+                updated_at=_RECENT,
+                access_count=5,
             ),
             _make_entry(
-                "python-data", "python data science",
-                confidence=0.8, updated_at=_RECENT, access_count=5,
+                "python-data",
+                "python data science",
+                confidence=0.8,
+                updated_at=_RECENT,
+                access_count=5,
             ),
             _make_entry(
-                "rust-setup", "rust setup guide",
-                confidence=0.8, updated_at=_RECENT, access_count=5,
+                "rust-setup",
+                "rust setup guide",
+                confidence=0.8,
+                updated_at=_RECENT,
+                access_count=5,
             ),
         ]
         retriever = MemoryRetriever()

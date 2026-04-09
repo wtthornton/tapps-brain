@@ -59,7 +59,6 @@ _DEFAULT_RESULTS = 10
 _MIN_CONFIDENCE_FLOOR = 0.1
 
 
-
 class ScoredMemory(BaseModel):
     """A memory entry with retrieval scoring metadata."""
 
@@ -655,8 +654,12 @@ class MemoryRetriever:
         def run_bm25() -> None:
             nonlocal bm25_keys
             candidates = self._get_candidates(
-                query, store, memory_group=memory_group,
-                since=since, until=until, time_field=time_field,
+                query,
+                store,
+                memory_group=memory_group,
+                since=since,
+                until=until,
+                time_field=time_field,
             )
             # Take top top_k_lexical by score
             sorted_cands = sorted(

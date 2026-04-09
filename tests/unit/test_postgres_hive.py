@@ -5,10 +5,7 @@ EPIC-055 — verifies SQL generation and method delegation without a real PG ins
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 
 def _make_backend() -> tuple:
@@ -79,12 +76,43 @@ class TestPostgresHiveBackendSave:
         backend, _, _, mock_cursor = _make_backend()
 
         # Existing entry with higher confidence.
-        mock_cursor.fetchone.return_value = ("universal", "k", "v", "agent-2", "pattern", 0.9, "agent", "[]", None, None, None, None, "supersede", None, "2025-01-01", "2025-01-01", None)
+        mock_cursor.fetchone.return_value = (
+            "universal",
+            "k",
+            "v",
+            "agent-2",
+            "pattern",
+            0.9,
+            "agent",
+            "[]",
+            None,
+            None,
+            None,
+            None,
+            "supersede",
+            None,
+            "2025-01-01",
+            "2025-01-01",
+            None,
+        )
         mock_cursor.description = [
-            ("namespace",), ("key",), ("value",), ("source_agent",), ("tier",),
-            ("confidence",), ("source",), ("tags",), ("valid_at",), ("invalid_at",),
-            ("superseded_by",), ("memory_group",), ("conflict_policy",), ("embedding",),
-            ("created_at",), ("updated_at",), ("search_vector",),
+            ("namespace",),
+            ("key",),
+            ("value",),
+            ("source_agent",),
+            ("tier",),
+            ("confidence",),
+            ("source",),
+            ("tags",),
+            ("valid_at",),
+            ("invalid_at",),
+            ("superseded_by",),
+            ("memory_group",),
+            ("conflict_policy",),
+            ("embedding",),
+            ("created_at",),
+            ("updated_at",),
+            ("search_vector",),
         ]
 
         result = backend.save(
@@ -102,15 +130,42 @@ class TestPostgresHiveBackendGet:
         backend, _, _, mock_cursor = _make_backend()
 
         mock_cursor.fetchone.return_value = (
-            "universal", "my-key", "my-value", "agent-1", "pattern",
-            0.6, "agent", "[]", None, None, None, None, "supersede",
-            None, "2025-01-01", "2025-01-01", None,
+            "universal",
+            "my-key",
+            "my-value",
+            "agent-1",
+            "pattern",
+            0.6,
+            "agent",
+            "[]",
+            None,
+            None,
+            None,
+            None,
+            "supersede",
+            None,
+            "2025-01-01",
+            "2025-01-01",
+            None,
         )
         mock_cursor.description = [
-            ("namespace",), ("key",), ("value",), ("source_agent",), ("tier",),
-            ("confidence",), ("source",), ("tags",), ("valid_at",), ("invalid_at",),
-            ("superseded_by",), ("memory_group",), ("conflict_policy",), ("embedding",),
-            ("created_at",), ("updated_at",), ("search_vector",),
+            ("namespace",),
+            ("key",),
+            ("value",),
+            ("source_agent",),
+            ("tier",),
+            ("confidence",),
+            ("source",),
+            ("tags",),
+            ("valid_at",),
+            ("invalid_at",),
+            ("superseded_by",),
+            ("memory_group",),
+            ("conflict_policy",),
+            ("embedding",),
+            ("created_at",),
+            ("updated_at",),
+            ("search_vector",),
         ]
 
         result = backend.get("my-key", "universal")
@@ -288,8 +343,14 @@ class TestPostgresAgentRegistry:
             ("a1", "Agent 1", "repo-brain", "[]", None, "[]", "2025-01-01", "2025-01-01"),
         ]
         mock_cursor.description = [
-            ("id",), ("name",), ("profile",), ("skills",), ("project_root",),
-            ("groups",), ("registered_at",), ("last_seen_at",),
+            ("id",),
+            ("name",),
+            ("profile",),
+            ("skills",),
+            ("project_root",),
+            ("groups",),
+            ("registered_at",),
+            ("last_seen_at",),
         ]
 
         result = registry.list_agents()

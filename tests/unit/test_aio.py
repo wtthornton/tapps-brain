@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -201,7 +201,7 @@ class TestAsyncGetattr:
     @pytest.mark.asyncio
     async def test_getattr_private_raises(self, astore: AsyncMemoryStore) -> None:
         with pytest.raises(AttributeError):
-            _ = astore._nonexistent  # noqa: B018
+            _ = astore._nonexistent
 
     @pytest.mark.asyncio
     async def test_getattr_update_tags(self, astore: AsyncMemoryStore) -> None:

@@ -89,11 +89,13 @@ class TestToolsDiscovery:
                 "profile_info",
                 "memory_profile_onboarding",
                 "profile_switch",
-                "profile_tier_migrate",
                 # Hive
                 "hive_status",
                 "hive_search",
                 "hive_propagate",
+                "hive_push",
+                "hive_wait_write",
+                "hive_write_revision",
                 # Agent
                 "agent_register",
                 "agent_create",
@@ -109,6 +111,34 @@ class TestToolsDiscovery:
                 "memory_list_tags",
                 "memory_update_tags",
                 "memory_entries_by_tag",
+                # Groups
+                "memory_list_groups",
+                # Brain (EPIC-057)
+                "brain_remember",
+                "brain_recall",
+                "brain_forget",
+                "brain_learn_success",
+                "brain_learn_failure",
+                "brain_status",
+                # Diagnostics
+                "diagnostics_report",
+                "diagnostics_history",
+                # Feedback
+                "feedback_record",
+                "feedback_query",
+                "feedback_rate",
+                "feedback_issue",
+                "feedback_gap",
+                # Flywheel
+                "flywheel_process",
+                "flywheel_report",
+                "flywheel_evaluate",
+                "flywheel_gaps",
+                "flywheel_hive_feedback",
+                # Health & relay
+                "tapps_brain_health",
+                "tapps_brain_relay_export",
+                "tapps_brain_session_end",
             }
             assert expected.issubset(tool_names)
             assert len(tool_names) >= len(expected), (

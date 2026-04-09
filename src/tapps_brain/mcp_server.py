@@ -225,9 +225,7 @@ def create_server(  # noqa: PLR0915
         return json.dumps({"learned": True, "key": key})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_learn_failure(
-        description: str, task_id: str = "", error: str = ""
-    ) -> str:
+    def brain_learn_failure(description: str, task_id: str = "", error: str = "") -> str:
         """Record a failed task outcome to avoid repeating mistakes."""
         from tapps_brain.agent_brain import _content_key
 
@@ -1727,7 +1725,6 @@ def create_server(  # noqa: PLR0915
             logger.exception("profile_switch_error", profile=name)
             return json.dumps({"error": "profile_switch_error", "message": str(exc)})
 
-
     # ------------------------------------------------------------------
     # Hive tools (EPIC-011)
     # ------------------------------------------------------------------
@@ -2388,7 +2385,6 @@ def create_server(  # noqa: PLR0915
                 "count": len(entries),
             }
         )
-
 
     # ------------------------------------------------------------------
     # Session end tool (Issue #17 — episodic memory capture)

@@ -6,8 +6,7 @@ No real PostgreSQL needed; filesystem and version logic are tested directly.
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -152,13 +151,17 @@ class TestApplyMigrationsRequiresPsycopg:
     def test_apply_hive_raises_import_error(self) -> None:
         from tapps_brain.postgres_migrations import apply_hive_migrations
 
-        with patch.dict("sys.modules", {"psycopg": None}):
-            with pytest.raises(ImportError, match="psycopg"):
-                apply_hive_migrations("postgres://localhost/test")
+        with (
+            patch.dict("sys.modules", {"psycopg": None}),
+            pytest.raises(ImportError, match="psycopg"),
+        ):
+            apply_hive_migrations("postgres://localhost/test")
 
     def test_get_status_raises_import_error(self) -> None:
         from tapps_brain.postgres_migrations import get_hive_schema_status
 
-        with patch.dict("sys.modules", {"psycopg": None}):
-            with pytest.raises(ImportError, match="psycopg"):
-                get_hive_schema_status("postgres://localhost/test")
+        with (
+            patch.dict("sys.modules", {"psycopg": None}),
+            pytest.raises(ImportError, match="psycopg"),
+        ):
+            get_hive_schema_status("postgres://localhost/test")

@@ -19,7 +19,6 @@ from tapps_brain.backends import SqliteHiveBackend
 from tapps_brain.federation import FederatedStore
 from tapps_brain.hive import AgentRegistry, HiveStore
 
-
 # ---------------------------------------------------------------------------
 # runtime_checkable sanity
 # ---------------------------------------------------------------------------

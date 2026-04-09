@@ -387,6 +387,7 @@ class HiveConfig(BaseModel):
 # Main profile model
 # ---------------------------------------------------------------------------
 
+
 class ConsolidationProfileConfig(BaseModel):
     """Profile-driven auto-consolidation defaults (Issue #71)."""
 

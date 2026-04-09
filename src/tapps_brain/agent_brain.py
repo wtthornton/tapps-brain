@@ -12,15 +12,19 @@ EPIC-057 — Unified Agent API.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from tapps_brain.backends import create_hive_backend
 from tapps_brain.store import MemoryStore
+
+if TYPE_CHECKING:
+    from tapps_brain._protocols import HiveBackend
 
 logger = structlog.get_logger(__name__)
 
@@ -41,9 +45,7 @@ def _content_key(content: str) -> str:
     h = hashlib.sha256(content.encode()).hexdigest()[:16]
     # Create a slug from first few words
     words = content.lower().split()[:4]
-    slug = "-".join(
-        w[:12] for w in words if w.isalnum() or w.replace("-", "").isalnum()
-    )[:60]
+    slug = "-".join(w[:12] for w in words if w.isalnum() or w.replace("-", "").isalnum())[:60]
     return f"{slug}-{h}" if slug else h
 
 
@@ -72,9 +74,7 @@ class AgentBrain:
     ) -> None:
         # Resolve from env vars if not provided
         self._agent_id = agent_id or os.environ.get("TAPPS_BRAIN_AGENT_ID") or None
-        _project_dir = (
-            project_dir or os.environ.get("TAPPS_BRAIN_PROJECT_DIR") or str(Path.cwd())
-        )
+        _project_dir = project_dir or os.environ.get("TAPPS_BRAIN_PROJECT_DIR") or str(Path.cwd())
         self._project_dir = Path(_project_dir).resolve()
         _hive_dsn = hive_dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
         _groups = groups or _parse_csv_env("TAPPS_BRAIN_GROUPS")
@@ -117,7 +117,7 @@ class AgentBrain:
         return self._store
 
     @property
-    def hive(self) -> Any:
+    def hive(self) -> HiveBackend | None:
         """Return the ``HiveBackend``, or ``None``."""
         return self._hive
 
@@ -136,7 +136,7 @@ class AgentBrain:
     def __enter__(self) -> AgentBrain:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -173,9 +173,7 @@ class AgentBrain:
         elif isinstance(share_with, list):
             # Save to each specified group
             for group in share_with:
-                self._store.save(
-                    key=key, value=fact, tier=tier, agent_scope=f"group:{group}"
-                )
+                self._store.save(key=key, value=fact, tier=tier, agent_scope=f"group:{group}")
             return key
 
         self._store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
@@ -222,9 +220,7 @@ class AgentBrain:
 
     # --- Learning methods (STORY-057.3) ---------------------------------------
 
-    def set_task_context(
-        self, task_id: str, session_id: str | None = None
-    ) -> None:
+    def set_task_context(self, task_id: str, session_id: str | None = None) -> None:
         """Set the current task context for subsequent learn calls."""
         self._task_id = task_id
         self._session_id = session_id
@@ -251,10 +247,8 @@ class AgentBrain:
         for recalled_key in self._last_recalled_keys:
             entry = self._store.get(recalled_key)
             if entry is not None:
-                try:
+                with contextlib.suppress(KeyError):
                     self._store.reinforce(recalled_key, confidence_boost=boost)
-                except KeyError:
-                    pass
 
     def learn_from_failure(
         self,

@@ -10,7 +10,10 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
+
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
 
 import structlog
 
@@ -149,7 +152,7 @@ def _main_callback(
     ] = None,
 ) -> None:
     """Global options applied before any sub-command."""
-    global _cli_agent_id  # noqa: PLW0603
+    global _cli_agent_id
     _cli_agent_id = agent_id
 
 
@@ -394,7 +397,7 @@ def store_search(
 
 
 @memory_app.command("save")
-def memory_save_cmd(  # noqa: PLR0915
+def memory_save_cmd(
     key: Annotated[str, typer.Argument(help="Memory key (slug; same rules as MCP memory_save).")],
     value: Annotated[str, typer.Argument(help="Memory body text.")],
     tier: Annotated[str, typer.Option(help="Tier or active profile layer name.")] = "pattern",
@@ -1664,8 +1667,6 @@ def _require_passphrase(value: str | None) -> str:
     return str(prompted)
 
 
-
-
 @maintenance_app.command("verify-integrity")
 def maintenance_verify_integrity(
     project_dir: ProjectDir = None,
@@ -1703,12 +1704,8 @@ def maintenance_verify_integrity(
 
 @maintenance_app.command("split-by-agent")
 def maintenance_split_by_agent(
-    project_dir: Annotated[
-        str, typer.Argument(help="Project root directory.")
-    ] = ".",
-    store_dir: Annotated[
-        str, typer.Option(help="Store directory name.")
-    ] = ".tapps-brain",
+    project_dir: Annotated[str, typer.Argument(help="Project root directory.")] = ".",
+    store_dir: Annotated[str, typer.Option(help="Store directory name.")] = ".tapps-brain",
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Report what would happen without writing.")
     ] = False,
@@ -1725,7 +1722,7 @@ def maintenance_split_by_agent(
     all_entries = shared.load_all()
 
     # Group by source_agent
-    by_agent: dict[str, list] = {}
+    by_agent: dict[str, list[MemoryEntry]] = {}
     for entry in all_entries:
         agent = (
             entry.source_agent
@@ -1740,8 +1737,7 @@ def maintenance_split_by_agent(
 
     # Report
     typer.echo(
-        f"Found {sum(len(v) for v in by_agent.values())} memories "
-        f"across {len(by_agent)} agents:"
+        f"Found {sum(len(v) for v in by_agent.values())} memories across {len(by_agent)} agents:"
     )
     for agent_name, entries in sorted(by_agent.items()):
         typer.echo(f"  {agent_name}: {len(entries)} memories")
@@ -1801,12 +1797,11 @@ def maintenance_migrate_hive(
     }
     if as_json:
         _output(data, as_json=True)
+    elif not applied:
+        typer.echo("Hive schema is up-to-date.")
     else:
-        if not applied:
-            typer.echo("Hive schema is up-to-date.")
-        else:
-            action = "Would apply" if dry_run else "Applied"
-            typer.echo(f"{action} migrations: {applied}")
+        action = "Would apply" if dry_run else "Applied"
+        typer.echo(f"{action} migrations: {applied}")
 
 
 @maintenance_app.command("hive-schema-status")
@@ -1825,9 +1820,7 @@ def maintenance_hive_schema_status(
     data = {
         "current_version": status.current_version,
         "applied_versions": status.applied_versions,
-        "pending_migrations": [
-            {"version": v, "filename": f} for v, f in status.pending_migrations
-        ],
+        "pending_migrations": [{"version": v, "filename": f} for v, f in status.pending_migrations],
     }
     if as_json:
         _output(data, as_json=True)
@@ -1850,7 +1843,7 @@ def maintenance_hive_schema_status(
 def maintenance_backup_hive(
     output: Annotated[str | None, typer.Option(help="Output file path.")] = None,
     dsn: Annotated[str | None, typer.Option(help="Hive Postgres DSN.")] = None,
-    format: Annotated[str, typer.Option(help="Backup format: sql or custom.")] = "sql",
+    format: Annotated[str, typer.Option(help="Backup format: sql or custom.")] = "sql",  # noqa: A002
 ) -> None:
     """Backup Hive Postgres data using pg_dump."""
     import os
@@ -1874,15 +1867,15 @@ def maintenance_backup_hive(
         typer.echo(f"Backup written to {output}")
     except subprocess.CalledProcessError as e:
         typer.echo(f"Error: {e.stderr}", err=True)
-        raise typer.Exit(1)
-    except FileNotFoundError:
+        raise typer.Exit(1) from e
+    except FileNotFoundError as e:
         typer.echo("Error: pg_dump not found. Install PostgreSQL client tools.", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @maintenance_app.command("restore-hive")
 def maintenance_restore_hive(
-    input: Annotated[str, typer.Argument(help="Backup file to restore.")],
+    input: Annotated[str, typer.Argument(help="Backup file to restore.")],  # noqa: A002
     dsn: Annotated[str | None, typer.Option(help="Hive Postgres DSN.")] = None,
 ) -> None:
     """Restore Hive Postgres data from a backup."""
@@ -1905,7 +1898,7 @@ def maintenance_restore_hive(
         typer.echo(f"Restored from {input}")
     except subprocess.CalledProcessError as e:
         typer.echo(f"Error: {e.stderr}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @store_app.command("metrics")
@@ -2028,11 +2021,10 @@ def cli_brain_recall(
             )
         if as_json:
             _output(results, as_json=True)
+        elif not results:
+            typer.echo("  (no results)")
         else:
-            if not results:
-                typer.echo("  (no results)")
-            else:
-                _print_table(results)
+            _print_table(results)
     finally:
         store.close()
 
@@ -2188,8 +2180,6 @@ def profile_set(
     profile_path.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
 
     typer.echo(f"Profile set to '{profile.name}' at {profile_path}")
-
-
 
 
 @profile_app.command("onboard")
@@ -2735,8 +2725,6 @@ def agent_delete(
 # ===================================================================
 # OPENCLAW COMMANDS
 # ===================================================================
-
-
 
 
 @openclaw_app.command("init")

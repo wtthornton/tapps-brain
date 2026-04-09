@@ -10,6 +10,13 @@ import pytest
 
 pytestmark = pytest.mark.requires_cli
 
+
+def _extract_json(output: str) -> dict[str, object]:
+    """Extract JSON from CLI output, skipping any warning lines."""
+    json_start = output.find("{")
+    return json.loads(output[json_start:])  # type: ignore[no-any-return]
+
+
 from typer.testing import CliRunner
 
 from tapps_brain.cli import app
@@ -129,7 +136,7 @@ class TestSessionEndCLI:
             ["session", "end", "JSON test", "--project-dir", str(tmp_path), "--json"],
         )
         assert result.exit_code == 0, result.output
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["status"] == "saved"
         assert "key" in data
 
@@ -150,7 +157,7 @@ class TestSessionEndCLI:
             ],
         )
         assert result.exit_code == 0, result.output
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert "deploy" in data["tags"]
         assert "prod" in data["tags"]
 

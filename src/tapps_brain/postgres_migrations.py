@@ -10,7 +10,6 @@ import importlib.resources
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import structlog
 
@@ -84,7 +83,7 @@ def _get_schema_status(
 ) -> SchemaStatus:
     """Read current version from *version_table* and compute pending migrations."""
     try:
-        import psycopg
+        import psycopg  # type: ignore[import-not-found]
     except ImportError:
         raise ImportError(
             "psycopg is required for PostgreSQL migrations.\n"
@@ -93,28 +92,22 @@ def _get_schema_status(
 
     status = SchemaStatus()
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            # Check if the version table exists.
-            cur.execute(
-                "SELECT EXISTS ("
-                "  SELECT FROM information_schema.tables "
-                "  WHERE table_name = %s"
-                ")",
-                (version_table,),
-            )
-            exists = cur.fetchone()[0]
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        # Check if the version table exists.
+        cur.execute(
+            "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",
+            (version_table,),
+        )
+        exists = cur.fetchone()[0]
 
-            if exists:
-                cur.execute(f"SELECT version FROM {version_table} ORDER BY version")  # noqa: S608
-                status.applied_versions = [row[0] for row in cur.fetchall()]
-                if status.applied_versions:
-                    status.current_version = max(status.applied_versions)
+        if exists:
+            cur.execute(f"SELECT version FROM {version_table} ORDER BY version")
+            status.applied_versions = [row[0] for row in cur.fetchall()]
+            if status.applied_versions:
+                status.current_version = max(status.applied_versions)
 
     applied_set = set(status.applied_versions)
-    status.pending_migrations = [
-        (v, fname) for v, fname, _ in migrations if v not in applied_set
-    ]
+    status.pending_migrations = [(v, fname) for v, fname, _ in migrations if v not in applied_set]
     return status
 
 
@@ -153,55 +146,51 @@ def _apply_migrations(
 
     applied: list[int] = []
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            # Check if version table exists to determine already-applied versions.
-            cur.execute(
-                "SELECT EXISTS ("
-                "  SELECT FROM information_schema.tables "
-                "  WHERE table_name = %s"
-                ")",
-                (version_table,),
-            )
-            table_exists = cur.fetchone()[0]
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        # Check if version table exists to determine already-applied versions.
+        cur.execute(
+            "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",
+            (version_table,),
+        )
+        table_exists = cur.fetchone()[0]
 
-            applied_set: set[int] = set()
-            if table_exists:
-                cur.execute(f"SELECT version FROM {version_table}")  # noqa: S608
-                applied_set = {row[0] for row in cur.fetchall()}
+        applied_set: set[int] = set()
+        if table_exists:
+            cur.execute(f"SELECT version FROM {version_table}")
+            applied_set = {row[0] for row in cur.fetchall()}
 
-            pending = [(v, fname, sql) for v, fname, sql in migrations if v not in applied_set]
+        pending = [(v, fname, sql) for v, fname, sql in migrations if v not in applied_set]
 
-            if not pending:
-                logger.info("postgres.migrations.up_to_date", version_table=version_table)
-                return applied
+        if not pending:
+            logger.info("postgres.migrations.up_to_date", version_table=version_table)
+            return applied
 
-            for version, fname, sql in pending:
-                if dry_run:
-                    logger.info(
-                        "postgres.migrations.would_apply",
-                        version=version,
-                        filename=fname,
-                    )
-                    applied.append(version)
-                    continue
-
+        for version, fname, sql in pending:
+            if dry_run:
                 logger.info(
-                    "postgres.migrations.applying",
+                    "postgres.migrations.would_apply",
                     version=version,
                     filename=fname,
                 )
-                # Execute the migration SQL.
-                # Each migration file is expected to be idempotent (IF NOT EXISTS, etc.)
-                # and to insert its own version row.
-                conn.execute(sql.encode())
-                conn.commit()
                 applied.append(version)
-                logger.info(
-                    "postgres.migrations.applied",
-                    version=version,
-                    filename=fname,
-                )
+                continue
+
+            logger.info(
+                "postgres.migrations.applying",
+                version=version,
+                filename=fname,
+            )
+            # Execute the migration SQL.
+            # Each migration file is expected to be idempotent (IF NOT EXISTS, etc.)
+            # and to insert its own version row.
+            conn.execute(sql.encode())
+            conn.commit()
+            applied.append(version)
+            logger.info(
+                "postgres.migrations.applied",
+                version=version,
+                filename=fname,
+            )
 
     return applied
 

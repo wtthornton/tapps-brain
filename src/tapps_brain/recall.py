@@ -33,8 +33,8 @@ from tapps_brain.models import (
 from tapps_brain.recall_diagnostics import RECALL_EMPTY_POST_FILTER
 
 if TYPE_CHECKING:
+    from tapps_brain._protocols import HiveBackend
     from tapps_brain.decay import DecayConfig
-    from tapps_brain.hive import HiveStore
     from tapps_brain.retrieval import MemoryRetriever
     from tapps_brain.store import MemoryStore
 
@@ -88,7 +88,7 @@ class RecallOrchestrator:
         retriever: MemoryRetriever | None = None,
         config: RecallConfig | None = None,
         decay_config: DecayConfig | None = None,
-        hive_store: HiveStore | None = None,
+        hive_store: HiveBackend | None = None,
         hive_recall_weight: float = 0.8,
         hive_agent_profile: str = "repo-brain",
         hive_agent_id: str = "unknown",

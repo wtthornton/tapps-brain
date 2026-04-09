@@ -16,8 +16,8 @@ from tapps_brain.sqlite_vec_index import (
     delete_vec_key,
     ensure_memory_vec_table,
     knn_search,
-    maybe_backfill_if_empty,
     load_extension,
+    maybe_backfill_if_empty,
     upsert_vec_row,
     vec_row_count,
 )

@@ -11,6 +11,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _extract_json(output: str) -> dict[str, object]:
+    """Extract JSON from CLI output, skipping any warning lines."""
+    json_start = output.find("{")
+    return json.loads(output[json_start:])  # type: ignore[no-any-return]
+
+
 # ---------------------------------------------------------------------------
 # GCConfig dataclass
 # ---------------------------------------------------------------------------
@@ -220,7 +226,7 @@ class TestMaintenanceGcConfigCLI:
             app, ["maintenance", "gc-config", "--project-dir", str(tmp_path), "--json"]
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["floor_retention_days"] == 30
         assert data["session_expiry_days"] == 7
 
@@ -243,7 +249,7 @@ class TestMaintenanceGcConfigCLI:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["floor_retention_days"] == 60
 
     def test_gc_config_set_multiple_values(self, tmp_path: Path) -> None:
@@ -267,7 +273,7 @@ class TestMaintenanceGcConfigCLI:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["session_expiry_days"] == 14
         assert data["contradicted_threshold"] == pytest.approx(0.1)
         assert data["floor_retention_days"] == 30  # unchanged

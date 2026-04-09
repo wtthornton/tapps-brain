@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -146,7 +144,8 @@ class TestExpertAutoPublish:
         hive_save_calls = hive.save.call_args_list
         # Find the expert auto-publish call (namespace="universal" with expert tags)
         expert_calls = [
-            c for c in hive_save_calls
+            c
+            for c in hive_save_calls
             if c.kwargs.get("namespace") == "universal"
             and any("expert:security" in t for t in (c.kwargs.get("tags") or []))
         ]
@@ -169,7 +168,8 @@ class TestExpertAutoPublish:
             agent_scope="private",
         )
         expert_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace") == "universal"
             and any("expert:performance" in t for t in (c.kwargs.get("tags") or []))
         ]
@@ -191,7 +191,8 @@ class TestExpertAutoPublish:
         )
         # No expert auto-publish calls for context tier
         expert_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace") == "universal"
             and any("expert:" in t for t in (c.kwargs.get("tags") or []))
         ]
@@ -213,7 +214,8 @@ class TestExpertAutoPublish:
             auto_publish=False,
         )
         expert_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace") == "universal"
             and any("expert:" in t for t in (c.kwargs.get("tags") or []))
         ]
@@ -236,7 +238,8 @@ class TestExpertAutoPublish:
             agent_scope="group:dev-team",
         )
         expert_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace") == "universal"
             and any("expert:" in t for t in (c.kwargs.get("tags") or []))
         ]
@@ -270,7 +273,8 @@ class TestGroupScopedSave:
         )
         # Should propagate to both group namespaces
         group_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace", "").startswith("group:")
         ]
         namespaces = {c.kwargs["namespace"] for c in group_calls}
@@ -294,7 +298,8 @@ class TestGroupScopedSave:
             agent_scope="group:dev-pipeline",
         )
         group_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if c.kwargs.get("namespace", "").startswith("group:")
         ]
         assert len(group_calls) == 1
@@ -396,7 +401,8 @@ class TestBackwardCompat:
         )
         # No expert tags in any hive save call
         expert_calls = [
-            c for c in hive.save.call_args_list
+            c
+            for c in hive.save.call_args_list
             if any("expert:" in t for t in (c.kwargs.get("tags") or []))
         ]
         assert len(expert_calls) == 0

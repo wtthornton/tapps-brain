@@ -88,7 +88,7 @@ class FlashRankReranker:
         self._model_name = model
         self._ranker: Any = None  # lazy init — avoid model load at factory time
 
-    def _get_ranker(self) -> Any:
+    def _get_ranker(self) -> Any:  # noqa: ANN401
         """Lazy-initialize the FlashRank Ranker on first use."""
         if self._ranker is None:
             from flashrank import Ranker

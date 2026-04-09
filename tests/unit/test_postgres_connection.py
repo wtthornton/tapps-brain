@@ -53,9 +53,11 @@ class TestPostgresConnectionManager:
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
         cm = PostgresConnectionManager("postgres://localhost/test")
-        with patch.dict("sys.modules", {"psycopg_pool": None}):
-            with pytest.raises(ImportError, match="psycopg"):
-                cm._ensure_pool()
+        with (
+            patch.dict("sys.modules", {"psycopg_pool": None}),
+            pytest.raises(ImportError, match="psycopg"),
+        ):
+            cm._ensure_pool()
 
     def test_ensure_pool_creates_pool_on_first_call(self) -> None:
         from tapps_brain.postgres_connection import PostgresConnectionManager

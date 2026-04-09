@@ -57,7 +57,7 @@ class PostgresConnectionManager:
         if self._pool is not None:
             return
         try:
-            from psycopg_pool import ConnectionPool
+            from psycopg_pool import ConnectionPool  # type: ignore[import-not-found]
         except ImportError:
             raise ImportError(
                 "psycopg and psycopg_pool are required for PostgreSQL backends.\n"

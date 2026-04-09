@@ -1,10 +1,12 @@
-"""Unit tests for agent-scoped storage paths (STORY-053.1), auto-registration (STORY-053.3), and CLI/MCP passthrough (STORY-053.4)."""
+"""Unit tests for agent-scoped storage paths (STORY-053.1),
+auto-registration (STORY-053.3), and CLI/MCP passthrough (STORY-053.4).
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest  # noqa: F401 — used for MonkeyPatch type annotation
+import pytest
 
 from tapps_brain.hive import AgentRegistry, HiveStore
 from tapps_brain.persistence import MemoryPersistence
@@ -124,7 +126,7 @@ class TestAutoRegisterAgent:
             hive_store=hive,
             embedding_provider=None,
         )
-        registry_path = (tmp_path / "hive" / "agents.yaml")
+        registry_path = tmp_path / "hive" / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
         agent = registry.get("frontend-dev")
         assert agent is not None
@@ -145,7 +147,7 @@ class TestAutoRegisterAgent:
             hive_store=hive,
             embedding_provider=None,
         )
-        registry_path = (tmp_path / "hive" / "agents.yaml")
+        registry_path = tmp_path / "hive" / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
         agents = [a for a in registry.list_agents() if a.id == "frontend-dev"]
         assert len(agents) == 1
@@ -159,7 +161,7 @@ class TestAutoRegisterAgent:
             embedding_provider=None,
             auto_register=False,
         )
-        registry_path = (tmp_path / "hive" / "agents.yaml")
+        registry_path = tmp_path / "hive" / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
         assert registry.get("frontend-dev") is None
 
@@ -170,7 +172,7 @@ class TestAutoRegisterAgent:
             hive_store=hive,
             embedding_provider=None,
         )
-        registry_path = (tmp_path / "hive" / "agents.yaml")
+        registry_path = tmp_path / "hive" / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
         assert len(registry.list_agents()) == 0
 
@@ -199,7 +201,7 @@ class TestMcpGetStoreAgentId:
         expected = tmp_path / ".tapps-brain" / "memory" / "memory.db"
         assert expected.exists()
 
-    def test_env_var_agent_id_fallback(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_env_var_agent_id_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import os
 
         # Simulate: --agent-id not given (defaults to "unknown"),
@@ -237,10 +239,10 @@ class TestSplitByAgent:
         """Dry-run reports counts but creates no per-agent stores."""
         self._make_shared_store(tmp_path)
 
-        from tapps_brain.cli import maintenance_split_by_agent
-
         # Invoke the underlying function in dry-run mode
         import typer
+
+        from tapps_brain.cli import maintenance_split_by_agent
 
         with pytest.raises(typer.Exit):
             maintenance_split_by_agent(
@@ -267,25 +269,19 @@ class TestSplitByAgent:
         )
 
         # Verify agent "a" store
-        store_a = MemoryPersistence(
-            tmp_path, agent_id="a", encryption_key=""
-        )
+        store_a = MemoryPersistence(tmp_path, agent_id="a", encryption_key="")
         entries_a = store_a.load_all()
         assert len(entries_a) == 2
         assert {e.key for e in entries_a} == {"a-key1", "a-key2"}
 
         # Verify agent "b" store
-        store_b = MemoryPersistence(
-            tmp_path, agent_id="b", encryption_key=""
-        )
+        store_b = MemoryPersistence(tmp_path, agent_id="b", encryption_key="")
         entries_b = store_b.load_all()
         assert len(entries_b) == 1
         assert entries_b[0].key == "b-key1"
 
         # Verify "_legacy" store (source_agent="unknown")
-        store_legacy = MemoryPersistence(
-            tmp_path, agent_id="_legacy", encryption_key=""
-        )
+        store_legacy = MemoryPersistence(tmp_path, agent_id="_legacy", encryption_key="")
         entries_legacy = store_legacy.load_all()
         assert len(entries_legacy) == 1
         assert entries_legacy[0].key == "u-key1"

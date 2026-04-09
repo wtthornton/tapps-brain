@@ -65,8 +65,20 @@ _PA_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bi\s+can't\s+eat\b", re.I), "long-term"),
     (re.compile(r"\bi\s+don't\s+(?:eat|drink)\b", re.I), "long-term"),
     # Procedural / routines
-    (re.compile(r"\bevery\s+(?:morning|evening|night|day|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I), "procedural"),
-    (re.compile(r"\bon\s+(?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|weekends?)\b", re.I), "procedural"),
+    (
+        re.compile(
+            r"\bevery\s+(?:morning|evening|night|day|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+            re.I,
+        ),
+        "procedural",
+    ),
+    (
+        re.compile(
+            r"\bon\s+(?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|weekends?)\b",
+            re.I,
+        ),
+        "procedural",
+    ),
     (re.compile(r"\bmy\s+(?:routine|schedule|habit|workout)\b", re.I), "procedural"),
     (re.compile(r"\bi\s+usually\b", re.I), "procedural"),
     # Short-term / context

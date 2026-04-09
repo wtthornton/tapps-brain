@@ -337,7 +337,8 @@ class MemoryPersistence:
         # FTS5 full-text search index
         cur.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-            USING fts5(key, value, tags, content=memories, content_rowid=rowid, tokenize='porter unicode61')
+            USING fts5(key, value, tags, content=memories,
+            content_rowid=rowid, tokenize='porter unicode61')
         """)
 
         # Triggers to keep FTS in sync
@@ -404,7 +405,8 @@ class MemoryPersistence:
         )
         cur.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS session_index_fts
-            USING fts5(session_id, content, content=session_index, content_rowid=rowid, tokenize='porter unicode61')
+            USING fts5(session_id, content, content=session_index,
+            content_rowid=rowid, tokenize='porter unicode61')
         """)
         cur.execute("""
             CREATE TRIGGER IF NOT EXISTS session_index_ai AFTER INSERT ON session_index BEGIN
@@ -541,7 +543,7 @@ class MemoryPersistence:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(self, entry: MemoryEntry) -> None:  # noqa: PLR0915
+    def save(self, entry: MemoryEntry) -> None:
         """Insert or replace a memory entry."""
         tags_json = json.dumps(entry.tags, ensure_ascii=False)
         embedding_json: str | None = None
@@ -615,9 +617,7 @@ class MemoryPersistence:
         values = (*values, entry.positive_feedback_count, entry.negative_feedback_count)
 
         # Provenance metadata (GitHub #38)
-        columns.extend(
-            ["source_session_id", "source_channel", "source_message_id", "triggered_by"]
-        )
+        columns.extend(["source_session_id", "source_channel", "source_message_id", "triggered_by"])
         values = (
             *values,
             entry.source_session_id,

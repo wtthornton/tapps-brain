@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
-    from tapps_brain.hive import HiveStore
 
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.metrics import (
@@ -497,7 +496,7 @@ class MemoryStore:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(
+    def save(  # noqa: PLR0911
         self,
         key: str,
         value: str,
@@ -887,9 +886,7 @@ class MemoryStore:
                     entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
                 )
                 _source_str_056 = (
-                    entry.source.value
-                    if hasattr(entry.source, "value")
-                    else str(entry.source)
+                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
                 )
                 if agent_scope == "group" and self._groups:
                     # Propagate to ALL declared groups
@@ -946,9 +943,7 @@ class MemoryStore:
                     entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
                 )
                 _source_str_exp = (
-                    entry.source.value
-                    if hasattr(entry.source, "value")
-                    else str(entry.source)
+                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
                 )
                 expert_tags = [f"expert:{d}" for d in self._expert_domains]
                 all_tags = list(entry.tags or []) + expert_tags

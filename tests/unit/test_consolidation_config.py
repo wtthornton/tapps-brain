@@ -10,6 +10,13 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+
+def _extract_json(output: str) -> dict[str, object]:
+    """Extract JSON from CLI output, skipping any warning lines."""
+    json_start = output.find("{")
+    return json.loads(output[json_start:])  # type: ignore[no-any-return]
+
+
 # ---------------------------------------------------------------------------
 # ConsolidationConfig dataclass
 # ---------------------------------------------------------------------------
@@ -182,7 +189,7 @@ class TestMaintenanceConsolidationConfigCLI:
             ["maintenance", "consolidation-config", "--project-dir", str(tmp_path), "--json"],
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["enabled"] is True
         assert data["threshold"] == pytest.approx(0.7)
         assert data["min_entries"] == 3
@@ -205,7 +212,7 @@ class TestMaintenanceConsolidationConfigCLI:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["status"] == "updated"
         assert data["enabled"] is True
 
@@ -230,7 +237,7 @@ class TestMaintenanceConsolidationConfigCLI:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = _extract_json(result.output)
         assert data["status"] == "updated"
         assert data["threshold"] == pytest.approx(0.5)
         assert data["min_entries"] == 5

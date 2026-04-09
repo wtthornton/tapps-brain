@@ -43,24 +43,15 @@ class PostgresFederationBackend:
         now = datetime.now(tz=UTC).isoformat()
         published = 0
 
-        with self._cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                for entry in entries:
-                    tags_json = json.dumps(
-                        entry.tags if hasattr(entry, "tags") else getattr(entry, "tags", [])
-                    )
-                    tier = (
-                        entry.tier.value
-                        if hasattr(entry.tier, "value")
-                        else str(entry.tier)
-                    )
-                    source = (
-                        entry.source.value
-                        if hasattr(entry.source, "value")
-                        else str(entry.source)
-                    )
-                    cur.execute(
-                        """
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            for entry in entries:
+                tags_json = json.dumps(
+                    entry.tags if hasattr(entry, "tags") else getattr(entry, "tags", [])
+                )
+                tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                source = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+                cur.execute(
+                    """
                         INSERT INTO federated_memories
                             (project_id, key, value, tier, confidence, source,
                              source_agent, tags, created_at, updated_at,
@@ -79,27 +70,27 @@ class PostgresFederationBackend:
                             origin_project_root = EXCLUDED.origin_project_root,
                             memory_group = EXCLUDED.memory_group
                         """,
-                        (
-                            project_id,
-                            entry.key,
-                            entry.value,
-                            tier,
-                            entry.confidence,
-                            source,
-                            entry.source_agent,
-                            tags_json,
-                            entry.created_at,
-                            entry.updated_at,
-                            now,
-                            project_root,
-                            getattr(entry, "memory_group", None),
-                        ),
-                    )
-                    published += 1
+                    (
+                        project_id,
+                        entry.key,
+                        entry.value,
+                        tier,
+                        entry.confidence,
+                        source,
+                        entry.source_agent,
+                        tags_json,
+                        entry.created_at,
+                        entry.updated_at,
+                        now,
+                        project_root,
+                        getattr(entry, "memory_group", None),
+                    ),
+                )
+                published += 1
 
-                # Update federation metadata.
-                cur.execute(
-                    """
+            # Update federation metadata.
+            cur.execute(
+                """
                     INSERT INTO federation_meta (project_id, last_sync, entry_count)
                     VALUES (
                         %s, %s,
@@ -109,33 +100,29 @@ class PostgresFederationBackend:
                         last_sync = EXCLUDED.last_sync,
                         entry_count = EXCLUDED.entry_count
                     """,
-                    (project_id, now, project_id),
-                )
+                (project_id, now, project_id),
+            )
 
         logger.info("federation.pg.published", project_id=project_id, count=published)
         return published
 
-    def unpublish(
-        self, project_id: str, keys: list[str] | None = None
-    ) -> int:
+    def unpublish(self, project_id: str, keys: list[str] | None = None) -> int:
         """Remove memories from the federation hub."""
-        with self._cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                if keys:
-                    cur.execute(
-                        "DELETE FROM federated_memories "
-                        "WHERE project_id = %s AND key = ANY(%s)",
-                        (project_id, keys),
-                    )
-                else:
-                    cur.execute(
-                        "DELETE FROM federated_memories WHERE project_id = %s",
-                        (project_id,),
-                    )
-                removed = cur.rowcount
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            if keys:
+                cur.execute(
+                    "DELETE FROM federated_memories WHERE project_id = %s AND key = ANY(%s)",
+                    (project_id, keys),
+                )
+            else:
+                cur.execute(
+                    "DELETE FROM federated_memories WHERE project_id = %s",
+                    (project_id,),
+                )
+            removed = cur.rowcount
 
         logger.info("federation.pg.unpublished", project_id=project_id, count=removed)
-        return removed
+        return int(removed)
 
     # ------------------------------------------------------------------
     # Search & Query
@@ -173,22 +160,21 @@ class PostgresFederationBackend:
 
         where = " AND ".join(clauses)
 
-        with self._cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank "  # noqa: S608
-                    f"FROM federated_memories "
-                    f"WHERE {where} "
-                    f"ORDER BY rank DESC "
-                    f"LIMIT %s",
-                    [query, *params],
-                )
-                rows = cur.fetchall()
-                col_names = [desc[0] for desc in cur.description]
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank "
+                f"FROM federated_memories "
+                f"WHERE {where} "
+                f"ORDER BY rank DESC "
+                f"LIMIT %s",
+                [query, *params],
+            )
+            rows = cur.fetchall()
+            col_names = [desc[0] for desc in cur.description]
 
         results: list[dict[str, Any]] = []
         for r in rows:
-            d = dict(zip(col_names, r))
+            d = dict(zip(col_names, r, strict=False))
             row_tags = d.get("tags", [])
             if isinstance(row_tags, str):
                 row_tags = json.loads(row_tags)
@@ -208,23 +194,22 @@ class PostgresFederationBackend:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Get all entries for a specific project."""
-        with self._cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     SELECT * FROM federated_memories
                     WHERE project_id = %s
                     ORDER BY updated_at DESC
                     LIMIT %s
                     """,
-                    (project_id, limit),
-                )
-                rows = cur.fetchall()
-                col_names = [desc[0] for desc in cur.description]
+                (project_id, limit),
+            )
+            rows = cur.fetchall()
+            col_names = [desc[0] for desc in cur.description]
 
         results: list[dict[str, Any]] = []
         for r in rows:
-            d = dict(zip(col_names, r))
+            d = dict(zip(col_names, r, strict=False))
             tags = d.get("tags", [])
             if isinstance(tags, str):
                 d["tags"] = json.loads(tags)
@@ -234,20 +219,17 @@ class PostgresFederationBackend:
 
     def get_stats(self) -> dict[str, Any]:
         """Return federation hub statistics."""
-        with self._cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM federated_memories")
-                total = cur.fetchone()[0]
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM federated_memories")
+            total = cur.fetchone()[0]
 
-                cur.execute(
-                    "SELECT project_id, COUNT(*) FROM federated_memories GROUP BY project_id"
-                )
-                project_counts = {row[0]: row[1] for row in cur.fetchall()}
+            cur.execute("SELECT project_id, COUNT(*) FROM federated_memories GROUP BY project_id")
+            project_counts = {row[0]: row[1] for row in cur.fetchall()}
 
-                cur.execute("SELECT * FROM federation_meta")
-                meta_rows = cur.fetchall()
-                meta_cols = [desc[0] for desc in cur.description]
-                meta = [dict(zip(meta_cols, r)) for r in meta_rows]
+            cur.execute("SELECT * FROM federation_meta")
+            meta_rows = cur.fetchall()
+            meta_cols = [desc[0] for desc in cur.description]
+            meta = [dict(zip(meta_cols, r, strict=False)) for r in meta_rows]
 
         return {
             "total_entries": total,

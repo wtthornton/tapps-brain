@@ -112,7 +112,7 @@ def _require_sqlcipher() -> _ConnectFactory:
 
 def _warn_sqlite_version_once() -> None:
     """Log a warning once if the SQLite version has the WAL-reset corruption bug."""
-    global _sqlite_version_warned  # noqa: PLW0603
+    global _sqlite_version_warned
     if _sqlite_version_warned:
         return
     _sqlite_version_warned = True

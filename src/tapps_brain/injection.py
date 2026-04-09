@@ -253,11 +253,7 @@ def inject_memories(  # noqa: PLR0915
 
     from tapps_brain.reranker import get_reranker, reranker_provider_label
 
-    reranker = (
-        get_reranker(enabled=config.reranker_enabled)
-        if config.reranker_enabled
-        else None
-    )
+    reranker = get_reranker(enabled=config.reranker_enabled) if config.reranker_enabled else None
     retriever = MemoryRetriever(
         config=decay_config,
         reranker=reranker,

@@ -317,7 +317,8 @@ class FederatedStore:
             with contextlib.suppress(sqlite3.OperationalError):
                 self._conn.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS federated_fts
-                    USING fts5(key, value, tags, content=federated_memories, content_rowid=rowid, tokenize='porter unicode61')
+                    USING fts5(key, value, tags, content=federated_memories,
+                    content_rowid=rowid, tokenize='porter unicode61')
                 """)
 
             self._migrate_federated_memory_group()

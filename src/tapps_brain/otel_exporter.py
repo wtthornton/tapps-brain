@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 try:
     from opentelemetry.metrics import get_meter
 except ImportError:  # pragma: no cover — opentelemetry-api is a core dependency
-    get_meter = None  # type: ignore[assignment, misc]
+    get_meter = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from tapps_brain.metrics import MetricsSnapshot

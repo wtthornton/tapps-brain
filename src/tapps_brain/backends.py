@@ -9,10 +9,11 @@ EPIC-055 — pluggable storage backends.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain._protocols import AgentRegistryBackend, FederationBackend, HiveBackend
-
+if TYPE_CHECKING:
+    from tapps_brain._protocols import AgentRegistryBackend, FederationBackend, HiveBackend
+    from tapps_brain.hive import AgentRegistration
 
 # ---------------------------------------------------------------------------
 # SQLite Hive Backend
@@ -26,11 +27,8 @@ class SqliteHiveBackend:
         from tapps_brain.hive import HiveStore
 
         self._store = HiveStore(db_path=db_path, encryption_key=encryption_key)
-
-    # Expose _db_path so the protocol attribute is satisfied.
-    @property
-    def _db_path(self) -> Path:  # noqa: D401
-        return self._store._db_path
+        # Expose _db_path so the protocol attribute is satisfied.
+        self._db_path: Path = self._store._db_path
 
     # -- CRUD / search -------------------------------------------------------
 
@@ -48,7 +46,7 @@ class SqliteHiveBackend:
         valid_at: str | None = None,
         invalid_at: str | None = None,
         superseded_by: str | None = None,
-        conflict_policy: Any = "supersede",
+        conflict_policy: str = "supersede",
         memory_group: str | None = None,
     ) -> dict[str, Any] | None:
         return self._store.save(
@@ -77,7 +75,9 @@ class SqliteHiveBackend:
         min_confidence: float = 0.0,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        return self._store.search(query, namespaces=namespaces, min_confidence=min_confidence, limit=limit)
+        return self._store.search(
+            query, namespaces=namespaces, min_confidence=min_confidence, limit=limit
+        )
 
     # -- Confidence ----------------------------------------------------------
 
@@ -115,9 +115,11 @@ class SqliteHiveBackend:
         query: str,
         agent_id: str,
         agent_namespace: str | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> list[dict[str, Any]]:
-        return self._store.search_with_groups(query, agent_id, agent_namespace=agent_namespace, **kwargs)
+        return self._store.search_with_groups(
+            query, agent_id, agent_namespace=agent_namespace, **kwargs
+        )
 
     # -- Feedback ------------------------------------------------------------
 
@@ -153,7 +155,9 @@ class SqliteHiveBackend:
         entry_key: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        return self._store.query_feedback_events(namespace=namespace, entry_key=entry_key, limit=limit)
+        return self._store.query_feedback_events(
+            namespace=namespace, entry_key=entry_key, limit=limit
+        )
 
     # -- Introspection -------------------------------------------------------
 
@@ -248,20 +252,23 @@ class SqliteFederationBackend:
 
 
 class SqliteAgentRegistryBackend:
-    """SQLite-backed :class:`AgentRegistryBackend` — delegates to existing :class:`AgentRegistry`."""
+    """SQLite-backed :class:`AgentRegistryBackend`.
+
+    Delegates to existing :class:`AgentRegistry`.
+    """
 
     def __init__(self, registry_path: Path | None = None) -> None:
         from tapps_brain.hive import AgentRegistry
 
         self._registry = AgentRegistry(registry_path=registry_path)
 
-    def register(self, agent: Any) -> None:
+    def register(self, agent: AgentRegistration) -> None:
         self._registry.register(agent)
 
     def unregister(self, agent_id: str) -> bool:
         return self._registry.unregister(agent_id)
 
-    def get(self, agent_id: str) -> Any | None:
+    def get(self, agent_id: str) -> AgentRegistration | None:
         return self._registry.get(agent_id)
 
     def list_agents(self) -> list[Any]:

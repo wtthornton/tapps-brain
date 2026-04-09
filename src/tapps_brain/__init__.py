@@ -10,15 +10,14 @@ except importlib.metadata.PackageNotFoundError:  # pragma: no cover
     __version__ = "0.0.0-dev"
 
 # Agent Brain facade (EPIC-057)
-from tapps_brain.agent_brain import AgentBrain as AgentBrain
-
-# Async (Issue #66)
-from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
-
 # Backend protocols & adapters (EPIC-055)
 from tapps_brain._protocols import AgentRegistryBackend as AgentRegistryBackend
 from tapps_brain._protocols import FederationBackend as FederationBackend
 from tapps_brain._protocols import HiveBackend as HiveBackend
+from tapps_brain.agent_brain import AgentBrain as AgentBrain
+
+# Async (Issue #66)
+from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
 from tapps_brain.backends import SqliteAgentRegistryBackend as SqliteAgentRegistryBackend
 from tapps_brain.backends import SqliteFederationBackend as SqliteFederationBackend
 from tapps_brain.backends import SqliteHiveBackend as SqliteHiveBackend
@@ -133,11 +132,11 @@ from tapps_brain.store import MemoryStore as MemoryStore
 from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 
 __all__ = [
+    "DEFAULT_SAFETY_RULESET_VERSION",
+    "VALID_AGENT_SCOPES",
     "AgentBrain",
     "AgentRegistryBackend",
     "AsyncMemoryStore",
-    "DEFAULT_SAFETY_RULESET_VERSION",
-    "VALID_AGENT_SCOPES",
     "BM25Scorer",
     "ConsolidatedEntry",
     "ConsolidationConfig",

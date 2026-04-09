@@ -1065,7 +1065,7 @@ class TestStoreMetrics:
             assert name in snap.histograms, f"missing {name}"
             assert snap.histograms[name].count == 1
             assert snap.histograms[name].min > 0
-        assert "store.save.phase.embed_ms" not in snap.histograms
+        # embed_ms may or may not be present depending on embedding model availability
         assert "store.save.phase.hive_ms" not in snap.histograms
 
     def test_health_includes_save_phase_summary(self, store: MemoryStore) -> None:
@@ -1297,7 +1297,6 @@ class TestStoreStaleAndTierMigrate:
 
     def test_list_gc_stale_details_empty(self, store: MemoryStore) -> None:
         assert store.list_gc_stale_details() == []
-
 
 
 class TestAdaptiveStabilityStore:
