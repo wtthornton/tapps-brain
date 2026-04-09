@@ -52,4 +52,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed; **EPIC-048 complete** (all 6 stories done, including 048.6 visual PNG capture).*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-04-09 — **v3.2.0**: EPIC-048 complete (all 6 stories done, including 048.6 visual PNG capture); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank reranker; Docker base → python:3.13-slim. EPIC-053–058 complete (v3.1.0); #66/#69/#70/#71/#72 all closed.*

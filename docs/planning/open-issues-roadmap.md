@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-09 — **EPIC-048 complete** — all 6 stories done; last shipped: **STORY-048.6** (`capture_png()`, `tapps-brain visual capture`, `[visual]` extra w/ playwright, manual checklist in visual-snapshot.md)
+Last updated: 2026-04-09 — **v3.2.0** — EPIC-048 complete (all 6 stories); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank local reranker; FTS5 porter unicode61; schema reset to v1; Docker base → python:3.13-slim; docs synced
 Owner: @wtthornton
 
 ## Purpose
@@ -272,6 +272,7 @@ Copy this section at the end of each week:
 - 2026-04-09: **#71 verified + closed** — `ConsolidationProfileConfig.threshold` fully wired from profile YAML through `store.py` to `auto_consolidation.py`; `personal-assistant.yaml` ships `consolidation.threshold: 0.65`; GitHub **#71** closed.
 - 2026-04-09: **STORY-048.6** — `capture_png()` in `visual_snapshot.py`; `tapps-brain visual capture` CLI; `[visual]` optional extra (playwright); 4 new tests; manual checklist in `docs/guides/visual-snapshot.md`; **EPIC-048 complete** (all 6 stories done).
 - 2026-04-09: **Issue hygiene** — closed **#66** (async wrapper shipped as `tapps_brain.aio.AsyncMemoryStore`), **#69** (sqlite-vec core), **#72** (5K eviction/GC already handled); EPIC-048 story order documented; next-session-prompt updated.
+- 2026-04-09: **v3.2.0** — EPIC-048 complete (all 6 stories: session GC, relations batch, markdown round-trip, eval CI, doc validation, visual PNG capture); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank local reranker; porter unicode61 FTS5; schema reset to v1; Docker base → python:3.13-slim; README/STATUS/next-session-prompt synced to 3.2.0.
 - 2026-04-09: **v3.1.0** — EPIC-053–058 shipped; epic status hygiene sweep (EPIC-040/042/044/050 marked done); roadmap + STATUS + next-session-prompt updated.
 - 2026-04-04: Planning **doc sync** — `STATUS` / `next-session-prompt` / `mcp.md` aligned with **044.4** merge undo + CLI-only maintenance commands; snapshot dates refreshed.
 - 2026-04-03: **STORY-044.4** — merge **undo** (`undo_consolidation_merge`, `consolidation_merge_undo` audit, CLI **`maintenance consolidation-merge-undo`**); consolidated row **`skip_consolidation=True`**; planning docs + **`CHANGELOG`** [Unreleased].

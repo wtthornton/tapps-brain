@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-09 (America/Chicago) — **EPIC-048 complete** — all 6 stories done: 048.1 (session GC + token budget), 048.2 (relations batch + cycle detection), 048.3 (markdown round-trip + schema version), 048.4 (eval CI golden set), 048.5 (doc validation strict mode + guide), **048.6 (visual snapshot PNG capture** — `capture_png()`, `tapps-brain visual capture`, `[visual]` extra); **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-09 (America/Chicago) — **v3.2.0** — EPIC-048 complete (all 6 stories done); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank local reranker; porter unicode61 FTS5 tokenizer; schema reset to v1; Docker base → python:3.13-slim; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
-**Package version (PyPI / `pyproject.toml`):** **3.1.0**
+**Package version (PyPI / `pyproject.toml`):** **3.2.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -127,6 +127,11 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-058 | Docker & Deployment Support — Postgres Hive infrastructure | done | 2026-04-09 — v3.1.0 |
 
 ## Current focus
+
+**Shipped in v3.2.0 (2026-04-09):**
+- **EPIC-048** — Optional/auxiliary capabilities: session GC retention policy + token budget (048.1); relations batch + cycle detection + max-edges cap (048.2); markdown round-trip with YAML front matter schema version (048.3); eval CI golden set + `run_eval_golden.py` artifact (048.4); doc validation strict mode + pluggable lookup engine guide (048.5); visual snapshot PNG capture — `capture_png()`, `tapps-brain visual capture`, `[visual]` extra (048.6).
+- **EPIC-048 (retrieval)** — Default embedding switched to `BAAI/bge-small-en-v1.5`; FlashRank local reranker replaces Cohere; `[reranker]` extra now installs flashrank; `TAPPS_SEMANTIC_SEARCH` env var removed (always enabled).
+- **Docker** — `docker/Dockerfile.migrate` base upgraded to `python:3.13-slim`.
 
 **Shipped in v3.1.0 (2026-04-09):**
 - **EPIC-053** — Per-agent brain identity: `MemoryStore(agent_id=)` routes to `{project_dir}/.tapps-brain/agents/{id}/memory.db`; auto-registration; `source_agent` auto-fill; CLI/MCP `--agent-id` passthrough; `maintenance split-by-agent` migration tool.

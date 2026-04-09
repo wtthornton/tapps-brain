@@ -5,7 +5,7 @@
 **Universal persistent memory for AI agents**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Version 3.1.0](https://img.shields.io/badge/version-3.1.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
+[![Version 3.2.0](https://img.shields.io/badge/version-3.2.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Tests 2900+](https://img.shields.io/badge/tests-2900%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![Coverage 95%+](https://img.shields.io/badge/coverage-95%25%2B-brightgreen?style=for-the-badge)](pyproject.toml)
