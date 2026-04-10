@@ -6,8 +6,9 @@ Quick reference for Docker-based Hive deployment.
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.hive.yaml` | Reference Compose file: pgvector DB + migration sidecar |
+| `docker-compose.hive.yaml` | Reference Compose file: pgvector DB + migration sidecar + visual frontend |
 | `Dockerfile.migrate` | Slim image that runs `tapps-brain maintenance migrate-hive` |
+| `Dockerfile.visual` | nginx image serving the brain-visual static frontend |
 | `init-hive.sql` | Bootstraps the `vector` extension on first DB start |
 | `.env.example` | Sample environment variables (copy to `.env` and edit) |
 | `secrets/` | Directory for Docker secrets (e.g. `tapps_hive_password.txt`) |
@@ -40,5 +41,10 @@ check on `pg_isready`.
 | `TAPPS_HIVE_PORT` | `5432` | Host port mapped to Postgres |
 | `TAPPS_HIVE_PASSWORD` | `tapps` | Postgres password (Compose default) |
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | (none) | Set to `true` to auto-migrate on startup |
+| `TAPPS_VISUAL_PORT` | `8088` | Host port for the brain-visual frontend |
+
+## brain-visual frontend
+
+The `tapps-visual` service serves the brain-visual snapshot UI at `http://localhost:8080` (or `$TAPPS_VISUAL_PORT`). Load a `brain-visual.json` export from `tapps-brain visual export` to explore memory health, retrieval stats, and the scorecard.
 
 See `docs/guides/hive-deployment.md` for full deployment guidance.

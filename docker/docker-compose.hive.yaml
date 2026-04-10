@@ -21,6 +21,14 @@ services:
       - tapps_hive_password
     restart: unless-stopped
 
+  tapps-visual:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.visual
+    ports:
+      - "${TAPPS_VISUAL_PORT:-8088}:80"
+    restart: unless-stopped
+
   tapps-hive-migrate:
     build:
       context: ..
