@@ -13,9 +13,9 @@
 5. [Profile Schema](#5-profile-schema)
 6. [Layer Interaction Patterns](#6-layer-interaction-patterns)
 7. [Out-of-the-Box Profiles](#7-out-of-the-box-profiles)
-8. [Hive Architecture — Multi-Agent Shared Brain](#8-hive-architecture--multi-agent-shared-brain)
+8. [Hive Architecture — Multi-Agent Shared Brain](#8-hive-architecture-multi-agent-shared-brain)
 9. [Implementation Plan](#9-implementation-plan)
-10. [Migration & Backward Compatibility](#10-migration--backward-compatibility)
+10. [Migration & Backward Compatibility](#10-migration-backward-compatibility)
 11. [Sources](#11-sources)
 
 ---

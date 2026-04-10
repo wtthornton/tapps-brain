@@ -144,7 +144,7 @@ The script will:
 
 The plugin requires OpenClaw v2026.3.7+ (`minimumVersion` in `openclaw.plugin.json`).
 For older OpenClaw versions, use the MCP sidecar integration (Mode 3 in the
-[OpenClaw guide](../../docs/guides/openclaw.md)) instead of the plugin.
+[OpenClaw guide](../docs/guides/openclaw.md)) instead of the plugin.
 
 Canonical install/upgrade runbook:
 `docs/guides/openclaw-runbook.md`

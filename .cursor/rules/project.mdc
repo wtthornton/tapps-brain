@@ -75,6 +75,16 @@ mypy --strict src/tapps_brain/
 - Coverage minimum: 95%
 - LF line endings enforced via `.gitattributes`
 
+## Cursor (IDE)
+
+- **Quick pointers:** `AGENTS.md` — setup, tests, doc links. **VS Code/Cursor:** `.vscode/settings.json` (Python/Ruff/mypy, 100-char ruler), `.vscode/extensions.json` (recommended extensions), `.vscode/tasks.json` (pytest, ruff, mypy, `release-ready.sh`). **Indexing:** `.cursorignore` excludes `.venv/`, caches, and `openclaw-plugin/node_modules/`.
+- **Project MCP config:** `.cursor/mcp.json` wires the same MCP servers as Claude Code where possible:
+  - **tapps-mcp** — `tapps-mcp serve --transport` stdio (matches `uv tool install` / `~/.local/bin/tapps-mcp` on PATH).
+  - **docs-mcp** — `uv run --directory …/tapps-mcp/packages/docs-mcp docsmcp serve` (same as `claude mcp list`). Uses `${workspaceFolder}/../tapps-mcp/...` so it works when this repo and [tapps-mcp](https://github.com/tapps-mcp/tapps-mcp) are sibling clones (e.g. `~/code/tapps-brain` + `~/code/tapps-mcp`). If your layout differs, edit the `--directory` path to your local `packages/docs-mcp` checkout.
+  - **playwright** — `npx @playwright/mcp@latest` (same pattern as Claude / Playwright docs). If Cursor already lists **Plugin MCP → playwright**, remove the `playwright` block from `.cursor/mcp.json` to avoid duplicate browser tools.
+- Ensure **PATH** includes `~/.local/bin` (uv tools) and Node/`npx` if you use Playwright via `npx`.
+- Optional: add **tapps-brain** memory MCP for dogfooding this repo — see `docs/guides/mcp.md` (`tapps-brain-mcp` + `--project-dir` `${workspaceFolder}`).
+
 ## OpenClaw (operators)
 
 - Canonical install/upgrade: `docs/guides/openclaw-runbook.md`
@@ -106,7 +116,7 @@ This project is configured for Ralph — an autonomous development loop that dri
   - `.ralphrc`
   - `CLAUDE.md`
   - `.ralph/AGENT.md`
-- **Cursor or other agents (default):** read `CLAUDE.md` and `docs/planning/open-issues-roadmap.md` when picking delivery work; Ralph files are optional unless you are running Ralph.
+- **Cursor or other agents (default):** read `AGENTS.md`, `CLAUDE.md`, and `docs/planning/open-issues-roadmap.md` when picking delivery work; Ralph files are optional unless you are running Ralph.
 - If any file you depend on changes during the session, re-read the changed file(s) before continuing.
 
 ### Ralph Files

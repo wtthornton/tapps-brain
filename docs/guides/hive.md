@@ -20,7 +20,7 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents on the sam
 - [Python API](#python-api)
 - [Best Practices](#best-practices)
 - [Scope Resolution](#scope-resolution)
-- [Backup & Restore](#backup--restore)
+- [Backup & Restore](#backup-restore)
 - [Quotas](#quotas)
 - [Propagation Denial Logging](#propagation-denial-logging)
 - [Change Notification](#change-notification)

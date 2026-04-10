@@ -1,0 +1,42 @@
+# tapps-brain
+
+> Persistent cross-session memory system for AI coding assistants
+
+- Version: 3.2.0
+- License: MIT
+- Repository: https://github.com/wtthornton/tapps-brain
+
+## Tech stack
+
+- Python >=3.12
+- Pydantic v2, SQLite (WAL + FTS5), optional sqlite-vec / Postgres (Hive)
+- uv for development; hatchling build
+
+## Entry points (console scripts)
+
+- `tapps-brain` → `tapps_brain.cli:app`
+- `tapps-brain-mcp` → `tapps_brain.mcp_server:main`
+
+## Where to read first
+
+- [`README.md`](README.md) — product overview, install, interfaces
+- [`AGENTS.md`](AGENTS.md) — contributor quick path (Cursor / automation)
+- [`docs/engineering/README.md`](docs/engineering/README.md) — architecture index
+- [`docs/guides/getting-started.md`](docs/guides/getting-started.md) — interfaces and workflows
+- [`docs/DOCUMENTATION_INDEX.md`](docs/DOCUMENTATION_INDEX.md) — generated map of all docs
+- [`CHANGELOG.md`](CHANGELOG.md) — releases
+
+## API surface (approximate)
+
+- Primary package: `tapps_brain` (agent API: `agent_brain.AgentBrain`; storage: `store.MemoryStore`)
+- See source under `src/tapps_brain/` and tests under `tests/`
+
+## Layout
+
+```
+src/tapps_brain/   # library and CLI/MCP
+tests/             # unit, integration, benchmarks
+docs/              # guides, engineering, planning
+openclaw-plugin/   # OpenClaw plugin package
+scripts/           # release, codegen, maintenance
+```

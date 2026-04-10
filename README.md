@@ -1,23 +1,4 @@
-<div align="center">
-
-# 🧠 tapps-brain
-
-**Universal persistent memory for AI agents**
-
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Version 3.2.0](https://img.shields.io/badge/version-3.2.0-2ea44f?style=for-the-badge)](https://github.com/wtthornton/tapps-brain/releases)
-[![License MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![Tests 2900+](https://img.shields.io/badge/tests-2900%2B-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
-[![Coverage 95%+](https://img.shields.io/badge/coverage-95%25%2B-brightgreen?style=for-the-badge)](pyproject.toml)
-[![mypy strict](https://img.shields.io/badge/mypy-strict-blue?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
-
-A fully deterministic (zero LLM calls), SQLite-backed knowledge store with configurable memory profiles,<br>multi-agent shared brain (Hive), BM25 + sqlite-vec hybrid search, dual decay models, automatic consolidation,<br>cross-project federation, and built-in semantic vector search.
-
-[Getting Started](docs/guides/getting-started.md) · [Engineering baseline](docs/engineering/README.md) · [Profile Catalog](docs/guides/profile-catalog.md) · [Hive Guide](docs/guides/hive.md) · [MCP Server](docs/guides/mcp.md) · [Federation](docs/guides/federation.md) · [Visual snapshot](docs/guides/visual-snapshot.md) · [OpenClaw](docs/guides/openclaw.md) · [OpenClaw runbook](docs/guides/openclaw-runbook.md)
-
-</div>
-
----
+# tapps-brain
 
 ## Why tapps-brain?
 
@@ -48,6 +29,8 @@ Cross-agent memory sharing with namespace isolation, 4 conflict resolution polic
 
 ## Quick start
 
+**Contributors (Cursor / VS Code):** after clone, see [AGENTS.md](AGENTS.md) for `uv sync`, tests, and pointers to `.vscode/` tasks and `.cursor/mcp.json`.
+
 ```bash
 pip install tapps-brain
 ```
@@ -58,7 +41,6 @@ from tapps_brain import MemoryStore
 
 store = MemoryStore(Path("."))
 
-# Save a memory
 store.save(
     key="auth-pattern",
     value="This project uses JWT tokens with refresh rotation",
@@ -67,7 +49,6 @@ store.save(
     tags=["auth", "security"],
 )
 
-# Recall ranked memories for prompt injection
 result = store.recall("How does auth work?")
 print(result.memory_section)   # formatted context block
 print(result.token_count)      # token budget enforced (default 2000)
@@ -79,25 +60,20 @@ store.close()
 <summary><strong>More examples</strong></summary>
 
 ```python
-# Reinforce a useful memory (can trigger promotion)
 store.reinforce("auth-pattern", confidence_boost=0.1)
 
-# Extract facts from conversation automatically
 store.ingest_context(
     "We decided to use PostgreSQL. All APIs will be REST, not GraphQL."
 )
 
-# Supersede a fact (bi-temporal versioning)
 store.supersede(
     old_key="pricing-plan",
     new_value="Pricing is $397/mo (raised from $297)",
     tier="architectural",
 )
 
-# Point-in-time query
 results = store.search("pricing", as_of="2026-01-15T00:00:00Z")
 
-# Version history
 chain = store.history("pricing-plan")
 ```
 
@@ -306,7 +282,6 @@ Profiles make tapps-brain a universal brain for **any** AI agent — not just co
 | **`home-automation`** | household-profile → learned-patterns → recent-events → future-events → transient | **power-law** on household | recency 35% | IoT, smart home |
 
 ```python
-# Use a built-in profile
 store = MemoryStore(Path("."), profile_name="personal-assistant")
 ```
 
@@ -535,22 +510,16 @@ All writes pass through prompt injection detection and content sanitization. The
 ## Development
 
 ```bash
-# Requires Python 3.12+ and uv
 uv sync --extra dev
 
-# Tests (~2300+ collected; coverage gate ≥95%; benchmarks excluded like CI release gate)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
-# Lint + format
 ruff check src/ tests/ && ruff format --check src/ tests/
 
-# Type check (strict)
 mypy --strict src/tapps_brain/
 
-# Benchmarks
 pytest tests/benchmarks/ -v --benchmark-only
 
-# Production release gate (also what CI job `release-ready` runs, with SKIP_FULL_PYTEST=1 there)
 bash scripts/release-ready.sh
 ```
 
@@ -585,6 +554,8 @@ tests/
 
 | Guide | Description |
 |-------|-------------|
+| [Documentation index](docs/DOCUMENTATION_INDEX.md) | Categorized map of guides, engineering references, and planning epics |
+| [Contributing](CONTRIBUTING.md) | Contributor setup (`uv`), tests, lint, types, and PR expectations |
 | [Getting Started](docs/guides/getting-started.md) | Use-case map and quick example for each interface |
 | [Profile Design Guide](docs/guides/profiles.md) | Custom profiles: layers, decay, scoring, promotion, Hive config |
 | [Profile Catalog](docs/guides/profile-catalog.md) | All 6 built-in profiles with comparison tables |

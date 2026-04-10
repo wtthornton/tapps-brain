@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "tapps-mcp": {
+      "command": "tapps-mcp",
+      "args": ["serve", "--transport", "stdio"]
+    },
+    "docs-mcp": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${workspaceFolder}/../tapps-mcp/packages/docs-mcp",
+        "docsmcp",
+        "serve"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}

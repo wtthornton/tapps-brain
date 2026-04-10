@@ -1,0 +1,9 @@
+# Cursor indexing: skip bulky trees (source in src/, tests/)
+.venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+openclaw-plugin/node_modules/
+dist/
+build/
+*.egg-info/

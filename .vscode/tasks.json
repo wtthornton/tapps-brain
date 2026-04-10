@@ -1,0 +1,74 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pytest (CI-style, no benchmarks)",
+      "type": "shell",
+      "command": "pytest tests/ -v --tb=short -m \"not benchmark\" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pytest (current file)",
+      "type": "shell",
+      "command": "pytest \"${file}\" -v --tb=short -m \"not benchmark\"",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff check",
+      "type": "shell",
+      "command": "ruff check src/ tests/",
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff format (write)",
+      "type": "shell",
+      "command": "ruff format src/ tests/",
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "mypy (strict)",
+      "type": "shell",
+      "command": "mypy --strict src/tapps_brain/",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$mypy"
+    },
+    {
+      "label": "release-ready (full gate)",
+      "type": "shell",
+      "command": "bash scripts/release-ready.sh",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

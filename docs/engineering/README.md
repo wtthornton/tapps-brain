@@ -2,6 +2,8 @@
 
 This folder is the code-aligned engineering reference for tapps-brain runtime behavior.
 
+A generated map of all documentation (including planning epics) lives at [`DOCUMENTATION_INDEX.md`](../DOCUMENTATION_INDEX.md).
+
 If planning docs or guides disagree with this folder, treat this folder as the implementation ground truth and open a doc-fix issue.
 
 ## Documents
