@@ -227,9 +227,12 @@ def _agent_scope_counts(store: MemoryStore) -> dict[str, int]:
 def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
     """Best-effort Hive hub stats (matches health_check spirit; never raises)."""
     try:
-        from tapps_brain.hive import AgentRegistry, HiveStore
+        from tapps_brain.backends import resolve_hive_backend_from_env
+        from tapps_brain.hive import AgentRegistry
 
-        hive = HiveStore()
+        hive = resolve_hive_backend_from_env()
+        if hive is None:
+            return HiveHealthSummary(connected=False, status="skipped")
         try:
             ns_counts = hive.count_by_namespace()
             registry = AgentRegistry()

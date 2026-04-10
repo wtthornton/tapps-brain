@@ -80,12 +80,13 @@ class AgentBrain:
         _groups = groups or _parse_csv_env("TAPPS_BRAIN_GROUPS")
         _expert_domains = expert_domains or _parse_csv_env("TAPPS_BRAIN_EXPERT_DOMAINS")
 
-        # Create HiveBackend if DSN available or default SQLite
+        # Postgres Hive only (ADR-007); no SQLite fallback.
         self._hive = None
-        try:
-            self._hive = create_hive_backend(_hive_dsn, encryption_key=encryption_key)
-        except Exception:
-            logger.warning("agent_brain.hive_init_failed", exc_info=True)
+        if _hive_dsn:
+            try:
+                self._hive = create_hive_backend(_hive_dsn, encryption_key=encryption_key)
+            except Exception:
+                logger.warning("agent_brain.hive_init_failed", exc_info=True)
 
         # Create MemoryStore
         self._store = MemoryStore(

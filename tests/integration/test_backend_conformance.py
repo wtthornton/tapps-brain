@@ -1,14 +1,11 @@
 """Backend conformance test suite for Hive, Federation, and AgentRegistry.
 
-EPIC-055 STORY-055.8 — parametrised over ["sqlite", "postgres"]. The
-"postgres" variant requires ``TAPPS_TEST_POSTGRES_DSN`` env var and skips
-otherwise.  SQLite tests always run.
+ADR-007 / EPIC-055 — requires ``TAPPS_TEST_POSTGRES_DSN`` (set in CI).
 """
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,12 +18,6 @@ _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
 
 
-def _make_sqlite_hive(tmp_path: Path) -> Any:
-    from tapps_brain.backends import SqliteHiveBackend
-
-    return SqliteHiveBackend(db_path=tmp_path / "hive.db")
-
-
 def _make_postgres_hive() -> Any:
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.postgres_hive import PostgresHiveBackend
@@ -35,12 +26,6 @@ def _make_postgres_hive() -> Any:
     apply_hive_migrations(_PG_DSN)
     cm = PostgresConnectionManager(_PG_DSN)
     return PostgresHiveBackend(cm)
-
-
-def _make_sqlite_federation(tmp_path: Path) -> Any:
-    from tapps_brain.backends import SqliteFederationBackend
-
-    return SqliteFederationBackend(db_path=tmp_path / "federated.db")
 
 
 def _make_postgres_federation() -> Any:
@@ -53,12 +38,6 @@ def _make_postgres_federation() -> Any:
     return PostgresFederationBackend(cm)
 
 
-def _make_sqlite_agent_registry(tmp_path: Path) -> Any:
-    from tapps_brain.backends import SqliteAgentRegistryBackend
-
-    return SqliteAgentRegistryBackend(registry_path=tmp_path / "agents.yaml")
-
-
 def _make_postgres_agent_registry() -> Any:
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.postgres_hive import PostgresAgentRegistry
@@ -69,38 +48,29 @@ def _make_postgres_agent_registry() -> Any:
     return PostgresAgentRegistry(cm)
 
 
-@pytest.fixture(params=["sqlite", "postgres"])
-def hive_backend(request: pytest.FixtureRequest, tmp_path: Path) -> Any:
-    if request.param == "postgres":
-        if _SKIP_PG:
-            pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
-        backend = _make_postgres_hive()
-    else:
-        backend = _make_sqlite_hive(tmp_path)
+@pytest.fixture
+def hive_backend() -> Any:
+    if _SKIP_PG:
+        pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
+    backend = _make_postgres_hive()
     yield backend
     backend.close()
 
 
-@pytest.fixture(params=["sqlite", "postgres"])
-def federation_backend(request: pytest.FixtureRequest, tmp_path: Path) -> Any:
-    if request.param == "postgres":
-        if _SKIP_PG:
-            pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
-        backend = _make_postgres_federation()
-    else:
-        backend = _make_sqlite_federation(tmp_path)
+@pytest.fixture
+def federation_backend() -> Any:
+    if _SKIP_PG:
+        pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
+    backend = _make_postgres_federation()
     yield backend
     backend.close()
 
 
-@pytest.fixture(params=["sqlite", "postgres"])
-def agent_registry(request: pytest.FixtureRequest, tmp_path: Path) -> Any:
-    if request.param == "postgres":
-        if _SKIP_PG:
-            pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
-        registry = _make_postgres_agent_registry()
-    else:
-        registry = _make_sqlite_agent_registry(tmp_path)
+@pytest.fixture
+def agent_registry() -> Any:
+    if _SKIP_PG:
+        pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
+    registry = _make_postgres_agent_registry()
     yield registry
 
 
@@ -110,7 +80,7 @@ def agent_registry(request: pytest.FixtureRequest, tmp_path: Path) -> Any:
 
 
 class TestHiveBackendConformance:
-    """Verify that both SQLite and PostgreSQL backends satisfy the HiveBackend protocol."""
+    """Verify PostgreSQL HiveBackend protocol conformance (ADR-007)."""
 
     def test_save_and_get(self, hive_backend: Any) -> None:
         result = hive_backend.save(key="k1", value="v1", namespace="universal")
@@ -220,7 +190,7 @@ class TestHiveBackendConformance:
 
 
 class TestFederationBackendConformance:
-    """Verify both SQLite and PostgreSQL federation backends."""
+    """Verify PostgreSQL federation backend conformance (ADR-007)."""
 
     def _make_entry(self, key: str = "entry1", value: str = "test value") -> Any:
         """Create a minimal entry object for publishing."""
@@ -280,7 +250,7 @@ class TestFederationBackendConformance:
 
 
 class TestAgentRegistryConformance:
-    """Verify both SQLite and PostgreSQL agent registry backends."""
+    """Verify PostgreSQL agent registry conformance (ADR-007)."""
 
     def _make_agent(self, agent_id: str = "test-agent") -> Any:
         from tapps_brain.hive import AgentRegistration

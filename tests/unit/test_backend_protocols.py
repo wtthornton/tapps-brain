@@ -3,7 +3,7 @@
 STORY-054.1 / STORY-054.2 / STORY-054.6 — verify that:
 1. Each protocol is runtime_checkable.
 2. The concrete implementations satisfy isinstance checks.
-3. MemoryStore accepts HiveBackend (SqliteHiveBackend) as hive_store.
+3. MemoryStore accepts any HiveBackend as hive_store.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from tapps_brain._protocols import (
     FederationBackend,
     HiveBackend,
 )
-from tapps_brain.backends import SqliteHiveBackend
 from tapps_brain.federation import FederatedStore
 from tapps_brain.hive import AgentRegistry, HiveStore
 
@@ -74,11 +73,11 @@ def test_agent_registry_satisfies_agent_registry_backend(tmp_path: Path) -> None
 
 
 def test_memory_store_accepts_hive_backend(tmp_path: Path) -> None:
-    """MemoryStore.__init__ accepts a SqliteHiveBackend as hive_store."""
+    """MemoryStore.__init__ accepts a HiveBackend (here: in-process HiveStore)."""
     from tapps_brain.store import MemoryStore
 
     hive_db = tmp_path / "hive" / "hive.db"
-    backend = SqliteHiveBackend(db_path=hive_db)
+    backend = HiveStore(db_path=hive_db)
     try:
         assert isinstance(backend, HiveBackend)
         store = MemoryStore(
@@ -87,7 +86,6 @@ def test_memory_store_accepts_hive_backend(tmp_path: Path) -> None:
             hive_agent_id="test-agent",
             embedding_provider=None,
         )
-        # Verify the store accepted and stored the backend
         assert store._hive_store is backend
     finally:
         backend.close()

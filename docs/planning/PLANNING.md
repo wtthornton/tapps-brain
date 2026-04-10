@@ -96,7 +96,8 @@ docs/planning/
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
     ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
     ├── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
-    └── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`; **EPIC-051** checklist decisions in `adr/ADR-00*.md`)
+    ├── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`; **EPIC-051** checklist decisions in `adr/ADR-00*.md`)
+    └── EPIC-059.md … EPIC-063.md  ← **Greenfield v3 (pre-GA):** Postgres-only, agent-first runtime, observability, MCP-primary, trust boundaries (no v2 migration path)
 ```
 
 ## Why This Structure

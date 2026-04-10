@@ -72,16 +72,15 @@ def _get_store(
 ) -> Any:  # noqa: ANN401
     """Open a MemoryStore for the given project directory.
 
-    When *enable_hive* is ``True``, a shared :class:`HiveStore` is
-    created and wired into the store together with *agent_id*.
+    When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is wired in
+    when ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007 — no SQLite Hive).
     """
+    from tapps_brain.backends import resolve_hive_backend_from_env
     from tapps_brain.store import MemoryStore
 
     hive_store = None
     if enable_hive:
-        from tapps_brain.hive import HiveStore
-
-        hive_store = HiveStore()
+        hive_store = resolve_hive_backend_from_env()
 
     agent_id_for_store = agent_id if agent_id != "unknown" else None
     return MemoryStore(
@@ -102,8 +101,8 @@ def create_server(  # noqa: PLR0915
 
     Args:
         project_dir: Project root directory. Defaults to cwd.
-        enable_hive: When ``True``, create a shared ``HiveStore`` and
-            wire it into the ``MemoryStore``.
+        enable_hive: When ``True``, attach a Postgres Hive backend when
+            ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007).
         agent_id: Agent identifier passed to the store as
             ``hive_agent_id``.
 
@@ -114,6 +113,21 @@ def create_server(  # noqa: PLR0915
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
+
+    def _hive_for_tools() -> tuple[Any, bool]:
+        """Return ``(hive_backend, should_close)`` for Hive MCP tools (ADR-007)."""
+        shared = getattr(store, "_hive_store", None)
+        if shared is not None:
+            return shared, False
+        from tapps_brain.backends import resolve_hive_backend_from_env
+
+        extra = resolve_hive_backend_from_env()
+        if extra is None:
+            raise RuntimeError(
+                "Hive tools require TAPPS_BRAIN_HIVE_DSN (postgresql://...) "
+                "or MemoryStore configured with a Hive backend (ADR-007)."
+            )
+        return extra, True
 
     mcp = fastmcp_cls(
         "tapps-brain",
@@ -1754,11 +1768,9 @@ def create_server(  # noqa: PLR0915
         use, and how many shared memories are in each namespace.
         """
         try:
-            from tapps_brain.hive import AgentRegistry, HiveStore
+            from tapps_brain.hive import AgentRegistry
 
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             try:
                 ns_counts = hive.count_by_namespace()
                 agent_counts = hive.count_by_agent()
@@ -1778,7 +1790,7 @@ def create_server(  # noqa: PLR0915
                     for a in registry.list_agents()
                 ]
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             return json.dumps(
                 {
@@ -1806,16 +1818,12 @@ def create_server(  # noqa: PLR0915
                 domain-scoped memories, or 'universal' for hive-scoped ones.
         """
         try:
-            from tapps_brain.hive import HiveStore
-
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             try:
                 ns_list = [namespace] if namespace else None
                 results = hive.search(query, namespaces=ns_list, limit=20)
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             return json.dumps({"results": results, "count": len(results)})
         except Exception as exc:
@@ -1852,7 +1860,7 @@ def create_server(  # noqa: PLR0915
                 agent_scope_valid_values_for_errors,
                 normalize_agent_scope,
             )
-            from tapps_brain.hive import HiveStore, PropagationEngine
+            from tapps_brain.hive import PropagationEngine
 
             try:
                 agent_scope = normalize_agent_scope(agent_scope)
@@ -1865,9 +1873,7 @@ def create_server(  # noqa: PLR0915
                     }
                 )
 
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
             auto_propagate: list[str] | None = None
@@ -1898,7 +1904,7 @@ def create_server(  # noqa: PLR0915
                     dry_run=dry_run,
                 )
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             if result is None:
                 return json.dumps({"propagated": False, "reason": "scope is private"})
@@ -1939,7 +1945,6 @@ def create_server(  # noqa: PLR0915
                 normalize_agent_scope,
             )
             from tapps_brain.hive import (
-                HiveStore,
                 push_memory_entries_to_hive,
                 select_local_entries_for_hive_push,
             )
@@ -1977,9 +1982,7 @@ def create_server(  # noqa: PLR0915
             except ValueError as ve:
                 return json.dumps({"error": "invalid_args", "message": str(ve)})
 
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"
             auto_propagate: list[str] | None = None
@@ -2004,7 +2007,7 @@ def create_server(  # noqa: PLR0915
                     dry_run=dry_run,
                 )
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             return json.dumps(report)
         except Exception as exc:
@@ -2025,15 +2028,11 @@ def create_server(  # noqa: PLR0915
             JSON with ``revision`` (int) and ``updated_at`` (ISO timestamp).
         """
         try:
-            from tapps_brain.hive import HiveStore
-
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             try:
                 state = hive.get_write_notify_state()
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             return json.dumps(state)
         except Exception as exc:
@@ -2057,11 +2056,7 @@ def create_server(  # noqa: PLR0915
             ``timed_out`` (bool).
         """
         try:
-            from tapps_brain.hive import HiveStore
-
-            shared = getattr(store, "_hive_store", None)
-            _should_close = shared is None
-            hive: HiveStore = shared if shared is not None else HiveStore()
+            hive, should_close = _hive_for_tools()
             try:
                 cap = min(60.0, max(0.0, float(timeout_seconds)))
                 state = hive.get_write_notify_state()
@@ -2073,7 +2068,7 @@ def create_server(  # noqa: PLR0915
                     poll_interval_sec=0.25,
                 )
             finally:
-                if _should_close:
+                if should_close:
                     hive.close()
             return json.dumps(result)
         except Exception as exc:

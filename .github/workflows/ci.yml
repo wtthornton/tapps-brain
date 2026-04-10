@@ -49,6 +49,17 @@ jobs:
         python-version: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tapps_test
+    env:
+      TAPPS_TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/tapps_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

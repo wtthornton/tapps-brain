@@ -19,10 +19,9 @@ from tapps_brain.agent_brain import AgentBrain as AgentBrain
 # Async (Issue #66)
 from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
 from tapps_brain.backends import SqliteAgentRegistryBackend as SqliteAgentRegistryBackend
-from tapps_brain.backends import SqliteFederationBackend as SqliteFederationBackend
-from tapps_brain.backends import SqliteHiveBackend as SqliteHiveBackend
 from tapps_brain.backends import create_federation_backend as create_federation_backend
 from tapps_brain.backends import create_hive_backend as create_hive_backend
+from tapps_brain.backends import resolve_hive_backend_from_env as resolve_hive_backend_from_env
 
 # BM25
 from tapps_brain.bm25 import BM25Scorer as BM25Scorer
@@ -170,8 +169,6 @@ __all__ = [
     "SimilarityResult",
     "SlidingWindowRateLimiter",
     "SqliteAgentRegistryBackend",
-    "SqliteFederationBackend",
-    "SqliteHiveBackend",
     "StoreHealthReport",
     "__version__",
     "calculate_decayed_confidence",
@@ -192,6 +189,7 @@ __all__ = [
     "import_openclaw_workspace",
     "inject_memories",
     "is_stale",
+    "resolve_hive_backend_from_env",
     "resolve_safety_ruleset_version",
     "sync_from_markdown",
     "sync_to_markdown",

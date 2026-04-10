@@ -168,16 +168,31 @@ def _resolve_project_dir(project_dir: Path | None) -> Path:
 
 def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
     """Open a MemoryStore from the resolved project dir."""
-    from tapps_brain.hive import HiveStore
+    from tapps_brain.backends import resolve_hive_backend_from_env
     from tapps_brain.store import MemoryStore
 
     root = _resolve_project_dir(project_dir)
     return MemoryStore(
         root,
         agent_id=_cli_agent_id,
-        hive_store=HiveStore(),
+        hive_store=resolve_hive_backend_from_env(),
         hive_agent_id=_cli_agent_id or "cli",
     )
+
+
+def _open_hive_backend_for_cli() -> Any:  # noqa: ANN401
+    """Return Postgres Hive backend or exit with an error (ADR-007)."""
+    from tapps_brain.backends import resolve_hive_backend_from_env
+
+    hb = resolve_hive_backend_from_env()
+    if hb is None:
+        typer.echo(
+            "Error: Hive requires TAPPS_BRAIN_HIVE_DSN=postgresql://... "
+            "(SQLite Hive removed — ADR-007).",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return hb
 
 
 def _output(data: Any, as_json: bool) -> None:  # noqa: ANN401
@@ -2287,9 +2302,9 @@ def profile_layers(
 @hive_app.command("status")
 def hive_status(as_json: JsonFlag = False) -> None:
     """Show Hive status: namespaces, entry counts, registered agents."""
-    from tapps_brain.hive import AgentRegistry, HiveStore
+    from tapps_brain.hive import AgentRegistry
 
-    hive = HiveStore()
+    hive = _open_hive_backend_for_cli()
     try:
         ns_counts = hive.count_by_namespace()
         agent_counts = hive.count_by_agent()
@@ -2341,9 +2356,7 @@ def hive_search(
     as_json: JsonFlag = False,
 ) -> None:
     """Search the Hive shared brain."""
-    from tapps_brain.hive import HiveStore
-
-    hive = HiveStore()
+    hive = _open_hive_backend_for_cli()
     try:
         ns_list = [namespace] if namespace else None
         results = hive.search(query, namespaces=ns_list, limit=20)
@@ -2385,9 +2398,7 @@ def hive_watch(
 
     Also updates ``~/.tapps-brain/hive/.hive_write_notify`` on each Hive write for file watchers.
     """
-    from tapps_brain.hive import HiveStore
-
-    hive = HiveStore()
+    hive = _open_hive_backend_for_cli()
     try:
         state0 = hive.get_write_notify_state()
         baseline = state0["revision"] if since is None else since
@@ -2451,7 +2462,6 @@ def _run_hive_push_from_store(
 ) -> None:
     """Batch-promote local memories to Hive (GitHub #18)."""
     from tapps_brain.hive import (
-        HiveStore,
         push_memory_entries_to_hive,
         select_local_entries_for_hive_push,
     )
@@ -2488,7 +2498,7 @@ def _run_hive_push_from_store(
 
         shared = getattr(store, "_hive_store", None)
         _should_close = shared is None
-        hive: HiveStore = shared if shared is not None else HiveStore()
+        hive = shared if shared is not None else _open_hive_backend_for_cli()
         agent_id = getattr(store, "_hive_agent_id", "cli")
         profile_name = "repo-brain"
         auto_propagate: list[str] | None = None
