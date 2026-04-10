@@ -5,9 +5,18 @@ status: planned
 priority: low
 created: 2026-03-23
 tags: [opentelemetry, telemetry, genai, observability, integration]
+see_also: [EPIC-061]
 ---
 
 # EPIC-032: OTel GenAI Semantic Conventions — Standardized Telemetry Export
+
+## Goal
+
+Upgrade tapps-brain's optional OpenTelemetry exporter to comply with the OpenTelemetry GenAI and MCP semantic conventions, making tapps-brain plug-and-play with standard observability stacks (Grafana, Datadog, Honeycomb, Jaeger).
+
+## Motivation
+
+EPIC-007 shipped an OTel exporter before the GenAI semconv (v1.40.0, Feb 2025) and MCP semconv (v1.35.0, Jun 2024) were standardised. Without alignment, spans and metrics use non-standard names that observability platforms cannot interpret natively. Adopting both conventions now means any operator who points an OTel collector at tapps-brain gets correctly labelled signals with no extra configuration.
 
 ## Context
 
@@ -25,7 +34,7 @@ tapps-brain's MCP server already handles 54 tool invocations (current surface). 
 
 This epic is intentionally small and optional. It upgrades the existing OTel exporter to convention-aware traces and metrics. It does not add required dependencies. All GenAI semconv attributes are "Development" stability — use requires `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`.
 
-## Success Criteria
+## Acceptance Criteria
 
 - [ ] MCP tool invocations emit OTel spans following both GenAI and MCP semantic conventions
 - [ ] Span attributes include `gen_ai.operation.name`, `gen_ai.data_source.id`, `mcp.method.name`, `mcp.session.id`
@@ -109,13 +118,13 @@ The GenAI and MCP metric conventions define standard metric names that observabi
 
 **Status:** planned
 **Effort:** S
-**Depends on:** STORY-032.1, EPIC-029 (optional), EPIC-030 (optional)
+**Depends on:** STORY-032.1, EPIC-029 (done — `feedback.py` available), EPIC-030 (done — `diagnostics.py` available)
 **Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/feedback.py`, `src/tapps_brain/diagnostics.py`
 **Verification:** `pytest tests/unit/test_otel_exporter.py::TestFeedbackDiagnosticsEvents -v`
 
 #### Why
 
-When EPIC-029 and EPIC-030 are available, their events are valuable telemetry signals. OTel Events are implemented as `LogRecord` with `event.name` attribute (per OTel event conventions). Feedback and diagnostics events make the full quality loop visible in observability platforms.
+EPIC-029 (`feedback.py`) and EPIC-030 (`diagnostics.py`) are both done and available; their events are valuable telemetry signals. OTel Events are implemented as `LogRecord` with `event.name` attribute (per OTel event conventions). Feedback and diagnostics events make the full quality loop visible in observability platforms.
 
 #### Acceptance Criteria
 
@@ -207,3 +216,10 @@ Validates the full OTel pipeline: MCP tool calls producing convention-compliant 
 ```
 
 032.2 and 032.4 can be worked in parallel after 032.1. 032.3 is optional and depends on other EPICs.
+
+## References
+
+- [EPIC-061](EPIC-061.md) — Greenfield v3 observability (incremental alignment target)
+- `src/tapps_brain/otel_exporter.py`
+- `src/tapps_brain/mcp_server.py`
+- `src/tapps_brain/metrics.py`
