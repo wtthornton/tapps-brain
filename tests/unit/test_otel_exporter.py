@@ -882,3 +882,328 @@ class TestBootstrapTracer:
 
         # The span passed to the body must be None (no real span allocated)
         mock_create.assert_called_once_with(None)
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.5: GenAIMetricsRecorder — standard GenAI + MCP histograms
+# ---------------------------------------------------------------------------
+
+
+class TestGenAIMetricsRecorderConstants:
+    """GenAI semconv v1.35.0 metric names are exported as module-level constants."""
+
+    def test_gen_ai_operation_duration_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import GEN_AI_OPERATION_DURATION_METRIC
+
+        assert GEN_AI_OPERATION_DURATION_METRIC == "gen_ai.client.operation.duration"
+
+    def test_mcp_server_operation_duration_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import MCP_SERVER_OPERATION_DURATION_METRIC
+
+        assert MCP_SERVER_OPERATION_DURATION_METRIC == "mcp.server.operation.duration"
+
+    def test_gen_ai_token_usage_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import GEN_AI_TOKEN_USAGE_METRIC
+
+        assert GEN_AI_TOKEN_USAGE_METRIC == "gen_ai.client.token.usage"
+
+
+class TestGenAIMetricsRecorderInit:
+    """GenAIMetricsRecorder creates three histogram instruments on init."""
+
+    def test_creates_three_histograms(self) -> None:
+        mock_meter = MagicMock()
+        mock_meter.create_histogram.return_value = MagicMock()
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        GenAIMetricsRecorder(meter=mock_meter)
+
+        assert mock_meter.create_histogram.call_count == 3
+
+    def test_histogram_names(self) -> None:
+        mock_meter = MagicMock()
+        mock_meter.create_histogram.return_value = MagicMock()
+
+        from tapps_brain.otel_exporter import (
+            GEN_AI_OPERATION_DURATION_METRIC,
+            GEN_AI_TOKEN_USAGE_METRIC,
+            MCP_SERVER_OPERATION_DURATION_METRIC,
+            GenAIMetricsRecorder,
+        )
+
+        GenAIMetricsRecorder(meter=mock_meter)
+
+        names = {call.kwargs.get("name") or call.args[0] for call in mock_meter.create_histogram.call_args_list}
+        assert GEN_AI_OPERATION_DURATION_METRIC in names
+        assert MCP_SERVER_OPERATION_DURATION_METRIC in names
+        assert GEN_AI_TOKEN_USAGE_METRIC in names
+
+    def test_histogram_units(self) -> None:
+        mock_meter = MagicMock()
+        mock_meter.create_histogram.return_value = MagicMock()
+
+        from tapps_brain.otel_exporter import (
+            GEN_AI_OPERATION_DURATION_METRIC,
+            GEN_AI_TOKEN_USAGE_METRIC,
+            MCP_SERVER_OPERATION_DURATION_METRIC,
+            GenAIMetricsRecorder,
+        )
+
+        GenAIMetricsRecorder(meter=mock_meter)
+
+        by_name: dict[str, Any] = {}
+        for call in mock_meter.create_histogram.call_args_list:
+            name = call.kwargs.get("name") or call.args[0]
+            unit = call.kwargs.get("unit", "")
+            by_name[name] = unit
+
+        assert by_name.get(GEN_AI_OPERATION_DURATION_METRIC) == "s"
+        assert by_name.get(MCP_SERVER_OPERATION_DURATION_METRIC) == "s"
+        assert by_name.get(GEN_AI_TOKEN_USAGE_METRIC) == "{token}"
+
+    def test_none_meter_does_not_crash(self) -> None:
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        # None meter → no histogram creation; no crash
+        recorder = GenAIMetricsRecorder(meter=None)
+        # All record methods should be no-ops
+        recorder.record_gen_ai_operation(0.5)
+        recorder.record_mcp_operation(0.1)
+        recorder.record_token_usage(100)
+
+    def test_init_error_does_not_propagate(self) -> None:
+        """If create_histogram raises, GenAIMetricsRecorder must not raise."""
+        mock_meter = MagicMock()
+        mock_meter.create_histogram.side_effect = RuntimeError("SDK error")
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        # All record methods must still be safe no-ops
+        recorder.record_gen_ai_operation(0.5, operation="remember")
+        recorder.record_mcp_operation(0.1, method="tools/call", tool_name="brain_remember")
+        recorder.record_token_usage(42, token_type="input")
+
+
+class TestGenAIMetricsRecorderRecordGenAI:
+    """GenAIMetricsRecorder.record_gen_ai_operation() records with correct attributes."""
+
+    def test_record_gen_ai_operation_basic(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import (
+            GEN_AI_OPERATION_DURATION_METRIC,
+            GenAIMetricsRecorder,
+        )
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+
+        # Identify the gen_ai histogram call
+        gen_ai_hist = None
+        for call, mock_result in zip(
+            mock_meter.create_histogram.call_args_list,
+            [mock_meter.create_histogram.return_value] * 3,
+        ):
+            name = call.kwargs.get("name") or call.args[0]
+            if name == GEN_AI_OPERATION_DURATION_METRIC:
+                gen_ai_hist = mock_result
+                break
+
+        recorder.record_gen_ai_operation(1.23, operation="remember")
+
+        # mock_hist is shared for all three; verify record was called
+        assert mock_hist.record.call_count >= 1
+
+    def test_record_gen_ai_operation_with_error_type(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        recorder.record_gen_ai_operation(0.5, operation="recall", error_type="db_error")
+
+        # Find the call to record (at least one histogram call with error_type attr)
+        found = False
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else call.kwargs.get("attributes", {})
+            if isinstance(attrs, dict) and attrs.get("error.type") == "db_error":
+                found = True
+                break
+        assert found, "error.type attribute not found in any record() call"
+
+    def test_record_gen_ai_operation_omits_empty_operation(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        recorder.record_gen_ai_operation(0.1)  # no operation= kwarg
+
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else {}
+            assert "gen_ai.operation.name" not in attrs
+
+    def test_record_gen_ai_operation_sdk_error_suppressed(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_hist.record.side_effect = RuntimeError("SDK down")
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        # Must not raise
+        recorder.record_gen_ai_operation(0.5)
+
+
+class TestGenAIMetricsRecorderRecordMCP:
+    """GenAIMetricsRecorder.record_mcp_operation() records with correct attributes."""
+
+    def _make_recorder_with_mock(self) -> tuple[Any, Any]:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        return recorder, mock_hist
+
+    def test_record_mcp_operation_basic(self) -> None:
+        recorder, mock_hist = self._make_recorder_with_mock()
+        recorder.record_mcp_operation(0.05, method="tools/call", tool_name="brain_remember")
+
+        assert mock_hist.record.call_count >= 1
+
+    def test_record_mcp_operation_attributes(self) -> None:
+        recorder, mock_hist = self._make_recorder_with_mock()
+        recorder.record_mcp_operation(
+            0.05,
+            method="tools/call",
+            tool_name="brain_recall",
+            error_type="content_blocked",
+        )
+
+        found = False
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else call.kwargs.get("attributes", {})
+            if isinstance(attrs, dict):
+                if attrs.get("mcp.method.name") == "tools/call" and attrs.get("gen_ai.tool.name") == "brain_recall":
+                    found = True
+                    break
+        assert found, "Expected mcp.method.name and gen_ai.tool.name in record() attrs"
+
+    def test_record_mcp_operation_omits_empty_fields(self) -> None:
+        recorder, mock_hist = self._make_recorder_with_mock()
+        recorder.record_mcp_operation(0.1)  # no method or tool_name
+
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else {}
+            assert "mcp.method.name" not in attrs
+            assert "gen_ai.tool.name" not in attrs
+
+    def test_record_mcp_operation_sdk_error_suppressed(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_hist.record.side_effect = RuntimeError("SDK gone")
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        recorder.record_mcp_operation(0.1, method="tools/call")  # must not raise
+
+
+class TestGenAIMetricsRecorderTokenUsage:
+    """GenAIMetricsRecorder.record_token_usage() records with correct attributes."""
+
+    def _make_recorder_with_mock(self) -> tuple[Any, Any]:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        return recorder, mock_hist
+
+    def test_record_token_usage_default_type(self) -> None:
+        recorder, mock_hist = self._make_recorder_with_mock()
+        recorder.record_token_usage(256)
+
+        found = False
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else call.kwargs.get("attributes", {})
+            if isinstance(attrs, dict) and attrs.get("gen_ai.token.type") == "total":
+                found = True
+                break
+        assert found, "Default token_type='total' not found in record() attrs"
+
+    def test_record_token_usage_input_type(self) -> None:
+        recorder, mock_hist = self._make_recorder_with_mock()
+        recorder.record_token_usage(128, token_type="input", operation="recall")
+
+        found = False
+        for call in mock_hist.record.call_args_list:
+            attrs = call.args[1] if len(call.args) > 1 else call.kwargs.get("attributes", {})
+            if isinstance(attrs, dict) and attrs.get("gen_ai.token.type") == "input":
+                found = True
+                assert attrs.get("gen_ai.operation.name") == "recall"
+                break
+        assert found, "token_type='input' not found in record() attrs"
+
+    def test_record_token_usage_sdk_error_suppressed(self) -> None:
+        mock_meter = MagicMock()
+        mock_hist = MagicMock()
+        mock_hist.record.side_effect = RuntimeError("SDK error")
+        mock_meter.create_histogram.return_value = mock_hist
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+
+        recorder = GenAIMetricsRecorder(meter=mock_meter)
+        recorder.record_token_usage(100)  # must not raise
+
+
+class TestGenAIMetricDimensionsInAllowedSet:
+    """GenAI semconv attribute keys are in ALLOWED_METRIC_DIMENSIONS (STORY-032.5)."""
+
+    def test_gen_ai_system_in_allowed(self) -> None:
+        from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+        assert "gen_ai.system" in ALLOWED_METRIC_DIMENSIONS
+
+    def test_gen_ai_operation_name_in_allowed(self) -> None:
+        from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+        assert "gen_ai.operation.name" in ALLOWED_METRIC_DIMENSIONS
+
+    def test_gen_ai_token_type_in_allowed(self) -> None:
+        from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+        assert "gen_ai.token.type" in ALLOWED_METRIC_DIMENSIONS
+
+    def test_mcp_method_name_in_allowed(self) -> None:
+        from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+        assert "mcp.method.name" in ALLOWED_METRIC_DIMENSIONS
+
+    def test_gen_ai_tool_name_in_allowed(self) -> None:
+        from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+        assert "gen_ai.tool.name" in ALLOWED_METRIC_DIMENSIONS
+
+    def test_no_overlap_with_forbidden(self) -> None:
+        from tapps_brain.otel_exporter import (
+            ALLOWED_METRIC_DIMENSIONS,
+            FORBIDDEN_METRIC_DIMENSIONS,
+        )
+
+        overlap = ALLOWED_METRIC_DIMENSIONS & FORBIDDEN_METRIC_DIMENSIONS
+        assert not overlap

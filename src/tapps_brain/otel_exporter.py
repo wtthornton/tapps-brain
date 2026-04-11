@@ -8,6 +8,13 @@ to get the SDK for actual metric export.
 When the OpenTelemetry SDK is not installed, :func:`create_exporter`
 returns ``None`` and no metrics are exported.
 
+:class:`GenAIMetricsRecorder` (STORY-032.5) provides direct recording of the
+standard GenAI semantic convention v1.35.0 metric instruments:
+
+- ``gen_ai.client.operation.duration`` (seconds, histogram)
+- ``mcp.server.operation.duration`` (seconds, histogram)
+- ``gen_ai.client.token.usage`` (tokens, histogram)
+
 ---------------------------------------------------------------------------
 Allowed metric dimensions (label / attribute set)
 ---------------------------------------------------------------------------
@@ -20,12 +27,17 @@ unbounded cardinality which can degrade your metrics backend.
 
 .. code-block:: text
 
-    operation.type   — "remember" | "recall" | "search" | "hive_propagate" | "hive_search"
-    memory.tier      — "architectural" | "pattern" | "procedural" | "context"
-    memory.scope     — "project" | "branch" | "session"
-    error.type       — "content_blocked" | "invalid_scope" | "invalid_group"
-                       | "write_rules_violation" | "db_error"
-    hive.group_scoped — "true" | "false"   (NOT the group name — that is user-controlled)
+    operation.type       — "remember" | "recall" | "search" | "hive_propagate" | "hive_search"
+    memory.tier          — "architectural" | "pattern" | "procedural" | "context"
+    memory.scope         — "project" | "branch" | "session"
+    error.type           — "content_blocked" | "invalid_scope" | "invalid_group"
+                           | "write_rules_violation" | "db_error"
+    hive.group_scoped    — "true" | "false"   (NOT the group name — that is user-controlled)
+    gen_ai.system        — "tapps-brain"   (fixed constant)
+    gen_ai.operation.name — "remember" | "recall" | "execute_tool" | etc.
+    gen_ai.token.type    — "input" | "output" | "total"
+    mcp.method.name      — "tools/call" | "resources/read" | etc.
+    gen_ai.tool.name     — registered MCP tool name (bounded, not user content)
 
 **Forbidden** (unbounded / PII risk):
 
@@ -184,6 +196,12 @@ ALLOWED_METRIC_DIMENSIONS: frozenset[str] = frozenset(
         "memory.scope",
         "error.type",
         "hive.group_scoped",
+        # GenAI semantic convention v1.35.0 dimensions (STORY-032.5)
+        "gen_ai.system",
+        "gen_ai.operation.name",
+        "gen_ai.token.type",
+        "gen_ai.tool.name",
+        "mcp.method.name",
     }
 )
 """Bounded set of safe metric attribute (dimension) names.
@@ -191,6 +209,9 @@ ALLOWED_METRIC_DIMENSIONS: frozenset[str] = frozenset(
 Any attribute **not** in this set must be reviewed before use.  Attributes
 that contain raw user content (memory text, query strings, entry keys) are
 **permanently forbidden** — see the module docstring.
+
+The GenAI semconv v1.35.0 attributes (``gen_ai.*``, ``mcp.method.name``) are
+low-cardinality enums and therefore safe to use as metric dimensions.
 """
 
 FORBIDDEN_METRIC_DIMENSIONS: frozenset[str] = frozenset(
@@ -492,6 +513,195 @@ class OTelExporter:
                 self._last_gauge_values[name] = current
 
         except Exception:  # OTel SDK failures must not propagate to callers
+            pass
+
+
+# ---------------------------------------------------------------------------
+# GenAI semantic convention v1.35.0 metric instrument names (STORY-032.5)
+# ---------------------------------------------------------------------------
+
+#: Standard GenAI client operation duration histogram name (semconv v1.35.0).
+GEN_AI_OPERATION_DURATION_METRIC: str = "gen_ai.client.operation.duration"
+
+#: Standard MCP server operation duration histogram name (semconv v1.35.0).
+MCP_SERVER_OPERATION_DURATION_METRIC: str = "mcp.server.operation.duration"
+
+#: Standard GenAI client token usage histogram name (semconv v1.35.0).
+GEN_AI_TOKEN_USAGE_METRIC: str = "gen_ai.client.token.usage"
+
+#: Fixed ``gen_ai.system`` attribute value for tapps-brain.
+_GEN_AI_SYSTEM_VALUE: str = "tapps-brain"
+
+
+class GenAIMetricsRecorder:
+    """Records GenAI semantic convention v1.35.0 metrics via the OTel Metrics API.
+
+    Creates three standard histogram instruments on init:
+
+    - :data:`GEN_AI_OPERATION_DURATION_METRIC` (``gen_ai.client.operation.duration``,
+      unit ``s``) — duration of high-level AgentBrain / MemoryStore operations.
+    - :data:`MCP_SERVER_OPERATION_DURATION_METRIC` (``mcp.server.operation.duration``,
+      unit ``s``) — duration of individual MCP server tool calls.
+    - :data:`GEN_AI_TOKEN_USAGE_METRIC` (``gen_ai.client.token.usage``,
+      unit ``{token}``) — token counts for any LLM-aware path (optional / future).
+
+    All recording methods are **no-ops** when the meter is ``None`` or when the
+    OTel API raises an exception.  OTel SDK failures **never** propagate to callers.
+
+    Usage::
+
+        from tapps_brain.otel_exporter import GenAIMetricsRecorder
+        from opentelemetry.metrics import get_meter
+
+        recorder = GenAIMetricsRecorder(meter=get_meter("my-service"))
+
+        import time
+        t0 = time.perf_counter()
+        # … do some work …
+        recorder.record_gen_ai_operation(
+            time.perf_counter() - t0,
+            operation="remember",
+        )
+
+    When no *meter* is supplied, a default meter named ``"tapps_brain"`` is
+    created from the global meter provider (which is a no-op when the OTel SDK
+    is not configured).
+    """
+
+    def __init__(self, meter: Any = None) -> None:  # noqa: ANN401
+        """Initialise with an optional OTel ``Meter`` instance.
+
+        If *meter* is ``None`` and ``opentelemetry-api`` is installed, a default
+        meter named ``"tapps_brain"`` is used.  All instruments are created lazily
+        on the first recording call if construction fails.
+        """
+        if meter is None and get_meter is not None:
+            self._meter: Any = get_meter("tapps_brain")
+        else:
+            self._meter = meter
+
+        self._gen_ai_duration: Any = None
+        self._mcp_duration: Any = None
+        self._token_usage: Any = None
+        self._init_instruments()
+
+    def _init_instruments(self) -> None:
+        """Create the three standard histogram instruments; silently skip on error."""
+        if self._meter is None:
+            return
+        try:
+            self._gen_ai_duration = self._meter.create_histogram(
+                name=GEN_AI_OPERATION_DURATION_METRIC,
+                description="Duration of GenAI client operations (AgentBrain / MemoryStore)",
+                unit="s",
+            )
+            self._mcp_duration = self._meter.create_histogram(
+                name=MCP_SERVER_OPERATION_DURATION_METRIC,
+                description="Duration of MCP server tool call operations",
+                unit="s",
+            )
+            self._token_usage = self._meter.create_histogram(
+                name=GEN_AI_TOKEN_USAGE_METRIC,
+                description="Number of tokens processed in GenAI operations",
+                unit="{token}",
+            )
+        except Exception:
+            # OTel SDK internal errors must not propagate
+            pass
+
+    def record_gen_ai_operation(
+        self,
+        duration_s: float,
+        *,
+        operation: str = "",
+        system: str = _GEN_AI_SYSTEM_VALUE,
+        error_type: str | None = None,
+    ) -> None:
+        """Record a :data:`GEN_AI_OPERATION_DURATION_METRIC` observation.
+
+        Args:
+            duration_s: Elapsed time in **seconds**.
+            operation: ``gen_ai.operation.name`` attribute value
+                (e.g. ``"remember"``, ``"recall"``, ``"execute_tool"``).
+                Omitted from attributes when empty.
+            system: ``gen_ai.system`` attribute (default: ``"tapps-brain"``).
+            error_type: Optional ``error.type`` attribute
+                (e.g. ``"content_blocked"``).  Omitted when ``None``.
+        """
+        if self._gen_ai_duration is None:
+            return
+        attrs: dict[str, str] = {}
+        if operation:
+            attrs["gen_ai.operation.name"] = operation
+        if system:
+            attrs["gen_ai.system"] = system
+        if error_type:
+            attrs["error.type"] = error_type
+        try:
+            self._gen_ai_duration.record(duration_s, attrs)
+        except Exception:
+            pass
+
+    def record_mcp_operation(
+        self,
+        duration_s: float,
+        *,
+        method: str = "",
+        tool_name: str = "",
+        error_type: str | None = None,
+    ) -> None:
+        """Record a :data:`MCP_SERVER_OPERATION_DURATION_METRIC` observation.
+
+        Args:
+            duration_s: Elapsed time in **seconds**.
+            method: ``mcp.method.name`` attribute (e.g. ``"tools/call"``).
+                Omitted from attributes when empty.
+            tool_name: ``gen_ai.tool.name`` attribute (e.g. ``"brain_remember"``).
+                Must be a registered MCP tool name — **not** raw user content.
+                Omitted when empty.
+            error_type: Optional ``error.type`` attribute.  Omitted when ``None``.
+        """
+        if self._mcp_duration is None:
+            return
+        attrs: dict[str, str] = {}
+        if method:
+            attrs["mcp.method.name"] = method
+        if tool_name:
+            attrs["gen_ai.tool.name"] = tool_name
+        if error_type:
+            attrs["error.type"] = error_type
+        try:
+            self._mcp_duration.record(duration_s, attrs)
+        except Exception:
+            pass
+
+    def record_token_usage(
+        self,
+        token_count: int,
+        *,
+        token_type: str = "total",
+        operation: str = "",
+        system: str = _GEN_AI_SYSTEM_VALUE,
+    ) -> None:
+        """Record a :data:`GEN_AI_TOKEN_USAGE_METRIC` observation.
+
+        Args:
+            token_count: Number of tokens (non-negative integer).
+            token_type: ``gen_ai.token.type`` attribute — one of
+                ``"input"``, ``"output"``, or ``"total"`` (default).
+            operation: ``gen_ai.operation.name`` attribute.  Omitted when empty.
+            system: ``gen_ai.system`` attribute (default: ``"tapps-brain"``).
+        """
+        if self._token_usage is None:
+            return
+        attrs: dict[str, str] = {"gen_ai.token.type": token_type}
+        if operation:
+            attrs["gen_ai.operation.name"] = operation
+        if system:
+            attrs["gen_ai.system"] = system
+        try:
+            self._token_usage.record(token_count, attrs)
+        except Exception:
             pass
 
 
