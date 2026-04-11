@@ -211,6 +211,74 @@
 
 ---
 
+---
+
+## EPIC-066: Postgres-Only Persistence Plane — Production Readiness
+
+**Priority: P0 — CRITICAL — closes out ADR-007 stage 2**
+**Read first:** `docs/planning/epics/EPIC-066.md`, `docs/planning/adr/ADR-007-postgres-only-no-sqlite.md`
+
+> **Context:** Stage 2 (ADR-007) deleted all SQLite source code and rewired private memory to Postgres (psycopg[binary,pool]). Result: 2475 passing / 90 failing tests. The 90 failures are tracked behavioural gaps — not stale SQLite references. Fix the foundation before building new features on top of it.
+
+### Phase A: Failing test fixes (066.1–066.5) <!-- id: 066-phase-a -->
+
+- [ ] **066.1** Consolidation merge audit emission — wire `append_audit` into merge/undo/periodic-scan paths in `auto_consolidation.py`; fixes 5 failing tests (`test_consolidation_on_save_writes_audit_trail`, `test_undo_restores_sources_and_deletes_consolidated`, `test_undo_rejects_wrong_contradiction_reason`, `test_second_undo_fails_after_success`, `test_periodic_scan_writes_audit_when_groups_merged`). [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.1.md -->
+- [ ] **066.2** Bi-temporal `as_of` filter — add `valid_at`/`invalid_at` predicates to `PostgresPrivateBackend.search()`; propagate `as_of` from `MemoryStore.search()`; fixes `test_search_as_of_returns_old_version` and `test_search_excludes_superseded`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.2.md -->
+- [ ] **066.3** GC archive Postgres table — create `migrations/private/006_gc_archive.sql`; add `archive_entry`/`list_archive`/`total_archive_bytes` to `PostgresPrivateBackend`; update `gc.py` to INSERT instead of writing `archive.jsonl`; fixes `test_gc_live_increments_archive_bytes`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.3.md -->
+- [ ] **066.4** MCP tool registration audit and fix — investigate `KeyError 'tool not found: memory_gc_config_set'`; register `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set` in `mcp_server.py`; regenerate `docs/generated/mcp-tools-manifest.json`; fixes 15+ failing tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.4.md -->
+- [ ] **066.5** Version consistency unblock — bump `openclaw-skill/SKILL.md` (and `openclaw-plugin/package.json` if present) to match `pyproject.toml`; fixes `test_all_versions_match`. [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.5.md -->
+
+🔒 **QA GATE — Phase A complete.** Run: `pytest tests/ -v --tb=short -m "not benchmark and not requires_postgres" --cov=tapps_brain --cov-report=term-missing` — target: 0 failures in unit suite.
+
+### Phase B: Operator readiness (066.6–066.8) <!-- id: 066-phase-b -->
+
+- [ ] **066.6** CI workflow with ephemeral Postgres — add `pgvector/pgvector:pg17` service container to `.github/workflows/test.yml`; set `TAPPS_BRAIN_DATABASE_URL`; run migrations before pytest; full unit + integration suite under 15 min; document in `AGENTS.md`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.6.md -->
+- [ ] **066.7** Connection pool tuning + health JSON pool fields — add `TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS` env vars with defaults; expose `pool_saturation`, `pool_idle`, `last_migration_version` in `/health` JSON; unit tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.7.md -->
+- [ ] **066.8** Auto-migrate on startup gate — honour `TAPPS_BRAIN_AUTO_MIGRATE=1`; run `apply_private_migrations` before backend init; raise `MigrationDowngradeError` when DB version > bundled; log applied migrations at INFO; document in `CLAUDE.md` and `AGENTS.md`. [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.8.md -->
+
+### Phase C: Docs, benchmarks, and test parity (066.9–066.13) <!-- id: 066-phase-c -->
+
+- [ ] **066.9** Behavioral parity doc + load smoke benchmark — update `docs/engineering/v3-behavioral-parity.md` with all intentional v3 vs v2 deltas; write `tests/benchmarks/load_smoke_postgres.py` (50 concurrent agents, 60 s, p95 latency for save/recall/hive_search); mark `requires_postgres`. [LARGE] <!-- story: docs/planning/epics/stories/STORY-066.9.md -->
+- [ ] **066.10** pg_tde operator runbook — publish `docs/guides/postgres-tde.md` covering Percona pg_tde 2.1.2 install, Vault/OpenBao key provider, key rotation, cloud fallback table (AWS RDS / Google CloudSQL / Azure); cross-link from ADR-007. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.10.md -->
+- [ ] **066.11** Postgres backup and restore runbook — publish `docs/guides/postgres-backup.md` (pg_dump + base backup + WAL archiving + PITR + Hive failover); ops runbook at `docs/operations/postgres-backup-runbook.md`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.11.md -->
+- [ ] **066.12** Engineering docs drift sweep — run `docs_check_drift` over `docs/engineering/` and `docs/guides/` scoped to SQLite names; fix every hit; target zero stale SQLite references; update `system-architecture.md` and `data-stores-and-schema.md` for Postgres tenant-key model. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.12.md -->
+- [ ] **066.13** Postgres integration tests replacing deleted SQLite-coupled tests — write `tests/integration/test_postgres_private_backend.py`, `test_feedback_postgres.py`, `test_session_index_postgres.py`, `test_agent_identity_postgres.py`, `test_pgvector_embeddings.py`; all marked `requires_postgres`; 0 flakiness over 5 runs. [LARGE] <!-- story: docs/planning/epics/stories/STORY-066.13.md -->
+
+### Phase D: Final sweep (066.14) <!-- id: 066-phase-d -->
+
+- [ ] **066.14** Final test failure sweep — 90 to zero — after 066.1–066.4 land, re-run full suite; classify each remaining failure as fix/skip/delete; land surgical fixes; target zero failures and zero unjustified skips; update `CHANGELOG.md`; tag `3.4.0`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.14.md -->
+
+🔒 **QA GATE — EPIC-066 complete.** `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95 && ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/` — target: 0 failures, tag 3.4.0.
+
+---
+
+## EPIC-065: Live Always-On Dashboard — Real-Time tapps-brain and Hive Monitoring
+
+**Priority: P1 — High**
+**Read first:** `docs/planning/epics/EPIC-065.md`
+
+> **Dependencies done:** EPIC-060 (HttpAdapter foundation), EPIC-048 (visual_snapshot v2 schema), EPIC-030 (diagnostics composite score). **Sequenced after EPIC-066** — builds on a stable, fully-tested Postgres persistence layer. Dashboard wires to the always-on HttpAdapter and adds live Hive monitoring panels.
+
+### Phase A: Live endpoint + polling (065.1–065.3) <!-- id: 065-phase-a -->
+
+- [ ] **065.1** GET /snapshot live endpoint on HttpAdapter — add `GET /snapshot` to `http_adapter.py` calling `build_visual_snapshot()` with 15s TTL cache; wire auth token gate; add CORS header; update OpenAPI spec; unit tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.1.md -->
+- [ ] **065.2** Dashboard live polling mode — replace static `brain-visual.json` fetch in `index.html` with `setInterval` poll against `/snapshot`; add LIVE/STALE/ERROR connection badge and last-refreshed timestamp; remove demo JSON as silent default. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.2.md -->
+- [ ] **065.3** Purge stale and privacy-gated components — delete Tags section, Memory Groups section, static pipeline step-flow diagram, and `scorecard-derive.js`; replace privacy footer with dynamic badge; ship empty `brain-visual.json` stub. [SMALL] <!-- story: docs/planning/epics/stories/STORY-065.3.md -->
+
+### Phase B: Hive and agent monitoring panels (065.4–065.5) <!-- id: 065-phase-b -->
+
+- [ ] **065.4** Hive hub deep monitoring panel — extend `HiveHealthSummary` with per-namespace entry counts and `last_write_at`; render as structured table (not prose string) in dashboard; unit tests. [LARGE] <!-- story: docs/planning/epics/stories/STORY-065.4.md -->
+- [ ] **065.5** Agent registry live table — add `agent_registry` list to `VisualSnapshot` from `AgentRegistry.list_agents()`; render sortable table with last-write delta, silence highlighting, and empty state. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.5.md -->
+
+### Phase C: Velocity and retrieval panels (065.6–065.7) <!-- id: 065-phase-c -->
+
+- [ ] **065.6** Memory velocity panel — add `MemoryVelocity` (writes_1h, recalls_1h, writes_24h, recalls_24h) to `VisualSnapshot` via COUNT queries on `created_at`/`last_accessed`; render 2×2 stat grid with delta arrows. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
+- [ ] **065.7** Retrieval pipeline live metrics panel — add `RetrievalMetrics` from OTel in-process counters to `VisualSnapshot`; replace static step-flow diagram with 5-tile metrics panel (queries, BM25 hits, vector hits, RRF fusions, avg latency). [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.7.md -->
+
+🔒 **QA GATE — EPIC-065 complete.** Run: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95 && ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/` — then visual review of dashboard against NLT Labs style guide.
+
+---
+
 ## Deferred (not in current scope)
 
 | Epic | Title | Notes |
