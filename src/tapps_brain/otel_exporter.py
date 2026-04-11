@@ -58,9 +58,11 @@ high-cardinality attribute key before the instrument records its value.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import hashlib
 import importlib.util
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -71,6 +73,105 @@ except ImportError:  # pragma: no cover — opentelemetry-api is a core dependen
 
 if TYPE_CHECKING:
     from tapps_brain.metrics import MetricsSnapshot
+
+# ---------------------------------------------------------------------------
+# HAS_OTEL — public feature flag (STORY-032.1)
+# ---------------------------------------------------------------------------
+
+#: ``True`` when the ``opentelemetry-api`` package is importable at runtime.
+#:
+#: When ``False`` every OTel code path is a zero-overhead no-op — no spans,
+#: no metrics, no allocations on the hot path.
+#:
+#: Note: even when ``HAS_OTEL`` is ``True``, :class:`OTelConfig` can disable
+#: instrumentation via ``OTelConfig.enabled = False``.
+HAS_OTEL: bool = get_meter is not None
+
+# ---------------------------------------------------------------------------
+# OTelConfig — bootstrap configuration (STORY-032.1)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class OTelConfig:
+    """Bootstrap configuration for tapps-brain OpenTelemetry instrumentation.
+
+    Controls whether OTel is active (``enabled``) and which service identity
+    to report (``service_name``).  When ``enabled`` is ``False`` the tracer
+    returned by :func:`bootstrap_tracer` is ``None`` — a null-object that
+    causes :func:`tapps_brain.otel_tracer.start_span` to yield ``None``
+    immediately with **zero allocation** on the hot path.
+
+    Usage::
+
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+        # From environment (recommended)
+        tracer = bootstrap_tracer(OTelConfig.from_env())
+
+        # Explicit disable
+        tracer = bootstrap_tracer(OTelConfig(enabled=False))
+    """
+
+    enabled: bool = True
+    """Soft on/off switch, independent of :data:`HAS_OTEL` library availability."""
+
+    service_name: str = "tapps-brain"
+    """Value for the ``service.name`` OTel resource attribute."""
+
+    @classmethod
+    def from_env(cls) -> OTelConfig:
+        """Construct :class:`OTelConfig` from environment variables.
+
+        Environment variables read:
+
+        .. code-block:: text
+
+            TAPPS_BRAIN_OTEL_ENABLED  — "1"/"true"/"yes" enables (default).
+                                         "0"/"false"/"no"  disables.
+            OTEL_SERVICE_NAME          — service name (default: ``"tapps-brain"``).
+
+        Returns:
+            A new :class:`OTelConfig` instance populated from the environment.
+        """
+        raw = os.environ.get("TAPPS_BRAIN_OTEL_ENABLED", "1").strip().lower()
+        enabled = raw not in {"0", "false", "no"}
+        service_name = os.environ.get("OTEL_SERVICE_NAME", "tapps-brain") or "tapps-brain"
+        return cls(enabled=enabled, service_name=service_name)
+
+
+def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
+    """Return an OTel tracer for *config*, or ``None`` when OTel is disabled.
+
+    This is the **single canonical place** that creates a tracer.  All
+    downstream stories (032.2, 032.3, …) call this function.
+
+    Returns ``None`` (null-object / no-op) when **either**:
+
+    - :data:`HAS_OTEL` is ``False`` (``opentelemetry-api`` not installed), **or**
+    - ``config.enabled`` is ``False``
+
+    When ``None`` is returned, :func:`tapps_brain.otel_tracer.start_span` is
+    already wired to yield ``None`` without creating any span objects —
+    **zero allocation** on the hot path.
+
+    Args:
+        config: OTel bootstrap configuration.  When ``None`` a default
+            :class:`OTelConfig` (all defaults, enabled) is used.
+
+    Returns:
+        An OTel ``Tracer`` instance, or ``None`` when OTel is disabled.
+    """
+    cfg = config if config is not None else OTelConfig()
+    if not HAS_OTEL or not cfg.enabled:
+        return None
+    try:
+        from opentelemetry import trace  # lazy — API is a core dep but guard anyway
+
+        return trace.get_tracer(cfg.service_name)
+    except Exception:  # OTel import / init errors must not crash callers
+        return None  # pragma: no cover
+
 
 # ---------------------------------------------------------------------------
 # Documented allowed metric dimensions — see module docstring.

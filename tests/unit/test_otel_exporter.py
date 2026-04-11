@@ -721,3 +721,164 @@ class TestForbiddenLogFields:
 
         assert "query_text" in FORBIDDEN_LOG_FIELDS
         assert "query.text" in FORBIDDEN_LOG_FIELDS
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.1: OTelConfig — tracer bootstrap and null-object
+# ---------------------------------------------------------------------------
+
+
+class TestOTelConfig:
+    """OTelConfig dataclass defaults, explicit values, and from_env() (STORY-032.1)."""
+
+    def test_defaults(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig()
+        assert cfg.enabled is True
+        assert cfg.service_name == "tapps-brain"
+
+    def test_explicit_enabled_false(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig(enabled=False, service_name="my-svc")
+        assert cfg.enabled is False
+        assert cfg.service_name == "my-svc"
+
+    def test_from_env_defaults(self, monkeypatch: Any) -> None:
+        """No env vars set → uses built-in defaults."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_ENABLED", raising=False)
+        monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.enabled is True
+        assert cfg.service_name == "tapps-brain"
+
+    def test_from_env_disabled_via_zero(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_ENABLED", "0")
+        monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.enabled is False
+
+    def test_from_env_disabled_via_false(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_ENABLED", "false")
+        cfg = OTelConfig.from_env()
+        assert cfg.enabled is False
+
+    def test_from_env_disabled_via_no(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_ENABLED", "NO")
+        cfg = OTelConfig.from_env()
+        assert cfg.enabled is False
+
+    def test_from_env_enabled_explicitly(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_ENABLED", "true")
+        cfg = OTelConfig.from_env()
+        assert cfg.enabled is True
+
+    def test_from_env_custom_service_name(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("OTEL_SERVICE_NAME", "agent-cortex")
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_ENABLED", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.service_name == "agent-cortex"
+
+    def test_from_env_empty_service_name_falls_back_to_default(
+        self, monkeypatch: Any
+    ) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        # Empty string in env → fall back to "tapps-brain"
+        monkeypatch.setenv("OTEL_SERVICE_NAME", "")
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_ENABLED", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.service_name == "tapps-brain"
+
+    def test_is_dataclass(self) -> None:
+        import dataclasses
+
+        from tapps_brain.otel_exporter import OTelConfig
+
+        assert dataclasses.is_dataclass(OTelConfig)
+
+
+class TestHasOtel:
+    """HAS_OTEL module-level flag reflects opentelemetry-api availability (STORY-032.1)."""
+
+    def test_has_otel_is_bool(self) -> None:
+        from tapps_brain.otel_exporter import HAS_OTEL
+
+        assert isinstance(HAS_OTEL, bool)
+
+    def test_has_otel_true_when_api_importable(self) -> None:
+        """In the test environment opentelemetry-api is installed (core dep)."""
+        from tapps_brain.otel_exporter import HAS_OTEL
+
+        # opentelemetry-api is a core dep; this should be True in CI / local
+        # (if the import failed during module load, get_meter would be None)
+        assert HAS_OTEL is True
+
+
+class TestBootstrapTracer:
+    """bootstrap_tracer() null-object contract (STORY-032.1)."""
+
+    def test_disabled_config_returns_none(self) -> None:
+        """Soft-disabled via OTelConfig.enabled → null-object (None)."""
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+        result = bootstrap_tracer(OTelConfig(enabled=False))
+        assert result is None
+
+    def test_has_otel_false_returns_none(self) -> None:
+        """HAS_OTEL=False → null-object even when config says enabled."""
+        from unittest.mock import patch
+
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+        with patch("tapps_brain.otel_exporter.HAS_OTEL", False):
+            result = bootstrap_tracer(OTelConfig(enabled=True))
+        assert result is None
+
+    def test_none_config_uses_defaults_and_returns_tracer(self) -> None:
+        """None config → OTelConfig() defaults → tracer returned (API is available)."""
+        from tapps_brain.otel_exporter import bootstrap_tracer
+
+        # In test env HAS_OTEL=True and default enabled=True → non-None tracer
+        result = bootstrap_tracer(None)
+        assert result is not None  # OTel API is a core dep
+
+    def test_enabled_config_returns_tracer(self) -> None:
+        """Enabled config with API available → returns a tracer object."""
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+        result = bootstrap_tracer(OTelConfig(enabled=True, service_name="test-svc"))
+        assert result is not None
+
+    def test_disabled_config_no_span_allocation(self) -> None:
+        """Null tracer from disabled config → start_span yields None (no spans)."""
+        from unittest.mock import MagicMock
+
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+        from tapps_brain.otel_tracer import start_span, SPAN_REMEMBER
+
+        cfg = OTelConfig(enabled=False)
+        tracer = bootstrap_tracer(cfg)
+        assert tracer is None, "Disabled config must produce null tracer"
+
+        # Verify: when get_tracer returns None, start_span yields None (no-op)
+        mock_create = MagicMock()
+        with patch("tapps_brain.otel_tracer.get_tracer", return_value=None):
+            with start_span(SPAN_REMEMBER) as span:
+                mock_create(span)
+
+        # The span passed to the body must be None (no real span allocated)
+        mock_create.assert_called_once_with(None)
