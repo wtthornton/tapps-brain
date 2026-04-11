@@ -40,7 +40,7 @@
 
 - [x] **059.4** Private memory — schema + migrations — Postgres tables keyed by `(project_id, agent_id)`; forward-only `migrations/private/001_initial.sql`; clean apply on empty DB; revision tracking. [LARGE — new schema design] <!-- resolved: src/tapps_brain/migrations/, src/tapps_brain/persistence.py -->
 - [x] **059.5** Private memory — indexes + store wiring — recall/BM25-adjacent indexes; `MemoryStore` reads/writes private rows through Postgres backend; no `.tapps-brain/agents/<id>/memory.db` in v3 layout. [LARGE — core wiring] <!-- resolved: src/tapps_brain/store.py, src/tapps_brain/persistence.py -->
-- [ ] **059.6** Behavioral parity doc + load smoke — short markdown: what matches v2 (decay, consolidation, safety) vs what changed; benchmark script for N concurrent agents; p95 or "informational." <!-- resolved: docs/engineering/, scripts/ or tests/benchmarks/ -->
+- [x] **059.6** Behavioral parity doc + load smoke — short markdown: what matches v2 (decay, consolidation, safety) vs what changed; benchmark script for N concurrent agents; p95 or "informational." <!-- resolved: docs/engineering/, scripts/ or tests/benchmarks/ -->
 
 ### Phase C: Config, onboarding, CI (059.7–059.8) <!-- id: 059-phase-c -->
 

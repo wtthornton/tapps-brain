@@ -23,3 +23,25 @@ ralph                                  # or: ralph --live
 ```
 
 Ralph reads `.ralph/fix_plan.md` and `.ralph/PROMPT.md`. Logs: `.ralph/logs/`. Full detail: `CLAUDE.md` § Ralph.
+
+## v3 Load Smoke (concurrent-agent benchmark)
+
+Validates that N concurrent agents can write and recall memories without interference against one
+Postgres. Results are **informational only** (pre-SLO) — no hard latency budget is enforced in v3.0.
+
+```bash
+# Requires a running Postgres with private-memory schema applied
+export TAPPS_TEST_POSTGRES_DSN="postgres://tapps:tapps@localhost:5432/tapps_test"
+
+# 10 agents × 50 ops each (default)
+python scripts/load_smoke.py
+
+# Custom: 20 agents × 100 ops
+python scripts/load_smoke.py --agents 20 --ops 100
+
+# Without Postgres (in-memory store only, no DSN required)
+python scripts/load_smoke.py --no-postgres
+```
+
+Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wall time).
+Full parity doc: `docs/engineering/v3-behavioral-parity.md`.
