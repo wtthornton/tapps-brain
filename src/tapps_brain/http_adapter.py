@@ -1,16 +1,30 @@
-"""HTTP adapter for tapps-brain runtime API (STORY-060.3).
+"""HTTP adapter for tapps-brain runtime API (STORY-060.3 / STORY-060.4).
 
-Exposes three read-only probe/metrics endpoints using **only** the Python
-standard library — no external HTTP framework is required.
+Exposes probe/metrics endpoints using **only** the Python standard library —
+no external HTTP framework is required.
 
 Routes
 ------
-``GET /health``   — Liveness: always ``200 OK`` while the process is alive.
-                    Does **not** require a database connection.
-``GET /ready``    — Readiness: DB ping + highest applied migration version.
-                    Returns ``200`` when ready, ``503`` when degraded.
-``GET /metrics``  — Prometheus text-format exposition of basic runtime counters.
-``GET /``         — Redirects to ``/health`` (convenience).
+``GET /``             — Alias for ``/health`` (convenience).
+``GET /health``       — Liveness: always ``200 OK`` while the process is alive.
+                        Does **not** require a database connection. (public)
+``GET /ready``        — Readiness: DB ping + highest applied migration version.
+                        Returns ``200`` when ready, ``503`` when degraded. (public)
+``GET /metrics``      — Prometheus text-format exposition of basic runtime counters.
+                        (public)
+``GET /info``         — Extended runtime info: version, Python, uptime, config flags.
+                        **Auth-protected** when ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` is set.
+``GET /openapi.json`` — OpenAPI 3.1 spec for this adapter (public).
+
+Authentication
+--------------
+Set ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` (or pass ``auth_token`` to the constructor)
+to require ``Authorization: Bearer <token>`` on protected routes.  Probe routes
+(``/``, ``/health``, ``/ready``, ``/metrics``, ``/openapi.json``) are **always
+public** so orchestrators can reach them without credentials.
+
+If the token is not configured, all routes are open (not-for-production — see
+the ADR and README for the auth requirements statement).
 
 Usage::
 
@@ -23,14 +37,13 @@ Usage::
 
 Or as a context manager::
 
-    with HttpAdapter(port=8080, dsn="postgres://...") as adapter:
+    with HttpAdapter(port=8080, dsn="postgres://...", auth_token="secret") as adapter:
         ...  # adapter is running
 
-The ``dsn`` parameter is used only for ``/ready`` and ``/metrics`` — it is
-never included in response bodies or log output (ADR-007 / EPIC-063 secret
-hygiene).
+The ``dsn`` and ``auth_token`` parameters are never included in response bodies
+or log output (ADR-007 / EPIC-063 secret hygiene).
 
-EPIC-060 STORY-060.3
+EPIC-060 STORY-060.3 / STORY-060.4
 """
 
 from __future__ import annotations
@@ -47,6 +60,167 @@ from typing import Any
 import structlog
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# OpenAPI spec (STORY-060.4) — single source of truth for the route list.
+# Kept in-module so it always matches the live code.
+# ---------------------------------------------------------------------------
+
+_OPENAPI_SPEC: dict[str, Any] = {
+    "openapi": "3.1.0",
+    "info": {
+        "title": "tapps-brain runtime API",
+        "version": "3.0.0",
+        "description": (
+            "Minimal HTTP adapter exposing liveness, readiness, metrics, and "
+            "extended runtime info for tapps-brain. "
+            "Memory operations are **not** available over HTTP — use the "
+            "AgentBrain Python API or the MCP server instead."
+        ),
+    },
+    "paths": {
+        "/health": {
+            "get": {
+                "summary": "Liveness probe",
+                "description": (
+                    "Always returns 200 OK while the process is alive. "
+                    "Does not require a database connection."
+                ),
+                "operationId": "getLiveness",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "Process is alive.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {"type": "string", "example": "ok"},
+                                        "service": {"type": "string"},
+                                        "version": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+        },
+        "/ready": {
+            "get": {
+                "summary": "Readiness probe",
+                "description": (
+                    "Returns 200 when the configured Postgres database is reachable "
+                    "and the latest migration has been applied. Returns 503 otherwise."
+                ),
+                "operationId": "getReadiness",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "Service is ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": ["ready", "degraded"],
+                                        },
+                                        "migration_version": {
+                                            "type": ["integer", "null"]
+                                        },
+                                        "detail": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "503": {"description": "Service is degraded (DB unreachable)."},
+                },
+            }
+        },
+        "/metrics": {
+            "get": {
+                "summary": "Prometheus metrics",
+                "description": (
+                    "Exposes basic runtime counters in Prometheus text format. "
+                    "High-cardinality labels (query text, memory keys, agent IDs) "
+                    "are never included."
+                ),
+                "operationId": "getMetrics",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "Prometheus text exposition.",
+                        "content": {"text/plain": {}},
+                    }
+                },
+            }
+        },
+        "/info": {
+            "get": {
+                "summary": "Extended runtime info",
+                "description": (
+                    "Returns service version, Python runtime, uptime, and config flags. "
+                    "Auth-protected when TAPPS_BRAIN_HTTP_AUTH_TOKEN is configured."
+                ),
+                "operationId": "getInfo",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {
+                        "description": "Runtime info.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "service": {"type": "string"},
+                                        "version": {"type": "string"},
+                                        "python": {"type": "string"},
+                                        "platform": {"type": "string"},
+                                        "uptime_seconds": {"type": "number"},
+                                        "auth_enabled": {"type": "boolean"},
+                                        "dsn_configured": {"type": "boolean"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "401": {"description": "Missing or malformed Authorization header."},
+                    "403": {"description": "Invalid token."},
+                },
+            }
+        },
+        "/openapi.json": {
+            "get": {
+                "summary": "OpenAPI spec",
+                "description": "Returns this OpenAPI 3.1 specification as JSON.",
+                "operationId": "getOpenApiSpec",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "OpenAPI spec.",
+                        "content": {"application/json": {}},
+                    }
+                },
+            }
+        },
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": (
+                    "Set TAPPS_BRAIN_HTTP_AUTH_TOKEN to enable. "
+                    "When not configured, protected routes are open (not-for-production)."
+                ),
+            }
+        }
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Version / service metadata helpers
@@ -173,6 +347,66 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     # Injected by HttpAdapter before serving
     _dsn: str | None = None
     _version: str = "unknown"
+    _auth_token: str | None = None  # None → auth disabled
+
+    # Routes that are always public — no auth check applied.
+    _PUBLIC_PATHS: frozenset[str] = frozenset(
+        {"/", "/health", "/ready", "/metrics", "/openapi.json"}
+    )
+
+    # ------------------------------------------------------------------
+    # Auth helpers
+    # ------------------------------------------------------------------
+
+    def _check_auth(self) -> bool:
+        """Return True if the request passes auth (or auth is disabled).
+
+        When ``_auth_token`` is ``None`` the route is open.
+        Otherwise, the request must include::
+
+            Authorization: Bearer <token>
+
+        Returns False and sends the appropriate 401/403 response when auth
+        fails — the caller must return immediately without sending further
+        output.
+        """
+        if not self._auth_token:
+            # Auth not configured → open (not-for-production)
+            return True
+
+        header = self.headers.get("Authorization", "")
+        if not header:
+            self._send_json(
+                401,
+                {
+                    "error": "unauthorized",
+                    "detail": "Authorization header required (Bearer token).",
+                },
+            )
+            return False
+
+        parts = header.split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            self._send_json(
+                401,
+                {
+                    "error": "unauthorized",
+                    "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
+                },
+            )
+            return False
+
+        if parts[1] != self._auth_token:
+            self._send_json(
+                403,
+                {
+                    "error": "forbidden",
+                    "detail": "Invalid token.",
+                },
+            )
+            return False
+
+        return True
 
     # ------------------------------------------------------------------
     # Route dispatch
@@ -181,12 +415,21 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Handle GET requests."""
         path = self.path.split("?", 1)[0]  # strip query string
+
+        # Auth gate: apply to routes not in the public set
+        if path not in self._PUBLIC_PATHS and not self._check_auth():
+            return  # _check_auth already sent the 401/403 response
+
         if path in ("/", "/health"):
             self._handle_health()
         elif path == "/ready":
             self._handle_ready()
         elif path == "/metrics":
             self._handle_metrics()
+        elif path == "/info":
+            self._handle_info()
+        elif path == "/openapi.json":
+            self._handle_openapi()
         else:
             self._send_json(404, {"error": "not_found", "path": path})
 
@@ -220,6 +463,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _handle_info(self) -> None:
+        """Extended runtime info — auth-protected when token is configured."""
+        body: dict[str, Any] = {
+            "service": _SERVICE_NAME,
+            "version": self._version,
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "platform": platform.system(),
+            "uptime_seconds": round(time.time() - _PROCESS_START_TIME, 3),
+            "auth_enabled": self._auth_token is not None,
+            "dsn_configured": self._dsn is not None,
+        }
+        self._send_json(200, body)
+
+    def _handle_openapi(self) -> None:
+        """Return the OpenAPI 3.1 spec as JSON (always public)."""
+        self._send_json(200, _OPENAPI_SPEC)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -249,7 +509,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 
 class HttpAdapter:
-    """Minimal HTTP adapter exposing liveness, readiness, and metrics probes.
+    """Minimal HTTP adapter exposing liveness, readiness, metrics, and info probes.
 
     Parameters
     ----------
@@ -262,6 +522,12 @@ class HttpAdapter:
         Falls back to the ``TAPPS_BRAIN_DATABASE_URL`` environment variable,
         then ``TAPPS_BRAIN_HIVE_DSN``.  When neither is set, ``/ready``
         returns ``503`` and ``/metrics`` reports ``tapps_brain_db_ready 0``.
+    auth_token:
+        Bearer token required for protected routes (``/info``).
+        Falls back to the ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` environment variable.
+        When neither is set, protected routes are open (**not for production**).
+        Probe routes (``/health``, ``/ready``, ``/metrics``, ``/openapi.json``)
+        are always public regardless of this setting.
     """
 
     def __init__(
@@ -270,10 +536,12 @@ class HttpAdapter:
         host: str = "127.0.0.1",
         port: int = 8080,
         dsn: str | None = None,
+        auth_token: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._dsn = dsn or self._resolve_dsn_from_env()
+        self._auth_token = auth_token or self._resolve_auth_token_from_env()
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._version = _service_version()
@@ -287,13 +555,15 @@ class HttpAdapter:
         if self._server is not None:
             return  # already running
 
-        # Build a handler subclass with the DSN bound in
+        # Build a handler subclass with the DSN and auth token bound in
         dsn = self._dsn
         version = self._version
+        auth_token = self._auth_token
 
         class BoundHandler(_Handler):
             _dsn = dsn
             _version = version
+            _auth_token = auth_token
 
         self._server = http.server.HTTPServer((self._host, self._port), BoundHandler)
         self._thread = threading.Thread(
@@ -360,3 +630,8 @@ class HttpAdapter:
             or ""
         ).strip()
         return dsn or None
+
+    @staticmethod
+    def _resolve_auth_token_from_env() -> str | None:
+        token = os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "").strip()
+        return token or None

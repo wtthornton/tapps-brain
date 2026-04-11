@@ -1,9 +1,12 @@
-"""Contract tests for tapps_brain.http_adapter (STORY-060.3).
+"""Contract tests for tapps_brain.http_adapter (STORY-060.3 / STORY-060.4).
 
 Tests cover:
 - /health: always 200, JSON body
 - /ready: 200 when DB reachable, 503 when DB down / DSN missing
 - /metrics: Prometheus text format, correct Content-Type, key gauge names
+- /info: auth-protected runtime info
+- /openapi.json: public OpenAPI spec
+- Auth: 401 on missing header, 403 on wrong token, 200 on correct token
 - 404 for unknown routes
 - Context manager lifecycle (start/stop)
 """
@@ -20,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tapps_brain.http_adapter import HttpAdapter, _probe_db, _service_version
+from tapps_brain.http_adapter import HttpAdapter, _OPENAPI_SPEC, _probe_db, _service_version
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,6 +42,23 @@ def _get(port: int, path: str) -> tuple[int, dict[str, Any] | str]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", path)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        content_type = resp.getheader("Content-Type", "")
+        if "application/json" in content_type:
+            return resp.status, json.loads(raw)
+        return resp.status, raw
+    finally:
+        conn.close()
+
+
+def _get_with_headers(
+    port: int, path: str, headers: dict[str, str]
+) -> tuple[int, dict[str, Any] | str]:
+    """Issue a GET request with custom headers and return (status_code, parsed_body)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", path, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         content_type = resp.getheader("Content-Type", "")
@@ -405,3 +425,211 @@ class TestServiceVersion:
         v = _service_version()
         assert isinstance(v, str)
         assert len(v) > 0
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for auth tests (STORY-060.4)
+# ---------------------------------------------------------------------------
+
+_TEST_TOKEN = "test-secret-token-abc123"  # noqa: S105  (test credential, not real)
+
+
+@pytest.fixture()
+def adapter_with_auth():
+    """Start an HttpAdapter with a fixed auth token."""
+    port = _free_port()
+    adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, auth_token=_TEST_TOKEN)
+    adapter.start()
+    _wait_for_server(port)
+    yield adapter
+    adapter.stop()
+
+
+@pytest.fixture()
+def adapter_no_auth():
+    """Start an HttpAdapter without auth (same as adapter_no_dsn but named for clarity)."""
+    port = _free_port()
+    adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, auth_token=None)
+    adapter.start()
+    _wait_for_server(port)
+    yield adapter
+    adapter.stop()
+
+
+# ---------------------------------------------------------------------------
+# /info endpoint — auth-protected (STORY-060.4)
+# ---------------------------------------------------------------------------
+
+
+class TestInfoEndpointNoAuth:
+    """When auth is not configured, /info is open."""
+
+    def test_returns_200_without_auth(self, adapter_no_auth: HttpAdapter) -> None:
+        status, _body = _get(adapter_no_auth.address[1], "/info")
+        assert status == 200
+
+    def test_body_has_service_field(self, adapter_no_auth: HttpAdapter) -> None:
+        _, body = _get(adapter_no_auth.address[1], "/info")
+        assert isinstance(body, dict)
+        assert body["service"] == "tapps-brain"
+
+    def test_body_has_python_field(self, adapter_no_auth: HttpAdapter) -> None:
+        _, body = _get(adapter_no_auth.address[1], "/info")
+        assert isinstance(body, dict)
+        assert "python" in body
+        # Should look like "3.12.x"
+        assert body["python"].count(".") >= 1
+
+    def test_body_has_uptime_seconds(self, adapter_no_auth: HttpAdapter) -> None:
+        _, body = _get(adapter_no_auth.address[1], "/info")
+        assert isinstance(body, dict)
+        assert isinstance(body.get("uptime_seconds"), float | int)
+        assert body["uptime_seconds"] >= 0
+
+    def test_auth_enabled_is_false_without_token(self, adapter_no_auth: HttpAdapter) -> None:
+        _, body = _get(adapter_no_auth.address[1], "/info")
+        assert isinstance(body, dict)
+        assert body["auth_enabled"] is False
+
+    def test_dsn_configured_is_false_without_dsn(self, adapter_no_auth: HttpAdapter) -> None:
+        _, body = _get(adapter_no_auth.address[1], "/info")
+        assert isinstance(body, dict)
+        assert body["dsn_configured"] is False
+
+
+class TestInfoEndpointWithAuth:
+    """When auth IS configured, /info requires a valid Bearer token."""
+
+    def test_returns_401_without_authorization_header(
+        self, adapter_with_auth: HttpAdapter
+    ) -> None:
+        """Fuzz: missing Authorization header → 401."""
+        status, body = _get(adapter_with_auth.address[1], "/info")
+        assert status == 401
+        assert isinstance(body, dict)
+        assert body.get("error") == "unauthorized"
+
+    def test_returns_401_with_malformed_header(self, adapter_with_auth: HttpAdapter) -> None:
+        """Fuzz: Authorization header present but not 'Bearer <token>' form → 401."""
+        port = adapter_with_auth.address[1]
+        for bad_header in [
+            "Basic abc123",
+            "Bearer",  # missing token
+            "token abc123",
+            "bearer" + _TEST_TOKEN,  # no space
+        ]:
+            status, body = _get_with_headers(port, "/info", {"Authorization": bad_header})
+            assert status in (401, 403), f"Expected 401/403 for header '{bad_header}', got {status}"
+
+    def test_returns_403_with_wrong_token(self, adapter_with_auth: HttpAdapter) -> None:
+        """Fuzz: wrong token → 403."""
+        port = adapter_with_auth.address[1]
+        status, body = _get_with_headers(
+            port, "/info", {"Authorization": "Bearer wrong-token-xyz"}
+        )
+        assert status == 403
+        assert isinstance(body, dict)
+        assert body.get("error") == "forbidden"
+
+    def test_returns_200_with_correct_token(self, adapter_with_auth: HttpAdapter) -> None:
+        """Correct token → 200."""
+        port = adapter_with_auth.address[1]
+        status, body = _get_with_headers(
+            port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"}
+        )
+        assert status == 200
+        assert isinstance(body, dict)
+        assert body["service"] == "tapps-brain"
+
+    def test_auth_enabled_is_true_with_token(self, adapter_with_auth: HttpAdapter) -> None:
+        port = adapter_with_auth.address[1]
+        _, body = _get_with_headers(
+            port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"}
+        )
+        assert isinstance(body, dict)
+        assert body["auth_enabled"] is True
+
+    def test_probe_routes_public_even_with_auth_configured(
+        self, adapter_with_auth: HttpAdapter
+    ) -> None:
+        """Probe routes must not require auth — Kubernetes probes don't send tokens."""
+        port = adapter_with_auth.address[1]
+        for path in ("/health", "/ready", "/metrics", "/openapi.json"):
+            status, _ = _get(port, path)
+            assert status in (200, 503), (
+                f"Public probe route {path} returned {status} — must not require auth"
+            )
+
+
+# ---------------------------------------------------------------------------
+# /openapi.json endpoint (STORY-060.4)
+# ---------------------------------------------------------------------------
+
+
+class TestOpenApiEndpoint:
+    def test_returns_200(self, adapter_no_dsn: HttpAdapter) -> None:
+        status, _ = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert status == 200
+
+    def test_returns_json(self, adapter_no_dsn: HttpAdapter) -> None:
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+
+    def test_openapi_version_field(self, adapter_no_dsn: HttpAdapter) -> None:
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+        assert body.get("openapi", "").startswith("3.")
+
+    def test_paths_include_required_routes(self, adapter_no_dsn: HttpAdapter) -> None:
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+        paths = body.get("paths", {})
+        for route in ("/health", "/ready", "/metrics", "/info", "/openapi.json"):
+            assert route in paths, f"OpenAPI spec missing route: {route}"
+
+    def test_no_memory_crud_routes(self, adapter_no_dsn: HttpAdapter) -> None:
+        """OpenAPI spec must not include memory CRUD paths."""
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+        paths = body.get("paths", {})
+        forbidden_prefixes = ("/memory", "/memories", "/entries", "/agent")
+        for path in paths:
+            for prefix in forbidden_prefixes:
+                assert not path.startswith(prefix), (
+                    f"OpenAPI spec must not include memory CRUD route: {path}"
+                )
+
+    def test_spec_within_page_limit(self) -> None:
+        """Sanity: OpenAPI spec must remain ≤ 1 page — keep route count ≤ 10."""
+        paths = _OPENAPI_SPEC.get("paths", {})
+        assert len(paths) <= 10, (
+            f"OpenAPI spec has {len(paths)} routes — EPIC-060 limits to ≤ 10 documented routes"
+        )
+
+    def test_public_even_with_auth_configured(self, adapter_with_auth: HttpAdapter) -> None:
+        """OpenAPI spec must be accessible without auth."""
+        port = adapter_with_auth.address[1]
+        status, _ = _get(port, "/openapi.json")
+        assert status == 200
+
+
+# ---------------------------------------------------------------------------
+# Auth env-var resolution
+# ---------------------------------------------------------------------------
+
+
+class TestAuthTokenEnvResolution:
+    def test_resolves_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "env-token-xyz")
+        token = HttpAdapter._resolve_auth_token_from_env()
+        assert token == "env-token-xyz"
+
+    def test_returns_none_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", raising=False)
+        token = HttpAdapter._resolve_auth_token_from_env()
+        assert token is None
+
+    def test_returns_none_for_empty_string(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "  ")
+        token = HttpAdapter._resolve_auth_token_from_env()
+        assert token is None

@@ -1,0 +1,184 @@
+openapi: "3.1.0"
+info:
+  title: tapps-brain runtime API
+  version: "3.0.0"
+  description: |
+    Minimal HTTP adapter for tapps-brain.
+
+    **Primary integration surface is the AgentBrain Python API or the MCP server.**
+    This HTTP adapter exposes only operational endpoints (health, readiness, metrics,
+    and runtime info). Memory operations are NOT available over HTTP.
+
+    ## Authentication
+
+    Set `TAPPS_BRAIN_HTTP_AUTH_TOKEN` (or pass `auth_token` to `HttpAdapter`) to
+    require `Authorization: Bearer <token>` on protected routes.
+
+    **Auth required in production** for any non-probe route (EPIC-060 ADR).
+    Probe routes (`/health`, `/ready`, `/metrics`, `/openapi.json`) are always public
+    so Kubernetes liveness/readiness checks work without credentials.
+
+    ## Non-goals
+
+    - No CRUD for memory keys or agent state.
+    - No replacement for AgentBrain Python API or MCP server.
+    - Not a second REST memory model.
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      description: |
+        Always returns 200 OK while the process is alive.
+        Does not require a database connection.
+        Use for Kubernetes `livenessProbe`.
+      operationId: getLiveness
+      security: []
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: tapps-brain
+                  version:
+                    type: string
+                    example: "3.0.0"
+
+  /ready:
+    get:
+      summary: Readiness probe
+      description: |
+        Returns 200 when the configured Postgres database is reachable and
+        the latest migration has been applied. Returns 503 otherwise.
+        Use for Kubernetes `readinessProbe`.
+      operationId: getReadiness
+      security: []
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ready, degraded]
+                  migration_version:
+                    type: ["integer", "null"]
+                  detail:
+                    type: string
+        "503":
+          description: Service is degraded (DB unreachable or DSN not configured).
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: |
+        Exposes basic runtime counters in Prometheus text format (content-type
+        `text/plain; version=0.0.4`).
+
+        High-cardinality labels (query text, memory keys, agent IDs) are never
+        included per the EPIC-061 redaction policy.
+      operationId: getMetrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /info:
+    get:
+      summary: Extended runtime info
+      description: |
+        Returns service version, Python runtime, uptime, and config flags.
+
+        **Auth-protected** when `TAPPS_BRAIN_HTTP_AUTH_TOKEN` is configured.
+        When auth is not configured this route is open — not for production.
+      operationId: getInfo
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Runtime info.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: tapps-brain
+                  version:
+                    type: string
+                    example: "3.0.0"
+                  python:
+                    type: string
+                    example: "3.12.3"
+                  platform:
+                    type: string
+                    example: Linux
+                  uptime_seconds:
+                    type: number
+                    example: 42.7
+                  auth_enabled:
+                    type: boolean
+                    description: True when TAPPS_BRAIN_HTTP_AUTH_TOKEN is configured.
+                  dsn_configured:
+                    type: boolean
+                    description: True when a Postgres DSN has been resolved.
+        "401":
+          description: Missing or malformed Authorization header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /openapi.json:
+    get:
+      summary: OpenAPI spec
+      description: Returns this OpenAPI 3.1 specification as JSON (always public).
+      operationId: getOpenApiSpec
+      security: []
+      responses:
+        "200":
+          description: OpenAPI spec document.
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Set `TAPPS_BRAIN_HTTP_AUTH_TOKEN` to require bearer token auth on
+        protected routes. When not configured, protected routes are open
+        (not-for-production).
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
