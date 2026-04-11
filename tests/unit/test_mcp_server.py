@@ -727,6 +727,9 @@ class TestPrompts:
         assert "tier" in content
 
 
+@pytest.mark.skip(
+    reason="SQLite FederatedStore removed in v3 (ADR-007); federation MCP tools require PostgresFederationBackend"
+)
 class TestFederationAndMaintenance:
     """Test federation and maintenance tools (STORY-008.5)."""
 
@@ -1117,6 +1120,9 @@ class TestMemoryImportEdgeCases:
         assert result["imported"] == 0
 
 
+@pytest.mark.skip(
+    reason="SQLite FederatedStore removed in v3 (ADR-007); federation error paths require PostgresFederationBackend"
+)
 class TestFederationErrorPaths:
     """Test federation error paths: hub unavailable, subscribe ValueError."""
 
@@ -1244,6 +1250,9 @@ class TestSessionAndCaptureTools:
 # ------------------------------------------------------------------
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); hive wiring tests require PostgresHiveBackend"
+)
 class TestMCPHiveWiring:
     """Tests for --agent-id and --enable-hive flags (STORY-013.1)."""
 
@@ -1320,6 +1329,7 @@ class TestMemorySaveAgentScope:
         assert entry is not None
         assert entry.agent_scope == "hive"
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_memory_save_hive_scope_triggers_propagation(self, store_dir):
         """When Hive is enabled, saving with agent_scope='hive' propagates."""
         from unittest.mock import patch
@@ -1339,6 +1349,7 @@ class TestMemorySaveAgentScope:
         store._hive_store.close()
         store.close()
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_memory_save_private_scope_still_calls_propagate(self, store_dir):
         """Private scope entries still call _propagate_to_hive (engine decides)."""
         from unittest.mock import patch
@@ -1641,6 +1652,9 @@ class TestMemorySearchAsOfValidation:
         assert isinstance(result, list)
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); shared HiveStore tests require PostgresHiveBackend"
+)
 class TestHiveToolsReuseSharedStore:
     """Tests for Hive tools reusing the server's shared HiveStore (STORY-013.4)."""
 
@@ -1799,7 +1813,7 @@ class TestHiveToolsReuseSharedStore:
         save_fn(key="identity-test", value="check agent id")
 
         # Patch PropagationEngine.propagate to capture the agent_id passed
-        with patch("tapps_brain.hive.PropagationEngine.propagate", wraps=None) as mock_propagate:
+        with patch("tapps_brain.backends.PropagationEngine.propagate", wraps=None) as mock_propagate:
             mock_propagate.return_value = {"namespace": "test", "key": "identity-test"}
             prop_fn = _tool_fn(server, "hive_propagate")
             result = json.loads(prop_fn(key="identity-test", agent_scope="hive"))
@@ -1827,7 +1841,7 @@ class TestHiveToolsReuseSharedStore:
         if hasattr(store, "_hive_agent_id"):
             delattr(store, "_hive_agent_id")
 
-        with patch("tapps_brain.hive.PropagationEngine.propagate", wraps=None) as mock_propagate:
+        with patch("tapps_brain.backends.PropagationEngine.propagate", wraps=None) as mock_propagate:
             mock_propagate.return_value = {"namespace": "test", "key": "fallback-test"}
             prop_fn = _tool_fn(server, "hive_propagate")
             result = json.loads(prop_fn(key="fallback-test", agent_scope="hive"))
@@ -1929,7 +1943,7 @@ class TestHiveToolsReuseSharedStore:
             self.close = close_wrapper
             self.search = MagicMock(side_effect=ValueError("search exploded"))
 
-        import tapps_brain.hive as hive_module
+        import tapps_brain.backends as hive_module
 
         original_init = hive_module.HiveStore.__init__
 
@@ -1968,7 +1982,7 @@ class TestHiveToolsReuseSharedStore:
             self.close = close_wrapper
             self.count_by_namespace = MagicMock(side_effect=ValueError("count exploded"))
 
-        import tapps_brain.hive as hive_module
+        import tapps_brain.backends as hive_module
 
         original_init = hive_module.HiveStore.__init__
 
@@ -2013,7 +2027,7 @@ class TestHiveToolsReuseSharedStore:
             original_init(self, db_path)
             self.search = MagicMock(side_effect=RuntimeError("unexpected bug"))
 
-        import tapps_brain.hive as hive_module
+        import tapps_brain.backends as hive_module
 
         original_init = hive_module.HiveStore.__init__
 
@@ -2198,7 +2212,7 @@ class TestMCPAdditionalCoverage:
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=False)
-        import tapps_brain.hive as hive_mod
+        import tapps_brain.backends as hive_mod
 
         monkeypatch.setattr(
             hive_mod.AgentRegistry,
@@ -2214,6 +2228,7 @@ class TestMCPAdditionalCoverage:
     # hive_status namespace_entries per agent
     # ------------------------------------------------------------------
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_hive_status_agents_include_entries_contributed(self, store_dir):
         """hive_status agents list includes entries_contributed field (fix for issue #22).
 
@@ -2243,6 +2258,7 @@ class TestMCPAdditionalCoverage:
     # hive_status / hive_search — exception paths
     # ------------------------------------------------------------------
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_hive_status_exception_returns_error(self, store_dir, monkeypatch):
         """hive_status returns error JSON when an exception occurs."""
         from tapps_brain.mcp_server import create_server
@@ -2260,6 +2276,7 @@ class TestMCPAdditionalCoverage:
         server._tapps_store._hive_store.close()
         server._tapps_store.close()
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_hive_search_exception_returns_error(self, store_dir, monkeypatch):
         """hive_search returns error JSON when an exception occurs."""
         from tapps_brain.mcp_server import create_server
@@ -2280,6 +2297,7 @@ class TestMCPAdditionalCoverage:
     # agent_create — exception path
     # ------------------------------------------------------------------
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_agent_create_exception_returns_error(self, store_dir, monkeypatch):
         """agent_create returns error JSON when registration raises unexpectedly."""
         from tapps_brain.mcp_server import create_server
@@ -2287,7 +2305,7 @@ class TestMCPAdditionalCoverage:
         server = create_server(store_dir, enable_hive=True, agent_id="lead")
 
         # Patch AgentRegistry.register to raise after profile validation succeeds
-        import tapps_brain.hive as hive_mod
+        import tapps_brain.backends as hive_mod
 
         original_register = hive_mod.AgentRegistry.register
 
@@ -2353,12 +2371,13 @@ class TestMCPAdditionalCoverage:
     # agent_register — exception path
     # ------------------------------------------------------------------
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_agent_register_exception_returns_error(self, store_dir, monkeypatch):
         """agent_register returns error JSON when registration raises unexpectedly."""
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=True, agent_id="lead")
-        import tapps_brain.hive as hive_mod
+        import tapps_brain.backends as hive_mod
 
         monkeypatch.setattr(
             hive_mod.AgentRegistry,
@@ -2380,7 +2399,7 @@ class TestMCPAdditionalCoverage:
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=False)
-        import tapps_brain.hive as hive_mod
+        import tapps_brain.backends as hive_mod
 
         monkeypatch.setattr(
             hive_mod.AgentRegistry,
@@ -2396,6 +2415,7 @@ class TestMCPAdditionalCoverage:
     # hive_propagate — exception path
     # ------------------------------------------------------------------
 
+    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_hive_propagate_exception_returns_error(self, store_dir, monkeypatch):
         """hive_propagate returns error JSON when PropagationEngine raises."""
         from tapps_brain.mcp_server import create_server
@@ -2403,7 +2423,7 @@ class TestMCPAdditionalCoverage:
         server = create_server(store_dir, enable_hive=True, agent_id="test")
         store = server._tapps_store
         store.save(key="exc-fact", value="A fact for exception test", tier="architectural")
-        import tapps_brain.hive as hive_mod
+        import tapps_brain.backends as hive_mod
 
         monkeypatch.setattr(
             hive_mod.PropagationEngine,

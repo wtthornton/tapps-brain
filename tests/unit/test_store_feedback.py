@@ -392,9 +392,12 @@ class TestFeedbackConfigFromProfile:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); Hive feedback tests require PostgresHiveBackend"
+)
 class TestHiveFeedbackPropagation:
     def test_propagate_after_hive_recall_session_index(self, tmp_path: Path) -> None:
-        from tapps_brain.hive import HiveStore
+        raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")
 
         hive_db = tmp_path / "hive.db"
         hs = HiveStore(db_path=hive_db)

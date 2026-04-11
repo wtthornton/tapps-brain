@@ -18,7 +18,6 @@ from typer.testing import CliRunner
 
 from tapps_brain.cli import app
 from tapps_brain.feedback import FeedbackConfig
-from tapps_brain.hive import HiveStore
 from tapps_brain.mcp_server import create_server
 from tapps_brain.profile import get_builtin_profile
 from tapps_brain.store import MemoryStore
@@ -32,9 +31,11 @@ def _mcp_tool_fn(mcp_server: object, name: str):
     raise KeyError(msg)
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); test requires PostgresHiveBackend"
+)
 def test_full_feedback_pipeline(tmp_path: Path) -> None:
-    hive_db = tmp_path / "hive.db"
-    hs = HiveStore(db_path=hive_db)
+    raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")
     profile = get_builtin_profile("repo-brain").model_copy(
         update={"feedback": FeedbackConfig(custom_event_types=["deploy_completed"])},
     )

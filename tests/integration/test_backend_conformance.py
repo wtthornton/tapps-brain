@@ -253,7 +253,7 @@ class TestAgentRegistryConformance:
     """Verify PostgreSQL agent registry conformance (ADR-007)."""
 
     def _make_agent(self, agent_id: str = "test-agent") -> Any:
-        from tapps_brain.hive import AgentRegistration
+        from tapps_brain.models import AgentRegistration
 
         return AgentRegistration(
             id=agent_id,

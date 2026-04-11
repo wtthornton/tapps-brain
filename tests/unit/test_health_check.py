@@ -148,10 +148,11 @@ def test_run_health_check_near_capacity_warning(
     assert any("capacity" in w.lower() for w in report.warnings)
 
 
-def test_run_health_check_hive_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("tapps_brain.hive.HiveStore", MagicMock(side_effect=OSError("hive down")))
+def test_run_health_check_hive_no_dsn_reports_skipped(tmp_path: Path) -> None:
+    """Without TAPPS_BRAIN_HIVE_DSN and no explicit hive_store, hive status is 'skipped'."""
+    # v3: no SQLite fallback — hive requires Postgres DSN (ADR-007)
     report = run_health_check(project_root=tmp_path, check_hive=True)
-    assert report.hive.status == "warn"
+    assert report.hive.status == "skipped"
     assert report.hive.connected is False
     assert any("hive" in w.lower() for w in report.warnings)
 
@@ -159,16 +160,17 @@ def test_run_health_check_hive_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_
 def test_run_health_check_hive_no_agents_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Explicit hive_store with 0 agents generates a warning."""
     mock_hive = MagicMock()
     mock_hive.count_by_namespace.return_value = {"default": 1}
     mock_hive.close = MagicMock()
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = []
 
-    monkeypatch.setattr("tapps_brain.hive.HiveStore", lambda: mock_hive)
-    monkeypatch.setattr("tapps_brain.hive.AgentRegistry", lambda: mock_reg)
+    # Patch AgentRegistry in backends (where health_check.py imports it from)
+    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda **_: mock_reg)
 
-    report = run_health_check(project_root=tmp_path, check_hive=True)
+    report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
     assert report.hive.connected is True
     assert any("agents" in w.lower() for w in report.warnings)
 
@@ -182,9 +184,8 @@ def test_run_health_check_hive_store_parameter(
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = ["agent-a"]
 
-    # Ensure default SQLite HiveStore is never called
-    monkeypatch.setattr("tapps_brain.hive.HiveStore", MagicMock(side_effect=RuntimeError("SQLite should not be opened")))
-    monkeypatch.setattr("tapps_brain.hive.AgentRegistry", lambda: mock_reg)
+    # Patch AgentRegistry in backends (where health_check.py imports it from)
+    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda **_: mock_reg)
 
     report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
 

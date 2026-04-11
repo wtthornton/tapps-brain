@@ -104,18 +104,10 @@ def test_memory_store_passes_encryption_key_to_persistence(
         store.close()
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); encryption wiring tested via MemoryStore only"
+)
 def test_hive_store_forwards_encryption_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    captured: list[str | None] = []
-    monkeypatch.setattr(
-        "tapps_brain.hive.connect_sqlite",
-        _connect_shim(captured),
-    )
-    from tapps_brain.hive import HiveStore
-
-    h = HiveStore(db_path=tmp_path / "hive.db", encryption_key="hive-k")
-    try:
-        assert captured == ["hive-k"]
-    finally:
-        h.close()
+    raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from tapps_brain.diagnostics import (
     AnomalyDetector,
     CircuitBreaker,
@@ -354,25 +356,8 @@ def test_hive_namespace_scores_empty_without_hive(tmp_path) -> None:
         store.close()
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); Hive diagnostics require PostgresHiveBackend"
+)
 def test_hive_namespace_scores_with_hive(tmp_path) -> None:
-    from tapps_brain.diagnostics import _hive_namespace_scores
-    from tapps_brain.hive import HiveStore
-
-    hs = HiveStore(tmp_path / "shared.hive.db")
-    try:
-        hs.save(
-            key="h-diag-1",
-            value="gamma delta hive diag content",
-            namespace="universal",
-            source_agent="agent-diag",
-            confidence=0.9,
-        )
-        store = MemoryStore(tmp_path / "proj-h", hive_store=hs, hive_agent_id="agent-diag")
-        try:
-            d, w = _hive_namespace_scores(store)
-            assert "universal" in d
-            assert w is not None
-        finally:
-            store.close()
-    finally:
-        hs.close()
+    raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")

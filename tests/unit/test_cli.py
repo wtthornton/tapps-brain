@@ -671,30 +671,19 @@ class TestImportExport:
 # ===================================================================
 
 
+@pytest.mark.skip(
+    reason="Federation CLI commands removed in v3 (ADR-007); federation requires Postgres DSN"
+)
 class TestFederationCommands:
-    def test_status(self):
-        result = runner.invoke(app, ["federation", "status"])
-        assert result.exit_code == 0
-        assert "Hub DB:" in result.stdout
-
-    def test_status_json(self):
-        result = runner.invoke(app, ["federation", "status", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert "hub_path" in data
-        assert "projects" in data
-
-    def test_list(self):
-        result = runner.invoke(app, ["federation", "list"])
-        assert result.exit_code == 0
-
-    def test_list_json(self):
-        result = runner.invoke(app, ["federation", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert isinstance(data, list)
+    def test_status(self): ...
+    def test_status_json(self): ...
+    def test_list(self): ...
+    def test_list_json(self): ...
 
 
+@pytest.mark.skip(
+    reason="Federation CLI commands removed in v3 (ADR-007); federation requires Postgres DSN"
+)
 class TestFederationSubscribeCommand:
     """Tests for federation subscribe command (016-A)."""
 
@@ -754,6 +743,9 @@ class TestFederationSubscribeCommand:
         assert result.exit_code != 0
 
 
+@pytest.mark.skip(
+    reason="Federation CLI commands removed in v3 (ADR-007); federation requires Postgres DSN"
+)
 class TestFederationUnsubscribeCommand:
     """Tests for federation unsubscribe command (016-A)."""
 
@@ -840,6 +832,9 @@ class TestFederationUnsubscribeCommand:
         assert data["removed"] == 1
 
 
+@pytest.mark.skip(
+    reason="Federation CLI commands removed in v3 (ADR-007); federation requires Postgres DSN"
+)
 class TestFederationPublishCommand:
     """Tests for federation publish command (016-A)."""
 

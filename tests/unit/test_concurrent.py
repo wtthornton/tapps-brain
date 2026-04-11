@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-from tapps_brain.hive import HiveStore
 from tapps_brain.store import MemoryStore, MemoryStoreLockTimeout
 
 
@@ -317,18 +316,13 @@ class TestConcurrentGCAndSaves:
             s.close()
 
 
-@pytest.fixture()
-def hive_store(tmp_path: Path) -> Generator[HiveStore, None, None]:
-    """Isolated HiveStore backed by a temp SQLite file."""
-    hs = HiveStore(db_path=tmp_path / "hive.db")
-    yield hs
-    hs.close()
-
-
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); concurrent Hive tests require PostgresHiveBackend"
+)
 class TestConcurrentHivePropagation:
     """Multiple agents propagating to HiveStore concurrently — all entries arrive."""
 
-    def test_concurrent_hive_saves_all_arrive(self, hive_store: HiveStore) -> None:
+    def test_concurrent_hive_saves_all_arrive(self, tmp_path: Path) -> None:
         """5 agents each saving 20 unique entries → all 100 entries in HiveStore."""
         num_agents = 5
         entries_per_agent = 20
@@ -367,7 +361,7 @@ class TestConcurrentHivePropagation:
             f"Expected {expected_count} entries, found {len(saved_keys)}"
         )
 
-    def test_concurrent_hive_multi_namespace(self, hive_store: HiveStore) -> None:
+    def test_concurrent_hive_multi_namespace(self, tmp_path: Path) -> None:
         """Agents writing to different namespaces should not collide."""
         namespaces = ["domain-a", "domain-b", "domain-c"]
         entries_per_ns = 10
@@ -403,10 +397,13 @@ class TestConcurrentHivePropagation:
             )
 
 
+@pytest.mark.skip(
+    reason="SQLite HiveStore removed in v3 (ADR-007); concurrent Hive tests require PostgresHiveBackend"
+)
 class TestConcurrentHiveRecallDuringPropagation:
     """Concurrent recall from Hive during propagation — no exceptions."""
 
-    def test_recall_during_propagation(self, hive_store: HiveStore) -> None:
+    def test_recall_during_propagation(self, tmp_path: Path) -> None:
         """Searches must not raise even when concurrent saves are in progress."""
         # Seed with some entries so searches return results from the start
         for i in range(20):

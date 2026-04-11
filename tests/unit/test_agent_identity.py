@@ -6,9 +6,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from unittest.mock import MagicMock
+
 import pytest
 
-from tapps_brain.hive import AgentRegistry, HiveStore
+from tapps_brain.backends import AgentRegistry
 from tapps_brain.persistence import MemoryPersistence
 from tapps_brain.store import MemoryStore
 
@@ -119,60 +121,70 @@ class TestAutoRegisterAgent:
     """MemoryStore auto-registers agent in AgentRegistry when hive_store is set."""
 
     def test_auto_register_agent_in_hive(self, tmp_path: Path) -> None:
-        hive = HiveStore(db_path=tmp_path / "hive" / "hive.db")
-        MemoryStore(
+        # Use a mock HiveBackend — auto-registration uses AgentRegistry (YAML), not HiveStore
+        mock_hive = MagicMock()
+        mock_hive.close = MagicMock()
+        registry_path = tmp_path / "agents.yaml"
+        store = MemoryStore(
             tmp_path,
             agent_id="frontend-dev",
-            hive_store=hive,
+            hive_store=mock_hive,
             embedding_provider=None,
         )
-        registry_path = tmp_path / "hive" / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
         agent = registry.get("frontend-dev")
         assert agent is not None
         assert agent.id == "frontend-dev"
         assert agent.project_root == str(tmp_path)
+        store.close()
 
     def test_auto_register_idempotent(self, tmp_path: Path) -> None:
-        hive = HiveStore(db_path=tmp_path / "hive" / "hive.db")
-        MemoryStore(
+        mock_hive = MagicMock()
+        mock_hive.close = MagicMock()
+        registry_path = tmp_path / "agents.yaml"
+        s1 = MemoryStore(
             tmp_path,
             agent_id="frontend-dev",
-            hive_store=hive,
+            hive_store=mock_hive,
             embedding_provider=None,
         )
-        MemoryStore(
+        s1.close()
+        s2 = MemoryStore(
             tmp_path,
             agent_id="frontend-dev",
-            hive_store=hive,
+            hive_store=mock_hive,
             embedding_provider=None,
         )
-        registry_path = tmp_path / "hive" / "agents.yaml"
+        s2.close()
         registry = AgentRegistry(registry_path=registry_path)
         agents = [a for a in registry.list_agents() if a.id == "frontend-dev"]
         assert len(agents) == 1
 
     def test_auto_register_disabled(self, tmp_path: Path) -> None:
-        hive = HiveStore(db_path=tmp_path / "hive" / "hive.db")
-        MemoryStore(
+        mock_hive = MagicMock()
+        mock_hive.close = MagicMock()
+        registry_path = tmp_path / "agents.yaml"
+        store = MemoryStore(
             tmp_path,
             agent_id="frontend-dev",
-            hive_store=hive,
+            hive_store=mock_hive,
             embedding_provider=None,
             auto_register=False,
         )
-        registry_path = tmp_path / "hive" / "agents.yaml"
+        store.close()
         registry = AgentRegistry(registry_path=registry_path)
         assert registry.get("frontend-dev") is None
 
     def test_no_auto_register_without_agent_id(self, tmp_path: Path) -> None:
-        hive = HiveStore(db_path=tmp_path / "hive" / "hive.db")
-        MemoryStore(
+        mock_hive = MagicMock()
+        mock_hive.close = MagicMock()
+        registry_path = tmp_path / "agents.yaml"
+        store = MemoryStore(
             tmp_path,
-            hive_store=hive,
+            hive_store=mock_hive,
             embedding_provider=None,
         )
-        registry_path = tmp_path / "hive" / "agents.yaml"
+        store.close()
         registry = AgentRegistry(registry_path=registry_path)
         assert len(registry.list_agents()) == 0
 
