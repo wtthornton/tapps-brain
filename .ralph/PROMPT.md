@@ -7,7 +7,7 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 
 ## Current Objectives
 - **fix_plan.md is the single source of truth for what to work on in this Ralph loop.** Do ONE task per loop (or batch per `ralph.md` sizing rules), top to bottom. Do not skip, reorder, or pick tasks from other sources.
-- **Current campaign:** Greenfield v3 (EPIC-059–063) → optional EPIC-032. All stories reference epics in `docs/planning/epics/`.
+- **Current campaign:** EPIC-065 (live dashboard) → EPIC-066 (Postgres production readiness — close 90 failing tests, operator hardening). All stories reference epics in `docs/planning/epics/`.
 - **Product delivery queue** (for humans / non-Ralph / releases): `docs/planning/open-issues-roadmap.md`. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
 - Write tests for new functionality (95% coverage required)
 - Reference stories in commits: `feat(story-NNN.N): description`
@@ -38,7 +38,8 @@ You have access to **tapps-mcp** and **docs-mcp** via `.claude/mcp.json`. See th
 - Search the codebase before assuming something isn't implemented
 - Synchronous by design — no async/await in core code
 - Deterministic — no LLM calls in core logic
-- Write-through cache — all mutations update both in-memory dict and SQLite
+- **Postgres-only persistence (ADR-007)** — no SQLite anywhere; private memory, Hive, Federation all on Postgres via psycopg[binary,pool]
+- Write-through to Postgres — all mutations go through `PostgresPrivateBackend`; no local file state
 - Max 5,000 entries per project (default; profile-configurable) — enforced in MemoryStore
 - Commit working changes with descriptive messages
 - Keep outputs concise and implementation-focused
@@ -74,6 +75,31 @@ After completing a task from `fix_plan.md`, you MUST update that file to check o
 
 ## Build & Run
 See AGENT.md for build and run instructions.
+
+## Postgres / Docker (required for EPIC-065 and EPIC-066 tasks)
+
+Before running any task that touches `PostgresPrivateBackend`, migrations, or integration tests:
+
+1. **Check if the container is running:**
+   ```bash
+   docker compose ps tapps-db
+   ```
+2. **If not running, start it:**
+   ```bash
+   TAPPS_DEV_PORT=5433 docker compose up -d tapps-db
+   ```
+3. **Set the DSN** (already in `.env` if present, otherwise):
+   ```bash
+   export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5433/tapps_brain
+   ```
+4. **Unit tests** (no Docker needed — use `InMemoryPrivateBackend` fixture):
+   ```bash
+   uv run pytest tests/unit/ -v --tb=short
+   ```
+5. **Integration tests** (requires Docker Postgres):
+   ```bash
+   uv run pytest tests/integration/ -v --tb=short -m requires_postgres
+   ```
 
 ## Status Reporting (CRITICAL)
 
