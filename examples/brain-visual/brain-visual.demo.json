@@ -1,0 +1,204 @@
+{
+  "_note": "Synthetic demo snapshot — not a real brain export. Showcases all visual-snapshot fields.",
+  "access_stats": {
+    "buckets": [
+      {
+        "count": 12,
+        "label": "0"
+      },
+      {
+        "count": 38,
+        "label": "1-5"
+      },
+      {
+        "count": 21,
+        "label": "6-20"
+      },
+      {
+        "count": 7,
+        "label": "21+"
+      }
+    ],
+    "entries_with_access": 66,
+    "mean_access_count": 6.4,
+    "sum_access_count": 422,
+    "sum_total_access_count": 980,
+    "sum_useful_access_count": 831
+  },
+  "agent_scope_counts": {
+    "domain": 18,
+    "hive": 24,
+    "private": 36
+  },
+  "diagnostics": {
+    "circuit_state": "closed",
+    "composite_score": 0.8741,
+    "recorded_at": "2026-04-11T09:00:00.000000+00:00"
+  },
+  "fingerprint_sha256": "a3f2e1b08c5d4e7f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+  "generated_at": "2026-04-11T09:00:00.123456+00:00",
+  "health": {
+    "consolidation_candidates": 4,
+    "entry_count": 78,
+    "federation_enabled": true,
+    "federation_project_count": 3,
+    "gc_archive_bytes_total": 14336,
+    "gc_archived_rows_total": 11,
+    "gc_candidates": 2,
+    "gc_runs_total": 5,
+    "integrity_no_hash": 0,
+    "integrity_tampered": 0,
+    "integrity_tampered_keys": [],
+    "integrity_verified": 78,
+    "max_entries": 5000,
+    "oldest_entry_age_days": 62.4,
+    "package_version": "3.0.0",
+    "profile_name": "demo-project",
+    "rag_safety_blocked_count": 2,
+    "rag_safety_ruleset_version": "1.0.0",
+    "rag_safety_sanitized_count": 5,
+    "rate_limit_exempt_writes": 0,
+    "rate_limit_minute_anomalies": 1,
+    "rate_limit_session_anomalies": 0,
+    "rate_limit_total_writes": 312,
+    "relation_count": 14,
+    "save_phase_summary": "",
+    "schema_version": 17,
+    "sqlcipher_enabled": false,
+    "store_path": "/home/demo/projects/my-project",
+    "tier_distribution": {
+      "architectural": 22,
+      "context": 18,
+      "pattern": 27,
+      "procedural": 11
+    }
+  },
+  "hive_attached": true,
+  "hive_health": {
+    "agents": 6,
+    "connected": true,
+    "entries": 2843,
+    "namespaces": [
+      "backend-guild",
+      "demo-project",
+      "frontend-guild",
+      "universal"
+    ],
+    "status": "ok"
+  },
+  "identity_schema_version": 2,
+  "memory_group_count": 5,
+  "memory_group_counts": {
+    "auth-flows": 9,
+    "deployment": 6,
+    "design-system": 14,
+    "onboarding": 8,
+    "testing-patterns": 11
+  },
+  "privacy": "Aggregated metadata; excludes memory text and keys. Tags and named memory groups included (privacy tier: local).",
+  "privacy_tier": "local",
+  "retrieval_effective_mode": "hybrid",
+  "retrieval_summary": "Hybrid recall active: BM25 (40% relevance) + pgvector cosine similarity fused via Reciprocal Rank Fusion. Pool: 50 BM25 + 20 vector candidates.",
+  "schema_version": 2,
+  "scorecard": [
+    {
+      "detail": "78 memor(y/ies) within max 5000.",
+      "id": "store_entries",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Store contents"
+    },
+    {
+      "detail": "Composite score and circuit state included in this export.",
+      "id": "diagnostics_data",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Diagnostics data"
+    },
+    {
+      "detail": "Diagnostics circuit is closed (nominal).",
+      "id": "diagnostics_circuit",
+      "status": "ok",
+      "ticket_hint": "Run `tapps-brain diagnostics health` and review scorecard dimensions.",
+      "title": "Diagnostics circuit"
+    },
+    {
+      "detail": "Composite score 0.87 (0-1). Some recall quality signals below threshold.",
+      "id": "diagnostics_composite",
+      "status": "warn",
+      "ticket_hint": "Inspect diagnostics history and recall quality signals. Consider re-running consolidation.",
+      "title": "Diagnostics composite score"
+    },
+    {
+      "detail": "No tampered integrity hashes reported.",
+      "id": "integrity_tampered",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Integrity (tampered)"
+    },
+    {
+      "detail": "No entries missing integrity hashes.",
+      "id": "integrity_no_hash",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Integrity (missing hash)"
+    },
+    {
+      "detail": "Capacity 2% of max_entries (78/5000).",
+      "id": "store_capacity",
+      "status": "ok",
+      "ticket_hint": "Raise max_entries in profile or archive/GC if appropriate.",
+      "title": "Store capacity"
+    },
+    {
+      "detail": "1 minute-window rate-limit anomaly recorded.",
+      "id": "rate_limits",
+      "status": "warn",
+      "ticket_hint": "Review write patterns — a burst of writes triggered the minute-window threshold.",
+      "title": "Rate limit anomalies"
+    },
+    {
+      "detail": "4 consolidation candidates; 2 GC candidates.",
+      "id": "maintenance_backlog",
+      "status": "warn",
+      "ticket_hint": "Run `tapps-brain maintenance consolidate` and `tapps-brain gc` when maintenance windows allow.",
+      "title": "Maintenance backlog"
+    },
+    {
+      "detail": "Hub connected; 6 agent(s), 2843 shared entr(y/ies).",
+      "id": "hive_hub",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Hive hub reachability"
+    },
+    {
+      "detail": "Hybrid retrieval active (BM25 + pgvector).",
+      "id": "retrieval_stack",
+      "status": "ok",
+      "ticket_hint": "",
+      "title": "Retrieval stack"
+    }
+  ],
+  "sqlite_vec_enabled": false,
+  "sqlite_vec_rows": 0,
+  "tag_stats": [
+    { "count": 19, "tag": "architecture" },
+    { "count": 14, "tag": "postgres" },
+    { "count": 12, "tag": "auth" },
+    { "count": 11, "tag": "api" },
+    { "count": 9,  "tag": "testing" },
+    { "count": 8,  "tag": "frontend" },
+    { "count": 7,  "tag": "deploy" },
+    { "count": 6,  "tag": "performance" },
+    { "count": 5,  "tag": "security" },
+    { "count": 4,  "tag": "onboarding" }
+  ],
+  "theme": {
+    "accent_chroma": 0.58,
+    "flow_angle_deg": 225,
+    "hue_accent": 262,
+    "hue_primary": 248,
+    "surface_lightness": 10,
+    "text_lightness": 97
+  }
+}

@@ -202,7 +202,7 @@
 
 ### Phase Q: Demo + discovery + clean (064.5–064.6, 064.CLEAN) <!-- id: 064-phase-q -->
 
-- [ ] **064.5** Demo snapshot + first-run — `brain-visual.demo.json` (synthetic) + load path or “Load demo” control; README note. [SMALL] <!-- resolved: examples/brain-visual/ -->
+- [x] **064.5** Demo snapshot + first-run — `brain-visual.demo.json` (synthetic) + load path or “Load demo” control; README note. [SMALL] <!-- resolved: examples/brain-visual/ -->
 - [ ] **064.6** README / docs index CTA — “See it” subsection + cross-links. [SMALL — docs] <!-- resolved: README.md, docs/DOCUMENTATION_INDEX.md or docs/guides/visual-snapshot.md -->
 
 - [ ] **064.CLEAN** Doc + a11y + MCP gate — `mcp__docs-mcp docs_validate_epic` on `EPIC-064.md`; `docs_check_cross_refs` + `docs_check_style` on epic-touched `docs/` subtrees; `docs_check_drift` if `DOCUMENTATION_INDEX.md` / engineering maps changed. `mcp__tapps-mcp tapps_checklist` (`task_type: "epic"`); if Python changed: `tapps_impact_analysis` per file, `tapps_quality_gate` on `visual_snapshot.py`, and `tapps_dead_code` + `tapps_dependency_graph` when imports/public API change. Lighthouse (or equivalent) accessibility spot-check recorded. Confirm epic **Research notes** retain W3C + MDN/web.dev anchors. [SMALL] <!-- resolved: docs/planning/epics/EPIC-064.md, docs/, src/tapps_brain/ if touched -->

@@ -12,6 +12,8 @@
 
 2. Open `index.html` in a browser and use **Load snapshot** to pick `brain-visual.json`, or serve this folder so `brain-visual.json` loads automatically. Serving over HTTP also loads `scorecard-derive.js` (fallback if an older JSON lacks the `scorecard` array) and `brain-visual-help.js`.
 
+   > **No real snapshot yet?** Click **Load demo** to load `brain-visual.demo.json` — a rich synthetic snapshot that populates every panel (hybrid retrieval, Hive hub, memory groups, tag cloud, mixed scorecard states). Useful for screenshots, demos, or exploring the UI before your first export. Requires serving over HTTP (see step 3 of [Serving locally](#serving-locally) below, or run `python3 -m http.server 8080` in this folder).
+
 3. **In-page help (`?`):** Each **scorecard** row opens a long-form article keyed by its stable `id` (same slugs as `visual_snapshot._build_scorecard`). Section headers, the top KPI strip, the scorecard count strip, and most tiles have one or more pills. Some tiles expose **two** topics (e.g. Hive hub reachability vs agent scope; snapshot schema vs federation flag; entries vs active profile). The Diagnostics bento tile uses **`scorecard:diagnostics_bento`** so it resolves to the same article namespace as the grid (not `concept:`).
 
 4. **Scorecard & tickets:** the page shows pass/warn/fail rows from the export’s `scorecard` field; use **Copy GitHub issue (Markdown)** to paste into GitHub/Jira.

@@ -1476,6 +1476,7 @@
       <div class="load-row">
         <input id="snapshot-file" class="sr-only" type="file" accept="application/json,.json" />
         <label class="btn-load" for="snapshot-file">Load snapshot</label>
+        <button type="button" class="btn-ghost" id="load-demo">Load demo</button>
         <button type="button" class="btn-ghost" id="copy-fp" disabled>Copy fingerprint</button>
         <span id="status" class="muted">No file loaded; placeholders shown.</span>
       </div>
@@ -2868,6 +2869,17 @@
         }
       };
       r.readAsText(f);
+    });
+
+    document.getElementById("load-demo").addEventListener("click", () => {
+      const demoUrl = new URL("brain-visual.demo.json", document.baseURI).href;
+      fetch(demoUrl)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((data) => {
+          applySnapshot(data);
+          setStatus("Demo snapshot loaded.", true);
+        })
+        .catch((err) => setStatus("Could not load demo: " + err, false));
     });
 
     const snapshotUrl = new URL("brain-visual.json", document.baseURI).href;
