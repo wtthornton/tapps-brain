@@ -148,6 +148,45 @@ class PostgresConnectionManager:
             pass
         return base
 
+    @contextmanager
+    def namespace_context(self, namespace: str) -> Iterator[Any]:
+        """Yield a connection with ``tapps.current_namespace`` session variable set.
+
+        This is the documented pattern for enforcing namespace-based Row Level
+        Security (RLS) on ``hive_memories`` (EPIC-063 STORY-063.3).  Within the
+        yielded transaction the ``hive_namespace_isolation`` policy will restrict
+        visible rows to those whose ``namespace`` column matches *namespace*.
+
+        ``SET LOCAL`` is used so the variable is automatically cleared when the
+        transaction ends (commit or rollback) — safe for pooled connections.
+
+        Usage::
+
+            with manager.namespace_context("project-alpha") as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT * FROM hive_memories WHERE key = %s",
+                        (key,),
+                    )
+
+        When RLS is enabled (migration ``hive/002_rls_spike.sql`` applied),
+        this call restricts all reads and writes within the transaction to rows
+        with ``namespace = <namespace>``.  Without the migration or when
+        connecting as a superuser/table-owner, the ``SET LOCAL`` is harmless.
+
+        Parameters
+        ----------
+        namespace:
+            The namespace value to bind for this transaction.  Must not be
+            empty; pass ``""`` only to explicitly invoke the admin-bypass policy
+            (all rows visible, no isolation).
+        """
+        self._ensure_pool()
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL tapps.current_namespace = %s", (namespace,))
+            yield conn
+
     @property
     def dsn(self) -> str:
         """Return the DSN this manager was created with."""
