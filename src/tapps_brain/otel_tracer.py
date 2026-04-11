@@ -239,3 +239,146 @@ def extract_trace_context(carrier: dict[str, str]) -> Any:  # noqa: ANN401
         return _otel_propagate.extract(carrier)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# MCP params._meta.traceparent extraction — STORY-032.3
+# ---------------------------------------------------------------------------
+
+#: MCP JSON-RPC params key that carries W3C trace context (MCP 2025-03-26 spec).
+MCP_META_KEY: str = "_meta"
+
+#: W3C TraceContext header name.
+W3C_TRACEPARENT_KEY: str = "traceparent"
+
+#: W3C TraceState header name.
+W3C_TRACESTATE_KEY: str = "tracestate"
+
+
+def extract_trace_context_from_mcp_params(params: dict[str, Any] | None) -> Any:  # noqa: ANN401
+    """Extract an OTel ``Context`` from MCP ``params._meta`` trace context fields.
+
+    The MCP 2025-03-26 specification allows clients to propagate W3C
+    ``traceparent`` / ``tracestate`` headers via the ``_meta`` key of any
+    JSON-RPC ``params`` object.  This helper extracts those fields and
+    delegates to :func:`extract_trace_context`.
+
+    Example MCP params structure::
+
+        {
+            "query": "what is the test",
+            "_meta": {
+                "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+                "tracestate": "rojo=00f067aa0ba902b7"
+            }
+        }
+
+    Args:
+        params: The MCP JSON-RPC ``params`` dict, or ``None``.  Any type
+            error (non-dict ``_meta``, missing keys) is silently handled.
+
+    Returns:
+        An OTel ``Context`` (possibly empty) when ``opentelemetry-api`` is
+        available and a ``traceparent`` was found, otherwise ``None``.
+    """
+    if not params:
+        return None
+    meta = params.get(MCP_META_KEY)
+    if not isinstance(meta, dict):
+        return None
+    carrier: dict[str, str] = {}
+    tp = meta.get(W3C_TRACEPARENT_KEY)
+    if isinstance(tp, str) and tp:
+        carrier[W3C_TRACEPARENT_KEY] = tp
+    ts = meta.get(W3C_TRACESTATE_KEY)
+    if isinstance(ts, str) and ts:
+        carrier[W3C_TRACESTATE_KEY] = ts
+    if not carrier:
+        return None
+    return extract_trace_context(carrier)
+
+
+# ---------------------------------------------------------------------------
+# Retrieval document events — STORY-032.3
+# ---------------------------------------------------------------------------
+
+#: OTel event name for a single retrieval document result.
+EVENT_RETRIEVAL_DOCUMENT: str = "gen_ai.retrieval.document"
+
+#: Span event attribute: SHA-256-hashed document identifier (avoids raw key PII).
+ATTR_RETRIEVAL_DOC_ID: str = "gen_ai.retrieval.document.id"
+
+#: Span event attribute: relevance score for the retrieval result (float 0-1).
+ATTR_RETRIEVAL_DOC_SCORE: str = "gen_ai.retrieval.document.relevance_score"
+
+#: Span event attribute: memory tier of the retrieval result.
+ATTR_RETRIEVAL_DOC_TIER: str = "gen_ai.retrieval.document.tier"
+
+_DOC_ID_HASH_LEN: int = 16  # hex chars from SHA-256 (64-bit prefix)
+
+
+def _hash_doc_id(key: str) -> str:
+    """Return a 16-hex-char SHA-256 prefix of *key* for use as a document id.
+
+    Hashing avoids exposing raw entry keys (which may be user-controlled /
+    contain PII) while preserving a stable, collision-resistant identifier
+    suitable for log correlation.
+    """
+    import hashlib
+
+    return hashlib.sha256(key.encode("utf-8", errors="replace")).hexdigest()[:_DOC_ID_HASH_LEN]
+
+
+def record_retrieval_document_events(
+    span: Any,  # noqa: ANN401
+    memories: list[dict[str, Any]],
+) -> None:
+    """Add one OTel span event per retrieved memory document.
+
+    Each event uses the name :data:`EVENT_RETRIEVAL_DOCUMENT` and carries:
+
+    - ``gen_ai.retrieval.document.id`` — a 16-hex SHA-256 prefix of the
+      entry key (hashed to avoid PII in telemetry).
+    - ``gen_ai.retrieval.document.relevance_score`` — the float relevance
+      score from :class:`~tapps_brain.models.RecallResult` (0.0 if absent).
+    - ``gen_ai.retrieval.document.tier`` — the memory tier string (safe
+      low-cardinality enum).
+
+    This function is a **no-op** when:
+
+    - *span* is ``None`` (OTel unavailable or disabled).
+    - *memories* is empty.
+    - The span does not support ``add_event`` (defensive: wrong type).
+
+    .. warning::
+        **Never** pass raw memory values or query text in the event attributes.
+        Only hashed keys, numeric scores, and tier enums are allowed.
+
+    Args:
+        span: The active OTel span returned by :func:`start_span`, or ``None``.
+        memories: The ``RecallResult.memories`` list — each item is a dict
+            with keys ``key``, ``score`` (float), ``tier`` (str), etc.
+    """
+    if span is None or not memories:
+        return
+    add_event = getattr(span, "add_event", None)
+    if add_event is None:
+        return
+    for mem in memories:
+        if not isinstance(mem, dict):
+            continue
+        raw_key = mem.get("key", "")
+        doc_id = _hash_doc_id(str(raw_key)) if raw_key else ""
+        score = mem.get("score", 0.0)
+        tier = mem.get("tier", "")
+        event_attrs: dict[str, str | float] = {}
+        if doc_id:
+            event_attrs[ATTR_RETRIEVAL_DOC_ID] = doc_id
+        if isinstance(score, (int, float)):
+            event_attrs[ATTR_RETRIEVAL_DOC_SCORE] = float(score)
+        if tier and isinstance(tier, str):
+            event_attrs[ATTR_RETRIEVAL_DOC_TIER] = tier
+        try:
+            add_event(EVENT_RETRIEVAL_DOCUMENT, event_attrs)
+        except Exception:
+            pass  # OTel SDK errors must never propagate to callers

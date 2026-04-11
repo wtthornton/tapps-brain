@@ -53,6 +53,7 @@ from tapps_brain.otel_tracer import (
     SPAN_RECALL,
     SPAN_REMEMBER,
     SPAN_SEARCH,
+    record_retrieval_document_events,
     start_span,
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
@@ -2023,6 +2024,10 @@ class MemoryStore:
             if _recall_span is not None:
                 _recall_span.set_attribute(
                     "recall.hive_count", getattr(result, "hive_memory_count", 0)
+                )
+                # STORY-032.3: add one structured event per retrieved document
+                record_retrieval_document_events(
+                    _recall_span, getattr(result, "memories", [])
                 )
 
         # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking

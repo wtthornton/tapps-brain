@@ -629,3 +629,293 @@ class TestStartMcpToolSpan:
         # Only fixed enum-like values are allowed — no user-controlled strings
         expected_values = {"tapps-brain", "brain_remember", "tools/call", "execute_tool"}
         assert attr_values == expected_values
+
+
+# ---------------------------------------------------------------------------
+# Tests for extract_trace_context_from_mcp_params() — STORY-032.3
+# ---------------------------------------------------------------------------
+
+
+class TestExtractTraceContextFromMcpParams:
+    """extract_trace_context_from_mcp_params() extracts W3C context from _meta."""
+
+    def test_returns_none_when_params_none(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params(None)
+        assert result is None
+
+    def test_returns_none_when_params_empty(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params({})
+        assert result is None
+
+    def test_returns_none_when_no_meta_key(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params({"query": "test"})
+        assert result is None
+
+    def test_returns_none_when_meta_not_dict(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params({"_meta": "not-a-dict"})
+        assert result is None
+
+    def test_returns_none_when_meta_missing_traceparent(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params({"_meta": {"other": "value"}})
+        assert result is None
+
+    def test_returns_none_when_traceparent_empty_string(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        result = extract_trace_context_from_mcp_params({"_meta": {"traceparent": ""}})
+        assert result is None
+
+    def test_calls_extract_trace_context_with_traceparent(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        mock_ctx = MagicMock()
+        with patch(
+            "tapps_brain.otel_tracer.extract_trace_context", return_value=mock_ctx
+        ) as mock_extract:
+            result = extract_trace_context_from_mcp_params({"_meta": {"traceparent": tp}})
+
+        assert result is mock_ctx
+        mock_extract.assert_called_once_with({"traceparent": tp})
+
+    def test_includes_tracestate_when_present(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        ts = "rojo=00f067aa0ba902b7"
+        mock_ctx = MagicMock()
+        with patch(
+            "tapps_brain.otel_tracer.extract_trace_context", return_value=mock_ctx
+        ) as mock_extract:
+            extract_trace_context_from_mcp_params(
+                {"_meta": {"traceparent": tp, "tracestate": ts}}
+            )
+
+        mock_extract.assert_called_once_with({"traceparent": tp, "tracestate": ts})
+
+    def test_omits_tracestate_when_empty_string(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        mock_ctx = MagicMock()
+        with patch(
+            "tapps_brain.otel_tracer.extract_trace_context", return_value=mock_ctx
+        ) as mock_extract:
+            extract_trace_context_from_mcp_params(
+                {"_meta": {"traceparent": tp, "tracestate": ""}}
+            )
+
+        # tracestate must NOT be in carrier when empty
+        call_carrier = mock_extract.call_args[0][0]
+        assert "tracestate" not in call_carrier
+
+    def test_ignores_non_string_tracestate(self) -> None:
+        from tapps_brain.otel_tracer import extract_trace_context_from_mcp_params
+
+        tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        with patch(
+            "tapps_brain.otel_tracer.extract_trace_context", return_value=MagicMock()
+        ) as mock_extract:
+            extract_trace_context_from_mcp_params(
+                {"_meta": {"traceparent": tp, "tracestate": 12345}}
+            )
+
+        call_carrier = mock_extract.call_args[0][0]
+        assert "tracestate" not in call_carrier
+
+    def test_mcp_meta_key_constant(self) -> None:
+        from tapps_brain.otel_tracer import MCP_META_KEY
+
+        assert MCP_META_KEY == "_meta"
+
+    def test_w3c_traceparent_key_constant(self) -> None:
+        from tapps_brain.otel_tracer import W3C_TRACEPARENT_KEY
+
+        assert W3C_TRACEPARENT_KEY == "traceparent"
+
+
+# ---------------------------------------------------------------------------
+# Tests for record_retrieval_document_events() — STORY-032.3
+# ---------------------------------------------------------------------------
+
+
+class TestRecordRetrievalDocumentEvents:
+    """record_retrieval_document_events() adds safe OTel events per recall result."""
+
+    def test_noop_when_span_is_none(self) -> None:
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        # Should not raise even when span is None
+        record_retrieval_document_events(None, [{"key": "k", "score": 0.9, "tier": "pattern"}])
+
+    def test_noop_when_memories_empty(self) -> None:
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [])
+        mock_span.add_event.assert_not_called()
+
+    def test_adds_one_event_per_memory(self) -> None:
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        mock_span = MagicMock()
+        memories = [
+            {"key": "key1", "score": 0.9, "tier": "pattern"},
+            {"key": "key2", "score": 0.7, "tier": "context"},
+        ]
+        record_retrieval_document_events(mock_span, memories)
+        assert mock_span.add_event.call_count == 2
+
+    def test_event_name_is_gen_ai_retrieval_document(self) -> None:
+        from tapps_brain.otel_tracer import EVENT_RETRIEVAL_DOCUMENT, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "context"}])
+        event_name = mock_span.add_event.call_args[0][0]
+        assert event_name == EVENT_RETRIEVAL_DOCUMENT
+
+    def test_doc_id_is_hashed_not_raw_key(self) -> None:
+        """The raw entry key must never appear as the doc id — must be SHA-256 hashed."""
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_ID, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        raw_key = "secret-entry-key-abc123"
+        record_retrieval_document_events(mock_span, [{"key": raw_key, "score": 0.5, "tier": "context"}])
+
+        event_attrs = mock_span.add_event.call_args[0][1]
+        doc_id = event_attrs.get(ATTR_RETRIEVAL_DOC_ID, "")
+        # Must NOT be the raw key
+        assert doc_id != raw_key
+        # Must be hex string of _DOC_ID_HASH_LEN chars
+        assert len(doc_id) == 16
+        assert all(c in "0123456789abcdef" for c in doc_id)
+
+    def test_doc_id_is_stable_for_same_key(self) -> None:
+        """Same key must produce the same doc_id across calls."""
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_ID, record_retrieval_document_events
+
+        mock_span1, mock_span2 = MagicMock(), MagicMock()
+        mem = {"key": "stable-key", "score": 0.5, "tier": "context"}
+        record_retrieval_document_events(mock_span1, [mem])
+        record_retrieval_document_events(mock_span2, [mem])
+        id1 = mock_span1.add_event.call_args[0][1].get(ATTR_RETRIEVAL_DOC_ID)
+        id2 = mock_span2.add_event.call_args[0][1].get(ATTR_RETRIEVAL_DOC_ID)
+        assert id1 == id2
+
+    def test_score_attribute_is_float(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_SCORE, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.85, "tier": "pattern"}])
+        attrs = mock_span.add_event.call_args[0][1]
+        assert isinstance(attrs.get(ATTR_RETRIEVAL_DOC_SCORE), float)
+        assert abs(attrs[ATTR_RETRIEVAL_DOC_SCORE] - 0.85) < 1e-9
+
+    def test_tier_attribute_is_present(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_TIER, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "architectural"}])
+        attrs = mock_span.add_event.call_args[0][1]
+        assert attrs.get(ATTR_RETRIEVAL_DOC_TIER) == "architectural"
+
+    def test_missing_key_produces_no_doc_id(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_ID, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [{"score": 0.5, "tier": "context"}])
+        attrs = mock_span.add_event.call_args[0][1]
+        assert ATTR_RETRIEVAL_DOC_ID not in attrs
+
+    def test_missing_score_defaults_to_float(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_SCORE, record_retrieval_document_events
+
+        mock_span = MagicMock()
+        record_retrieval_document_events(mock_span, [{"key": "k", "tier": "context"}])
+        attrs = mock_span.add_event.call_args[0][1]
+        assert isinstance(attrs.get(ATTR_RETRIEVAL_DOC_SCORE), float)
+
+    def test_non_dict_memory_entries_skipped(self) -> None:
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        mock_span = MagicMock()
+        # Mix of valid dicts and invalid types
+        memories: list[Any] = [
+            "not-a-dict",
+            {"key": "k", "score": 0.5, "tier": "context"},
+            None,
+        ]
+        record_retrieval_document_events(mock_span, memories)
+        # Only the dict entry should produce an event
+        assert mock_span.add_event.call_count == 1
+
+    def test_noop_when_span_has_no_add_event(self) -> None:
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        # Object with no add_event method — should not raise
+        class _FakeSpan:
+            pass
+
+        record_retrieval_document_events(_FakeSpan(), [{"key": "k", "score": 0.5, "tier": "context"}])
+
+    def test_event_constants_have_correct_values(self) -> None:
+        from tapps_brain.otel_tracer import (
+            ATTR_RETRIEVAL_DOC_ID,
+            ATTR_RETRIEVAL_DOC_SCORE,
+            ATTR_RETRIEVAL_DOC_TIER,
+            EVENT_RETRIEVAL_DOCUMENT,
+        )
+
+        assert EVENT_RETRIEVAL_DOCUMENT == "gen_ai.retrieval.document"
+        assert ATTR_RETRIEVAL_DOC_ID == "gen_ai.retrieval.document.id"
+        assert ATTR_RETRIEVAL_DOC_SCORE == "gen_ai.retrieval.document.relevance_score"
+        assert ATTR_RETRIEVAL_DOC_TIER == "gen_ai.retrieval.document.tier"
+
+    def test_sdk_error_silently_suppressed(self) -> None:
+        """If span.add_event raises, the error must not propagate."""
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        mock_span = MagicMock()
+        mock_span.add_event.side_effect = RuntimeError("SDK crash")
+
+        # Must not raise
+        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "context"}])
+
+
+# ---------------------------------------------------------------------------
+# Tests for store.py emitting retrieval events on recall — STORY-032.3
+# ---------------------------------------------------------------------------
+
+
+class TestStoreRetrievalDocumentEvents:
+    """store.recall() wires retrieval document events onto the recall span."""
+
+    def _make_store(self, tmp_path: Any) -> Any:
+        from tapps_brain.store import MemoryStore
+
+        return MemoryStore(tmp_path, embedding_provider=None)
+
+    def test_recall_calls_record_retrieval_document_events(self, tmp_path: Any) -> None:
+        """record_retrieval_document_events must be called during store.recall()."""
+        from tapps_brain.otel_tracer import record_retrieval_document_events
+
+        store = self._make_store(tmp_path)
+        store.save("recall-test-key", "test value for recall", tier="pattern")
+
+        with patch(
+            "tapps_brain.store.record_retrieval_document_events",
+            wraps=record_retrieval_document_events,
+        ) as mock_rde:
+            store.recall("test value")
+
+        assert mock_rde.call_count >= 1
