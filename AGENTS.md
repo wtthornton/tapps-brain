@@ -9,6 +9,58 @@ Short entry points for AI assistants working in this repo.
 - **Cursor MCP / indexing:** `.cursor/mcp.json` — tapps-mcp, docs-mcp (sibling `tapps-mcp` checkout), Playwright; `.cursorignore` trims bulky dirs — see `project.mdc` § Cursor.
 - **Delivery priorities (non-Ralph):** `docs/planning/open-issues-roadmap.md`.
 
+## Quick start: clone → compose → pytest (≤ 15 min)
+
+```bash
+# 1. Clone and install
+git clone https://github.com/your-org/tapps-brain
+cd tapps-brain
+uv sync --group dev           # creates .venv; Python 3.12+ required
+
+# 2. Start Postgres + pgvector (Docker required)
+make brain-up                 # pulls pgvector/pgvector:pg17, waits for ready
+
+# 3. Run the full test suite
+make brain-test               # pytest with coverage gate ≥ 95 %
+
+# 4. Tear down when done
+make brain-down               # removes containers + volumes
+```
+
+Expected total time: ~5–12 min depending on image pull and hardware.
+
+### All Makefile targets
+
+| Target | Description |
+|---|---|
+| `make brain-up` | Start Postgres+pgvector in the background |
+| `make brain-down` | Stop containers and remove volumes |
+| `make brain-restart` | Restart the Postgres container (keeps data) |
+| `make brain-psql` | Open a psql shell in the running container |
+| `make brain-test` | Full test suite with coverage (≥ 95 %) |
+| `make brain-test-fast` | Tests excluding benchmarks, no coverage, fail-fast (`-x`) |
+| `make brain-lint` | Ruff lint + format check |
+| `make brain-type` | Strict mypy type check |
+| `make brain-qa` | Full QA: lint + type + tests (mirrors CI) |
+
+### DSN override
+
+The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_dev`.
+Override with:
+
+```bash
+make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps"
+```
+
+See `docs/guides/postgres-dsn.md` for the full env-var reference.
+
+### CI
+
+GitHub Actions (`ci.yml`) runs the same `pytest` command against a
+`pgvector/pgvector:pg17` service container on every push and PR — no Docker
+needed locally just for CI. The `TAPPS_TEST_POSTGRES_DSN` env var is set
+automatically in CI.
+
 ## Ralph (autonomous loop — Linux / Ubuntu)
 
 Run commands from the **repository root** (the directory that contains `pyproject.toml`). Do **not** type a literal path like `/path/to/tapps-brain` — that is only a placeholder in generic docs. Use your real clone path, for example:

@@ -1,0 +1,34 @@
+# docker-compose.yml — Developer / CI quick-start
+#
+# Starts a local Postgres + pgvector instance for running the test suite.
+# Credentials are intentionally simple — do NOT use in production.
+#
+# For production or team deployment see docker/docker-compose.hive.yaml
+# and docs/guides/hive-deployment.md.
+#
+# Usage (see Makefile targets):
+#   make brain-up    # start Postgres in the background
+#   make brain-test  # run the full test suite against it
+#   make brain-down  # stop and remove containers + volumes
+
+services:
+  tapps-db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: tapps_dev
+      POSTGRES_USER: tapps
+      POSTGRES_PASSWORD: tapps
+    volumes:
+      - tapps-pgdata:/var/lib/postgresql/data
+      - ./docker/init-hive.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    ports:
+      - "${TAPPS_DEV_PORT:-5432}:5432"
+
+volumes:
+  tapps-pgdata:
