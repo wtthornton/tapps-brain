@@ -27,6 +27,25 @@ Cross-agent memory sharing with namespace isolation, 4 conflict resolution polic
 </tr>
 </table>
 
+## See it in action
+
+The **brain-visual** dashboard shows your memory store at a glance — tier mix, scorecard health, retrieval stack, Hive status, tag cloud, and diagnostics — no code required.
+
+```bash
+# export a snapshot from your project
+tapps-brain visual export -o brain-visual.json
+
+# serve the dashboard and open it
+python3 -m http.server 8080 --directory examples/brain-visual
+# → open http://localhost:8080, click "Load snapshot", pick brain-visual.json
+```
+
+> **No real store yet?** Click **Load demo** — a rich synthetic snapshot (`brain-visual.demo.json`) populates every panel instantly. Requires serving over HTTP as shown above.
+
+→ [Visual snapshot guide](docs/guides/visual-snapshot.md) · [Dashboard README](examples/brain-visual/README.md)
+
+---
+
 ## Quick start
 
 **Contributors (Cursor / VS Code):** after clone, see [AGENTS.md](AGENTS.md) for `uv sync`, tests, and pointers to `.vscode/` tasks and `.cursor/mcp.json`.
@@ -567,6 +586,8 @@ tests/
 | [Auto-Recall Guide](docs/guides/auto-recall.md) | Recall orchestrator usage and integration patterns |
 | [Publish checklist](scripts/publish-checklist.md) | PyPI pre-flight (includes release gate command) |
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup |
+| [Visual snapshot guide](docs/guides/visual-snapshot.md) | Export a `brain-visual.json` snapshot and explore the brain-visual dashboard |
+| [Dashboard README](examples/brain-visual/README.md) | Load demo, motion test checklist, brand notes |
 | [Changelog](CHANGELOG.md) | Version history |
 
 <details>

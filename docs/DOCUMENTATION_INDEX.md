@@ -71,6 +71,7 @@
 - [SQLite “database is locked” — operator runbook](guides/sqlite-database-locked.md) — tapps-brain uses SQLite with **WAL** journal mode for project memory, Hive, federation hub, feedback, and diagnostics... *(updated 2026-04-05)*
 - [sqlite-vec index — operator playbook](guides/sqlite-vec-operators.md) — This guide covers the **`memory_vec`** virtual table (**vec0** from [sqlite-vec](https://github.com/asg017/sqlite-vec... *(updated 2026-04-07)*
 - [Visual snapshot (`brain-visual.json`)](guides/visual-snapshot.md) — Export a **versioned JSON snapshot** of store health, tier mix, and related signals for static dashboards and the bra... *(updated 2026-04-09)*
+- [Brain-visual dashboard](../examples/brain-visual/README.md) — Load a real or demo snapshot in the static dashboard; motion test checklist; brand and NLT Labs design language notes. *(updated 2026-04-11)*
 
 ## Operations
 
