@@ -289,17 +289,6 @@ agent_register(agent_id="qa-agent", profile="repo-brain", skills="testing,review
 
 The Hive enables cross-agent memory sharing with namespace isolation and conflict resolution. See the [Hive Guide](hive.md).
 
-### Federation Tools
-
-| Tool | Description |
-|------|-------------|
-| `federation_status` | Show hub status, registered projects, and subscriptions |
-| `federation_subscribe` | Subscribe a project to receive memories from other projects |
-| `federation_unsubscribe` | Remove a project's federation subscription |
-| `federation_publish` | Publish shared-scope memories to the federation hub |
-
-Federation enables cross-project memory sharing. See the [Federation Guide](federation.md) for details.
-
 ### Knowledge Graph Tools
 
 | Tool | Description |
@@ -349,19 +338,55 @@ Federation enables cross-project memory sharing. See the [Federation Guide](fede
 |------|-------------|
 | `memory_audit` | Query the audit trail with optional filters |
 
-### Maintenance Tools
+### Operator Tools (advanced/maintenance)
 
-| Tool | Description |
-|------|-------------|
-| `maintenance_consolidate` | Merge similar memories (deterministic, Jaccard + TF-IDF) |
-| `maintenance_gc` | Archive stale memories (supports `dry_run`) |
-| `maintenance_stale` | List GC stale candidates with reasons (read-only JSON: `count`, `entries`) |
-| `maintenance_gc_config` | View or set GC thresholds at runtime |
-| `maintenance_consolidation_config` | View or set consolidation configuration |
-| `maintenance_health` | Store health report |
-| `maintenance_migrate` | Run schema migrations |
-| `memory_export` | Export entries as JSON (with tier/scope/confidence filters) |
-| `memory_import` | Import entries from JSON |
+Operator tools are **not available in default agent sessions**. They are intended for
+operators running dedicated maintenance or monitoring sessions, not for regular
+agent workflows. Enable them via the `--enable-operator-tools` CLI flag or by setting
+`TAPPS_BRAIN_OPERATOR_TOOLS=1` in the server's environment.
+
+**Do not enable operator tools in shared multi-tenant agent sessions.** They expose
+bulk data operations (export, import), trigger destructive mutations (GC, consolidation),
+and surface configuration writes that can affect all agents sharing the same store.
+
+To start the server with operator tools:
+
+```bash
+# CLI flag
+tapps-brain-mcp --project-dir /path/to/project --enable-operator-tools
+
+# Environment variable
+TAPPS_BRAIN_OPERATOR_TOOLS=1 tapps-brain-mcp --project-dir /path/to/project
+```
+
+In a client config (e.g. `.mcp.json`), pass the flag as an arg:
+
+```json
+{
+  "mcpServers": {
+    "tapps-brain-ops": {
+      "command": "tapps-brain-mcp",
+      "args": ["--project-dir", "/path/to/project", "--enable-operator-tools"]
+    }
+  }
+}
+```
+
+| Tool | Description | Risk |
+|------|-------------|------|
+| `maintenance_consolidate` | Merge similar memories (deterministic, Jaccard + TF-IDF) | Bulk mutation |
+| `maintenance_gc` | Archive stale memories (supports `dry_run`) | Bulk archive |
+| `maintenance_stale` | List GC stale candidates with reasons (read-only JSON: `count`, `entries`) | Read-only |
+| `tapps_brain_health` | Structured health report (store connectivity, Hive status, integrity) | Read-only |
+| `memory_gc_config` | Read current GC thresholds | Read-only |
+| `memory_gc_config_set` | Update GC thresholds at runtime | Config write |
+| `memory_consolidation_config` | Read current auto-consolidation settings | Read-only |
+| `memory_consolidation_config_set` | Update auto-consolidation settings at runtime | Config write |
+| `memory_export` | Export entries as JSON (with tier/scope/confidence filters) | Data exposure |
+| `memory_import` | Import entries from JSON | Bulk write |
+| `tapps_brain_relay_export` | Build cross-node memory relay payload (GitHub #19) | Data exposure |
+| `flywheel_evaluate` | Run a BEIR-style eval suite against the store | Compute-heavy |
+| `flywheel_hive_feedback` | Aggregate and apply Hive cross-project feedback penalties | Hive mutation |
 
 **CLI-only (not exposed as MCP tools):**
 

@@ -108,6 +108,7 @@ def create_server(  # noqa: PLR0915
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
+    enable_operator_tools: bool = False,
 ) -> Any:  # noqa: ANN401
     """Create and configure a FastMCP server instance.
 
@@ -117,6 +118,14 @@ def create_server(  # noqa: PLR0915
             ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007).
         agent_id: Agent identifier passed to the store as
             ``hive_agent_id``.
+        enable_operator_tools: When ``True``, register advanced/maintenance
+            tools intended for operators rather than agents: consolidation
+            triggers, garbage collection, GC/consolidation config writes,
+            bulk export/import, relay export, BEIR eval runner, and Hive
+            feedback aggregation. Defaults to ``False`` so agent sessions
+            see only the stable core tool surface. Enable via
+            ``--enable-operator-tools`` CLI flag or
+            ``TAPPS_BRAIN_OPERATOR_TOOLS=1`` env var.
 
     Returns:
         A configured FastMCP server instance.
@@ -126,6 +135,11 @@ def create_server(  # noqa: PLR0915
         **refuses to start** if ``TAPPS_BRAIN_HIVE_DSN`` is missing.
         Without strict mode, Hive tools fail lazily when invoked
         (acceptable for local development but not for production).
+
+        ``TAPPS_BRAIN_OPERATOR_TOOLS``: When set to ``"1"``, operator
+        tools are registered (same as ``--enable-operator-tools``).
+        Do not enable in shared multi-tenant agent sessions; reserve for
+        dedicated operator/maintenance sessions.
     """
     fastmcp_cls = _lazy_import_mcp()
 
@@ -2342,11 +2356,52 @@ def create_server(  # noqa: PLR0915
         return json.dumps(result, default=str)
 
     # ------------------------------------------------------------------
+    # Operator tool gate — remove advanced/maintenance tools unless enabled
+    # ------------------------------------------------------------------
+    #
+    # Operator tools are registered unconditionally above so they share the
+    # same closure scope as core tools. When ``enable_operator_tools`` is
+    # False (the default), they are removed from the tool manager here so
+    # MCP clients never see them. Enable via ``--enable-operator-tools`` CLI
+    # flag or ``TAPPS_BRAIN_OPERATOR_TOOLS=1`` env var.
+    #
+    # Tools in this set are NOT intended for regular agent sessions. They
+    # can trigger bulk mutations (GC, consolidation), expose raw store data
+    # (export), or run operator-only maintenance pipelines (eval, relay).
+    # Do not add them to shared multi-tenant sessions.
+
+    _OPERATOR_TOOL_NAMES: frozenset[str] = frozenset(
+        {
+            "maintenance_consolidate",
+            "maintenance_gc",
+            "maintenance_stale",
+            "tapps_brain_health",
+            "memory_gc_config",
+            "memory_gc_config_set",
+            "memory_consolidation_config",
+            "memory_consolidation_config_set",
+            "memory_export",
+            "memory_import",
+            "tapps_brain_relay_export",
+            "flywheel_evaluate",
+            "flywheel_hive_feedback",
+        }
+    )
+
+    if not enable_operator_tools:
+        for _op_tool in _OPERATOR_TOOL_NAMES:
+            try:
+                mcp._tool_manager.remove_tool(_op_tool)
+            except Exception:  # noqa: BLE001
+                pass  # Tool may not be registered in all configurations
+
+    # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
     mcp._tapps_agent_id = agent_id
     mcp._tapps_hive_enabled = enable_hive
+    mcp._tapps_operator_tools_enabled = enable_operator_tools
     # Expose the shared Hive backend (if any) so Hive tools can reuse it
     mcp._tapps_hive_store = getattr(store, "_hive_store", None)
 
@@ -2389,11 +2444,27 @@ def main() -> None:
         default=True,
         help="Enable Hive multi-agent shared brain (default: enabled).",
     )
+    parser.add_argument(
+        "--enable-operator-tools",
+        action="store_true",
+        default=False,
+        help=(
+            "Register advanced/maintenance tools (consolidation, GC, export/import, "
+            "relay, eval harness). Not intended for regular agent sessions. "
+            "Also enabled by TAPPS_BRAIN_OPERATOR_TOOLS=1 env var."
+        ),
+    )
     args = parser.parse_args()
 
     effective_agent_id = args.agent_id
     if effective_agent_id == "unknown":
         effective_agent_id = os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
+
+    # env var overrides the default; CLI flag overrides env var
+    enable_operator_tools: bool = (
+        args.enable_operator_tools
+        or os.environ.get("TAPPS_BRAIN_OPERATOR_TOOLS", "") == "1"
+    )
 
     project_dir = Path(args.project_dir) if args.project_dir else None
     try:
@@ -2401,6 +2472,7 @@ def main() -> None:
             project_dir,
             enable_hive=args.enable_hive,
             agent_id=effective_agent_id,
+            enable_operator_tools=enable_operator_tools,
         )
     except RuntimeError as exc:
         # Strict-mode configuration failures produce a RuntimeError (e.g.

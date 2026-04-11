@@ -144,7 +144,7 @@
 - [x] **062.1** MCP — Hive backend from unified DSN — `_get_store` uses `create_hive_backend` from env; no `HiveStore()` SQLite; unit test (env set → Postgres; unset + strict → error). [SMALL — MCP already uses env; verify + harden] <!-- resolved: src/tapps_brain/mcp_server.py -->
 - [x] **062.2** MCP — strict vs non-strict startup — `TAPPS_BRAIN_STRICT=1` → missing DSN exits with clear message (stderr + non-zero); non-strict documented as not-for-prod (or removed). [SMALL] <!-- resolved: src/tapps_brain/mcp_server.py -->
 - [x] **062.3** MCP — freeze core tool list — document core agent tool set in PR; regenerate `docs/generated/mcp-tools-manifest.json`; OpenClaw consistency. [SMALL — inventory + manifest] <!-- resolved: src/tapps_brain/mcp_server.py, docs/generated/ -->
-- [ ] **062.4** MCP — operator tools behind flag — advanced/maintenance tools behind `--enable-operator-tools` or profile flag; default session excludes them; doc paragraph for operators. [MEDIUM] <!-- resolved: src/tapps_brain/mcp_server.py -->
+- [x] **062.4** MCP — operator tools behind flag — advanced/maintenance tools behind `--enable-operator-tools` or profile flag; default session excludes them; doc paragraph for operators. [MEDIUM] <!-- resolved: src/tapps_brain/mcp_server.py -->
 
 ### Phase L: Env contract + CI (062.5–062.8) <!-- id: 062-phase-l -->
 

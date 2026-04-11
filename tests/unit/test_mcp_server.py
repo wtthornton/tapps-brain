@@ -95,6 +95,7 @@ class TestCoreTools:
         assert "memory_list" in tool_names
 
     def test_all_expected_tools_present(self, mcp_server):
+        """Default server (no operator tools) must expose only the core tool surface."""
         tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
         expected = {
             # Core memory tools
@@ -113,24 +114,7 @@ class TestCoreTools:
             "memory_index_session",
             "memory_search_sessions",
             "memory_capture",
-            # Federation tools
-            "federation_status",
-            "federation_subscribe",
-            "federation_unsubscribe",
-            "federation_publish",
-            # Maintenance tools
-            "maintenance_consolidate",
-            "maintenance_gc",
-            "maintenance_stale",
-            # GC and consolidation config tools
-            "memory_gc_config",
-            "memory_gc_config_set",
-            "memory_consolidation_config",
-            "memory_consolidation_config_set",
-            # Export/import tools
-            "memory_export",
-            "memory_import",
-            "tapps_brain_relay_export",
+            # Session-end tool
             "tapps_brain_session_end",
             # Profile tools
             "profile_info",
@@ -168,13 +152,10 @@ class TestCoreTools:
             # Diagnostics (EPIC-030)
             "diagnostics_report",
             "diagnostics_history",
-            "tapps_brain_health",
-            # Flywheel (EPIC-031)
+            # Flywheel (EPIC-031) — core tools only; eval+hive_feedback are operator
             "flywheel_process",
             "flywheel_gaps",
             "flywheel_report",
-            "flywheel_evaluate",
-            "flywheel_hive_feedback",
             # AgentBrain facade (EPIC-057)
             "brain_remember",
             "brain_recall",
@@ -188,6 +169,58 @@ class TestCoreTools:
             f"  Missing from server: {expected - tool_names}\n"
             f"  Extra on server (not in expected): {tool_names - expected}"
         )
+
+    def test_operator_tools_absent_by_default(self, mcp_server):
+        """Operator tools must NOT appear in the default (non-operator) session."""
+        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        operator_tools = {
+            "maintenance_consolidate",
+            "maintenance_gc",
+            "maintenance_stale",
+            "tapps_brain_health",
+            "memory_gc_config",
+            "memory_gc_config_set",
+            "memory_consolidation_config",
+            "memory_consolidation_config_set",
+            "memory_export",
+            "memory_import",
+            "tapps_brain_relay_export",
+            "flywheel_evaluate",
+            "flywheel_hive_feedback",
+        }
+        present = operator_tools & tool_names
+        assert not present, (
+            f"Operator tools should be absent by default but found: {present}"
+        )
+        assert not mcp_server._tapps_operator_tools_enabled
+
+    def test_operator_tools_present_when_enabled(self, store_dir):
+        """All operator tools must appear when enable_operator_tools=True."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
+        try:
+            tool_names = {t.name for t in server._tool_manager.list_tools()}
+            expected_operator = {
+                "maintenance_consolidate",
+                "maintenance_gc",
+                "maintenance_stale",
+                "tapps_brain_health",
+                "memory_gc_config",
+                "memory_gc_config_set",
+                "memory_consolidation_config",
+                "memory_consolidation_config_set",
+                "memory_export",
+                "memory_import",
+                "tapps_brain_relay_export",
+                "flywheel_evaluate",
+                "flywheel_hive_feedback",
+            }
+            missing = expected_operator - tool_names
+            assert not missing, f"Operator tools missing: {missing}"
+            assert server._tapps_operator_tools_enabled
+        finally:
+            server._tapps_store.close()
 
 
 class TestLifecycleTools:
