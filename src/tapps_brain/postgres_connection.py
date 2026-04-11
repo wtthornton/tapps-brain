@@ -32,6 +32,10 @@ class PostgresConnectionManager:
     connect_timeout:
         Seconds to wait when acquiring a connection.  Falls back to
         ``TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT`` env var, then ``5``.
+    idle_timeout:
+        Seconds before an idle connection is closed and evicted from the pool.
+        Falls back to ``TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT`` env var, then ``300`` (5 min).
+        Pass ``0`` to disable idle eviction.
     """
 
     def __init__(
@@ -41,6 +45,7 @@ class PostgresConnectionManager:
         min_size: int | None = None,
         max_size: int | None = None,
         connect_timeout: float | None = None,
+        idle_timeout: float | None = None,
     ) -> None:
         self._dsn = dsn
         self._min_size = min_size or int(os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2"))
@@ -48,6 +53,8 @@ class PostgresConnectionManager:
         self._connect_timeout = connect_timeout or float(
             os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
         )
+        _idle_env = float(os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300"))
+        self._idle_timeout = idle_timeout if idle_timeout is not None else _idle_env
         self._pool: Any = None
 
     # -- Pool lifecycle --------------------------------------------------------
@@ -64,12 +71,14 @@ class PostgresConnectionManager:
                 "Install with: pip install 'psycopg[binary]' psycopg_pool"
             ) from None
 
-        self._pool = ConnectionPool(
-            self._dsn,
-            min_size=self._min_size,
-            max_size=self._max_size,
-            timeout=self._connect_timeout,
-        )
+        kwargs: dict[str, Any] = {
+            "min_size": self._min_size,
+            "max_size": self._max_size,
+            "timeout": self._connect_timeout,
+        }
+        if self._idle_timeout > 0:
+            kwargs["max_idle"] = self._idle_timeout
+        self._pool = ConnectionPool(self._dsn, **kwargs)
         logger.info(
             "postgres.pool_created",
             min_size=self._min_size,
@@ -96,6 +105,48 @@ class PostgresConnectionManager:
             self._pool.close()
             self._pool = None
             logger.info("postgres.pool_closed")
+
+    def get_pool_stats(self) -> dict[str, Any]:
+        """Return current pool statistics.
+
+        Returns a dict with at least:
+
+        - ``pool_min`` — configured minimum connections
+        - ``pool_max`` — configured maximum connections
+        - ``pool_size`` — current open connections (0 if pool not initialised)
+        - ``pool_available`` — idle connections ready to serve requests
+        - ``pool_saturation`` — fraction of max_size in use (0.0 – 1.0)
+        - ``idle_timeout`` — configured idle eviction timeout in seconds
+
+        When the pool has not been opened yet (e.g. lazy init not triggered)
+        ``pool_size`` and ``pool_available`` will be 0 and ``pool_saturation``
+        will be 0.0.
+        """
+        base: dict[str, Any] = {
+            "pool_min": self._min_size,
+            "pool_max": self._max_size,
+            "pool_size": 0,
+            "pool_available": 0,
+            "pool_saturation": 0.0,
+            "idle_timeout": self._idle_timeout,
+        }
+        if self._pool is None:
+            return base
+        try:
+            raw = self._pool.get_stats()
+            size = int(raw.get("pool_size", 0))
+            available = int(raw.get("pool_available", 0))
+            saturation = (size - available) / self._max_size if self._max_size > 0 else 0.0
+            base.update(
+                {
+                    "pool_size": size,
+                    "pool_available": available,
+                    "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
+                }
+            )
+        except Exception:
+            pass
+        return base
 
     @property
     def dsn(self) -> str:

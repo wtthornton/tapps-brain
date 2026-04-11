@@ -79,6 +79,20 @@ class HiveHealth(BaseModel):
     namespaces: list[str] = Field(default_factory=list)
     entries: int = 0
     agents: int = 0
+    pool_saturation: float | None = Field(
+        default=None,
+        description=(
+            "Fraction of pool max_size currently in use (0.0–1.0). "
+            "None when the pool has not been opened or stats are unavailable."
+        ),
+    )
+    migration_version: int | None = Field(
+        default=None,
+        description=(
+            "Highest applied Hive schema migration version. "
+            "None when the DB is unreachable or version table is absent."
+        ),
+    )
 
 
 class IntegrityHealth(BaseModel):
@@ -292,6 +306,28 @@ def run_health_check(  # noqa: PLR0915
 
                     if hive_health.agents == 0:
                         warnings.append("No agents registered in Hive")
+
+                    # Pool saturation: available from connection manager if exposed.
+                    _cm = getattr(hive, "_cm", None)
+                    if _cm is not None and hasattr(_cm, "get_pool_stats"):
+                        try:
+                            _ps = _cm.get_pool_stats()
+                            hive_health.pool_saturation = float(
+                                _ps.get("pool_saturation", 0.0)
+                            )
+                        except Exception:
+                            pass
+
+                    # Migration version: last applied Hive schema version.
+                    if _hive_dsn:
+                        try:
+                            from tapps_brain.postgres_migrations import get_hive_schema_status
+
+                            _schema = get_hive_schema_status(_hive_dsn)
+                            hive_health.migration_version = _schema.current_version
+                        except Exception:
+                            pass
+
                 finally:
                     if _owns_hive and hasattr(hive, "close"):
                         hive.close()

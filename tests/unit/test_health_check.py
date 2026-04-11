@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tapps_brain.health_check import HealthReport, run_health_check
+from tapps_brain.health_check import HealthReport, HiveHealth, run_health_check
 
 
 def test_health_report_exit_code_ok_warn_error() -> None:
@@ -146,6 +146,106 @@ def test_run_health_check_near_capacity_warning(
 
     report = run_health_check(project_root=tmp_path, check_hive=False)
     assert any("capacity" in w.lower() for w in report.warnings)
+
+
+# ---------------------------------------------------------------------------
+# HiveHealth new fields (EPIC-059.7)
+# ---------------------------------------------------------------------------
+
+
+def test_hive_health_model_has_pool_saturation_and_migration_version() -> None:
+    """HiveHealth model must expose pool_saturation and migration_version fields."""
+    hh = HiveHealth()
+    assert hh.pool_saturation is None
+    assert hh.migration_version is None
+
+
+def test_hive_health_model_pool_saturation_set() -> None:
+    hh = HiveHealth(pool_saturation=0.45)
+    assert hh.pool_saturation == pytest.approx(0.45)
+
+
+def test_hive_health_model_migration_version_set() -> None:
+    hh = HiveHealth(migration_version=3)
+    assert hh.migration_version == 3
+
+
+def _make_mock_store(tmp_path: Path, entry_count: int = 0) -> MagicMock:
+    mock_store = MagicMock()
+    mock_store.health.return_value = _store_health_return(entry_count=entry_count)
+    mock_store.sqlite_vec_enabled = False
+    mock_store.sqlite_vec_row_count = 0
+    mock_store.close = MagicMock()
+    mock_store._lock = Lock()
+    mock_store._entries = {}
+    mock_store._persistence = MagicMock()
+    mock_store.verify_integrity.return_value = {"tampered_keys": []}
+    mock_store._persistence.list_relations.return_value = []
+    return mock_store
+
+
+def test_run_health_check_hive_pool_saturation_populated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """pool_saturation is read from the backend's connection manager when present."""
+    mock_cm = MagicMock()
+    mock_cm.get_pool_stats.return_value = {
+        "pool_saturation": 0.25,
+        "pool_size": 5,
+        "pool_available": 3,
+        "pool_min": 2,
+        "pool_max": 20,
+        "idle_timeout": 300,
+    }
+
+    mock_hive = MagicMock()
+    mock_hive._cm = mock_cm
+    mock_hive.count_by_namespace.return_value = {"universal": 10}
+    mock_hive.close = MagicMock()
+
+    mock_registry = MagicMock()
+    mock_registry.list_agents.return_value = []
+
+    monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
+    monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
+    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+
+    # Skip migration version lookup to keep this test focused on pool_saturation.
+    import tapps_brain.postgres_migrations as _pm
+
+    monkeypatch.setattr(_pm, "get_hive_schema_status", MagicMock(side_effect=Exception("skip")))
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: _make_mock_store(tmp_path))
+
+    report = run_health_check(project_root=tmp_path, check_hive=True)
+    assert report.hive.pool_saturation == pytest.approx(0.25)
+
+
+def test_run_health_check_hive_migration_version_populated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """migration_version is read from schema status when Postgres DSN is set."""
+    from tapps_brain.postgres_migrations import SchemaStatus
+
+    mock_hive = MagicMock()
+    mock_hive._cm = None  # no pool stats
+    mock_hive.count_by_namespace.return_value = {}
+    mock_hive.close = MagicMock()
+
+    mock_registry = MagicMock()
+    mock_registry.list_agents.return_value = []
+
+    monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
+    monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
+    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+
+    schema_status = SchemaStatus(current_version=5, applied_versions=[1, 2, 3, 4, 5])
+    import tapps_brain.postgres_migrations as _pm
+
+    monkeypatch.setattr(_pm, "get_hive_schema_status", lambda dsn: schema_status)
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: _make_mock_store(tmp_path))
+
+    report = run_health_check(project_root=tmp_path, check_hive=True)
+    assert report.hive.migration_version == 5
 
 
 def test_run_health_check_hive_no_dsn_reports_skipped(tmp_path: Path) -> None:

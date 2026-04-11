@@ -104,3 +104,91 @@ class TestPostgresConnectionManager:
         cm = PostgresConnectionManager("postgres://localhost/test")
         cm.close()  # Should not raise.
         assert cm.is_open is False
+
+    # -- idle_timeout ----------------------------------------------------------
+
+    def test_init_idle_timeout_default(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._idle_timeout == 300.0
+
+    def test_init_idle_timeout_explicit(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test", idle_timeout=600.0)
+        assert cm._idle_timeout == 600.0
+
+    def test_init_idle_timeout_zero_disables_eviction(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test", idle_timeout=0)
+        assert cm._idle_timeout == 0
+
+    def test_init_idle_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "120")
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._idle_timeout == 120.0
+
+    # -- get_pool_stats --------------------------------------------------------
+
+    def test_get_pool_stats_before_pool_open(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        stats = cm.get_pool_stats()
+        assert stats["pool_min"] == 2
+        assert stats["pool_max"] == 10
+        assert stats["pool_size"] == 0
+        assert stats["pool_available"] == 0
+        assert stats["pool_saturation"] == 0.0
+        assert stats["idle_timeout"] == 300.0
+
+    def test_get_pool_stats_with_mock_pool(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        mock_pool = MagicMock()
+        mock_pool.get_stats.return_value = {"pool_size": 6, "pool_available": 4}
+
+        cm = PostgresConnectionManager(
+            "postgres://localhost/test",
+            min_size=2,
+            max_size=10,
+        )
+        cm._pool = mock_pool
+
+        stats = cm.get_pool_stats()
+        assert stats["pool_size"] == 6
+        assert stats["pool_available"] == 4
+        # (6 - 4) / 10 = 0.2
+        assert stats["pool_saturation"] == pytest.approx(0.2, abs=1e-4)
+
+    def test_get_pool_stats_saturation_clamped_to_one(self) -> None:
+        """Pool stats should never report saturation > 1.0 even with bad data."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        mock_pool = MagicMock()
+        # pool_size > max_size can theoretically happen with burst; clamp to 1.
+        mock_pool.get_stats.return_value = {"pool_size": 15, "pool_available": 0}
+
+        cm = PostgresConnectionManager("postgres://localhost/test", max_size=10)
+        cm._pool = mock_pool
+
+        stats = cm.get_pool_stats()
+        assert stats["pool_saturation"] <= 1.0
+
+    def test_get_pool_stats_returns_zero_saturation_when_get_stats_raises(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        mock_pool = MagicMock()
+        mock_pool.get_stats.side_effect = RuntimeError("pool gone")
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = mock_pool
+
+        # Should not raise; falls back to zero values.
+        stats = cm.get_pool_stats()
+        assert stats["pool_saturation"] == 0.0
+        assert stats["pool_size"] == 0
