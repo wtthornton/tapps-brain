@@ -333,7 +333,8 @@ class MemoryStore:
         """Register this agent in the Hive registry if not already present."""
         if self._hive_store is None or self._agent_id is None:
             return
-        from tapps_brain.hive import AgentRegistration, AgentRegistry
+        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.models import AgentRegistration
 
         registry_path = self._hive_store._db_path.parent / "agents.yaml"
         registry = AgentRegistry(registry_path=registry_path)
@@ -1074,7 +1075,7 @@ class MemoryStore:
         if self._hive_store is None:
             return
         try:
-            from tapps_brain.hive import PropagationEngine
+            from tapps_brain.backends import PropagationEngine
 
             # Read Hive config from profile if available
             auto_propagate: list[str] | None = None
@@ -2058,7 +2059,6 @@ class MemoryStore:
         """Return a structured health report for this store."""
         from datetime import UTC, datetime
 
-        from tapps_brain.federation import load_federation_config
         from tapps_brain.gc import MemoryGarbageCollector
         from tapps_brain.similarity import find_consolidation_groups
 
@@ -2097,8 +2097,9 @@ class MemoryStore:
         )
         consolidation_candidates = sum(len(g) for g in groups)
 
-        fed = load_federation_config()
-        federation_project_count = len(fed.projects)
+        # Federation config removed (STORY-059.2 — SQLite federation deleted).
+        # Federation is now Postgres-only; project count not available from local config.
+        federation_project_count = 0
 
         # Integrity verification (H4c)
         integrity = self.verify_integrity()

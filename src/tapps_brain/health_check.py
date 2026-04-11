@@ -251,7 +251,7 @@ def run_health_check(  # noqa: PLR0915
         try:
             import os
 
-            from tapps_brain.hive import AgentRegistry
+            from tapps_brain.backends import AgentRegistry
 
             # Resolve which backend to probe:
             #   1. Explicit hive_store parameter

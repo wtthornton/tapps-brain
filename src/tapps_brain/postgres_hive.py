@@ -21,7 +21,7 @@ import structlog
 if TYPE_CHECKING:
     import psycopg  # type: ignore[import-not-found]
 
-    from tapps_brain.hive import AgentRegistration
+    from tapps_brain.models import AgentRegistration
     from tapps_brain.postgres_connection import PostgresConnectionManager
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
