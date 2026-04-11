@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -155,10 +154,12 @@ class TestStartSpan:
     def test_creates_span_with_correct_name(self) -> None:
         from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
 
-        mock_tracer, mock_span = _make_mock_tracer()
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_REMEMBER):
-                pass
+        mock_tracer, _mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_REMEMBER),
+        ):
+            pass
 
         mock_tracer.start_as_current_span.assert_called_once()
         args, _ = mock_tracer.start_as_current_span.call_args
@@ -170,9 +171,11 @@ class TestStartSpan:
         from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
 
         mock_tracer, _ = _make_mock_tracer()
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_REMEMBER):
-                pass
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_REMEMBER),
+        ):
+            pass
 
         _, kwargs = mock_tracer.start_as_current_span.call_args
         assert kwargs.get("kind") == SpanKind.INTERNAL
@@ -181,18 +184,22 @@ class TestStartSpan:
         from tapps_brain.otel_tracer import SPAN_SEARCH, start_span
 
         mock_tracer, mock_span = _make_mock_tracer()
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_SEARCH) as span:
-                assert span is mock_span
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_SEARCH) as span,
+        ):
+            assert span is mock_span
 
     def test_sets_initial_attributes_on_span(self) -> None:
         from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
 
         mock_tracer, mock_span = _make_mock_tracer()
         attrs = {"memory.tier": "pattern", "memory.scope": "project"}
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_REMEMBER, attrs):
-                pass
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_REMEMBER, attrs),
+        ):
+            pass
 
         expected_calls = [call("memory.tier", "pattern"), call("memory.scope", "project")]
         mock_span.set_attribute.assert_has_calls(expected_calls, any_order=True)
@@ -203,9 +210,11 @@ class TestStartSpan:
         from tapps_brain.otel_tracer import SPAN_RECALL, start_span
 
         mock_tracer, mock_span = _make_mock_tracer()
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_RECALL):
-                pass
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_RECALL),
+        ):
+            pass
 
         mock_span.set_status.assert_called_once()
         status_arg = mock_span.set_status.call_args[0][0]
@@ -242,9 +251,11 @@ class TestStartSpan:
         from tapps_brain.otel_tracer import SPAN_SEARCH, start_span
 
         mock_tracer, mock_span = _make_mock_tracer()
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span(SPAN_SEARCH, None):
-                pass
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span(SPAN_SEARCH, None),
+        ):
+            pass
 
         mock_span.set_attribute.assert_not_called()
 
@@ -285,12 +296,14 @@ class TestStoreSpans:
         mock_tracer, _ = _make_mock_tracer()
         store = self._make_store(tmp_path)
 
-        with patch(
-            "tapps_brain.store.start_span",
-            wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
-        ) as mock_start_span:
-            with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-                store.save("test-key", "test value", tier="pattern")
+        with (
+            patch(
+                "tapps_brain.store.start_span",
+                wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
+            ) as mock_start_span,
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+        ):
+            store.save("test-key", "test value", tier="pattern")
 
         # Verify start_span was called with SPAN_REMEMBER
         called_names = [c.args[0] for c in mock_start_span.call_args_list]
@@ -301,12 +314,14 @@ class TestStoreSpans:
 
         store = self._make_store(tmp_path)
 
-        with patch(
-            "tapps_brain.store.start_span",
-            wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
-        ) as mock_start_span:
-            with patch("tapps_brain.otel_tracer.get_tracer", return_value=_make_mock_tracer()[0]):
-                store.recall("what is the test")
+        with (
+            patch(
+                "tapps_brain.store.start_span",
+                wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
+            ) as mock_start_span,
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=_make_mock_tracer()[0]),
+        ):
+            store.recall("what is the test")
 
         called_names = [c.args[0] for c in mock_start_span.call_args_list]
         assert SPAN_RECALL in called_names
@@ -316,19 +331,21 @@ class TestStoreSpans:
 
         store = self._make_store(tmp_path)
 
-        with patch(
-            "tapps_brain.store.start_span",
-            wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
-        ) as mock_start_span:
-            with patch("tapps_brain.otel_tracer.get_tracer", return_value=_make_mock_tracer()[0]):
-                store.search("test query")
+        with (
+            patch(
+                "tapps_brain.store.start_span",
+                wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
+            ) as mock_start_span,
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=_make_mock_tracer()[0]),
+        ):
+            store.search("test query")
 
         called_names = [c.args[0] for c in mock_start_span.call_args_list]
         assert SPAN_SEARCH in called_names
 
     def test_remember_span_has_safe_attributes_no_content(self, tmp_path: Any) -> None:
         """Verify save() span attributes do not include raw memory content."""
-        from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
+        from tapps_brain.otel_tracer import SPAN_REMEMBER
 
         captured_attrs: dict[str, Any] = {}
 

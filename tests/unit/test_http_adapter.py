@@ -199,9 +199,7 @@ class TestHealthEndpoint:
         assert isinstance(body, dict)
         assert body["status"] == "ok"
 
-    def test_liveness_returns_200_even_with_db_down(
-        self, adapter_bad_dsn: HttpAdapter
-    ) -> None:
+    def test_liveness_returns_200_even_with_db_down(self, adapter_bad_dsn: HttpAdapter) -> None:
         """STORY-061.4: /health must return 200 even when Postgres is unreachable.
 
         Kubernetes livenessProbe uses /health. If the DB is down, the pod
@@ -516,9 +514,7 @@ class TestInfoEndpointNoAuth:
 class TestInfoEndpointWithAuth:
     """When auth IS configured, /info requires a valid Bearer token."""
 
-    def test_returns_401_without_authorization_header(
-        self, adapter_with_auth: HttpAdapter
-    ) -> None:
+    def test_returns_401_without_authorization_header(self, adapter_with_auth: HttpAdapter) -> None:
         """Fuzz: missing Authorization header → 401."""
         status, body = _get(adapter_with_auth.address[1], "/info")
         assert status == 401
@@ -540,9 +536,7 @@ class TestInfoEndpointWithAuth:
     def test_returns_403_with_wrong_token(self, adapter_with_auth: HttpAdapter) -> None:
         """Fuzz: wrong token → 403."""
         port = adapter_with_auth.address[1]
-        status, body = _get_with_headers(
-            port, "/info", {"Authorization": "Bearer wrong-token-xyz"}
-        )
+        status, body = _get_with_headers(port, "/info", {"Authorization": "Bearer wrong-token-xyz"})
         assert status == 403
         assert isinstance(body, dict)
         assert body.get("error") == "forbidden"
@@ -550,18 +544,14 @@ class TestInfoEndpointWithAuth:
     def test_returns_200_with_correct_token(self, adapter_with_auth: HttpAdapter) -> None:
         """Correct token → 200."""
         port = adapter_with_auth.address[1]
-        status, body = _get_with_headers(
-            port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"}
-        )
+        status, body = _get_with_headers(port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"})
         assert status == 200
         assert isinstance(body, dict)
         assert body["service"] == "tapps-brain"
 
     def test_auth_enabled_is_true_with_token(self, adapter_with_auth: HttpAdapter) -> None:
         port = adapter_with_auth.address[1]
-        _, body = _get_with_headers(
-            port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"}
-        )
+        _, body = _get_with_headers(port, "/info", {"Authorization": f"Bearer {_TEST_TOKEN}"})
         assert isinstance(body, dict)
         assert body["auth_enabled"] is True
 
@@ -662,14 +652,10 @@ class TestTraceContextPropagation:
     # A valid W3C traceparent: version=00, trace-id (32 hex), span-id (16 hex), flags=01
     _TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
-    def test_request_with_traceparent_still_returns_200(
-        self, adapter_no_dsn: HttpAdapter
-    ) -> None:
+    def test_request_with_traceparent_still_returns_200(self, adapter_no_dsn: HttpAdapter) -> None:
         """The response must be unaffected by the presence of traceparent."""
         port = adapter_no_dsn.address[1]
-        status, body = _get_with_headers(
-            port, "/health", {"traceparent": self._TRACEPARENT}
-        )
+        status, body = _get_with_headers(port, "/health", {"traceparent": self._TRACEPARENT})
         assert status == 200
         assert isinstance(body, dict)
         assert body["status"] == "ok"
@@ -682,17 +668,13 @@ class TestTraceContextPropagation:
         status, _body = _get(port, "/health")
         assert status == 200
 
-    def test_traceparent_extracted_and_span_created(
-        self, adapter_no_dsn: HttpAdapter
-    ) -> None:
+    def test_traceparent_extracted_and_span_created(self, adapter_no_dsn: HttpAdapter) -> None:
         """When traceparent is present, a SERVER span is started with the extracted context."""
         from unittest.mock import patch
 
         _spans_started: list[tuple[str, Any]] = []
 
-        _real_start_span = __import__(
-            "tapps_brain.otel_tracer", fromlist=["start_span"]
-        ).start_span
+        _real_start_span = __import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span
         from contextlib import contextmanager
 
         @contextmanager  # type: ignore[misc]
@@ -767,9 +749,11 @@ class TestTraceContextPropagation:
         mock_span.__exit__ = MagicMock(return_value=False)
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
-            with start_span("test.server.span", kind=SpanKind.SERVER):
-                pass
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_span("test.server.span", kind=SpanKind.SERVER),
+        ):
+            pass
 
         _, kwargs = mock_tracer.start_as_current_span.call_args
         assert kwargs.get("kind") == SpanKind.SERVER

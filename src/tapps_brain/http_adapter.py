@@ -59,6 +59,8 @@ from typing import Any
 
 import structlog
 
+from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -128,9 +130,7 @@ _OPENAPI_SPEC: dict[str, Any] = {
                                             "type": "string",
                                             "enum": ["ready", "degraded"],
                                         },
-                                        "migration_version": {
-                                            "type": ["integer", "null"]
-                                        },
+                                        "migration_version": {"type": ["integer", "null"]},
                                         "detail": {"type": "string"},
                                     },
                                 }
@@ -227,6 +227,9 @@ _OPENAPI_SPEC: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 _SERVICE_NAME = "tapps-brain"
+
+# Number of parts in a valid "Bearer <token>" Authorization header.
+_BEARER_PARTS = 2
 
 
 def _service_version() -> str:
@@ -386,7 +389,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return False
 
         parts = header.split(" ", 1)
-        if len(parts) != 2 or parts[0].lower() != "bearer":
+        if len(parts) != _BEARER_PARTS or parts[0].lower() != "bearer":
             self._send_json(
                 401,
                 {
@@ -413,25 +416,48 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def do_GET(self) -> None:
-        """Handle GET requests."""
+        """Handle GET requests.
+
+        W3C ``traceparent`` propagation (STORY-061.3): when a ``traceparent``
+        header is present in the request, its trace context is extracted and
+        the request handling span is created as a child of the caller's trace.
+        This is a no-op when the OTel SDK is not configured.
+        """
         path = self.path.split("?", 1)[0]  # strip query string
 
-        # Auth gate: apply to routes not in the public set
-        if path not in self._PUBLIC_PATHS and not self._check_auth():
-            return  # _check_auth already sent the 401/403 response
+        # Extract W3C traceparent context for distributed tracing (STORY-061.3).
+        # carrier must be a plain dict with lowercased header names.
+        _carrier: dict[str, str] = {}
+        _tp = self.headers.get("traceparent")
+        if _tp:
+            _carrier["traceparent"] = _tp
+        _ts = self.headers.get("tracestate")
+        if _ts:
+            _carrier["tracestate"] = _ts
+        _trace_ctx = extract_trace_context(_carrier) if _carrier else None
 
-        if path in ("/", "/health"):
-            self._handle_health()
-        elif path == "/ready":
-            self._handle_ready()
-        elif path == "/metrics":
-            self._handle_metrics()
-        elif path == "/info":
-            self._handle_info()
-        elif path == "/openapi.json":
-            self._handle_openapi()
-        else:
-            self._send_json(404, {"error": "not_found", "path": path})
+        with start_span(
+            f"GET {path}",
+            {"http.method": "GET", "http.route": path},
+            kind=SPAN_KIND_SERVER,
+            context=_trace_ctx,
+        ):
+            # Auth gate: apply to routes not in the public set
+            if path not in self._PUBLIC_PATHS and not self._check_auth():
+                return  # _check_auth already sent the 401/403 response
+
+            if path in ("/", "/health"):
+                self._handle_health()
+            elif path == "/ready":
+                self._handle_ready()
+            elif path == "/metrics":
+                self._handle_metrics()
+            elif path == "/info":
+                self._handle_info()
+            elif path == "/openapi.json":
+                self._handle_openapi()
+            else:
+                self._send_json(404, {"error": "not_found", "path": path})
 
     def _handle_health(self) -> None:
         """Liveness: always 200 while process is alive."""
