@@ -149,7 +149,7 @@
 ### Phase L: Env contract + CI (062.5–062.8) <!-- id: 062-phase-l -->
 
 - [x] **062.5+062.6** Env contract — markdown table + links — single table: variable | meaning | example | required (prod) | required (dev); linked from README, AGENTS.md, agentforge-integration.md; `.env.example` matches. [BATCH-2: SMALL — two XS/S tasks, same deliverable] <!-- resolved: docs/guides/, README.md, AGENTS.md, .env.example -->
-- [ ] **062.7+062.8** CI — docs_validate_epic + regression test — CI step on changed EPIC-059–063 files; blocks merge; documented check that broken frontmatter → CI red; optional smoke script. [BATCH-2: SMALL — two XS/S tasks, same workflow] <!-- resolved: .github/workflows/, scripts/ -->
+- [x] **062.7+062.8** CI — docs_validate_epic + regression test — CI step on changed EPIC-059–063 files; blocks merge; documented check that broken frontmatter → CI red; optional smoke script. [BATCH-2: SMALL — two XS/S tasks, same workflow] <!-- resolved: .github/workflows/, scripts/ -->
 
 - [ ] **062.CLEAN** MCP manifest + env contract validation — Run `mcp__tapps-mcp tapps_checklist` with `task_type: "epic"`; verify `mcp-tools-manifest.json` matches actual tools; run `mcp__docs-mcp docs_check_cross_refs` on `docs/guides/mcp.md` and env contract page; verify `.env.example` keys match table. [SMALL — automated checks] <!-- resolved: docs/generated/, docs/guides/, .env.example -->
 

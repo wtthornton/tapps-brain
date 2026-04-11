@@ -20,6 +20,23 @@
 
 ---
 
+### Epic frontmatter review (required when editing docs/planning/epics/EPIC-059–063)
+
+> Complete this section only when your PR adds or modifies planning epic files
+> (`docs/planning/epics/EPIC-059*.md`–`EPIC-063*.md`).  The **Epic Validation**
+> CI job will run automatically and block merge on errors.  Delete this section
+> for unrelated changes.  See [epic-validation-regression.md](docs/operations/epic-validation-regression.md)
+> for how to verify the gate is working.
+
+- [ ] `id` matches the filename stem (e.g. `id: EPIC-062` in `EPIC-062.md`)
+- [ ] `status` is one of: `planned`, `in-progress`, `complete`
+- [ ] `priority` is one of: `critical`, `high`, `medium`, `low`
+- [ ] `created` is a valid `YYYY-MM-DD` date
+- [ ] All required fields present: `id`, `title`, `status`, `priority`, `created`, `tags`, `depends_on`, `blocks`
+- [ ] Ran `python3 scripts/validate_epics.py docs/planning/epics/EPIC-0XX.md` locally and it printed `OK`
+
+---
+
 ### Telemetry review (required when touching observability code)
 
 > Complete this section only when your PR adds or modifies spans, metrics, log

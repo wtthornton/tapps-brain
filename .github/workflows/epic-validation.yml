@@ -1,0 +1,47 @@
+name: Epic Validation
+
+# Validates YAML frontmatter for v3 planning epics (EPIC-059–063) whenever
+# those files change.  A broken epic frontmatter (missing required field,
+# invalid status/priority, malformed date, id/filename mismatch) fails this
+# check and blocks merge.
+#
+# Regression smoke: deliberately break a frontmatter field (e.g. set status
+# to an invalid value) in a branch, open a PR, and confirm this job turns red.
+# Revert to restore green.  See docs/operations/epic-validation-regression.md
+# for the step-by-step runbook.
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "docs/planning/epics/EPIC-059*.md"
+      - "docs/planning/epics/EPIC-060*.md"
+      - "docs/planning/epics/EPIC-061*.md"
+      - "docs/planning/epics/EPIC-062*.md"
+      - "docs/planning/epics/EPIC-063*.md"
+  push:
+    branches: [main, master]
+    paths:
+      - "docs/planning/epics/EPIC-059*.md"
+      - "docs/planning/epics/EPIC-060*.md"
+      - "docs/planning/epics/EPIC-061*.md"
+      - "docs/planning/epics/EPIC-062*.md"
+      - "docs/planning/epics/EPIC-063*.md"
+  workflow_dispatch:
+
+jobs:
+  validate-epics:
+    name: Validate v3 epic frontmatter
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate EPIC-059 – EPIC-063 frontmatter
+        run: |
+          python3 scripts/validate_epics.py \
+            docs/planning/epics/EPIC-059.md \
+            docs/planning/epics/EPIC-060.md \
+            docs/planning/epics/EPIC-061.md \
+            docs/planning/epics/EPIC-062.md \
+            docs/planning/epics/EPIC-063.md
