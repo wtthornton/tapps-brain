@@ -747,3 +747,4 @@ This would be an **optional sidecar process**, not a change to the core library.
 - [Profile Design Guide](profiles.md) — Designing custom profiles with Hive config
 - [Profile Catalog](profile-catalog.md) — Built-in profiles and their Hive settings
 - [Federation Guide](federation.md) — Cross-project sharing (complements Hive)
+- [Scope Audit](scope-audit.md) — `agent_scope` / group / hive namespace matrix and code checklist (EPIC-063)
