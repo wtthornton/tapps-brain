@@ -48,11 +48,15 @@ from tapps_brain.metrics import (
     compact_save_phase_summary,
 )
 from tapps_brain.otel_tracer import (
+    GEN_AI_OPERATION_EXECUTE_TOOL,
+    SPAN_DELETE,
     SPAN_HIVE_PROPAGATE,
     SPAN_HIVE_SEARCH,
     SPAN_RECALL,
+    SPAN_REINFORCE,
     SPAN_REMEMBER,
     SPAN_SEARCH,
+    SPAN_UPDATE,
     record_retrieval_document_events,
     start_span,
 )
@@ -768,7 +772,12 @@ class MemoryStore:
         with (
             start_span(
                 SPAN_REMEMBER,
-                {"memory.tier": tier, "memory.scope": scope, "memory.agent_scope": agent_scope},
+                {
+                    "memory.tier": tier,
+                    "memory.scope": scope,
+                    "memory.agent_scope": agent_scope,
+                    "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
+                },
             ),
             MetricsTimer(self._metrics, "store.save_ms"),
         ):
@@ -1231,20 +1240,23 @@ class MemoryStore:
 
     def delete(self, key: str) -> bool:
         """Delete a memory entry by key. Returns True if deleted."""
-        with self._serialized():
-            if key not in self._entries:
-                return False
-            removed = self._entries.pop(key)
-
-        # Persist deletion — rollback in-memory cache on failure to
-        # maintain write-through consistency.
-        try:
-            self._persistence.delete(key)
-        except Exception:
+        with start_span(
+            SPAN_DELETE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}
+        ):
             with self._serialized():
-                self._entries[key] = removed
-            raise
-        return True
+                if key not in self._entries:
+                    return False
+                removed = self._entries.pop(key)
+
+            # Persist deletion — rollback in-memory cache on failure to
+            # maintain write-through consistency.
+            try:
+                self._persistence.delete(key)
+            except Exception:
+                with self._serialized():
+                    self._entries[key] = removed
+                raise
+            return True
 
     @staticmethod
     def _parse_relative_time(value: str) -> str:
@@ -1497,84 +1509,89 @@ class MemoryStore:
         self._metrics.increment("store.reinforce")
         decay_cfg = self._get_decay_config()
 
-        with self._serialized():
-            entry = self._entries.get(key)
-            if entry is None:
-                raise KeyError(key)
-
-            updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
-            # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
-            # using pre-reinforce timestamps for retrievability — same layer flag as record_access.
-            if self._profile is not None:
-                tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                layer = self._profile.get_layer(tier_name)
-                if layer is not None and layer.adaptive_stability:
-                    try:
-                        from tapps_brain.decay import update_stability
-
-                        new_stab, new_diff = update_stability(entry, decay_cfg, True)
-                        updates["stability"] = new_stab
-                        updates["difficulty"] = new_diff
-                    except Exception:
-                        logger.debug("reinforce_stability_update_failed", key=key, exc_info=True)
-
-            updated = entry.model_copy(update=updates)
-            self._entries[key] = updated
-
-        # Persist reinforcement — rollback in-memory cache on failure to
-        # maintain write-through consistency (matches get() / update_fields()).
-        try:
-            self._persistence.save(updated)
-        except Exception:
+        with start_span(
+            SPAN_REINFORCE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}
+        ):
             with self._serialized():
-                self._entries[key] = entry
-            raise
+                entry = self._entries.get(key)
+                if entry is None:
+                    raise KeyError(key)
 
-        # EPIC-010: Check promotion after reinforcement
-        final: MemoryEntry = updated
-        if self._profile is not None:
+                updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
+                # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
+                # using pre-reinforce timestamps for retrievability — same layer flag as record_access.
+                if self._profile is not None:
+                    tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                    layer = self._profile.get_layer(tier_name)
+                    if layer is not None and layer.adaptive_stability:
+                        try:
+                            from tapps_brain.decay import update_stability
+
+                            new_stab, new_diff = update_stability(entry, decay_cfg, True)
+                            updates["stability"] = new_stab
+                            updates["difficulty"] = new_diff
+                        except Exception:
+                            logger.debug(
+                                "reinforce_stability_update_failed", key=key, exc_info=True
+                            )
+
+                updated = entry.model_copy(update=updates)
+                self._entries[key] = updated
+
+            # Persist reinforcement — rollback in-memory cache on failure to
+            # maintain write-through consistency (matches get() / update_fields()).
             try:
-                from tapps_brain.promotion import PromotionEngine
-
-                engine = PromotionEngine(decay_cfg)
-                target_tier = engine.check_promotion(updated, self._profile)
-                if target_tier is not None:
-                    old_tier = str(updated.tier)
-                    promoted = updated.model_copy(
-                        update={"tier": target_tier, "updated_at": _utc_now_iso()}
-                    )
-                    with self._serialized():
-                        self._entries[key] = promoted
-                    self._persistence.save(promoted)
-                    self._persistence.append_audit(
-                        action="promote",
-                        key=key,
-                        extra={
-                            "from_tier": old_tier,
-                            "to_tier": target_tier,
-                            "access_count": updated.access_count,
-                            "reinforce_count": updated.reinforce_count,
-                        },
-                    )
-                    logger.info(
-                        "memory_promoted",
-                        key=key,
-                        from_tier=old_tier,
-                        to_tier=target_tier,
-                    )
-                    final = promoted
+                self._persistence.save(updated)
             except Exception:
-                logger.debug("promotion_check_failed", key=key, exc_info=True)
+                with self._serialized():
+                    self._entries[key] = entry
+                raise
 
-        # EPIC-029 story 029.3: implicit positive feedback
-        if session_id is not None:
-            _should_emit = False
-            with self._serialized():
-                _should_emit = self._check_and_mark_reinforced(session_id, key)
-            if _should_emit:
-                self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
+            # EPIC-010: Check promotion after reinforcement
+            final: MemoryEntry = updated
+            if self._profile is not None:
+                try:
+                    from tapps_brain.promotion import PromotionEngine
 
-        return final
+                    engine = PromotionEngine(decay_cfg)
+                    target_tier = engine.check_promotion(updated, self._profile)
+                    if target_tier is not None:
+                        old_tier = str(updated.tier)
+                        promoted = updated.model_copy(
+                            update={"tier": target_tier, "updated_at": _utc_now_iso()}
+                        )
+                        with self._serialized():
+                            self._entries[key] = promoted
+                        self._persistence.save(promoted)
+                        self._persistence.append_audit(
+                            action="promote",
+                            key=key,
+                            extra={
+                                "from_tier": old_tier,
+                                "to_tier": target_tier,
+                                "access_count": updated.access_count,
+                                "reinforce_count": updated.reinforce_count,
+                            },
+                        )
+                        logger.info(
+                            "memory_promoted",
+                            key=key,
+                            from_tier=old_tier,
+                            to_tier=target_tier,
+                        )
+                        final = promoted
+                except Exception:
+                    logger.debug("promotion_check_failed", key=key, exc_info=True)
+
+            # EPIC-029 story 029.3: implicit positive feedback
+            if session_id is not None:
+                _should_emit = False
+                with self._serialized():
+                    _should_emit = self._check_and_mark_reinforced(session_id, key)
+                if _should_emit:
+                    self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
+
+            return final
 
     def record_access(self, key: str, was_useful: bool) -> None:
         """Record whether a retrieved memory was useful. Updates Bayesian confidence.

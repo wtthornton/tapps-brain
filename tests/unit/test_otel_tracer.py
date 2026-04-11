@@ -919,3 +919,191 @@ class TestStoreRetrievalDocumentEvents:
             store.recall("test value")
 
         assert mock_rde.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# Tests for non-retrieval spans — STORY-032.4
+# ---------------------------------------------------------------------------
+
+
+class TestNonRetrievalSpanConstants:
+    """Span name constants for delete, reinforce, and update ops (STORY-032.4)."""
+
+    def test_span_delete_constant(self) -> None:
+        from tapps_brain.otel_tracer import SPAN_DELETE
+
+        assert SPAN_DELETE == "tapps_brain.delete"
+        assert SPAN_DELETE.startswith("tapps_brain.")
+
+    def test_span_reinforce_constant(self) -> None:
+        from tapps_brain.otel_tracer import SPAN_REINFORCE
+
+        assert SPAN_REINFORCE == "tapps_brain.reinforce"
+        assert SPAN_REINFORCE.startswith("tapps_brain.")
+
+    def test_span_update_constant(self) -> None:
+        from tapps_brain.otel_tracer import SPAN_UPDATE
+
+        assert SPAN_UPDATE == "tapps_brain.update"
+        assert SPAN_UPDATE.startswith("tapps_brain.")
+
+    def test_all_non_retrieval_spans_have_tapps_brain_prefix(self) -> None:
+        from tapps_brain.otel_tracer import SPAN_DELETE, SPAN_REINFORCE, SPAN_UPDATE
+
+        for name in (SPAN_DELETE, SPAN_REINFORCE, SPAN_UPDATE):
+            assert name.startswith("tapps_brain."), f"{name!r} must start with 'tapps_brain.'"
+
+
+class TestNonRetrievalSpanStoreIntegration:
+    """store.delete() and store.reinforce() emit spans with gen_ai.operation.name."""
+
+    def _make_store(self, tmp_path: Any) -> Any:
+        from tapps_brain.store import MemoryStore
+
+        return MemoryStore(tmp_path, embedding_provider=None)
+
+    def test_delete_emits_delete_span(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import SPAN_DELETE
+
+        store = self._make_store(tmp_path)
+        store.save("to-delete", "value", tier="context")
+
+        with patch(
+            "tapps_brain.store.start_span",
+            wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
+        ) as mock_start_span:
+            store.delete("to-delete")
+
+        called_names = [c.args[0] for c in mock_start_span.call_args_list]
+        assert SPAN_DELETE in called_names
+
+    def test_delete_span_has_gen_ai_operation_name(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_OPERATION_EXECUTE_TOOL, SPAN_DELETE
+
+        store = self._make_store(tmp_path)
+        store.save("key-for-delete", "some value", tier="context")
+
+        captured_attrs: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing_start_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            if name == SPAN_DELETE and attributes:
+                captured_attrs.update(attributes)
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            yield mock_span
+
+        with patch("tapps_brain.store.start_span", _capturing_start_span):
+            store.delete("key-for-delete")
+
+        assert captured_attrs.get("gen_ai.operation.name") == GEN_AI_OPERATION_EXECUTE_TOOL
+
+    def test_reinforce_emits_reinforce_span(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import SPAN_REINFORCE
+
+        store = self._make_store(tmp_path)
+        store.save("to-reinforce", "value", tier="pattern")
+
+        with patch(
+            "tapps_brain.store.start_span",
+            wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
+        ) as mock_start_span:
+            store.reinforce("to-reinforce")
+
+        called_names = [c.args[0] for c in mock_start_span.call_args_list]
+        assert SPAN_REINFORCE in called_names
+
+    def test_reinforce_span_has_gen_ai_operation_name(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_OPERATION_EXECUTE_TOOL, SPAN_REINFORCE
+
+        store = self._make_store(tmp_path)
+        store.save("key-for-reinforce", "some value", tier="pattern")
+
+        captured_attrs: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing_start_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            if name == SPAN_REINFORCE and attributes:
+                captured_attrs.update(attributes)
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            yield mock_span
+
+        with patch("tapps_brain.store.start_span", _capturing_start_span):
+            store.reinforce("key-for-reinforce")
+
+        assert captured_attrs.get("gen_ai.operation.name") == GEN_AI_OPERATION_EXECUTE_TOOL
+
+    def test_save_span_has_gen_ai_operation_name(self, tmp_path: Any) -> None:
+        """remember (save) span must carry gen_ai.operation.name = 'execute_tool'."""
+        from tapps_brain.otel_tracer import GEN_AI_OPERATION_EXECUTE_TOOL, SPAN_REMEMBER
+
+        store = self._make_store(tmp_path)
+
+        captured_attrs: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing_start_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            if name == SPAN_REMEMBER and attributes:
+                captured_attrs.update(attributes)
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            yield mock_span
+
+        with patch("tapps_brain.store.start_span", _capturing_start_span):
+            store.save("save-key", "save value", tier="pattern")
+
+        assert captured_attrs.get("gen_ai.operation.name") == GEN_AI_OPERATION_EXECUTE_TOOL
+
+    def test_delete_span_does_not_include_raw_key(self, tmp_path: Any) -> None:
+        """delete() span attributes must not contain the raw entry key."""
+        from tapps_brain.otel_tracer import SPAN_DELETE
+
+        store = self._make_store(tmp_path)
+        raw_key = "secret-entry-key-to-delete"
+        store.save(raw_key, "some value", tier="context")
+
+        captured_attrs: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing_start_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            if name == SPAN_DELETE and attributes:
+                captured_attrs.update(attributes)
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            yield mock_span
+
+        with patch("tapps_brain.store.start_span", _capturing_start_span):
+            store.delete(raw_key)
+
+        raw_vals = list(captured_attrs.values())
+        assert raw_key not in raw_vals, "Raw entry key must not appear in delete span attributes"
+
+    def test_reinforce_span_does_not_include_raw_key(self, tmp_path: Any) -> None:
+        """reinforce() span attributes must not contain the raw entry key."""
+        from tapps_brain.otel_tracer import SPAN_REINFORCE
+
+        store = self._make_store(tmp_path)
+        raw_key = "secret-reinforce-key"
+        store.save(raw_key, "some value", tier="pattern")
+
+        captured_attrs: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing_start_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            if name == SPAN_REINFORCE and attributes:
+                captured_attrs.update(attributes)
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            yield mock_span
+
+        with patch("tapps_brain.store.start_span", _capturing_start_span):
+            store.reinforce(raw_key)
+
+        raw_vals = list(captured_attrs.values())
+        assert raw_key not in raw_vals, "Raw entry key must not appear in reinforce span attributes"

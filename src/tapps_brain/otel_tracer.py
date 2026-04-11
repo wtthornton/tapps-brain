@@ -48,6 +48,15 @@ SPAN_HIVE_PROPAGATE: str = "tapps_brain.hive.propagate"
 #: Span name for Hive search during group-aware recall.
 SPAN_HIVE_SEARCH: str = "tapps_brain.hive.search"
 
+#: Span name for the ``delete`` (forget) operation.
+SPAN_DELETE: str = "tapps_brain.delete"
+
+#: Span name for the ``reinforce`` operation.
+SPAN_REINFORCE: str = "tapps_brain.reinforce"
+
+#: Span name for the ``update_fields`` (update) operation.
+SPAN_UPDATE: str = "tapps_brain.update"
+
 # ---------------------------------------------------------------------------
 # MCP tool call spans — GenAI semantic conventions v1.35.0 (STORY-032.2)
 # ---------------------------------------------------------------------------
