@@ -104,15 +104,45 @@ HAS_OTEL: bool = get_meter is not None
 # ---------------------------------------------------------------------------
 
 
+def _parse_bool_env(value: str, default: bool) -> bool:
+    """Parse a boolean environment variable string.
+
+    Returns *default* when *value* is empty/whitespace.
+    Truthy: ``"1"``, ``"true"``, ``"yes"`` (case-insensitive).
+    Falsy: ``"0"``, ``"false"``, ``"no"`` (case-insensitive).
+    """
+    v = value.strip().lower()
+    if not v:
+        return default
+    return v in {"1", "true", "yes"}
+
+
 @dataclasses.dataclass
 class OTelConfig:
     """Bootstrap configuration for tapps-brain OpenTelemetry instrumentation.
 
-    Controls whether OTel is active (``enabled``) and which service identity
-    to report (``service_name``).  When ``enabled`` is ``False`` the tracer
-    returned by :func:`bootstrap_tracer` is ``None`` — a null-object that
-    causes :func:`tapps_brain.otel_tracer.start_span` to yield ``None``
-    immediately with **zero allocation** on the hot path.
+    Controls whether OTel is active (``enabled``), which service identity to
+    report (``service_name``), and whether to emit memory/query content as span
+    attributes (``capture_content``).
+
+    When ``enabled`` is ``False`` the tracer returned by :func:`bootstrap_tracer`
+    is ``None`` — a null-object that causes :func:`tapps_brain.otel_tracer.start_span`
+    to yield ``None`` immediately with **zero allocation** on the hot path.
+
+    **Privacy — content capture (STORY-032.9)**
+
+    ``capture_content`` controls whether memory content or query strings may be
+    attached to OTel spans.  The **default is ``False``** (opt-in, not opt-out)
+    to protect user data.
+
+    When ``False`` (default), content attributes are **omitted entirely** —
+    never replaced with a placeholder like ``"[REDACTED]"``.  A placeholder
+    would still leak the fact that content was present and could confuse
+    consumers.  Omitting the attribute is the only correct privacy posture.
+
+    This mirrors the standard
+    ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` env var defined by
+    the OpenTelemetry GenAI semantic conventions.
 
     Usage::
 
@@ -123,6 +153,9 @@ class OTelConfig:
 
         # Explicit disable
         tracer = bootstrap_tracer(OTelConfig(enabled=False))
+
+        # Opt-in to content capture (non-prod / debug only)
+        cfg = OTelConfig(capture_content=True)
     """
 
     enabled: bool = True
@@ -130,6 +163,24 @@ class OTelConfig:
 
     service_name: str = "tapps-brain"
     """Value for the ``service.name`` OTel resource attribute."""
+
+    capture_content: bool = False
+    """Whether memory content / query strings may be emitted as span attributes.
+
+    Default: ``False`` (opt-in).  When ``False``, content attributes are
+    **omitted entirely** — not redacted or replaced with placeholders.
+
+    Set to ``True`` only in controlled, non-production environments where
+    you need to correlate memory bodies with traces.  Never enable in prod.
+
+    Controlled by (in priority order):
+
+    1. ``TAPPS_BRAIN_OTEL_CAPTURE_CONTENT`` env var (``"1"``/``"true"``/``"yes"``
+       or ``"0"``/``"false"``/``"no"``).
+    2. ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` env var (same values)
+       — standard GenAI semconv variable.
+    3. Default ``False`` when neither is set.
+    """
 
     @classmethod
     def from_env(cls) -> OTelConfig:
@@ -139,17 +190,69 @@ class OTelConfig:
 
         .. code-block:: text
 
-            TAPPS_BRAIN_OTEL_ENABLED  — "1"/"true"/"yes" enables (default).
-                                         "0"/"false"/"no"  disables.
-            OTEL_SERVICE_NAME          — service name (default: ``"tapps-brain"``).
+            TAPPS_BRAIN_OTEL_ENABLED    — "1"/"true"/"yes" enables (default).
+                                           "0"/"false"/"no"  disables.
+            OTEL_SERVICE_NAME            — service name (default: ``"tapps-brain"``).
+            TAPPS_BRAIN_OTEL_CAPTURE_CONTENT
+                                         — opt-in content capture (default: ``"0"``).
+                                           Takes priority over the semconv var below.
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+                                         — standard GenAI semconv env var; used when
+                                           TAPPS_BRAIN_OTEL_CAPTURE_CONTENT is unset.
 
         Returns:
             A new :class:`OTelConfig` instance populated from the environment.
         """
-        raw = os.environ.get("TAPPS_BRAIN_OTEL_ENABLED", "1").strip().lower()
-        enabled = raw not in {"0", "false", "no"}
+        raw_enabled = os.environ.get("TAPPS_BRAIN_OTEL_ENABLED", "1").strip().lower()
+        enabled = raw_enabled not in {"0", "false", "no"}
         service_name = os.environ.get("OTEL_SERVICE_NAME", "tapps-brain") or "tapps-brain"
-        return cls(enabled=enabled, service_name=service_name)
+
+        # Privacy: content capture — tapps-brain var takes priority over semconv var.
+        tapps_capture_raw = os.environ.get("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "")
+        if tapps_capture_raw.strip():
+            capture_content = _parse_bool_env(tapps_capture_raw, default=False)
+        else:
+            semconv_raw = os.environ.get(
+                "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
+            )
+            capture_content = _parse_bool_env(semconv_raw, default=False)
+
+        return cls(enabled=enabled, service_name=service_name, capture_content=capture_content)
+
+
+def should_capture_content(config: OTelConfig | None = None) -> bool:
+    """Return ``True`` if memory / query content may be emitted as span attributes.
+
+    This is the **single canonical check** that all tapps-brain instrumentation
+    code must call before attaching any content attribute to a span or metric.
+    When it returns ``False``, the attribute must be **omitted entirely** — not
+    set to a placeholder like ``"[REDACTED]"``.
+
+    A placeholder still leaks that content was present and may confuse trace
+    consumers.  Omitting the attribute is the only correct privacy posture.
+
+    When *config* is ``None`` (most call sites), the function reads environment
+    variables via :meth:`OTelConfig.from_env` — the result is **not cached**,
+    so env changes during a process lifetime are respected.
+
+    Args:
+        config: Explicit :class:`OTelConfig`, or ``None`` to read from env.
+
+    Returns:
+        ``True`` if content capture is explicitly opted-in; ``False`` otherwise.
+
+    Example::
+
+        from tapps_brain.otel_exporter import should_capture_content
+        from tapps_brain.otel_tracer import start_span
+
+        with start_span("tapps_brain.remember") as span:
+            if span and should_capture_content():
+                span.set_attribute("gen_ai.prompt", query_text)
+            # … rest of operation …
+    """
+    cfg = config if config is not None else OTelConfig.from_env()
+    return cfg.capture_content
 
 
 def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401

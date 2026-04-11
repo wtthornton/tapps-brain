@@ -1349,3 +1349,163 @@ class TestTappsBrainCardinalityDoc:
         all_dims = ALLOWED_METRIC_DIMENSIONS | FORBIDDEN_METRIC_DIMENSIONS
         assert TAPPS_BRAIN_ENTRIES_COUNT_METRIC not in all_dims
         assert TAPPS_BRAIN_GC_CANDIDATES_METRIC not in all_dims
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.9: Privacy controls — OTelConfig.capture_content + should_capture_content()
+# ---------------------------------------------------------------------------
+
+
+class TestOTelConfigCaptureContent:
+    """OTelConfig.capture_content defaults to False; readable from env (STORY-032.9)."""
+
+    def test_default_capture_content_is_false(self) -> None:
+        """capture_content must default to False — opt-in, not opt-out."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig()
+        assert cfg.capture_content is False
+
+    def test_explicit_capture_content_true(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig(capture_content=True)
+        assert cfg.capture_content is True
+
+    def test_from_env_default_capture_content_is_false(self, monkeypatch: Any) -> None:
+        """No env var → capture_content=False (privacy default)."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", raising=False)
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is False
+
+    def test_from_env_tapps_capture_content_enables(self, monkeypatch: Any) -> None:
+        """TAPPS_BRAIN_OTEL_CAPTURE_CONTENT=1 → capture_content=True."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "1")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is True
+
+    def test_from_env_tapps_capture_content_true_string(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "true")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is True
+
+    def test_from_env_tapps_capture_content_zero_disables(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "0")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is False
+
+    def test_from_env_semconv_var_enables(self, monkeypatch: Any) -> None:
+        """OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true → capture_content=True."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", raising=False)
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is True
+
+    def test_from_env_semconv_var_false_disables(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", raising=False)
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "false")
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is False
+
+    def test_tapps_var_takes_priority_over_semconv(self, monkeypatch: Any) -> None:
+        """TAPPS_BRAIN_OTEL_CAPTURE_CONTENT takes priority over semconv var."""
+        from tapps_brain.otel_exporter import OTelConfig
+
+        # tapps var says "false", semconv var says "true" → tapps wins → False
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "false")
+        monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is False
+
+    def test_tapps_var_yes_enables(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "yes")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is True
+
+    def test_tapps_var_no_disables(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "no")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        cfg = OTelConfig.from_env()
+        assert cfg.capture_content is False
+
+
+class TestShouldCaptureContent:
+    """should_capture_content() returns correct bool; attribute omitted when False (STORY-032.9)."""
+
+    def test_default_is_false(self, monkeypatch: Any) -> None:
+        """No env → should_capture_content() returns False."""
+        from tapps_brain.otel_exporter import should_capture_content
+
+        monkeypatch.delenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", raising=False)
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        assert should_capture_content() is False
+
+    def test_explicit_config_true(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+
+        assert should_capture_content(OTelConfig(capture_content=True)) is True
+
+    def test_explicit_config_false(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+
+        assert should_capture_content(OTelConfig(capture_content=False)) is False
+
+    def test_env_enabled(self, monkeypatch: Any) -> None:
+        from tapps_brain.otel_exporter import should_capture_content
+
+        monkeypatch.setenv("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "1")
+        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+        assert should_capture_content() is True
+
+    def test_attribute_omitted_not_placeholder_when_disabled(self) -> None:
+        """When capture_content=False, content must be OMITTED — not set to a placeholder.
+
+        This test verifies the coding contract: code must check should_capture_content()
+        before setting any content attribute, and must NOT set it to '[REDACTED]' etc.
+        """
+        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+
+        cfg = OTelConfig(capture_content=False)
+        # The correct pattern: omit the attribute entirely when disabled
+        mock_span = MagicMock()
+        if should_capture_content(cfg):
+            mock_span.set_attribute("gen_ai.prompt", "some query text")
+        # set_attribute must NOT be called when capture_content is False
+        mock_span.set_attribute.assert_not_called()
+
+    def test_attribute_set_when_enabled(self) -> None:
+        """When capture_content=True, the attribute may be set."""
+        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+
+        cfg = OTelConfig(capture_content=True)
+        mock_span = MagicMock()
+        if should_capture_content(cfg):
+            mock_span.set_attribute("gen_ai.prompt", "some query text")
+        mock_span.set_attribute.assert_called_once_with("gen_ai.prompt", "some query text")
+
+    def test_returns_bool(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+
+        result = should_capture_content(OTelConfig())
+        assert isinstance(result, bool)
