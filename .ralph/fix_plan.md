@@ -196,7 +196,7 @@
 ### Phase P: Brand audit + narrative + motion (064.1–064.4) <!-- id: 064-phase-p -->
 
 - [x] **064.1** NLT Labs — style sheet & logo pack audit — locate canonical `BRAND-STYLE-GUIDE` (or successor) + logo pack; gap matrix vs `index.html` / `nlt-an-mark-sm.svg` / `VisualThemeTokens`; optional redistributable subset under `docs/design/nlt-brand/` + README link, or documented internal fetch path. Run `mcp__docs-mcp docs_check_cross_refs` + `docs_check_style` on new/edited docs. [MEDIUM — docs + inventory] <!-- resolved: docs/design/nlt-brand/README.md, examples/brain-visual/README.md -->
-- [ ] **064.2** Narrative & IA refresh — decision-first copy, story beats order, microcopy tied to real snapshot fields (no vague “RAG” hype). [MEDIUM] <!-- resolved: examples/brain-visual/index.html -->
+- [x] **064.2** Narrative & IA refresh — decision-first copy, story beats order, microcopy tied to real snapshot fields (no vague “RAG” hype). [MEDIUM] <!-- resolved: examples/brain-visual/index.html -->
 - [ ] **064.3** Motion system — CSS motion tokens from brand audit; transform/opacity only; `prefers-reduced-motion` gates; drawer/modal audit. [LARGE — CSS/JS] <!-- resolved: examples/brain-visual/index.html -->
 - [ ] **064.4** Deep insight panels — stepped explainer for diagnostics or retrieval stack; privacy footer three-bullet pattern; help articles for new concepts. [LARGE] <!-- resolved: examples/brain-visual/, brain-visual-help.js -->
 

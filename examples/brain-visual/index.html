@@ -1034,10 +1034,11 @@
   <main>
     <div class="content-shell">
       <p class="product-tag">tapps-brain</p>
-      <h1 class="page-title">Visual <span class="gradient-text">snapshot</span></h1>
+      <h1 class="page-title">Memory health, <span class="gradient-text">at a glance</span></h1>
       <p class="page-subtitle">
-        Control-room view of this brain: retrieval mode, Hive hub, access patterns, and integrity—still
-        no raw memory text in the JSON (unless you choose a local-only export).
+        Persistent, deterministic memory for AI coding agents — no raw text in the export by default.
+        See recall mode, Hive sync, capacity, and trust signals for this brain.
+        Load a snapshot from your project to get started, or use <strong>Load snapshot</strong> below.
       </p>
 
       <details class="dev-details">
@@ -1088,10 +1089,10 @@
         <li><a href="#pulse">Pulse</a></li>
         <li><a href="#retrieval">Retrieval</a></li>
         <li><a href="#hive">Hive</a></li>
+        <li><a href="#integrity">Integrity</a></li>
         <li><a href="#activity">Activity</a></li>
         <li><a href="#groups">Groups</a></li>
         <li><a href="#tags">Tags</a></li>
-        <li><a href="#integrity">Integrity</a></li>
         <li><a href="#diagnostics">Diagnostics</a></li>
         <li><a href="#privacy">Privacy</a></li>
       </ul>
@@ -1199,21 +1200,6 @@
           </div>
           <div class="stat" id="hive">—</div>
           <p class="sub" id="scopes">agent scopes</p>
-        </section>
-        <section class="tile" id="diagnostics" aria-label="Diagnostics">
-          <div class="section-tag-row">
-            <p class="section-tag">Diagnostics</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="scorecard:diagnostics_bento"
-              aria-label="Explain diagnostics tile"
-            >
-              ?
-            </button>
-          </div>
-          <div class="stat" id="diag">—</div>
-          <p class="sub" id="circuit">—</p>
         </section>
         <section class="tile tile-wide" aria-label="Snapshot format">
           <div class="section-tag-row">
@@ -1338,7 +1324,10 @@
             ?
           </button>
         </div>
-        <p class="prose-small" id="retrieval-summary">—</p>
+        <p class="prose-small">
+          How this brain searches: <code>retrieval_effective_mode</code> shows BM25, hybrid (BM25 + pgvector), or bm25-only
+          depending on your Postgres setup. <span id="retrieval-summary"></span>
+        </p>
         <div class="tile" style="min-height: auto">
           <div class="section-tag-row">
             <p class="section-tag">Effective mode</p>
@@ -1385,6 +1374,22 @@
         </div>
       </section>
 
+      <section class="dash-section" id="integrity">
+        <div class="dash-h2-row">
+          <h2>Integrity &amp; limits</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:integrity_panel"
+            aria-label="Explain integrity and limits"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Relations, tamper detection, rate-limit anomalies, and GC candidates — the safety layer for this store.</p>
+        <div id="integrity-body" class="prose-small">—</div>
+      </section>
+
       <section class="dash-section" id="activity">
         <div class="dash-h2-row">
           <h2>Activity</h2>
@@ -1397,7 +1402,7 @@
             ?
           </button>
         </div>
-        <p class="prose-small">Aggregated access counters—no per-memory keys.</p>
+        <p class="prose-small">Aggregated access counters — no per-memory keys or content.</p>
         <div class="tile tile-wide" style="min-height: auto">
           <div class="section-tag-row">
             <p class="section-tag">Access histogram</p>
@@ -1427,7 +1432,7 @@
             ?
           </button>
         </div>
-        <p class="prose-small">Project-local <code>memory_group</code> partitions.</p>
+        <p class="prose-small">Project-local <code>memory_group</code> partitions — count always exported; names only with <code>--privacy local</code>.</p>
         <div id="groups-body" class="prose-small">—</div>
       </section>
 
@@ -1443,24 +1448,33 @@
             ?
           </button>
         </div>
-        <p class="prose-small">Shown only for <code>--privacy local</code> exports.</p>
+        <p class="prose-small">Tag frequency counts — shown only for <code>--privacy local</code> exports.</p>
         <div id="tags-body"></div>
       </section>
 
-      <section class="dash-section" id="integrity">
+      <section class="dash-section" id="diagnostics">
         <div class="dash-h2-row">
-          <h2>Integrity &amp; limits</h2>
+          <h2>Diagnostics</h2>
           <button
             type="button"
             class="help-pill"
-            data-help="concept:integrity_panel"
-            aria-label="Explain integrity and limits"
+            data-help="scorecard:diagnostics_bento"
+            aria-label="Explain diagnostics"
           >
             ?
           </button>
         </div>
-        <p class="prose-small">Relations, verification, and rate-limit anomalies.</p>
-        <div id="integrity-body" class="prose-small">—</div>
+        <p class="prose-small">
+          Circuit-breaker state and composite health score from this export.
+          Add <code>--skip-diagnostics</code> to the CLI export command to omit this block.
+        </p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Composite score</p>
+          </div>
+          <div class="stat" id="diag">—</div>
+          <p class="sub" id="circuit">—</p>
+        </div>
       </section>
 
       <section class="dash-section" id="privacy">
@@ -1485,6 +1499,10 @@
             </button>
           </span>
         </div>
+        <p class="prose-small">
+          Memory content is never exported. Aggregates only: counts, histograms, and schema versions.
+          Tag and group names appear only with <code>--privacy local</code> (single-user, local-trust mode).
+        </p>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
       </section>
     </div>
@@ -1837,7 +1855,7 @@
             val: entryCount !== null ? String(entryCount) : "—",
             sub: maxEnt !== null ? "of " + maxEnt + " max" : "",
           },
-          { lbl: "DB schema", val: el("schema").textContent, sub: "SQLite migrations" },
+          { lbl: "DB schema", val: el("schema").textContent, sub: "Postgres schema version" },
           {
             lbl: "Privacy",
             val: isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard",
@@ -1888,12 +1906,12 @@
         const svOn = data.sqlite_vec_enabled === true;
         const svRows = Number(data.sqlite_vec_rows) || 0;
         svLine.textContent = svOn
-          ? "sqlite-vec on · " + svRows + " vector row(s)"
-          : "sqlite-vec off";
+          ? "pgvector on · " + svRows + " vector row(s)"
+          : "pgvector off";
       } else {
         rmode.textContent = "—";
         rsum.textContent =
-          "Re-export with tapps-brain CLI (visual export schema v2) for BM25/hybrid/sqlite-vec mode.";
+          "Re-export with tapps-brain CLI (visual export schema v2) for BM25/hybrid/pgvector mode.";
         svLine.textContent = "—";
       }
 
