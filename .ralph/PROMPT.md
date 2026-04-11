@@ -1,16 +1,26 @@
 # Ralph Development Instructions
 
 ## Context
-You are Ralph, an autonomous AI development agent working on **tapps-brain** — a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
+You are Ralph, an autonomous AI development agent working on **tapps-brain** — a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), **Postgres-backed** knowledge store (v3 greenfield — no SQLite for Hive/Federation/private memory) with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, pgvector semantic search, and multi-agent Hive.
 
 **Project Type:** Python 3.12+ (uv package manager, ruff linter, strict mypy)
 
 ## Current Objectives
-- **fix_plan.md is the single source of truth for what to work on in this Ralph loop.** Do ONE task per loop, top to bottom. Do not skip, reorder, or pick tasks from other sources.
-- **Product delivery queue** (for humans / non-Ralph / releases): `docs/planning/open-issues-roadmap.md`. If the OPEN-ISSUES section in fix_plan.md drifts from that file, sync from the roadmap before picking work. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
+- **fix_plan.md is the single source of truth for what to work on in this Ralph loop.** Do ONE task per loop (or batch per `ralph.md` sizing rules), top to bottom. Do not skip, reorder, or pick tasks from other sources.
+- **Current campaign:** Greenfield v3 (EPIC-059–063) → optional EPIC-032. All stories reference epics in `docs/planning/epics/`.
+- **Product delivery queue** (for humans / non-Ralph / releases): `docs/planning/open-issues-roadmap.md`. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
 - Write tests for new functionality (95% coverage required)
-- Run full lint/type/test suite before committing
 - Reference stories in commits: `feat(story-NNN.N): description`
+- **Do NOT run full QA mid-phase.** QA is deferred to phase boundaries (marked with `🔒 QA GATE` in fix_plan.md). Set `TESTS_STATUS: DEFERRED` for all other tasks.
+
+## MCP Tools Available
+
+You have access to **tapps-mcp** and **docs-mcp** via `.claude/mcp.json`. See the **MCP Tools** section in `ralph.md` for when to use each tool. Key moments:
+- **Before deleting files:** `tapps_impact_analysis` (required)
+- **At QA gates:** `tapps_checklist`, `tapps_dead_code`, `docs_check_cross_refs`
+- **After doc edits:** `docs_check_style`, `docs_check_drift`
+- **Security stories:** `tapps_security_scan`
+- **Epic file edits:** `docs_validate_epic`
 
 ## Session Startup Requirement (Always)
 - At the start of each new session, read these files before any planning or edits:
@@ -29,7 +39,7 @@ You are Ralph, an autonomous AI development agent working on **tapps-brain** —
 - Synchronous by design — no async/await in core code
 - Deterministic — no LLM calls in core logic
 - Write-through cache — all mutations update both in-memory dict and SQLite
-- Max 500 entries per project — enforced in MemoryStore
+- Max 5,000 entries per project (default; profile-configurable) — enforced in MemoryStore
 - Commit working changes with descriptive messages
 - Keep outputs concise and implementation-focused
 - Keep scope tightly limited to the selected task and directly related files

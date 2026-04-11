@@ -28,6 +28,19 @@ Track delivery status for currently open GitHub issues, prioritized by value and
 - **[#63](https://github.com/wtthornton/tapps-brain/issues/63)** — `retrieval_effective_mode` / `retrieval_summary` on health (CLI + MCP); STORY-041.3.
 - **[#64](https://github.com/wtthornton/tapps-brain/issues/64)** — [`hive-vs-federation.md`](../guides/hive-vs-federation.md); STORY-041.4.
 
+**Next engineering (canonical queue — greenfield v3):**
+
+| Order | Epic | Title | Status | Blocks |
+|------:|------|-------|--------|--------|
+| 1 | [EPIC-059](epics/EPIC-059.md) | Postgres-Only Persistence Plane | `planned` | 060, 061, 062, 063 |
+| 2 | [EPIC-060](epics/EPIC-060.md) | Agent-First Core & Minimal Runtime API | `planned` | 062 |
+| 3 | [EPIC-061](epics/EPIC-061.md) | Observability-First Product | `planned` | — |
+| 4 | [EPIC-063](epics/EPIC-063.md) | Trust Boundaries & Postgres Enforcement | `planned` | — |
+| 5 | [EPIC-062](epics/EPIC-062.md) | MCP-Primary Integration & Env Contract | `planned` | — |
+| 6 | [EPIC-032](epics/EPIC-032.md) | OTel GenAI Semantic Conventions | `planned` (low) | — |
+
+See individual epic files for story breakdown (8–10 stories each, ~42 Ralph loops total). ADR: [`ADR-007`](adr/ADR-007-postgres-only-no-sqlite.md).
+
 **Further backlog (no GitHub issue yet — file when scheduled):** architecture review follow-ups; clarity / observability / optional refactors—not emergency fixes.
 
 **EPIC-052 deferred follow-up (not blocking):**

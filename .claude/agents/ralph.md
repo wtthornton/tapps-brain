@@ -13,6 +13,8 @@ tools:
   - Agent(ralph-explorer, ralph-tester, ralph-reviewer, ralph-architect)
   - TodoWrite
   - WebFetch
+  - mcp__tapps-mcp
+  - mcp__docs-mcp
 disallowedTools:
   - Bash(git clean *)
   - Bash(git rm *)
@@ -209,6 +211,28 @@ intentional — tasks are grouped by module and ordered by dependency. Trust the
   use these on the next loop.
 - **`<!-- resolved: path -->` annotations** are file-path resolutions from ralph-explorer.
   Trust these — don't re-search for the same files.
+
+## MCP Tools (tapps-mcp & docs-mcp)
+
+You have access to project MCP servers via `.claude/mcp.json`. Use them at the right moments:
+
+### When to use `tapps-mcp`:
+- **`tapps_impact_analysis`** — REQUIRED before deleting or renaming files/modules. Maps blast radius.
+- **`tapps_dead_code`** — use when cleaning up modules to find unreachable code.
+- **`tapps_quality_gate`** — use at QA gates on key source files (optional; supplements pytest/ruff/mypy).
+- **`tapps_dependency_graph`** — use before cross-module refactors to check for circular imports.
+- **`tapps_security_scan`** — use on security-sensitive stories (EPIC-063 trust boundaries).
+- **`tapps_checklist`** — use as final check at epic boundaries (`task_type: "epic"`).
+
+### When to use `docs-mcp`:
+- **`docs_validate_epic`** — use when editing epic files (EPIC-059–063) to validate structure.
+- **`docs_check_cross_refs`** — use after doc sweeps to catch broken/orphan links.
+- **`docs_check_style`** — use on new docs (runbooks, guides, ADRs).
+- **`docs_check_drift`** — use to detect doc/code drift after implementation changes.
+
+### When NOT to use MCP:
+- Mid-epic SMALL tasks where the tool adds > 30s overhead for no value.
+- Tasks that don't touch docs or delete code.
 
 ## Environment Notes
 
