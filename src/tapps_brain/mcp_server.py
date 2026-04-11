@@ -72,15 +72,29 @@ def _get_store(
 ) -> Any:  # noqa: ANN401
     """Open a MemoryStore for the given project directory.
 
-    When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is wired in
-    when ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007 — no SQLite Hive).
+    When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is
+    wired in when ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007 — no SQLite
+    Hive).
+
+    **Strict mode** (``TAPPS_BRAIN_STRICT=1``): When this env var is set,
+    startup **fails immediately** if ``TAPPS_BRAIN_HIVE_DSN`` is not
+    configured.  This prevents silent degradation in production where a
+    missing DSN would quietly disable Hive tools.
     """
     from tapps_brain.backends import resolve_hive_backend_from_env
     from tapps_brain.store import MemoryStore
 
+    strict = os.environ.get("TAPPS_BRAIN_STRICT", "") == "1"
+
     hive_store = None
     if enable_hive:
         hive_store = resolve_hive_backend_from_env()
+        if strict and hive_store is None:
+            raise RuntimeError(
+                "TAPPS_BRAIN_STRICT=1 requires "
+                "TAPPS_BRAIN_HIVE_DSN to be set "
+                "(postgresql://...)"
+            )
 
     agent_id_for_store = agent_id if agent_id != "unknown" else None
     return MemoryStore(
@@ -108,6 +122,12 @@ def create_server(  # noqa: PLR0915
 
     Returns:
         A configured FastMCP server instance.
+
+    Environment:
+        ``TAPPS_BRAIN_STRICT``: When set to ``"1"``, the server
+        **refuses to start** if ``TAPPS_BRAIN_HIVE_DSN`` is missing.
+        Without strict mode, Hive tools fail lazily when invoked
+        (acceptable for local development but not for production).
     """
     fastmcp_cls = _lazy_import_mcp()
 
@@ -2329,7 +2349,7 @@ def create_server(  # noqa: PLR0915
     mcp._tapps_store = store
     mcp._tapps_agent_id = agent_id
     mcp._tapps_hive_enabled = enable_hive
-    # Expose the shared HiveStore (if any) so Hive tools can reuse it
+    # Expose the shared Hive backend (if any) so Hive tools can reuse it
     mcp._tapps_hive_store = getattr(store, "_hive_store", None)
 
     return mcp

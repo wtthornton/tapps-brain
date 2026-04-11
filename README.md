@@ -395,7 +395,7 @@ Search results are ranked by four weighted signals (configurable per profile):
 
 ### Hive — multi-agent shared brain
 
-Cross-agent memory sharing via a central SQLite store with namespace isolation:
+Cross-agent memory sharing via a PostgreSQL store with namespace isolation (ADR-007):
 
 ```
 ┌──────────┐  ┌──────────┐  ┌──────────┐
@@ -485,7 +485,7 @@ All writes pass through prompt injection detection and content sanitization. The
 | **Multi-Agent** | `hive` | Hive shared brain, namespace isolation, agent registry, propagation engine |
 | **Integrations** | `reinforcement`, `extraction`, `session_index`, `doc_validation` | Boost, fact extraction, session search, doc scoring |
 | **Safety** | `safety` | Prompt injection detection, content sanitization |
-| **Federation** | `federation` | Cross-project pub/sub via central SQLite hub |
+| **Federation** | `postgres_federation` | Cross-project pub/sub via PostgreSQL (ADR-007) |
 | **Relations** | `relations`, `contradictions` | Entity/relation extraction, contradiction detection |
 | **Extensions** | `embeddings`, `reranker`, `similarity` | sqlite-vec vectors, FlashRank local reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |

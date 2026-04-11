@@ -6,8 +6,8 @@
 |-------|---------|----------|
 | **Agent store** (EPIC-053) | SQLite (per-agent, isolated) | `{project}/.tapps-brain/agents/{agent_id}/memory.db` |
 | **Legacy project store** | SQLite | `{project}/.tapps-brain/memory/memory.db` |
-| **Hive** (EPIC-054/055) | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_HIVE_DSN` or `~/.tapps-brain/hive/hive.db` |
-| **Federation** (EPIC-054/055) | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_FEDERATION_DSN` or `~/.tapps-brain/memory/federated.db` |
+| **Hive** (EPIC-054/055/059) | **PostgreSQL** only (ADR-007) | `TAPPS_BRAIN_HIVE_DSN` (`postgres://...`) |
+| **Federation** (EPIC-054/055/059) | **PostgreSQL** only (ADR-007) | `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://...`) |
 
 For Postgres Hive schema and migrations, see `src/tapps_brain/migrations/hive/`. For deployment, see [`hive-deployment.md`](../guides/hive-deployment.md).
 
@@ -65,9 +65,9 @@ When profile **`limits.max_entries_per_group`** is set (integer ≥ 1), each buc
 
 When `max_entries_per_group` is **unset** (`null` / omitted), behavior matches the global-only policy above.
 
-## Hive store (PostgreSQL or SQLite)
+## Hive store (PostgreSQL only — ADR-007)
 
-The Hive supports two backends (EPIC-054/055). Production deployments use **PostgreSQL** (`TAPPS_BRAIN_HIVE_DSN`). Local dev uses **SQLite** (`hive.db`).
+The Hive uses **PostgreSQL** exclusively (`TAPPS_BRAIN_HIVE_DSN`). SQLite Hive backends were removed in EPIC-059 (ADR-007).
 
 ### Core tables (shared across backends)
 
@@ -80,7 +80,7 @@ The Hive supports two backends (EPIC-054/055). Production deployments use **Post
 ### Full-text search
 
 - **PostgreSQL:** `tsvector` column + GIN index + `plainto_tsquery()`
-- **SQLite:** `hive_fts` FTS5 table + sync triggers (`hive_fts_ai`, `hive_fts_ad`, `hive_fts_au`)
+- *(SQLite Hive FTS removed — ADR-007)*
 
 ### Semantic search
 

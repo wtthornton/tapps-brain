@@ -932,6 +932,71 @@ class TestProjectDirResolution:
         assert result == Path.cwd().resolve()
 
 
+class TestStrictMode:
+    """Tests for TAPPS_BRAIN_STRICT=1 startup mode (STORY-059.3).
+
+    Strict mode prevents silent degradation in production: when
+    TAPPS_BRAIN_STRICT=1, the server refuses to start if
+    TAPPS_BRAIN_HIVE_DSN is not set.
+    """
+
+    def test_strict_mode_raises_when_hive_dsn_missing(self, tmp_path, monkeypatch):
+        """TAPPS_BRAIN_STRICT=1 + no DSN → RuntimeError at startup."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT=1"):
+            store = _get_store(tmp_path, enable_hive=True)
+            store.close()
+
+    def test_strict_mode_no_error_when_hive_disabled(self, tmp_path, monkeypatch):
+        """TAPPS_BRAIN_STRICT=1 with enable_hive=False does not raise."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        # enable_hive=False skips the Hive backend check entirely
+        store = _get_store(tmp_path, enable_hive=False)
+        store.close()
+
+    def test_non_strict_mode_succeeds_without_dsn(self, tmp_path, monkeypatch):
+        """Without strict mode, missing DSN is silently ignored (lazy failure)."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        store = _get_store(tmp_path, enable_hive=True)
+        # hive_store is None — Hive tools fail lazily at invocation time
+        assert getattr(store, "_hive_store", None) is None
+        store.close()
+
+    def test_strict_mode_off_by_default(self, tmp_path, monkeypatch):
+        """TAPPS_BRAIN_STRICT is unset → default non-strict behaviour."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        # Should not raise regardless of enable_hive
+        store = _get_store(tmp_path, enable_hive=True)
+        store.close()
+
+    def test_strict_mode_not_triggered_by_other_values(self, tmp_path, monkeypatch):
+        """TAPPS_BRAIN_STRICT=0 / 'true' / 'yes' do NOT trigger strict mode."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        for value in ("0", "true", "yes", "false", ""):
+            monkeypatch.setenv("TAPPS_BRAIN_STRICT", value)
+            store = _get_store(tmp_path, enable_hive=True)
+            store.close()
+
+
 class TestMemorySaveSafetyRejection:
     """Test that memory_save handler returns error dict when safety blocks content."""
 
@@ -3144,3 +3209,60 @@ class TestMcpServerInputValidation022C:
         fn = _tool_fn(server, "agent_create")
         result = json.loads(fn(agent_id=""))
         assert result["error"] == "invalid_agent_id"
+
+
+class TestStrictStartupMode:
+    """STORY-059.3: TAPPS_BRAIN_STRICT=1 rejects missing DSN at startup."""
+
+    def test_strict_mode_raises_without_hive_dsn(self, tmp_path):
+        """With TAPPS_BRAIN_STRICT=1 and no DSN, create_server raises."""
+        from tapps_brain.mcp_server import create_server
+
+        env = {
+            "TAPPS_BRAIN_STRICT": "1",
+        }
+        with patch.dict("os.environ", env, clear=False):
+            # Remove DSN if set
+            with patch.dict(
+                "os.environ",
+                {},
+                clear=False,
+            ):
+                import os as _os
+
+                _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
+                with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT"):
+                    create_server(tmp_path, enable_hive=True)
+
+    def test_non_strict_mode_no_dsn_succeeds(self, tmp_path):
+        """Without strict mode, missing DSN starts fine (lazy failure)."""
+        from tapps_brain.mcp_server import create_server
+
+        env_remove = {
+            "TAPPS_BRAIN_STRICT": "",
+        }
+        with patch.dict("os.environ", env_remove, clear=False):
+            import os as _os
+
+            _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
+            _os.environ.pop("TAPPS_BRAIN_STRICT", None)
+            server = create_server(tmp_path, enable_hive=True)
+            # Server should start — Hive tools fail lazily when called
+            assert server is not None
+            server._tapps_store.close()
+
+    def test_strict_mode_hive_disabled_no_error(self, tmp_path):
+        """Strict mode with enable_hive=False should not raise."""
+        from tapps_brain.mcp_server import create_server
+
+        env = {"TAPPS_BRAIN_STRICT": "1"}
+        with patch.dict("os.environ", env, clear=False):
+            import os as _os
+
+            _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
+            # enable_hive=False bypasses the strict check
+            server = create_server(
+                tmp_path, enable_hive=False
+            )
+            assert server is not None
+            server._tapps_store.close()

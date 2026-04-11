@@ -34,9 +34,17 @@ Revisit when **production** shows sustained **`database is locked`**, **lock tim
 - **Marketing / docs** continue to describe **modest concurrent sessions**, not high-QPS multi-tenant SaaS on a single embedded store.
 - **Engineering** may add benchmarks or QPS claims later **without** contradicting this ADR if labeled **environment-specific** and linked to harness revision.
 
+## Scope clarification (ADR-007)
+
+[ADR-007](./ADR-007-postgres-only-no-sqlite.md) narrows this ADR's scope: the single-node SQLite
+posture described here applies **only to private agent memory** (`memory.db`). Shared stores
+(Hive, Federation) are now Postgres-only. When STORY-059.4–059.6 deliver Postgres-backed private
+memory, this ADR will be superseded entirely.
+
 ## References
 
 - [`system-architecture.md`](../../engineering/system-architecture.md) — *Concurrency model*, *Scaling posture*.
 - [`open-issues-roadmap.md`](../open-issues-roadmap.md) — row 22 (MemoryStore modularization).
 - [`EPIC-050.md`](../epics/EPIC-050.md) — concurrency and SQLite discipline stories.
 - [`EPIC-051.md`](../epics/EPIC-051.md) — STORY-051.4.
+- [`ADR-007.md`](./ADR-007-postgres-only-no-sqlite.md) — Postgres-only Hive and Federation (narrows scope of this ADR).

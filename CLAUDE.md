@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-tapps-brain is a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
+tapps-brain is a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), Postgres-backed shared stores (Hive/Federation) with SQLite for private agent memory, BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
 
 ## Build & Development Commands
 
@@ -67,7 +67,7 @@ Agent N ──► own memory.db (isolated SQLite)  ─┘
 - **Private agent memory:** Each agent gets its own isolated SQLite at `{project_dir}/.tapps-brain/agents/{agent_id}/memory.db`. No lock contention between agents.
 - **Shared memory (Hive):** PostgreSQL backend for cross-agent communication, group knowledge, and expert publishing. Supports concurrent reads/writes via MVCC, `pgvector` for semantic search, `tsvector` for FTS, `LISTEN/NOTIFY` for real-time change notifications.
 - **Federation:** PostgreSQL backend for cross-project memory sharing.
-- **Backend abstraction:** `_protocols.py` defines `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols. `backends.py` provides `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories — pass a `postgres://` DSN for Postgres, a file path or `None` for local SQLite fallback.
+- **Backend abstraction:** `_protocols.py` defines `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols. `backends.py` provides `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories — requires a `postgres://` or `postgresql://` DSN (ADR-007; SQLite backends removed).
 - **AgentBrain facade** (`agent_brain.py`): Simplified 5-method API for agents — `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`. Agents never think about backends, scopes, or propagation.
 
 **Key environment variables:**
@@ -104,9 +104,9 @@ Agent N ──► own memory.db (isolated SQLite)  ─┘
 
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 
-**Hive** — Cross-agent memory sharing. SQLite backend: `hive.py` (`HiveStore`, `AgentRegistry`, `PropagationEngine`). Postgres backend: `postgres_hive.py` (`PostgresHiveBackend`, `PostgresAgentRegistry`). Backend selected by `create_hive_backend(dsn)` — Postgres when DSN starts with `postgres://`, SQLite otherwise. `PropagationEngine` routes entries based on `agent_scope` (`private`/`domain`/`hive`). `ConflictPolicy` resolves concurrent writes. Recall merges local + Hive results with configurable weight (default 0.8). Declarative group membership and expert auto-publishing (EPIC-056). See `docs/guides/hive.md`, `docs/guides/hive-deployment.md`.
+**Hive** — Cross-agent memory sharing via PostgreSQL (ADR-007 — Postgres-only; SQLite Hive removed). `postgres_hive.py` (`PostgresHiveBackend`, `PostgresAgentRegistry`). Created via `create_hive_backend(dsn)` with a `postgres://` DSN. `PropagationEngine` routes entries based on `agent_scope` (`private`/`domain`/`hive`). `ConflictPolicy` resolves concurrent writes. Recall merges local + Hive results with configurable weight (default 0.8). Declarative group membership and expert auto-publishing (EPIC-056). See `docs/guides/hive.md`, `docs/guides/hive-deployment.md`.
 
-**Federation** — Cross-project memory sharing. SQLite backend: `federation.py`. Postgres backend: `postgres_federation.py`. Backend selected by `create_federation_backend(dsn)`.
+**Federation** — Cross-project memory sharing via PostgreSQL (ADR-007 — Postgres-only; SQLite Federation removed). `postgres_federation.py` (`PostgresFederationBackend`). Created via `create_federation_backend(dsn)` with a `postgres://` DSN.
 
 **Pluggable extensions** — `_protocols.py` defines Protocol interfaces for backends, embedding providers, rerankers, and LLM judges. Optional deps (flashrank, anthropic, openai, psycopg) detected lazily. Embeddings (`embeddings.py`) and reranking (`reranker.py`) are opt-in.
 

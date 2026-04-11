@@ -21,17 +21,17 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 │  (per-agent, isolated) │    │                                         │
 │                        │    │  ┌─────────────────────────────────┐    │
 │  MemoryStore           │    │  │ HiveBackend protocol            │    │
-│  └─ persistence.py     │    │  │  ├─ PostgresHiveBackend (prod)  │    │
-│     └─ agent's own     │    │  │  └─ SqliteHiveBackend (dev)     │    │
-│        memory.db       │    │  └─────────────────────────────────┘    │
-│                        │    │  ┌─────────────────────────────────┐    │
-│  No contention between │    │  │ FederationBackend protocol      │    │
-│  agents — each has its │    │  │  ├─ PostgresFederationBackend   │    │
-│  own SQLite + lock.    │    │  │  └─ SqliteFederationBackend     │    │
-│                        │    │  └─────────────────────────────────┘    │
-└────────────────────────┘    │                                         │
-                              │  Factory: create_hive_backend(dsn)      │
-┌────────────────────────┐    │  postgres:// → Postgres │ else → SQLite │
+│  └─ persistence.py     │    │  │  └─ PostgresHiveBackend         │    │
+│     └─ agent's own     │    │  └─────────────────────────────────┘    │
+│        memory.db       │    │  ┌─────────────────────────────────┐    │
+│                        │    │  │ FederationBackend protocol      │    │
+│  No contention between │    │  │  └─ PostgresFederationBackend   │    │
+│  agents — each has its │    │  └─────────────────────────────────┘    │
+│  own SQLite + lock.    │    │                                         │
+│                        │    │  Factory: create_hive_backend(dsn)      │
+└────────────────────────┘    │  Requires postgres:// DSN (ADR-007)     │
+                              │                                         │
+┌────────────────────────┐    │  See: ADR-007-postgres-only-no-sqlite   │
 │  RETRIEVAL STACK       │    └─────────────────────────────────────────┘
 │  retrieval.py          │
 │  fusion.py (RRF)       │    ┌─────────────────────────────────────────┐
@@ -62,7 +62,7 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 - **Backend abstraction**: `_protocols.py`, `backends.py`
   - `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols
   - `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories
-  - `SqliteHiveBackend` / `SqliteFederationBackend` adapters for local dev
+  - SQLite backends removed (ADR-007); Hive/Federation require PostgreSQL
 - **PostgreSQL backends**: `postgres_hive.py`, `postgres_federation.py`, `postgres_connection.py`, `postgres_migrations.py`
   - `PostgresHiveBackend` — full Hive with pgvector, tsvector, LISTEN/NOTIFY, connection pooling
   - `PostgresFederationBackend` — full Federation with parameterized SQL, JSONB tags
@@ -70,9 +70,9 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
   - Versioned schema migrations in `src/tapps_brain/migrations/`
 - **Retrieval and injection**: `retrieval.py`, `injection.py`, `recall.py`
   - Composite scoring, optional hybrid/vector retrieval, token-budgeted injection
-- **Hive (cross-agent sharing)**: `hive.py` (SQLite) or `postgres_hive.py` (Postgres)
+- **Hive (cross-agent sharing)**: `postgres_hive.py` (PostgreSQL only — ADR-007)
   - Shared store with namespaces, propagation engine, group membership, expert publishing, watch revision
-- **Federation (cross-project sharing)**: `federation.py` (SQLite) or `postgres_federation.py` (Postgres)
+- **Federation (cross-project sharing)**: `postgres_federation.py` (PostgreSQL only — ADR-007)
   - Hub store and explicit sync/publish
 - **Quality loop**: `feedback.py`, `diagnostics.py`, `flywheel.py`
   - Signals, health scoring, anomaly/circuit behavior, report generation
@@ -83,10 +83,10 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 |-------|---------|---------|------------|
 | **Agent memory** | Private per-agent store | SQLite (isolated) | `{project}/.tapps-brain/agents/{agent_id}/memory.db` |
 | **Legacy memory** | Shared project store (pre-v3.1) | SQLite | `{project}/.tapps-brain/memory/memory.db` |
-| **Hive** | Cross-agent shared memory | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_HIVE_DSN` or `~/.tapps-brain/hive/hive.db` |
-| **Federation** | Cross-project sharing | **PostgreSQL** (prod) or SQLite (dev) | `TAPPS_BRAIN_FEDERATION_DSN` or `~/.tapps-brain/memory/federated.db` |
+| **Hive** | Cross-agent shared memory | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_HIVE_DSN` (`postgres://...`) |
+| **Federation** | Cross-project sharing | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://...`) |
 
-**Why this split:** Agent-local memory is fast embedded SQLite with no cross-agent contention. Shared stores (Hive/Federation) need concurrent multi-host access — PostgreSQL provides MVCC, connection pooling, pgvector, and LISTEN/NOTIFY for this.
+**Why this split:** Agent-local memory is fast embedded SQLite with no cross-agent contention. Shared stores (Hive/Federation) require PostgreSQL for concurrent multi-host access — MVCC, connection pooling, pgvector, and LISTEN/NOTIFY ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)).
 
 ## Feature and technology inventory
 
@@ -117,7 +117,7 @@ Each agent gets its own `MemoryStore` backed by its own SQLite file. **200 agent
 ### Shared store concurrency (Hive / Federation)
 
 - **PostgreSQL (production):** MVCC handles concurrent reads/writes from N agents without locking. Connection pooling via `psycopg_pool` (`PostgresConnectionManager`) — configurable `min_size`/`max_size` via `TAPPS_BRAIN_HIVE_POOL_MIN`/`TAPPS_BRAIN_HIVE_POOL_MAX` env vars.
-- **SQLite fallback (local dev):** Single-writer with WAL mode. Adequate for development; not recommended for multi-agent production.
+- **Note:** SQLite Hive/Federation backends were removed (ADR-007). Shared stores require PostgreSQL.
 
 ### Agent-local SQLite tuning
 
@@ -138,8 +138,8 @@ Each agent gets its own `MemoryStore` backed by its own SQLite file. **200 agent
   - Diagnostics/flywheel
 - **Persistence**
   - Per-agent local memory DB (SQLite)
-  - Shared Hive DB (Postgres or SQLite)
-  - Federation DB (Postgres or SQLite)
+  - Shared Hive DB (PostgreSQL — ADR-007)
+  - Federation DB (PostgreSQL — ADR-007)
 - **Egress**
   - Recall payloads
   - MCP resources
