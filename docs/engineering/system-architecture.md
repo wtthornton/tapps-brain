@@ -146,6 +146,48 @@ Each agent gets its own `MemoryStore` backed by its own SQLite file. **200 agent
   - CLI reports
   - JSON/Markdown export
 
+## Observability
+
+tapps-brain instruments the hot paths with OpenTelemetry traces and metrics.  The
+`opentelemetry-api` package is a required dependency (no-op when no SDK is
+configured).  Install `tapps-brain[otel]` for actual export.
+
+### Canonical span names
+
+All spans use constants from `tapps_brain.otel_tracer` — never string literals.
+
+| Constant | Span name | Operation |
+|----------|-----------|-----------|
+| `SPAN_REMEMBER` | `tapps_brain.remember` | `MemoryStore.save` / `AgentBrain.remember` |
+| `SPAN_RECALL` | `tapps_brain.recall` | `AgentBrain.recall` |
+| `SPAN_SEARCH` | `tapps_brain.search` | Low-level BM25 + vector retrieval |
+| `SPAN_HIVE_PROPAGATE` | `tapps_brain.hive.propagate` | Hive write fan-out |
+| `SPAN_HIVE_SEARCH` | `tapps_brain.hive.search` | Hive cross-agent search |
+
+Do **not** invent span names outside this table without updating this file and
+`docs/operations/telemetry-policy.md`.
+
+### Telemetry policy
+
+Only bounded-enum attributes are permitted on spans and metrics — never raw
+memory content, entry keys, query strings, or session/agent IDs.  See
+[`docs/operations/telemetry-policy.md`](../operations/telemetry-policy.md) for
+the full attribute allow-list, forbidden list, and log-redaction rules.
+
+### HTTP trace context
+
+The HTTP adapter (`http_adapter.py`) extracts W3C `traceparent` from incoming
+request headers and passes it to `start_span()` so inbound spans are correctly
+parented to upstream callers (STORY-061.3).
+
+### Key modules
+
+- `otel_tracer.py` — span names, `start_span()` context manager, `extract_trace_context()`
+- `otel_exporter.py` — `OTelExporter` (MetricsSnapshot → OTel metrics), `MemoryBodyRedactionFilter`, `create_allowed_attribute_views()`
+- `metrics.py` — `MetricsCollector`, `MetricsSnapshot`, `MetricsTimer`
+
+---
+
 ## Docker deployment (EPIC-058)
 
 Reference files in `docker/`:

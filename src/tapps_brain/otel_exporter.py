@@ -57,6 +57,7 @@ high-cardinality attribute key before the instrument records its value.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import logging
@@ -189,10 +190,9 @@ class MemoryBodyRedactionFilter(logging.Filter):
                     placeholder = self._REDACTED_FMT.format(hash=self._hash(raw))
                 else:
                     placeholder = "[REDACTED]"
-                try:
+                with contextlib.suppress(AttributeError):
+                    # some attrs are read-only on certain platforms
                     setattr(record, field, placeholder)
-                except AttributeError:  # some attrs are read-only on certain platforms
-                    pass
 
     def _redact_message(self, record: logging.LogRecord) -> None:
         """Redact inline forbidden-key patterns in the formatted message."""
@@ -249,7 +249,7 @@ def install_memory_redaction_filter(
 # ---------------------------------------------------------------------------
 
 
-def create_allowed_attribute_views() -> list[Any]:  # noqa: ANN401
+def create_allowed_attribute_views() -> list[Any]:
     """Return OTel SDK ``View`` objects that enforce the allowed metric dimension set.
 
     Each returned :class:`opentelemetry.sdk.metrics.view.View` applies to all
@@ -270,7 +270,7 @@ def create_allowed_attribute_views() -> list[Any]:  # noqa: ANN401
     if not _has_otel_sdk():
         return []
     try:
-        from opentelemetry.sdk.metrics.view import View  # type: ignore[import-untyped]
+        from opentelemetry.sdk.metrics.view import View
 
         return [
             View(
