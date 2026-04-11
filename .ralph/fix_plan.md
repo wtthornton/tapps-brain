@@ -180,7 +180,7 @@
 
 ### Phase O: Integration tests (032.10) <!-- id: 032-phase-o -->
 
-- [ ] **032.10** End-to-end integration tests — recall spans + metrics + privacy modes + `HAS_OTEL=False`; real MemoryStore + mocked collectors; optional feedback/diagnostics events. [MEDIUM] <!-- resolved: tests/integration/test_otel_integration.py -->
+- [x] **032.10** End-to-end integration tests — recall spans + metrics + privacy modes + `HAS_OTEL=False`; real MemoryStore + mocked collectors; optional feedback/diagnostics events. [MEDIUM] <!-- resolved: tests/integration/test_otel_integration.py -->
 
 🔒 **QA GATE — EPIC-032 complete.** Full QA suite. `release-ready.sh` if publishing.
 
