@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from tapps_brain._protocols import HiveBackend
+    from tapps_brain._protocols import HiveBackend, PrivateBackend
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore
@@ -46,6 +46,14 @@ from tapps_brain.metrics import (
     MetricsTimer,
     StoreHealthReport,
     compact_save_phase_summary,
+)
+from tapps_brain.otel_tracer import (
+    SPAN_HIVE_PROPAGATE,
+    SPAN_HIVE_SEARCH,
+    SPAN_RECALL,
+    SPAN_REMEMBER,
+    SPAN_SEARCH,
+    start_span,
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
@@ -201,6 +209,7 @@ class MemoryStore:
         encryption_key: str | None = None,
         lock_timeout_seconds: float | None = None,
         auto_register: bool = True,
+        private_backend: PrivateBackend | None = None,
     ) -> None:
         self._project_root = project_root
         self._agent_id = agent_id
@@ -210,25 +219,31 @@ class MemoryStore:
         # Profile before persistence so lexical FTS/BM25 settings apply at open.
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
-        try:
-            self._persistence = MemoryPersistence(
-                project_root,
-                store_dir=store_dir,
-                agent_id=agent_id,
-                encryption_key=encryption_key,
-                lexical_config=_lexical,
-            )
-        except sqlite3.DatabaseError:
-            if agent_id is not None:
-                _db_path = project_root / store_dir / "agents" / agent_id / "memory.db"
-            else:
-                _db_path = project_root / store_dir / "memory" / "memory.db"
-            logger.error(
-                "database_corrupt",
-                path=str(_db_path),
-                message=f"Database corrupt: {_db_path}. Back up and delete to recover.",
-            )
-            raise
+
+        # EPIC-059 STORY-059.5: when a Postgres PrivateBackend is supplied, use it
+        # directly instead of creating a per-agent SQLite MemoryPersistence file.
+        if private_backend is not None:
+            self._persistence: MemoryPersistence | PrivateBackend = private_backend
+        else:
+            try:
+                self._persistence = MemoryPersistence(
+                    project_root,
+                    store_dir=store_dir,
+                    agent_id=agent_id,
+                    encryption_key=encryption_key,
+                    lexical_config=_lexical,
+                )
+            except sqlite3.DatabaseError:
+                if agent_id is not None:
+                    _db_path = project_root / store_dir / "agents" / agent_id / "memory.db"
+                else:
+                    _db_path = project_root / store_dir / "memory" / "memory.db"
+                logger.error(
+                    "database_corrupt",
+                    path=str(_db_path),
+                    message=f"Database corrupt: {_db_path}. Back up and delete to recover.",
+                )
+                raise
         self._lock = threading.Lock()
         if lock_timeout_seconds is not None:
             self._lock_timeout_sec = (
@@ -747,7 +762,13 @@ class MemoryStore:
                                 )
 
         self._metrics.increment("store.save")
-        with MetricsTimer(self._metrics, "store.save_ms"):
+        with (
+            start_span(
+                SPAN_REMEMBER,
+                {"memory.tier": tier, "memory.scope": scope, "memory.agent_scope": agent_scope},
+            ),
+            MetricsTimer(self._metrics, "store.save_ms"),
+        ):
             now = _utc_now_iso()
             with (
                 MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
@@ -983,8 +1004,7 @@ class MemoryStore:
                             entry_key=key,
                             cycle_count=len(cycles),
                             cycles=[
-                                {"subject": s, "predicate": p, "object": o}
-                                for s, p, o in cycles
+                                {"subject": s, "predicate": p, "object": o} for s, p, o in cycles
                             ],
                         )
 
@@ -1090,21 +1110,31 @@ class MemoryStore:
 
             tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
 
-            PropagationEngine.propagate(
-                key=entry.key,
-                value=entry.value,
-                agent_scope=entry.agent_scope,
-                agent_id=self._hive_agent_id,
-                agent_profile=agent_profile,
-                tier=tier_str,
-                confidence=entry.confidence,
-                source=entry.source.value if hasattr(entry.source, "value") else str(entry.source),
-                tags=entry.tags,
-                hive_store=self._hive_store,
-                auto_propagate_tiers=auto_propagate,
-                private_tiers=private,
-                memory_group=entry.memory_group,
-            )
+            with start_span(
+                SPAN_HIVE_PROPAGATE,
+                {
+                    "hive.agent_scope": entry.agent_scope,
+                    "hive.tier": tier_str,
+                    "hive.agent_id": self._hive_agent_id,
+                },
+            ):
+                PropagationEngine.propagate(
+                    key=entry.key,
+                    value=entry.value,
+                    agent_scope=entry.agent_scope,
+                    agent_id=self._hive_agent_id,
+                    agent_profile=agent_profile,
+                    tier=tier_str,
+                    confidence=entry.confidence,
+                    source=entry.source.value
+                    if hasattr(entry.source, "value")
+                    else str(entry.source),
+                    tags=entry.tags,
+                    hive_store=self._hive_store,
+                    auto_propagate_tiers=auto_propagate,
+                    private_tiers=private,
+                    memory_group=entry.memory_group,
+                )
         except Exception:
             logger.debug("hive_propagation_failed", key=entry.key, exc_info=True)
 
@@ -1278,7 +1308,10 @@ class MemoryStore:
             max_group_results: Maximum results per group namespace (STORY-056.5).
         """
         self._metrics.increment("store.search")
-        with MetricsTimer(self._metrics, "store.search_ms"):
+        with (
+            start_span(SPAN_SEARCH) as _search_span,
+            MetricsTimer(self._metrics, "store.search_ms"),
+        ):
             # Expand relative shorthands ("7d", "2w", "1m") to ISO-8601 strings.
             if since is not None:
                 since = self._parse_relative_time(since)
@@ -1311,11 +1344,15 @@ class MemoryStore:
                 _seen_keys = {r.key for r in results}
                 for _gn in self._groups:
                     try:
-                        group_results = self._hive_store.search(
-                            query,
-                            namespaces=[f"group:{_gn}"],
-                            limit=max_group_results,
-                        )
+                        with start_span(
+                            SPAN_HIVE_SEARCH,
+                            {"hive.group": _gn, "hive.namespace": f"group:{_gn}"},
+                        ):
+                            group_results = self._hive_store.search(
+                                query,
+                                namespaces=[f"group:{_gn}"],
+                                limit=max_group_results,
+                            )
                         for _gr in group_results:
                             _gk = _gr.get("key", "")
                             if _gk and _gk not in _seen_keys:
@@ -1350,6 +1387,8 @@ class MemoryStore:
                         )
 
             self._metrics.increment("store.search.results", len(results))
+            if _search_span is not None:
+                _search_span.set_attribute("search.result_count", len(results))
             return results
 
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
@@ -1974,8 +2013,15 @@ class MemoryStore:
                     hive_agent_id=self._hive_agent_id,
                 )
 
-        with MetricsTimer(self._metrics, "store.recall_ms"):
+        with (
+            start_span(SPAN_RECALL) as _recall_span,
+            MetricsTimer(self._metrics, "store.recall_ms"),
+        ):
             result = self._recall_orchestrator.recall(message, **kwargs)
+            if _recall_span is not None:
+                _recall_span.set_attribute(
+                    "recall.hive_count", getattr(result, "hive_memory_count", 0)
+                )
 
         # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking
         if session_id is not None:
@@ -2405,9 +2451,7 @@ class MemoryStore:
         """
         return list(self._relations.get(key, []))
 
-    def get_relations_batch(
-        self, keys: list[str]
-    ) -> dict[str, list[dict[str, Any]]]:
+    def get_relations_batch(self, keys: list[str]) -> dict[str, list[dict[str, Any]]]:
         """Return relations for multiple keys in one call (STORY-048.2).
 
         Args:
