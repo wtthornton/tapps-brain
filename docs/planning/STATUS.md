@@ -46,12 +46,12 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 - **Runtime (core):** `pydantic`, `structlog`, `pyyaml` — no typer/mcp in core.
 - **Extras:** `[cli]` adds `typer`; `[mcp]` adds `mcp`; `[all]` includes both.
 - **Optional:** `reranker` (cohere); `anthropic_sdk` and `openai_sdk` for LLM-as-judge evaluation.
-- **Dev:** test stack + `mcp` so MCP unit tests run under `uv sync --extra dev`.
+- **Dev:** test stack + `mcp` so MCP unit tests run under `uv sync --group dev`.
 
 Install for contributors:
 
 ```bash
-uv sync --extra dev    # pytest, ruff, mypy, and mcp (needed for MCP unit tests)
+uv sync --group dev    # pytest, ruff, mypy, and mcp (needed for MCP unit tests)
 uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools)
 ```
 
@@ -190,4 +190,4 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 - Ralph and full test runs are **WSL-first** (bash, Linux `.venv`). See **`CLAUDE.md`** → *Ralph on Windows (use WSL)*.
 - In WSL, activate with `source .venv/bin/activate` (not `Scripts/activate`).
-- **One checkout, one OS for `.venv`:** alternating `uv sync` on the same tree between WSL (Linux layout) and native Windows can leave `.venv` in a state where `uv` fails to replace `lib64` (access denied). Remove `.venv` and run `uv sync --extra dev` on the platform you are using, or keep separate clones per OS.
+- **One checkout, one OS for `.venv`:** alternating `uv sync` on the same tree between WSL (Linux layout) and native Windows can leave `.venv` in a state where `uv` fails to replace `lib64` (access denied). Remove `.venv` and run `uv sync --group dev` on the platform you are using, or keep separate clones per OS.

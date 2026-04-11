@@ -4,10 +4,10 @@
 
 ```bash
 # Install dependencies
-uv sync --extra dev
+uv sync --group dev
 
-# Install with optional vector search support
-uv sync --extra dev --extra vector
+# Optional extras (see pyproject.toml): e.g. encryption, otel, visual
+# uv sync --group dev --extra encryption
 ```
 
 ## Test Instructions

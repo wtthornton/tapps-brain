@@ -62,3 +62,7 @@ mem0-review/
 
 # Local Docker secrets (passwords); use docker/secrets/*.example in docs
 docker/secrets/
+
+# tapps-mcp CLI cache and session metrics (local only)
+.tapps-mcp-cache/
+.tapps-mcp/

@@ -169,7 +169,7 @@ class TestProceduralToPatternBoundary:
         recent = (_NOW - timedelta(days=1)).isoformat()
         return make_entry(
             key="proc-entry",
-            value="Run `uv sync --extra dev` to set up the environment",
+            value="Run `uv sync --group dev` to set up the environment",
             tier="procedural",
             confidence=0.85,
             source="human",

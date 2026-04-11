@@ -42,7 +42,7 @@ Key distribution insight from 2026 research: MCP servers are most commonly distr
 **Effort:** M
 **Depends on:** EPIC-008 STORY-008.1
 **Context refs:** `pyproject.toml`, `src/tapps_brain/__init__.py`
-**Verification:** `uv sync --extra dev && pytest tests/ -v --tb=short`
+**Verification:** `uv sync --group dev && pytest tests/ -v --tb=short`
 
 #### Why
 

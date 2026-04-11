@@ -94,7 +94,7 @@ pip install tapps-brain[all]            # everything above (except visual and ot
 
 > **Visual PNG capture:** after `pip install tapps-brain[visual]`, also run `playwright install chromium` once to download the browser binary. See [Visual snapshot guide](docs/guides/visual-snapshot.md).
 
-> **Contributors:** `uv sync --extra dev` installs the full dev stack (pytest, ruff, mypy, mcp, typer).
+> **Contributors:** `uv sync --group dev` installs the full dev stack (pytest, ruff, mypy, mcp, typer).
 
 **Observability note:** [docs/guides/observability.md](docs/guides/observability.md) describes metrics/diagnostics and the OTel module status (EP032).
 
@@ -510,7 +510,7 @@ All writes pass through prompt injection detection and content sanitization. The
 ## Development
 
 ```bash
-uv sync --extra dev
+uv sync --group dev
 
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 

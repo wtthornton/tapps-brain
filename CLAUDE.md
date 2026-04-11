@@ -9,11 +9,11 @@ tapps-brain is a persistent cross-session memory system for AI coding assistants
 ## Build & Development Commands
 
 ```bash
-# Install dependencies (uses uv package manager)
-uv sync --extra dev
+# Install dependencies (uses uv package manager; dev deps are in dependency-groups)
+uv sync --group dev
 
-# Install with optional vector search support
-uv sync --extra dev --extra vector
+# Optional extras (see pyproject.toml): cli, mcp, reranker, encryption, otel, visual, all
+# uv sync --group dev --extra encryption
 
 # Run all tests (~2300+ tests, coverage gate ≥95%; exclude benchmarks in CI-style runs)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
@@ -171,6 +171,16 @@ This project is configured for [Ralph for Claude Code](https://github.com/frankb
 - `.ralphrc` — Project-level Ralph configuration (rate limits, tool permissions, timeouts)
 
 ### Running Ralph
+
+**Always `cd` to this repository’s root first** (the folder that contains `pyproject.toml`). Paths like `/path/to/tapps-brain` in generic guides are placeholders, not real directories. Example if you cloned under `~/code`:
+
+```bash
+cd ~/code/tapps-brain
+test -f pyproject.toml || { echo "Not the repo root — find the folder with pyproject.toml"; exit 1; }
+uv sync --group dev
+export PATH="$HOME/.local/bin:$PATH"   # if ralph / claude live here
+claude --version    # must be installed; Ralph invokes the Claude Code CLI
+```
 
 ```bash
 # Start the autonomous loop

@@ -12,10 +12,10 @@ Persistent cross-session memory system for AI coding assistants. Fully determini
 
 ```bash
 # Install dependencies (uses uv package manager)
-uv sync --extra dev
+uv sync --group dev
 
-# Install with optional vector search support
-uv sync --extra dev --extra vector
+# Optional extras (see pyproject.toml): cli, mcp, reranker, encryption, otel, visual, all
+# uv sync --group dev --extra encryption
 
 # Run all tests (CI-style: exclude benchmarks)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95

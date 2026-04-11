@@ -5,7 +5,7 @@
 #   bash scripts/release-ready.sh
 #
 # From repo root with uv on PATH:
-#   uv sync --extra dev && bash scripts/release-ready.sh
+#   uv sync --group dev && bash scripts/release-ready.sh
 #
 # CI fast path (skip full pytest when matrix already ran tests):
 #   SKIP_FULL_PYTEST=1 bash scripts/release-ready.sh

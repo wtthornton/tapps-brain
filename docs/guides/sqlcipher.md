@@ -9,7 +9,7 @@
 1. Install the Python extra:
 
    ```bash
-   uv sync --extra dev --extra encryption
+   uv sync --group dev --extra encryption
    ```
 
 2. **System SQLCipher**: many `pysqlcipher3` wheels expect a system `sqlcipher` library (package name varies by OS). If import fails or `PRAGMA cipher_version` is empty, install SQLCipher for your platform and retry.
@@ -101,7 +101,7 @@ To run encryption tests in CI, add a job variant that installs the system SQLCip
 ```yaml
 # Example GitHub Actions step
 - run: sudo apt-get install -y libsqlcipher-dev
-- run: uv sync --extra dev --extra encryption
+- run: uv sync --group dev --extra encryption
 - run: uv run pytest -m requires_encryption -v
 ```
 
