@@ -153,6 +153,7 @@ The MCP SDK pin (`>=1.2.0,<2`) in `pyproject.toml` allows compatible minor/patch
 | `memory_delete` | Delete an entry by key |
 | `memory_search` | Full-text search with tier/scope/point-in-time filters |
 | `memory_list` | List entries with optional filters |
+| `memory_list_groups` | List distinct group names used in the store (for `group=` filter) |
 
 **Example — saving a memory:**
 
@@ -207,6 +208,7 @@ memory_supersede(
 | `memory_index_session` | Index session chunks (summaries/key facts) for future search |
 | `memory_search_sessions` | Search past session summaries by relevance |
 | `memory_capture` | Extract and persist new facts from an agent response |
+| `tapps_brain_session_end` | Record an end-of-session episodic memory (summary, tags, optional daily note) |
 
 **Example — indexing a session:**
 
@@ -238,7 +240,7 @@ memory_capture(
 |------|-------------|
 | `profile_info` | Return the active profile's name, layers, scoring config, and Hive settings |
 | `profile_switch` | Switch to a different built-in profile by name |
-| `profile_tier_migrate` | Remap stored entry tiers (`tier_map_json`, `dry_run`); writes `tier_migrate` audit rows when applied |
+| `memory_profile_onboarding` | Return Markdown onboarding guidance for the active profile (tiers, scoring, limits, Hive hints) |
 
 **Example — checking the active profile:**
 
@@ -263,6 +265,8 @@ Profiles configure layers, decay models, scoring weights, promotion rules, and l
 | `hive_search` | Search the Hive with optional namespace filter |
 | `hive_propagate` | Manually propagate a local memory to the Hive (optional `force`, `dry_run`) |
 | `hive_push` | Batch-promote local memories to the Hive (`push_all`, `tags`, `tier`, `keys`, `dry_run`, `force`) |
+| `hive_write_revision` | Return the current Hive write-notification revision (monotonic counter for polling) |
+| `hive_wait_write` | Long-poll until the Hive write revision exceeds `since_revision` or timeout |
 | `agent_register` | Register an agent in the Hive registry (id, profile, skills) |
 | `agent_create` | Composite: register + validate profile + namespace assignment |
 | `agent_list` | List all registered agents |
@@ -296,6 +300,7 @@ The Hive enables cross-agent memory sharing with namespace isolation and conflic
 | `memory_relations` | Get relations for a memory entry |
 | `memory_find_related` | BFS traversal from an entity |
 | `memory_query_relations` | Query relation triples |
+| `memory_relations_get_batch` | Return relations for multiple memory keys in one call |
 
 ### Tag Management Tools
 
