@@ -15,6 +15,10 @@ from tapps_brain._protocols import AgentRegistryBackend as AgentRegistryBackend
 from tapps_brain._protocols import FederationBackend as FederationBackend
 from tapps_brain._protocols import HiveBackend as HiveBackend
 from tapps_brain.agent_brain import AgentBrain as AgentBrain
+from tapps_brain.agent_brain import BrainConfigError as BrainConfigError
+from tapps_brain.agent_brain import BrainError as BrainError
+from tapps_brain.agent_brain import BrainTransientError as BrainTransientError
+from tapps_brain.agent_brain import BrainValidationError as BrainValidationError
 
 # Async (Issue #66)
 from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
@@ -131,6 +135,10 @@ __all__ = [
     "VALID_AGENT_SCOPES",
     "AgentBrain",
     "AgentRegistryBackend",
+    "BrainConfigError",
+    "BrainError",
+    "BrainTransientError",
+    "BrainValidationError",
     "AsyncMemoryStore",
     "BM25Scorer",
     "ConsolidatedEntry",

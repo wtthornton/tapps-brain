@@ -30,6 +30,61 @@ logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Typed exception hierarchy (STORY-060.2)
+# ---------------------------------------------------------------------------
+
+
+class BrainError(Exception):
+    """Base class for all tapps-brain exceptions raised through the public API.
+
+    Catch this to handle any tapps-brain error generically.
+    """
+
+
+class BrainConfigError(BrainError):
+    """Raised when the agent cannot be started due to a configuration problem.
+
+    These errors occur at construction time or on first use and will not
+    resolve without an operator change.  Examples:
+
+    * Missing or malformed ``TAPPS_BRAIN_DATABASE_URL`` or
+      ``TAPPS_BRAIN_HIVE_DSN`` (non-Postgres scheme, e.g. ``sqlite://``).
+    * ``TAPPS_BRAIN_STRICT=1`` is set and a required DSN is absent.
+    * An unknown / unsupported profile name is passed to the constructor.
+
+    Recovery: fix the environment variable or constructor argument and restart.
+    """
+
+
+class BrainTransientError(BrainError):
+    """Raised when an operation fails due to a transient infrastructure problem.
+
+    The failure *may* resolve on retry.  Examples:
+
+    * Postgres connection refused or timed out during ``remember`` / ``recall``.
+    * Pool exhaustion under high concurrency.
+    * A network hiccup during Hive propagation.
+
+    Recovery: retry with exponential back-off; alert if failures persist.
+    """
+
+
+class BrainValidationError(BrainError, ValueError):
+    """Raised when a caller-supplied value fails validation.
+
+    These errors will not resolve without a code change.  Examples:
+
+    * ``tier`` passed to ``remember()`` is not one of the canonical values
+      (``"architectural"``, ``"pattern"``, ``"procedural"``, ``"context"``).
+    * A ``share_with`` value is an empty string.
+    * ``max_results`` is non-positive.
+
+    ``BrainValidationError`` also inherits from :class:`ValueError` so
+    existing code that catches ``ValueError`` continues to work.
+    """
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -88,15 +143,29 @@ class AgentBrain:
             except Exception:
                 logger.warning("agent_brain.hive_init_failed", exc_info=True)
 
+        # EPIC-059 STORY-059.5: resolve Postgres private backend from env when available.
+        # Falls back to SQLite MemoryPersistence when TAPPS_BRAIN_DATABASE_URL is unset.
+        _private_backend = None
+        _effective_agent_id = self._agent_id or "unknown"
+        try:
+            from tapps_brain.backends import derive_project_id, resolve_private_backend_from_env
+
+            _project_id = derive_project_id(self._project_dir)
+            _private_backend = resolve_private_backend_from_env(_project_id, _effective_agent_id)
+        except Exception:
+            logger.warning("agent_brain.private_backend_init_failed", exc_info=True)
+            _private_backend = None
+
         # Create MemoryStore
         self._store = MemoryStore(
             self._project_dir,
             agent_id=self._agent_id,
             hive_store=self._hive,
-            hive_agent_id=self._agent_id or "unknown",
+            hive_agent_id=_effective_agent_id,
             groups=_groups,
             expert_domains=_expert_domains,
             encryption_key=encryption_key,
+            private_backend=_private_backend,
         )
 
         # Internal recall tracking for learn_from_success

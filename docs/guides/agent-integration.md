@@ -352,6 +352,163 @@ See [Memory scopes](memory-scopes.md) and [Profile catalog](profile-catalog.md).
 
 ---
 
+---
+
+## Exception taxonomy
+
+tapps-brain raises a typed exception hierarchy so callers can distinguish
+configuration bugs from transient infrastructure failures from input
+validation errors.
+
+```
+BrainError                     # base — catch this to handle any tapps-brain error
+├── BrainConfigError           # bad env/constructor config; operator fix required
+├── BrainTransientError        # transient infra failure; retry may help
+└── BrainValidationError       # invalid caller-supplied value; code fix required
+    (also inherits ValueError)
+```
+
+Import from the package root:
+
+```python
+from tapps_brain import BrainError, BrainConfigError, BrainTransientError, BrainValidationError
+```
+
+### `BrainConfigError` — configuration problems
+
+Raised at construction time or on first use when the agent cannot start due
+to a misconfiguration that requires an operator fix:
+
+| Situation | How to resolve |
+|-----------|---------------|
+| Missing `TAPPS_BRAIN_DATABASE_URL` with `TAPPS_BRAIN_STRICT=1` | Set the env var before starting |
+| Non-Postgres DSN (e.g. `sqlite://…`) passed to `hive_dsn` | Use a `postgres://` or `postgresql://` DSN |
+| Unknown profile name | Check [Profile catalog](profile-catalog.md) for valid names |
+
+```python
+from tapps_brain import AgentBrain, BrainConfigError
+
+try:
+    brain = AgentBrain(agent_id="planner", hive_dsn="sqlite:///bad.db")
+except BrainConfigError as exc:
+    # fix the DSN and restart — retrying without a fix won't help
+    raise SystemExit(f"tapps-brain config error: {exc}") from exc
+```
+
+### `BrainTransientError` — transient infrastructure failures
+
+Raised when an operation fails due to a transient infrastructure problem that
+*may* resolve on retry:
+
+| Situation | Recovery |
+|-----------|----------|
+| Postgres connection refused | Wait and retry with back-off |
+| Connection pool exhausted | Retry; reduce concurrency; increase pool size |
+| Network error during Hive propagation | Retry; alert if failures persist |
+
+```python
+from tapps_brain import AgentBrain, BrainTransientError
+import time
+
+brain = AgentBrain(agent_id="planner", project_dir="/app")
+for attempt in range(3):
+    try:
+        brain.remember("Use Postgres for shared state")
+        break
+    except BrainTransientError:
+        if attempt == 2:
+            raise
+        time.sleep(2 ** attempt)
+```
+
+### `BrainValidationError` — invalid caller-supplied values
+
+Raised when a caller-supplied value fails validation.  These will not resolve
+without a code change:
+
+| Situation | Resolution |
+|-----------|-----------|
+| `tier` is not a canonical value | Use `"architectural"`, `"pattern"`, `"procedural"`, or `"context"` |
+| `share_with` is an empty string | Pass `None` or a non-empty group name |
+| `max_results` is non-positive | Use a positive integer |
+
+`BrainValidationError` also inherits from `ValueError`, so existing code that
+catches `ValueError` continues to work without changes.
+
+### Catching all tapps-brain errors
+
+```python
+from tapps_brain import BrainError
+
+try:
+    brain.remember("some fact", tier="bad-tier")
+except BrainError as exc:
+    logger.error("tapps-brain error", error=str(exc), type=type(exc).__name__)
+```
+
+---
+
+## v3 breaking changes
+
+tapps-brain v3 is a **greenfield** release.  The following v2 behaviors and
+APIs were removed or changed.
+
+### Postgres required — no SQLite fallback for shared stores
+
+v3 uses **PostgreSQL exclusively** for all shared (Hive, Federation) and
+private-backend storage.  There is no SQLite fallback.
+
+| v2 | v3 replacement |
+|----|----------------|
+| `HiveStore(hive_dir=…)` (SQLite) | `create_hive_backend("postgres://…")` |
+| `FederatedStore(hub_dir=…)` (SQLite) | `create_federation_backend("postgres://…")` |
+| `.tapps-brain/agents/<id>/memory.db` layout | Private rows keyed by `(project_id, agent_id)` in Postgres |
+| `sqlite://` DSN accepted | **Rejected at startup** — must be `postgres://` or `postgresql://` |
+
+See [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md) for
+rationale.
+
+### Removed classes
+
+| Removed | v3 replacement |
+|---------|---------------|
+| `HiveStore` | `PostgresHiveBackend` (via `create_hive_backend`) |
+| `FederatedStore` | `PostgresFederationBackend` (via `create_federation_backend`) |
+| `FederationConfig` | Constructor arguments to `create_federation_backend` |
+| `SqliteHiveBackend` | `PostgresHiveBackend` |
+| `SqliteFederationBackend` | `PostgresFederationBackend` |
+
+### New required environment variables
+
+| Variable | Required when |
+|----------|--------------|
+| `TAPPS_BRAIN_DATABASE_URL` | Private Postgres backend (v3 default) |
+| `TAPPS_BRAIN_HIVE_DSN` | Cross-agent Hive sharing |
+| `TAPPS_BRAIN_FEDERATION_DSN` | Cross-project federation |
+
+Set `TAPPS_BRAIN_STRICT=1` in production so a missing DSN raises
+`BrainConfigError` at startup instead of silently running without persistence.
+
+### No local database files
+
+v3 stores private agent memory in Postgres (`TAPPS_BRAIN_DATABASE_URL`).
+There is no `.tapps-brain/agents/` directory created in the project root.
+If you previously backed up or inspected SQLite `.db` files, switch to
+Postgres tooling (`pg_dump`, `psql`).
+
+### Migration path from v2
+
+1. Stand up a Postgres instance with pgvector (see
+   [Hive deployment guide](hive-deployment.md) or the repo `docker-compose.yml`).
+2. Set `TAPPS_BRAIN_DATABASE_URL` to a `postgres://` DSN.
+3. Replace any `HiveStore()` / `FederatedStore()` construction with factory
+   calls from `backends.py`.
+4. Remove any `sqlite://` DSNs from your config.
+5. Set `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true` on first deploy.
+6. Set `TAPPS_BRAIN_STRICT=1` to catch misconfiguration early.
+
+---
+
 ## Related docs
 
 - [PostgreSQL DSN & Connection Pool Reference](postgres-dsn.md) — full env-var table, pool sizing, health JSON
@@ -361,3 +518,4 @@ See [Memory scopes](memory-scopes.md) and [Profile catalog](profile-catalog.md).
 - [Getting started](getting-started.md)
 - [Profile catalog](profile-catalog.md)
 - [Memory scopes](memory-scopes.md)
+- [ADR-007: Postgres-only, no SQLite](../planning/adr/ADR-007-postgres-only-no-sqlite.md)

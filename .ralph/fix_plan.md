@@ -63,7 +63,7 @@
 ### Phase D: API contract + HTTP adapter (060.1–060.6) <!-- id: 060-phase-d -->
 
 - [x] **060.1** Agent integration page — API surface — new/refreshed doc listing `AgentBrain` public methods + env vars table; cross-links from README/AGENTS.md. [SMALL — docs only] <!-- resolved: docs/guides/agent-integration.md -->
-- [ ] **060.2** Agent integration page — exceptions + breaking changes — typed exception taxonomy (config vs transient vs validation); v3 breaking changes subsection; optional mypy re-export check. [SMALL — docs + spot-check code] <!-- resolved: docs/guides/agent-integration.md, src/tapps_brain/agent_brain.py -->
+- [x] **060.2** Agent integration page — exceptions + breaking changes — typed exception taxonomy (config vs transient vs validation); v3 breaking changes subsection; optional mypy re-export check. [SMALL — docs + spot-check code] <!-- resolved: docs/guides/agent-integration.md, src/tapps_brain/agent_brain.py -->
 - [ ] **060.3** HTTP adapter — liveness, readiness, metrics — `/health` (no DB), `/ready` (DB ping + migration version), `/metrics` (Prometheus or OTel); contract tests (status codes for healthy vs DB-down). [MEDIUM — new module] <!-- resolved: src/tapps_brain/http_adapter.py (new) -->
 - [ ] **060.4** HTTP adapter — optional routes + auth + OpenAPI — ≤ 2 extra routes; auth middleware; OpenAPI spec ≤ 1 page; fuzz 401/403 on protected routes. [MEDIUM] <!-- resolved: src/tapps_brain/http_adapter.py -->
 - [ ] **060.5+060.6** ADR (no HTTP without MCP+library parity) + guardrails (CODEOWNERS or CI for HTTP tree) — commit ADR; link from engineering docs; CODEOWNERS entry or CI script; documented in contributing. [BATCH-2: SMALL — two XS tasks merged] <!-- resolved: docs/planning/adr/, .github/CODEOWNERS -->
