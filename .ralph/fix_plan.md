@@ -119,7 +119,7 @@
 ### Phase I: RLS spike (063.3–063.4) <!-- id: 063-phase-i -->
 
 - [x] **063.3** RLS spike — policy on one table — ENABLE RLS on hive entries; policy on `project_id`/`org_id`; connection sets session var; integration test (two projects can't read each other). Run `mcp__tapps-mcp tapps_security_scan` on migration SQL. [MEDIUM — requires Postgres] <!-- resolved: src/tapps_brain/migrations/, tests/integration/ -->
-- [ ] **063.4** RLS spike — performance + ship/defer decision — benchmark % overhead before/after; ADR update: ship RLS in GA vs defer with compensating controls; document if defer. [MEDIUM] <!-- resolved: docs/planning/adr/, scripts/ -->
+- [x] **063.4** RLS spike — performance + ship/defer decision — benchmark % overhead before/after; ADR update: ship RLS in GA vs defer with compensating controls; document if defer. [MEDIUM] <!-- resolved: docs/planning/adr/, scripts/ -->
 
 ### Phase J: Scope audit (063.5–063.7) <!-- id: 063-phase-j -->
 
