@@ -113,7 +113,7 @@
 
 ### Phase H: DB roles + threat model (063.1–063.2, 063.8) <!-- id: 063-phase-h -->
 
-- [ ] **063.8** Threat model — STRIDE one-pager — STRIDE bullets (spoofing, tampering, repudiation, info disclosure, DoS, elevation) with mitigation references; explicit v3.0 out-of-scope. [SMALL — docs, no code deps] <!-- resolved: docs/engineering/ or docs/guides/ -->
+- [x] **063.8** Threat model — STRIDE one-pager — STRIDE bullets (spoofing, tampering, repudiation, info disclosure, DoS, elevation) with mitigation references; explicit v3.0 out-of-scope. [SMALL — docs, no code deps] <!-- resolved: docs/engineering/threat-model.md -->
 - [ ] **063.1+063.2** DB roles — migration SQL + runbooks — create `tapps_runtime` (DML), `tapps_migrator` (DDL), optional `tapps_readonly`; GRANT/REVOKE idempotent; migration README; runbook snippet (runtime vs migrator DSN); no DSN in logs; env/secret injection. [BATCH-2: SMALL — two S tasks, same migration + runbook] <!-- resolved: src/tapps_brain/migrations/, docs/operations/ -->
 
 ### Phase I: RLS spike (063.3–063.4) <!-- id: 063-phase-i -->
