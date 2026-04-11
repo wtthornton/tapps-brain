@@ -17,3 +17,7 @@
 4. **Scorecard & tickets:** the page shows pass/warn/fail rows from the export’s `scorecard` field; use **Copy GitHub issue (Markdown)** to paste into GitHub/Jira.
 
 Snapshot **schema_version** `2` adds retrieval mode, Hive hub stats, access histograms, memory-group counts, and a **`scorecard`** (operator pass/warn/fail checks). No raw memory text is included. See `docs/planning/brain-visual-implementation-plan.md`, `docs/guides/visual-snapshot.md`, and article source in `brain-visual-help.js`.
+
+## Brand
+
+CSS tokens, typography, and logo usage follow the **NLT Labs** design language. The canonical brand style sheet is an internal NLT Labs asset (not redistributed here). A gap matrix and redistribution notes are at [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
