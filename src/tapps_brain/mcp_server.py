@@ -209,19 +209,21 @@ def create_server(  # noqa: PLR0915
         or share_with='hive' for org-wide.
         """
         from tapps_brain.agent_brain import _content_key
+        from tapps_brain.otel_tracer import start_mcp_tool_span
 
-        key = _content_key(fact)
-        agent_scope = "private"
-        if share:
-            agent_scope = "group"
-        elif share_with == "hive":
-            agent_scope = "hive"
-        elif share_with:
-            agent_scope = f"group:{share_with}"
-        result = store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
-        if isinstance(result, dict) and "error" in result:
-            return json.dumps(result)
-        return json.dumps({"saved": True, "key": key})
+        with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
+            key = _content_key(fact)
+            agent_scope = "private"
+            if share:
+                agent_scope = "group"
+            elif share_with == "hive":
+                agent_scope = "hive"
+            elif share_with:
+                agent_scope = f"group:{share_with}"
+            result = store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+            if isinstance(result, dict) and "error" in result:
+                return json.dumps(result)
+            return json.dumps({"saved": True, "key": key})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_recall(query: str, max_results: int = 5) -> str:
@@ -229,31 +231,37 @@ def create_server(  # noqa: PLR0915
 
         Searches local agent memory, group knowledge, and org-wide expert knowledge.
         """
-        entries = store.search(query)
-        results = []
-        for entry in entries[:max_results]:
-            if isinstance(entry, dict):
-                results.append(entry)
-            else:
-                results.append(
-                    {
-                        "key": entry.key,
-                        "value": entry.value,
-                        "tier": str(entry.tier),
-                        "confidence": entry.confidence,
-                        "tags": list(entry.tags) if entry.tags else [],
-                    }
-                )
-        return json.dumps(results, default=str)
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        with start_mcp_tool_span("brain_recall"):
+            entries = store.search(query)
+            results = []
+            for entry in entries[:max_results]:
+                if isinstance(entry, dict):
+                    results.append(entry)
+                else:
+                    results.append(
+                        {
+                            "key": entry.key,
+                            "value": entry.value,
+                            "tier": str(entry.tier),
+                            "confidence": entry.confidence,
+                            "tags": list(entry.tags) if entry.tags else [],
+                        }
+                    )
+            return json.dumps(results, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_forget(key: str) -> str:
         """Archive a memory by key. The memory is not permanently deleted."""
-        entry = store.get(key)
-        if entry is None:
-            return json.dumps({"forgotten": False, "reason": "not_found"})
-        store.delete(key)
-        return json.dumps({"forgotten": True, "key": key})
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        with start_mcp_tool_span("brain_forget"):
+            entry = store.get(key)
+            if entry is None:
+                return json.dumps({"forgotten": False, "reason": "not_found"})
+            store.delete(key)
+            return json.dumps({"forgotten": True, "key": key})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_learn_success(task_description: str, task_id: str = "") -> str:
@@ -262,26 +270,30 @@ def create_server(  # noqa: PLR0915
         Saves the experience and reinforces any recently recalled memories.
         """
         from tapps_brain.agent_brain import _content_key
+        from tapps_brain.otel_tracer import start_mcp_tool_span
 
-        key = _content_key(f"success-{task_description}")
-        tags = ["success"]
-        if task_id:
-            tags.append(f"task:{task_id}")
-        store.save(key=key, value=task_description, tier="procedural", tags=tags)
-        return json.dumps({"learned": True, "key": key})
+        with start_mcp_tool_span("brain_learn_success"):
+            key = _content_key(f"success-{task_description}")
+            tags = ["success"]
+            if task_id:
+                tags.append(f"task:{task_id}")
+            store.save(key=key, value=task_description, tier="procedural", tags=tags)
+            return json.dumps({"learned": True, "key": key})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_learn_failure(description: str, task_id: str = "", error: str = "") -> str:
         """Record a failed task outcome to avoid repeating mistakes."""
         from tapps_brain.agent_brain import _content_key
+        from tapps_brain.otel_tracer import start_mcp_tool_span
 
-        key = _content_key(f"failure-{description}")
-        value = f"{description}\n\nError: {error}" if error else description
-        tags = ["failure"]
-        if task_id:
-            tags.append(f"task:{task_id}")
-        store.save(key=key, value=value, tier="procedural", tags=tags)
-        return json.dumps({"learned": True, "key": key})
+        with start_mcp_tool_span("brain_learn_failure"):
+            key = _content_key(f"failure-{description}")
+            value = f"{description}\n\nError: {error}" if error else description
+            tags = ["failure"]
+            if task_id:
+                tags.append(f"task:{task_id}")
+            store.save(key=key, value=value, tier="procedural", tags=tags)
+            return json.dumps({"learned": True, "key": key})
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_status() -> str:

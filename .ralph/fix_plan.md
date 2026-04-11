@@ -167,7 +167,7 @@
 ### Phase M: Foundation + spans (032.1–032.4) <!-- id: 032-phase-m -->
 
 - [x] **032.1** Tracer bootstrap + null-object — `OTelConfig` (enabled, service_name); TracerProvider from env; no-op when `HAS_OTEL=False`; zero-allocation on hot path. [SMALL] <!-- resolved: src/tapps_brain/otel_exporter.py -->
-- [ ] **032.2** MCP tool call spans — span name `{mcp.method.name} {gen_ai.tool.name}`; SERVER kind; semconv v1.35.0 attributes; unit tests with mocked SDK. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py, src/tapps_brain/mcp_server.py -->
+- [x] **032.2** MCP tool call spans — span name `{mcp.method.name} {gen_ai.tool.name}`; SERVER kind; semconv v1.35.0 attributes; unit tests with mocked SDK. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py, src/tapps_brain/mcp_server.py -->
 - [ ] **032.3** Retrieval document events + W3C traceparent — structured events per recall result (`id` + `score`); `params._meta.traceparent` extraction; unit tests. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 - [ ] **032.4** Non-retrieval spans (save, delete, reinforce, etc.) — `gen_ai.operation.name = "execute_tool"`; unit tests per op type. [SMALL — parallel after 032.1] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 

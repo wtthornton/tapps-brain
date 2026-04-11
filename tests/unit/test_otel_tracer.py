@@ -370,3 +370,262 @@ class TestStoreSpans:
         raw_vals = list(captured_attrs.values())
         assert "sensitive memory value" not in raw_vals, "Raw memory content leaked into span"
         assert "my-key" not in raw_vals, "Memory key leaked into span"
+
+
+# ---------------------------------------------------------------------------
+# Tests for start_mcp_tool_span() — GenAI semconv v1.35.0 (STORY-032.2)
+# ---------------------------------------------------------------------------
+
+
+class TestStartMcpToolSpan:
+    """start_mcp_tool_span() emits SERVER spans with GenAI semconv v1.35.0 attrs."""
+
+    # --- Constants ----------------------------------------------------------
+
+    def test_mcp_method_tools_call_constant(self) -> None:
+        from tapps_brain.otel_tracer import MCP_METHOD_TOOLS_CALL
+
+        assert MCP_METHOD_TOOLS_CALL == "tools/call"
+
+    def test_gen_ai_operation_execute_tool_constant(self) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_OPERATION_EXECUTE_TOOL
+
+        assert GEN_AI_OPERATION_EXECUTE_TOOL == "execute_tool"
+
+    def test_gen_ai_system_constant(self) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_SYSTEM
+
+        assert GEN_AI_SYSTEM == "tapps-brain"
+
+    # --- Span name ----------------------------------------------------------
+
+    def test_span_name_is_method_space_tool(self) -> None:
+        """Span name must be '{method} {tool_name}' per GenAI semconv v1.35.0."""
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, _ = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_remember"),
+        ):
+            pass
+
+        args, _ = mock_tracer.start_as_current_span.call_args
+        assert args[0] == "tools/call brain_remember"
+
+    def test_custom_method_in_span_name(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, _ = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("memory_save", method="tools/execute"),
+        ):
+            pass
+
+        args, _ = mock_tracer.start_as_current_span.call_args
+        assert args[0] == "tools/execute memory_save"
+
+    # --- SpanKind -----------------------------------------------------------
+
+    def test_span_kind_is_server(self) -> None:
+        """MCP tool spans must use SpanKind.SERVER per semconv v1.35.0."""
+        from opentelemetry.trace import SpanKind
+
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, _ = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_recall"),
+        ):
+            pass
+
+        _, kwargs = mock_tracer.start_as_current_span.call_args
+        assert kwargs.get("kind") == SpanKind.SERVER
+
+    # --- Required semconv v1.35.0 attributes --------------------------------
+
+    def test_gen_ai_system_attribute(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_remember"),
+        ):
+            pass
+
+        set_calls = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert set_calls.get("gen_ai.system") == "tapps-brain"
+
+    def test_gen_ai_tool_name_attribute(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_recall"),
+        ):
+            pass
+
+        set_calls = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert set_calls.get("gen_ai.tool.name") == "brain_recall"
+
+    def test_mcp_method_name_attribute(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_forget"),
+        ):
+            pass
+
+        set_calls = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert set_calls.get("mcp.method.name") == "tools/call"
+
+    def test_gen_ai_operation_name_attribute(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_learn_success"),
+        ):
+            pass
+
+        set_calls = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert set_calls.get("gen_ai.operation.name") == "execute_tool"
+
+    def test_all_required_semconv_attributes_present(self) -> None:
+        """All four required semconv v1.35.0 attributes must be set."""
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_learn_failure"),
+        ):
+            pass
+
+        set_keys = {c.args[0] for c in mock_span.set_attribute.call_args_list}
+        assert "gen_ai.system" in set_keys
+        assert "gen_ai.tool.name" in set_keys
+        assert "mcp.method.name" in set_keys
+        assert "gen_ai.operation.name" in set_keys
+
+    # --- extra_attributes ---------------------------------------------------
+
+    def test_extra_attributes_merged(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": "pattern"}),
+        ):
+            pass
+
+        set_calls = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert set_calls.get("memory.tier") == "pattern"
+        # Standard semconv attrs still present
+        assert "gen_ai.system" in set_calls
+
+    def test_none_extra_attributes_safe(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_forget", extra_attributes=None),
+        ):
+            pass
+
+        # Only 4 standard semconv attributes (no crash)
+        set_keys = {c.args[0] for c in mock_span.set_attribute.call_args_list}
+        assert len(set_keys) == 4
+
+    # --- Error handling -----------------------------------------------------
+
+    def test_exception_recorded_and_reraised(self) -> None:
+        from opentelemetry.trace import StatusCode
+
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+
+        class _ToolError(RuntimeError):
+            pass
+
+        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
+            try:
+                with start_mcp_tool_span("brain_remember"):
+                    raise _ToolError("tool failed")
+            except _ToolError:
+                pass
+            else:
+                raise AssertionError("Exception should have been re-raised")
+
+        mock_span.record_exception.assert_called_once()
+        exc_arg = mock_span.record_exception.call_args[0][0]
+        assert isinstance(exc_arg, _ToolError)
+        status_code = mock_span.set_status.call_args[0][0]
+        assert status_code == StatusCode.ERROR
+
+    def test_no_exception_recording_when_disabled(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+
+        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
+            try:
+                with start_mcp_tool_span("brain_recall", record_exception=False):
+                    raise ValueError("suppress me")
+            except ValueError:
+                pass
+
+        mock_span.record_exception.assert_not_called()
+
+    def test_yields_span_to_caller(self) -> None:
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_forget") as span,
+        ):
+            assert span is mock_span
+
+    def test_ok_status_set_on_success(self) -> None:
+        from opentelemetry.trace import StatusCode
+
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_learn_success"),
+        ):
+            pass
+
+        mock_span.set_status.assert_called_once()
+        assert mock_span.set_status.call_args[0][0] == StatusCode.OK
+
+    # --- Privacy: no raw content in attributes ------------------------------
+
+    def test_no_raw_content_in_semconv_attrs(self) -> None:
+        """Standard semconv attrs must never contain user-supplied content."""
+        from tapps_brain.otel_tracer import start_mcp_tool_span
+
+        mock_tracer, mock_span = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            start_mcp_tool_span("brain_remember"),
+        ):
+            pass
+
+        attr_values = {c.args[1] for c in mock_span.set_attribute.call_args_list}
+        # Only fixed enum-like values are allowed — no user-controlled strings
+        expected_values = {"tapps-brain", "brain_remember", "tools/call", "execute_tool"}
+        assert attr_values == expected_values
