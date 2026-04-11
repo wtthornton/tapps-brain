@@ -728,7 +728,10 @@ class TestPrompts:
 
 
 @pytest.mark.skip(
-    reason="SQLite FederatedStore removed in v3 (ADR-007); federation MCP tools require PostgresFederationBackend"
+    reason=(
+        "SQLite FederatedStore removed in v3 (ADR-007); "
+        "federation MCP tools require PostgresFederationBackend"
+    )
 )
 class TestFederationAndMaintenance:
     """Test federation and maintenance tools (STORY-008.5)."""
@@ -1186,7 +1189,10 @@ class TestMemoryImportEdgeCases:
 
 
 @pytest.mark.skip(
-    reason="SQLite FederatedStore removed in v3 (ADR-007); federation error paths require PostgresFederationBackend"
+    reason=(
+        "SQLite FederatedStore removed in v3 (ADR-007); "
+        "federation error paths require PostgresFederationBackend"
+    )
 )
 class TestFederationErrorPaths:
     """Test federation error paths: hub unavailable, subscribe ValueError."""
@@ -1497,8 +1503,8 @@ class TestAgentScopeValidation:
         result = json.loads(save_fn(key="valid-hive", value="test", agent_scope="hive"))
         assert result["status"] == "saved"
 
-    def test_valid_agent_scope_hive(self, mcp_server):
-        """memory_save with agent_scope='hive' succeeds (tests valid scope acceptance)."""
+    def test_valid_agent_scope_hive_stores_scope(self, mcp_server):
+        """memory_save with agent_scope='hive' persists the scope on the entry."""
         save_fn = _tool_fn(mcp_server, "memory_save")
         result = json.loads(save_fn(key="valid-hive-scope", value="test", agent_scope="hive"))
         assert result["status"] == "saved"
@@ -1513,7 +1519,9 @@ class TestAgentScopeValidation:
         initialized with groups=['team-x'] or have joined the group via the Hive.
         """
         save_fn = _tool_fn(mcp_server, "memory_save")
-        result = json.loads(save_fn(key="group-no-member", value="test", agent_scope="group:team-x"))
+        result = json.loads(
+            save_fn(key="group-no-member", value="test", agent_scope="group:team-x")
+        )
         assert result["error"] == "invalid_agent_scope"
 
     def test_invalid_agent_scope_returns_error(self, mcp_server):
@@ -1718,7 +1726,10 @@ class TestMemorySearchAsOfValidation:
 
 
 @pytest.mark.skip(
-    reason="SQLite HiveStore removed in v3 (ADR-007); shared HiveStore tests require PostgresHiveBackend"
+    reason=(
+        "SQLite HiveStore removed in v3 (ADR-007); "
+        "shared HiveStore tests require PostgresHiveBackend"
+    )
 )
 class TestHiveToolsReuseSharedStore:
     """Tests for Hive tools reusing the server's shared HiveStore (STORY-013.4)."""
@@ -1878,7 +1889,9 @@ class TestHiveToolsReuseSharedStore:
         save_fn(key="identity-test", value="check agent id")
 
         # Patch PropagationEngine.propagate to capture the agent_id passed
-        with patch("tapps_brain.backends.PropagationEngine.propagate", wraps=None) as mock_propagate:
+        with patch(
+            "tapps_brain.backends.PropagationEngine.propagate", wraps=None
+        ) as mock_propagate:
             mock_propagate.return_value = {"namespace": "test", "key": "identity-test"}
             prop_fn = _tool_fn(server, "hive_propagate")
             result = json.loads(prop_fn(key="identity-test", agent_scope="hive"))
@@ -1906,7 +1919,9 @@ class TestHiveToolsReuseSharedStore:
         if hasattr(store, "_hive_agent_id"):
             delattr(store, "_hive_agent_id")
 
-        with patch("tapps_brain.backends.PropagationEngine.propagate", wraps=None) as mock_propagate:
+        with patch(
+            "tapps_brain.backends.PropagationEngine.propagate", wraps=None
+        ) as mock_propagate:
             mock_propagate.return_value = {"namespace": "test", "key": "fallback-test"}
             prop_fn = _tool_fn(server, "hive_propagate")
             result = json.loads(prop_fn(key="fallback-test", agent_scope="hive"))
@@ -3221,18 +3236,12 @@ class TestStrictStartupMode:
         env = {
             "TAPPS_BRAIN_STRICT": "1",
         }
-        with patch.dict("os.environ", env, clear=False):
-            # Remove DSN if set
-            with patch.dict(
-                "os.environ",
-                {},
-                clear=False,
-            ):
-                import os as _os
+        with patch.dict("os.environ", env, clear=False), patch.dict("os.environ", {}, clear=False):
+            import os as _os
 
-                _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
-                with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT"):
-                    create_server(tmp_path, enable_hive=True)
+            _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
+            with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT"):
+                create_server(tmp_path, enable_hive=True)
 
     def test_non_strict_mode_no_dsn_succeeds(self, tmp_path):
         """Without strict mode, missing DSN starts fine (lazy failure)."""
@@ -3261,8 +3270,92 @@ class TestStrictStartupMode:
 
             _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
             # enable_hive=False bypasses the strict check
-            server = create_server(
-                tmp_path, enable_hive=False
-            )
+            server = create_server(tmp_path, enable_hive=False)
             assert server is not None
             server._tapps_store.close()
+
+
+class TestGetStoreHiveWiring:
+    """STORY-062.1: _get_store wires Hive backend from unified DSN env var.
+
+    Verifies that:
+    - When TAPPS_BRAIN_HIVE_DSN is set to a valid Postgres DSN, _get_store
+      attaches a PostgresHiveBackend to the store.
+    - When TAPPS_BRAIN_HIVE_DSN is unset and TAPPS_BRAIN_STRICT=1, startup
+      fails with a clear error (covered by TestStrictMode; duplicated here
+      for story traceability).
+    """
+
+    def test_hive_dsn_set_attaches_postgres_backend(self, tmp_path, monkeypatch):
+        """TAPPS_BRAIN_HIVE_DSN set → _get_store attaches PostgresHiveBackend."""
+        from tapps_brain.mcp_server import _get_store
+        from tapps_brain.postgres_hive import PostgresHiveBackend
+
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/brain")
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+
+        store = _get_store(tmp_path, enable_hive=True)
+        try:
+            hive = getattr(store, "_hive_store", None)
+            assert hive is not None, "_hive_store should be set when DSN is provided"
+            assert isinstance(hive, PostgresHiveBackend), (
+                f"Expected PostgresHiveBackend, got {type(hive)}"
+            )
+        finally:
+            h = getattr(store, "_hive_store", None)
+            if h is not None:
+                h.close()
+            store.close()
+
+    def test_hive_dsn_postgresql_prefix_attaches_postgres_backend(self, tmp_path, monkeypatch):
+        """postgresql:// prefix also wires PostgresHiveBackend (both prefixes accepted)."""
+        from tapps_brain.mcp_server import _get_store
+        from tapps_brain.postgres_hive import PostgresHiveBackend
+
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgresql://localhost/brain")
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+
+        store = _get_store(tmp_path, enable_hive=True)
+        try:
+            hive = getattr(store, "_hive_store", None)
+            assert isinstance(hive, PostgresHiveBackend)
+        finally:
+            h = getattr(store, "_hive_store", None)
+            if h is not None:
+                h.close()
+            store.close()
+
+    def test_hive_dsn_unset_and_strict_raises(self, tmp_path, monkeypatch):
+        """Unset TAPPS_BRAIN_HIVE_DSN + TAPPS_BRAIN_STRICT=1 → RuntimeError."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+
+        with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT=1"):
+            store = _get_store(tmp_path, enable_hive=True)
+            store.close()
+
+    def test_hive_dsn_unset_non_strict_no_hive(self, tmp_path, monkeypatch):
+        """Unset TAPPS_BRAIN_HIVE_DSN without strict mode → _hive_store is None."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+
+        store = _get_store(tmp_path, enable_hive=True)
+        try:
+            assert getattr(store, "_hive_store", None) is None
+        finally:
+            store.close()
+
+    def test_invalid_dsn_in_env_raises_value_error(self, tmp_path, monkeypatch):
+        """Non-Postgres DSN in TAPPS_BRAIN_HIVE_DSN → ValueError (ADR-007)."""
+        from tapps_brain.mcp_server import _get_store
+
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "mysql://localhost/brain")
+        monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
+
+        with pytest.raises(ValueError, match="ADR-007"):
+            store = _get_store(tmp_path, enable_hive=True)
+            store.close()
