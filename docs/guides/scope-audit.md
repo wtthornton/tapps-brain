@@ -107,6 +107,16 @@ The following gaps were found during this audit. Each is listed with severity an
 
 > Add comments or approval to the PR introducing this document.
 
+### 4.1 Negative-test coverage (STORY-063.7)
+
+Automated negative tests validate the enforcement points above:
+
+| Test file | What it covers |
+|---|---|
+| `tests/unit/test_scope_negative.py` | `PropagationEngine` group rejection (non-member → None, no save); private scope always dropped; profile `private_tiers` override; `bypass_profile_hive_rules` sanity; cross-tenant write structural isolation (backend keyed by `(project_id, agent_id)` at construction, verified via mocked SQL params); dry-run mode (no writes). |
+| `tests/integration/test_private_memory_integration.py::TestTenantIsolation` | Live Postgres round-trip: agent A writes and agent B cannot read (load_all + FTS search); same-agent different-project isolation. |
+| `tests/integration/test_rls_spike.py` | Postgres RLS: `hive_admin_bypass` + `hive_namespace_isolation` policies prevent cross-namespace reads when session variable is set. |
+
 ---
 
 ## 5. References

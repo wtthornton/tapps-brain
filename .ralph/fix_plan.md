@@ -124,7 +124,7 @@
 ### Phase J: Scope audit (063.5–063.7) <!-- id: 063-phase-j -->
 
 - [x] **063.5+063.6** Scope audit — matrix doc + code checklist — `agent_scope`/group/hive → allowed namespaces/ops matrix; linked from hive.md; checklist table: path → scope rule → reviewer; gaps filed as GitHub issues. [BATCH-2: SMALL — two S/M tasks, tightly coupled] <!-- resolved: docs/guides/scope-audit.md -->
-- [ ] **063.7** Scope audit — negative tests — wrong `agent_id` cannot write cross-tenant; wrong group rejected on propagate; peer review sign-off. [MEDIUM] <!-- resolved: tests/integration/ or tests/unit/ -->
+- [x] **063.7** Scope audit — negative tests — wrong `agent_id` cannot write cross-tenant; wrong group rejected on propagate; peer review sign-off. [MEDIUM] <!-- resolved: tests/integration/ or tests/unit/ -->
 
 - [ ] **063.CLEAN** Security scan + doc validation — Run `mcp__tapps-mcp tapps_security_scan` on `src/tapps_brain/postgres_hive.py`, `postgres_connection.py`, migrations; run `mcp__docs-mcp docs_validate_epic` on `EPIC-063.md`; run `mcp__docs-mcp docs_check_cross_refs` on `docs/guides/hive.md` (scope matrix should be linked). [SMALL — automated checks] <!-- resolved: src/tapps_brain/, docs/ -->
 
