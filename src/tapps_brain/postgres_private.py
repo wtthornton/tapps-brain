@@ -58,14 +58,13 @@ class PostgresPrivateBackend:
     ``001_initial.sql``).  The lighter-weight ``private_relations`` table is
     created inline on first use via :meth:`_ensure_relations_table`.
 
-    Protocol-compatibility sentinels
-    ---------------------------------
+    Path sentinels
+    --------------
     ``db_path``, ``store_dir``, and ``audit_path`` return ``Path("/dev/null")``.
-    Code that relies on these paths (``DiagnosticsHistoryStore``, ``FeedbackStore``,
-    JSONL ``AuditReader``) is **not supported** by this backend in v3.  Callers will
-    silently degrade: ``append_audit`` is a no-op, and SQLite-backed diagnostics /
-    feedback tables will not be populated.  Postgres-native replacements are
-    planned in upcoming stories (059.7, 061).
+    v3 is Postgres-only (ADR-007) — these paths exist for legacy protocol
+    compatibility and are not written to.  JSONL audit is a no-op; feedback
+    events live in the ``feedback_events`` table (migration 003) via
+    :class:`~tapps_brain.feedback.FeedbackStore`.
     """
 
     def __init__(
@@ -108,13 +107,8 @@ class PostgresPrivateBackend:
 
     @property
     def encryption_key(self) -> str | None:
-        """Always ``None`` — Postgres does not use SQLCipher."""
+        """Always ``None`` — Postgres uses pg_tde at the storage layer (ADR-007)."""
         return None
-
-    @property
-    def sqlcipher_enabled(self) -> bool:
-        """Always ``False`` — Postgres backend does not use SQLCipher."""
-        return False
 
     # ------------------------------------------------------------------
     # Core CRUD — private_memories table
@@ -346,14 +340,14 @@ class PostgresPrivateBackend:
     # Vector similarity search
     # ------------------------------------------------------------------
 
-    def sqlite_vec_knn_search(
+    def knn_search(
         self, query_embedding: list[float], k: int
     ) -> list[tuple[str, float]]:
-        """Approximate nearest-neighbour search via ``pgvector`` cosine distance.
+        """Approximate nearest-neighbour search via pgvector cosine distance.
 
-        Uses the ``idx_priv_embedding_ivfflat`` index when data has been loaded.
-        Returns ``(key, distance)`` pairs, lowest distance first.  Returns ``[]``
-        if the ``embedding`` column is unpopulated or on any DB error.
+        Uses the ``idx_priv_embedding_hnsw`` index (migration 002).  Returns
+        ``(key, distance)`` pairs, lowest distance first.  Returns ``[]`` if
+        the ``embedding`` column is unpopulated or on any DB error.
         """
         if not query_embedding:
             return []
@@ -375,7 +369,7 @@ class PostgresPrivateBackend:
             logger.debug("postgres_private.knn_search_failed", exc_info=True)
             return []
 
-    def sqlite_vec_row_count(self) -> int:
+    def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute(
@@ -521,16 +515,101 @@ class PostgresPrivateBackend:
         key: str,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        """No-op: Postgres private backend does not write a JSONL audit log.
+        """Append a row to the Postgres ``audit_log`` table (migration 005).
 
-        A structured Postgres audit table will be introduced in a future story.
+        Best-effort: failures are logged but never raised — audit MUST NOT
+        block the hot save/delete path.
         """
-        logger.debug(
-            "postgres_private.audit_noop",
-            action=action,
-            key=key,
-            extra=extra,
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO audit_log
+                        (project_id, agent_id, event_type, key, details)
+                    VALUES (%s, %s, %s, %s, %s::jsonb)
+                    """,
+                    (
+                        self._project_id,
+                        self._agent_id,
+                        action,
+                        key or "",
+                        json.dumps(extra or {}, default=str),
+                    ),
+                )
+        except Exception:
+            logger.debug(
+                "postgres_private.audit_append_failed",
+                action=action,
+                key=key,
+                exc_info=True,
+            )
+
+    def query_audit(
+        self,
+        *,
+        key: str | None = None,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Read entries from ``audit_log`` for this ``(project_id, agent_id)``.
+
+        Returns dicts with ``timestamp`` (ISO-8601 string), ``event_type``,
+        ``key``, and ``details``.  Ordered oldest-to-newest.
+        """
+        conditions: list[str] = ["project_id = %s", "agent_id = %s"]
+        params: list[Any] = [self._project_id, self._agent_id]
+        if key is not None:
+            conditions.append("key = %s")
+            params.append(key)
+        if event_type is not None:
+            conditions.append("event_type = %s")
+            params.append(event_type)
+        if since is not None:
+            conditions.append("timestamp >= %s")
+            params.append(since)
+        if until is not None:
+            conditions.append("timestamp <= %s")
+            params.append(until)
+        where = " AND ".join(conditions)
+        sql = (
+            "SELECT timestamp, event_type, key, details "
+            f"FROM audit_log WHERE {where} "
+            "ORDER BY timestamp ASC, id ASC LIMIT %s"
         )
+        params.append(limit)
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+        except Exception:
+            logger.debug("postgres_private.audit_query_failed", exc_info=True)
+            return []
+
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            ts = r[0]
+            ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+            details_raw = r[3]
+            if isinstance(details_raw, dict):
+                details = details_raw
+            elif isinstance(details_raw, str):
+                try:
+                    details = json.loads(details_raw)
+                except (json.JSONDecodeError, TypeError):
+                    details = {}
+            else:
+                details = {}
+            results.append(
+                {
+                    "timestamp": ts_str,
+                    "event_type": str(r[1]),
+                    "key": str(r[2] or ""),
+                    "details": details,
+                }
+            )
+        return results
 
     # ------------------------------------------------------------------
     # Lifecycle

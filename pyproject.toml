@@ -12,7 +12,7 @@ readme = "README.md"
 authors = [
     { name = "TappsMCP Contributors" },
 ]
-keywords = ["memory", "ai", "coding-assistant", "bm25", "knowledge-store", "sqlite"]
+keywords = ["memory", "ai", "coding-assistant", "bm25", "knowledge-store", "postgres", "pgvector"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -27,10 +27,11 @@ dependencies = [
     "pydantic>=2.12.5,<3",
     "structlog>=25.5.0,<26",
     "pyyaml>=6.0.3,<7",
-    # Vector semantic search — sqlite-vec is the default ANN index.
+    # Vector semantic search — pgvector HNSW is the ANN index (see migrations/private).
     "numpy>=2.4.2,<3",
     "sentence-transformers>=5.2.3,<6",
-    "sqlite-vec>=0.1.9,<0.2",
+    # Postgres driver for private memory / hive / federation (EPIC-059).
+    "psycopg[binary,pool]>=3.2,<4",
     # OTel API is a no-op by default; users install opentelemetry-sdk for actual export.
     "opentelemetry-api>=1.20,<2",
 ]
@@ -55,9 +56,6 @@ mcp = [
 ]
 reranker = [
     "flashrank>=0.2.9,<0.3",
-]
-encryption = [
-    "pysqlcipher3>=1.2.0,<2",
 ]
 otel = [
     "opentelemetry-sdk>=1.20,<2",
@@ -96,7 +94,6 @@ markers = [
     "benchmark: performance benchmarks (deselect with '-m not benchmark')",
     "requires_cli: tests requiring the [cli] extra (typer)",
     "requires_mcp: tests requiring the [mcp] extra (mcp SDK)",
-    "requires_encryption: tests requiring SQLCipher (pysqlcipher3 + optional system lib)",
 ]
 filterwarnings = [
     "error::ResourceWarning",
@@ -115,8 +112,6 @@ module = [
     "numpy.*",
     "sentence_transformers",
     "sentence_transformers.*",
-    "sqlite_vec",
-    "sqlite_vec.*",
     "flashrank",
     "flashrank.*",
     "yaml",
@@ -126,8 +121,8 @@ module = [
     "opentelemetry.*",
     "playwright",
     "playwright.*",
-    "pysqlcipher3",
-    "pysqlcipher3.*",
+    "psycopg",
+    "psycopg.*",
 ]
 ignore_missing_imports = true
 

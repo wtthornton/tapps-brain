@@ -323,21 +323,16 @@ class AgentRegistryBackend(Protocol):
 class PrivateBackend(Protocol):
     """Backend protocol for private agent memory storage.
 
-    Decouples :class:`~tapps_brain.store.MemoryStore` from the concrete
-    :class:`~tapps_brain.persistence.MemoryPersistence` (SQLite) and
-    :class:`~tapps_brain.postgres_private.PostgresPrivateBackend` (Postgres)
-    implementations.
-
+    The only supported implementation in v3 is
+    :class:`~tapps_brain.postgres_private.PostgresPrivateBackend` (ADR-007).
     All operations are implicitly scoped to a single ``(project_id, agent_id)``
     pair — implementations supply tenant isolation at construction time.
 
     Path sentinels
     --------------
     ``db_path``, ``store_dir``, and ``audit_path`` must return :class:`Path`
-    objects but may point to ``Path("/dev/null")`` when the backend has no
-    on-disk representation (e.g. Postgres).  Callers that depend on these paths
-    (diagnostics history, JSONL audit, FeedbackStore) must degrade gracefully
-    when the paths do not exist.
+    objects but point at ``Path("/dev/null")`` under the Postgres backend.
+    They exist for legacy diagnostics call sites and are not written to.
     """
 
     # -- Properties required by MemoryStore callers -------------------------
@@ -353,9 +348,6 @@ class PrivateBackend(Protocol):
 
     @property
     def encryption_key(self) -> str | None: ...
-
-    @property
-    def sqlcipher_enabled(self) -> bool: ...
 
     # -- Core CRUD -----------------------------------------------------------
 
@@ -389,11 +381,11 @@ class PrivateBackend(Protocol):
 
     def get_schema_version(self) -> int: ...
 
-    def sqlite_vec_knn_search(
+    def knn_search(
         self, query_embedding: list[float], k: int
     ) -> list[tuple[str, float]]: ...
 
-    def sqlite_vec_row_count(self) -> int: ...
+    def vector_row_count(self) -> int: ...
 
     def append_audit(
         self,

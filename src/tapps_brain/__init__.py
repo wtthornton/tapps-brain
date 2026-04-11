@@ -22,7 +22,7 @@ from tapps_brain.agent_brain import BrainValidationError as BrainValidationError
 
 # Async (Issue #66)
 from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
-from tapps_brain.backends import SqliteAgentRegistryBackend as SqliteAgentRegistryBackend
+from tapps_brain.backends import FileAgentRegistryBackend as FileAgentRegistryBackend
 from tapps_brain.backends import create_federation_backend as create_federation_backend
 from tapps_brain.backends import create_hive_backend as create_hive_backend
 from tapps_brain.backends import resolve_hive_backend_from_env as resolve_hive_backend_from_env
@@ -169,8 +169,8 @@ __all__ = [
     "ScoredMemory",
     "ScoringConfig",
     "SimilarityResult",
+    "FileAgentRegistryBackend",
     "SlidingWindowRateLimiter",
-    "SqliteAgentRegistryBackend",
     "StoreHealthReport",
     "__version__",
     "calculate_decayed_confidence",

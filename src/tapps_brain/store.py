@@ -1,14 +1,14 @@
-"""In-memory cache backed by SQLite for the shared memory subsystem.
+"""In-memory cache backed by Postgres for the shared memory subsystem.
 
-Provides fast reads from an in-memory dict with write-through to SQLite.
+Provides fast reads from an in-memory dict with write-through to the
+``PostgresPrivateBackend`` (ADR-007 — Postgres-only persistence plane).
 RAG safety checks on save prevent prompt injection in stored content.
-Auto-consolidation triggers on save when enabled (Epic 58).
+Auto-consolidation triggers on save when enabled (EPIC-058).
 """
 
 from __future__ import annotations
 
 import os
-import sqlite3
 import threading
 import time
 from collections import deque
@@ -28,7 +28,6 @@ from tapps_brain.models import (
     MemoryTier,
     _utc_now_iso,
 )
-from tapps_brain.persistence import MemoryPersistence
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -188,11 +187,12 @@ class MemoryStore:
     Thread-safe: one ``threading.Lock`` serializes orchestration and cache access.
     Optional ``lock_timeout_seconds`` or env ``TAPPS_STORE_LOCK_TIMEOUT_S`` (>0) makes
     contended acquires fail fast with :exc:`MemoryStoreLockTimeout` instead of blocking.
-    Write-through: every mutation updates both the in-memory dict and SQLite synchronously.
-    Auto-consolidation triggers on save when enabled (Epic 58).
+    Write-through: every mutation updates both the in-memory dict and Postgres synchronously.
+    Auto-consolidation triggers on save when enabled (EPIC-058).
 
-    Semantic search via sqlite-vec is enabled by default.  Pass
-    ``embedding_provider=None`` to explicitly disable it.
+    Semantic search via pgvector HNSW is always available under the
+    Postgres-only persistence plane (ADR-007).  Pass ``embedding_provider=None``
+    to disable embedding computation entirely.
     """
 
     def __init__(
@@ -225,30 +225,34 @@ class MemoryStore:
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
 
-        # EPIC-059 STORY-059.5: when a Postgres PrivateBackend is supplied, use it
-        # directly instead of creating a per-agent SQLite MemoryPersistence file.
-        if private_backend is not None:
-            self._persistence: MemoryPersistence | PrivateBackend = private_backend
-        else:
-            try:
-                self._persistence = MemoryPersistence(
-                    project_root,
-                    store_dir=store_dir,
-                    agent_id=agent_id,
-                    encryption_key=encryption_key,
-                    lexical_config=_lexical,
+        # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
+        # When the caller does not pass one, resolve it from
+        # TAPPS_BRAIN_DATABASE_URL via backends.resolve_private_backend_from_env.
+        # If the env var is also missing we hard-fail — there is no SQLite fallback.
+        if private_backend is None:
+            from tapps_brain.backends import (
+                derive_project_id,
+                resolve_private_backend_from_env,
+            )
+
+            _resolved_agent_id = agent_id or "default"
+            _project_id = derive_project_id(project_root)
+            private_backend = resolve_private_backend_from_env(
+                _project_id, _resolved_agent_id
+            )
+            if private_backend is None:
+                msg = (
+                    "MemoryStore requires a Postgres private_backend (ADR-007). "
+                    "Set TAPPS_BRAIN_DATABASE_URL to a postgres:// or postgresql:// "
+                    "DSN, or pass an explicit private_backend constructed via "
+                    "tapps_brain.backends.create_private_backend(dsn, ...). "
+                    "SQLite is no longer supported."
                 )
-            except sqlite3.DatabaseError:
-                if agent_id is not None:
-                    _db_path = project_root / store_dir / "agents" / agent_id / "memory.db"
-                else:
-                    _db_path = project_root / store_dir / "memory" / "memory.db"
-                logger.error(
-                    "database_corrupt",
-                    path=str(_db_path),
-                    message=f"Database corrupt: {_db_path}. Back up and delete to recover.",
-                )
-                raise
+                raise ValueError(msg)
+        # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
+        # kept in the signature for API compatibility but ignored on Postgres.
+        _ = (store_dir, encryption_key, _lexical)
+        self._persistence: PrivateBackend = private_backend
         self._lock = threading.Lock()
         if lock_timeout_seconds is not None:
             self._lock_timeout_sec = (
@@ -893,20 +897,11 @@ class MemoryStore:
                     except Exception:
                         logger.debug("embedding_compute_failed", key=key, exc_info=True)
 
-            # Persist to SQLite — rollback in-memory cache on failure to
+            # Persist to Postgres — rollback in-memory cache on failure to
             # maintain write-through consistency.
             try:
                 with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
                     self._persistence.save(entry)
-            except sqlite3.OperationalError as exc:
-                if "database is locked" in str(exc):
-                    self._metrics.increment("store.sqlite_busy_count")
-                with self._serialized():
-                    if existing is not None:
-                        self._entries[key] = existing
-                    else:
-                        self._entries.pop(key, None)
-                raise
             except Exception:
                 with self._serialized():
                     if existing is not None:
@@ -914,6 +909,17 @@ class MemoryStore:
                     else:
                         self._entries.pop(key, None)
                 raise
+
+            # Audit (best-effort — append_audit swallows its own exceptions).
+            self._persistence.append_audit(
+                action="save",
+                key=key,
+                extra={
+                    "tier": str(entry.tier),
+                    "value_len": len(entry.value),
+                    "is_update": existing is not None,
+                },
+            )
 
             # Hive propagation (EPIC-011)
             if self._hive_store is not None:
@@ -1262,6 +1268,13 @@ class MemoryStore:
                 with self._serialized():
                     self._entries[key] = removed
                 raise
+
+            # Audit (best-effort).
+            self._persistence.append_audit(
+                action="delete",
+                key=key,
+                extra={"tier": str(removed.tier)},
+            )
             return True
 
     @staticmethod
@@ -1468,24 +1481,24 @@ class MemoryStore:
         )
 
     def get_schema_version(self) -> int:
-        """Return the current SQLite schema version."""
+        """Return the current private-memory schema version."""
         return self._persistence.get_schema_version()
 
-    def sqlite_vec_knn_search(
+    def knn_search(
         self, query_embedding: list[float], k: int
     ) -> list[tuple[str, float]]:
-        """KNN search via sqlite-vec when enabled (GitHub #30); else empty."""
-        return self._persistence.sqlite_vec_knn_search(query_embedding, k)
+        """Approximate-nearest-neighbour search via pgvector HNSW."""
+        return self._persistence.knn_search(query_embedding, k)
 
     @property
-    def sqlite_vec_enabled(self) -> bool:
-        """True when sqlite-vec ANN index is active."""
-        return bool(getattr(self._persistence, "_sqlite_vec_enabled", False))
+    def vector_index_enabled(self) -> bool:
+        """Always True under the Postgres backend (pgvector is a hard dependency)."""
+        return True
 
     @property
-    def sqlite_vec_row_count(self) -> int:
-        """Row count in ``memory_vec`` (0 when disabled)."""
-        return self._persistence.sqlite_vec_row_count()
+    def vector_row_count(self) -> int:
+        """Number of private_memories rows with a non-NULL embedding vector."""
+        return self._persistence.vector_row_count()
 
     # ------------------------------------------------------------------
     # Reinforcement (Story 002.2)
@@ -2238,7 +2251,6 @@ class MemoryStore:
             rate_limit_total_writes=rl_stats.total_writes,
             rate_limit_exempt_writes=rl_stats.exempt_writes,
             relation_count=self.count_relations(),
-            sqlcipher_enabled=self._persistence.sqlcipher_enabled,
             save_phase_summary=save_phases,
             rag_safety_ruleset_version=eff_ruleset,
             rag_safety_blocked_count=int(_ctr.get("rag_safety.blocked", 0)),
@@ -2351,9 +2363,9 @@ class MemoryStore:
         until: str | None = None,
         limit: int = 100,
     ) -> list[Any]:
-        """Query the JSONL audit trail.
+        """Query the audit trail (Postgres ``audit_log`` table — migration 005).
 
-        Convenience wrapper around ``AuditReader.query()``.
+        Convenience wrapper around :class:`~tapps_brain.audit.AuditReader`.
 
         Args:
             key: Filter by memory entry key.
@@ -2367,7 +2379,7 @@ class MemoryStore:
         """
         from tapps_brain.audit import AuditReader
 
-        reader = AuditReader(self._persistence.audit_path)
+        reader = AuditReader(self._persistence)
         return reader.query(
             key=key,
             event_type=event_type,
@@ -2444,9 +2456,19 @@ class MemoryStore:
             return
         from tapps_brain.diagnostics import DiagnosticsHistoryStore
 
+        cm = getattr(self._persistence, "_cm", None)
+        project_id = getattr(self._persistence, "_project_id", None)
+        agent_id = getattr(self._persistence, "_agent_id", None)
+        if cm is None or project_id is None or agent_id is None:
+            # Backend has no Postgres connection manager (e.g. unit-test
+            # InMemoryPrivateBackend).  Diagnostics history is silently
+            # unavailable in that case — record() / history() are no-ops.
+            logger.debug("diagnostics_history.skipped_no_postgres_cm")
+            return
         self._diagnostics_history_store = DiagnosticsHistoryStore(
-            self._persistence.db_path,
-            encryption_key=self._persistence.encryption_key,
+            cm,
+            project_id=project_id,
+            agent_id=agent_id,
         )
         self._anomaly_detector.reset_from_history(
             self._diagnostics_history_store.history(limit=500)
@@ -2851,23 +2873,42 @@ class MemoryStore:
     # ------------------------------------------------------------------
 
     def _get_feedback_store(self) -> FeedbackStore:
-        """Return the lazily-initialized FeedbackStore.
+        """Return the lazily-initialized :class:`FeedbackStore`.
 
-        The store shares the project's ``memory.db`` and audit log.
-        FeedbackConfig is resolved from the active profile when available.
+        Reuses the ``PostgresPrivateBackend``'s connection manager so feedback
+        events live in the same physical database as the memories they describe
+        (table: ``feedback_events``, migration 003).  ``FeedbackConfig`` is
+        resolved from the active profile when available.
+
+        Raises:
+            RuntimeError: When the active backend has no Postgres connection
+                manager (e.g. the unit-test ``InMemoryPrivateBackend``) and a
+                feedback operation is attempted.  Tests that exercise the
+                feedback path must inject a real ``PostgresPrivateBackend``.
         """
         if self._feedback_store_instance is None:
             from tapps_brain.feedback import FeedbackConfig, FeedbackStore
+
+            cm = getattr(self._persistence, "_cm", None)
+            project_id = getattr(self._persistence, "_project_id", None)
+            agent_id = getattr(self._persistence, "_agent_id", None)
+            if cm is None or project_id is None or agent_id is None:
+                msg = (
+                    "FeedbackStore requires a PostgresPrivateBackend with a "
+                    "PostgresConnectionManager, project_id, and agent_id. "
+                    "v3 is Postgres-only (ADR-007)."
+                )
+                raise RuntimeError(msg)
 
             config: FeedbackConfig | None = None
             if self._profile is not None:
                 config = getattr(self._profile, "feedback", None)
 
             self._feedback_store_instance = FeedbackStore(
-                db_path=self._persistence.db_path,
-                audit_path=self._persistence.audit_path,
+                cm,
+                project_id=project_id,
+                agent_id=agent_id,
                 config=config,
-                encryption_key=self._persistence.encryption_key,
             )
         return self._feedback_store_instance
 

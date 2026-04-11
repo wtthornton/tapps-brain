@@ -1,19 +1,19 @@
-"""Audit trail query API for the JSONL audit log (EPIC-007).
+"""Audit trail query API (EPIC-007).
 
-Provides ``AuditReader`` to query the existing append-only JSONL audit log
-written by ``MemoryPersistence``. Reads lazily using seek/readline —
-does not load the entire file into memory.
+Provides :class:`AuditReader`, which queries the Postgres ``audit_log`` table
+created by migration 005.  Under the v3 Postgres-only persistence plane
+(ADR-007) the legacy JSONL audit file is gone; ``AuditReader`` now wraps a
+:class:`~tapps_brain.postgres_private.PostgresPrivateBackend` directly.
 """
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -36,14 +36,16 @@ class AuditEntry(BaseModel):
 
 
 class AuditReader:
-    """Query interface for the JSONL audit log.
+    """Query interface for the Postgres ``audit_log`` table (migration 005).
 
-    Reads line-by-line from the file to avoid loading the entire log
-    into memory.
+    Wraps a backend (typically a
+    :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`) that
+    exposes a ``query_audit`` method.  Falls back to an empty result set when
+    the backend has no audit support (e.g. unit-test InMemoryPrivateBackend).
     """
 
-    def __init__(self, audit_path: Path) -> None:
-        self._path = audit_path
+    def __init__(self, backend: Any) -> None:  # noqa: ANN401
+        self._backend = backend
 
     def query(
         self,
@@ -54,67 +56,26 @@ class AuditReader:
         until: str | None = None,
         limit: int = 100,
     ) -> list[AuditEntry]:
-        """Query audit log entries with optional filters.
-
-        Args:
-            key: Filter by memory entry key.
-            event_type: Filter by event type (save, delete, etc.).
-            since: ISO-8601 lower bound (inclusive).
-            until: ISO-8601 upper bound (inclusive).
-            limit: Maximum number of entries to return.
-
-        Returns:
-            Matching audit entries, most recent last.
-        """
-        if not self._path.exists():
+        """Query audit log entries with optional filters."""
+        query_audit = getattr(self._backend, "query_audit", None)
+        if query_audit is None:
             return []
-
-        results: list[AuditEntry] = []
-
-        with self._path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                # Map the existing audit log format to AuditEntry
-                entry_key = record.get("key", "")
-                entry_action = record.get("action", "")
-                entry_ts = record.get("timestamp", "")
-
-                # Apply filters
-                if key is not None and entry_key != key:
-                    continue
-                if event_type is not None and entry_action != event_type:
-                    continue
-                if since is not None and entry_ts < since:
-                    continue
-                if until is not None and entry_ts > until:
-                    continue
-
-                # Build details from any extra fields
-                details: dict[str, object] = {
-                    k: v for k, v in record.items() if k not in ("key", "action", "timestamp")
-                }
-
-                results.append(
-                    AuditEntry(
-                        timestamp=entry_ts,
-                        event_type=entry_action,
-                        key=entry_key,
-                        details=details,
-                    )
-                )
-
-                if len(results) >= limit:
-                    break
-
-        return results
+        rows: list[dict[str, Any]] = query_audit(
+            key=key,
+            event_type=event_type,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+        return [
+            AuditEntry(
+                timestamp=str(r.get("timestamp", "")),
+                event_type=str(r.get("event_type", "")),
+                key=str(r.get("key", "")),
+                details=dict(r.get("details") or {}),
+            )
+            for r in rows
+        ]
 
     def count(
         self,
@@ -122,25 +83,5 @@ class AuditReader:
         key: str | None = None,
         event_type: str | None = None,
     ) -> int:
-        """Count matching audit entries without returning them."""
-        if not self._path.exists():
-            return 0
-
-        count = 0
-        with self._path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                if key is not None and record.get("key", "") != key:
-                    continue
-                if event_type is not None and record.get("action", "") != event_type:
-                    continue
-                count += 1
-
-        return count
+        """Count matching audit entries."""
+        return len(self.query(key=key, event_type=event_type, limit=10_000))

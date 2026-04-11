@@ -50,14 +50,19 @@ python3 -m http.server 8080 --directory examples/brain-visual
 
 **Contributors (Cursor / VS Code):** after clone, see [AGENTS.md](AGENTS.md) for `uv sync`, tests, and pointers to `.vscode/` tasks and `.cursor/mcp.json`.
 
+> **PostgreSQL is required.** As of [ADR-007](docs/planning/adr/ADR-007-postgres-only-no-sqlite.md) (2026-04-11), tapps-brain is **Postgres-only** — there is no SQLite or in-process fallback.  `MemoryStore.__init__` raises `ValueError` if `TAPPS_BRAIN_DATABASE_URL` is unset and no explicit `private_backend` is supplied.  For local dev, run `make brain-up` to start the bundled `pgvector/pg17` container.
+
 ```bash
 pip install tapps-brain
+make brain-up   # starts Postgres + pgvector on localhost:5432
+export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_dev
 ```
 
 ```python
 from pathlib import Path
 from tapps_brain import MemoryStore
 
+# MemoryStore reads TAPPS_BRAIN_DATABASE_URL automatically.
 store = MemoryStore(Path("."))
 
 store.save(
@@ -103,13 +108,15 @@ chain = store.history("pricing-plan")
 ## Installation
 
 ```bash
-pip install tapps-brain                 # core library (includes sqlite-vec + sentence-transformers)
+pip install tapps-brain                 # core library (includes psycopg[binary] + sentence-transformers)
 pip install tapps-brain[mcp]            # + MCP server for Claude Code, Cursor, VS Code Copilot
 pip install tapps-brain[reranker]       # + FlashRank local reranking (no API key needed)
 pip install tapps-brain[visual]         # + Playwright headless PNG capture (tapps-brain visual capture)
 pip install tapps-brain[otel]           # + OpenTelemetry types/helpers (not wired to CLI/MCP yet — see docs/guides/observability.md)
 pip install tapps-brain[all]            # everything above (except visual and otel)
 ```
+
+> **PostgreSQL backend.** Vector ANN is **pgvector HNSW** (`m=16, ef_construction=200`); lexical retrieval is `tsvector` + GIN with A/B/C weighting; at-rest encryption is delegated to the storage layer (Percona `pg_tde` 2.1.2 or cloud TDE). The historical SQLite, `sqlite-vec`, and SQLCipher dependencies were removed in [ADR-007](docs/planning/adr/ADR-007-postgres-only-no-sqlite.md) stage 2.
 
 > **Visual PNG capture:** after `pip install tapps-brain[visual]`, also run `playwright install chromium` once to download the browser binary. See [Visual snapshot guide](docs/guides/visual-snapshot.md).
 

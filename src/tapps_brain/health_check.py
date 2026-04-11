@@ -39,19 +39,19 @@ class StoreHealth(BaseModel):
     tiers: dict[str, int] = Field(default_factory=dict)
     gc_candidates: int = 0
     consolidation_candidates: int = 0
-    sqlite_vec_enabled: bool = False
-    sqlite_vec_rows: int = 0
-    # GitHub #63 — effective retrieval / vector stack (no model load on health check)
+    vector_index_enabled: bool = True
+    vector_index_rows: int = 0
+    # Effective retrieval / vector stack (no model load on health check)
     retrieval_effective_mode: str = Field(
         default="unknown",
         description=(
-            "Machine-readable mode: bm25_only | hybrid_sqlite_vec_knn | "
-            "hybrid_sqlite_vec_empty | hybrid_on_the_fly_embeddings | unknown"
+            "Machine-readable mode: bm25_only | hybrid_pgvector_hnsw | "
+            "hybrid_pgvector_empty | hybrid_on_the_fly_embeddings | unknown"
         ),
     )
     retrieval_summary: str = Field(
         default="",
-        description="One-line explanation of BM25 vs vector vs sqlite-vec for operators.",
+        description="One-line explanation of BM25 vs pgvector HNSW for operators.",
     )
     save_phase_summary: str = Field(
         default="",
@@ -131,37 +131,29 @@ class HealthReport(BaseModel):
 
 
 def retrieval_health_slice(store: object) -> tuple[str, str]:
-    """Public alias for dashboards/visual export: BM25 vs hybrid vs sqlite-vec (no model load)."""
+    """Public alias for dashboards/visual export: BM25 vs hybrid vs pgvector HNSW (no model load)."""
     return _retrieval_health_from_store(store)
 
 
 def _retrieval_health_from_store(store: object) -> tuple[str, str]:
-    """Derive retrieval mode from installed extras and store state (GitHub #63).
+    """Derive retrieval mode from store state (ADR-007 — pgvector HNSW always on).
 
     Does not load sentence-transformers models — uses feature detection only.
     """
-    sv_raw = getattr(store, "sqlite_vec_enabled", False)
-    sv_on = bool(sv_raw() if callable(sv_raw) else sv_raw)
-    sv_n_raw = getattr(store, "sqlite_vec_row_count", 0)
+    sv_n_raw = getattr(store, "vector_row_count", 0)
     sv_n = int(sv_n_raw() if callable(sv_n_raw) else sv_n_raw)
 
     cli_note = " CLI `memory search` default: BM25-only."
 
-    if sv_on and sv_n > 0:
+    if sv_n > 0:
         return (
-            "hybrid_sqlite_vec_knn",
-            f"Hybrid BM25+vector; sqlite-vec KNN index on ({sv_n} rows)." + cli_note,
-        )
-    if sv_on:
-        return (
-            "hybrid_sqlite_vec_empty",
-            "Hybrid-capable: sqlite-vec extension on but `memory_vec` empty — "
-            "vector leg may embed on the fly." + cli_note,
+            "hybrid_pgvector_hnsw",
+            f"Hybrid BM25+vector; pgvector HNSW index ({sv_n} embedded rows)." + cli_note,
         )
     return (
-        "hybrid_on_the_fly_embeddings",
-        "Hybrid BM25+vector; no sqlite-vec KNN — vector leg uses on-the-fly embedding "
-        "(heavier on large corpora)." + cli_note,
+        "hybrid_pgvector_empty",
+        "Hybrid-capable: pgvector HNSW index ready but no embedded rows yet — "
+        "vector leg may embed on the fly." + cli_note,
     )
 
 
@@ -190,11 +182,9 @@ def run_health_check(  # noqa: PLR0915
             metrics. Caller must not close it. When omitted, a temporary store is
             opened and closed.
         hive_store: Optional pre-configured Hive backend (``HiveBackend`` protocol).
-            When provided, this backend is used to probe Hive health instead of
-            creating a default SQLite ``HiveStore``.  Pass the backend configured
-            for the active deployment (SQLite *or* Postgres).  When omitted the
-            function checks ``store._hive_store``, then ``TAPPS_BRAIN_HIVE_DSN``,
-            then falls back to the default SQLite path.
+            When provided, this backend is used to probe Hive health.  When
+            omitted the function checks ``store._hive_store`` and then
+            ``TAPPS_BRAIN_HIVE_DSN`` (Postgres-only — ADR-007).
 
     Returns:
         HealthReport with structured results.
@@ -224,18 +214,17 @@ def run_health_check(  # noqa: PLR0915
             store_health.tiers = dict(report.tier_distribution)
             store_health.gc_candidates = report.gc_candidates
             store_health.consolidation_candidates = report.consolidation_candidates
-            store_health.sqlite_vec_enabled = ms.sqlite_vec_enabled
-            store_health.sqlite_vec_rows = ms.sqlite_vec_row_count
+            store_health.vector_index_enabled = ms.vector_index_enabled
+            store_health.vector_index_rows = ms.vector_row_count
             mode, summary = retrieval_health_slice(ms)
             store_health.retrieval_effective_mode = mode
             store_health.retrieval_summary = summary
             store_health.save_phase_summary = getattr(report, "save_phase_summary", "") or ""
             store_health.profile_seed_version = getattr(report, "profile_seed_version", None)
 
-            # Size on disk
-            db_path = root / ".tapps-brain" / "memory" / "memory.db"
-            if db_path.exists():
-                store_health.size_bytes = db_path.stat().st_size
+            # Size on disk is no longer reported under the Postgres backend —
+            # the database lives in shared infrastructure (ADR-007).
+            store_health.size_bytes = 0
 
             # Checks
             if report.entry_count == 0:

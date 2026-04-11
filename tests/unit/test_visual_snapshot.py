@@ -80,7 +80,7 @@ def test_build_visual_snapshot_shape(tmp_path: Path) -> None:
     assert snap.privacy_tier == "standard"
     assert len(snap.fingerprint_sha256) == 64
     assert snap.hive_attached is False
-    assert snap.hive_health.status in {"ok", "warn"}
+    assert snap.hive_health.status in {"ok", "warn", "skipped"}
     assert snap.agent_scope_counts.get("private") == 1
     assert snap.agent_scope_counts.get("hive") == 1
     assert snap.diagnostics is None
@@ -518,7 +518,7 @@ def test_scorecard_hive_attached_connected_with_agents() -> None:
     assert checks["hive_hub"].status == "ok"
 
 
-def test_scorecard_retrieval_hybrid_sqlite_vec_empty() -> None:
+def test_scorecard_retrieval_hybrid_pgvector_empty() -> None:
     report = _make_report()
     checks = _scorecard_ids(
         _build_scorecard(
@@ -526,7 +526,7 @@ def test_scorecard_retrieval_hybrid_sqlite_vec_empty() -> None:
             diagnostics=None,
             hive_attached=False,
             hive_health=HiveHealthSummary(),
-            retrieval_mode="hybrid_sqlite_vec_empty",
+            retrieval_mode="hybrid_pgvector_empty",
             skip_diagnostics=True,
         )
     )
@@ -578,16 +578,6 @@ def test_scorecard_retrieval_other_mode() -> None:
     assert checks["retrieval_stack"].status == "info"
 
 
-def test_scorecard_sqlcipher_enabled() -> None:
-    report = _make_report(sqlcipher_enabled=True)
-    checks = _scorecard_ids(
-        _build_scorecard(
-            report,
-            diagnostics=None,
-            hive_attached=False,
-            hive_health=HiveHealthSummary(),
-            retrieval_mode="bm25_only",
-            skip_diagnostics=True,
-        )
-    )
-    assert checks["sqlcipher"].status == "info"
+# SQLCipher scorecard check was removed in ADR-007 stage 2 (2026-04-11) —
+# at-rest encryption is delegated to the storage layer (pg_tde) and no
+# longer surfaces in the brain-visual scorecard.

@@ -19,7 +19,7 @@ from tapps_brain._protocols import (
     FederationBackend,
     HiveBackend,
 )
-from tapps_brain.backends import AgentRegistry, SqliteAgentRegistryBackend
+from tapps_brain.backends import AgentRegistry, FileAgentRegistryBackend
 
 # ---------------------------------------------------------------------------
 # runtime_checkable sanity
@@ -54,8 +54,8 @@ def test_agent_registry_satisfies_agent_registry_backend(tmp_path: Path) -> None
     assert isinstance(registry, AgentRegistryBackend)
 
 
-def test_sqlite_agent_registry_backend_satisfies_protocol(tmp_path: Path) -> None:
-    backend = SqliteAgentRegistryBackend(registry_path=tmp_path / "agents.yaml")
+def test_file_agent_registry_backend_satisfies_protocol(tmp_path: Path) -> None:
+    backend = FileAgentRegistryBackend(registry_path=tmp_path / "agents.yaml")
     assert isinstance(backend, AgentRegistryBackend)
 
 

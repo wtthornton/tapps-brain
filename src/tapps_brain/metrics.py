@@ -124,8 +124,6 @@ class StoreHealthReport(BaseModel):
     rate_limit_exempt_writes: int = 0
     # Relation graph (M3)
     relation_count: int = 0
-    # Encrypted SQLite (GitHub #23)
-    sqlcipher_enabled: bool = False
     # Save-path phase latencies (EPIC-051.6); empty when no samples since process start
     save_phase_summary: str = Field(
         default="",

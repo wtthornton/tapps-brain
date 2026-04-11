@@ -22,7 +22,6 @@ import structlog
 from pydantic import BaseModel, Field
 
 from tapps_brain._protocols import HealthDimension
-from tapps_brain.sqlcipher_util import connect_sqlite
 
 if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
@@ -427,67 +426,108 @@ def run_diagnostics(
 
 
 # ---------------------------------------------------------------------------
-# Diagnostics history (SQLite)
+# Diagnostics history (Postgres — migrations/private/004_diagnostics_history.sql)
 # ---------------------------------------------------------------------------
 
 
 class DiagnosticsHistoryStore:
-    """Append-only diagnostics history in the project memory.db."""
+    """Append-only diagnostics history scoped to ``(project_id, agent_id)``.
 
-    def __init__(self, db_path: Path, *, encryption_key: str | None = None) -> None:
-        self._db_path = db_path
+    Persisted in the Postgres ``diagnostics_history`` table created by
+    migration 004.  Reuses the connection manager from
+    :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`.
+    """
+
+    def __init__(
+        self,
+        connection_manager: Any,  # PostgresConnectionManager  # noqa: ANN401
+        *,
+        project_id: str,
+        agent_id: str,
+    ) -> None:
+        self._cm = connection_manager
+        self._project_id = project_id
+        self._agent_id = agent_id
         self._lock = threading.Lock()
-        self._conn = connect_sqlite(
-            db_path,
-            encryption_key=encryption_key,
-            check_same_thread=False,
-        )
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
+        return None
 
     def record(self, report: DiagnosticsReport, *, circuit_state: str = "closed") -> str:
         rid = str(uuid.uuid4())
         dim_json = json.dumps({k: v.score for k, v in report.dimensions.items()})
-        payload = report.model_dump(mode="json")
-        with self._lock:
-            self._conn.execute(
+        payload = json.dumps(report.model_dump(mode="json"), default=str)
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
                 """
                 INSERT INTO diagnostics_history (
-                    id, recorded_at, composite_score, dimension_scores,
-                    circuit_state, full_report_json
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    project_id, agent_id, id, recorded_at, composite_score,
+                    dimension_scores, circuit_state, full_report
+                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
                 """,
                 (
+                    self._project_id,
+                    self._agent_id,
                     rid,
                     report.recorded_at,
                     report.composite_score,
                     dim_json,
                     circuit_state,
-                    json.dumps(payload, default=str),
+                    payload,
                 ),
             )
-            self._conn.commit()
         return rid
 
     def history(self, *, limit: int = 100) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM diagnostics_history ORDER BY recorded_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, recorded_at, composite_score, dimension_scores,
+                       circuit_state, full_report
+                FROM diagnostics_history
+                WHERE project_id = %s AND agent_id = %s
+                ORDER BY recorded_at DESC
+                LIMIT %s
+                """,
+                (self._project_id, self._agent_id, limit),
+            )
+            rows = cur.fetchall()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            recorded = r[1]
+            recorded_str = (
+                recorded.isoformat() if hasattr(recorded, "isoformat") else str(recorded)
+            )
+            dim_raw = r[3]
+            if isinstance(dim_raw, dict):
+                dim_json_str = json.dumps(dim_raw)
+            elif isinstance(dim_raw, str):
+                dim_json_str = dim_raw
+            else:
+                dim_json_str = "{}"
+            results.append(
+                {
+                    "id": str(r[0]),
+                    "recorded_at": recorded_str,
+                    "composite_score": float(r[2]),
+                    "dimension_scores": dim_json_str,
+                    "circuit_state": str(r[4]),
+                    "full_report": r[5],
+                }
+            )
+        return results
 
     def prune_older_than(self, days: int) -> int:
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
-        with self._lock:
-            cur = self._conn.execute(
-                "DELETE FROM diagnostics_history WHERE recorded_at < ?",
-                (cutoff,),
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM diagnostics_history
+                WHERE project_id = %s AND agent_id = %s AND recorded_at < %s
+                """,
+                (self._project_id, self._agent_id, cutoff),
             )
-            self._conn.commit()
-            return cur.rowcount
+            return int(cur.rowcount or 0)
 
     def rolling_average(self, *, dimension: str, window: int = 20) -> float | None:
         rows = self.history(limit=window)

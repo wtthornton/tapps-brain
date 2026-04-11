@@ -742,15 +742,11 @@ class MemoryRetriever:
         if not q:
             return empty
 
-        # Prefer sqlite-vec KNN when enabled (GitHub #30) — avoids full-corpus re-embedding.
-        # Vec0 returns L2 distance; map to a bounded score for RRF (monotonic for dist >= 0).
-        pv = getattr(store, "_persistence", None)
-        if (
-            pv is not None
-            and getattr(pv, "_sqlite_vec_enabled", False)
-            and len(q) == getattr(pv, "_sqlite_vec_dim", 0)
-        ):
-            knn = store.sqlite_vec_knn_search(q, limit)
+        # pgvector HNSW KNN (ADR-007) — always available under the Postgres
+        # private backend.  Returns cosine distance; map to a bounded similarity
+        # score for RRF (monotonic for dist >= 0).
+        if len(q) == 384:  # pgvector schema is vector(384) — see migration 001
+            knn = store.knn_search(q, limit)
             if knn:
                 scored_knn: list[tuple[str, float]] = []
                 for key, dist in knn:

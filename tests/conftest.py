@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
-from typing import TYPE_CHECKING
+import threading
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -13,7 +15,7 @@ import pytest
 # pass their own provider explicitly.
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterator
 
 _HAS_TYPER = importlib.util.find_spec("typer") is not None
 _HAS_MCP = importlib.util.find_spec("mcp") is not None
@@ -56,6 +58,153 @@ def _cached_embedding_model():
     _emb.get_embedding_provider = lambda model=_emb._DEFAULT_MODEL: _provider  # noqa: SLF001
     yield
     _emb.get_embedding_provider = _original
+
+
+# ---------------------------------------------------------------------------
+# In-memory PrivateBackend for unit tests (ADR-007 stage 2)
+# ---------------------------------------------------------------------------
+#
+# Production code is Postgres-only.  Unit tests previously relied on the
+# now-deleted SQLite ``MemoryPersistence``; we provide an in-process dict-backed
+# stand-in that satisfies the ``PrivateBackend`` protocol so the unit suite can
+# run without spinning up Docker Postgres.  Integration tests that exercise
+# real Postgres still set ``TAPPS_TEST_POSTGRES_DSN`` and bypass this fixture.
+
+
+class InMemoryPrivateBackend:
+    """Dict-backed PrivateBackend used by unit tests only — never in prod."""
+
+    def __init__(self, project_id: str = "test", agent_id: str = "test") -> None:
+        from tapps_brain.models import MemoryEntry  # noqa: F401  (typing only)
+
+        self._project_id = project_id
+        self._agent_id = agent_id
+        self._entries: dict[str, Any] = {}
+        self._relations: list[dict[str, Any]] = []
+        self._lock = threading.Lock()
+        self._db_path = Path("/dev/null")
+        self._store_dir = Path("/dev/null").parent
+        self._audit_path = Path("/dev/null")
+        # Sentinel attributes that store.py / FeedbackStore / DiagnosticsHistoryStore
+        # introspect to reach the underlying connection manager. Tests that need
+        # FeedbackStore must inject a real backend instead.
+        self._cm = None
+
+    @property
+    def store_dir(self) -> Path:
+        return self._store_dir
+
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
+    @property
+    def audit_path(self) -> Path:
+        return self._audit_path
+
+    @property
+    def encryption_key(self) -> str | None:
+        return None
+
+    def save(self, entry: Any) -> None:
+        with self._lock:
+            self._entries[entry.key] = entry
+
+    def load_all(self) -> list[Any]:
+        with self._lock:
+            return list(self._entries.values())
+
+    def delete(self, key: str) -> bool:
+        with self._lock:
+            return self._entries.pop(key, None) is not None
+
+    def search(self, query: str, **_kwargs: Any) -> list[Any]:
+        if not query.strip():
+            return []
+        q = query.lower()
+        with self._lock:
+            return [e for e in self._entries.values() if q in e.value.lower() or q in e.key.lower()]
+
+    def list_relations(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._relations)
+
+    def count_relations(self) -> int:
+        with self._lock:
+            return len(self._relations)
+
+    def save_relations(self, key: str, relations: list[Any]) -> int:
+        with self._lock:
+            for rel in relations:
+                self._relations.append(
+                    {
+                        "subject": getattr(rel, "subject", ""),
+                        "predicate": getattr(rel, "predicate", ""),
+                        "object_entity": getattr(rel, "object_entity", ""),
+                        "source_entry_keys": list(
+                            dict.fromkeys([*getattr(rel, "source_entry_keys", []), key])
+                        ),
+                        "confidence": float(getattr(rel, "confidence", 0.8)),
+                        "created_at": "1970-01-01T00:00:00+00:00",
+                    }
+                )
+            return len(relations)
+
+    def load_relations(self, key: str) -> list[dict[str, Any]]:
+        with self._lock:
+            return [r for r in self._relations if key in r["source_entry_keys"]]
+
+    def get_schema_version(self) -> int:
+        return 1
+
+    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
+        return []  # tests that exercise vector recall must use a real backend
+
+    def vector_row_count(self) -> int:
+        return 0
+
+    def append_audit(
+        self,
+        action: str,
+        key: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _inject_in_memory_private_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Inject :class:`InMemoryPrivateBackend` whenever ``MemoryStore`` is built
+    without an explicit ``private_backend`` and no Postgres DSN is set.
+
+    Production code raises ``ValueError`` in that case (ADR-007).  This fixture
+    only intercepts construction during the unit-test session and does **not**
+    touch tests that explicitly pass a backend or set ``TAPPS_BRAIN_DATABASE_URL``.
+    """
+    import os
+
+    from tapps_brain import store as _store_mod
+
+    _original_init = _store_mod.MemoryStore.__init__
+
+    # Tests that want to verify the Postgres-only hard-fail set
+    # ``TAPPS_BRAIN_TEST_NO_INMEMORY_BACKEND=1`` to disable this fixture and
+    # let MemoryStore raise ValueError naturally.
+    def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        if (
+            kwargs.get("private_backend") is None
+            and not os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+            and not os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            and not os.environ.get("TAPPS_BRAIN_TEST_NO_INMEMORY_BACKEND")
+        ):
+            kwargs["private_backend"] = InMemoryPrivateBackend()
+        _original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(_store_mod.MemoryStore, "__init__", _patched_init)
+    yield
 
 
 @pytest.fixture()

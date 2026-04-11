@@ -11,7 +11,7 @@ from tapps_brain._protocols import (
     PrivateBackend,
 )
 from tapps_brain.backends import (
-    SqliteAgentRegistryBackend,
+    FileAgentRegistryBackend,
     create_agent_registry_backend,
     create_federation_backend,
     create_hive_backend,
@@ -158,11 +158,11 @@ class TestCreateAgentRegistryBackend:
     def test_default_returns_yaml_file_backend(self, tmp_path) -> None:
         path = tmp_path / "agents.yaml"
         backend = create_agent_registry_backend(str(path))
-        assert isinstance(backend, SqliteAgentRegistryBackend)
+        assert isinstance(backend, FileAgentRegistryBackend)
 
     def test_none_returns_yaml_file_backend(self) -> None:
         backend = create_agent_registry_backend(None)
-        assert isinstance(backend, SqliteAgentRegistryBackend)
+        assert isinstance(backend, FileAgentRegistryBackend)
 
     def test_postgres_returns_postgres_backend(self) -> None:
         from tapps_brain.postgres_hive import PostgresAgentRegistry

@@ -6,10 +6,10 @@ any Object-Action snake_case string is accepted, not a closed Literal enum.
 ``FeedbackConfig`` allows host projects to register custom event types and
 optionally enable strict validation (reject unknown types at record time).
 
-``FeedbackStore`` is a SQLite-backed store for feedback events, sharing the
-project's ``memory.db`` via a write-through connection.  Thread-safe via
-``threading.Lock``.  Audit log emission is handled by the store's
-``append_audit`` callback.
+``FeedbackStore`` is a Postgres-backed store for feedback events, scoped to
+``(project_id, agent_id)`` and persisted in the ``feedback_events`` table
+defined by ``migrations/private/003_feedback_and_session.sql``.  Thread-safe
+via ``threading.Lock``.
 
 Standard event types (non-exhaustive — open enum):
     recall_rated, gap_reported, issue_flagged,
@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3  # noqa: TC003
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -29,10 +28,8 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from pydantic import BaseModel, Field, field_validator
 
-from tapps_brain.sqlcipher_util import connect_sqlite
-
 if TYPE_CHECKING:
-    from pathlib import Path
+    from tapps_brain.postgres_connection import PostgresConnectionManager
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -73,18 +70,6 @@ class FeedbackConfig(BaseModel):
     * Enable strict validation via ``strict_event_types=True``, which makes
       ``FeedbackStore.record()`` reject any event type not in the known set
       (built-ins + custom).
-
-    Profile YAML example
-    --------------------
-    .. code-block:: yaml
-
-       profile:
-         ...
-         feedback:
-           custom_event_types:
-             - deploy_completed
-             - pr_review_requested
-           strict_event_types: true
     """
 
     custom_event_types: list[str] = Field(
@@ -118,7 +103,6 @@ class FeedbackConfig(BaseModel):
     @field_validator("custom_event_types")
     @classmethod
     def _validate_custom_event_types(cls, v: list[str]) -> list[str]:
-        """Validate that each custom event type matches the naming pattern."""
         for name in v:
             if not _EVENT_TYPE_RE.match(name):
                 raise ValueError(
@@ -132,32 +116,6 @@ class FeedbackConfig(BaseModel):
     def known_event_types(self) -> frozenset[str]:
         """Return the full set of known event types (built-ins + custom)."""
         return BUILTIN_EVENT_TYPES | frozenset(self.custom_event_types)
-
-
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-
-_SCHEMA_VERSION = 1  # Internal schema version for the feedback_events table.
-
-_CREATE_FEEDBACK_TABLE = """
-    CREATE TABLE IF NOT EXISTS feedback_events (
-        id          TEXT NOT NULL PRIMARY KEY,
-        event_type  TEXT NOT NULL,
-        entry_key   TEXT,
-        session_id  TEXT,
-        utility_score REAL,
-        details     TEXT NOT NULL DEFAULT '{}',
-        timestamp   TEXT NOT NULL
-    )
-"""
-
-_CREATE_FEEDBACK_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_feedback_event_type  ON feedback_events(event_type)",
-    "CREATE INDEX IF NOT EXISTS idx_feedback_timestamp   ON feedback_events(timestamp)",
-    "CREATE INDEX IF NOT EXISTS idx_feedback_entry_key   ON feedback_events(entry_key)",
-    "CREATE INDEX IF NOT EXISTS idx_feedback_session_id  ON feedback_events(session_id)",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -177,18 +135,6 @@ class FeedbackEvent(BaseModel):
     snake_case name is accepted (e.g. ``recall_rated``, ``gap_reported``,
     ``my_custom_event``).  This is intentionally NOT a closed enum so that
     downstream projects can extend it without forking the model.
-
-    Standard built-in event types
-    ------------------------------
-    * ``recall_rated``       — user rated a recall result (utility_score: 1=helpful, 0=irrelevant)
-    * ``gap_reported``       — user indicated missing knowledge
-    * ``issue_flagged``      — user flagged a quality issue with a memory entry
-    * ``implicit_positive``  — recall followed by reinforce (implicit good signal)
-    * ``implicit_negative``  — recall NOT followed by reinforce within window (weak bad signal)
-    * ``implicit_correction`` — recall followed by store with overlapping content
-
-    Custom event types follow the same Object-Action snake_case convention
-    and are registered via ``FeedbackConfig.custom_event_types`` (STORY-029.8).
     """
 
     id: str = Field(
@@ -242,86 +188,49 @@ class FeedbackEvent(BaseModel):
 
 
 class FeedbackStore:
-    """SQLite-backed store for feedback events.
+    """Postgres-backed store for feedback events.
 
-    Shares the project's ``memory.db`` file via its own WAL-mode connection.
-    Thread-safe via ``threading.Lock``.
-
-    The ``feedback_events`` table is created by ``MemoryPersistence._create_schema``
-    (persistence.py) and also idempotently on first use here.
+    Scoped to a single ``(project_id, agent_id)`` pair — same isolation
+    model as :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`.
+    The ``feedback_events`` table is created by migration
+    ``003_feedback_and_session.sql``.
 
     Args:
-        db_path: Path to the SQLite database file (usually ``memory.db``).
-        audit_path: Path to the JSONL audit log (for audit emission).
-        encryption_key: Same passphrase as ``MemoryPersistence`` when using SQLCipher.
+        connection_manager: Shared :class:`PostgresConnectionManager` —
+            typically the same one used by ``PostgresPrivateBackend`` so that
+            feedback events live in the same physical database as the private
+            memories they describe.
+        project_id: Canonical project identifier (see
+            :func:`~tapps_brain.backends.derive_project_id`).
+        agent_id: Agent identifier (e.g. ``'claude-code'``).
+        config: Optional :class:`FeedbackConfig` for strict-mode validation
+            and custom event types.
     """
 
     def __init__(
         self,
-        db_path: Path,
-        audit_path: Path | None = None,
-        config: FeedbackConfig | None = None,
+        connection_manager: PostgresConnectionManager,
         *,
-        encryption_key: str | None = None,
+        project_id: str,
+        agent_id: str,
+        config: FeedbackConfig | None = None,
     ) -> None:
-        self._db_path = db_path
-        self._audit_path = audit_path
+        self._cm = connection_manager
+        self._project_id = project_id
+        self._agent_id = agent_id
         self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
-        self._encryption_key = encryption_key
         self._lock = threading.Lock()
-        self._conn = self._connect()
-        self._ensure_table()
 
     # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _connect(self) -> sqlite3.Connection:
-        """Open a WAL-mode SQLite or SQLCipher connection (same key as ``MemoryPersistence``)."""
-        return connect_sqlite(
-            self._db_path,
-            encryption_key=self._encryption_key,
-            check_same_thread=False,
-        )
-
-    def _ensure_table(self) -> None:
-        """Create ``feedback_events`` table and indexes if not present (idempotent)."""
-        with self._lock:
-            cur = self._conn.cursor()
-            cur.execute(_CREATE_FEEDBACK_TABLE)
-            for stmt in _CREATE_FEEDBACK_INDEXES:
-                cur.execute(stmt)
-            self._conn.commit()
-
-    def _emit_audit(self, action: str, event_id: str, extra: dict[str, Any] | None = None) -> None:
-        """Append a line to the JSONL audit log (best-effort, never raises)."""
-        if self._audit_path is None:
-            return
-        record: dict[str, Any] = {
-            "action": action,
-            "key": event_id,
-            "timestamp": _utc_now_iso(),
-        }
-        if extra:
-            record.update(extra)
-        try:
-            with self._audit_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except OSError:
-            logger.debug("feedback_audit_write_failed", event_id=event_id, action=action)
-
-    # ------------------------------------------------------------------
-    # Public API (record / query implemented in STORY-029.1 / 029-1b)
+    # Public API
     # ------------------------------------------------------------------
 
     def record(self, event: FeedbackEvent) -> None:
-        """Persist a feedback event and emit an audit log entry.
+        """Persist a feedback event.
 
         If ``FeedbackConfig.strict_event_types`` is True, the event's
         ``event_type`` must be in the known set (built-ins + custom); otherwise
         a ``ValueError`` is raised before any write occurs.
-
-        Implemented in story 029-1b (base) + 029-2 (strict validation).
         """
         if (
             self._config.strict_event_types
@@ -334,14 +243,18 @@ class FeedbackStore:
                 f"Register it via FeedbackConfig.custom_event_types or disable strict mode. "
                 f"Known types: {known}"
             )
-        with self._lock:
-            self._conn.execute(
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
                 """
-                INSERT OR IGNORE INTO feedback_events
-                    (id, event_type, entry_key, session_id, utility_score, details, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO feedback_events
+                    (project_id, agent_id, id, event_type, entry_key,
+                     session_id, utility_score, details, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                ON CONFLICT (project_id, agent_id, id) DO NOTHING
                 """,
                 (
+                    self._project_id,
+                    self._agent_id,
                     event.id,
                     event.event_type,
                     event.entry_key,
@@ -351,12 +264,6 @@ class FeedbackStore:
                     event.timestamp,
                 ),
             )
-            self._conn.commit()
-        self._emit_audit(
-            "feedback_record",
-            event.id,
-            extra={"event_type": event.event_type, "entry_key": event.entry_key},
-        )
         logger.debug(
             "feedback.recorded",
             event_id=event.id,
@@ -376,65 +283,70 @@ class FeedbackStore:
     ) -> list[FeedbackEvent]:
         """Query feedback events with optional filters.
 
-        Args:
-            event_type: Exact match on ``event_type`` (or None for all).
-            entry_key: Filter by related memory entry key.
-            session_id: Filter by session identifier.
-            since: ISO-8601 lower bound (inclusive) on ``timestamp``.
-            until: ISO-8601 upper bound (inclusive) on ``timestamp``.
-            limit: Maximum number of results (default 100).
-
-        Returns:
-            Matching events ordered by ``timestamp`` ascending.
-
-        Implemented in story 029-1b.
+        Results are ordered by ``timestamp`` ascending (oldest first).
         """
-        conditions: list[str] = []
-        params: list[Any] = []
+        conditions: list[str] = ["project_id = %s", "agent_id = %s"]
+        params: list[Any] = [self._project_id, self._agent_id]
 
         if event_type is not None:
-            conditions.append("event_type = ?")
+            conditions.append("event_type = %s")
             params.append(event_type)
         if entry_key is not None:
-            conditions.append("entry_key = ?")
+            conditions.append("entry_key = %s")
             params.append(entry_key)
         if session_id is not None:
-            conditions.append("session_id = ?")
+            conditions.append("session_id = %s")
             params.append(session_id)
         if since is not None:
-            conditions.append("timestamp >= ?")
+            conditions.append("timestamp >= %s")
             params.append(since)
         if until is not None:
-            conditions.append("timestamp <= ?")
+            conditions.append("timestamp <= %s")
             params.append(until)
 
-        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        sql = f"SELECT * FROM feedback_events {where} ORDER BY timestamp ASC LIMIT ?"
+        where = " AND ".join(conditions)
+        sql = (
+            "SELECT id, event_type, entry_key, session_id, utility_score, "
+            "       details, timestamp "
+            f"FROM feedback_events WHERE {where} "
+            "ORDER BY timestamp ASC LIMIT %s"
+        )
         params.append(limit)
 
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
 
         results: list[FeedbackEvent] = []
         for row in rows:
+            details_raw = row[5]
+            if isinstance(details_raw, dict):
+                details = details_raw
+            elif isinstance(details_raw, str):
+                try:
+                    details = json.loads(details_raw)
+                except (json.JSONDecodeError, TypeError):
+                    details = {}
+            else:
+                details = {}
+            ts = row[6]
+            ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
             try:
-                details = json.loads(row["details"]) if row["details"] else {}
                 results.append(
                     FeedbackEvent(
-                        id=row["id"],
-                        event_type=row["event_type"],
-                        entry_key=row["entry_key"],
-                        session_id=row["session_id"],
-                        utility_score=row["utility_score"],
+                        id=str(row[0]),
+                        event_type=str(row[1]),
+                        entry_key=row[2],
+                        session_id=row[3],
+                        utility_score=row[4],
                         details=details,
-                        timestamp=row["timestamp"],
+                        timestamp=ts_str,
                     )
                 )
             except Exception:
-                logger.warning("feedback.query_row_skipped", row_id=row["id"])
+                logger.warning("feedback.query_row_skipped", row_id=row[0])
         return results
 
     def close(self) -> None:
-        """Close the underlying SQLite connection."""
-        with self._lock:
-            self._conn.close()
+        """No-op: the connection manager is owned by the caller."""
+        return None

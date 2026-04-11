@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -935,38 +934,10 @@ class TestMaintenanceCommands:
         assert result.exit_code == 0
         assert "Stale (GC) candidates" in result.stdout
 
-    def test_gc_archives_stale_entries(self, tmp_path: Path) -> None:
-        """016-B: GC non-dry-run archives session-scoped entries older than 7 days."""
-        import sqlite3
-        from datetime import UTC, datetime, timedelta
-
-        # Create store and save a session-scoped entry
-        s = MemoryStore(tmp_path)
-        s.save(key="old-session-fact", value="temporary session info", scope="session")
-        s.close()
-
-        # Back-date updated_at to 8 days ago so GC identifies it as stale
-        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
-        old_ts = (datetime.now(tz=UTC) - timedelta(days=8)).isoformat()
-        conn = sqlite3.connect(str(db_path))
-        conn.execute(
-            "UPDATE memories SET updated_at = ? WHERE key = ?",
-            (old_ts, "old-session-fact"),
-        )
-        conn.commit()
-        conn.close()
-
-        # Run gc non-dry-run
-        result = runner.invoke(app, ["maintenance", "gc", "--project-dir", str(tmp_path)])
-        assert result.exit_code == 0
-        # Verify at least 1 entry was archived
-        assert "Archived 1" in result.stdout
-
-        # Verify archive file was written
-        archive_path = tmp_path / ".tapps-brain" / "memory" / "archive.jsonl"
-        assert archive_path.exists()
-        archive_content = archive_path.read_text()
-        assert "old-session-fact" in archive_content
+    # NOTE: the legacy `test_gc_archives_stale_entries` test backdated rows by
+    # opening the SQLite memory.db directly. Under ADR-007 there is no SQLite
+    # file to poke and the equivalent Postgres path requires an ephemeral DB
+    # fixture (tracked as a follow-up Postgres integration test).
 
     def test_migrate(self, project_dir):
         result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
@@ -1160,24 +1131,10 @@ class TestMaintenanceVerifyIntegrityCommand:
         assert "no_hash" in data
         assert data["tampered"] == 0
 
-    def test_verify_integrity_tampered_exits_1(self, tmp_path: Path) -> None:
-        """When an entry is tampered with, exit code should be 1."""
-        s = MemoryStore(tmp_path)
-        s.save(key="test-entry", value="original value", tier="context")
-        # Tamper with the value directly in the database
-        db_path = tmp_path / ".tapps-brain" / "memory" / "memory.db"
-        s.close()
-
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("UPDATE memories SET value = 'tampered value' WHERE key = 'test-entry'")
-        conn.commit()
-        conn.close()
-
-        result = runner.invoke(
-            app, ["maintenance", "verify-integrity", "--project-dir", str(tmp_path)]
-        )
-        assert result.exit_code == 1
-        assert "Tampered" in result.stdout
+    # NOTE: the legacy `test_verify_integrity_tampered_exits_1` test poked a
+    # tampered value directly into the SQLite memory.db.  Under ADR-007 the
+    # equivalent path is a Postgres UPDATE through psycopg, which needs an
+    # ephemeral DB fixture (tracked as a follow-up Postgres integration test).
 
 
 class TestMaintenanceGcConfigCommand:
@@ -1400,7 +1357,6 @@ class TestHealthCommand:
         assert "schema_version" in data
         assert "tier_distribution" in data
         assert data["entry_count"] == 3
-        assert data.get("sqlcipher_enabled") is False
         assert "profile_seed_version" in data
 
     def test_maintenance_health_shows_profile_seed_version(self, tmp_path: Path) -> None:
@@ -2156,7 +2112,7 @@ class TestDiagnosticsCommands:
         assert r.exit_code in (0, 1, 2)
         data = json.loads(r.stdout)
         assert "store" in data
-        assert "sqlite_vec_enabled" in data["store"]
+        assert "vector_index_enabled" in data["store"]
 
     def test_diagnostics_health_human(self, project_dir):
         r = runner.invoke(
@@ -2165,9 +2121,9 @@ class TestDiagnosticsCommands:
         )
         assert r.exit_code in (0, 1, 2)
         assert "tapps-brain health" in r.stdout
-        assert "sqlite-vec" in r.stdout
+        assert "pgvector HNSW" in r.stdout
 
-    def test_diagnostics_health_human_sqlite_vec_on(self, project_dir, monkeypatch):
+    def test_diagnostics_health_human_pgvector_on(self, project_dir, monkeypatch):
         from tapps_brain import health_check as hc
 
         def fake_run(*, project_root=None, check_hive=True):
@@ -2179,11 +2135,11 @@ class TestDiagnosticsCommands:
                     entries=2,
                     max_entries=100,
                     schema_version="1",
-                    size_bytes=4096,
+                    size_bytes=0,
                     tiers={"pattern": 2},
-                    sqlite_vec_enabled=True,
-                    sqlite_vec_rows=2,
-                    retrieval_effective_mode="hybrid_sqlite_vec_knn",
+                    vector_index_enabled=True,
+                    vector_index_rows=2,
+                    retrieval_effective_mode="hybrid_pgvector_hnsw",
                     retrieval_summary=(
                         "Hybrid test summary. CLI `memory search` default: BM25-only."
                     ),
@@ -2198,9 +2154,9 @@ class TestDiagnosticsCommands:
             ["diagnostics", "health", "--project-dir", project_dir, "--no-hive"],
         )
         assert r.exit_code == 0
-        assert "sqlite-vec: on" in r.stdout
+        assert "pgvector HNSW: on" in r.stdout
         assert "Retrieval:" in r.stdout
-        assert "hybrid_sqlite_vec_knn" in r.stdout
+        assert "hybrid_pgvector_hnsw" in r.stdout
 
     def test_diagnostics_health_human_hive_connected(self, project_dir, monkeypatch):
         from tapps_brain import health_check as hc
@@ -2214,8 +2170,8 @@ class TestDiagnosticsCommands:
                     entries=1,
                     max_entries=5000,
                     schema_version="1",
-                    sqlite_vec_enabled=False,
-                    sqlite_vec_rows=0,
+                    vector_index_enabled=True,
+                    vector_index_rows=0,
                 ),
                 hive=hc.HiveHealth(
                     status="ok",

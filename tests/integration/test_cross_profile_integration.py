@@ -307,13 +307,22 @@ class TestCustomScoringWeights:
         finally:
             store.close()
 
-        # Directly persist the old entry with backdated timestamps
-        # by saving via the persistence layer and re-opening the store.
-        from tapps_brain.persistence import MemoryPersistence
+        # Backdate the entry directly through the Postgres private backend
+        # so the freshly-opened store loads the aged row on cold start.
+        from tapps_brain.backends import (
+            create_private_backend,
+            derive_project_id,
+        )
 
-        persistence = MemoryPersistence(tmp_project)
-        old_entry = persistence.get("deploy-old")
-        assert old_entry is not None
+        dsn = os.environ.get("TAPPS_TEST_POSTGRES_DSN") or os.environ.get(
+            "TAPPS_BRAIN_DATABASE_URL"
+        )
+        if not dsn:
+            pytest.skip("requires TAPPS_TEST_POSTGRES_DSN / TAPPS_BRAIN_DATABASE_URL")
+        backend = create_private_backend(
+            dsn, project_id=derive_project_id(tmp_project), agent_id="default"
+        )
+        old_entry = next(e for e in backend.load_all() if e.key == "deploy-old")
         backdated = old_entry.model_copy(
             update={
                 "created_at": thirty_days_ago,
@@ -321,10 +330,10 @@ class TestCustomScoringWeights:
                 "last_accessed": thirty_days_ago,
             }
         )
-        persistence.save(backdated)
-        persistence.close()
+        backend.save(backdated)
+        backend.close()
 
-        # Re-open the store so it loads the backdated entry from SQLite
+        # Re-open the store so it loads the backdated entry from Postgres.
         store = MemoryStore(tmp_project, profile=rb_profile)
         try:
             # Retriever with personal-assistant scoring (recency=0.30)

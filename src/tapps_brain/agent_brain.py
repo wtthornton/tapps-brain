@@ -143,8 +143,9 @@ class AgentBrain:
             except Exception:
                 logger.warning("agent_brain.hive_init_failed", exc_info=True)
 
-        # EPIC-059 STORY-059.5: resolve Postgres private backend from env when available.
-        # Falls back to SQLite MemoryPersistence when TAPPS_BRAIN_DATABASE_URL is unset.
+        # ADR-007: resolve the Postgres private backend from
+        # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is
+        # unset, MemoryStore.__init__ raises ValueError.
         _private_backend = None
         _effective_agent_id = self._agent_id or "unknown"
         try:

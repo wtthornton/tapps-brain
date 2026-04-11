@@ -109,15 +109,15 @@ class AgentRegistry:
 
 
 # ---------------------------------------------------------------------------
-# SQLite Agent Registry Backend (YAML file — not a SQLite database)
+# File-backed (YAML) Agent Registry Backend
 # ---------------------------------------------------------------------------
 
 
-class SqliteAgentRegistryBackend:
-    """File-backed :class:`AgentRegistryBackend` (agents.yaml).
+class FileAgentRegistryBackend:
+    """File-backed :class:`AgentRegistryBackend` (``agents.yaml``).
 
-    Despite the historical name, this does **not** use SQLite — only a YAML
-    registry file. Prefer :func:`create_agent_registry_backend` for selection.
+    The registry is a YAML file at ``~/.tapps-brain/hive/agents.yaml``.  Prefer
+    :func:`create_agent_registry_backend` for selection.
     """
 
     def __init__(self, registry_path: Path | None = None) -> None:
@@ -407,12 +407,13 @@ def create_hive_backend(
 ) -> HiveBackend:
     """Create a :class:`PostgresHiveBackend`.
 
-    A **PostgreSQL** DSN is required. SQLite Hive backends were removed (ADR-007).
+    A **PostgreSQL** DSN is required (ADR-007).
 
     ``encryption_key`` is accepted for API compatibility with older callers but
-    is ignored — Postgres does not use SQLCipher.
+    is ignored — at-rest encryption is delegated to the storage layer
+    (e.g. ``pg_tde``), not the application.
     """
-    _ = encryption_key  # SQLCipher was SQLite-only; keep parameter for call-site compat
+    _ = encryption_key  # legacy SQLCipher knob — Postgres uses pg_tde instead
     if dsn_or_path is None or not str(dsn_or_path).strip():
         msg = (
             "create_hive_backend() requires TAPPS_BRAIN_HIVE_DSN "
@@ -516,7 +517,8 @@ def resolve_private_backend_from_env(
 
     Reads ``TAPPS_BRAIN_DATABASE_URL`` (v3 unified DSN) and falls back to
     ``TAPPS_BRAIN_HIVE_DSN`` for backward compatibility.  Returns ``None`` when
-    neither env var is set — callers fall back to SQLite :class:`MemoryPersistence`.
+    neither env var is set; :class:`~tapps_brain.store.MemoryStore` then raises
+    ``ValueError`` because v3 is Postgres-only (ADR-007).
 
     Args:
         project_id: Canonical project identifier (see :func:`derive_project_id`).
@@ -560,7 +562,7 @@ def create_agent_registry_backend(
 ) -> AgentRegistryBackend:
     """Create an :class:`AgentRegistryBackend`.
 
-    - ``None`` or a file path -> :class:`SqliteAgentRegistryBackend` (YAML file)
+    - ``None`` or a file path -> :class:`FileAgentRegistryBackend` (YAML file)
     - ``postgres://...`` or ``postgresql://...`` -> :class:`PostgresAgentRegistry` (EPIC-055)
     """
     if registry_path is not None and registry_path.startswith(("postgres://", "postgresql://")):
@@ -570,4 +572,4 @@ def create_agent_registry_backend(
         cm = PostgresConnectionManager(registry_path)
         return PostgresAgentRegistry(cm)
     path = Path(registry_path) if registry_path else None
-    return SqliteAgentRegistryBackend(registry_path=path)
+    return FileAgentRegistryBackend(registry_path=path)

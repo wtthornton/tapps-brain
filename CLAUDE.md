@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-tapps-brain is a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), Postgres-backed shared stores (Hive/Federation) with SQLite for private agent memory, BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
+tapps-brain is a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), **PostgreSQL-only** persistence (private memory, Hive, Federation), pgvector HNSW + tsvector hybrid retrieval, BM25 ranking, exponential decay, automatic consolidation, cross-project federation. **SQLite was removed in ADR-007 stage 2 (2026-04-11)** — there is no in-process database fallback.
 
 ## Build & Development Commands
 
@@ -12,8 +12,8 @@ tapps-brain is a persistent cross-session memory system for AI coding assistants
 # Install dependencies (uses uv package manager; dev deps are in dependency-groups)
 uv sync --group dev
 
-# Optional extras (see pyproject.toml): cli, mcp, reranker, encryption, otel, visual, all
-# uv sync --group dev --extra encryption
+# Optional extras (see pyproject.toml): cli, mcp, reranker, otel, visual, all
+# (the legacy `encryption` extra was removed; use pg_tde at the storage layer)
 
 # Run all tests (~2300+ tests, coverage gate ≥95%; exclude benchmarks in CI-style runs)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
@@ -53,28 +53,29 @@ uv build
 
 **Code-aligned docs** — `docs/engineering/` (system architecture, call flows, schema, optional-feature matrix, inventory).
 
-### Multi-agent architecture (EPIC-053–058, v3.1.0+)
+### Multi-agent architecture (EPIC-053–059, v3.3.0+)
 
-tapps-brain is designed for **many concurrent agents** (200+). The architecture separates private and shared memory:
+tapps-brain is designed for **many concurrent agents** (200+).  Under ADR-007 every store — private, Hive, Federation — lives in PostgreSQL.  Per-agent isolation is enforced by a `(project_id, agent_id)` composite key on every row, **not** by separate database files.
 
 ```
-Agent 1 ──► own memory.db (isolated SQLite)  ─┐
-Agent 2 ──► own memory.db (isolated SQLite)  ─┤
-  ...                                          ├──► Postgres Hive (shared, MVCC, pgvector)
-Agent N ──► own memory.db (isolated SQLite)  ─┘
+Agent 1 ──┐
+Agent 2 ──┤
+  ...     ├──► Postgres (private_memories | hive_* | federation_* tables;
+Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 ```
 
-- **Private agent memory:** Each agent gets its own isolated SQLite at `{project_dir}/.tapps-brain/agents/{agent_id}/memory.db`. No lock contention between agents.
-- **Shared memory (Hive):** PostgreSQL backend for cross-agent communication, group knowledge, and expert publishing. Supports concurrent reads/writes via MVCC, `pgvector` for semantic search, `tsvector` for FTS, `LISTEN/NOTIFY` for real-time change notifications.
-- **Federation:** PostgreSQL backend for cross-project memory sharing.
-- **Backend abstraction:** `_protocols.py` defines `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols. `backends.py` provides `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories — requires a `postgres://` or `postgresql://` DSN (ADR-007; SQLite backends removed).
+- **Private agent memory:** `PostgresPrivateBackend` against the `private_memories` table (migration 001), keyed by `(project_id, agent_id, key)`.  No file-system isolation.
+- **Shared memory (Hive):** `PostgresHiveBackend` for cross-agent communication, group knowledge, expert publishing.  Concurrent reads/writes via MVCC, `pgvector` for semantic search, `tsvector` for FTS, `LISTEN/NOTIFY` for change notifications.
+- **Federation:** `PostgresFederationBackend` for cross-project memory sharing.
+- **Backend abstraction:** `_protocols.py` defines `PrivateBackend`, `HiveBackend`, `FederationBackend`, `AgentRegistryBackend`. `backends.py` provides `create_private_backend(dsn, ...)`, `create_hive_backend(dsn)`, `create_federation_backend(dsn)` factories — every factory requires a `postgres://` or `postgresql://` DSN (ADR-007).
 - **AgentBrain facade** (`agent_brain.py`): Simplified 5-method API for agents — `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`. Agents never think about backends, scopes, or propagation.
 
 **Key environment variables:**
 
 | Variable | Purpose |
 |----------|---------|
-| `TAPPS_BRAIN_HIVE_DSN` | Postgres DSN for shared Hive (`postgres://user:pass@host/db`) |
+| `TAPPS_BRAIN_DATABASE_URL` | Unified Postgres DSN (used for private memory, fallback for Hive). Required at startup — `MemoryStore.__init__` raises `ValueError` if unset. |
+| `TAPPS_BRAIN_HIVE_DSN` | Postgres DSN for shared Hive (overrides `TAPPS_BRAIN_DATABASE_URL` for Hive only) |
 | `TAPPS_BRAIN_FEDERATION_DSN` | Postgres DSN for Federation |
 | `TAPPS_BRAIN_AGENT_ID` | Agent identity string |
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path |
@@ -88,9 +89,9 @@ Agent N ──► own memory.db (isolated SQLite)  ─┘
 
 **Agent API** — `agent_brain.py` provides `AgentBrain`, the primary agent-facing class (EPIC-057). Wraps `MemoryStore` + `HiveBackend`. Configured via env vars or constructor args. Context manager support. Agents use this — they never import `MemoryStore` directly.
 
-**Storage layer** — `store.py` is the lower-level `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. Per-agent isolation via `agent_id` parameter (EPIC-053) — storage at `{project_dir}/.tapps-brain/agents/{agent_id}/memory.db` (or `memory/memory.db` without `agent_id`). Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing, doc validation (`validate_entries()`), **`health()`** / **`get_metrics()`** (observability), feedback APIs, **`diagnostics()`**, flywheel, optional Hive propagation (`hive_store` param), groups + expert domains (EPIC-056), and MCP exposure via `mcp_server.py` (tool/resource counts in `docs/generated/mcp-tools-manifest.json`; 3 prompts). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1→v17**). JSONL audit log at `{store_dir}/memory/memory_log.jsonl`.
+**Storage layer** — `store.py` is the lower-level `MemoryStore` class: in-memory dict + Postgres write-through, thread-safe via `threading.Lock`. Per-agent isolation via `agent_id` parameter (EPIC-053) — every row in `private_memories` is keyed by `(project_id, agent_id, key)`. Integrates reinforcement (`reinforce()`), extraction (`ingest_context()`), session indexing, doc validation (`validate_entries()`), **`health()`** / **`get_metrics()`** (observability), feedback APIs, **`diagnostics()`**, flywheel, optional Hive propagation (`hive_store` param), groups + expert domains (EPIC-056), and MCP exposure via `mcp_server.py`. `postgres_private.py` handles the private memory backend; schema migrations live in `src/tapps_brain/migrations/private/` (currently v1–v5: initial → HNSW upgrade → feedback+session tables → diagnostics history → audit log).  `MemoryStore.__init__` requires a `PrivateBackend` and **raises `ValueError` when neither one is supplied nor a DSN is set** (no SQLite fallback — ADR-007).
 
-**Backend abstraction** — `_protocols.py` defines `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` Protocol interfaces (EPIC-054). `backends.py` provides factory functions (`create_hive_backend()`, `create_federation_backend()`, `create_agent_registry_backend()`, `resolve_hive_backend_from_env()`). Hive and Federation factories require a **PostgreSQL** DSN (`postgres://` or `postgresql://`); SQLite backends were removed (ADR-007). Agent registry may still use a YAML file or Postgres.
+**Backend abstraction** — `_protocols.py` defines `PrivateBackend`, `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` Protocol interfaces (EPIC-054 + EPIC-059). `backends.py` provides factory functions (`create_private_backend()`, `create_hive_backend()`, `create_federation_backend()`, `create_agent_registry_backend()`, `resolve_private_backend_from_env()`, `resolve_hive_backend_from_env()`). All durable-store factories require a **PostgreSQL** DSN (`postgres://` or `postgresql://`) — ADR-007. Agent registry may use a YAML file (`FileAgentRegistryBackend`) or Postgres.
 
 **Postgres backends** — `postgres_connection.py` (`PostgresConnectionManager` — connection pooling via `psycopg` + `psycopg_pool`). `postgres_hive.py` (`PostgresHiveBackend` — full `HiveBackend` implementation with parameterized SQL, `pgvector` semantic search, `tsvector` FTS, `LISTEN/NOTIFY`; `PostgresAgentRegistry`). `postgres_federation.py` (`PostgresFederationBackend`). `postgres_migrations.py` (versioned schema migrations for Hive/Federation; SQL files in `src/tapps_brain/migrations/`). All psycopg imports are lazy — Postgres deps only required when using Postgres DSN.
 
@@ -100,7 +101,7 @@ Agent N ──► own memory.db (isolated SQLite)  ─┘
 
 **Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides pure-Python Okapi BM25 scoring. `fusion.py` implements Reciprocal Rank Fusion for hybrid BM25 + vector search. Optional hybrid pool sizes and RRF *k* are profile-tunable via `MemoryProfile.hybrid_fusion` (YAML `hybrid_fusion:`); `inject_memories` passes this into `MemoryRetriever` when present.
 
-**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives (architectural: 180d, context: 14d), evaluated lazily on read. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM); EPIC-044.4 adds JSONL audit, `MemoryStore.undo_consolidation_merge`, CLI `maintenance consolidation-merge-undo`. `gc.py` archives (not deletes) stale memories to `archive.jsonl`. Max-entry eviction: optional **`limits.max_entries_per_group`** (STORY-044.7). Profile **`seeding.seed_version`** labels auto-seed runs (`seeding.py`, EPIC-044.6).
+**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives (architectural: 180d, context: 14d), evaluated lazily on read. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM); EPIC-044.4 adds the consolidation audit trail, `MemoryStore.undo_consolidation_merge`, CLI `maintenance consolidation-merge-undo`. `gc.py` archives (not deletes) stale memories. Max-entry eviction: optional **`limits.max_entries_per_group`** (STORY-044.7). Profile **`seeding.seed_version`** labels auto-seed runs (`seeding.py`, EPIC-044.6).
 
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 
@@ -112,14 +113,17 @@ Agent N ──► own memory.db (isolated SQLite)  ─┘
 
 ### Key design decisions
 
-- **Per-agent isolation** — each agent owns its own SQLite store; no shared-DB bottleneck for private memory
-- **Postgres for shared stores** — Hive and Federation use PostgreSQL (pgvector, tsvector, LISTEN/NOTIFY) for multi-host concurrent access
-- **Backend abstraction** — callers program against protocols, never concrete backends; factory selects by DSN
-- **Synchronous by design** — no async/await in core code
-- **Write-through cache** — all mutations update both in-memory dict and SQLite (per-agent store)
-- **Lazy decay** — exponential decay computed on read, not via background tasks
-- **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls
-- **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore
+- **Postgres-only persistence** (ADR-007) — every durable store lives in PostgreSQL: private memory, Hive, Federation, audit log, diagnostics history, feedback events, session chunks. No SQLite, no SQLCipher, no in-process fallback.
+- **Tenant isolation by row, not by file** — `(project_id, agent_id)` composite key on every private table keeps agents isolated without per-agent database files.
+- **pgvector HNSW for semantic recall** (`m=16, ef_construction=200, vector_cosine_ops`) — see migration 002. ~1.5× faster than tuned IVFFlat at comparable recall, no rebuild-after-bulk-load step.
+- **tsvector + GIN for lexical recall** with A/B/C weighting on `key` / `value` / `tags`. Upgrade path to ParadeDB `pg_search` (BM25 on Tantivy) when ranking quality matters more than ops simplicity.
+- **At-rest encryption is the storage layer's job** — Percona `pg_tde` 2.1.2 (released 2026-03-02) or cloud TDE. Application code does not handle keys.
+- **Backend abstraction** — callers program against protocols, never concrete backends; factory selects by DSN.
+- **Synchronous by design** — no async/await in core code.
+- **Write-through cache** — all mutations update both in-memory dict and Postgres.
+- **Lazy decay** — exponential decay computed on read, not via background tasks.
+- **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls.
+- **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore.
 
 ## Code Quality
 

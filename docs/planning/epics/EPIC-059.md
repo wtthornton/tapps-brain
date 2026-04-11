@@ -1,9 +1,10 @@
 ---
 id: EPIC-059
 title: "Greenfield v3 — Postgres-Only Persistence Plane"
-status: planned
+status: in_progress
 priority: critical
 created: 2026-04-10
+updated: 2026-04-11
 tags: [greenfield, postgres, persistence, v3, hive, federation]
 depends_on: []
 blocks: [EPIC-060, EPIC-061]
@@ -23,19 +24,21 @@ A single shared Hive on Postgres is undermined if clients still default to SQLit
 
 Pre-GA greenfield: **no migration path from v2**. SQLite backends and file-based `memory.db` paths are removed from the supported product surface so operations, backup, and security have a single engine.
 
+**Stage 2 update (2026-04-11):** the source-level rip-out is complete — `persistence.py`, `sqlite_vec_index.py`, `sqlcipher_util.py`, and the `SqliteAgentRegistryBackend` shim have been deleted. `MemoryStore.__init__` raises `ValueError` when `TAPPS_BRAIN_DATABASE_URL` is unset. Migrations 001–005 cover `private_memories`, the IVFFlat → HNSW upgrade, `feedback_events` + `session_chunks`, `diagnostics_history`, and `audit_log`. ~96% of the unit suite passes against the local Docker Postgres; the remaining ~90 failures are behavioural gaps (consolidation audit trail in merge paths, temporal `as_of` filter on Postgres `search`, archive flow replacement, a few MCP tool-registration issues, and a pre-existing version-consistency test).
+
 ## Acceptance Criteria
 
-- [ ] No supported runtime path uses SQLite for Hive, Federation, or private agent memory.
-- [ ] Startup fails with a **clear error** if required Postgres DSN(s) are missing (no silent fallback).
-- [ ] Schema changes ship as **versioned SQL migrations** for Postgres only.
-- [ ] CI runs the full test suite against **ephemeral Postgres** (e.g. Testcontainers), not in-memory SQLite.
-- [ ] `docker compose` (or equivalent) provides a **one-command** local Postgres for developers.
+- [x] No supported runtime path uses SQLite for Hive, Federation, or private agent memory.
+- [x] Startup fails with a **clear error** if required Postgres DSN(s) are missing (no silent fallback).
+- [x] Schema changes ship as **versioned SQL migrations** for Postgres only.
+- [x] `docker compose` (or equivalent) provides a **one-command** local Postgres for developers.
+- [ ] CI runs the full test suite against **ephemeral Postgres** (e.g. Testcontainers), not in-memory SQLite. *(Local Docker works; CI workflow update pending.)*
 
 ## Stories
 
 ### STORY-059.1: Postgres-only factory contracts
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** —
 
@@ -57,7 +60,7 @@ Fail-fast DSN validation and typed errors are the foundation; everything else bu
 
 ### STORY-059.2: Remove SQLite adapter implementations
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-059.1
 
@@ -79,7 +82,7 @@ Shipping `SqliteHiveBackend` / `SqliteFederationBackend` in the package contradi
 
 ### STORY-059.3: No silent SQLite in runtime + production docs
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-059.2
 
@@ -102,7 +105,7 @@ Code and docs must agree: no implicit `HiveStore()` / `memory.db`, and no operat
 
 ### STORY-059.4: Private memory — schema and migrations
 
-**Status:** planned  
+**Status:** done  
 **Size:** L  
 **Depends on:** STORY-059.2
 
@@ -124,7 +127,7 @@ Tenant columns and forward-only SQL migrations must exist before wiring `MemoryS
 
 ### STORY-059.5: Private memory — indexes and store wiring
 
-**Status:** planned  
+**Status:** done  
 **Size:** L  
 **Depends on:** STORY-059.4
 
@@ -146,7 +149,7 @@ Hot paths are recall / search; indexes and write-through behavior must match pro
 
 ### STORY-059.6: Behavioral parity and load smoke
 
-**Status:** planned  
+**Status:** in_progress  
 **Size:** M  
 **Depends on:** STORY-059.5
 
@@ -167,7 +170,7 @@ Greenfield allows breaking changes, but intentional deltas must be documented an
 
 ### STORY-059.7: DSN table, pool tuning, and health fields
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-059.1
 
@@ -190,7 +193,7 @@ One table for operators; pool and migration visibility prevent silent overload.
 
 ### STORY-059.8: Compose, Makefile, CI, and onboarding
 
-**Status:** planned  
+**Status:** in_progress  
 **Size:** L  
 **Depends on:** STORY-059.4, STORY-059.7
 

@@ -893,10 +893,9 @@ def stats_cmd(  # noqa: PLR0915
         top_accessed.sort(key=lambda x: x[2], reverse=True)
         top5 = top_accessed[:5]
 
-        # DB size
-        db_path = store._project_root / ".tapps-brain" / "memory" / "memory.db"
-        db_size_bytes = db_path.stat().st_size if db_path.exists() else 0
-        db_size_kb = round(db_size_bytes / 1024, 1)
+        # DB size is no longer reported under the Postgres backend (ADR-007).
+        db_size_bytes = 0
+        db_size_kb = 0.0
 
         tier_avg = {
             t: round(tier_conf_sum[t] / tier_counts[t], 3) if tier_counts[t] else 0.0
@@ -1516,27 +1515,8 @@ def maintenance_health(
                 f"Federation: {'enabled' if report.federation_enabled else 'disabled'}"
                 f" ({report.federation_project_count} projects)"
             )
-            typer.echo(f"SQLCipher: {'enabled' if report.sqlcipher_enabled else 'disabled'}")
     finally:
         store.close()
-
-
-PassphraseOpt = Annotated[
-    str | None,
-    typer.Option(
-        "--passphrase",
-        "-p",
-        envvar="TAPPS_BRAIN_ENCRYPTION_KEY",
-        help="SQLCipher passphrase (or set TAPPS_BRAIN_ENCRYPTION_KEY).",
-    ),
-]
-
-
-def _require_passphrase(value: str | None) -> str:
-    if value and value.strip():
-        return value.strip()
-    prompted = typer.prompt("Passphrase", hide_input=True)
-    return str(prompted)
 
 
 @maintenance_app.command("verify-integrity")
@@ -1574,62 +1554,11 @@ def maintenance_verify_integrity(
         store.close()
 
 
-@maintenance_app.command("split-by-agent")
-def maintenance_split_by_agent(
-    project_dir: Annotated[str, typer.Argument(help="Project root directory.")] = ".",
-    store_dir: Annotated[str, typer.Option(help="Store directory name.")] = ".tapps-brain",
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Report what would happen without writing.")
-    ] = False,
-) -> None:
-    """Split a shared memory.db into per-agent stores based on source_agent field."""
-    from pathlib import Path
-
-    from tapps_brain.persistence import MemoryPersistence
-
-    project_root = Path(project_dir).resolve()
-
-    # Open the shared store (legacy path — no agent_id)
-    shared = MemoryPersistence(project_root, store_dir=store_dir, encryption_key="")
-    all_entries = shared.load_all()
-
-    # Group by source_agent
-    by_agent: dict[str, list[MemoryEntry]] = {}
-    for entry in all_entries:
-        agent = (
-            entry.source_agent
-            if entry.source_agent and entry.source_agent != "unknown"
-            else "_legacy"
-        )
-        by_agent.setdefault(agent, []).append(entry)
-
-    if not by_agent:
-        typer.echo("No memories found in shared store.")
-        raise typer.Exit()
-
-    # Report
-    typer.echo(
-        f"Found {sum(len(v) for v in by_agent.values())} memories across {len(by_agent)} agents:"
-    )
-    for agent_name, entries in sorted(by_agent.items()):
-        typer.echo(f"  {agent_name}: {len(entries)} memories")
-
-    if dry_run:
-        typer.echo("\n[dry-run] No changes written.")
-        raise typer.Exit()
-
-    # Create per-agent stores and copy entries
-    for agent_name, entries in by_agent.items():
-        agent_store = MemoryPersistence(
-            project_root, store_dir=store_dir, agent_id=agent_name, encryption_key=""
-        )
-        for entry in entries:
-            agent_store.save(entry)
-        typer.echo(
-            f"  \u2713 {agent_name}: {len(entries)} memories written to {agent_store.db_path}"
-        )
-
-    typer.echo(f"\nDone. Original {shared.db_path} was NOT modified.")
+# NOTE: the legacy `maintenance split-by-agent` command was removed in
+# ADR-007 — it operated on per-agent SQLite memory.db files.  Under the
+# Postgres-only persistence plane every agent already has an isolated
+# (project_id, agent_id) scope inside ``private_memories``; there is
+# nothing to split.
 
 
 # ---------------------------------------------------------------------------
@@ -2906,10 +2835,9 @@ def diagnostics_health_cmd(
             f"Store {s_icon}: {s.entries}/{s.max_entries} entries  "
             f"schema={s.schema_version}  size={sz_kb}KB"
         )
-        if s.sqlite_vec_enabled:
-            typer.echo(f"  sqlite-vec: on  ({s.sqlite_vec_rows} vectors indexed)")
-        else:
-            typer.echo("  sqlite-vec: off (install optional vector extras)")
+        typer.echo(
+            f"  pgvector HNSW: on  ({s.vector_index_rows} vectors indexed)"
+        )
         if getattr(s, "retrieval_effective_mode", "unknown") != "unknown":
             typer.echo(f"  Retrieval: {s.retrieval_effective_mode}")
             if s.retrieval_summary:

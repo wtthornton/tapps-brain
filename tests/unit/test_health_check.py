@@ -69,8 +69,8 @@ def test_run_health_check_smoke(tmp_path: Path) -> None:
     assert any("empty" in w.lower() for w in report.warnings)
     assert report.store.retrieval_effective_mode in (
         "bm25_only",
-        "hybrid_sqlite_vec_knn",
-        "hybrid_sqlite_vec_empty",
+        "hybrid_pgvector_hnsw",
+        "hybrid_pgvector_empty",
         "hybrid_on_the_fly_embeddings",
     )
     assert "CLI `memory search`" in report.store.retrieval_summary
@@ -133,8 +133,8 @@ def test_run_health_check_near_capacity_warning(
 ) -> None:
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return()
-    mock_store.sqlite_vec_enabled = False
-    mock_store.sqlite_vec_row_count = 0
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
     mock_store._lock = Lock()
     mock_store._entries = {}
@@ -173,8 +173,8 @@ def test_hive_health_model_migration_version_set() -> None:
 def _make_mock_store(tmp_path: Path, entry_count: int = 0) -> MagicMock:
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return(entry_count=entry_count)
-    mock_store.sqlite_vec_enabled = False
-    mock_store.sqlite_vec_row_count = 0
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
     mock_store._lock = Lock()
     mock_store._entries = {}
@@ -302,8 +302,8 @@ def test_run_health_check_integrity_corrupted(
 ) -> None:
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return(entry_count=1, max_entries=5000)
-    mock_store.sqlite_vec_enabled = False
-    mock_store.sqlite_vec_row_count = 0
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
     mock_store._lock = Lock()
     mock_store._entries = {"a": MagicMock(valid_at=None)}
@@ -322,8 +322,8 @@ def test_run_health_check_integrity_orphaned_and_expired(
 ) -> None:
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return(entry_count=1, max_entries=5000)
-    mock_store.sqlite_vec_enabled = False
-    mock_store.sqlite_vec_row_count = 0
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
     mock_store._lock = Lock()
     mock_store._persistence = MagicMock()
@@ -346,8 +346,8 @@ def test_run_health_check_list_relations_raises_skipped(
 ) -> None:
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return(entry_count=1, max_entries=5000)
-    mock_store.sqlite_vec_enabled = False
-    mock_store.sqlite_vec_row_count = 0
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
     mock_store._lock = Lock()
     mock_store._entries = {}
@@ -371,8 +371,8 @@ def test_run_health_check_integrity_outer_failure(
         if len(calls) == 1:
             m = MagicMock()
             m.health.return_value = _store_health_return(entry_count=2, max_entries=5000)
-            m.sqlite_vec_enabled = True
-            m.sqlite_vec_row_count = 2
+            m.vector_index_enabled = True
+            m.vector_row_count = 2
             m.close = MagicMock()
             return m
         raise RuntimeError("integrity open failed")

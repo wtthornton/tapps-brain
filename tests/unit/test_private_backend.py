@@ -165,24 +165,20 @@ class TestPrivateBackendProtocol:
         backend, _ = _make_backend()
         assert backend.encryption_key is None
 
-    def test_sqlcipher_enabled_is_false(self) -> None:
-        backend, _ = _make_backend()
-        assert backend.sqlcipher_enabled is False
-
     def test_get_schema_version_returns_int(self) -> None:
         backend, _ = _make_backend()
         # Falls back to _PRIVATE_SCHEMA_VERSION (1) when query returns (0,)
         result = backend.get_schema_version()
         assert isinstance(result, int)
 
-    def test_sqlite_vec_row_count_returns_int(self) -> None:
+    def test_vector_row_count_returns_int(self) -> None:
         backend, _ = _make_backend()
-        result = backend.sqlite_vec_row_count()
+        result = backend.vector_row_count()
         assert isinstance(result, int)
 
-    def test_sqlite_vec_knn_search_empty_for_empty_embedding(self) -> None:
+    def test_knn_search_empty_for_empty_embedding(self) -> None:
         backend, _ = _make_backend()
-        assert backend.sqlite_vec_knn_search([], k=5) == []
+        assert backend.knn_search([], k=5) == []
 
     def test_append_audit_is_noop_no_raise(self) -> None:
         backend, _ = _make_backend()
@@ -429,9 +425,10 @@ class TestMemoryStoreWiring:
         backend = PostgresPrivateBackend(cm, project_id="p", agent_id="a")
         store = MemoryStore(tmp_path, private_backend=backend)
 
-        from tapps_brain.persistence import MemoryPersistence
+        # The store wraps the supplied PostgresPrivateBackend directly.
+        from tapps_brain.postgres_private import PostgresPrivateBackend as _PPB
 
-        assert not isinstance(store._persistence, MemoryPersistence)
+        assert isinstance(store._persistence, _PPB)
         assert store._persistence is backend
 
     def test_no_sqlite_memory_db_created(self, tmp_path: Path) -> None:
@@ -443,14 +440,21 @@ class TestMemoryStoreWiring:
         MemoryStore(tmp_path, private_backend=backend)
 
         db_files = list(tmp_path.rglob("memory.db"))
-        assert db_files == [], "No memory.db files should be created when using Postgres backend"
+        assert db_files == [], "No memory.db files should be created — v3 is Postgres-only (ADR-007)"
 
-    def test_sqlite_fallback_without_private_backend(self, tmp_path: Path) -> None:
-        from tapps_brain.persistence import MemoryPersistence
+    def test_no_private_backend_and_no_dsn_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from tapps_brain.store import MemoryStore
 
-        store = MemoryStore(tmp_path)
-        assert isinstance(store._persistence, MemoryPersistence)
+        # Ensure neither v3 unified DSN nor legacy hive DSN are set, and
+        # disable the conftest in-memory fixture so the production hard-fail
+        # is exercised directly.
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.setenv("TAPPS_BRAIN_TEST_NO_INMEMORY_BACKEND", "1")
+        with pytest.raises(ValueError, match="Postgres"):
+            MemoryStore(tmp_path)
 
 
 # ---------------------------------------------------------------------------

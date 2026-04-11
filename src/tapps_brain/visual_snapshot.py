@@ -147,12 +147,12 @@ class VisualSnapshot(BaseModel):
     hive_health: HiveHealthSummary = Field(default_factory=HiveHealthSummary)
     retrieval_effective_mode: str = Field(
         default="unknown",
-        description="bm25_only | hybrid_sqlite_vec_knn | hybrid_sqlite_vec_empty | "
+        description="bm25_only | hybrid_pgvector_hnsw | hybrid_pgvector_empty | "
         "hybrid_on_the_fly_embeddings | unknown",
     )
     retrieval_summary: str = ""
-    sqlite_vec_enabled: bool = False
-    sqlite_vec_rows: int = Field(default=0, ge=0)
+    vector_index_enabled: bool = True
+    vector_index_rows: int = Field(default=0, ge=0)
     memory_group_count: int = Field(
         default=0,
         ge=0,
@@ -604,18 +604,18 @@ def _build_scorecard(  # noqa: PLR0915
             )
         )
 
-    if retrieval_mode == "hybrid_sqlite_vec_knn":
+    if retrieval_mode == "hybrid_pgvector_hnsw":
         rstat: ScorecardStatus = "ok"
-        rdetail = "Hybrid BM25 + sqlite-vec KNN active."
+        rdetail = "Hybrid BM25 + pgvector HNSW active."
     elif retrieval_mode == "bm25_only":
         rstat = "info"
         rdetail = "BM25-only retrieval (vector stack unavailable or empty)."
-    elif retrieval_mode == "hybrid_sqlite_vec_empty":
+    elif retrieval_mode == "hybrid_pgvector_empty":
         rstat = "warn"
-        rdetail = "sqlite-vec on but vector index empty; embeddings may run on the fly."
+        rdetail = "pgvector HNSW index ready but no embedded rows yet — vector leg may run on the fly."
     elif retrieval_mode == "hybrid_on_the_fly_embeddings":
         rstat = "info"
-        rdetail = "Hybrid without sqlite-vec KNN; vectors computed on demand."
+        rdetail = "Hybrid without precomputed pgvector HNSW; vectors computed on demand."
     elif retrieval_mode == "unknown":
         rstat = "warn"
         rdetail = "Could not classify retrieval mode."
@@ -629,21 +629,10 @@ def _build_scorecard(  # noqa: PLR0915
             status=rstat,
             detail=rdetail,
             ticket_hint=(
-                "Align with `uv sync --extra vector` and sqlite-vec docs if hybrid expected."
+                "pgvector HNSW + tsvector hybrid; see docs/guides/postgres-dsn.md."
             ),
         )
     )
-
-    if bool(getattr(report, "sqlcipher_enabled", False)):
-        checks.append(
-            ScorecardCheck(
-                id="sqlcipher",
-                title="SQLCipher",
-                status="info",
-                detail="Encrypted SQLite (SQLCipher) enabled for this store.",
-                ticket_hint="",
-            )
-        )
 
     return checks
 
@@ -665,9 +654,7 @@ def build_visual_snapshot(
     mg_count, mg_counts = _memory_group_stats(entries, privacy=privacy)
 
     mode, summary = retrieval_health_slice(store)
-    _raw_sv = getattr(store, "sqlite_vec_enabled", False)
-    sv_en = bool(_raw_sv() if callable(_raw_sv) else _raw_sv)
-    _raw_n = getattr(store, "sqlite_vec_row_count", 0)
+    _raw_n = getattr(store, "vector_row_count", 0)
     sv_n = int(_raw_n() if callable(_raw_n) else _raw_n)
 
     identity: dict[str, object] = {
@@ -722,8 +709,8 @@ def build_visual_snapshot(
         hive_health=hive_health,
         retrieval_effective_mode=mode,
         retrieval_summary=summary,
-        sqlite_vec_enabled=sv_en,
-        sqlite_vec_rows=sv_n,
+        vector_index_enabled=True,
+        vector_index_rows=sv_n,
         memory_group_count=mg_count,
         memory_group_counts=mg_counts,
         access_stats=access_stats,
