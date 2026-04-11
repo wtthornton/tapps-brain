@@ -70,7 +70,7 @@
 
 ### Phase E: Host guide (060.7–060.8) <!-- id: 060-phase-e -->
 
-- [ ] **060.7+060.8** Host guide rewrite + diagram — rewrite `agentforge-integration.md` for v3 Postgres DSN flow; step-by-step; non-goals; mermaid diagram (Agent → AgentBrain → Postgres). [BATCH-2: SMALL — two S tasks, same file] <!-- resolved: docs/guides/agentforge-integration.md -->
+- [x] **060.7+060.8** Host guide rewrite + diagram — rewrite `agentforge-integration.md` for v3 Postgres DSN flow; step-by-step; non-goals; mermaid diagram (Agent → AgentBrain → Postgres). [BATCH-2: SMALL — two S tasks, same file] <!-- resolved: docs/guides/agentforge-integration.md -->
 
 - [ ] **060.CLEAN** Doc cross-refs + quality — Run `mcp__docs-mcp docs_validate_epic` on `EPIC-060.md`; run `mcp__docs-mcp docs_check_cross_refs` on `docs/guides/`; verify new docs (agent-integration, agentforge, ADR) pass `mcp__docs-mcp docs_check_style`. Run `mcp__tapps-mcp tapps_quality_gate` on `http_adapter.py` (if new). [SMALL — automated checks] <!-- resolved: docs/, src/tapps_brain/ -->
 
