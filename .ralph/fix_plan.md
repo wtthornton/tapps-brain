@@ -174,7 +174,7 @@
 ### Phase N: Metrics + events + privacy (032.5–032.9) <!-- id: 032-phase-n -->
 
 - [x] **032.5** Standard GenAI + MCP metrics — `gen_ai.client.operation.duration`, `mcp.server.operation.duration`, token usage histogram; unit tests. [SMALL] <!-- resolved: src/tapps_brain/otel_exporter.py, src/tapps_brain/metrics.py -->
-- [ ] **032.6** Custom `tapps_brain.*` metrics + export hook — entry count, consolidation/GC gauges; cardinality: never `entry_key`/`query`/`session_id` as labels; export on snapshot. [SMALL] <!-- resolved: src/tapps_brain/otel_exporter.py -->
+- [x] **032.6** Custom `tapps_brain.*` metrics + export hook — entry count, consolidation/GC gauges; cardinality: never `entry_key`/`query`/`session_id` as labels; export on snapshot. [SMALL] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 - [ ] **032.7+032.8** Feedback + diagnostics events as OTel Events — `tapps_brain.feedback.*` + `tapps_brain.diagnostics.*` events; graceful skip when modules absent; unit tests. [BATCH-2: SMALL — mirror pattern, same test structure] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 - [ ] **032.9** Privacy controls + OTelConfig from environment — `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` modes; tapps-brain env vars; attribute omitted (not placeholder) when disabled. [SMALL] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 

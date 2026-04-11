@@ -333,6 +333,12 @@ class MemoryStore:
         self._zero_result_queries: deque[tuple[str, str]] = deque(maxlen=2000)
         self._latest_quality_report: dict[str, Any] | None = None
 
+        # STORY-032.6: Last-known candidate counts for tapps_brain.* gauges.
+        # Updated when health() or gc() is called; stale between runs — that is fine
+        # because computing them requires a full-entry scan.
+        self._last_consolidation_candidates: int = 0
+        self._last_gc_candidates: int = 0
+
         # Auto-register agent in Hive registry (STORY-053.3)
         if auto_register and self._agent_id is not None and self._hive_store is not None:
             self._auto_register_agent()
@@ -2166,6 +2172,8 @@ class MemoryStore:
             threshold=self._consolidation_config.threshold,
         )
         consolidation_candidates = sum(len(g) for g in groups)
+        # Update tapps_brain.consolidation.candidates gauge (STORY-032.6).
+        self._last_consolidation_candidates = consolidation_candidates
 
         # Federation config removed (STORY-059.2 — SQLite federation deleted).
         # Federation is now Postgres-only; project count not available from local config.
@@ -2272,6 +2280,9 @@ class MemoryStore:
             entries = list(self._entries.values())
         now = datetime.now(tz=UTC)
         candidates = gc_collector.identify_candidates(entries, now=now)
+        # Update tapps_brain.gc.candidates gauge with the current candidate count
+        # (STORY-032.6) — recorded once per gc() call so get_metrics() stays cheap.
+        self._last_gc_candidates = len(candidates)
         details = gc_collector.stale_candidate_details(entries, now=now)
         reason_counts = aggregate_gc_reason_counts(details)
         candidate_keys = [c.key for c in candidates]
@@ -2373,6 +2384,20 @@ class MemoryStore:
         - ``pool.hive.connections_in_use`` — active connections (pool_size - pool_available)
         - ``pool.hive.pool_size`` — total open connections
         - ``pool.hive.saturation`` — fraction of max_size in use (0.0-1.0)
+
+        Custom ``tapps_brain.*`` gauges (STORY-032.6) are also included:
+
+        - ``tapps_brain.entries.count`` — current memory entry count (updated on every call)
+        - ``tapps_brain.consolidation.candidates`` — last known consolidation candidate count
+          (updated by :meth:`health` or :meth:`gc`; stale between runs)
+        - ``tapps_brain.gc.candidates`` — last known GC candidate count
+          (updated by :meth:`gc`; stale between runs)
+
+        .. note::
+            **Cardinality rule:** these gauges must **never** carry ``entry_key``,
+            ``query``, ``session_id``, or any user-controlled string as an OTel
+            attribute.  Only bounded enum values from ``ALLOWED_METRIC_DIMENSIONS``
+            are safe as metric labels.
         """
         if self._hive_store is not None:
             _pool_fn = getattr(self._hive_store, "get_pool_stats", None)
@@ -2389,6 +2414,20 @@ class MemoryStore:
                     self._metrics.set_gauge("pool.hive.saturation", _saturation)
                 except Exception:
                     pass
+
+        # tapps_brain.* gauges — STORY-032.6
+        with self._serialized():
+            _entry_count = len(self._entries)
+        self._metrics.set_gauge("tapps_brain.entries.count", float(_entry_count))
+        self._metrics.set_gauge(
+            "tapps_brain.consolidation.candidates",
+            float(self._last_consolidation_candidates),
+        )
+        self._metrics.set_gauge(
+            "tapps_brain.gc.candidates",
+            float(self._last_gc_candidates),
+        )
+
         return self._metrics.snapshot()
 
     def get_hive_recall_weight(self) -> float:

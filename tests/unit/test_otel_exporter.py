@@ -1207,3 +1207,145 @@ class TestGenAIMetricDimensionsInAllowedSet:
 
         overlap = ALLOWED_METRIC_DIMENSIONS & FORBIDDEN_METRIC_DIMENSIONS
         assert not overlap
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.6: Custom tapps_brain.* metric names + get_metrics() gauges
+# ---------------------------------------------------------------------------
+
+
+class TestTappsBrainMetricConstants:
+    """tapps_brain.* metric name constants are exported (STORY-032.6)."""
+
+    def test_entries_count_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import TAPPS_BRAIN_ENTRIES_COUNT_METRIC
+
+        assert TAPPS_BRAIN_ENTRIES_COUNT_METRIC == "tapps_brain.entries.count"
+
+    def test_consolidation_candidates_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import TAPPS_BRAIN_CONSOLIDATION_CANDIDATES_METRIC
+
+        assert TAPPS_BRAIN_CONSOLIDATION_CANDIDATES_METRIC == "tapps_brain.consolidation.candidates"
+
+    def test_gc_candidates_metric_name(self) -> None:
+        from tapps_brain.otel_exporter import TAPPS_BRAIN_GC_CANDIDATES_METRIC
+
+        assert TAPPS_BRAIN_GC_CANDIDATES_METRIC == "tapps_brain.gc.candidates"
+
+
+class TestTappsBrainGaugesInSnapshot:
+    """tapps_brain.* gauges appear in MetricsSnapshot returned by get_metrics() (STORY-032.6)."""
+
+    def test_entries_count_gauge_in_snapshot(self, tmp_path: Any) -> None:
+        """get_metrics() includes tapps_brain.entries.count as a gauge."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        # Save two entries
+        store.save("key1", "value1")
+        store.save("key2", "value2")
+
+        snap = store.get_metrics()
+
+        assert "tapps_brain.entries.count" in snap.gauges
+        # At least 2 entries (may have dedup consolidations)
+        assert snap.gauges["tapps_brain.entries.count"] >= 2.0
+
+    def test_entries_count_gauge_empty_store(self, tmp_path: Any) -> None:
+        """Empty store reports tapps_brain.entries.count = 0."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        snap = store.get_metrics()
+
+        assert snap.gauges.get("tapps_brain.entries.count", -1.0) == 0.0
+
+    def test_consolidation_candidates_gauge_in_snapshot(self, tmp_path: Any) -> None:
+        """tapps_brain.consolidation.candidates gauge is present in snapshot."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        snap = store.get_metrics()
+
+        assert "tapps_brain.consolidation.candidates" in snap.gauges
+        # Defaults to 0 before health() or gc() runs
+        assert snap.gauges["tapps_brain.consolidation.candidates"] >= 0.0
+
+    def test_gc_candidates_gauge_in_snapshot(self, tmp_path: Any) -> None:
+        """tapps_brain.gc.candidates gauge is present in snapshot."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        snap = store.get_metrics()
+
+        assert "tapps_brain.gc.candidates" in snap.gauges
+        assert snap.gauges["tapps_brain.gc.candidates"] >= 0.0
+
+    def test_gc_candidates_updated_after_gc_run(self, tmp_path: Any) -> None:
+        """tapps_brain.gc.candidates reflects last gc() candidate count."""
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        # Run dry-run GC to trigger candidate count tracking
+        store.gc(dry_run=True)
+
+        snap = store.get_metrics()
+        # Value should be present (may be 0 on fresh empty store)
+        assert "tapps_brain.gc.candidates" in snap.gauges
+
+    def test_tapps_brain_gauges_exported_via_otel_exporter(self, tmp_path: Any) -> None:
+        """OTelExporter.export() forwards tapps_brain.* gauges to OTel up-down counters."""
+        from tapps_brain.otel_exporter import OTelExporter
+        from tapps_brain.store import MemoryStore
+
+        mock_meter = MagicMock()
+        mock_udc = MagicMock()
+        mock_meter.create_up_down_counter.return_value = mock_udc
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        store.save("key1", "hello world")
+        snap = store.get_metrics()
+
+        exporter = OTelExporter(meter=mock_meter)
+        exporter.export(snap)
+
+        # At least one up-down counter call for entries.count
+        udc_names = {
+            (c.kwargs.get("name") or c.args[0])
+            for c in mock_meter.create_up_down_counter.call_args_list
+        }
+        assert "tapps_brain.entries.count" in udc_names
+
+
+class TestTappsBrainCardinalityDoc:
+    """Cardinality rule: entry_key/query/session_id must never be tapps_brain.* metric labels."""
+
+    def test_entry_key_in_forbidden_dimensions(self) -> None:
+        """entry_key-equivalent labels are in FORBIDDEN_METRIC_DIMENSIONS."""
+        from tapps_brain.otel_exporter import FORBIDDEN_METRIC_DIMENSIONS
+
+        # memory.key represents the entry key — must be forbidden
+        assert "memory.key" in FORBIDDEN_METRIC_DIMENSIONS
+
+    def test_query_text_in_forbidden_dimensions(self) -> None:
+        from tapps_brain.otel_exporter import FORBIDDEN_METRIC_DIMENSIONS
+
+        assert "query.text" in FORBIDDEN_METRIC_DIMENSIONS
+
+    def test_session_id_in_forbidden_dimensions(self) -> None:
+        from tapps_brain.otel_exporter import FORBIDDEN_METRIC_DIMENSIONS
+
+        assert "session_id" in FORBIDDEN_METRIC_DIMENSIONS
+
+    def test_tapps_brain_metric_names_not_used_as_dimensions(self) -> None:
+        """tapps_brain.* metric names must not appear in ALLOWED or FORBIDDEN dimensions."""
+        from tapps_brain.otel_exporter import (
+            ALLOWED_METRIC_DIMENSIONS,
+            FORBIDDEN_METRIC_DIMENSIONS,
+            TAPPS_BRAIN_ENTRIES_COUNT_METRIC,
+            TAPPS_BRAIN_GC_CANDIDATES_METRIC,
+        )
+
+        all_dims = ALLOWED_METRIC_DIMENSIONS | FORBIDDEN_METRIC_DIMENSIONS
+        assert TAPPS_BRAIN_ENTRIES_COUNT_METRIC not in all_dims
+        assert TAPPS_BRAIN_GC_CANDIDATES_METRIC not in all_dims

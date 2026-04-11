@@ -532,6 +532,28 @@ GEN_AI_TOKEN_USAGE_METRIC: str = "gen_ai.client.token.usage"
 #: Fixed ``gen_ai.system`` attribute value for tapps-brain.
 _GEN_AI_SYSTEM_VALUE: str = "tapps-brain"
 
+# ---------------------------------------------------------------------------
+# Custom tapps_brain.* metric instrument names (STORY-032.6)
+# ---------------------------------------------------------------------------
+
+#: Gauge tracking the total number of memory entries in the private store.
+#:
+#: .. warning::
+#:     **Cardinality rule** — never attach ``entry_key``, ``query``,
+#:     ``session_id``, or any user-controlled string as an attribute on these
+#:     instruments.  The only safe labels are the bounded enum keys in
+#:     :data:`ALLOWED_METRIC_DIMENSIONS`.
+TAPPS_BRAIN_ENTRIES_COUNT_METRIC: str = "tapps_brain.entries.count"
+
+#: Gauge tracking the number of candidate memory entries identified for consolidation
+#: at the last health-check or GC scan.  Staleness: updated when ``MemoryStore.health()``
+#: or ``MemoryStore.gc()`` runs, not on every ``get_metrics()`` call.
+TAPPS_BRAIN_CONSOLIDATION_CANDIDATES_METRIC: str = "tapps_brain.consolidation.candidates"
+
+#: Gauge tracking the number of candidate memory entries identified for garbage collection
+#: at the last GC scan.  Staleness: updated when ``MemoryStore.gc()`` runs.
+TAPPS_BRAIN_GC_CANDIDATES_METRIC: str = "tapps_brain.gc.candidates"
+
 
 class GenAIMetricsRecorder:
     """Records GenAI semantic convention v1.35.0 metrics via the OTel Metrics API.
