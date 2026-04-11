@@ -53,7 +53,7 @@ Override with:
 make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps"
 ```
 
-See `docs/guides/postgres-dsn.md` for the full env-var reference.
+See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full env-var contract** (all variables, examples, required (prod/dev)). Template: [`.env.example`](.env.example).
 
 ### CI
 

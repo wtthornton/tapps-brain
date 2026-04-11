@@ -555,6 +555,7 @@ tests/
 | Guide | Description |
 |-------|-------------|
 | [Documentation index](docs/DOCUMENTATION_INDEX.md) | Categorized map of guides, engineering references, and planning epics |
+| [**Environment variables**](docs/guides/postgres-dsn.md) | **Full env-var contract** — all variables, examples, required (prod/dev). Template: [`.env.example`](.env.example) |
 | [Contributing](CONTRIBUTING.md) | Contributor setup (`uv`), tests, lint, types, and PR expectations |
 | [Getting Started](docs/guides/getting-started.md) | Use-case map and quick example for each interface |
 | [Profile Design Guide](docs/guides/profiles.md) | Custom profiles: layers, decay, scoring, promotion, Hive config |

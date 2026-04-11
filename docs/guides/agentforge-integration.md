@@ -100,8 +100,9 @@ export TAPPS_BRAIN_GROUPS="security,testing"
 export TAPPS_BRAIN_EXPERT_DOMAINS="sql,python"
 ```
 
-See [Agent integration guide — environment variables](agent-integration.md#environment-variables)
-for the full table, including pool sizing and health JSON fields.
+See the [**environment variable reference**](postgres-dsn.md) for the complete table
+(all variables, defaults, and required/optional for prod vs dev).
+A ready-made template is in [`.env.example`](../../.env.example) at the repo root.
 
 ### 4 — Initialize AgentBrain in your host
 
