@@ -1107,3 +1107,267 @@ class TestNonRetrievalSpanStoreIntegration:
 
         raw_vals = list(captured_attrs.values())
         assert raw_key not in raw_vals, "Raw entry key must not appear in reinforce span attributes"
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.7: record_feedback_event() — feedback span events
+# ---------------------------------------------------------------------------
+
+
+class TestRecordFeedbackEvent:
+    """record_feedback_event() emits tapps_brain.feedback OTel span events."""
+
+    def _make_feedback_event(self, event_type: str = "recall_rated", utility_score: float | None = 0.8) -> Any:
+        """Return a simple namespace object mimicking FeedbackEvent."""
+        from types import SimpleNamespace
+        return SimpleNamespace(event_type=event_type, utility_score=utility_score)
+
+    def test_adds_event_to_span(self) -> None:
+        from tapps_brain.otel_tracer import EVENT_FEEDBACK, record_feedback_event
+
+        mock_span = MagicMock()
+        event = self._make_feedback_event("recall_rated", 0.9)
+        record_feedback_event(mock_span, event)
+
+        mock_span.add_event.assert_called_once()
+        call_args = mock_span.add_event.call_args
+        assert call_args.args[0] == EVENT_FEEDBACK or call_args[0][0] == EVENT_FEEDBACK
+
+    def test_event_attrs_contain_event_type(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_FEEDBACK_EVENT_TYPE, record_feedback_event
+
+        mock_span = MagicMock()
+        event = self._make_feedback_event("gap_reported", None)
+        record_feedback_event(mock_span, event)
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_FEEDBACK_EVENT_TYPE) == "gap_reported"
+
+    def test_event_attrs_contain_utility_score_when_set(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_FEEDBACK_UTILITY_SCORE, record_feedback_event
+
+        mock_span = MagicMock()
+        event = self._make_feedback_event("recall_rated", 0.75)
+        record_feedback_event(mock_span, event)
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_FEEDBACK_UTILITY_SCORE) == 0.75
+
+    def test_utility_score_omitted_when_none(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_FEEDBACK_UTILITY_SCORE, record_feedback_event
+
+        mock_span = MagicMock()
+        event = self._make_feedback_event("gap_reported", None)
+        record_feedback_event(mock_span, event)
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert ATTR_FEEDBACK_UTILITY_SCORE not in attrs
+
+    def test_no_pii_in_event_attrs(self) -> None:
+        """entry_key, session_id, and details must never appear in event attributes."""
+        from types import SimpleNamespace
+
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        mock_span = MagicMock()
+        event = SimpleNamespace(
+            event_type="recall_rated",
+            utility_score=1.0,
+            entry_key="secret-key-pii",
+            session_id="session-pii",
+            details={"raw": "sensitive-data"},
+        )
+        record_feedback_event(mock_span, event)
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert "entry_key" not in attrs
+        assert "session_id" not in attrs
+        assert "details" not in attrs
+        assert "secret-key-pii" not in str(attrs)
+        assert "sensitive-data" not in str(attrs)
+
+    def test_noop_when_span_is_none(self) -> None:
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        # Must not raise
+        record_feedback_event(None, self._make_feedback_event())
+
+    def test_noop_when_event_is_none(self) -> None:
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        mock_span = MagicMock()
+        record_feedback_event(mock_span, None)
+        mock_span.add_event.assert_not_called()
+
+    def test_noop_when_event_type_missing(self) -> None:
+        from types import SimpleNamespace
+
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        mock_span = MagicMock()
+        event = SimpleNamespace(utility_score=0.5)  # no event_type
+        record_feedback_event(mock_span, event)
+        mock_span.add_event.assert_not_called()
+
+    def test_noop_when_span_lacks_add_event(self) -> None:
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        # span without add_event attribute
+        class _BadSpan:
+            pass
+
+        record_feedback_event(_BadSpan(), self._make_feedback_event())  # must not raise
+
+    def test_sdk_error_suppressed(self) -> None:
+        from tapps_brain.otel_tracer import record_feedback_event
+
+        mock_span = MagicMock()
+        mock_span.add_event.side_effect = RuntimeError("SDK error")
+        record_feedback_event(mock_span, self._make_feedback_event())  # must not raise
+
+    def test_works_with_real_feedback_event(self) -> None:
+        """Verify with actual FeedbackEvent model — graceful when module present."""
+        from tapps_brain.otel_tracer import ATTR_FEEDBACK_EVENT_TYPE, record_feedback_event
+
+        try:
+            from tapps_brain.feedback import FeedbackEvent
+        except ImportError:
+            return  # graceful skip when module absent
+
+        mock_span = MagicMock()
+        event = FeedbackEvent(event_type="recall_rated", utility_score=0.5)
+        record_feedback_event(mock_span, event)
+
+        mock_span.add_event.assert_called_once()
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_FEEDBACK_EVENT_TYPE) == "recall_rated"
+
+
+# ---------------------------------------------------------------------------
+# STORY-032.8: record_diagnostics_event() — diagnostics span events
+# ---------------------------------------------------------------------------
+
+
+class TestRecordDiagnosticsEvent:
+    """record_diagnostics_event() emits tapps_brain.diagnostics.report OTel span events."""
+
+    def _make_report(
+        self,
+        composite_score: float = 0.85,
+        circuit_state: str = "closed",
+        gap_count: int = 2,
+        anomalies: list[Any] | None = None,
+    ) -> Any:
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            composite_score=composite_score,
+            circuit_state=circuit_state,
+            gap_count=gap_count,
+            anomalies=anomalies or [],
+        )
+
+    def test_adds_event_to_span(self) -> None:
+        from tapps_brain.otel_tracer import EVENT_DIAGNOSTICS_REPORT, record_diagnostics_event
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, self._make_report())
+
+        mock_span.add_event.assert_called_once()
+        call_name = mock_span.add_event.call_args.args[0] if mock_span.add_event.call_args.args else mock_span.add_event.call_args.kwargs.get("name")
+        assert call_name == EVENT_DIAGNOSTICS_REPORT
+
+    def test_event_attrs_composite_score(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_COMPOSITE_SCORE, record_diagnostics_event
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, self._make_report(composite_score=0.72))
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_DIAGNOSTICS_COMPOSITE_SCORE) == 0.72
+
+    def test_event_attrs_circuit_state(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_CIRCUIT_STATE, record_diagnostics_event
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, self._make_report(circuit_state="degraded"))
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_DIAGNOSTICS_CIRCUIT_STATE) == "degraded"
+
+    def test_event_attrs_gap_count(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_GAP_COUNT, record_diagnostics_event
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, self._make_report(gap_count=5))
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_DIAGNOSTICS_GAP_COUNT) == 5
+
+    def test_event_attrs_anomaly_count(self) -> None:
+        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_ANOMALY_COUNT, record_diagnostics_event
+
+        mock_span = MagicMock()
+        anomalies = [{"type": "spike"}, {"type": "drift"}]
+        record_diagnostics_event(mock_span, self._make_report(anomalies=anomalies))
+
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert attrs.get(ATTR_DIAGNOSTICS_ANOMALY_COUNT) == 2
+
+    def test_noop_when_span_is_none(self) -> None:
+        from tapps_brain.otel_tracer import record_diagnostics_event
+
+        record_diagnostics_event(None, self._make_report())  # must not raise
+
+    def test_noop_when_report_is_none(self) -> None:
+        from tapps_brain.otel_tracer import record_diagnostics_event
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, None)
+        mock_span.add_event.assert_not_called()
+
+    def test_noop_when_composite_score_missing(self) -> None:
+        """Report without composite_score is silently skipped."""
+        from types import SimpleNamespace
+
+        from tapps_brain.otel_tracer import record_diagnostics_event
+
+        mock_span = MagicMock()
+        report = SimpleNamespace(circuit_state="closed")  # no composite_score
+        record_diagnostics_event(mock_span, report)
+        mock_span.add_event.assert_not_called()
+
+    def test_noop_when_span_lacks_add_event(self) -> None:
+        from tapps_brain.otel_tracer import record_diagnostics_event
+
+        class _BadSpan:
+            pass
+
+        record_diagnostics_event(_BadSpan(), self._make_report())  # must not raise
+
+    def test_sdk_error_suppressed(self) -> None:
+        from tapps_brain.otel_tracer import record_diagnostics_event
+
+        mock_span = MagicMock()
+        mock_span.add_event.side_effect = RuntimeError("SDK error")
+        record_diagnostics_event(mock_span, self._make_report())  # must not raise
+
+    def test_works_with_real_diagnostics_report(self, tmp_path: Any) -> None:
+        """Verify with actual DiagnosticsReport from run_diagnostics() when module present."""
+        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_COMPOSITE_SCORE, record_diagnostics_event
+
+        try:
+            from tapps_brain.diagnostics import run_diagnostics
+            from tapps_brain.store import MemoryStore
+        except ImportError:
+            return  # graceful skip when module absent
+
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        store.save("key1", "some memory content for diagnostics test")
+        report = run_diagnostics(store)
+
+        mock_span = MagicMock()
+        record_diagnostics_event(mock_span, report)
+
+        mock_span.add_event.assert_called_once()
+        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        assert ATTR_DIAGNOSTICS_COMPOSITE_SCORE in attrs

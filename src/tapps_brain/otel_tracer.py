@@ -391,3 +391,145 @@ def record_retrieval_document_events(
             add_event(EVENT_RETRIEVAL_DOCUMENT, event_attrs)
         except Exception:
             pass  # OTel SDK errors must never propagate to callers
+
+
+# ---------------------------------------------------------------------------
+# Feedback events — STORY-032.7
+# ---------------------------------------------------------------------------
+
+#: OTel span event name for a tapps-brain feedback event.
+EVENT_FEEDBACK: str = "tapps_brain.feedback"
+
+#: Span event attribute: the event_type of the feedback event (safe low-cardinality enum).
+ATTR_FEEDBACK_EVENT_TYPE: str = "tapps_brain.feedback.event_type"
+
+#: Span event attribute: numeric utility score (float in [-1.0, 1.0] or absent).
+ATTR_FEEDBACK_UTILITY_SCORE: str = "tapps_brain.feedback.utility_score"
+
+
+def record_feedback_event(
+    span: Any,  # noqa: ANN401
+    event: Any,  # noqa: ANN401  — FeedbackEvent or dict-like; intentionally untyped to avoid import
+) -> None:
+    """Add a ``tapps_brain.feedback`` OTel span event for a recorded feedback signal.
+
+    This function is a **no-op** when:
+
+    - *span* is ``None`` (OTel unavailable or disabled).
+    - *event* is ``None`` or does not have an ``event_type`` attribute.
+    - The span does not support ``add_event`` (defensive: wrong type).
+
+    Only safe, low-cardinality attributes are emitted:
+
+    - ``tapps_brain.feedback.event_type`` — the Object-Action snake_case event name
+      (e.g. ``"recall_rated"``, ``"gap_reported"``).  **Not** raw user content.
+    - ``tapps_brain.feedback.utility_score`` — numeric score in [-1.0, 1.0] when set.
+
+    **Forbidden** (never included): ``entry_key``, ``session_id``, ``details`` —
+    these may contain user-controlled PII.  See the telemetry policy doc (STORY-061.6).
+
+    Args:
+        span: The active OTel span returned by :func:`start_span`, or ``None``.
+        event: A ``FeedbackEvent`` instance (or any object with an ``event_type``
+            attribute).  Gracefully skipped if the module is absent.
+    """
+    if span is None or event is None:
+        return
+    add_event = getattr(span, "add_event", None)
+    if add_event is None:
+        return
+
+    event_type = getattr(event, "event_type", None)
+    if not event_type or not isinstance(event_type, str):
+        return
+
+    event_attrs: dict[str, str | float] = {
+        ATTR_FEEDBACK_EVENT_TYPE: event_type,
+    }
+    utility_score = getattr(event, "utility_score", None)
+    if utility_score is not None and isinstance(utility_score, (int, float)):
+        event_attrs[ATTR_FEEDBACK_UTILITY_SCORE] = float(utility_score)
+
+    try:
+        add_event(EVENT_FEEDBACK, event_attrs)
+    except Exception:
+        pass  # OTel SDK errors must never propagate to callers
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics events — STORY-032.8
+# ---------------------------------------------------------------------------
+
+#: OTel span event name for a tapps-brain diagnostics report.
+EVENT_DIAGNOSTICS_REPORT: str = "tapps_brain.diagnostics.report"
+
+#: Span event attribute: composite quality score (float 0-1).
+ATTR_DIAGNOSTICS_COMPOSITE_SCORE: str = "tapps_brain.diagnostics.composite_score"
+
+#: Span event attribute: circuit breaker state ("closed", "degraded", "open", "half_open").
+ATTR_DIAGNOSTICS_CIRCUIT_STATE: str = "tapps_brain.diagnostics.circuit_state"
+
+#: Span event attribute: number of memory gaps currently tracked.
+ATTR_DIAGNOSTICS_GAP_COUNT: str = "tapps_brain.diagnostics.gap_count"
+
+#: Span event attribute: number of active anomalies in the report.
+ATTR_DIAGNOSTICS_ANOMALY_COUNT: str = "tapps_brain.diagnostics.anomaly_count"
+
+
+def record_diagnostics_event(
+    span: Any,  # noqa: ANN401
+    report: Any,  # noqa: ANN401  — DiagnosticsReport or dict-like; intentionally untyped
+) -> None:
+    """Add a ``tapps_brain.diagnostics.report`` OTel span event.
+
+    This function is a **no-op** when:
+
+    - *span* is ``None`` (OTel unavailable or disabled).
+    - *report* is ``None`` or lacks a ``composite_score`` attribute.
+    - The span does not support ``add_event`` (defensive: wrong type).
+
+    Only safe, bounded attributes are emitted:
+
+    - ``tapps_brain.diagnostics.composite_score`` — float 0.0–1.0.
+    - ``tapps_brain.diagnostics.circuit_state`` — bounded enum string.
+    - ``tapps_brain.diagnostics.gap_count`` — integer ≥ 0.
+    - ``tapps_brain.diagnostics.anomaly_count`` — length of anomalies list.
+
+    **Never emitted**: raw memory content, dimension scores containing entry keys,
+    or any user-controlled string.  See telemetry policy (STORY-061.6).
+
+    Args:
+        span: The active OTel span returned by :func:`start_span`, or ``None``.
+        report: A ``DiagnosticsReport`` instance (or any object with a
+            ``composite_score`` attribute).  Gracefully skipped if absent.
+    """
+    if span is None or report is None:
+        return
+    add_event = getattr(span, "add_event", None)
+    if add_event is None:
+        return
+
+    composite_score = getattr(report, "composite_score", None)
+    if composite_score is None:
+        return
+
+    event_attrs: dict[str, str | float | int] = {}
+    if isinstance(composite_score, (int, float)):
+        event_attrs[ATTR_DIAGNOSTICS_COMPOSITE_SCORE] = float(composite_score)
+
+    circuit_state = getattr(report, "circuit_state", None)
+    if circuit_state is not None and isinstance(circuit_state, str):
+        event_attrs[ATTR_DIAGNOSTICS_CIRCUIT_STATE] = circuit_state
+
+    gap_count = getattr(report, "gap_count", None)
+    if gap_count is not None and isinstance(gap_count, int):
+        event_attrs[ATTR_DIAGNOSTICS_GAP_COUNT] = gap_count
+
+    anomalies = getattr(report, "anomalies", None)
+    if isinstance(anomalies, (list, tuple)):
+        event_attrs[ATTR_DIAGNOSTICS_ANOMALY_COUNT] = len(anomalies)
+
+    try:
+        add_event(EVENT_DIAGNOSTICS_REPORT, event_attrs)
+    except Exception:
+        pass  # OTel SDK errors must never propagate to callers
