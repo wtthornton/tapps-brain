@@ -1,0 +1,24 @@
+# CODEOWNERS — tapps-brain
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# These owners are automatically requested for review on any PR that changes
+# the listed paths. Ownership is intentional — not just notification.
+
+# Default owner for all files not matched below
+*   @wtthornton
+
+# HTTP adapter — any new route requires explicit review + ADR or inline
+# justification (see ADR-008: no HTTP without MCP + library parity).
+src/tapps_brain/http_adapter.py   @wtthornton
+
+# Migrations — DDL changes must not break existing Postgres deployments
+src/tapps_brain/migrations/   @wtthornton
+
+# Security-sensitive modules
+src/tapps_brain/safety.py          @wtthornton
+src/tapps_brain/postgres_hive.py   @wtthornton
+src/tapps_brain/postgres_connection.py   @wtthornton
+
+# ADRs — architectural decisions require maintainer sign-off
+docs/planning/adr/   @wtthornton
