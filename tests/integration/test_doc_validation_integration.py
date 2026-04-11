@@ -407,10 +407,7 @@ class TestRoundTrip:
         """validate_entries(strict=True) raises StrictValidationError when entries are flagged."""
         # Deprecation trigger: docs say "badlib deprecated", claim text contains "badlib"
         docs = {
-            "badlib": (
-                "## badlib\n\n"
-                "badlib is deprecated and removed in v3. Use newlib instead."
-            )
+            "badlib": ("## badlib\n\nbadlib is deprecated and removed in v3. Use newlib instead.")
         }
         engine = StubLookupEngine(docs=docs)
         s = MemoryStore(tmp_path, lookup_engine=engine)

@@ -35,6 +35,7 @@ def _mcp_tool_fn(mcp_server: object, name: str):
     reason="SQLite HiveStore removed in v3 (ADR-007); test requires PostgresHiveBackend"
 )
 def test_full_feedback_pipeline(tmp_path: Path) -> None:
+    hs: object = None  # HiveStore removed in v3 (ADR-007); placeholder for dead code below
     raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")
     profile = get_builtin_profile("repo-brain").model_copy(
         update={"feedback": FeedbackConfig(custom_event_types=["deploy_completed"])},

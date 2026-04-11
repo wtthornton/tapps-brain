@@ -226,7 +226,9 @@ class TestFTSSearch:
     def test_search_with_memory_group_filter(self, backend: Any) -> None:
         from tapps_brain.models import MemoryEntry
 
-        backend.save(MemoryEntry(key="grp-a", value="filtered by group alpha", memory_group="alpha"))
+        backend.save(
+            MemoryEntry(key="grp-a", value="filtered by group alpha", memory_group="alpha")
+        )
         backend.save(MemoryEntry(key="grp-b", value="filtered by group beta", memory_group="beta"))
         results = backend.search("filtered", memory_group="alpha")
         keys = [e.key for e in results]
@@ -323,9 +325,7 @@ class TestNoSQLiteFiles:
         from tapps_brain.store import MemoryStore
 
         cm = PostgresConnectionManager(_PG_DSN)
-        backend = PostgresPrivateBackend(
-            cm, project_id=_unique_project(), agent_id=_unique_agent()
-        )
+        backend = PostgresPrivateBackend(cm, project_id=_unique_project(), agent_id=_unique_agent())
         try:
             _apply_migrations()
             store = MemoryStore(tmp_path, private_backend=backend)

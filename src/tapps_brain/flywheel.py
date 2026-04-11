@@ -145,7 +145,7 @@ class FeedbackProcessor:
 
         if not isinstance(store, _MS):
             raise TypeError("store must be MemoryStore")
-        raw = store._persistence.flywheel_meta_get(_FEEDBACK_CURSOR_KEY)
+        raw = store._persistence.flywheel_meta_get(_FEEDBACK_CURSOR_KEY)  # type: ignore[union-attr]
         cur_ts, cur_id = _parse_cursor(raw)
         events = store.query_feedback(limit=100_000)
         events.sort(key=lambda e: (e.timestamp, e.id))
@@ -195,7 +195,7 @@ class FeedbackProcessor:
             processed += 1
             last_ts, last_id = ev.timestamp, ev.id
         if last_ts is not None and last_id is not None:
-            store._persistence.flywheel_meta_set(
+            store._persistence.flywheel_meta_set(  # type: ignore[union-attr]
                 _FEEDBACK_CURSOR_KEY,
                 json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
             )

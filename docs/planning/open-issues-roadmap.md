@@ -43,6 +43,8 @@ See individual epic files for story breakdown (8–10 stories each, ~42 Ralph lo
 
 **Further backlog (no GitHub issue yet — file when scheduled):** architecture review follow-ups; clarity / observability / optional refactors—not emergency fixes.
 
+**Product experience (parallel / post-v3 polish):** [EPIC-064](epics/EPIC-064.md) — brain-visual narrative motion, deep insight panels, **web-cited** WCAG/MDN motion constraints, **NLT Labs style sheet + logo pack** audit (`064.1`), and explicit **docs-mcp** + **tapps-mcp** verification (see epic § *MCP + web coverage*); Ralph [`.ralph/fix_plan.md`](../.ralph/fix_plan.md) § EPIC-064.
+
 **EPIC-052 deferred follow-up (not blocking):**
 - **`persistence.delete_relations` O(n) cleanup path** — currently loads all relations, JSON-parses `source_entry_keys` per row in Python, and issues one `DELETE` per match. Called only when deleting a single entry's related rows (low frequency). Optimization candidate: single SQL `DELETE` with `JSON_EACH` / `LIKE` on a canonicalized key string. Kept out of scope for EPIC-052 per non-goals (no structural refactor). File a GitHub issue when relation volume becomes a bottleneck.
 

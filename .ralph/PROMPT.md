@@ -91,6 +91,8 @@ RECOMMENDATION: <one line summary of what to do next>
 ---END_RALPH_STATUS---
 ```
 
+**IMPORTANT:** Output the `---RALPH_STATUS---` block as the **very last thing** in your response with nothing after it. Ralph's parser requires the status block to appear at the end of output — any text after it causes `UNKNOWN` work type and breaks loop analysis.
+
 ### STATUS and EXIT_SIGNAL rules
 
 `STATUS: COMPLETE` now explicitly requires **ALL items** in `fix_plan.md` checked `[x]`. Any remaining `- [ ]` items = `STATUS: IN_PROGRESS`.

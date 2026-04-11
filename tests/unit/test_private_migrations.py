@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -19,7 +19,6 @@ from tapps_brain.postgres_migrations import (
     discover_private_migrations,
     get_private_schema_status,
 )
-
 
 # ---------------------------------------------------------------------------
 # File discovery
@@ -51,7 +50,9 @@ class TestDiscoverPrivateMigrations:
 
     def test_migration_file_exists_on_disk(self) -> None:
         """Sanity: the physical SQL file must exist in the package tree."""
-        pkg_dir = Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "migrations" / "private"
+        pkg_dir = (
+            Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "migrations" / "private"
+        )
         sql_files = list(pkg_dir.glob("*.sql"))
         assert sql_files, "No .sql files found in migrations/private/"
 
@@ -120,9 +121,8 @@ class TestGetPrivateSchemaStatus:
         """Without psycopg installed (or importable), should raise ImportError."""
         import sys
 
-        with patch.dict(sys.modules, {"psycopg": None}):
-            with pytest.raises((ImportError, TypeError)):
-                get_private_schema_status("postgres://localhost/brain")
+        with patch.dict(sys.modules, {"psycopg": None}), pytest.raises((ImportError, TypeError)):
+            get_private_schema_status("postgres://localhost/brain")
 
     def test_returns_schema_status_instance(self) -> None:
         """With a mocked psycopg connection, returns a SchemaStatus."""
@@ -230,9 +230,8 @@ class TestApplyPrivateMigrations:
     def test_raises_import_error_without_psycopg(self) -> None:
         import sys
 
-        with patch.dict(sys.modules, {"psycopg": None}):
-            with pytest.raises((ImportError, TypeError)):
-                apply_private_migrations("postgres://localhost/brain")
+        with patch.dict(sys.modules, {"psycopg": None}), pytest.raises((ImportError, TypeError)):
+            apply_private_migrations("postgres://localhost/brain")
 
     def test_dry_run_returns_version_list_without_executing(self) -> None:
         migrations = discover_private_migrations()

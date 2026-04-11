@@ -247,8 +247,8 @@ class TestProperties:
 
     def test_hive_property(self, tmp_path: Path) -> None:
         with _make_brain(tmp_path) as brain:
-            # Default construction should have a Hive backend (SQLite)
-            assert brain.hive is not None
+            # v3 Postgres-only: without a DSN the Hive backend is None
+            assert brain.hive is None
 
 
 # ---------------------------------------------------------------------------

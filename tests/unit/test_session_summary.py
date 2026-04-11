@@ -135,6 +135,7 @@ class TestSessionSummarySave:
 
         # Verify stored value is within budget (plus ellipsis marker " …")
         from tapps_brain.store import MemoryStore
+
         store = MemoryStore(tmp_path)
         try:
             entries = store.search("word")
@@ -158,6 +159,7 @@ class TestSessionSummarySave:
         result = session_summary_save(summary, project_dir=tmp_path, max_chars=20)
         assert result.get("truncated") is True
         from tapps_brain.store import MemoryStore
+
         store = MemoryStore(tmp_path)
         try:
             entries = store.search("hello")

@@ -272,10 +272,7 @@ def run_health_check(  # noqa: PLR0915
             #   2. store._hive_store (already-configured backend from MemoryStore)
             #   3. TAPPS_BRAIN_HIVE_DSN env var → Postgres via create_hive_backend (ADR-007)
             _hive_dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-            _resolved_hive: object | None = (
-                hive_store
-                or getattr(store, "_hive_store", None)
-            )
+            _resolved_hive: object | None = hive_store or getattr(store, "_hive_store", None)
             _owns_hive = False  # whether we opened it and must close it
 
             if _resolved_hive is None and _hive_dsn:
@@ -312,9 +309,7 @@ def run_health_check(  # noqa: PLR0915
                     if _cm is not None and hasattr(_cm, "get_pool_stats"):
                         try:
                             _ps = _cm.get_pool_stats()
-                            hive_health.pool_saturation = float(
-                                _ps.get("pool_saturation", 0.0)
-                            )
+                            hive_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                         except Exception:
                             pass
 

@@ -204,7 +204,7 @@ def undo_consolidation_merge(  # noqa: PLR0911
         try:
             for sk in source_keys:
                 store._persistence.save(store._entries[sk])
-            store._persistence.delete_relations(consolidated_key)
+            store._persistence.delete_relations(consolidated_key)  # type: ignore[union-attr]
             deleted = store._persistence.delete(consolidated_key)
             if not deleted:
                 msg = "consolidated_row_delete_failed"

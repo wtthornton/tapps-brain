@@ -13,7 +13,6 @@ EPIC-055 — pluggable storage backends.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,7 +21,14 @@ import yaml
 from pydantic import ValidationError
 
 if TYPE_CHECKING:
-    from tapps_brain._protocols import AgentRegistryBackend, FederationBackend, HiveBackend
+    from collections.abc import Sequence
+
+    from tapps_brain._protocols import (
+        AgentRegistryBackend,
+        FederationBackend,
+        HiveBackend,
+        PrivateBackend,
+    )
     from tapps_brain.store import MemoryStore
 
 from tapps_brain.agent_scope import hive_group_name_from_scope
@@ -414,9 +420,7 @@ def create_hive_backend(
         )
         raise ValueError(msg)
     if not str(dsn_or_path).startswith(("postgres://", "postgresql://")):
-        msg = (
-            "Hive backend requires a PostgreSQL DSN. SQLite backends are removed (ADR-007)."
-        )
+        msg = "Hive backend requires a PostgreSQL DSN. SQLite backends are removed (ADR-007)."
         raise ValueError(msg)
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.postgres_hive import PostgresHiveBackend
@@ -437,10 +441,7 @@ def create_federation_backend(dsn_or_path: str | None = None) -> FederationBacke
         )
         raise ValueError(msg)
     if not str(dsn_or_path).startswith(("postgres://", "postgresql://")):
-        msg = (
-            "Federation backend requires a PostgreSQL DSN. "
-            "SQLite backends are removed (ADR-007)."
-        )
+        msg = "Federation backend requires a PostgreSQL DSN. SQLite backends are removed (ADR-007)."
         raise ValueError(msg)
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.postgres_federation import PostgresFederationBackend
@@ -464,6 +465,94 @@ def resolve_hive_backend_from_env(
     if not dsn:
         return None
     return create_hive_backend(dsn, encryption_key=encryption_key)
+
+
+def create_private_backend(
+    dsn: str,
+    *,
+    project_id: str,
+    agent_id: str,
+) -> PrivateBackend:
+    """Create a :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`.
+
+    A **PostgreSQL** DSN is required. SQLite private-memory backends are not
+    supported in v3 (ADR-007).
+
+    Args:
+        dsn: PostgreSQL DSN (``postgres://`` or ``postgresql://``).
+        project_id: Canonical project identifier (e.g. a hash of the project root
+            path).  All operations for this backend are scoped to this project.
+        agent_id: Agent identifier (e.g. ``'claude-code'``).
+
+    Raises:
+        ValueError: When *dsn* is empty or does not use a Postgres scheme.
+    """
+    if not dsn or not dsn.strip():
+        msg = (
+            "create_private_backend() requires a PostgreSQL DSN "
+            "(postgres:// or postgresql://). SQLite private backends are not "
+            "supported in v3 (ADR-007)."
+        )
+        raise ValueError(msg)
+    if not dsn.startswith(("postgres://", "postgresql://")):
+        msg = (
+            "Private memory backend requires a PostgreSQL DSN. "
+            "SQLite backends are not supported in v3 (ADR-007)."
+        )
+        raise ValueError(msg)
+
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.postgres_private import PostgresPrivateBackend
+
+    cm = PostgresConnectionManager(dsn)
+    return PostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)
+
+
+def resolve_private_backend_from_env(
+    project_id: str,
+    agent_id: str,
+) -> PrivateBackend | None:
+    """Return a :class:`~tapps_brain.postgres_private.PostgresPrivateBackend` from env.
+
+    Reads ``TAPPS_BRAIN_DATABASE_URL`` (v3 unified DSN) and falls back to
+    ``TAPPS_BRAIN_HIVE_DSN`` for backward compatibility.  Returns ``None`` when
+    neither env var is set — callers fall back to SQLite :class:`MemoryPersistence`.
+
+    Args:
+        project_id: Canonical project identifier (see :func:`derive_project_id`).
+        agent_id: Agent identifier string.
+    """
+    import os
+
+    dsn = (
+        os.environ.get("TAPPS_BRAIN_DATABASE_URL") or os.environ.get("TAPPS_BRAIN_HIVE_DSN") or ""
+    ).strip()
+    if not dsn:
+        return None
+    try:
+        return create_private_backend(dsn, project_id=project_id, agent_id=agent_id)
+    except ValueError:
+        logger.warning(
+            "private_backend.resolve_from_env_failed",
+            dsn_prefix=dsn[:20] if dsn else "",
+        )
+        return None
+
+
+def derive_project_id(project_root: Path | str) -> str:
+    """Derive a stable ``project_id`` string from a filesystem path.
+
+    Uses the first 16 hex chars of SHA-256(absolute-path) to keep IDs short
+    and path-agnostic.  Stable across sessions for the same root.
+
+    Example::
+
+        >>> derive_project_id("/home/user/myrepo")
+        'a3f1c9e207b4d852'
+    """
+    import hashlib
+
+    return hashlib.sha256(str(Path(project_root).resolve()).encode()).hexdigest()[:16]
 
 
 def create_agent_registry_backend(

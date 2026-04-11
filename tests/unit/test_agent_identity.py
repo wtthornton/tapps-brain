@@ -5,7 +5,6 @@ auto-registration (STORY-053.3), and CLI/MCP passthrough (STORY-053.4).
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-
 from unittest.mock import MagicMock
 
 import pytest

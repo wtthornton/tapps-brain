@@ -14,8 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from tapps_brain._protocols import (
     AgentRegistryBackend,
     FederationBackend,

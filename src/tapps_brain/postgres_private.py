@@ -1,0 +1,636 @@
+"""PostgreSQL implementation of PrivateBackend protocol.
+
+EPIC-059 STORY-059.5 — private agent memory wired through Postgres.
+All queries are scoped to the ``(project_id, agent_id)`` pair supplied at
+construction, replacing per-agent SQLite files (``.tapps-brain/agents/<id>/memory.db``).
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import structlog
+
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.relations import RelationEntry
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+# DDL for the private_relations auxiliary table.  Created on first use.
+_RELATIONS_DDL = """\
+CREATE TABLE IF NOT EXISTS private_relations (
+    project_id          TEXT        NOT NULL,
+    agent_id            TEXT        NOT NULL,
+    subject             TEXT        NOT NULL,
+    predicate           TEXT        NOT NULL,
+    object_entity       TEXT        NOT NULL,
+    source_entry_keys   JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    confidence          REAL        NOT NULL DEFAULT 0.8,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, agent_id, subject, predicate, object_entity)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_rel_project_agent
+    ON private_relations (project_id, agent_id);
+"""
+
+# Schema version reported by get_schema_version() (mirrors 001_initial.sql).
+_PRIVATE_SCHEMA_VERSION = 1
+
+# Valid time_field values for temporal filtering.
+_VALID_TIME_FIELDS: frozenset[str] = frozenset({"created_at", "updated_at", "last_accessed"})
+
+
+class PostgresPrivateBackend:
+    """PostgreSQL-backed private memory backend.
+
+    Satisfies the ``PrivateBackend`` protocol (``_protocols.py``).  All
+    operations are scoped to the ``(project_id, agent_id)`` pair set at
+    construction.  No SQLite files are created.
+
+    The ``private_memories`` table and its indexes must already exist (applied by
+    ``tapps_brain.postgres_migrations.discover_private_migrations()`` → migration
+    ``001_initial.sql``).  The lighter-weight ``private_relations`` table is
+    created inline on first use via :meth:`_ensure_relations_table`.
+
+    Protocol-compatibility sentinels
+    ---------------------------------
+    ``db_path``, ``store_dir``, and ``audit_path`` return ``Path("/dev/null")``.
+    Code that relies on these paths (``DiagnosticsHistoryStore``, ``FeedbackStore``,
+    JSONL ``AuditReader``) is **not supported** by this backend in v3.  Callers will
+    silently degrade: ``append_audit`` is a no-op, and SQLite-backed diagnostics /
+    feedback tables will not be populated.  Postgres-native replacements are
+    planned in upcoming stories (059.7, 061).
+    """
+
+    def __init__(
+        self,
+        connection_manager: PostgresConnectionManager,
+        *,
+        project_id: str,
+        agent_id: str,
+    ) -> None:
+        self._cm = connection_manager
+        self._project_id = project_id
+        self._agent_id = agent_id
+
+        # Sentinel paths — required by PrivateBackend protocol; no real files.
+        self._db_path: Path = Path("/dev/null")
+        self._store_dir: Path = Path("/dev/null").parent
+        self._audit_path: Path = Path("/dev/null")
+
+        self._lock = threading.Lock()
+        self._relations_ensured = False
+
+    # ------------------------------------------------------------------
+    # Protocol-required properties
+    # ------------------------------------------------------------------
+
+    @property
+    def store_dir(self) -> Path:
+        """Sentinel path — Postgres backend has no on-disk store directory."""
+        return self._store_dir
+
+    @property
+    def db_path(self) -> Path:
+        """Sentinel path — Postgres backend has no SQLite file."""
+        return self._db_path
+
+    @property
+    def audit_path(self) -> Path:
+        """Sentinel path — JSONL audit log is not used by this backend."""
+        return self._audit_path
+
+    @property
+    def encryption_key(self) -> str | None:
+        """Always ``None`` — Postgres does not use SQLCipher."""
+        return None
+
+    @property
+    def sqlcipher_enabled(self) -> bool:
+        """Always ``False`` — Postgres backend does not use SQLCipher."""
+        return False
+
+    # ------------------------------------------------------------------
+    # Core CRUD — private_memories table
+    # ------------------------------------------------------------------
+
+    def save(self, entry: MemoryEntry) -> None:
+        """Upsert a :class:`MemoryEntry` into ``private_memories``."""
+        tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        source = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+        scope = entry.scope.value if hasattr(entry.scope, "value") else str(entry.scope)
+        tags_json = json.dumps(entry.tags, ensure_ascii=False)
+
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO private_memories (
+                    project_id, agent_id, key, value,
+                    tier, confidence, source, source_agent,
+                    scope, agent_scope, memory_group, tags,
+                    created_at, updated_at, last_accessed,
+                    access_count, useful_access_count, total_access_count,
+                    branch, last_reinforced, reinforce_count,
+                    contradicted, contradiction_reason, seeded_from,
+                    valid_at, invalid_at, superseded_by,
+                    valid_from, valid_until,
+                    source_session_id, source_channel, source_message_id, triggered_by,
+                    stability, difficulty,
+                    positive_feedback_count, negative_feedback_count,
+                    integrity_hash, embedding_model_id
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s::jsonb,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s
+                )
+                ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
+                    value                    = EXCLUDED.value,
+                    tier                     = EXCLUDED.tier,
+                    confidence               = EXCLUDED.confidence,
+                    source                   = EXCLUDED.source,
+                    source_agent             = EXCLUDED.source_agent,
+                    scope                    = EXCLUDED.scope,
+                    agent_scope              = EXCLUDED.agent_scope,
+                    memory_group             = EXCLUDED.memory_group,
+                    tags                     = EXCLUDED.tags,
+                    updated_at               = EXCLUDED.updated_at,
+                    last_accessed            = EXCLUDED.last_accessed,
+                    access_count             = EXCLUDED.access_count,
+                    useful_access_count      = EXCLUDED.useful_access_count,
+                    total_access_count       = EXCLUDED.total_access_count,
+                    branch                   = EXCLUDED.branch,
+                    last_reinforced          = EXCLUDED.last_reinforced,
+                    reinforce_count          = EXCLUDED.reinforce_count,
+                    contradicted             = EXCLUDED.contradicted,
+                    contradiction_reason     = EXCLUDED.contradiction_reason,
+                    seeded_from              = EXCLUDED.seeded_from,
+                    valid_at                 = EXCLUDED.valid_at,
+                    invalid_at               = EXCLUDED.invalid_at,
+                    superseded_by            = EXCLUDED.superseded_by,
+                    valid_from               = EXCLUDED.valid_from,
+                    valid_until              = EXCLUDED.valid_until,
+                    source_session_id        = EXCLUDED.source_session_id,
+                    source_channel           = EXCLUDED.source_channel,
+                    source_message_id        = EXCLUDED.source_message_id,
+                    triggered_by             = EXCLUDED.triggered_by,
+                    stability                = EXCLUDED.stability,
+                    difficulty               = EXCLUDED.difficulty,
+                    positive_feedback_count  = EXCLUDED.positive_feedback_count,
+                    negative_feedback_count  = EXCLUDED.negative_feedback_count,
+                    integrity_hash           = EXCLUDED.integrity_hash,
+                    embedding_model_id       = EXCLUDED.embedding_model_id
+                """,
+                (
+                    self._project_id,
+                    self._agent_id,
+                    entry.key,
+                    entry.value,
+                    tier,
+                    entry.confidence,
+                    source,
+                    entry.source_agent,
+                    scope,
+                    entry.agent_scope,
+                    entry.memory_group,
+                    tags_json,
+                    entry.created_at,
+                    entry.updated_at,
+                    entry.last_accessed,
+                    entry.access_count,
+                    entry.useful_access_count,
+                    entry.total_access_count,
+                    entry.branch,
+                    entry.last_reinforced,
+                    entry.reinforce_count,
+                    entry.contradicted,
+                    entry.contradiction_reason,
+                    entry.seeded_from,
+                    entry.valid_at,
+                    entry.invalid_at,
+                    entry.superseded_by,
+                    entry.valid_from,
+                    entry.valid_until,
+                    entry.source_session_id,
+                    entry.source_channel,
+                    entry.source_message_id,
+                    entry.triggered_by,
+                    entry.stability,
+                    entry.difficulty,
+                    entry.positive_feedback_count,
+                    entry.negative_feedback_count,
+                    entry.integrity_hash,
+                    entry.embedding_model_id,
+                ),
+            )
+
+        logger.debug(
+            "postgres_private.saved",
+            project_id=self._project_id,
+            agent_id=self._agent_id,
+            key=entry.key,
+        )
+
+    def load_all(self) -> list[MemoryEntry]:
+        """Load all entries for this ``(project_id, agent_id)`` scope.
+
+        Used by :class:`MemoryStore` on cold-start to populate the in-memory cache.
+        """
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM private_memories WHERE project_id = %s AND agent_id = %s",
+                (self._project_id, self._agent_id),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            col_names = [desc[0] for desc in cur.description]
+        return [self._row_to_entry(dict(zip(col_names, row, strict=False))) for row in rows]
+
+    def delete(self, key: str) -> bool:
+        """Delete an entry by key.  Returns ``True`` if a row was removed."""
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s",
+                (self._project_id, self._agent_id, key),
+            )
+            deleted = (cur.rowcount or 0) > 0
+        if deleted:
+            logger.debug(
+                "postgres_private.deleted",
+                project_id=self._project_id,
+                agent_id=self._agent_id,
+                key=key,
+            )
+        return deleted
+
+    def search(
+        self,
+        query: str,
+        *,
+        memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
+    ) -> list[MemoryEntry]:
+        """Full-text search via ``search_vector @@ plainto_tsquery``.
+
+        The ``search_vector`` column is maintained by a Postgres trigger defined
+        in ``migrations/private/001_initial.sql``.  Results are ranked by
+        ``ts_rank``.
+
+        Args:
+            query: Plain-text search query (passed to ``plainto_tsquery``).
+            memory_group: Restrict results to a project-local group.
+            since: ISO-8601 lower bound (inclusive) on *time_field*.
+            until: ISO-8601 upper bound (exclusive) on *time_field*.
+            time_field: Column to filter on.
+        """
+        if time_field not in _VALID_TIME_FIELDS:
+            msg = f"time_field must be one of {sorted(_VALID_TIME_FIELDS)}, got {time_field!r}"
+            raise ValueError(msg)
+        if not query.strip():
+            return []
+
+        # Base query using the tsvector index (idx_priv_search_vector_gin).
+        sql = (
+            "SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS _rank "
+            "FROM private_memories "
+            "WHERE project_id = %s AND agent_id = %s "
+            "  AND search_vector @@ plainto_tsquery('english', %s)"
+        )
+        params: list[Any] = [query, self._project_id, self._agent_id, query]
+
+        if memory_group is not None:
+            sql += " AND memory_group = %s"
+            params.append(memory_group)
+        if since is not None:
+            sql += f" AND {time_field} >= %s"
+            params.append(since)
+        if until is not None:
+            sql += f" AND {time_field} < %s"
+            params.append(until)
+
+        sql += " ORDER BY _rank DESC LIMIT 100"
+
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            col_names = [desc[0] for desc in cur.description]
+
+        results = []
+        for row in rows:
+            row_dict = dict(zip(col_names, row, strict=False))
+            row_dict.pop("_rank", None)  # computed column, not in MemoryEntry
+            results.append(self._row_to_entry(row_dict))
+        return results
+
+    # ------------------------------------------------------------------
+    # Vector similarity search
+    # ------------------------------------------------------------------
+
+    def sqlite_vec_knn_search(
+        self, query_embedding: list[float], k: int
+    ) -> list[tuple[str, float]]:
+        """Approximate nearest-neighbour search via ``pgvector`` cosine distance.
+
+        Uses the ``idx_priv_embedding_ivfflat`` index when data has been loaded.
+        Returns ``(key, distance)`` pairs, lowest distance first.  Returns ``[]``
+        if the ``embedding`` column is unpopulated or on any DB error.
+        """
+        if not query_embedding:
+            return []
+
+        vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        sql = (
+            "SELECT key, embedding <-> %s::vector AS distance "
+            "FROM private_memories "
+            "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL "
+            "ORDER BY distance "
+            "LIMIT %s"
+        )
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(sql, (vec_str, self._project_id, self._agent_id, k))
+                rows = cur.fetchall()
+            return [(str(r[0]), float(r[1])) for r in rows]
+        except Exception:
+            logger.debug("postgres_private.knn_search_failed", exc_info=True)
+            return []
+
+    def sqlite_vec_row_count(self) -> int:
+        """Number of entries with a non-NULL embedding vector."""
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM private_memories "
+                "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL",
+                (self._project_id, self._agent_id),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------------
+    # Relations
+    # ------------------------------------------------------------------
+
+    def _ensure_relations_table(self) -> None:
+        """Create ``private_relations`` if it does not yet exist (idempotent)."""
+        with self._lock:
+            if self._relations_ensured:
+                return
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(_RELATIONS_DDL)
+            self._relations_ensured = True
+
+    def list_relations(self) -> list[dict[str, Any]]:
+        """Return all relations for this ``(project_id, agent_id)`` scope."""
+        self._ensure_relations_table()
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT subject, predicate, object_entity, "
+                "       source_entry_keys, confidence, created_at "
+                "FROM private_relations "
+                "WHERE project_id = %s AND agent_id = %s",
+                (self._project_id, self._agent_id),
+            )
+            rows = cur.fetchall()
+        if not rows:
+            return []
+
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            raw_keys = r[3]
+            if isinstance(raw_keys, list):
+                keys: list[str] = [str(k) for k in raw_keys]
+            elif isinstance(raw_keys, str):
+                try:
+                    keys = json.loads(raw_keys)
+                except (json.JSONDecodeError, TypeError):
+                    keys = []
+            else:
+                keys = []
+            created_raw = r[5]
+            created_str = (
+                created_raw.isoformat() if hasattr(created_raw, "isoformat") else str(created_raw)
+            )
+            results.append(
+                {
+                    "subject": str(r[0]),
+                    "predicate": str(r[1]),
+                    "object_entity": str(r[2]),
+                    "source_entry_keys": keys,
+                    "confidence": float(r[4]),
+                    "created_at": created_str,
+                }
+            )
+        return results
+
+    def count_relations(self) -> int:
+        """Total relation count for this ``(project_id, agent_id)`` scope."""
+        self._ensure_relations_table()
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM private_relations WHERE project_id = %s AND agent_id = %s",
+                (self._project_id, self._agent_id),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    def save_relations(self, key: str, relations: list[RelationEntry]) -> int:
+        """Batch-upsert relations linked to a memory entry key.
+
+        Each relation's ``source_entry_keys`` is ensured to contain *key*.
+        Returns the number of relations saved.
+        """
+        if not relations:
+            return 0
+        self._ensure_relations_table()
+        now = datetime.now(tz=UTC).isoformat()
+        count = 0
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            for rel in relations:
+                source_keys: list[str] = list(dict.fromkeys([*rel.source_entry_keys, key]))
+                cur.execute(
+                    """
+                    INSERT INTO private_relations
+                        (project_id, agent_id, subject, predicate, object_entity,
+                         source_entry_keys, confidence, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                    ON CONFLICT (project_id, agent_id, subject, predicate, object_entity)
+                    DO UPDATE SET
+                        source_entry_keys = EXCLUDED.source_entry_keys,
+                        confidence        = EXCLUDED.confidence
+                    """,
+                    (
+                        self._project_id,
+                        self._agent_id,
+                        rel.subject,
+                        rel.predicate,
+                        rel.object_entity,
+                        json.dumps(source_keys, ensure_ascii=False),
+                        rel.confidence,
+                        now,
+                    ),
+                )
+                count += 1
+        return count
+
+    def load_relations(self, key: str) -> list[dict[str, Any]]:
+        """Return relations whose ``source_entry_keys`` contains *key*."""
+        return [r for r in self.list_relations() if key in r["source_entry_keys"]]
+
+    # ------------------------------------------------------------------
+    # Schema / version
+    # ------------------------------------------------------------------
+
+    def get_schema_version(self) -> int:
+        """Return the private-memory schema version (from ``private_schema_version``)."""
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute("SELECT MAX(version) FROM private_schema_version")
+                row = cur.fetchone()
+            return int(row[0]) if row and row[0] is not None else _PRIVATE_SCHEMA_VERSION
+        except Exception:
+            logger.debug("postgres_private.get_schema_version_failed", exc_info=True)
+            return _PRIVATE_SCHEMA_VERSION
+
+    # ------------------------------------------------------------------
+    # Audit
+    # ------------------------------------------------------------------
+
+    def append_audit(
+        self,
+        action: str,
+        key: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """No-op: Postgres private backend does not write a JSONL audit log.
+
+        A structured Postgres audit table will be introduced in a future story.
+        """
+        logger.debug(
+            "postgres_private.audit_noop",
+            action=action,
+            key=key,
+            extra=extra,
+        )
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Close the underlying connection pool."""
+        try:
+            self._cm.close()
+        except Exception:
+            logger.debug("postgres_private.close_failed", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_entry(row: dict[str, Any]) -> MemoryEntry:
+        """Convert a Postgres row dict to a :class:`MemoryEntry`."""
+        from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTier
+
+        # Tags — stored as JSONB (may arrive as list or JSON string).
+        tags_raw = row.get("tags")
+        if isinstance(tags_raw, list):
+            tags: list[str] = [str(t) for t in tags_raw]
+        elif isinstance(tags_raw, str):
+            try:
+                parsed = json.loads(tags_raw)
+                tags = [str(t) for t in parsed] if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+        else:
+            tags = []
+
+        def _str_or_none(v: Any) -> str | None:  # noqa: ANN401
+            return str(v) if v is not None else None
+
+        def _to_iso(v: Any) -> str:  # noqa: ANN401
+            if v is None:
+                return datetime.now(tz=UTC).isoformat()
+            if hasattr(v, "isoformat"):
+                return v.isoformat()  # type: ignore[no-any-return]
+            return str(v)
+
+        # Tier — accept enum values or raw strings (profile layers).
+        tier_raw = row.get("tier", "pattern")
+        try:
+            tier: MemoryTier | str = MemoryTier(tier_raw)
+        except (ValueError, KeyError):
+            tier = str(tier_raw)
+
+        source_raw = row.get("source", "agent")
+        try:
+            source = MemorySource(source_raw)
+        except (ValueError, KeyError):
+            source = MemorySource.agent
+
+        scope_raw = row.get("scope", "project")
+        try:
+            scope = MemoryScope(scope_raw)
+        except (ValueError, KeyError):
+            scope = MemoryScope.project
+
+        return MemoryEntry(
+            key=str(row["key"]),
+            value=str(row["value"]),
+            tier=tier,
+            confidence=float(row.get("confidence", 0.6)),
+            source=source,
+            source_agent=str(row.get("source_agent", "unknown")),
+            scope=scope,
+            tags=tags,
+            created_at=_to_iso(row.get("created_at")),
+            updated_at=_to_iso(row.get("updated_at")),
+            last_accessed=_to_iso(row.get("last_accessed")),
+            access_count=int(row.get("access_count", 0)),
+            useful_access_count=int(row.get("useful_access_count", 0)),
+            total_access_count=int(row.get("total_access_count", 0)),
+            branch=_str_or_none(row.get("branch")),
+            last_reinforced=_str_or_none(row.get("last_reinforced")),
+            reinforce_count=int(row.get("reinforce_count", 0)),
+            contradicted=bool(row.get("contradicted", False)),
+            contradiction_reason=_str_or_none(row.get("contradiction_reason")),
+            seeded_from=_str_or_none(row.get("seeded_from")),
+            agent_scope=str(row.get("agent_scope", "private")),
+            memory_group=_str_or_none(row.get("memory_group")),
+            valid_at=_str_or_none(row.get("valid_at")),
+            invalid_at=_str_or_none(row.get("invalid_at")),
+            superseded_by=_str_or_none(row.get("superseded_by")),
+            valid_from=str(row.get("valid_from") or ""),
+            valid_until=str(row.get("valid_until") or ""),
+            source_session_id=str(row.get("source_session_id") or ""),
+            source_channel=str(row.get("source_channel") or ""),
+            source_message_id=str(row.get("source_message_id") or ""),
+            triggered_by=str(row.get("triggered_by") or ""),
+            stability=float(row.get("stability", 0.0)),
+            difficulty=float(row.get("difficulty", 0.0)),
+            positive_feedback_count=float(row.get("positive_feedback_count", 0.0)),
+            negative_feedback_count=float(row.get("negative_feedback_count", 0.0)),
+            integrity_hash=_str_or_none(row.get("integrity_hash")),
+            embedding_model_id=_str_or_none(row.get("embedding_model_id")),
+            # embedding is not loaded from DB (large binary; on-demand via knn_search)
+        )

@@ -489,8 +489,7 @@ class TestMemoryDocValidator:
         engine = _make_lookup_engine(
             docs={
                 "oldlib": (
-                    "## oldlib\n"
-                    "oldlib is deprecated and removed in v2. Use newlib instead."
+                    "## oldlib\noldlib is deprecated and removed in v2. Use newlib instead."
                 ),
             }
         )
