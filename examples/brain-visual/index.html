@@ -1062,6 +1062,348 @@
         transition: none !important;
       }
     }
+
+    /* ── Deep insight panels ─────────────────────────────────────────────────
+     * Used by: retrieval pipeline explainer, diagnostics composite, privacy    */
+    .insight-panel {
+      margin-top: 1.25rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+      overflow: hidden;
+    }
+
+    .insight-panel-header {
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+    }
+
+    html[data-theme="dark"] .insight-panel-header {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .insight-panel-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
+      margin: 0;
+    }
+
+    .insight-panel-body {
+      padding: 1rem 1.25rem 1.25rem;
+    }
+
+    /* ── Retrieval step-flow ─────────────────────────────────────────────── */
+    .step-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 0;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      min-width: 72px;
+      flex: 1;
+      opacity: 0.32;
+      transition:
+        opacity var(--dur-base) var(--ease-standard);
+    }
+
+    .step-node.step-active {
+      opacity: 1;
+    }
+
+    .step-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+      transition:
+        border-color var(--dur-base) var(--ease-standard),
+        background var(--dur-base) var(--ease-standard);
+    }
+
+    .step-node.step-active .step-icon {
+      border-color: var(--nlt-accent-primary);
+      background: rgba(217, 119, 6, 0.08);
+    }
+
+    .step-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: var(--fg-dim);
+      line-height: 1.25;
+    }
+
+    .step-node.step-active .step-label {
+      color: var(--fg);
+    }
+
+    .step-detail-note {
+      font-size: 0.6rem;
+      color: var(--fg-dim);
+      line-height: 1.3;
+      margin-top: 3px;
+      max-width: 72px;
+    }
+
+    .step-node.step-active .step-detail-note {
+      color: var(--nlt-accent-dim);
+    }
+
+    .step-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+      padding-bottom: 1.5rem;
+      color: var(--fg-dim);
+      font-size: 0.75rem;
+      opacity: 0.45;
+      flex-shrink: 0;
+    }
+
+    .step-mode-desc {
+      margin-top: 0.6rem;
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      line-height: 1.5;
+      max-width: 58ch;
+    }
+
+    @media (max-width: 540px) {
+      .step-flow {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .step-node {
+        flex-direction: row;
+        align-items: center;
+        text-align: left;
+        gap: 0.6rem;
+        min-width: auto;
+      }
+      .step-arrow {
+        transform: rotate(90deg);
+        padding: 2px 0;
+        padding-left: 1.25rem;
+      }
+      .step-detail-note {
+        max-width: none;
+        margin-top: 0;
+      }
+    }
+
+    /* ── Composite score bar ─────────────────────────────────────────────── */
+    .score-bar-wrap {
+      margin-top: 0.75rem;
+    }
+
+    .score-bar-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.4rem;
+    }
+
+    .score-bar-label-row .score-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+      font-feature-settings: "tnum";
+    }
+
+    .score-bar-label-row .score-cap {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+    }
+
+    .score-bar-track {
+      height: 7px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--nlt-gradient);
+      width: 0%;
+      transition: width var(--dur-slow) var(--ease-decel);
+    }
+
+    .score-bar-fill.score-warn {
+      background: linear-gradient(90deg, #b45309, #d97706);
+    }
+
+    .score-bar-fill.score-bad {
+      background: linear-gradient(90deg, #991b1b, #dc2626);
+    }
+
+    /* ── Circuit state badge ─────────────────────────────────────────────── */
+    .circuit-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0.28rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      border: 1px solid;
+      margin-top: 0.75rem;
+    }
+
+    .circuit-badge.circuit-closed {
+      background: rgba(16, 185, 129, 0.07);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #047857;
+    }
+    html[data-theme="dark"] .circuit-badge.circuit-closed {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(52, 211, 153, 0.25);
+    }
+
+    .circuit-badge.circuit-half {
+      background: rgba(217, 119, 6, 0.07);
+      border-color: rgba(217, 119, 6, 0.3);
+      color: var(--nlt-accent-dim);
+    }
+
+    .circuit-badge.circuit-open {
+      background: rgba(220, 38, 38, 0.07);
+      border-color: rgba(220, 38, 38, 0.3);
+      color: #b91c1c;
+    }
+    html[data-theme="dark"] .circuit-badge.circuit-open {
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+      border-color: rgba(248, 113, 113, 0.25);
+    }
+
+    .circuit-state-desc {
+      margin-top: 0.5rem;
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      line-height: 1.5;
+      max-width: 52ch;
+    }
+
+    .score-dims {
+      margin-top: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .score-dim {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 100px;
+      flex: 1;
+    }
+
+    .score-dim-label {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+
+    .score-dim-bar {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .score-dim-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: rgba(217, 119, 6, 0.55);
+      width: 0%;
+      transition: width var(--dur-slow) var(--ease-decel);
+    }
+
+    .score-dim-fill.dim-primary {
+      background: var(--nlt-accent-primary);
+    }
+
+    .score-dim-val {
+      font-size: 0.6875rem;
+      font-family: var(--font-mono);
+      color: var(--fg-dim);
+    }
+
+    /* ── Privacy bullets ─────────────────────────────────────────────────── */
+    .privacy-bullets {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .privacy-bullet {
+      flex: 1;
+      min-width: 160px;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .content-shell .privacy-bullet {
+      background: var(--bg);
+    }
+
+    .privacy-bullet-icon {
+      font-size: 1.2rem;
+      margin-bottom: 0.35rem;
+      display: block;
+      line-height: 1;
+    }
+
+    .privacy-bullet-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
+      margin: 0 0 0.25rem;
+    }
+
+    .privacy-bullet-desc {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
@@ -1410,6 +1752,57 @@
           <div class="stat mono-small" id="retrieval-mode">—</div>
           <p class="sub" id="sqlite-vec-line">—</p>
         </div>
+
+        <!-- Deep insight: retrieval pipeline stepped explainer -->
+        <div class="insight-panel">
+          <div class="insight-panel-header">
+            <p class="insight-panel-title">Retrieval pipeline</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:retrieval_pipeline"
+              aria-label="Explain retrieval pipeline"
+            >
+              ?
+            </button>
+          </div>
+          <div class="insight-panel-body">
+            <div class="step-flow" id="retrieval-step-flow" aria-label="Retrieval pipeline steps">
+              <div class="step-node step-active" id="rstep-query">
+                <div class="step-icon" aria-hidden="true">🔍</div>
+                <span class="step-label">Query</span>
+                <span class="step-detail-note">recall request</span>
+              </div>
+              <div class="step-arrow" aria-hidden="true">→</div>
+              <div class="step-node" id="rstep-bm25">
+                <div class="step-icon" aria-hidden="true">📊</div>
+                <span class="step-label">BM25</span>
+                <span class="step-detail-note">Okapi term scoring</span>
+              </div>
+              <div class="step-arrow" id="rstep-arrow-vec" aria-hidden="true">→</div>
+              <div class="step-node" id="rstep-vec">
+                <div class="step-icon" aria-hidden="true">🧠</div>
+                <span class="step-label">pgvector KNN</span>
+                <span class="step-detail-note">semantic search</span>
+              </div>
+              <div class="step-arrow" id="rstep-arrow-rrf" aria-hidden="true">→</div>
+              <div class="step-node" id="rstep-rrf">
+                <div class="step-icon" aria-hidden="true">⚖️</div>
+                <span class="step-label">RRF fusion</span>
+                <span class="step-detail-note">rank merge</span>
+              </div>
+              <div class="step-arrow" aria-hidden="true">→</div>
+              <div class="step-node step-active" id="rstep-result">
+                <div class="step-icon" aria-hidden="true">✅</div>
+                <span class="step-label">Result</span>
+                <span class="step-detail-note">ranked memories</span>
+              </div>
+            </div>
+            <p class="step-mode-desc" id="retrieval-mode-desc">
+              Load a snapshot to see which path is active for this brain.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="hive">
@@ -1538,9 +1931,71 @@
         <div class="tile tile-wide" style="min-height: auto">
           <div class="section-tag-row">
             <p class="section-tag">Composite score</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:composite_score"
+              aria-label="Explain composite score"
+            >
+              ?
+            </button>
           </div>
           <div class="stat" id="diag">—</div>
           <p class="sub" id="circuit">—</p>
+
+          <!-- Score bar visualization -->
+          <div class="score-bar-wrap" id="diag-score-bar-wrap" hidden>
+            <div class="score-bar-label-row">
+              <span class="score-cap">Composite health score (0 – 1)</span>
+              <span class="score-value" id="diag-score-val">—</span>
+            </div>
+            <div class="score-bar-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="diag-score-progressbar">
+              <div class="score-bar-fill" id="diag-score-fill"></div>
+            </div>
+          </div>
+
+          <!-- Dimension bars: relevance / confidence / recency / frequency -->
+          <div class="score-dims" id="diag-score-dims" hidden aria-label="Score dimension breakdown">
+            <div class="score-dim">
+              <span class="score-dim-label">Relevance 40%</span>
+              <div class="score-dim-bar"><div class="score-dim-fill dim-primary" id="sdim-relevance"></div></div>
+              <span class="score-dim-val" id="sdim-relevance-val">—</span>
+            </div>
+            <div class="score-dim">
+              <span class="score-dim-label">Confidence 30%</span>
+              <div class="score-dim-bar"><div class="score-dim-fill dim-primary" id="sdim-confidence"></div></div>
+              <span class="score-dim-val" id="sdim-confidence-val">—</span>
+            </div>
+            <div class="score-dim">
+              <span class="score-dim-label">Recency 15%</span>
+              <div class="score-dim-bar"><div class="score-dim-fill" id="sdim-recency"></div></div>
+              <span class="score-dim-val" id="sdim-recency-val">—</span>
+            </div>
+            <div class="score-dim">
+              <span class="score-dim-label">Frequency 15%</span>
+              <div class="score-dim-bar"><div class="score-dim-fill" id="sdim-frequency"></div></div>
+              <span class="score-dim-val" id="sdim-frequency-val">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deep insight: circuit breaker state -->
+        <div class="insight-panel" id="circuit-insight" hidden>
+          <div class="insight-panel-header">
+            <p class="insight-panel-title">Circuit breaker</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:circuit_breaker"
+              aria-label="Explain circuit breaker"
+            >
+              ?
+            </button>
+          </div>
+          <div class="insight-panel-body">
+            <div id="circuit-badge-container" aria-live="polite"></div>
+            <p class="circuit-state-desc" id="circuit-state-desc">—</p>
+          </div>
         </div>
       </section>
 
@@ -1571,6 +2026,31 @@
           Tag and group names appear only with <code>--privacy local</code> (single-user, local-trust mode).
         </p>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
+
+        <!-- Three-bullet privacy footer pattern -->
+        <ul class="privacy-bullets" aria-label="Privacy guarantees for this export">
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">🚫</span>
+            <p class="privacy-bullet-title">Excluded</p>
+            <p class="privacy-bullet-desc">
+              Memory content, entry keys, raw queries, and session IDs are <strong>never</strong> included in any export tier.
+            </p>
+          </li>
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">📦</span>
+            <p class="privacy-bullet-title">Aggregated</p>
+            <p class="privacy-bullet-desc">
+              Counts, tier histograms, access buckets, schema versions, and health scores — no per-entry data.
+            </p>
+          </li>
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">🏠</span>
+            <p class="privacy-bullet-title">Local-only</p>
+            <p class="privacy-bullet-desc">
+              Tag and group names appear only in <code>--privacy local</code> mode (single-user, local-trust stores).
+            </p>
+          </li>
+        </ul>
       </section>
     </div>
   </main>
@@ -1853,6 +2333,163 @@
       const s = el("status");
       s.textContent = text;
       s.className = loaded ? "status-pill" : "muted";
+    }
+
+    /* ── Deep insight: retrieval pipeline ─────────────────────────────────
+     * Activates step nodes that correspond to the effective retrieval mode.
+     * Modes: "bm25" → BM25 only; "hybrid" / "hybrid_pgvector" → full path;
+     * "hybrid_novectors" → BM25 + RRF (no vec rows).                       */
+    function renderRetrievalInsight(data) {
+      const mode = (typeof data.retrieval_effective_mode === "string"
+        ? data.retrieval_effective_mode
+        : ""
+      ).toLowerCase();
+
+      /* Always active: query + result */
+      const alwaysOn = ["rstep-query", "rstep-result"];
+      /* BM25 active in all modes */
+      const bm25Always = ["rstep-bm25"];
+      /* Vector + RRF only for hybrid modes */
+      const hybridOnly = ["rstep-vec", "rstep-rrf"];
+      const hybridArrows = ["rstep-arrow-vec", "rstep-arrow-rrf"];
+
+      const isHybrid = mode.startsWith("hybrid");
+      const hasVectors = isHybrid && !mode.includes("novectors");
+
+      const allStepIds = [...alwaysOn, ...bm25Always, ...hybridOnly];
+      allStepIds.forEach((id) => {
+        const node = el(id);
+        if (!node) return;
+        const isActive =
+          alwaysOn.includes(id) ||
+          bm25Always.includes(id) ||
+          (hybridOnly.includes(id) && isHybrid);
+        node.classList.toggle("step-active", isActive);
+      });
+
+      /* Dim vector/RRF arrows when not active */
+      hybridArrows.forEach((id) => {
+        const arrow = el(id);
+        if (arrow) arrow.style.opacity = isHybrid ? "" : "0.18";
+      });
+
+      const descEl = el("retrieval-mode-desc");
+      if (descEl) {
+        if (!mode) {
+          descEl.textContent = "Load a snapshot to see which path is active for this brain.";
+        } else if (mode === "bm25" || mode === "bm25-only") {
+          descEl.textContent =
+            "BM25-only mode: Okapi term scoring over tokenized memory entries. " +
+            "pgvector extension not available or embeddings not enabled — lexical recall only.";
+        } else if (hasVectors) {
+          descEl.textContent =
+            "Hybrid mode (BM25 + pgvector KNN): lexical ranks merged with semantic vector ranks via " +
+            "Reciprocal Rank Fusion (RRF). Best recall coverage for ambiguous or paraphrased queries.";
+        } else if (isHybrid) {
+          descEl.textContent =
+            "Hybrid mode with empty vector index (BM25 + RRF structure ready, no vector rows yet). " +
+            "Add embeddings to activate semantic search — BM25 ranks in the meantime.";
+        } else {
+          descEl.textContent = "Mode: " + mode + ". Load a v2 snapshot for full pipeline detail.";
+        }
+      }
+    }
+
+    /* ── Deep insight: diagnostics composite + circuit breaker ────────────
+     * Renders score bar, dimension bars, circuit badge, and state prose.   */
+    function renderDiagnosticsInsight(data) {
+      if (!data.diagnostics || typeof data.diagnostics !== "object") {
+        const wrap = el("diag-score-bar-wrap");
+        if (wrap) wrap.hidden = true;
+        const dims = el("diag-score-dims");
+        if (dims) dims.hidden = true;
+        const panel = el("circuit-insight");
+        if (panel) panel.hidden = true;
+        return;
+      }
+
+      const diag = data.diagnostics;
+      const score = typeof diag.composite_score === "number" ? diag.composite_score : null;
+      const circuitRaw = typeof diag.circuit_state === "string" ? diag.circuit_state : "";
+
+      /* Score bar */
+      const wrap = el("diag-score-bar-wrap");
+      if (wrap && score !== null) {
+        wrap.hidden = false;
+        const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
+        const valEl = el("diag-score-val");
+        if (valEl) valEl.textContent = score.toFixed(2);
+        const fill = el("diag-score-fill");
+        if (fill) {
+          fill.style.width = pct + "%";
+          fill.classList.remove("score-warn", "score-bad");
+          if (score < 0.3) fill.classList.add("score-bad");
+          else if (score < 0.6) fill.classList.add("score-warn");
+          const pb = el("diag-score-progressbar");
+          if (pb) pb.setAttribute("aria-valuenow", String(pct));
+        }
+      }
+
+      /* Dimension bars — composite = relevance*0.4 + confidence*0.3 + recency*0.15 + frequency*0.15
+       * The snapshot may not expose these directly; we show the overall score mapped to each weight. */
+      const dims = el("diag-score-dims");
+      if (dims && score !== null) {
+        dims.hidden = false;
+        const weights = { relevance: 0.4, confidence: 0.3, recency: 0.15, frequency: 0.15 };
+        const dimScores = {
+          relevance: typeof diag.relevance_score === "number" ? diag.relevance_score : score,
+          confidence: typeof diag.confidence_score === "number" ? diag.confidence_score : score,
+          recency: typeof diag.recency_score === "number" ? diag.recency_score : score,
+          frequency: typeof diag.frequency_score === "number" ? diag.frequency_score : score,
+        };
+        Object.keys(weights).forEach((dim) => {
+          const fill = el("sdim-" + dim);
+          const val = el("sdim-" + dim + "-val");
+          const v = dimScores[dim];
+          if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round(v * 100))) + "%";
+          if (val) val.textContent = v.toFixed(2);
+        });
+      }
+
+      /* Circuit breaker panel */
+      const panel = el("circuit-insight");
+      if (panel) panel.hidden = false;
+
+      const badgeContainer = el("circuit-badge-container");
+      const descEl = el("circuit-state-desc");
+      const circuit = circuitRaw.toUpperCase();
+
+      if (badgeContainer) {
+        let badgeClass = "circuit-closed";
+        let badgeText = "● CLOSED — healthy";
+        let desc =
+          "Circuit is closed: composite score ≥ 0.6. Recall operates normally with full quality signals. " +
+          "Score only degrades if many consecutive low-confidence recalls are recorded.";
+
+        if (circuit.includes("HALF") || circuit.includes("HALF_OPEN")) {
+          badgeClass = "circuit-half";
+          badgeText = "◑ HALF-OPEN — probing";
+          desc =
+            "Circuit is half-open: composite score was below 0.3 and a cooldown has elapsed. " +
+            "tapps-brain is running probe recalls to determine if quality has recovered. " +
+            "Recall returns a <code>quality_warning</code> on RecallResult.";
+        } else if (circuit.includes("OPEN")) {
+          badgeClass = "circuit-open";
+          badgeText = "○ OPEN — degraded";
+          desc =
+            "Circuit is open: composite score < 0.3. tapps-brain returns recall results with a " +
+            "<code>quality_warning</code> flag set on RecallResult. The store is still operational " +
+            "but confidence in retrieval quality is low — investigate consolidation, decay, or GC candidates.";
+        } else if (!circuitRaw) {
+          badgeClass = "circuit-half";
+          badgeText = "— Unknown";
+          desc = "Circuit state not available in this export.";
+        }
+
+        badgeContainer.innerHTML =
+          '<span class="circuit-badge ' + badgeClass + '">' + badgeText + "</span>";
+        if (descEl) descEl.innerHTML = desc;
+      }
     }
 
     function renderBarChart(containerId, rows) {
@@ -2143,6 +2780,8 @@
       }
 
       renderScorecard(data);
+      renderRetrievalInsight(data);
+      renderDiagnosticsInsight(data);
 
       setStatus(
         "Loaded · snapshot v" +

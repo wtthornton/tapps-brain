@@ -858,6 +858,132 @@
       ],
       reference: "Code: <code>visual_snapshot.py</code> · <code>ScorecardCheck</code>",
     },
+
+    retrieval_pipeline: {
+      title: "Retrieval pipeline (how it works)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>tapps-brain uses a <strong>two-stage retrieval pipeline</strong>: lexical BM25 scoring and, when " +
+            "pgvector is available, semantic KNN search. The pipeline is deterministic — no LLM is called for recall.</p>" +
+            "<ol><li><strong>BM25</strong> — Okapi BM25 scores tokens in memory entries against your query; fast and exact.</li>" +
+            "<li><strong>pgvector KNN</strong> — Cosine-nearest-neighbour over stored embeddings (if any vectors are present).</li>" +
+            "<li><strong>RRF fusion</strong> — Reciprocal Rank Fusion merges BM25 ranks and vector ranks into a single " +
+            "ranked list (no direct score comparison needed).</li></ol>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><strong>BM25:</strong> <code>score = IDF × (tf × (k1 + 1)) / (tf + k1 × (1 − b + b × dl / avgdl))</code> " +
+            "where k1=1.5, b=0.75 (Okapi defaults).</p>" +
+            "<p><strong>RRF:</strong> <code>RRFscore(d) = Σ 1 / (k + rank_i(d))</code> where k=60 by default. " +
+            "Equal weight per ranked list; biased toward entries that appear near the top in both lists.</p>" +
+            "<p><strong>Composite retrieval weights</strong> (post-fusion): relevance 40%, confidence 30%, recency 15%, " +
+            "frequency 15% (configurable in profile).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>BM25-only recall is strong for exact or keyword-heavy queries. Hybrid (BM25 + vector) adds " +
+            "semantic coverage for paraphrased or conceptually similar queries. The effective mode shown in this " +
+            "dashboard tells you which path your brain is using.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>MemoryRetriever</code> in <code>retrieval.py</code> orchestrates the pipeline. " +
+            "<code>bm25.py</code> provides pure-Python Okapi BM25. " +
+            "<code>fusion.py</code> implements RRF. <code>retrieval_health_slice()</code> in <code>health_check.py</code> " +
+            "determines the effective mode from installed extras + pgvector extension presence + vector row count.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>retrieval.py</code> · <code>bm25.py</code> · <code>fusion.py</code> · " +
+        "<code>health_check.py: retrieval_health_slice</code>",
+    },
+
+    composite_score: {
+      title: "Composite health score",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A single <strong>0 – 1 number</strong> summarising the current quality of the tapps-brain memory store. " +
+            "It is a weighted average of four dimensions measured across all stored entries.</p>" +
+            "<ul><li><strong>Relevance (40%)</strong> — are recalled entries topically matched?</li>" +
+            "<li><strong>Confidence (30%)</strong> — average confidence score across active entries.</li>" +
+            "<li><strong>Recency (15%)</strong> — recency-weighted access; stale entries drag this down.</li>" +
+            "<li><strong>Frequency (15%)</strong> — how often entries are accessed; rarely-touched entries " +
+            "contribute less.</li></ul>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p><code>composite = 0.4 × relevance + 0.3 × confidence + 0.15 × recency + 0.15 × frequency</code></p>" +
+            "<p>All component scores are normalised 0 – 1. The composite drives circuit-breaker transitions " +
+            "at <strong>0.6</strong> (closed ↔ half-open) and <strong>0.3</strong> (half-open ↔ open).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>A falling composite score is an early warning that recall quality is degrading — before agents " +
+            "notice confusing or stale memories. Score ≥ 0.6 means the circuit is CLOSED and fully trusted; " +
+            "0.3 – 0.6 is the degraded band; below 0.3 the circuit opens and recalls are flagged.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>diagnostics.py</code> computes the scorecard using EWMA anomaly detection and the circuit-breaker " +
+            "state machine. <code>RecallResult.quality_warning</code> is set when circuit is not CLOSED, " +
+            "so agents can react.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>diagnostics.py</code> · <code>models.py: RecallResult.quality_warning</code> · " +
+        "EPIC-030 (diagnostic scorecard design)",
+    },
+
+    circuit_breaker: {
+      title: "Circuit breaker (health state machine)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>tapps-brain uses a three-state <strong>circuit breaker</strong> pattern (borrowed from distributed systems) " +
+            "to track and communicate recall quality — without any LLM call.</p>" +
+            "<ul><li><strong>CLOSED</strong> — healthy; composite score ≥ 0.6. Full recall, no warning.</li>" +
+            "<li><strong>HALF-OPEN</strong> — probing; previous circuit-open cooldown elapsed. " +
+            "Probe recalls run; if they pass, circuit closes again.</li>" +
+            "<li><strong>OPEN</strong> — degraded; composite score &lt; 0.3. Recalls still work but " +
+            "<code>RecallResult.quality_warning</code> is set so agents know to treat results with caution.</li></ul>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>State transitions use EWMA (Exponentially Weighted Moving Average) over diagnostic scores with " +
+            "configurable thresholds (default 0.6 / 0.3). Cooldown period before OPEN → HALF-OPEN transition " +
+            "prevents flapping. All transitions are deterministic — no randomness.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>An OPEN circuit is a safe-fail signal, not a hard stop. Agents can degrade gracefully " +
+            "(e.g. prompt the user to run <code>tapps-brain gc</code> or <code>consolidation</code>) " +
+            "rather than silently returning stale results.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>DiagnosticsEngine.circuit_state</code> (in <code>diagnostics.py</code>) drives the state " +
+            "machine. <code>MemoryStore.recall()</code> propagates the warning through <code>RecallResult</code>. " +
+            "<code>build_visual_snapshot()</code> exports both composite score and circuit state.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>diagnostics.py</code> · <code>models.py: RecallResult</code> · " +
+        "Scorecard check: <em>Diagnostics circuit</em>",
+    },
   };
 
   function openBrainVisualHelp(type, id) {
