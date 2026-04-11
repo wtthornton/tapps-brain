@@ -56,8 +56,8 @@ _STATS_NEAR_EXPIRY_THRESHOLD = 0.35
 app = typer.Typer(
     name="tapps-brain",
     help=(
-        "Persistent cross-session memory for AI assistants — SQLite, BM25, decay, "
-        "Hive, federation. Sub-apps: store, memory, feedback, diagnostics, flywheel, "
+        "Persistent cross-session memory for AI assistants — BM25, decay, "
+        "Hive. Sub-apps: store, memory, feedback, diagnostics, flywheel, "
         "hive, openclaw, …"
     ),
     no_args_is_help=True,
@@ -67,7 +67,6 @@ memory_app = typer.Typer(
     help="Query, inspect, and save individual memories (MCP parity for save).",
     no_args_is_help=True,
 )
-federation_app = typer.Typer(help="Manage cross-project federation.", no_args_is_help=True)
 maintenance_app = typer.Typer(help="Run store maintenance operations.", no_args_is_help=True)
 
 profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
@@ -94,7 +93,6 @@ visual_app = typer.Typer(
 
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
-app.add_typer(federation_app, name="federation")
 app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(profile_app, name="profile")
 app.add_typer(hive_app, name="hive")
@@ -1043,166 +1041,6 @@ def import_cmd(
             _output(result, as_json=True)
         else:
             typer.echo(f"Imported {imported} entries, skipped {skipped}")
-    finally:
-        store.close()
-
-
-# ===================================================================
-# FEDERATION COMMANDS
-# ===================================================================
-
-
-@federation_app.command("status")
-def federation_status(
-    project_dir: ProjectDir = None,
-    as_json: JsonFlag = False,
-) -> None:
-    """Show federation hub status."""
-    from tapps_brain.federation import federated_hub_db_path, load_federation_config
-
-    config = load_federation_config()
-    hub_db = federated_hub_db_path(config)
-    data = {
-        "hub_path": str(hub_db),
-        "hub_path_config": config.hub_path,
-        "projects": len(config.projects),
-        "subscriptions": len(config.subscriptions),
-        "project_list": [p.project_id for p in config.projects],
-    }
-    if as_json:
-        _output(data, as_json=True)
-    else:
-        typer.echo(f"Hub DB: {hub_db}")
-        typer.echo(f"Projects: {len(config.projects)}")
-        for p in config.projects:
-            typer.echo(f"  - {p.project_id} ({p.project_root})")
-        typer.echo(f"Subscriptions: {len(config.subscriptions)}")
-        for s in config.subscriptions:
-            typer.echo(f"  - {s.subscriber} <- {', '.join(s.sources)}")
-
-
-@federation_app.command("list")
-def federation_list(
-    as_json: JsonFlag = False,
-) -> None:
-    """List all federated projects."""
-    from tapps_brain.federation import load_federation_config
-
-    config = load_federation_config()
-    if as_json:
-        _output(
-            [
-                {
-                    "project_id": p.project_id,
-                    "project_root": p.project_root,
-                    "registered_at": p.registered_at,
-                    "tags": p.tags,
-                }
-                for p in config.projects
-            ],
-            as_json=True,
-        )
-    else:
-        if not config.projects:
-            typer.echo("No federated projects.")
-            return
-        rows = [
-            {
-                "project_id": p.project_id,
-                "root": p.project_root,
-                "registered": p.registered_at[:10],
-                "tags": ", ".join(p.tags),
-            }
-            for p in config.projects
-        ]
-        _print_table(rows)
-
-
-@federation_app.command("subscribe")
-def federation_subscribe(
-    project_name: Annotated[str, typer.Argument(help="Project to subscribe to.")],
-    project_dir: ProjectDir = None,
-    min_confidence: Annotated[
-        float, typer.Option(help="Minimum confidence for synced entries.")
-    ] = 0.5,
-    as_json: JsonFlag = False,
-) -> None:
-    """Subscribe to another project's memories."""
-    from tapps_brain.federation import add_subscription
-
-    root = _resolve_project_dir(project_dir)
-    subscriber = root.name
-    config = add_subscription(
-        subscriber=subscriber,
-        sources=[project_name],
-        min_confidence=min_confidence,
-    )
-    sub_count = len(config.subscriptions)
-    result = {"subscriber": subscriber, "source": project_name, "subscriptions": sub_count}
-    if as_json:
-        _output(result, as_json=True)
-    else:
-        typer.echo(f"Subscribed '{subscriber}' to '{project_name}'")
-
-
-@federation_app.command("unsubscribe")
-def federation_unsubscribe(
-    project_name: Annotated[str, typer.Argument(help="Project to unsubscribe from.")],
-    project_dir: ProjectDir = None,
-    as_json: JsonFlag = False,
-) -> None:
-    """Unsubscribe from a project's memories."""
-    from tapps_brain.federation import load_federation_config, save_federation_config
-
-    root = _resolve_project_dir(project_dir)
-    subscriber = root.name
-    config = load_federation_config()
-    original_count = len(config.subscriptions)
-    config.subscriptions = [
-        s
-        for s in config.subscriptions
-        if not (s.subscriber == subscriber and project_name in s.sources)
-    ]
-    save_federation_config(config)
-    removed = original_count - len(config.subscriptions)
-    result = {"subscriber": subscriber, "source": project_name, "removed": removed}
-    if as_json:
-        _output(result, as_json=True)
-    elif removed > 0:
-        typer.echo(f"Unsubscribed '{subscriber}' from '{project_name}'")
-    else:
-        typer.echo(f"No subscription found for '{subscriber}' from '{project_name}'")
-
-
-@federation_app.command("publish")
-def federation_publish(
-    project_dir: ProjectDir = None,
-    as_json: JsonFlag = False,
-) -> None:
-    """Publish current project's memories to the federation hub."""
-    from tapps_brain.federation import (
-        FederatedStore,
-        register_project,
-        sync_to_hub,
-    )
-
-    root = _resolve_project_dir(project_dir)
-    store = _get_store(project_dir)
-    try:
-        project_id = root.name
-        register_project(project_id, str(root))
-        hub = FederatedStore()
-        try:
-            result = sync_to_hub(store, hub, project_id, project_root=str(root))
-            if as_json:
-                _output(result, as_json=True)
-            else:
-                typer.echo(
-                    f"Published {result.get('published', 0)} entries "
-                    f"(skipped {result.get('skipped', 0)})"
-                )
-        finally:
-            hub.close()
     finally:
         store.close()
 
@@ -2302,7 +2140,7 @@ def profile_layers(
 @hive_app.command("status")
 def hive_status(as_json: JsonFlag = False) -> None:
     """Show Hive status: namespaces, entry counts, registered agents."""
-    from tapps_brain.hive import AgentRegistry
+    from tapps_brain.backends import AgentRegistry
 
     hive = _open_hive_backend_for_cli()
     try:
@@ -2461,7 +2299,7 @@ def _run_hive_push_from_store(
     as_json: bool,
 ) -> None:
     """Batch-promote local memories to Hive (GitHub #18)."""
-    from tapps_brain.hive import (
+    from tapps_brain.backends import (
         push_memory_entries_to_hive,
         select_local_entries_for_hive_push,
     )
@@ -2632,7 +2470,8 @@ def agent_create(
     as_json: JsonFlag = False,
 ) -> None:
     """Create an agent with profile validation and print namespace and profile summary."""
-    from tapps_brain.hive import AgentRegistration, AgentRegistry
+    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.models import AgentRegistration
     from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
 
     # Validate profile
@@ -2700,7 +2539,8 @@ def agent_register(
     skills: Annotated[str, typer.Option(help="Comma-separated skills.")] = "",
 ) -> None:
     """Register an agent in the Hive."""
-    from tapps_brain.hive import AgentRegistration, AgentRegistry
+    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.models import AgentRegistration
 
     registry = AgentRegistry()
     skill_list = [s.strip() for s in skills.split(",") if s.strip()]
@@ -2712,7 +2552,7 @@ def agent_register(
 @agent_app.command("list")
 def agent_list(as_json: JsonFlag = False) -> None:
     """List all registered agents in the Hive."""
-    from tapps_brain.hive import AgentRegistry
+    from tapps_brain.backends import AgentRegistry
 
     registry = AgentRegistry()
     agents = registry.list_agents()
@@ -2737,7 +2577,7 @@ def agent_delete(
     as_json: JsonFlag = False,
 ) -> None:
     """Delete a registered agent from the Hive."""
-    from tapps_brain.hive import AgentRegistry
+    from tapps_brain.backends import AgentRegistry
 
     registry = AgentRegistry()
     removed = registry.unregister(agent_id)

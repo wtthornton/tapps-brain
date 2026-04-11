@@ -33,10 +33,6 @@ from tapps_brain.decay import calculate_decayed_confidence as calculate_decayed_
 from tapps_brain.decay import get_effective_confidence as get_effective_confidence
 from tapps_brain.decay import is_stale as is_stale
 
-# Federation
-from tapps_brain.federation import FederatedStore as FederatedStore
-from tapps_brain.federation import FederationConfig as FederationConfig
-
 # GC
 from tapps_brain.gc import GCResult as GCResult
 from tapps_brain.gc import MemoryGarbageCollector as MemoryGarbageCollector
@@ -141,9 +137,7 @@ __all__ = [
     "ConsolidationConfig",
     "ConsolidationReason",
     "DecayConfig",
-    "FederatedStore",
     "FederationBackend",
-    "FederationConfig",
     "GCResult",
     "HiveBackend",
     "InjectionConfig",

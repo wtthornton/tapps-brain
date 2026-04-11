@@ -1187,141 +1187,6 @@ def create_server(  # noqa: PLR0915
         return [{"role": "user", "content": body}]
 
     # ------------------------------------------------------------------
-    # Federation tools (STORY-008.5)
-    # ------------------------------------------------------------------
-
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def federation_status() -> str:
-        """Show federation hub status: registered projects and subscriptions.
-
-        Returns hub statistics, project list, and active subscriptions.
-        """
-        from tapps_brain.federation import (
-            FederatedStore,
-            federated_hub_db_path,
-            load_federation_config,
-        )
-
-        config = load_federation_config()
-        try:
-            hub = FederatedStore(db_path=federated_hub_db_path(config))
-            try:
-                stats = hub.get_stats()
-            finally:
-                hub.close()
-        except Exception:
-            logger.warning("federation_hub_unavailable")
-            stats = {"error": "hub_unavailable"}
-
-        return json.dumps(
-            {
-                "projects": [p.model_dump(mode="json") for p in config.projects],
-                "subscriptions": [s.model_dump(mode="json") for s in config.subscriptions],
-                "hub_stats": stats,
-            }
-        )
-
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def federation_subscribe(
-        project_id: str,
-        sources: list[str] | None = None,
-        tag_filter: list[str] | None = None,
-        min_confidence: float = 0.5,
-    ) -> str:
-        """Subscribe a project to receive memories from other federated projects.
-
-        The project must be registered first. If sources is empty, subscribes
-        to all other projects.
-
-        Args:
-            project_id: The project ID to subscribe.
-            sources: Optional list of source project IDs (empty = all).
-            tag_filter: Optional tag filter — only import memories with these tags.
-            min_confidence: Minimum confidence threshold (0.0-1.0, default 0.5).
-        """
-        from tapps_brain.federation import add_subscription, register_project
-
-        # Auto-register if not already registered
-        register_project(project_id, str(resolved_dir))
-
-        try:
-            add_subscription(
-                subscriber=project_id,
-                sources=sources,
-                tag_filter=tag_filter,
-                min_confidence=min_confidence,
-            )
-        except ValueError as exc:
-            return json.dumps({"error": str(exc)})
-
-        return json.dumps(
-            {
-                "status": "subscribed",
-                "project_id": project_id,
-                "sources": sources or ["all"],
-            }
-        )
-
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def federation_unsubscribe(project_id: str) -> str:
-        """Remove a project's federation subscription.
-
-        Args:
-            project_id: The project ID to unsubscribe.
-        """
-        from tapps_brain.federation import load_federation_config, save_federation_config
-
-        config = load_federation_config()
-        before = len(config.subscriptions)
-        config.subscriptions = [s for s in config.subscriptions if s.subscriber != project_id]
-        removed = before - len(config.subscriptions)
-        save_federation_config(config)
-
-        return json.dumps(
-            {
-                "status": "unsubscribed",
-                "project_id": project_id,
-                "subscriptions_removed": removed,
-            }
-        )
-
-    @mcp.tool()  # type: ignore[untyped-decorator]
-    def federation_publish(
-        project_id: str,
-        keys: list[str] | None = None,
-    ) -> str:
-        """Publish shared-scope memories to the federation hub.
-
-        Only memories with scope='shared' are published. If keys are specified,
-        only those entries are published.
-
-        Args:
-            project_id: This project's federation identifier.
-            keys: Optional list of specific keys to publish (default: all shared).
-        """
-        from tapps_brain.federation import (
-            FederatedStore,
-            federated_hub_db_path,
-            register_project,
-            sync_to_hub,
-        )
-
-        register_project(project_id, str(resolved_dir))
-        hub = FederatedStore(db_path=federated_hub_db_path())
-        try:
-            result = sync_to_hub(
-                store=store,
-                federated_store=hub,
-                project_id=project_id,
-                project_root=str(resolved_dir),
-                keys=keys,
-            )
-        finally:
-            hub.close()
-
-        return json.dumps({"status": "published", **result})
-
-    # ------------------------------------------------------------------
     # Maintenance tools (STORY-008.5)
     # ------------------------------------------------------------------
 
@@ -1768,7 +1633,7 @@ def create_server(  # noqa: PLR0915
         use, and how many shared memories are in each namespace.
         """
         try:
-            from tapps_brain.hive import AgentRegistry
+            from tapps_brain.backends import AgentRegistry
 
             hive, should_close = _hive_for_tools()
             try:
@@ -1860,7 +1725,7 @@ def create_server(  # noqa: PLR0915
                 agent_scope_valid_values_for_errors,
                 normalize_agent_scope,
             )
-            from tapps_brain.hive import PropagationEngine
+            from tapps_brain.backends import PropagationEngine
 
             try:
                 agent_scope = normalize_agent_scope(agent_scope)
@@ -1944,7 +1809,7 @@ def create_server(  # noqa: PLR0915
                 agent_scope_valid_values_for_errors,
                 normalize_agent_scope,
             )
-            from tapps_brain.hive import (
+            from tapps_brain.backends import (
                 push_memory_entries_to_hive,
                 select_local_entries_for_hive_push,
             )
@@ -2093,7 +1958,8 @@ def create_server(  # noqa: PLR0915
                 {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
             )
         try:
-            from tapps_brain.hive import AgentRegistration, AgentRegistry
+            from tapps_brain.backends import AgentRegistry
+            from tapps_brain.models import AgentRegistration
 
             registry = AgentRegistry()
             skill_list = [s.strip() for s in skills.split(",") if s.strip()]
@@ -2133,7 +1999,8 @@ def create_server(  # noqa: PLR0915
                 {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
             )
         try:
-            from tapps_brain.hive import AgentRegistration, AgentRegistry
+            from tapps_brain.backends import AgentRegistry
+            from tapps_brain.models import AgentRegistration
             from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
 
             # Validate profile exists
@@ -2185,7 +2052,7 @@ def create_server(  # noqa: PLR0915
     def agent_list() -> str:
         """List all registered agents in the Hive."""
         try:
-            from tapps_brain.hive import AgentRegistry
+            from tapps_brain.backends import AgentRegistry
 
             registry = AgentRegistry()
             agents = [a.model_dump(mode="json") for a in registry.list_agents()]
@@ -2202,7 +2069,7 @@ def create_server(  # noqa: PLR0915
             agent_id: Unique agent identifier to remove.
         """
         try:
-            from tapps_brain.hive import AgentRegistry
+            from tapps_brain.backends import AgentRegistry
 
             registry = AgentRegistry()
             removed = registry.unregister(agent_id)

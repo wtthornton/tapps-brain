@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _utc_now_iso() -> str:
@@ -457,4 +457,33 @@ class ConsolidatedEntry(MemoryEntry):
     is_consolidated: Literal[True] = Field(
         default=True,
         description="Always True for ConsolidatedEntry.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent Registration (Hive, EPIC-011)
+# ---------------------------------------------------------------------------
+
+
+class AgentRegistration(BaseModel):
+    """A registered agent in the Hive.
+
+    Moved from ``hive.py`` during STORY-059.2 (SQLite shared-store removal).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="Unique agent identifier (slug).")
+    name: str = Field(default="", description="Human-readable agent name.")
+    profile: str = Field(
+        default="repo-brain",
+        description="Memory profile name (determines domain namespace).",
+    )
+    skills: list[str] = Field(
+        default_factory=list,
+        description="Skills this agent provides (e.g. ['code-review', 'testing']).",
+    )
+    project_root: str | None = Field(
+        default=None,
+        description="Absolute path to the agent's project root (if project-scoped).",
     )
