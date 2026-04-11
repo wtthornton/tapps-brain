@@ -339,9 +339,10 @@ class HiveConfig(BaseModel):
     """Hive propagation configuration (EPIC-011).
 
     Controls tier routing, conflict resolution, and Hive recall weight when a
-    ``HiveStore`` is attached (see CLI/MCP defaults vs
-    ``MemoryStore(..., hive_store=...)`` in the Hive guide). This block does not
-    attach or detach Hive; it only applies when ``hive_store`` is non-``None``.
+    Hive backend is attached (``MemoryStore(..., hive_store=...)``, or via
+    ``TAPPS_BRAIN_HIVE_DSN`` in CLI/MCP defaults). This block does not attach
+    or detach Hive; it only applies when ``hive_store`` is non-``None``.
+    In v3 the Hive backend is always ``PostgresHiveBackend`` (ADR-007).
     """
 
     auto_propagate_tiers: list[str] = Field(

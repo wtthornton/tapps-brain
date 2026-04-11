@@ -2,6 +2,12 @@
 
 Cross-project memory sharing via a central hub store.
 
+> **v3 (current):** The Federation backend is **PostgreSQL-only** (ADR-007). Set
+> `TAPPS_BRAIN_FEDERATION_DSN=postgres://…` to activate it. SQLite Federation
+> support was removed in v3. Sections below that reference `federated.db` or
+> `FederatedStore()` describe v2 behaviour; the hub-and-spoke concepts are
+> unchanged. See [postgres-dsn.md](postgres-dsn.md) for v3 env-var reference.
+
 **Story:** STORY-002.5 from EPIC-002
 
 **Related:** Hive (cross-**agent** sharing) is different from federation — see **[Hive vs federation](hive-vs-federation.md)**.
@@ -9,9 +15,9 @@ Cross-project memory sharing via a central hub store.
 ## Overview
 
 Federation uses a **hub-and-spoke model**. Each project is a spoke that
-explicitly publishes shared-scope memories to a central SQLite hub at
-`~/.tapps-brain/memory/federated.db`. Projects subscribe to receive
-memories from other projects. No data is shared automatically.
+explicitly publishes shared-scope memories to a central PostgreSQL hub. Projects
+subscribe to receive memories from other projects. No data is shared
+automatically.
 
 ```
 Project A ──publish──> Hub (federated.db) <──publish── Project B

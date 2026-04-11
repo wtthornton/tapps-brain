@@ -82,7 +82,7 @@ class HiveHealth(BaseModel):
     pool_saturation: float | None = Field(
         default=None,
         description=(
-            "Fraction of pool max_size currently in use (0.0–1.0). "
+            "Fraction of pool max_size currently in use (0.0-1.0). "
             "None when the pool has not been opened or stats are unavailable."
         ),
     )

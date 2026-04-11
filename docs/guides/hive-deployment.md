@@ -44,8 +44,8 @@ For a single host (development, small team, or personal use):
    export TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true
    ```
 
-4. Run the MCP server or CLI as usual. Hive queries will use Postgres instead
-   of the local SQLite hive.db.
+4. Run the MCP server or CLI as usual. Hive queries will use Postgres
+   (SQLite Hive was removed in v3; ADR-007).
 
 ## Multi-Host Deployment
 

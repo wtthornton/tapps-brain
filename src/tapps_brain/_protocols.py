@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from tapps_brain.models import RecallResult
+    from tapps_brain.models import MemoryEntry, RecallResult
+    from tapps_brain.relations import RelationEntry
 
 
 @runtime_checkable
@@ -147,8 +148,9 @@ class ReportSection(Protocol):
 class HiveBackend(Protocol):
     """Backend protocol for Hive storage.
 
-    Decouples callers from the concrete SQLite ``HiveStore`` implementation,
-    enabling alternative backends (e.g., PostgreSQL) via EPIC-055.
+    Decouples callers from the concrete backend implementation.
+    The only supported backend in v3 is ``PostgresHiveBackend`` (ADR-007).
+    Created via :func:`tapps_brain.backends.create_hive_backend`.
     """
 
     _db_path: Path
@@ -258,8 +260,9 @@ class HiveBackend(Protocol):
 class FederationBackend(Protocol):
     """Backend protocol for Federation storage.
 
-    Decouples callers from the concrete SQLite ``FederatedStore`` implementation,
-    enabling alternative backends (e.g., PostgreSQL) via EPIC-055.
+    Decouples callers from the concrete backend implementation.
+    The only supported backend in v3 is ``PostgresFederationBackend`` (ADR-007).
+    Created via :func:`tapps_brain.backends.create_federation_backend`.
     """
 
     def publish(
@@ -309,3 +312,94 @@ class AgentRegistryBackend(Protocol):
     def list_agents(self) -> list[Any]: ...
 
     def agents_for_domain(self, domain_name: str) -> list[Any]: ...
+
+
+# ---------------------------------------------------------------------------
+# PrivateBackend protocol for per-agent private memory (EPIC-059 STORY-059.5)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class PrivateBackend(Protocol):
+    """Backend protocol for private agent memory storage.
+
+    Decouples :class:`~tapps_brain.store.MemoryStore` from the concrete
+    :class:`~tapps_brain.persistence.MemoryPersistence` (SQLite) and
+    :class:`~tapps_brain.postgres_private.PostgresPrivateBackend` (Postgres)
+    implementations.
+
+    All operations are implicitly scoped to a single ``(project_id, agent_id)``
+    pair — implementations supply tenant isolation at construction time.
+
+    Path sentinels
+    --------------
+    ``db_path``, ``store_dir``, and ``audit_path`` must return :class:`Path`
+    objects but may point to ``Path("/dev/null")`` when the backend has no
+    on-disk representation (e.g. Postgres).  Callers that depend on these paths
+    (diagnostics history, JSONL audit, FeedbackStore) must degrade gracefully
+    when the paths do not exist.
+    """
+
+    # -- Properties required by MemoryStore callers -------------------------
+
+    @property
+    def store_dir(self) -> Path: ...
+
+    @property
+    def db_path(self) -> Path: ...
+
+    @property
+    def audit_path(self) -> Path: ...
+
+    @property
+    def encryption_key(self) -> str | None: ...
+
+    @property
+    def sqlcipher_enabled(self) -> bool: ...
+
+    # -- Core CRUD -----------------------------------------------------------
+
+    def save(self, entry: MemoryEntry) -> None: ...
+
+    def load_all(self) -> list[MemoryEntry]: ...
+
+    def delete(self, key: str) -> bool: ...
+
+    def search(
+        self,
+        query: str,
+        *,
+        memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
+    ) -> list[MemoryEntry]: ...
+
+    # -- Relations -----------------------------------------------------------
+
+    def list_relations(self) -> list[dict[str, Any]]: ...
+
+    def count_relations(self) -> int: ...
+
+    def save_relations(self, key: str, relations: list[RelationEntry]) -> int: ...
+
+    def load_relations(self, key: str) -> list[dict[str, Any]]: ...
+
+    # -- Schema / vector / audit ---------------------------------------------
+
+    def get_schema_version(self) -> int: ...
+
+    def sqlite_vec_knn_search(
+        self, query_embedding: list[float], k: int
+    ) -> list[tuple[str, float]]: ...
+
+    def sqlite_vec_row_count(self) -> int: ...
+
+    def append_audit(
+        self,
+        action: str,
+        key: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def close(self) -> None: ...

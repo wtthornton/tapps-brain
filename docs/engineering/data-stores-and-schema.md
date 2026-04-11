@@ -91,9 +91,9 @@ The Hive uses **PostgreSQL** exclusively (`TAPPS_BRAIN_HIVE_DSN`). SQLite Hive b
 
 SQL migration files in `src/tapps_brain/migrations/hive/`. Managed by `postgres_migrations.py` (`apply_hive_migrations()`). Version tracked in `hive_schema_version` table. Auto-migrate on startup: `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=1`. CLI: `tapps-brain maintenance migrate-hive` / `hive-schema-status`.
 
-## Federation hub (PostgreSQL or SQLite)
+## Federation hub (PostgreSQL — v3)
 
-Same backend abstraction as Hive (EPIC-054/055). PostgreSQL when `TAPPS_BRAIN_FEDERATION_DSN` is set, SQLite (`federated.db`) otherwise.
+Same backend abstraction as Hive (EPIC-054/055). **PostgreSQL only** (ADR-007) — requires `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://` or `postgresql://`). SQLite Federation was removed in v3.
 
 ### Core tables
 

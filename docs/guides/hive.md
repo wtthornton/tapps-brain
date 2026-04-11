@@ -1,8 +1,16 @@
 # Hive Guide: Cross-Agent Memory Sharing
 
-The Hive is tapps-brain's multi-agent shared brain. It enables agents on the same machine to share knowledge through a central SQLite store with namespace isolation, conflict resolution, and configurable propagation.
+> **v3 (current):** The Hive backend is **PostgreSQL-only** (ADR-007). Set
+> `TAPPS_BRAIN_HIVE_DSN=postgres://…` to activate it. SQLite Hive support
+> was removed in v3. Sections below that still reference `hive.db` or
+> `HiveStore()` describe v2 behaviour; the underlying concepts (namespaces,
+> propagation, conflict resolution) are unchanged. See
+> [Hive Deployment Guide](hive-deployment.md) and
+> [postgres-dsn.md](postgres-dsn.md) for v3 configuration.
 
-> **Hive vs. Federation**: Federation shares memories across **projects** (`~/.tapps-brain/memory/federated.db`). The Hive shares memories across **agents** within or across projects (`~/.tapps-brain/hive/hive.db`). They solve different problems and can be used together. **Decision guide:** [`hive-vs-federation.md`](hive-vs-federation.md).
+The Hive is tapps-brain's multi-agent shared brain. It enables agents to share knowledge through a central PostgreSQL store with namespace isolation, conflict resolution, and configurable propagation.
+
+> **Hive vs. Federation**: Federation shares memories across **projects**. The Hive shares memories across **agents** within or across projects. They solve different problems and can be used together. **Decision guide:** [`hive-vs-federation.md`](hive-vs-federation.md).
 
 ## Table of Contents
 

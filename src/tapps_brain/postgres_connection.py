@@ -115,7 +115,7 @@ class PostgresConnectionManager:
         - ``pool_max`` — configured maximum connections
         - ``pool_size`` — current open connections (0 if pool not initialised)
         - ``pool_available`` — idle connections ready to serve requests
-        - ``pool_saturation`` — fraction of max_size in use (0.0 – 1.0)
+        - ``pool_saturation`` — fraction of max_size in use (0.0 - 1.0)
         - ``idle_timeout`` — configured idle eviction timeout in seconds
 
         When the pool has not been opened yet (e.g. lazy init not triggered)
