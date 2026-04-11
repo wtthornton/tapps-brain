@@ -62,6 +62,11 @@ def discover_federation_migrations() -> list[tuple[int, str, str]]:
     return _discover_migration_files("federation")
 
 
+def discover_private_migrations() -> list[tuple[int, str, str]]:
+    """Return private-memory migration files as ``(version, filename, sql)``."""
+    return _discover_migration_files("private")
+
+
 # ---------------------------------------------------------------------------
 # Schema status
 # ---------------------------------------------------------------------------
@@ -121,6 +126,12 @@ def get_federation_schema_status(dsn: str) -> SchemaStatus:
     """Return the current Federation schema status."""
     migrations = discover_federation_migrations()
     return _get_schema_status(dsn, "federation_schema_version", migrations)
+
+
+def get_private_schema_status(dsn: str) -> SchemaStatus:
+    """Return the current private-memory schema status."""
+    migrations = discover_private_migrations()
+    return _get_schema_status(dsn, "private_schema_version", migrations)
 
 
 # ---------------------------------------------------------------------------
@@ -211,3 +222,12 @@ def apply_federation_migrations(dsn: str, *, dry_run: bool = False) -> list[int]
     """
     migrations = discover_federation_migrations()
     return _apply_migrations(dsn, "federation_schema_version", migrations, dry_run=dry_run)
+
+
+def apply_private_migrations(dsn: str, *, dry_run: bool = False) -> list[int]:
+    """Apply pending private-memory schema migrations.
+
+    Returns the list of version numbers that were applied.
+    """
+    migrations = discover_private_migrations()
+    return _apply_migrations(dsn, "private_schema_version", migrations, dry_run=dry_run)
