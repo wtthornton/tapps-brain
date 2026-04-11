@@ -1,7 +1,29 @@
 {
   "source": "src/tapps_brain/mcp_server.py",
-  "tool_count": 69,
+  "tool_count": 65,
   "resource_count": 8,
+  "core_tool_count": 19,
+  "core_tools": [
+    "brain_forget",
+    "brain_learn_failure",
+    "brain_learn_success",
+    "brain_recall",
+    "brain_remember",
+    "brain_status",
+    "hive_propagate",
+    "hive_search",
+    "hive_status",
+    "memory_capture",
+    "memory_delete",
+    "memory_get",
+    "memory_ingest",
+    "memory_list",
+    "memory_recall",
+    "memory_reinforce",
+    "memory_save",
+    "memory_search",
+    "tapps_brain_health"
+  ],
   "tools": [
     {
       "name": "agent_create",
@@ -50,22 +72,6 @@
     {
       "name": "diagnostics_report",
       "description": "Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."
-    },
-    {
-      "name": "federation_publish",
-      "description": "Publish shared-scope memories to the federation hub."
-    },
-    {
-      "name": "federation_status",
-      "description": "Show federation hub status: registered projects and subscriptions."
-    },
-    {
-      "name": "federation_subscribe",
-      "description": "Subscribe a project to receive memories from other federated projects."
-    },
-    {
-      "name": "federation_unsubscribe",
-      "description": "Remove a project's federation subscription."
     },
     {
       "name": "feedback_gap",

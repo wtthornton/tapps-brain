@@ -63,15 +63,6 @@ tools:
     description: Search past session summaries
   - name: memory_capture
     description: Extract facts from agent response
-  # Federation
-  - name: federation_status
-    description: Hub status, projects, and subscriptions
-  - name: federation_subscribe
-    description: Subscribe project to receive memories
-  - name: federation_unsubscribe
-    description: Remove subscription
-  - name: federation_publish
-    description: Publish shared-scope memories to hub
   # Maintenance
   - name: maintenance_consolidate
     description: Merge similar memories
@@ -311,7 +302,6 @@ Available groups:
 | `search`     | `memory_stats`, `memory_health`, `memory_metrics`, `memory_entry_detail`, `memory_recall_prompt`, `memory_store_summary_prompt`, `memory_remember_prompt` |
 | `admin`      | `memory_audit`, `memory_list_tags`, `memory_update_tags`, `memory_entries_by_tag`, `profile_info`, `profile_switch`, `maintenance_consolidate`, `maintenance_gc`, `memory_gc_config`, `memory_gc_config_set`, `memory_consolidation_config`, `memory_consolidation_config_set`, `memory_export`, `memory_import` |
 | `hive`       | `hive_status`, `hive_search`, `hive_propagate`, `agent_register`, `agent_create`, `agent_list`, `agent_delete` |
-| `federation` | `federation_status`, `federation_subscribe`, `federation_unsubscribe`, `federation_publish` |
 | `graph`      | `memory_relations`, `memory_relations_get_batch`, `memory_find_related`, `memory_query_relations` |
 
 **Example — coder agent (recall and capture only):**

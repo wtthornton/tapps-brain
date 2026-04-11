@@ -7,6 +7,12 @@ Run from repo root:
 
 Writes ``docs/generated/mcp-tools-manifest.json`` (stable ordering for diffs).
 Canonical **tool_count** / **resource_count** for docs and drift checks.
+
+The manifest also includes a **core_tools** list — the frozen set of tools that
+every agent session exposes by default.  Operator / maintenance tools not in this
+list will move behind the ``--enable-operator-tools`` flag (STORY-062.4).
+
+To update the core set, edit ``CORE_TOOL_NAMES`` in this file and re-run.
 """
 
 from __future__ import annotations
@@ -19,6 +25,44 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MCP_PATH = PROJECT_ROOT / "src" / "tapps_brain" / "mcp_server.py"
 OUT_PATH = PROJECT_ROOT / "docs" / "generated" / "mcp-tools-manifest.json"
+
+# ---------------------------------------------------------------------------
+# Core agent tool set — frozen as of STORY-062.3
+#
+# These are the tools exposed in every default agent session.  They cover the
+# primary remember/recall/forget lifecycle plus Hive basics and health.
+# Operator/maintenance tools (diagnostics, flywheel, GC config, etc.) are NOT
+# in this set and will be gated behind --enable-operator-tools (STORY-062.4).
+# ---------------------------------------------------------------------------
+CORE_TOOL_NAMES: frozenset[str] = frozenset(
+    [
+        # Agent Brain facade (EPIC-057) — primary entry points for agents
+        "brain_remember",
+        "brain_recall",
+        "brain_forget",
+        "brain_learn_success",
+        "brain_learn_failure",
+        "brain_status",
+        # Memory CRUD
+        "memory_save",
+        "memory_get",
+        "memory_search",
+        "memory_list",
+        "memory_recall",
+        "memory_delete",
+        # Context extraction
+        "memory_capture",
+        "memory_ingest",
+        # Reinforce
+        "memory_reinforce",
+        # Hive basics
+        "hive_search",
+        "hive_status",
+        "hive_propagate",
+        # Health
+        "tapps_brain_health",
+    ]
+)
 
 
 def _is_mcp_tool_decorator(dec: ast.expr) -> bool:
@@ -93,16 +137,34 @@ def main() -> int:
         return 1
     tools = [{"name": n, "description": d} for n, d in _iter_mcp_tools(cs)]
     resources = [{"uri": u, "description": d} for u, d in _iter_mcp_resources(cs)]
+
+    # Validate core tool names are present in the full tool list
+    all_tool_names = {t["name"] for t in tools}
+    missing_core = CORE_TOOL_NAMES - all_tool_names
+    if missing_core:
+        print(
+            f"WARNING: CORE_TOOL_NAMES contains names not found in mcp_server.py: "
+            f"{sorted(missing_core)}",
+            file=sys.stderr,
+        )
+
+    core_tools = sorted(CORE_TOOL_NAMES & all_tool_names)
+
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "source": "src/tapps_brain/mcp_server.py",
         "tool_count": len(tools),
         "resource_count": len(resources),
+        "core_tool_count": len(core_tools),
+        "core_tools": core_tools,
         "tools": tools,
         "resources": resources,
     }
     OUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"Wrote {OUT_PATH} ({len(tools)} tools, {len(resources)} resources)")
+    print(
+        f"Wrote {OUT_PATH} ({len(tools)} tools, {len(resources)} resources, "
+        f"{len(core_tools)} core tools)"
+    )
     return 0
 
 
