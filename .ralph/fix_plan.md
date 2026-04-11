@@ -39,7 +39,7 @@
 ### Phase B: Private memory on Postgres (059.4–059.6) <!-- id: 059-phase-b -->
 
 - [x] **059.4** Private memory — schema + migrations — Postgres tables keyed by `(project_id, agent_id)`; forward-only `migrations/private/001_initial.sql`; clean apply on empty DB; revision tracking. [LARGE — new schema design] <!-- resolved: src/tapps_brain/migrations/, src/tapps_brain/persistence.py -->
-- [ ] **059.5** Private memory — indexes + store wiring — recall/BM25-adjacent indexes; `MemoryStore` reads/writes private rows through Postgres backend; no `.tapps-brain/agents/<id>/memory.db` in v3 layout. [LARGE — core wiring] <!-- resolved: src/tapps_brain/store.py, src/tapps_brain/persistence.py -->
+- [x] **059.5** Private memory — indexes + store wiring — recall/BM25-adjacent indexes; `MemoryStore` reads/writes private rows through Postgres backend; no `.tapps-brain/agents/<id>/memory.db` in v3 layout. [LARGE — core wiring] <!-- resolved: src/tapps_brain/store.py, src/tapps_brain/persistence.py -->
 - [ ] **059.6** Behavioral parity doc + load smoke — short markdown: what matches v2 (decay, consolidation, safety) vs what changed; benchmark script for N concurrent agents; p95 or "informational." <!-- resolved: docs/engineering/, scripts/ or tests/benchmarks/ -->
 
 ### Phase C: Config, onboarding, CI (059.7–059.8) <!-- id: 059-phase-c -->
@@ -183,6 +183,31 @@
 - [ ] **032.10** End-to-end integration tests — recall spans + metrics + privacy modes + `HAS_OTEL=False`; real MemoryStore + mocked collectors; optional feedback/diagnostics events. [MEDIUM] <!-- resolved: tests/integration/test_otel_integration.py -->
 
 🔒 **QA GATE — EPIC-032 complete.** Full QA suite. `release-ready.sh` if publishing.
+
+---
+
+## EPIC-064: Product surface — narrative motion, deep insight, NLT brand fidelity
+
+**Priority: MEDIUM — parallel polish; does not block v3 (059–063)**  
+**Read first:** `docs/planning/epics/EPIC-064.md` — **research:** W3C WCAG 2.3.3 / C39, MDN scroll-driven animations + `prefers-reduced-motion`, web.dev; **tooling:** `mcp__docs-mcp` (`docs_validate_epic`, `docs_check_cross_refs`, `docs_check_style`, `docs_check_drift`) + `mcp__tapps-mcp` (`tapps_checklist`, `tapps_impact_analysis`, `tapps_quality_gate`, `tapps_dead_code`, `tapps_dependency_graph` when Python surface changes). See epic § *MCP + web coverage*.
+
+> **Why:** Greenfield epics are ops/infrastructure dense. The tapps **frontend** in-repo (`examples/brain-visual/`) must **sell** the product: story-first IA, purposeful motion, insight panels (retrieval/diagnostics/privacy), and **audited alignment** to canonical **NLT Labs style sheets + logo packs** (guide is referenced in code but lives outside the repo today). **tapps-mcp** and **docs-mcp** are sibling tooling ([tapps-mcp](https://github.com/tapps-mcp/tapps-mcp)); wire per story verification in the epic—same pattern as EPIC-059 `.CLEAN` / EPIC-062 `.CLEAN`.
+
+### Phase P: Brand audit + narrative + motion (064.1–064.4) <!-- id: 064-phase-p -->
+
+- [ ] **064.1** NLT Labs — style sheet & logo pack audit — locate canonical `BRAND-STYLE-GUIDE` (or successor) + logo pack; gap matrix vs `index.html` / `nlt-an-mark-sm.svg` / `VisualThemeTokens`; optional redistributable subset under `docs/design/nlt-brand/` + README link, or documented internal fetch path. Run `mcp__docs-mcp docs_check_cross_refs` + `docs_check_style` on new/edited docs. [MEDIUM — docs + inventory] <!-- resolved: docs/planning/ or docs/design/, examples/brain-visual/README.md -->
+- [ ] **064.2** Narrative & IA refresh — decision-first copy, story beats order, microcopy tied to real snapshot fields (no vague “RAG” hype). [MEDIUM] <!-- resolved: examples/brain-visual/index.html -->
+- [ ] **064.3** Motion system — CSS motion tokens from brand audit; transform/opacity only; `prefers-reduced-motion` gates; drawer/modal audit. [LARGE — CSS/JS] <!-- resolved: examples/brain-visual/index.html -->
+- [ ] **064.4** Deep insight panels — stepped explainer for diagnostics or retrieval stack; privacy footer three-bullet pattern; help articles for new concepts. [LARGE] <!-- resolved: examples/brain-visual/, brain-visual-help.js -->
+
+### Phase Q: Demo + discovery + clean (064.5–064.6, 064.CLEAN) <!-- id: 064-phase-q -->
+
+- [ ] **064.5** Demo snapshot + first-run — `brain-visual.demo.json` (synthetic) + load path or “Load demo” control; README note. [SMALL] <!-- resolved: examples/brain-visual/ -->
+- [ ] **064.6** README / docs index CTA — “See it” subsection + cross-links. [SMALL — docs] <!-- resolved: README.md, docs/DOCUMENTATION_INDEX.md or docs/guides/visual-snapshot.md -->
+
+- [ ] **064.CLEAN** Doc + a11y + MCP gate — `mcp__docs-mcp docs_validate_epic` on `EPIC-064.md`; `docs_check_cross_refs` + `docs_check_style` on epic-touched `docs/` subtrees; `docs_check_drift` if `DOCUMENTATION_INDEX.md` / engineering maps changed. `mcp__tapps-mcp tapps_checklist` (`task_type: "epic"`); if Python changed: `tapps_impact_analysis` per file, `tapps_quality_gate` on `visual_snapshot.py`, and `tapps_dead_code` + `tapps_dependency_graph` when imports/public API change. Lighthouse (or equivalent) accessibility spot-check recorded. Confirm epic **Research notes** retain W3C + MDN/web.dev anchors. [SMALL] <!-- resolved: docs/planning/epics/EPIC-064.md, docs/, src/tapps_brain/ if touched -->
+
+🔒 **QA GATE — EPIC-064 complete.** No Python coverage gate unless `visual_snapshot.py` (or other `src/tapps_brain/`) changes—then run scoped `pytest` for touched modules + full suite if behavior contract changes. Otherwise manual + **docs-mcp** + **tapps-mcp** per epic + optional Playwright smoke if added later.
 
 ---
 
