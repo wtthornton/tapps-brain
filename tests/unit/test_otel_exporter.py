@@ -367,3 +367,356 @@ class TestGetMetricsPoolStats:
         assert snap.gauges.get("pool.hive.connections_in_use") == 3.0
         assert snap.gauges.get("pool.hive.pool_size") == 4.0
         assert snap.gauges.get("pool.hive.saturation") == 0.75
+
+
+# ---------------------------------------------------------------------------
+# STORY-061.7: MemoryBodyRedactionFilter tests
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryBodyRedactionFilter:
+    """Log filter strips memory body content from log records (STORY-061.7)."""
+
+    def _make_record(self, msg: str, **extra: Any) -> logging.LogRecord:
+        record = logging.LogRecord(
+            name="tapps_brain.test",
+            level=logging.DEBUG,
+            pathname="test.py",
+            lineno=1,
+            msg=msg,
+            args=(),
+            exc_info=None,
+        )
+        for k, v in extra.items():
+            setattr(record, k, v)
+        return record
+
+    def test_filter_always_returns_true(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("hello world")
+        assert filt.filter(record) is True
+
+    def test_redacts_content_extra_field(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("saved entry", content="my secret memory body")
+        filt.filter(record)
+        assert record.content != "my secret memory body"  # type: ignore[attr-defined]
+        assert "my secret memory body" not in str(record.content)  # type: ignore[attr-defined]
+        assert "[REDACTED:" in record.content  # type: ignore[attr-defined]
+
+    def test_redacts_body_extra_field(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("saved entry", body="super sensitive text")
+        filt.filter(record)
+        assert "super sensitive text" not in str(record.body)  # type: ignore[attr-defined]
+
+    def test_redacts_query_text_extra_field(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("recall called", query_text="find my password")
+        filt.filter(record)
+        assert "find my password" not in str(record.query_text)  # type: ignore[attr-defined]
+
+    def test_redacts_memory_value_extra_field(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("entry stored", memory_value="api-key=secret123")
+        filt.filter(record)
+        assert "api-key=secret123" not in str(record.memory_value)  # type: ignore[attr-defined]
+
+    def test_hash_is_consistent(self) -> None:
+        """Same content always produces the same hash prefix for correlation."""
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        r1 = self._make_record("a", content="repeat_me")
+        r2 = self._make_record("b", content="repeat_me")
+        filt.filter(r1)
+        filt.filter(r2)
+        assert r1.content == r2.content  # type: ignore[attr-defined]
+
+    def test_different_content_produces_different_hash(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        r1 = self._make_record("a", content="value_one")
+        r2 = self._make_record("b", content="value_two")
+        filt.filter(r1)
+        filt.filter(r2)
+        assert r1.content != r2.content  # type: ignore[attr-defined]
+
+    def test_non_forbidden_fields_not_redacted(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("ok", tier="architectural", count=5)
+        filt.filter(record)
+        assert record.tier == "architectural"  # type: ignore[attr-defined]
+        assert record.count == 5  # type: ignore[attr-defined]
+
+    def test_inline_content_pattern_redacted(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("Saved entry content=supersecret tier=architectural")
+        filt.filter(record)
+        assert "supersecret" not in record.getMessage()
+        assert "REDACTED" in record.getMessage()
+        # tier value should be untouched (not a forbidden key)
+        assert "architectural" in record.getMessage()
+
+    def test_inline_query_text_pattern_redacted(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("recall query.text=password_hint result_count=3")
+        filt.filter(record)
+        msg = record.getMessage()
+        assert "password_hint" not in msg
+        assert "REDACTED" in msg
+        assert "result_count=3" in msg
+
+    def test_empty_forbidden_field_handled(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("empty", content="")
+        # Empty string — filter should not crash
+        filt.filter(record)
+
+    def test_non_string_forbidden_field_handled(self) -> None:
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        filt = MemoryBodyRedactionFilter()
+        record = self._make_record("non_str", content={"nested": "dict"})
+        filt.filter(record)
+        assert record.content == "[REDACTED]"  # type: ignore[attr-defined]
+
+
+class TestInstallMemoryRedactionFilter:
+    """install_memory_redaction_filter() attaches the filter to the logger."""
+
+    def test_installs_filter_on_named_logger(self) -> None:
+        import logging
+
+        from tapps_brain.otel_exporter import (
+            MemoryBodyRedactionFilter,
+            install_memory_redaction_filter,
+        )
+
+        logger = logging.getLogger("tapps_brain._test_install_unique")
+        # Remove any pre-existing filters to ensure a clean state
+        logger.filters.clear()
+
+        result = install_memory_redaction_filter("tapps_brain._test_install_unique")
+        assert isinstance(result, MemoryBodyRedactionFilter)
+        assert any(isinstance(f, MemoryBodyRedactionFilter) for f in logger.filters)
+
+        # Cleanup
+        logger.filters.clear()
+
+    def test_idempotent_second_install(self) -> None:
+        import logging
+
+        from tapps_brain.otel_exporter import (
+            MemoryBodyRedactionFilter,
+            install_memory_redaction_filter,
+        )
+
+        logger = logging.getLogger("tapps_brain._test_idempotent_unique")
+        logger.filters.clear()
+
+        f1 = install_memory_redaction_filter("tapps_brain._test_idempotent_unique")
+        f2 = install_memory_redaction_filter("tapps_brain._test_idempotent_unique")
+        assert f1 is f2
+        assert sum(isinstance(f, MemoryBodyRedactionFilter) for f in logger.filters) == 1
+
+        # Cleanup
+        logger.filters.clear()
+
+
+class TestForbiddenStringsNeverInLogs:
+    """Static / integration test: forbidden content never reaches log output (STORY-061.7)."""
+
+    def test_forbidden_content_never_in_handler_output(self) -> None:
+        """A log record with raw memory content must not appear in handler output."""
+        import io
+        import logging
+
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.addFilter(MemoryBodyRedactionFilter())
+        handler.setLevel(logging.DEBUG)
+
+        logger = logging.getLogger("tapps_brain._test_forbidden_unique")
+        logger.handlers.clear()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        secret = "SUPER_SECRET_MEMORY_CONTENT_XYZ"
+        logger.debug("Saved entry", extra={"content": secret})
+        logger.debug(f"Recall query.text={secret}")
+
+        output = stream.getvalue()
+        assert secret not in output, f"Secret content leaked into log output:\n{output}"
+        assert "REDACTED" in output
+
+        # Cleanup
+        logger.handlers.clear()
+
+    def test_safe_fields_still_visible(self) -> None:
+        """Non-forbidden fields (tier, count, score) must reach the handler."""
+        import io
+        import logging
+
+        from tapps_brain.otel_exporter import MemoryBodyRedactionFilter
+
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.addFilter(MemoryBodyRedactionFilter())
+        handler.setLevel(logging.DEBUG)
+
+        logger = logging.getLogger("tapps_brain._test_safe_fields_unique")
+        logger.handlers.clear()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        logger.info("recall complete result_count=5 tier=architectural score=0.92")
+
+        output = stream.getvalue()
+        assert "result_count=5" in output
+        assert "tier=architectural" in output
+
+        # Cleanup
+        logger.handlers.clear()
+
+
+# ---------------------------------------------------------------------------
+# STORY-061.7: create_allowed_attribute_views() tests
+# ---------------------------------------------------------------------------
+
+
+class TestCreateAllowedAttributeViews:
+    """OTel SDK Views enforce the allowed metric dimension set (STORY-061.7)."""
+
+    def test_returns_list(self) -> None:
+        from tapps_brain.otel_exporter import create_allowed_attribute_views
+
+        result = create_allowed_attribute_views()
+        assert isinstance(result, list)
+
+    def test_returns_empty_list_without_sdk(self) -> None:
+        from unittest.mock import patch
+
+        from tapps_brain.otel_exporter import create_allowed_attribute_views
+
+        with patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=False):
+            result = create_allowed_attribute_views()
+            assert result == []
+
+    def test_returns_views_with_sdk(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.otel_exporter import create_allowed_attribute_views
+
+        mock_view_cls = MagicMock()
+        mock_view_cls.return_value = MagicMock()
+
+        with (
+            patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True),
+            patch.dict(
+                "sys.modules",
+                {"opentelemetry.sdk.metrics.view": MagicMock(View=mock_view_cls)},
+            ),
+        ):
+            result = create_allowed_attribute_views()
+            assert len(result) >= 1
+            mock_view_cls.assert_called_once()
+            call_kwargs = mock_view_cls.call_args.kwargs
+            assert call_kwargs.get("instrument_name") == "*"
+            # attribute_keys must be drawn from the allowed set
+            from tapps_brain.otel_exporter import ALLOWED_METRIC_DIMENSIONS
+
+            assert call_kwargs.get("attribute_keys") == set(ALLOWED_METRIC_DIMENSIONS)
+
+    def test_forbidden_dimensions_excluded_from_views(self) -> None:
+        """FORBIDDEN_METRIC_DIMENSIONS must not appear in the Views' attribute_keys."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.otel_exporter import (
+            FORBIDDEN_METRIC_DIMENSIONS,
+            create_allowed_attribute_views,
+        )
+
+        captured_keys: list[set[str]] = []
+
+        def _capture_view(**kwargs: Any) -> MagicMock:
+            captured_keys.append(set(kwargs.get("attribute_keys", set())))
+            return MagicMock()
+
+        with (
+            patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True),
+            patch.dict(
+                "sys.modules",
+                {"opentelemetry.sdk.metrics.view": MagicMock(View=_capture_view)},
+            ),
+        ):
+            create_allowed_attribute_views()
+
+        assert captured_keys, "No views were created"
+        for keys in captured_keys:
+            overlap = keys & FORBIDDEN_METRIC_DIMENSIONS
+            assert not overlap, f"View attribute_keys contains forbidden dimensions: {overlap}"
+
+    def test_sdk_import_error_returns_empty_list(self) -> None:
+        """If View import fails, return [] without raising."""
+        from unittest.mock import patch
+
+        from tapps_brain.otel_exporter import create_allowed_attribute_views
+
+        def _raise(*_args: Any, **_kwargs: Any) -> None:
+            raise ImportError("no SDK")
+
+        with (
+            patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True),
+            patch.dict(
+                "sys.modules",
+                {"opentelemetry.sdk.metrics.view": MagicMock(View=_raise)},
+            ),
+        ):
+            result = create_allowed_attribute_views()
+            assert result == []
+
+
+class TestForbiddenLogFields:
+    """STORY-061.7: FORBIDDEN_LOG_FIELDS constant is defined and complete."""
+
+    def test_forbidden_log_fields_is_frozenset(self) -> None:
+        from tapps_brain.otel_exporter import FORBIDDEN_LOG_FIELDS
+
+        assert isinstance(FORBIDDEN_LOG_FIELDS, frozenset)
+        assert len(FORBIDDEN_LOG_FIELDS) > 0
+
+    def test_content_and_body_in_forbidden_log_fields(self) -> None:
+        from tapps_brain.otel_exporter import FORBIDDEN_LOG_FIELDS
+
+        assert "content" in FORBIDDEN_LOG_FIELDS
+        assert "body" in FORBIDDEN_LOG_FIELDS
+
+    def test_query_fields_in_forbidden_log_fields(self) -> None:
+        from tapps_brain.otel_exporter import FORBIDDEN_LOG_FIELDS
+
+        assert "query_text" in FORBIDDEN_LOG_FIELDS
+        assert "query.text" in FORBIDDEN_LOG_FIELDS

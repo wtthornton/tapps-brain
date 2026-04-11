@@ -95,7 +95,7 @@
 ### Phase G: Redaction + runbook (061.6–061.8) <!-- id: 061-phase-g -->
 
 - [x] **061.6** Policy doc — allowed vs forbidden telemetry — markdown policy: allowed span attributes; forbidden (memory body, secrets, PII); PR template review slot. [SMALL — docs only] <!-- resolved: docs/operations/ or docs/engineering/ -->
-- [ ] **061.7** Enforcement — log handler + metric views — log formatter strips/hashes memory bodies; OTel Views drop high-cardinality labels; static/unit test: forbidden strings never appear. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py -->
+- [x] **061.7** Enforcement — log handler + metric views — log formatter strips/hashes memory bodies; OTel Views drop high-cardinality labels; static/unit test: forbidden strings never appear. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py -->
 - [ ] **061.8** Operator runbook + example alerts — `docs/operations/` runbook ≤ 2 pages; optional Prometheus rules / Grafana JSON as non-normative examples. [SMALL — docs only] <!-- resolved: docs/operations/ -->
 
 - [ ] **061.CLEAN** OTel code quality + doc validation — Run `mcp__tapps-mcp tapps_quality_gate` on `otel_exporter.py`; run `mcp__docs-mcp docs_check_style` on new runbook and policy doc; verify `docs/engineering/system-architecture.md` span names match code. [SMALL — automated checks] <!-- resolved: src/tapps_brain/otel_exporter.py, docs/operations/ -->
