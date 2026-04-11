@@ -4,6 +4,30 @@ tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics
 
 ---
 
+## HTTP probe endpoints (liveness / readiness)
+
+The HTTP adapter (EPIC-060) exposes two lightweight probe endpoints designed
+for Kubernetes `livenessProbe` / `readinessProbe` configuration:
+
+| Endpoint | DB call | Success | Degraded |
+|----------|---------|---------|---------|
+| `GET /health` | **No** | 200 `{"status":"ok"}` | — (process restart required) |
+| `GET /ready` | **Yes** | 200 `{"status":"ready", "migration_version": N}` | **503** `{"status":"degraded"}` |
+
+**503 vs 500:** `/ready` returns **503** when the Postgres database is
+unreachable or no DSN is configured (expected degraded state — Kubernetes
+should hold traffic and retry).  It returns **500** only on an unexpected code
+bug.  `/health` never returns 503 or 500 — any non-200 means the HTTP server
+itself has crashed.
+
+Probe routes (`/health`, `/ready`, `/metrics`) are always public — no
+`Authorization` header required, even when `TAPPS_BRAIN_HTTP_AUTH_TOKEN` is set.
+
+See [`docs/operations/k8s-probes.md`](../operations/k8s-probes.md) for full
+Kubernetes manifest examples and tuning guidelines.
+
+---
+
 ## Health checks
 
 The `run_health_check()` function in `src/tapps_brain/health_check.py` produces a machine-readable `HealthReport` covering three sub-systems. The report is designed to complete in under 2 seconds on a Raspberry Pi 5.

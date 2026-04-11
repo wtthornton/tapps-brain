@@ -90,7 +90,7 @@
 - [x] **061.1** Traces — remember/recall/hive hot paths — tracer spans with names from `docs/engineering/system-architecture.md`; `service.name`/`service.version` from env; unit tests with `InMemorySpanExporter`. [MEDIUM] <!-- resolved: src/tapps_brain/otel_tracer.py (new), src/tapps_brain/store.py, tests/unit/test_otel_tracer.py -->
 - [x] **061.2** Metrics — duration, errors, pool, bounded labels — histograms/counters for ops; **no** raw text/keys as labels (document allowed set); wired to metrics export. [MEDIUM] <!-- resolved: src/tapps_brain/otel_exporter.py, src/tapps_brain/metrics.py, src/tapps_brain/store.py, tests/unit/test_otel_exporter.py -->
 - [x] **061.3** Trace context — HTTP adapter + OTel review — W3C `traceparent` through EPIC-060 HTTP adapter; OTel SDK pattern review note; integration test (request with trace header → child span). [SMALL — depends on 060.3 existing] <!-- resolved: src/tapps_brain/http_adapter.py, src/tapps_brain/otel_exporter.py -->
-- [ ] **061.4+061.5** Probes — liveness + readiness — `/health` returns 200 without DB; `/ready` with DB ping + migration version or `degraded` JSON; 503 vs 500 documented; K8s probe docs. [BATCH-2: SMALL — two XS/S tasks, same `health_check.py`] <!-- resolved: src/tapps_brain/health_check.py -->
+- [x] **061.4+061.5** Probes — liveness + readiness — `/health` returns 200 without DB; `/ready` with DB ping + migration version or `degraded` JSON; 503 vs 500 documented; K8s probe docs. [BATCH-2: SMALL — two XS/S tasks, same `health_check.py`] <!-- resolved: src/tapps_brain/health_check.py -->
 
 ### Phase G: Redaction + runbook (061.6–061.8) <!-- id: 061-phase-g -->
 

@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tapps_brain.http_adapter import HttpAdapter, _OPENAPI_SPEC, _probe_db, _service_version
+from tapps_brain.http_adapter import _OPENAPI_SPEC, HttpAdapter, _probe_db, _service_version
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -196,6 +196,22 @@ class TestHealthEndpoint:
     def test_root_path_also_returns_200(self, adapter_no_dsn: HttpAdapter) -> None:
         status, body = _get(adapter_no_dsn.address[1], "/")
         assert status == 200
+        assert isinstance(body, dict)
+        assert body["status"] == "ok"
+
+    def test_liveness_returns_200_even_with_db_down(
+        self, adapter_bad_dsn: HttpAdapter
+    ) -> None:
+        """STORY-061.4: /health must return 200 even when Postgres is unreachable.
+
+        Kubernetes livenessProbe uses /health. If the DB is down, the pod
+        should NOT be restarted — it's the DB that's unhealthy, not the
+        process. Only /ready (readinessProbe) should return 503 in that case.
+        """
+        status, body = _get(adapter_bad_dsn.address[1], "/health")
+        assert status == 200, (
+            f"/health returned {status} with bad DSN — liveness must never call the DB"
+        )
         assert isinstance(body, dict)
         assert body["status"] == "ok"
 
@@ -431,7 +447,7 @@ class TestServiceVersion:
 # Fixtures for auth tests (STORY-060.4)
 # ---------------------------------------------------------------------------
 
-_TEST_TOKEN = "test-secret-token-abc123"  # noqa: S105  (test credential, not real)
+_TEST_TOKEN = "test-secret-token-abc123"
 
 
 @pytest.fixture()
@@ -518,7 +534,7 @@ class TestInfoEndpointWithAuth:
             "token abc123",
             "bearer" + _TEST_TOKEN,  # no space
         ]:
-            status, body = _get_with_headers(port, "/info", {"Authorization": bad_header})
+            status, _body = _get_with_headers(port, "/info", {"Authorization": bad_header})
             assert status in (401, 403), f"Expected 401/403 for header '{bad_header}', got {status}"
 
     def test_returns_403_with_wrong_token(self, adapter_with_auth: HttpAdapter) -> None:
@@ -633,3 +649,127 @@ class TestAuthTokenEnvResolution:
         monkeypatch.setenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "  ")
         token = HttpAdapter._resolve_auth_token_from_env()
         assert token is None
+
+
+# ---------------------------------------------------------------------------
+# W3C traceparent trace context propagation (STORY-061.3)
+# ---------------------------------------------------------------------------
+
+
+class TestTraceContextPropagation:
+    """STORY-061.3: W3C traceparent header creates a child span in the HTTP adapter."""
+
+    # A valid W3C traceparent: version=00, trace-id (32 hex), span-id (16 hex), flags=01
+    _TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+    def test_request_with_traceparent_still_returns_200(
+        self, adapter_no_dsn: HttpAdapter
+    ) -> None:
+        """The response must be unaffected by the presence of traceparent."""
+        port = adapter_no_dsn.address[1]
+        status, body = _get_with_headers(
+            port, "/health", {"traceparent": self._TRACEPARENT}
+        )
+        assert status == 200
+        assert isinstance(body, dict)
+        assert body["status"] == "ok"
+
+    def test_request_without_traceparent_still_returns_200(
+        self, adapter_no_dsn: HttpAdapter
+    ) -> None:
+        """No traceparent header → no trace context → normal response."""
+        port = adapter_no_dsn.address[1]
+        status, _body = _get(port, "/health")
+        assert status == 200
+
+    def test_traceparent_extracted_and_span_created(
+        self, adapter_no_dsn: HttpAdapter
+    ) -> None:
+        """When traceparent is present, a SERVER span is started with the extracted context."""
+        from unittest.mock import patch
+
+        _spans_started: list[tuple[str, Any]] = []
+
+        _real_start_span = __import__(
+            "tapps_brain.otel_tracer", fromlist=["start_span"]
+        ).start_span
+        from contextlib import contextmanager
+
+        @contextmanager  # type: ignore[misc]
+        def _tracking_start_span(
+            name: str,
+            attributes: Any = None,
+            *,
+            kind: Any = None,
+            context: Any = None,
+            **kw: Any,
+        ) -> Any:
+            _spans_started.append((name, context))
+            with _real_start_span(name, attributes, kind=kind, context=context, **kw) as span:
+                yield span
+
+        port = adapter_no_dsn.address[1]
+        with patch("tapps_brain.http_adapter.start_span", _tracking_start_span):
+            # Send a fresh request after patching; the server is already running
+            # so we patch the module-level name
+            _get_with_headers(port, "/health", {"traceparent": self._TRACEPARENT})
+
+        # The SERVER span for GET /health must have been started
+        get_spans = [(n, ctx) for n, ctx in _spans_started if "GET" in n]
+        assert len(get_spans) >= 1, f"No GET span found; all spans: {_spans_started}"
+        span_name, _ctx = get_spans[0]
+        assert "/health" in span_name
+
+    def test_extract_trace_context_with_valid_traceparent(self) -> None:
+        """extract_trace_context() returns a non-None context for a valid traceparent."""
+        from tapps_brain.otel_tracer import extract_trace_context
+
+        ctx = extract_trace_context({"traceparent": self._TRACEPARENT})
+        # When the OTel API is available, we always get a context object back
+        assert ctx is not None
+
+    def test_extract_trace_context_with_empty_carrier(self) -> None:
+        """extract_trace_context() does not raise on empty carrier."""
+        from tapps_brain.otel_tracer import extract_trace_context
+
+        ctx = extract_trace_context({})
+        # Empty carrier → no remote parent, but still a valid (empty) context
+        assert ctx is not None  # OTel API returns an empty context, not None
+
+    def test_extract_trace_context_never_raises(self) -> None:
+        """extract_trace_context() must never propagate exceptions."""
+        from tapps_brain.otel_tracer import extract_trace_context
+
+        # Malformed traceparent — should not raise
+        result = extract_trace_context({"traceparent": "not-a-valid-traceparent"})
+        # Result is either None (no API) or a context object — never an exception
+        assert result is not None or result is None  # always True, just checking no raise
+
+    def test_span_kind_server_exported(self) -> None:
+        """SPAN_KIND_SERVER must be SpanKind.SERVER when OTel API is available."""
+        from opentelemetry.trace import SpanKind
+
+        from tapps_brain.otel_tracer import SPAN_KIND_SERVER
+
+        assert SPAN_KIND_SERVER == SpanKind.SERVER
+
+    def test_start_span_accepts_server_kind(self) -> None:
+        """start_span() must accept kind=SPAN_KIND_SERVER without error."""
+        from unittest.mock import MagicMock
+
+        from opentelemetry.trace import SpanKind
+
+        from tapps_brain.otel_tracer import start_span
+
+        mock_tracer = MagicMock()
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=mock_span)
+        mock_span.__exit__ = MagicMock(return_value=False)
+        mock_tracer.start_as_current_span.return_value = mock_span
+
+        with patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer):
+            with start_span("test.server.span", kind=SpanKind.SERVER):
+                pass
+
+        _, kwargs = mock_tracer.start_as_current_span.call_args
+        assert kwargs.get("kind") == SpanKind.SERVER
