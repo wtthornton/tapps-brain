@@ -8,6 +8,7 @@ Short entry points for AI assistants working in this repo.
 - **Tests:** `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95` — or run the default test task from VS Code/Cursor (**Terminal → Run Task → pytest**).
 - **Cursor MCP / indexing:** `.cursor/mcp.json` — tapps-mcp, docs-mcp (sibling `tapps-mcp` checkout), Playwright; `.cursorignore` trims bulky dirs — see `project.mdc` § Cursor.
 - **Delivery priorities (non-Ralph):** `docs/planning/open-issues-roadmap.md`.
+- **Python API (AgentBrain):** `docs/guides/agent-integration.md` — full method reference, env-var table, and testing patterns.
 
 ## Quick start: clone → compose → pytest (≤ 15 min)
 

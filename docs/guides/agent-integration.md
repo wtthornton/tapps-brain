@@ -1,12 +1,17 @@
-# Agent integration guide (MCP, OpenClaw, custom clients)
+# Agent integration guide
 
-This page is the **operator contract** for AI agents using tapps-brain: how to write memory, how recall behaves when nothing returns, and where to read versions.
+This page is the **operator contract** for AI agents using tapps-brain: the
+`AgentBrain` Python API surface, environment-variable reference, and how to
+handle empty recall.
 
-## AgentBrain (EPIC-057) — simplified Python API
+---
 
-The `AgentBrain` class is the recommended entry point for Python-based agents.
-It wraps `MemoryStore` and `HiveBackend` creation, env-var resolution, and
-lifecycle management into a single facade.
+## AgentBrain — Python API (EPIC-057, v3)
+
+`AgentBrain` is the recommended entry point for Python-based agents.  It wraps
+`MemoryStore` and `HiveBackend` creation, env-var resolution, and lifecycle
+management into a single five-method facade.  Agents and LLMs use this class
+directly — they never import `MemoryStore` or backend factories.
 
 ### Quick start
 
@@ -19,18 +24,212 @@ with AgentBrain(agent_id="frontend-dev", project_dir="/app") as brain:
     brain.learn_from_success("Styled the sidebar component")
 ```
 
-### Configuration
+---
 
-| Parameter | Env var | Description |
-|-----------|---------|-------------|
-| `agent_id` | `TAPPS_BRAIN_AGENT_ID` | Agent identity for storage isolation |
-| `project_dir` | `TAPPS_BRAIN_PROJECT_DIR` | Project root (defaults to cwd) |
-| `groups` | `TAPPS_BRAIN_GROUPS` | Comma-separated group memberships |
-| `expert_domains` | `TAPPS_BRAIN_EXPERT_DOMAINS` | Comma-separated expert domains |
-| `hive_dsn` | `TAPPS_BRAIN_HIVE_DSN` | Hive backend DSN (SQLite path or `postgres://...`) |
-| `encryption_key` | — | Encryption key for SQLCipher |
+### Constructor
 
-### Declaring groups and expert domains
+```python
+AgentBrain(
+    agent_id: str | None = None,
+    project_dir: str | Path | None = None,
+    *,
+    groups: list[str] | None = None,
+    expert_domains: list[str] | None = None,
+    profile: str = "repo-brain",
+    hive_dsn: str | None = None,
+    encryption_key: str | None = None,
+)
+```
+
+All parameters are optional; most can be supplied via environment variables
+instead (see [Environment variables](#environment-variables) below).
+
+| Parameter | Type | Env var | Description |
+|-----------|------|---------|-------------|
+| `agent_id` | `str \| None` | `TAPPS_BRAIN_AGENT_ID` | Agent identity — scopes private memory rows and Hive propagation. |
+| `project_dir` | `str \| Path \| None` | `TAPPS_BRAIN_PROJECT_DIR` | Project root. Defaults to `cwd`. Used to derive the stable `project_id`. |
+| `groups` | `list[str] \| None` | `TAPPS_BRAIN_GROUPS` (CSV) | Group memberships for Hive group propagation. |
+| `expert_domains` | `list[str] \| None` | `TAPPS_BRAIN_EXPERT_DOMAINS` (CSV) | Expert domains for auto-publish to Hive. |
+| `profile` | `str` | — | Built-in profile name (default `"repo-brain"`). See [Profile catalog](profile-catalog.md). |
+| `hive_dsn` | `str \| None` | `TAPPS_BRAIN_HIVE_DSN` | Hive shared-store DSN. Must be `postgres://` or `postgresql://`. |
+| `encryption_key` | `str \| None` | — | Optional SQLCipher key (v2 legacy compat). |
+
+---
+
+### Public methods
+
+#### `remember(fact, *, tier, share, share_with) → str`
+
+Save a memory. Returns the generated key (SHA-256 slug).
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `fact` | `str` | required | The content to store. |
+| `tier` | `str` | `"procedural"` | Memory tier (`"architectural"`, `"pattern"`, `"procedural"`, `"context"`). |
+| `share` | `bool` | `False` | If `True`, propagate to all declared groups on the Hive. |
+| `share_with` | `str \| list[str] \| None` | `None` | Target group name, `"hive"` (global), or list of group names. |
+
+```python
+key = brain.remember("Use Tailwind for styling", tier="architectural")
+brain.remember("PR #42 merged", share=True)               # → all groups
+brain.remember("CSS decision", share_with="frontend")      # → one group
+brain.remember("Design token", share_with="hive")          # → global Hive
+```
+
+---
+
+#### `recall(query, *, max_results, scope) → list[dict]`
+
+Recall memories matching `query`. Returns a list of result dicts (keys:
+`key`, `value`, `tier`, `confidence`, `tags`).
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `query` | `str` | required | Free-text search query. |
+| `max_results` | `int` | `5` | Maximum number of results to return. |
+| `scope` | `str` | `"all"` | Result scope filter (passed through to the retriever). |
+
+```python
+results = brain.recall("how to style components?", max_results=10)
+for r in results:
+    print(r["value"])
+```
+
+The most recently returned keys are tracked internally and used by
+`learn_from_success` to reinforce the right entries.
+
+---
+
+#### `forget(key) → bool`
+
+Archive a memory by key. Returns `True` if found, `False` if not found.
+
+```python
+removed = brain.forget("tailwind-styling-abc123")
+```
+
+---
+
+#### `set_task_context(task_id, session_id) → None`
+
+Set the current task context for subsequent `learn_from_success` /
+`learn_from_failure` calls. Optional — both methods also accept `task_id`
+directly.
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `task_id` | `str` | Opaque task identifier (stored as a tag on success/failure entries). |
+| `session_id` | `str \| None` | Optional session identifier. |
+
+---
+
+#### `learn_from_success(task_description, *, task_id, boost) → None`
+
+Record a successful task outcome. Saves the experience and reinforces any
+recently recalled memories (from the last `recall` call).
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `task_description` | `str` | required | What was accomplished. |
+| `task_id` | `str \| None` | `None` | Override the task ID from `set_task_context`. |
+| `boost` | `float` | `0.1` | Confidence boost applied to recalled entries. |
+
+```python
+brain.set_task_context("TASK-42")
+results = brain.recall("sidebar styling")
+# ... do the work ...
+brain.learn_from_success("Styled the sidebar with Tailwind")
+```
+
+---
+
+#### `learn_from_failure(description, *, task_id, error) → None`
+
+Record a failed task outcome to avoid repeating mistakes.
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `description` | `str` | required | What failed. |
+| `task_id` | `str \| None` | `None` | Override the task ID from `set_task_context`. |
+| `error` | `str \| None` | `None` | Optional error string appended to the stored value. |
+
+```python
+brain.learn_from_failure(
+    "Tried CSS Grid but it broke IE11 compat",
+    error="Grid gaps not supported in IE11",
+)
+```
+
+---
+
+#### `close() → None`
+
+Close the underlying store and Hive backend. Called automatically when used
+as a context manager.
+
+```python
+brain = AgentBrain(agent_id="planner", project_dir="/app")
+try:
+    brain.remember("planning fact")
+finally:
+    brain.close()
+```
+
+---
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agent_id` | `str \| None` | The resolved agent identity. |
+| `store` | `MemoryStore` | The underlying `MemoryStore` (advanced use only). |
+| `hive` | `HiveBackend \| None` | The Hive backend, or `None` when no DSN is set. |
+| `groups` | `list[str]` | Declared group memberships. |
+| `expert_domains` | `list[str]` | Declared expert domains. |
+
+---
+
+### Context manager
+
+`AgentBrain` implements the context manager protocol. Use it with `with` to
+ensure the store and Hive connection are closed cleanly:
+
+```python
+with AgentBrain(agent_id="planner", project_dir="/app") as brain:
+    brain.remember("Use Postgres for shared state")
+    results = brain.recall("database choice")
+# store + Hive closed automatically
+```
+
+---
+
+## Environment variables
+
+All agent-identity and connection variables are listed below. For connection
+pool sizing, health JSON fields, and DSN format details, see
+[PostgreSQL DSN & Connection Pool Reference](postgres-dsn.md).
+
+| Variable | Example | Required (prod) | Description |
+|----------|---------|-----------------|-------------|
+| `TAPPS_BRAIN_AGENT_ID` | `claude-code` | ✅ | Agent identity string. Scopes private memory rows and Hive propagation. |
+| `TAPPS_BRAIN_PROJECT_DIR` | `/home/user/myrepo` | ✅ | Project root — used to derive the stable `project_id` hash. Defaults to `cwd`. |
+| `TAPPS_BRAIN_DATABASE_URL` | `postgres://tapps:s3cr3t@db:5432/tapps` | ✅ (v3) | Unified v3 DSN for private memory + Hive fallback. `postgres://` or `postgresql://` required. |
+| `TAPPS_BRAIN_HIVE_DSN` | `postgres://tapps:s3cr3t@db:5432/tapps_hive` | ✅ if using Hive | Hive shared-store DSN. Falls back to `TAPPS_BRAIN_DATABASE_URL`. |
+| `TAPPS_BRAIN_FEDERATION_DSN` | `postgres://tapps:s3cr3t@db:5432/tapps_fed` | if using federation | Cross-project federation DSN. |
+| `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | `true` | ✅ first deploy | Set `true` to run pending Hive schema migrations on startup. |
+| `TAPPS_BRAIN_GROUPS` | `dev-pipeline,frontend-guild` | if using groups | Comma-separated group memberships for Hive propagation. |
+| `TAPPS_BRAIN_EXPERT_DOMAINS` | `css,react` | if using expert publish | Comma-separated expert domains for auto-publish to Hive. |
+| `TAPPS_BRAIN_STRICT` | `1` | ✅ production | When `1`, a missing DSN raises an error instead of silently skipping Postgres. |
+
+> **v3 note:** tapps-brain v3 requires a Postgres DSN for any shared
+> (Hive/Federation) or private-backend storage. There is no SQLite fallback
+> for shared stores. Without a DSN, `AgentBrain` operates in local-only mode
+> using only in-memory state (no persistence). Set `TAPPS_BRAIN_STRICT=1` in
+> production to catch misconfigured deployments at startup.
+
+---
+
+## Declaring groups and expert domains
 
 ```python
 brain = AgentBrain(
@@ -48,24 +247,12 @@ export TAPPS_BRAIN_GROUPS="dev-pipeline,frontend"
 export TAPPS_BRAIN_EXPERT_DOMAINS="css,tailwind"
 ```
 
-### Configuring Hive DSN
+---
 
-For local-only mode (no shared storage), omit the DSN — a default SQLite
-backend is used automatically.
+## Testing
 
-For Postgres-backed Hive:
-
-```python
-brain = AgentBrain(
-    agent_id="planner",
-    project_dir="/app",
-    hive_dsn="postgres://user:pass@host:5432/tapps_hive",
-)
-```
-
-### Testing with local-only mode
-
-In tests, pass `project_dir=tmp_path` (from pytest) and no `hive_dsn`:
+In unit tests, pass `project_dir=tmp_path` (from pytest) and no `hive_dsn`.
+The store operates in memory without Postgres:
 
 ```python
 def test_my_agent(tmp_path):
@@ -75,27 +262,48 @@ def test_my_agent(tmp_path):
         assert len(results) >= 1
 ```
 
+For integration tests that exercise Hive or private-backend persistence, set
+`TAPPS_BRAIN_DATABASE_URL` to a real Postgres DSN (e.g. from the
+`docker-compose.yml` service container):
+
+```python
+import os, pytest
+
+@pytest.mark.integration
+def test_hive_roundtrip(tmp_path):
+    dsn = os.environ["TAPPS_BRAIN_DATABASE_URL"]
+    with AgentBrain(agent_id="test", project_dir=tmp_path, hive_dsn=dsn) as brain:
+        brain.remember("shared fact", share=True)
+        results = brain.recall("shared")
+        assert any("shared fact" in r["value"] for r in results)
+```
+
+---
+
 ## Versions and profile
 
 | Signal | Where |
 |--------|--------|
 | **PyPI / package version** | `importlib.metadata.version("tapps-brain")`, CLI `tapps-brain --version`, or `StoreHealthReport.package_version` from `maintenance health` / `memory://stats` / `memory://health` |
-| **SQLite schema** | `StoreHealthReport.schema_version`, `memory://stats` |
+| **Hive schema version** | `StoreHealthReport.hive_migration_version`, `/ready` health endpoint |
 | **Active profile** | `StoreHealthReport.profile_name`, MCP `profile_info`, resource `memory://agent-contract` |
-| **Profile seed recipe label** | `StoreHealthReport.profile_seed_version` (when `profile.seeding.seed_version` is set): `maintenance health`, `memory://stats`, `memory://health`, native `run_health_check` → `store.profile_seed_version` |
+| **Profile seed recipe label** | `StoreHealthReport.profile_seed_version` (when `profile.seeding.seed_version` is set) |
 
-Always pin the **package version** in your repo’s `AGENTS.md` (or equivalent) so agents do not follow stale instructions.
+Always pin the **package version** in your repo's `AGENTS.md` (or equivalent)
+so agents do not follow stale instructions.
+
+---
 
 ## Writing memory
 
 | Path | Command / tool |
 |------|----------------|
 | **MCP** | `memory_save` — primary path for assistants |
-| **CLI** | `tapps-brain memory save KEY "value" [--tier …] [--tag …] [--group …]` — same semantics as MCP |
+| **CLI** | `tapps-brain memory save KEY "value" [--tier …] [--tag …] [--group …]` |
 | **Bulk file** | `tapps-brain import data.json` — array of entries |
-| **Python** | `MemoryStore.save(...)` |
+| **Python** | `AgentBrain.remember(...)` or `MemoryStore.save(...)` |
 
-There is **no** legacy `memory save` subcommand; use **`memory save`** (Typer sub-app `memory`).
+---
 
 ## Reading / recall
 
@@ -104,6 +312,7 @@ There is **no** legacy `memory save` subcommand; use **`memory save`** (Typer su
 | `memory_search` | Full-text search with optional tier/scope/group filters |
 | `memory_recall` | Ranked, injection-oriented bundle (`memory_section` + `memories`) |
 | `memory_list` / `memory_get` | Browse or fetch by key |
+| `AgentBrain.recall(...)` | Python API — ranked results as list of dicts |
 
 ### Empty `memory_recall`
 
@@ -122,6 +331,8 @@ When `memory_count` is `0`, check **`recall_diagnostics`** in the JSON response:
 
 Fields **`retriever_hits`** and **`visible_entries`** add context (see `RecallDiagnostics` in `models.py`).
 
+---
+
 ## Tiers vs profile layers
 
 - **Canonical enum tiers** (`architectural`, `pattern`, `procedural`, `context`, …) are always valid for decay and storage.
@@ -130,6 +341,8 @@ Fields **`retriever_hits`** and **`visible_entries`** add context (see `RecallDi
 
 See [Memory scopes](memory-scopes.md) and [Profile catalog](profile-catalog.md).
 
+---
+
 ## Machine-readable surfaces
 
 | Artifact | Purpose |
@@ -137,8 +350,14 @@ See [Memory scopes](memory-scopes.md) and [Profile catalog](profile-catalog.md).
 | `memory://agent-contract` | One JSON blob: versions, profile layers, canonical tiers, empty-reason codes, doc links |
 | `docs/generated/mcp-tools-manifest.json` | `tool_count` / `resource_count`, tool names + resource URIs + short descriptions (regenerate: `python scripts/generate_mcp_tool_manifest.py`) |
 
+---
+
 ## Related docs
 
+- [PostgreSQL DSN & Connection Pool Reference](postgres-dsn.md) — full env-var table, pool sizing, health JSON
+- [Hive guide](hive.md) — cross-agent memory sharing
 - [MCP server](mcp.md) — setup and transport
 - [OpenClaw](openclaw.md) — plugin and hooks
 - [Getting started](getting-started.md)
+- [Profile catalog](profile-catalog.md)
+- [Memory scopes](memory-scopes.md)
