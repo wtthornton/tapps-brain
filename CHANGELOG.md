@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v3.3.0 (2026-04-11)
+
+### Changed
+
+- **Docker infrastructure — full rebuild:** Removed all prior `tapps-visual` and `tapps-hive-migrate` images and containers; rebuilt from scratch with `--no-cache` to pick up latest base image patches (`python:3.13-slim`, `nginx:alpine`). The `Dockerfile.migrate` wheel reference is updated to `tapps_brain-3.3.0`.
+- **Version bump to 3.3.0:** `pyproject.toml` and `openclaw-plugin/package.json` versions aligned to `3.3.0`.
+
+---
+
 ## v3.2.0 (2026-04-09)
 
 ### Added
