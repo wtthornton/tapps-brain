@@ -645,6 +645,8 @@ class MemoryStore:
                 patterns=safety.flagged_patterns,
                 ruleset_version=safety.ruleset_version,
             )
+            self._metrics.increment("store.save.errors")
+            self._metrics.increment("store.save.errors.content_blocked")
             return {
                 "error": "content_blocked",
                 "message": "Memory value blocked by RAG safety filter.",
@@ -2342,7 +2344,29 @@ class MemoryStore:
         )
 
     def get_metrics(self) -> MetricsSnapshot:
-        """Return a snapshot of in-process operation metrics."""
+        """Return a snapshot of in-process operation metrics.
+
+        Pool stats (when a Hive backend is configured) are included as gauges:
+
+        - ``pool.hive.connections_in_use`` — active connections (pool_size - pool_available)
+        - ``pool.hive.pool_size`` — total open connections
+        - ``pool.hive.saturation`` — fraction of max_size in use (0.0-1.0)
+        """
+        if self._hive_store is not None:
+            _pool_fn = getattr(self._hive_store, "get_pool_stats", None)
+            if callable(_pool_fn):
+                try:
+                    _ps = _pool_fn()
+                    _size = float(_ps.get("pool_size", 0))
+                    _avail = float(_ps.get("pool_available", 0))
+                    _saturation = float(_ps.get("pool_saturation", 0.0))
+                    self._metrics.set_gauge(
+                        "pool.hive.connections_in_use", max(0.0, _size - _avail)
+                    )
+                    self._metrics.set_gauge("pool.hive.pool_size", _size)
+                    self._metrics.set_gauge("pool.hive.saturation", _saturation)
+                except Exception:
+                    pass
         return self._metrics.snapshot()
 
     def get_hive_recall_weight(self) -> float:

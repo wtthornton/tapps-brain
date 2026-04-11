@@ -38,10 +38,19 @@ class HistogramStats(BaseModel):
 
 
 class MetricsSnapshot(BaseModel):
-    """Frozen snapshot of all counters and histograms."""
+    """Frozen snapshot of all counters, histograms, and gauges.
+
+    Gauges (``gauges`` field) hold point-in-time float readings — for example
+    Postgres pool utilisation.  They are exported as OTel observable up-down
+    counters and are reset to ``{}`` between snapshots (not cumulative).
+    """
 
     counters: dict[str, int] = Field(default_factory=dict)
     histograms: dict[str, HistogramStats] = Field(default_factory=dict)
+    gauges: dict[str, float] = Field(
+        default_factory=dict,
+        description="Point-in-time float readings (e.g. pool in-use connections).",
+    )
     captured_at: str = Field(default="")
 
     def to_dict(self) -> dict[str, Any]:
@@ -223,6 +232,7 @@ class MetricsCollector:
         self._lock = threading.Lock()
         self._counters: dict[str, int] = {}
         self._histograms: dict[str, _Reservoir] = {}
+        self._gauges: dict[str, float] = {}
 
     def increment(self, name: str, value: int = 1, tags: dict[str, str] | None = None) -> None:
         """Increment a counter by *value* (default 1)."""
@@ -238,17 +248,34 @@ class MetricsCollector:
                 self._histograms[key] = _Reservoir()
             self._histograms[key].add(value)
 
+    def set_gauge(self, name: str, value: float) -> None:
+        """Set a point-in-time gauge reading (e.g. pool in-use connections).
+
+        Unlike counters and histograms, gauges are **not** cumulative.  Each
+        :meth:`snapshot` call replaces the previous value.  Use for quantities
+        that go up *and* down — pool utilisation, entry count, queue depth.
+
+        .. warning::
+            Gauge names must never contain raw user content.  Only use
+            short, fixed metric names (see ``ALLOWED_METRIC_DIMENSIONS`` in
+            ``otel_exporter``).
+        """
+        with self._lock:
+            self._gauges[name] = value
+
     def snapshot(self) -> MetricsSnapshot:
-        """Return a frozen copy of all counters and histograms."""
+        """Return a frozen copy of all counters, histograms, and gauges."""
         from datetime import UTC, datetime
 
         with self._lock:
             counters = dict(self._counters)
             histograms = {k: v.stats() for k, v in self._histograms.items()}
+            gauges = dict(self._gauges)
 
         return MetricsSnapshot(
             counters=counters,
             histograms=histograms,
+            gauges=gauges,
             captured_at=datetime.now(tz=UTC).isoformat(),
         )
 
@@ -257,6 +284,7 @@ class MetricsCollector:
         with self._lock:
             self._counters.clear()
             self._histograms.clear()
+            self._gauges.clear()
 
     @staticmethod
     def _tagged_name(name: str, tags: dict[str, str] | None) -> str:
