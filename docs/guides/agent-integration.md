@@ -226,6 +226,11 @@ pool sizing, health JSON fields, and DSN format details, see
 > for shared stores. Without a DSN, `AgentBrain` operates in local-only mode
 > using only in-memory state (no persistence). Set `TAPPS_BRAIN_STRICT=1` in
 > production to catch misconfigured deployments at startup.
+>
+> **Non-strict mode (no `TAPPS_BRAIN_STRICT`) is not for production.** In
+> non-strict mode a missing DSN is silently ignored, which means Hive tools
+> fail lazily at call time with no visibility at startup. Use non-strict only
+> during local development where Postgres may not be available.
 
 ---
 

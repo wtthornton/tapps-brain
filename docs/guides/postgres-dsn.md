@@ -19,7 +19,7 @@ PostgreSQL connections, pool sizing, and related runtime behaviour.
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path — used to derive the stable `project_id` hash. | `/home/user/myrepo` | `cwd` | ✅ | ✅ |
 | `TAPPS_BRAIN_GROUPS` | CSV group memberships for Hive group propagation. | `dev-pipeline,frontend-guild` | — | if using groups | no |
 | `TAPPS_BRAIN_EXPERT_DOMAINS` | CSV domains for auto-publish to Hive. | `css,react` | — | if using expert publish | no |
-| `TAPPS_BRAIN_STRICT` | When `1`, missing DSN raises an error instead of silently skipping Postgres. | `1` | `0` | ✅ production | no |
+| `TAPPS_BRAIN_STRICT` | When `1`, missing DSN exits with a clear error (stderr + non-zero). **Not setting this is not for production** — use non-strict only for local dev. | `1` | `0` | ✅ production | no |
 
 ## DSN format
 

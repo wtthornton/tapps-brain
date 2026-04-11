@@ -659,6 +659,39 @@ class TestMcpMain:
         assert captured
         assert captured[0][1].get("transport") == "stdio"
 
+    def test_main_strict_mode_exits_nonzero_with_stderr(self, tmp_path, monkeypatch, capsys):
+        """STORY-062.2: TAPPS_BRAIN_STRICT=1 + no DSN → sys.exit(1) + clean stderr."""
+        from tapps_brain import mcp_server as ms
+
+        monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--project-dir", str(tmp_path)])
+
+        with pytest.raises(SystemExit) as exc_info:
+            ms.main()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        # Message must be clear and specific — no raw traceback
+        assert "ERROR:" in err
+        assert "TAPPS_BRAIN_STRICT" in err or "DSN" in err
+
+    def test_main_strict_mode_message_no_traceback(self, tmp_path, monkeypatch, capsys):
+        """STORY-062.2: stderr output must be a single clean line, not a Python traceback."""
+        from tapps_brain import mcp_server as ms
+
+        monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--project-dir", str(tmp_path)])
+
+        with pytest.raises(SystemExit):
+            ms.main()
+
+        err = capsys.readouterr().err
+        # A traceback would contain "Traceback (most recent call last):"
+        assert "Traceback" not in err
+        assert "RuntimeError" not in err  # raw class name should not appear
+
 
 class TestPrompts:
     """Test MCP prompt registration and execution (STORY-008.6)."""

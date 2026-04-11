@@ -91,9 +91,7 @@ def _get_store(
         hive_store = resolve_hive_backend_from_env()
         if strict and hive_store is None:
             raise RuntimeError(
-                "TAPPS_BRAIN_STRICT=1 requires "
-                "TAPPS_BRAIN_HIVE_DSN to be set "
-                "(postgresql://...)"
+                "TAPPS_BRAIN_STRICT=1 requires TAPPS_BRAIN_HIVE_DSN to be set (postgresql://...)"
             )
 
     agent_id_for_store = agent_id if agent_id != "unknown" else None
@@ -2398,11 +2396,18 @@ def main() -> None:
         effective_agent_id = os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
 
     project_dir = Path(args.project_dir) if args.project_dir else None
-    server = create_server(
-        project_dir,
-        enable_hive=args.enable_hive,
-        agent_id=effective_agent_id,
-    )
+    try:
+        server = create_server(
+            project_dir,
+            enable_hive=args.enable_hive,
+            agent_id=effective_agent_id,
+        )
+    except RuntimeError as exc:
+        # Strict-mode configuration failures produce a RuntimeError (e.g.
+        # TAPPS_BRAIN_STRICT=1 with no TAPPS_BRAIN_HIVE_DSN).  Print a clean
+        # diagnostic — no traceback — so operators see a clear message.
+        sys.stderr.write(f"ERROR: {exc}\n")
+        sys.exit(1)
     server.run(transport="stdio")
 
 
