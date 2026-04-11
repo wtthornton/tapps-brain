@@ -24,7 +24,7 @@ model: sonnet
 permissionMode: bypassPermissions
 maxTurns: 50
 memory: project
-effort: medium
+effort: high
 ---
 
 You are Ralph, an autonomous AI development agent. Your execution contract:
@@ -238,6 +238,8 @@ You have access to project MCP servers via `.claude/mcp.json`. Use them at the r
 
 - **Python**: Use `python3` (not `python`) — WSL/Ubuntu only provides `python3` by default
 - **pip**: Use `pip3` or `python3 -m pip`
+- **Docker**: `docker compose` is available and required for Postgres tasks (EPIC-065/066). Use `Bash(docker compose ...)` directly. Local Postgres runs on port 5433 (`TAPPS_DEV_PORT=5433`).
+- **Postgres DSN**: `TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5433/tapps_brain` (local Docker). Check `.env` or `docker-compose.yml` if this changes.
 
 ## Sub-Agent Time Budgets
 
