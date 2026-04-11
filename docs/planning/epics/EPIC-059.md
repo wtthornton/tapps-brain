@@ -33,54 +33,29 @@ Pre-GA greenfield: **no migration path from v2**. SQLite backends and file-based
 
 ## Stories
 
-### STORY-059.1: Remove SQLite backends from the supported surface
+### STORY-059.1: Postgres-only factory contracts
 
 **Status:** planned  
-**Size:** L  
+**Size:** S  
 **Depends on:** —
 
 #### Why
 
-Dual backends (`SqliteHiveBackend`, `SqliteFederationBackend`, file `HiveStore`) defeat “one Hive” and duplicate test matrices.
+Fail-fast DSN validation and typed errors are the foundation; everything else builds on explicit `postgres://` / `postgresql://` only.
 
 #### Acceptance criteria
 
-- [ ] `create_hive_backend` / `create_federation_backend` accept **only** `postgres://` or `postgresql://` DSNs in the v3 API; invalid or missing DSN fails fast with a documented exception type.
-- [ ] SQLite adapter modules are **deleted** from the installable package (not deprecated behind flags—greenfield).
-- [ ] No default `HiveStore()` SQLite construction in MCP, CLI, or health checks without an explicit **non-production** dev-only path (prefer: always Postgres; see STORY-059.4 for CI/dev).
-- [ ] Engineering docs list **zero** SQLite paths for production deployments.
+- [ ] `create_hive_backend` / `create_federation_backend` accept **only** `postgres://` or `postgresql://` DSN strings in the v3 public API.
+- [ ] Invalid prefix, empty string, or missing required DSN raises a **documented exception type** (single module or small `exceptions.py` surface).
+- [ ] Unit tests: valid DSN accepted; each failure mode has one focused test.
 
 #### Verification
 
-- Unit + integration tests run **Postgres only**; SQLite-specific tests removed or rewritten.
+- `pytest` on factory tests only; no integration DB required.
 
 ---
 
-### STORY-059.2: Postgres schema for per-agent private memory
-
-**Status:** planned  
-**Size:** XL  
-**Depends on:** STORY-059.1
-
-#### Why
-
-Private memory must scale with many agents without per-agent SQLite files; one cluster should host all agents with clear `(project_id, agent_id)` boundaries.
-
-#### Acceptance criteria
-
-- [ ] Private memories are stored in **Postgres tables** keyed by `project_id` (or repo root hash) and `agent_id`, with indexes suited to hot `recall` / BM25-adjacent queries as designed.
-- [ ] Default layout **does not** create `.tapps-brain/agents/<id>/memory.db` for v3.
-- [ ] Migrations are **forward-only** SQL files (no SQLite branches).
-- [ ] Retrieval, decay, consolidation, and safety behaviors are **re-specified** against Postgres (behavioral parity where intended; breaking changes allowed if documented).
-- [ ] Load test or benchmark smoke: N concurrent agents against one Postgres within agreed SLO (define in story).
-
-#### Verification
-
-- Targeted integration tests + migration tests against disposable Postgres.
-
----
-
-### STORY-059.3: Single DSN and pool configuration
+### STORY-059.2: Remove SQLite adapter implementations
 
 **Status:** planned  
 **Size:** M  
@@ -88,42 +63,151 @@ Private memory must scale with many agents without per-agent SQLite files; one c
 
 #### Why
 
-One operational contract reduces misconfiguration between AgentForge, MCP, and CLI.
+Shipping `SqliteHiveBackend` / `SqliteFederationBackend` in the package contradicts “one engine.”
 
 #### Acceptance criteria
 
-- [ ] Documented env vars: e.g. `TAPPS_BRAIN_DATABASE_URL` **or** explicit `TAPPS_BRAIN_HIVE_DSN` / `TAPPS_BRAIN_FEDERATION_DSN` if they remain split—**one story outcome**: minimal variables, table in README.
-- [ ] Connection **pool** sizing, connect timeout, and idle behavior configurable via env; defaults documented.
-- [ ] Health / readiness exposes **pool saturation** and last migration version applied.
-- [ ] No implicit silent fallback when URL is malformed.
+- [ ] SQLite adapter **classes and modules** removed from the installable package (not feature-flagged).
+- [ ] Package `__all__` / public imports updated; dead re-exports removed.
+- [ ] Any SQLite-only unit tests deleted or rewritten to Postgres fixtures.
 
 #### Verification
 
-- Unit tests for config parsing; integration test for pool exhaustion behavior (graceful errors).
+- `grep -r SqliteHiveBackend` / `SqliteFederation` in `src/` returns nothing (except changelog/docs if needed).
 
 ---
 
-### STORY-059.4: Test and dev ergonomics
+### STORY-059.3: No silent SQLite in runtime + production docs
 
 **Status:** planned  
 **Size:** M  
-**Depends on:** STORY-059.2, STORY-059.3
+**Depends on:** STORY-059.2
 
 #### Why
 
-Postgres-only fails adoption if `uv run pytest` is harder than today.
+Code and docs must agree: no implicit `HiveStore()` / `memory.db`, and no operator doc that reintroduces SQLite as prod.
 
 #### Acceptance criteria
 
-- [ ] Repo-root `docker-compose` (or documented profile) starts Postgres + optional pgvector image matching prod.
-- [ ] `Makefile` or `justfile` / task: `brain-up`, `brain-test` (names TBD) documented in `AGENTS.md` or `README`.
-- [ ] CI uses **ephemeral Postgres**; no flaky shared DB.
-- [ ] Contributor onboarding: “clone → compose up → pytest” in **≤ N minutes** (state target in doc).
-- [ ] Optional: seed script for minimal fixture data for demos.
+- [ ] MCP server startup: Hive/Federation from env DSN only (exact names per STORY-059.8); no default SQLite path.
+- [ ] CLI subcommands that touch Hive/Federation: same contract; documented dev-only escape hatch if any remains (or none).
+- [ ] Integration or smoke test: startup fails clearly when DSN missing in strict mode.
+- [ ] `docs/engineering/` and operator guides: **no** SQLite as a supported production path for Hive/Federation/private memory; ADR-007 linked from architecture overview.
 
 #### Verification
 
-- CI green; new contributor dry-run checklist in PR template or docs.
+- Grep + Testcontainers smoke + doc review checklist.
+
+---
+
+### STORY-059.4: Private memory — schema and migrations
+
+**Status:** planned  
+**Size:** L  
+**Depends on:** STORY-059.2
+
+#### Why
+
+Tenant columns and forward-only SQL migrations must exist before wiring `MemoryStore` to Postgres.
+
+#### Acceptance criteria
+
+- [ ] Postgres tables for private agent memory keyed by `project_id` (or canonical repo hash) and `agent_id`.
+- [ ] Versioned `migrations/*.sql` (forward-only; no SQLite branches).
+- [ ] Migration applies cleanly on empty DB; revision id recorded.
+
+#### Verification
+
+- Migration tests against disposable Postgres.
+
+---
+
+### STORY-059.5: Private memory — indexes and store wiring
+
+**Status:** planned  
+**Size:** L  
+**Depends on:** STORY-059.4
+
+#### Why
+
+Hot paths are recall / search; indexes and write-through behavior must match product SLOs.
+
+#### Acceptance criteria
+
+- [ ] Indexes suitable for BM25-adjacent / hot recall queries (documented in migration comments).
+- [ ] Default v3 layout **does not** create `.tapps-brain/agents/<id>/memory.db`.
+- [ ] `MemoryStore` (or successor) reads/writes private rows through Postgres backend; feature-flag or phase if incremental.
+
+#### Verification
+
+- Integration tests: round-trip save/recall with N entries.
+
+---
+
+### STORY-059.6: Behavioral parity and load smoke
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-059.5
+
+#### Why
+
+Greenfield allows breaking changes, but intentional deltas must be documented and performance bounded.
+
+#### Acceptance criteria
+
+- [ ] Short **parity doc**: decay, consolidation, safety — what matches v2 vs what changed (links to ADR/epic).
+- [ ] Benchmark or load smoke: **N** concurrent agents (define N in PR) against one Postgres; record p95 latency budget or “informational only” if pre-SLO.
+
+#### Verification
+
+- CI optional job or local script documented in `AGENTS.md`.
+
+---
+
+### STORY-059.7: DSN table, pool tuning, and health fields
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-059.1
+
+#### Why
+
+One table for operators; pool and migration visibility prevent silent overload.
+
+#### Acceptance criteria
+
+- [ ] Single **README / env table**: `TAPPS_BRAIN_DATABASE_URL` **or** split `HIVE` / `FEDERATION` DSNs — one coherent story, minimal variables.
+- [ ] Pool: max connections, idle timeout, connect timeout — env-configurable with documented defaults.
+- [ ] Health / readiness JSON includes **pool saturation** (or queue depth) and **last applied migration version**.
+- [ ] Malformed URL: fail at config parse with clear error (unit test).
+
+#### Verification
+
+- Unit tests for parsing; integration test for health JSON against Postgres.
+
+---
+
+### STORY-059.8: Compose, Makefile, CI, and onboarding
+
+**Status:** planned  
+**Size:** L  
+**Depends on:** STORY-059.4, STORY-059.7
+
+#### Why
+
+Postgres-only fails adoption if local and CI are harder than today; one story ties compose, automation, and green CI.
+
+#### Acceptance criteria
+
+- [ ] Repo-root `docker-compose` (or profile) starts Postgres **+** pgvector image aligned with prod.
+- [ ] `Makefile` or `justfile` targets: e.g. `brain-up`, `brain-down`, `brain-test`; documented in `AGENTS.md` / `README` with copy-paste local DSN.
+- [ ] CI test job uses **ephemeral Postgres** (service container or Testcontainers); no flaky shared DB.
+- [ ] PR template or contributing snippet: “clone → compose → pytest” with **target minutes** (e.g. ≤ 15); optional minimal seed script for demos.
+
+#### Verification
+
+- Green CI; maintainer dry-run recorded in epic PR description.
 
 ## Out of scope
 

@@ -33,52 +33,29 @@ With Postgres-only and many agents, **operators must see** latency, errors, pool
 
 ## Stories
 
-### STORY-061.1: OTel instrumentation (core paths)
+### STORY-061.1: Traces — remember / recall / hive hot paths
 
 **Status:** planned  
-**Size:** L  
+**Size:** M  
 **Depends on:** EPIC-059
 
 #### Why
 
-Without spans on hot paths, Postgres regressions are invisible until users complain.
+Span names must match architecture doc before metrics and cardinality work.
 
 #### Acceptance criteria
 
-- [ ] Tracer spans for: `remember`, `recall`, hive propagate/search (names consistent with internal architecture doc).
-- [ ] Metrics (histograms/counters): operation duration, error count, pool in-use connections, query counts **bounded cardinality** (no raw memory text as labels).
-- [ ] W3C trace context propagated through optional HTTP adapter (EPIC-060).
-- [ ] `tapps_lookup_docs`-aligned patterns for Python OTel SDK usage reviewed once during implementation.
+- [ ] Tracer spans on `remember`, `recall`, and hive propagate/search (names aligned with `docs/engineering/system-architecture.md`).
+- [ ] Span kind and resource attributes: `service.name`, `service.version` from env.
+- [ ] Unit tests with `InMemorySpanExporter` or mock tracer.
 
 #### Verification
 
-- Integration test with in-memory OTLP collector or exporter mock.
+- Focused pytest module for spans only.
 
 ---
 
-### STORY-061.2: Health & readiness split
-
-**Status:** planned  
-**Size:** S  
-**Depends on:** STORY-061.1
-
-#### Why
-
-Orchestrators need **liveness** vs **readiness** semantics.
-
-#### Acceptance criteria
-
-- [ ] `/health` or equivalent: process up (cheap).
-- [ ] `/ready`: Postgres ping **+** migration version matches expected **or** explicit “degraded” JSON with reason.
-- [ ] Documented behavior when DB is down (503 vs circuit).
-
-#### Verification
-
-- Container kill tests or integration mocks.
-
----
-
-### STORY-061.3: Redaction & cardinality policy
+### STORY-061.2: Metrics — duration, errors, pool, bounded labels
 
 **Status:** planned  
 **Size:** M  
@@ -86,38 +63,145 @@ Orchestrators need **liveness** vs **readiness** semantics.
 
 #### Why
 
-Observability must not become a data exfil channel.
+Histograms and counters are separate from trace wiring; cardinality rules are critical.
 
 #### Acceptance criteria
 
-- [ ] Written policy: allowed span attributes; forbidden (content, secrets, PII).
-- [ ] Log handler strips or hashes memory bodies; reviewed in PR checklist.
-- [ ] Metric views drop high-cardinality labels (OpenTelemetry Views where applicable).
+- [ ] Histograms/counters: operation duration, error count, pool in-use connections, query counts.
+- [ ] **No** raw memory text, queries, or entry keys as metric labels (document allowed label set).
+- [ ] Export path wired to existing metrics snapshot or periodic flush.
 
 #### Verification
 
-- Static scan or unit tests for log formatter.
+- Unit tests for metric instruments + label keys.
 
 ---
 
-### STORY-061.4: Operator runbook & dashboard template
+### STORY-061.3: Trace context — HTTP adapter and OTel review
 
 **Status:** planned  
 **Size:** S  
-**Depends on:** STORY-061.1–061.3
+**Depends on:** STORY-061.1
 
 #### Why
 
-“First-class” means SRE can onboard in one sitting.
+W3C propagation across EPIC-060 HTTP host must not break when OTel enabled.
 
 #### Acceptance criteria
 
-- [ ] `docs/operations/` (or equivalent) runbook: alerts, dashboards, triage steps.
-- [ ] Optional: Grafana JSON or Prometheus rules **as examples** (not mandatory vendor lock-in).
+- [ ] W3C `traceparent` propagated through optional HTTP adapter (EPIC-060) when present.
+- [ ] One-time review note: Python OTel SDK patterns vs `tapps_lookup_docs` (link or inline checklist).
+- [ ] Integration test: request with trace header creates child span.
 
 #### Verification
 
-- Dry-run with a teammate not on the core team.
+- Single integration test file.
+
+---
+
+### STORY-061.4: Probes — liveness semantics
+
+**Status:** planned  
+**Size:** XS  
+**Depends on:** STORY-061.2
+
+#### Why
+
+Cheap `/health` must never block on DB.
+
+#### Acceptance criteria
+
+- [ ] `/health` (or shared helper) returns 200 if process up; **no** Postgres call.
+- [ ] Documented for Kubernetes `livenessProbe` vs `readinessProbe`.
+
+#### Verification
+
+- HTTP test with DB stopped — liveness still 200.
+
+---
+
+### STORY-061.5: Probes — readiness and degraded mode
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-061.2
+
+#### Why
+
+Readiness must encode migration and DB failures distinctly.
+
+#### Acceptance criteria
+
+- [ ] `/ready`: Postgres ping + migration version matches expected **or** JSON body with `degraded` reason.
+- [ ] Documented: DB down → 503 vs 500; link runbook snippet.
+
+#### Verification
+
+- Tests with mocked DB failure vs migration mismatch.
+
+---
+
+### STORY-061.6: Policy doc — allowed vs forbidden telemetry
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-061.2
+
+#### Why
+
+Written policy before log/metric code changes land everywhere.
+
+#### Acceptance criteria
+
+- [ ] Markdown policy: allowed span attributes; forbidden (memory body, secrets, PII).
+- [ ] Review slot in PR template for observability PRs.
+
+#### Verification
+
+- Doc PR + one reviewer sign-off.
+
+---
+
+### STORY-061.7: Enforcement — log handler and metric views
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-061.6
+
+#### Why
+
+Policy without code is wishful; OTel Views drop bad labels.
+
+#### Acceptance criteria
+
+- [ ] Log formatter strips or hashes memory bodies by default.
+- [ ] OpenTelemetry **Views** (or equivalent) drop high-cardinality labels on selected instruments.
+- [ ] Static test or unit test: forbidden strings never appear in emitted log records in test harness.
+
+#### Verification
+
+- Unit tests for formatter + view registration.
+
+---
+
+### STORY-061.8: Operator runbook and example alerts
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-061.4, STORY-061.5, STORY-061.7
+
+#### Why
+
+SRE onboarding closes the epic.
+
+#### Acceptance criteria
+
+- [ ] `docs/operations/` runbook ≤ 2 printed pages: key metrics, alert thresholds, triage steps.
+- [ ] Optional: example Prometheus rules or Grafana JSON **as non-normative examples**.
+
+#### Verification
+
+- Dry-run with teammate not on core team.
 
 ## Out of scope
 

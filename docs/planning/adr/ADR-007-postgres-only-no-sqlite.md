@@ -15,7 +15,7 @@ Greenfield v3 policy: **SQLite does not exist for shared stores** from the publi
 1. **`create_hive_backend()` and `create_federation_backend()`** accept **only** `postgres://` or `postgresql://` DSNs. Non-Postgres arguments raise `ValueError` with an explicit message.
 2. **`SqliteHiveBackend` and `SqliteFederationBackend` are removed** from `backends.py` and from package exports.
 3. **CI** runs with a **PostgreSQL (pgvector) service** and sets `TAPPS_TEST_POSTGRES_DSN` so integration/conformance tests exercise real Postgres.
-4. **Agent-local memory** (`MemoryPersistence` / `memory.db`) **still uses SQLite** until EPIC-059 STORY-059.2 lands a Postgres-backed private store—at which point SQLite is removed there too. Until then, ADR-004’s single-node SQLite note applies only to **private** memory, not Hive/Federation.
+4. **Agent-local memory** (`MemoryPersistence` / `memory.db`) **still uses SQLite** until EPIC-059 delivers Postgres-backed private memory (**STORY-059.4–059.6**)—at which point SQLite is removed there too. Until then, ADR-004’s single-node SQLite note applies only to **private** memory, not Hive/Federation.
 
 ## Consequences
 

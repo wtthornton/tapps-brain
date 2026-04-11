@@ -32,90 +32,176 @@ The **canonical product surface** is the **Agent** abstraction (`AgentBrain` or 
 
 ## Stories
 
-### STORY-060.1: AgentBrain contract freeze (v3)
+### STORY-060.1: Agent integration page — API surface
 
 **Status:** planned  
-**Size:** M  
+**Size:** S  
 **Depends on:** EPIC-059 foundation (types stable)
 
 #### Why
 
-Agents and hosts need a stable, minimal contract without leaking storage details.
+Hosts need one page listing public methods and env vars before exception taxonomy.
 
 #### Acceptance criteria
 
-- [ ] Public methods, env vars (`TAPPS_BRAIN_AGENT_ID`, `TAPPS_BRAIN_PROJECT_DIR`, group/expert CSVs, DSNs) documented in a **single** “Agent integration” page.
-- [ ] Exceptions are typed and documented (config vs transient DB vs validation).
-- [ ] Breaking renames from v2 are allowed; no compatibility shim required.
+- [ ] New or refreshed **Agent integration** page lists public `AgentBrain` (or successor) methods: `remember`, `recall`, `forget`, `learn_from_success`, `learn_from_failure` (or v3 names).
+- [ ] Env vars on one table: `TAPPS_BRAIN_AGENT_ID`, `TAPPS_BRAIN_PROJECT_DIR`, group/expert CSVs, DSN variable names (link EPIC-059 env table).
+- [ ] Cross-links from `README` / `AGENTS.md`.
 
 #### Verification
 
-- Doc review + mypy-public API check as applicable.
+- Doc PR review; link check.
 
 ---
 
-### STORY-060.2: Minimal HTTP host adapter (optional package)
+### STORY-060.2: Agent integration page — exceptions and breaking changes
 
 **Status:** planned  
-**Size:** L  
+**Size:** S  
 **Depends on:** STORY-060.1
 
 #### Why
 
-Some deployments want a process boundary; the surface must stay minimal.
+Typed errors and explicit v3 breaks reduce support load.
 
 #### Acceptance criteria
 
-- [ ] Implements: **`/health`** (liveness), **`/ready`** (DB + migrations), **`/metrics`** (Prometheus text or OTel-native per EPIC-061).
-- [ ] At most **two** additional routes for host use cases (e.g. single `POST` hook for orchestration), each behind optional auth middleware **documented as required in production**.
-- [ ] OpenAPI spec **≤ 1 page** total; no CRUD mirror of memory keys.
+- [ ] Documented exception types: configuration vs transient DB vs validation (map to actual classes in code).
+- [ ] Short **v3 breaking changes** subsection: renames allowed; no compatibility shim required (greenfield).
+- [ ] Optional: mypy-public re-export list or `api` module snapshot.
 
 #### Verification
 
-- Contract test against OpenAPI; fuzz auth rejection.
+- Doc review + spot-check against `agent_brain.py`.
 
 ---
 
-### STORY-060.3: Anti-pattern guardrails
+### STORY-060.3: HTTP adapter — liveness, readiness, metrics
 
 **Status:** planned  
-**Size:** S  
+**Size:** M  
 **Depends on:** STORY-060.2
 
 #### Why
 
-Prevents endpoint creep in future PRs.
+Smallest useful HTTP surface: orchestrators need probes before optional hooks.
 
 #### Acceptance criteria
 
-- [ ] ADR: “No new public HTTP routes without library + MCP parity.”
-- [ ] Optional: CI script or CODEOWNERS rule for `**/http/**/*.py` (paths TBD).
+- [ ] **`/health`**: process up (cheap; no DB required).
+- [ ] **`/ready`**: DB ping + migration version (or degraded JSON); aligns with EPIC-061 semantics.
+- [ ] **`/metrics`**: Prometheus text **or** OTel-native per EPIC-061 (pick one in PR; document).
 
 #### Verification
 
-- Maintainer sign-off on ADR merge.
+- Contract tests: HTTP status codes for healthy vs DB down (mocked).
 
 ---
 
-### STORY-060.4: Host integration guide (AgentForge / TheStudio)
+### STORY-060.4: HTTP adapter — optional routes, auth, OpenAPI
 
 **Status:** planned  
 **Size:** M  
-**Depends on:** STORY-060.1–060.2
+**Depends on:** STORY-060.3
 
 #### Why
 
-Hosts must wire identity and DSN once; docs replace tribal knowledge.
+At most two extra routes for host hooks; auth documented as mandatory in prod.
 
 #### Acceptance criteria
 
-- [ ] `docs/guides/agentforge-integration.md` (or v3 successor) rewritten for **Postgres-only + agent-first** flow.
-- [ ] Sequence diagram: Agent → AgentBrain → Postgres (one page).
+- [ ] At most **two** additional routes (e.g. single `POST` orchestration hook); each behind optional auth middleware.
+- [ ] README/ADR: **auth required in production** for any non-probe route.
+- [ ] OpenAPI spec **≤ one printed page**; no CRUD for memory keys.
+
+#### Verification
+
+- OpenAPI snapshot test; fuzz 401/403 on protected routes.
+
+---
+
+### STORY-060.5: ADR — no new HTTP without MCP + library parity
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-060.4
+
+#### Why
+
+Prevents endpoint creep across future PRs.
+
+#### Acceptance criteria
+
+- [ ] ADR committed: no new public HTTP routes without **library + MCP** parity for the same capability.
+- [ ] Linked from `docs/engineering/` index or architecture README.
+
+#### Verification
+
+- Maintainer approval on ADR PR.
+
+---
+
+### STORY-060.6: Guardrails — CI or CODEOWNERS for HTTP tree
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-060.5
+
+#### Why
+
+Automation backs the ADR when humans forget.
+
+#### Acceptance criteria
+
+- [ ] Optional: `CODEOWNERS` entry for `**/http/**/*.py` or agreed path; **or** CI script that fails if new route file lacks ADR reference in PR template.
+- [ ] Documented in contributing or release checklist.
+
+#### Verification
+
+- Dry-run PR that touches HTTP path triggers review rule.
+
+---
+
+### STORY-060.7: Host guide — Postgres-only rewrite (body)
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-060.1, STORY-060.3
+
+#### Why
+
+`agentforge-integration.md` must match v3 env and probes before polish.
+
+#### Acceptance criteria
+
+- [ ] `docs/guides/agentforge-integration.md` (or v3 successor): **Postgres-only** DSN flow; no SQLite Hive.
+- [ ] Step-by-step: env → `AgentBrain` init → first `remember` / `recall`.
 - [ ] Explicit **non-goals**: duplicating full MCP tool surface over HTTP.
 
 #### Verification
 
-- Peer review from a host team representative.
+- Internal read-through; fix broken links.
+
+---
+
+### STORY-060.8: Host guide — diagram and peer review
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** STORY-060.7
+
+#### Why
+
+One diagram prevents miswired hosts.
+
+#### Acceptance criteria
+
+- [ ] Sequence or component diagram: Agent → AgentBrain → Postgres (one page, mermaid or static).
+- [ ] Peer review sign-off from a host-team representative (comment in PR or issue).
+
+#### Verification
+
+- Diagram renders in GitHub preview.
 
 ## Out of scope
 
@@ -128,4 +214,4 @@ Hosts must wire identity and DSN once; docs replace tribal knowledge.
 - `docs/guides/agentforge-integration.md`
 - [EPIC-059](EPIC-059.md) — Postgres-only persistence (foundation; blocks this epic)
 - [EPIC-062](EPIC-062.md) — MCP-primary integration (depends on this epic)
-- [EPIC-063](EPIC-063.md) — trust boundaries (STORY-063.3 depends on this epic)
+- [EPIC-063](EPIC-063.md) — trust boundaries (STORY-063.5 depends on STORY-060.2)

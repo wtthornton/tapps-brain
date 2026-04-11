@@ -32,72 +32,136 @@ MCP is the 2026 interoperability layer; divergent defaults (SQLite Hive in MCP v
 
 ## Stories
 
-### STORY-062.1: MCP server Postgres wiring
+### STORY-062.1: MCP — Hive backend from unified DSN
 
 **Status:** planned  
-**Size:** M  
+**Size:** S  
 **Depends on:** EPIC-059 STORY-059.1
 
 #### Why
 
-Today MCP can construct `HiveStore()` (SQLite); that contradicts “one Hive” on Postgres.
+Wire MCP to `create_hive_backend` with the same env var names as the library (exact string from EPIC-059 STORY-059.7 table).
 
 #### Acceptance criteria
 
-- [ ] `_get_store` (or successor) builds Hive via `create_hive_backend(os.environ["TAPPS_BRAIN_HIVE_DSN"])` (exact env name per unified contract in STORY-059.3).
-- [ ] **Strict mode** env (e.g. `TAPPS_BRAIN_STRICT=1`): missing DSN **exits** at startup with a clear, specific error message.
-- [ ] Non-strict dev mode is **opt-in** and documented as **not for production**—or removed entirely if product chooses fail-fast only.
+- [ ] `_get_store` (or successor) resolves Hive via `create_hive_backend` from documented env (e.g. `TAPPS_BRAIN_HIVE_DSN` — final name in 059.7).
+- [ ] No `HiveStore()` SQLite construction in MCP startup path.
+- [ ] Unit test: env set → backend is Postgres class; unset + strict → error path.
 
 #### Verification
 
-- Integration test: MCP server startup against Testcontainers Postgres.
+- Mocked backend factory tests.
 
 ---
 
-### STORY-062.2: Curated MCP tool surface
+### STORY-062.2: MCP — strict vs non-strict startup
 
 **Status:** planned  
-**Size:** M  
+**Size:** S  
 **Depends on:** STORY-062.1
 
 #### Why
 
-Tool sprawl confuses agents and reviewers; v3 is **agent-first**, not “every internal function exposed.”
+Fail-fast in prod; optional dev ergonomics must be explicit.
 
 #### Acceptance criteria
 
-- [ ] **Core** tool set frozen (list in epic PR); maps 1:1 to primary agent workflows.
-- [ ] **Advanced** tools (GC, consolidation sweeps, etc.) behind `profile` or `--enable-operator-tools`.
-- [ ] `docs/generated/mcp-tools-manifest.json` (or successor) regenerated and reviewed.
+- [ ] `TAPPS_BRAIN_STRICT=1` (or agreed name): missing DSN → process **exits** with clear, specific message (stderr + exit code non-zero).
+- [ ] Non-strict mode documented as **not for production** if retained; or removed if product chooses fail-fast only.
 
 #### Verification
 
-- Diff review + OpenClaw/manifest consistency check if applicable.
+- Integration test: Testcontainers or env matrix.
 
 ---
 
-### STORY-062.3: Cross-tool environment contract doc
+### STORY-062.3: MCP — freeze core tool list
 
 **Status:** planned  
-**Size:** S  
-**Depends on:** STORY-059.3
+**Size:** M  
+**Depends on:** STORY-062.2
 
 #### Why
 
-AgentForge, IDE, and CI must share one table of env vars.
+Agent workflows need a minimal, stable tool set before operator gating.
 
 #### Acceptance criteria
 
-- [ ] Single markdown table: variable, meaning, example, **required** (prod), **required** (dev).
-- [ ] Linked from `README.md`, `AGENTS.md`, and `docs/guides/agentforge-integration.md`.
+- [ ] **Core** tool list documented in epic PR (bullet list): maps 1:1 to primary agent flows (remember/recall/search/etc.).
+- [ ] `docs/generated/mcp-tools-manifest.json` regenerated to match.
+- [ ] OpenClaw plugin manifest consistency check if applicable.
 
 #### Verification
 
-- Copy-paste test: new contributor sets env from doc only.
+- Diff review + manifest JSON diff.
 
 ---
 
-### STORY-062.4: docs-mcp validation in CI
+### STORY-062.4: MCP — operator tools behind flag
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-062.3
+
+#### Why
+
+GC/consolidation must not clutter default agent context.
+
+#### Acceptance criteria
+
+- [ ] **Advanced** / operator tools registered only when `--enable-operator-tools` or profile flag set (exact mechanism in PR).
+- [ ] Default MCP session: operator tools absent from capability list.
+- [ ] Doc paragraph for operators enabling maintenance tools.
+
+#### Verification
+
+- Test: default vs flag-on tool count.
+
+---
+
+### STORY-062.5: Env contract — single markdown table
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** EPIC-059 STORY-059.7
+
+#### Why
+
+One table is the handoff artifact for AgentForge and CI.
+
+#### Acceptance criteria
+
+- [ ] One table: variable | meaning | example | required (prod) | required (dev).
+- [ ] Includes DSN, strict flag, OTel vars if MCP honors them, agent identity vars.
+
+#### Verification
+
+- Copy-paste dry-run: new contributor sets env from table only.
+
+---
+
+### STORY-062.6: Env contract — links from entrypoints
+
+**Status:** planned  
+**Size:** XS  
+**Depends on:** STORY-062.5
+
+#### Why
+
+Discoverability: README, AGENTS, agentforge guide must point to the same table.
+
+#### Acceptance criteria
+
+- [ ] Linked from `README.md`, `AGENTS.md`, and `docs/guides/agentforge-integration.md` (anchor or path).
+- [ ] `.env.example` at repo root matches table keys (placeholders).
+
+#### Verification
+
+- Link check; grep for drift.
+
+---
+
+### STORY-062.7: CI — docs_validate_epic for v3 epics
 
 **Status:** planned  
 **Size:** S  
@@ -105,16 +169,37 @@ AgentForge, IDE, and CI must share one table of env vars.
 
 #### Why
 
-Planning docs drift; `docs_validate_epic` already exists on docs-mcp.
+Planning docs drift; gate on changed files.
 
 #### Acceptance criteria
 
-- [ ] CI step: `docs_validate_epic` on changed epic files under `docs/planning/epics/EPIC-059*.md`–`EPIC-063*.md` (or broader opt-in).
+- [ ] CI step runs `docs_validate_epic` when `docs/planning/epics/EPIC-059*.md`–`EPIC-063*.md` change (path filter).
 - [ ] Failing validation blocks merge.
 
 #### Verification
 
-- Deliberately broken epic in draft PR proves gate works.
+- Draft PR with intentional epic typo proves gate.
+
+---
+
+### STORY-062.8: CI — broken-epic regression test
+
+**Status:** planned  
+**Size:** XS  
+**Depends on:** STORY-062.7
+
+#### Why
+
+Ensure the workflow fails loudly when the tool is misconfigured.
+
+#### Acceptance criteria
+
+- [ ] Documented manual or scripted check: “deliberately break epic frontmatter → CI red” recorded in `docs/contributing` or epic PR template note.
+- [ ] Optional: smoke job in `scripts/` that invokes validator on one golden epic.
+
+#### Verification
+
+- Maintainer runs script locally.
 
 ## Out of scope
 

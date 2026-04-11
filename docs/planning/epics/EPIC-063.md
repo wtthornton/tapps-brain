@@ -32,73 +32,157 @@ Postgres-only **increases** the value of stolen credentials. Defense in depth: *
 
 ## Stories
 
-### STORY-063.1: Postgres roles & least privilege
+### STORY-063.1: DB roles — migration SQL
 
 **Status:** planned  
 **Size:** M  
-**Depends on:** STORY-059.4 (CI/dev Postgres in place; migrations running)
+**Depends on:** EPIC-059 STORY-059.8 (CI/dev Postgres + migrations runnable)
 
 #### Why
 
-One superuser DSN for everything is convenient and dangerous.
+Roles must exist in schema before apps connect as least privilege.
 
 #### Acceptance criteria
 
-- [ ] Migration creates roles: e.g. `tapps_runtime` (SELECT/INSERT/UPDATE scoped), `tapps_migrator` (DDL), optional `tapps_readonly` for analytics.
-- [ ] `GRANT` documented in migration README; prod runbooks use **runtime** only.
-- [ ] Application supports reading DSN from secret store; **documented** no plaintext in logs.
+- [ ] Migration creates roles: `tapps_runtime` (scoped DML), `tapps_migrator` (DDL), optional `tapps_readonly`.
+- [ ] `GRANT`/`REVOKE` statements idempotent where possible; documented in migration folder README.
 
 #### Verification
 
-- CI applies migrations with migrator; app tests use runtime role only.
+- Apply migration on fresh DB; `\du` or query role list.
 
 ---
 
-### STORY-063.2: RLS policy spike (optional for GA)
+### STORY-063.2: DB roles — runbooks and DSN hygiene
 
 **Status:** planned  
-**Size:** L  
-**Depends on:** STORY-063.1, STORY-059.2 (Postgres schema with `project_id`/`agent_id` tenant keys)
+**Size:** S  
+**Depends on:** STORY-063.1
 
 #### Why
 
-For multi-project servers, DB-enforced row scope catches app bugs.
+Operators must use runtime DSN only; migrator used only in deploy jobs.
 
 #### Acceptance criteria
 
-- [ ] Spike on **one** table (e.g. hive entries): policy by `project_id` or `org_id` using session `SET` from connection opener.
-- [ ] Documented **performance** impact (single-digit % overhead target or measured).
-- [ ] Decision: **ship RLS in GA** vs **defer** with explicit risk acceptance.
+- [ ] Runbook snippet: prod uses **runtime** DSN; CI uses migrator only for `migrate` job.
+- [ ] Documented: no DSN plaintext in logs; load from secret store / env injection.
+- [ ] Application reads DSN from env or secret reference (no new logging of full URL).
 
 #### Verification
 
-- Benchmark before/after; security review notes.
+- Grep audit for accidental DSN logging in touched code.
 
 ---
 
-### STORY-063.3: Scope validation audit
+### STORY-063.3: RLS spike — policy on one table
 
 **Status:** planned  
 **Size:** M  
-**Depends on:** STORY-060.1 (AgentBrain contract freeze — types and scope semantics stable)
+**Depends on:** STORY-063.1, EPIC-059 STORY-059.4 (tenant key columns in schema)
 
 #### Why
 
-Every `remember` / propagate path must enforce agent identity and `agent_scope`.
+Prove session `SET` + policy syntax before GA decision.
 
 #### Acceptance criteria
 
-- [ ] Matrix documented: scope → allowed namespaces / groups.
-- [ ] Code audit checklist completed; gaps filed as blockers or follow-ups.
-- [ ] Regression tests for negative cases (wrong agent, wrong group).
+- [ ] One table (e.g. hive entries): `ENABLE ROW LEVEL SECURITY`; policy on `project_id` or `org_id`.
+- [ ] Connection opener sets session vars consumed by policy (documented pattern).
 
 #### Verification
 
-- Peer review sign-off from two maintainers.
+- Integration test: two projects cannot read each other’s rows when RLS enabled.
 
 ---
 
-### STORY-063.4: Threat model one-pager
+### STORY-063.4: RLS spike — performance and ship/defer decision
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-063.3
+
+#### Why
+
+RLS overhead must be measured before GA commitment.
+
+#### Acceptance criteria
+
+- [ ] Benchmark before/after on representative query mix; document **% overhead**.
+- [ ] ADR update: **ship RLS in GA** vs **defer** with explicit risk acceptance.
+- [ ] If defer: document compensating app-layer controls (link STORY-063.5–063.6).
+
+#### Verification
+
+- Benchmark script or CI job artifact attached to PR.
+
+---
+
+### STORY-063.5: Scope audit — matrix doc
+
+**Status:** planned  
+**Size:** S  
+**Depends on:** EPIC-060 STORY-060.2 (exceptions + contract doc stable)
+
+#### Why
+
+Audit needs a written scope → namespace map.
+
+#### Acceptance criteria
+
+- [ ] Matrix: `agent_scope` / group / hive → allowed namespaces and operations.
+- [ ] Published under `docs/guides/` or engineering (linked from hive.md).
+
+#### Verification
+
+- Review with Hive maintainer.
+
+---
+
+### STORY-063.6: Scope audit — code checklist and gap filing
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-063.5
+
+#### Why
+
+Matrix is useless without traceability to code paths.
+
+#### Acceptance criteria
+
+- [ ] Checklist table: path (module/function) → scope rule → reviewed by (initials/date).
+- [ ] Gaps filed as GitHub issues with `security` label or epic follow-up.
+
+#### Verification
+
+- PR checklist complete or explicit “no gaps” statement.
+
+---
+
+### STORY-063.7: Scope audit — negative tests
+
+**Status:** planned  
+**Size:** M  
+**Depends on:** STORY-063.6
+
+#### Why
+
+Regression tests enforce the matrix.
+
+#### Acceptance criteria
+
+- [ ] Tests: wrong `agent_id` cannot write cross-tenant row (where applicable).
+- [ ] Tests: wrong group membership rejected on propagate (expected error type).
+- [ ] Peer review: two maintainers sign off on test list vs matrix.
+
+#### Verification
+
+- CI green; review comments on PR.
+
+---
+
+### STORY-063.8: Threat model — STRIDE one-pager
 
 **Status:** planned  
 **Size:** S  
@@ -110,12 +194,12 @@ Stakeholders (TheStudio, AgentForge) need shared vocabulary for risk.
 
 #### Acceptance criteria
 
-- [ ] STRIDE-style bullets: spoofing, tampering, repudiation, information disclosure, DoS, elevation—mapped to mitigations.
-- [ ] Explicit **out of scope** for v3.0 (e.g. “no multi-tenant SaaS isolation guarantee” if single-org only).
+- [ ] STRIDE bullets: spoofing, tampering, repudiation, information disclosure, DoS, elevation — each with mitigation reference (doc link or ADR).
+- [ ] Explicit **out of scope** for v3.0 (e.g. no multi-tenant SaaS guarantee if single-org only).
 
 #### Verification
 
-- Review with platform owner.
+- Review with platform owner (comment or meeting note in PR).
 
 ## Out of scope
 
@@ -126,5 +210,5 @@ Stakeholders (TheStudio, AgentForge) need shared vocabulary for risk.
 - `docs/guides/hive.md` (scopes, namespaces)
 - `adr/` (new ADR for RLS decision)
 - [EPIC-059](EPIC-059.md) — Postgres-only persistence (foundation; blocks this epic)
-- [EPIC-060](EPIC-060.md) — agent-first API (STORY-063.3 depends on STORY-060.1)
+- [EPIC-060](EPIC-060.md) — agent-first API (STORY-063.5 depends on STORY-060.2)
 - [EPIC-062](EPIC-062.md) — MCP-primary integration (shares public endpoint auth surface)

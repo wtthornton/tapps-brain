@@ -48,174 +48,244 @@ This epic is intentionally small and optional. It upgrades the existing OTel exp
 
 ## Stories
 
-### STORY-032.1: GenAI and MCP span instrumentation
+### STORY-032.1: Tracer bootstrap and null-object when OTel off
 
-**Status:** planned
-**Effort:** M
-**Depends on:** none
-**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/mcp_server.py`, `src/tapps_brain/_feature_flags.py`
+**Status:** planned  
+**Effort:** S  
+**Depends on:** none  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/_feature_flags.py`  
+**Verification:** `pytest tests/unit/test_otel_exporter.py` — tracer init tests
+
+#### Why
+
+All downstream stories assume a single place that creates the tracer and respects `HAS_OTEL`.
+
+#### Acceptance Criteria
+
+- [ ] Upgrade `otel_exporter.py` to obtain `TracerProvider` / tracer with service name from `OTelConfig`.
+- [ ] `OTelConfig`: `enabled` (bool), `service_name` (str, default `"tapps-brain"`).
+- [ ] When `HAS_OTEL` is False: null-object / no-op tracer; **zero** allocation on hot path (verified by trivial benchmark or import-time check).
+- [ ] Unit tests: OTel disabled → no spans created.
+
+---
+
+### STORY-032.2: MCP tool call spans (attributes and naming)
+
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/mcp_server.py`  
 **Verification:** `pytest tests/unit/test_otel_exporter.py::TestGenAISpans -v`
 
 #### Why
 
-The GenAI retrieval and MCP semantic conventions define exactly how retrieval operations and MCP tool calls should be traced. Adopting both means any user who points an OTel collector at tapps-brain gets properly labeled spans that their observability platform understands natively. The MCP conventions (semconv v1.35.0) are particularly important since tapps-brain's primary external interface is MCP.
+MCP is the primary external API; span names and attributes must match semconv v1.35.0.
 
 #### Acceptance Criteria
 
-- [ ] Upgrade `otel_exporter.py` to create tracer with convention-compliant attributes
-- [ ] **MCP tool call spans** (for every MCP tool invocation):
-  - Span name: `{mcp.method.name} {gen_ai.tool.name}` (e.g., `tools/call memory_recall`)
-  - Span kind: `SERVER` (tapps-brain is the MCP server)
-  - `mcp.method.name`: `"tools/call"` for tool invocations, `"resources/read"` for resource reads
-  - `mcp.session.id`: from MCP session context (if available)
-  - `mcp.protocol.version`: MCP protocol version
-  - `gen_ai.tool.name`: the specific tool name (e.g., `memory_recall`, `memory_save`)
-  - `gen_ai.operation.name`: maps tool to GenAI operation: `memory_recall`/`memory_search` → `"retrieval"`, `memory_save` → `"execute_tool"`, others → `"execute_tool"`
+- [ ] **MCP tool call spans** for every tool invocation:
+  - Span name: `{mcp.method.name} {gen_ai.tool.name}` (e.g. `tools/call memory_recall`)
+  - Span kind: `SERVER`
+  - `mcp.method.name`: `tools/call` vs `resources/read`
+  - `mcp.session.id`, `mcp.protocol.version` when available
+  - `gen_ai.tool.name`, `gen_ai.operation.name` mapping (retrieval vs `execute_tool`)
   - `gen_ai.data_source.id`: `"tapps_brain"`
-- [ ] **Retrieval document events** within recall/search spans: each returned memory as a structured event following the official JSON schema: `{"id": "<entry_key>", "score": <composite_score>}` with `additionalProperties` for tier and staleness
-- [ ] **W3C Trace Context propagation**: if `params._meta.traceparent` is present in MCP request, extract and use as parent span context
-- [ ] Non-retrieval spans (save, delete, reinforce, consolidate, gc) use `gen_ai.operation.name = "execute_tool"` with `gen_ai.tool.name` set to the specific operation
-- [ ] `OTelConfig` with settings: `enabled` (bool), `service_name` (str, default "tapps-brain")
-- [ ] When `HAS_OTEL` is False, all span creation is a no-op (zero overhead via null-object pattern)
-- [ ] Unit tests with mocked OTel SDK verifying span structure, attribute names, and document events match spec
+- [ ] Unit tests with mocked OTel SDK: attribute keys and span names.
 
 ---
 
-### STORY-032.2: GenAI and MCP metric conventions
+### STORY-032.3: Retrieval document events and W3C traceparent
 
-**Status:** planned
-**Effort:** S
-**Depends on:** STORY-032.1
-**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/metrics.py`
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-032.2  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/mcp_server.py`  
+**Verification:** same as 032.2 — extended test class
+
+#### Why
+
+Retrieval quality is proven with per-document `id` + `score` events; hosts pass distributed trace headers.
+
+#### Acceptance Criteria
+
+- [ ] Within recall/search spans: structured events per result: `{"id": "<entry_key>", "score": <composite_score>}` + optional tier/staleness in `additionalProperties`.
+- [ ] If `params._meta.traceparent` present: extract and use as parent span context.
+- [ ] Unit tests: events emitted; parent context linked when traceparent set.
+
+---
+
+### STORY-032.4: Non-retrieval spans (save, delete, reinforce, consolidate, gc)
+
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/mcp_server.py`  
+**Verification:** `pytest tests/unit/test_otel_exporter.py::TestGenAISpans -v`
+
+#### Why
+
+Smaller than retrieval spans; separate story keeps PRs reviewable.
+
+#### Acceptance Criteria
+
+- [ ] Non-retrieval operations use `gen_ai.operation.name = "execute_tool"` and `gen_ai.tool.name` = concrete tool/operation name.
+- [ ] Coverage for at least: save, delete, reinforce (others as time permits in same PR or follow-up micro-PR).
+- [ ] Unit tests per operation type or parameterized table.
+
+---
+
+### STORY-032.5: Standard GenAI and MCP metrics
+
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/metrics.py`  
 **Verification:** `pytest tests/unit/test_otel_exporter.py::TestGenAIMetrics -v`
 
 #### Why
 
-The GenAI and MCP metric conventions define standard metric names that observability platforms recognize natively. Custom metrics use the `tapps_brain.*` vendor prefix per OTel naming guidance. Correct instrument selection (Counter vs Histogram vs Gauge) ensures metrics aggregate correctly across cardinality dimensions.
+Standard histogram names unblock Grafana dashboards; separate from custom vendor metrics.
 
 #### Acceptance Criteria
 
-- [ ] **Standard GenAI metrics** (Histogram, unit=`s`):
-  - `gen_ai.client.operation.duration` with attribute `gen_ai.operation.name` (retrieval, execute_tool) — maps from `recall_ms`, `save_ms`, `search_ms`
-- [ ] **Standard MCP metrics** (Histogram, unit=`s`, buckets `[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]`):
-  - `mcp.server.operation.duration` with attribute `mcp.method.name`
-- [ ] **Standard token metric** (Histogram, unit=`{token}`):
-  - `gen_ai.client.token.usage` — maps from recall token budget usage
-- [ ] **Custom `tapps_brain.*` metrics** (vendor-prefixed):
-  - `tapps_brain.entry.count` (UpDownCounter, by tier) — current entry count
-  - `tapps_brain.consolidation.candidates` (Gauge) — from health report
-  - `tapps_brain.gc.candidates` (Gauge) — from health report
-  - `tapps_brain.feedback.count` (Counter, by event_type) — only when EPIC-029 available
-  - `tapps_brain.diagnostics.composite_score` (Gauge) — only when EPIC-030 available
-  - `tapps_brain.diagnostics.circuit_breaker_state` (Gauge, encoded: 0=closed, 1=degraded, 2=open, 3=half_open) — only when EPIC-030 available
-- [ ] **Cardinality management**: metric attributes limited to low-cardinality values only (`gen_ai.operation.name`, `mcp.method.name`, `tier`, `event_type`). Never use `entry_key`, `query`, `session_id`, or `conversation_id` as metric attributes
-- [ ] Export triggered on `MetricsCollector.snapshot()` when OTel exporter is configured
-- [ ] Unit tests verifying metric names, types (Counter/Histogram/Gauge/UpDownCounter), units, and attribute conformance
+- [ ] `gen_ai.client.operation.duration` (Histogram, `s`) with `gen_ai.operation.name`.
+- [ ] `mcp.server.operation.duration` (Histogram, `s`, documented buckets) with `mcp.method.name`.
+- [ ] `gen_ai.client.token.usage` (Histogram, `{token}`) from recall token budget when available.
+- [ ] Unit tests: instrument names, units, attribute keys.
 
 ---
 
-### STORY-032.3: Feedback and diagnostics events
+### STORY-032.6: Custom `tapps_brain.*` metrics and export hook
 
-**Status:** planned
-**Effort:** S
-**Depends on:** STORY-032.1, EPIC-029 (done — `feedback.py` available), EPIC-030 (done — `diagnostics.py` available)
-**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/feedback.py`, `src/tapps_brain/diagnostics.py`
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.5  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/metrics.py`  
+**Verification:** `pytest tests/unit/test_otel_exporter.py::TestGenAIMetrics -v`
+
+#### Why
+
+Vendor metrics stay separate from semconv names; cardinality rules are easy to regress.
+
+#### Acceptance Criteria
+
+- [ ] Custom metrics: `tapps_brain.entry.count`, consolidation/GC gauges, feedback/diagnostics counters/gauges when modules present (per original epic list).
+- [ ] **Cardinality:** never `entry_key`, `query`, `session_id` as labels.
+- [ ] Export on `MetricsCollector.snapshot()` when OTel exporter configured.
+- [ ] Unit tests: types (UpDownCounter/Gauge/Counter) and label sets.
+
+---
+
+### STORY-032.7: Feedback events as OTel Events
+
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/feedback.py`  
 **Verification:** `pytest tests/unit/test_otel_exporter.py::TestFeedbackDiagnosticsEvents -v`
 
 #### Why
 
-EPIC-029 (`feedback.py`) and EPIC-030 (`diagnostics.py`) are both done and available; their events are valuable telemetry signals. OTel Events are implemented as `LogRecord` with `event.name` attribute (per OTel event conventions). Feedback and diagnostics events make the full quality loop visible in observability platforms.
+EPIC-029 (`feedback.py`) is shipped; feedback signals deserve isolated test coverage.
 
 #### Acceptance Criteria
 
-- [ ] Feedback events emitted as OTel Events (LogRecords with `event.name`):
-  - `event.name = "tapps_brain.feedback.recall_rated"` with attributes: `rating`, `entry_keys` (if enabled)
-  - `event.name = "tapps_brain.feedback.gap_reported"` with attributes: `description` (if enabled)
-  - `event.name = "tapps_brain.feedback.issue_flagged"` with attributes: `entry_key`, `issue_type`
-- [ ] Diagnostics events emitted as OTel Events:
-  - `event.name = "tapps_brain.diagnostics.anomaly_detected"` with attributes: `dimension`, `score`, `threshold`, `anomaly_type`
-  - `event.name = "tapps_brain.diagnostics.circuit_breaker_transition"` with attributes: `from_state`, `to_state`, `composite_score`
-- [ ] All event names use `tapps_brain.*` namespace (not `gen_ai.*` since these are custom, not standardized)
-- [ ] Events gracefully skipped when EPIC-029/030 modules are not available (feature detection via `hasattr`/try-import, not import errors)
-- [ ] Unit tests verifying event emission with and without feedback/diagnostics modules
+- [ ] Events: `tapps_brain.feedback.recall_rated`, `gap_reported`, `issue_flagged` with documented attributes.
+- [ ] Skipped gracefully when feedback module unavailable (feature detection).
+- [ ] Unit tests with/without feedback wired.
 
 ---
 
-### STORY-032.4: Privacy controls and configuration
+### STORY-032.8: Diagnostics events as OTel Events
 
-**Status:** planned
-**Effort:** S
-**Depends on:** STORY-032.1
-**Context refs:** `src/tapps_brain/otel_exporter.py`
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/diagnostics.py`  
+**Verification:** `pytest tests/unit/test_otel_exporter.py::TestFeedbackDiagnosticsEvents -v`
+
+#### Why
+
+EPIC-030 diagnostics are distinct from feedback; separate story avoids one huge test file.
+
+#### Acceptance Criteria
+
+- [ ] Events: `tapps_brain.diagnostics.anomaly_detected`, `circuit_breaker_transition` with attributes.
+- [ ] Skipped when diagnostics unavailable.
+- [ ] Unit tests mirroring 032.7 pattern.
+
+---
+
+### STORY-032.9: Privacy controls and OTelConfig from environment
+
+**Status:** planned  
+**Effort:** S  
+**Depends on:** STORY-032.1  
+**Context refs:** `src/tapps_brain/otel_exporter.py`  
 **Verification:** `pytest tests/unit/test_otel_exporter.py::TestPrivacy -v`
 
 #### Why
 
-Developer tool telemetry must be privacy-respecting by default. The OTel GenAI spec marks all content attributes as `opt_in` requirement level with sensitivity warnings. The `opentelemetry-util-genai` package defines `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` as the standard env var. tapps-brain should align with this convention while adding its own granular controls.
+Privacy is cross-cutting; implementing after span shapes avoids rework.
 
 #### Acceptance Criteria
 
-- [ ] **Standard OTel env var** respected: `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` with values:
-  - `NO_CONTENT` (default): no query text, no memory values, no feedback descriptions in spans or events
-  - `SPAN_ONLY`: content in span attributes only
-  - `EVENT_ONLY`: content in events only
-  - `SPAN_AND_EVENT`: content in both
-- [ ] **tapps-brain-specific env vars** for fine-grained control:
-  - `TAPPS_BRAIN_OTEL_ENABLED` (bool, default False): master switch
-  - `TAPPS_BRAIN_OTEL_LOG_ENTRY_KEYS` (bool, default True): whether entry keys appear (low sensitivity)
-  - `TAPPS_BRAIN_OTEL_SERVICE_NAME` (str, default "tapps-brain"): service name in spans
-- [ ] **Layered defense**: content omission happens at the application level (before data enters OTel pipeline), not via collector-level redaction — this is the primary defense per OTel security guidance
-- [ ] When a content field is disabled, the attribute is omitted entirely (not redacted, not hashed, not replaced with placeholder)
-- [ ] `OTelConfig` loadable from environment variables with fallback to profile YAML
-- [ ] Unit tests for each privacy setting verifying attribute presence/absence across all content modes
+- [ ] `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`: `NO_CONTENT` | `SPAN_ONLY` | `EVENT_ONLY` | `SPAN_AND_EVENT`.
+- [ ] `TAPPS_BRAIN_OTEL_ENABLED`, `TAPPS_BRAIN_OTEL_LOG_ENTRY_KEYS`, `TAPPS_BRAIN_OTEL_SERVICE_NAME` (or merged into `OTelConfig`).
+- [ ] Disabled content: attribute **omitted**, not placeholder.
+- [ ] `OTelConfig` from env with profile YAML fallback.
+- [ ] Unit tests per mode: attribute presence/absence.
 
 ---
 
-### STORY-032.5: Integration tests
+### STORY-032.10: End-to-end integration tests
 
-**Status:** planned
-**Effort:** M
-**Depends on:** STORY-032.1, STORY-032.2
-**Context refs:** `tests/integration/`
+**Status:** planned  
+**Effort:** M  
+**Depends on:** STORY-032.3, STORY-032.4, STORY-032.6, STORY-032.7, STORY-032.8, STORY-032.9  
+**Context refs:** `tests/integration/`  
 **Verification:** `pytest tests/integration/test_otel_integration.py -v`
 
 #### Why
 
-Validates the full OTel pipeline: MCP tool calls producing convention-compliant spans, metrics exported with correct names and types, privacy controls enforced, and graceful degradation when OTel is not installed.
+Validates pipeline: MCP → spans → metrics → privacy; catches integration gaps.
 
 #### Acceptance Criteria
 
-- [ ] Integration test: perform MCP recall via store, verify span has correct `gen_ai.operation.name`, `mcp.method.name`, `gen_ai.data_source.id`, and retrieval document events
-- [ ] Integration test: perform multiple operations, export metrics, verify `gen_ai.client.operation.duration`, `mcp.server.operation.duration`, and `tapps_brain.*` custom metrics
-- [ ] Integration test: set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT`, verify query text absent from spans
-- [ ] Integration test: set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT`, verify query text present
-- [ ] Integration test: verify zero overhead and no errors when OTel is not installed (`HAS_OTEL=False`)
-- [ ] Integration test: if EPIC-029/030 available, verify `tapps_brain.feedback.*` and `tapps_brain.diagnostics.*` events emitted
-- [ ] All tests use real `MemoryStore` + mocked OTel collector (InMemorySpanExporter/InMemoryMetricReader — no actual network export)
+- [ ] Recall path: span attributes + document events (InMemorySpanExporter).
+- [ ] Multi-op metrics: `gen_ai.*`, `mcp.*`, `tapps_brain.*` in InMemoryMetricReader.
+- [ ] Privacy: `NO_CONTENT` vs `SPAN_AND_EVENT` behavior.
+- [ ] `HAS_OTEL=False`: no import error, no overhead path exercised.
+- [ ] Optional: feedback/diagnostics events when modules loaded.
+- [ ] Real `MemoryStore` + mocked OTel backends (no network export).
 
 ## Priority Order
 
 | Order | Story | Effort | Rationale |
 |-------|-------|--------|-----------|
-| 1 | STORY-032.1 — GenAI + MCP span instrumentation | M | Core: span instrumentation with both conventions |
-| 2 | STORY-032.2 — GenAI + MCP metric conventions | S | Depends on 032.1; quick |
-| 3 | STORY-032.4 — Privacy controls | S | Can parallel with 032.2 |
-| 4 | STORY-032.3 — Feedback/diagnostics events | S | Optional; depends on 032.1 + other EPICs |
-| 5 | STORY-032.5 — Integration tests | M | Final validation |
+| 1 | STORY-032.1 — Tracer bootstrap | S | Foundation |
+| 2 | STORY-032.2 — MCP spans | M | Core visibility |
+| 3 | STORY-032.3 — Retrieval events + traceparent | M | Depends on 032.2 |
+| 4 | STORY-032.4 — Non-retrieval spans | S | Parallel after 032.1 |
+| 5 | STORY-032.5 — Standard metrics | S | Parallel after 032.1 |
+| 6 | STORY-032.6 — Custom metrics | S | After 032.5 |
+| 7 | STORY-032.9 — Privacy | S | Can parallel with 032.5–032.6 after 032.1 |
+| 8 | STORY-032.7 — Feedback events | S | After 032.1 |
+| 9 | STORY-032.8 — Diagnostics events | S | After 032.1 |
+| 10 | STORY-032.10 — Integration tests | M | Last |
 
 ## Dependency Graph
 
 ```
-032.1 (GenAI + MCP spans) ──┬──→ 032.2 (metrics) ──────────┐
-                             │                               │
-                             ├──→ 032.4 (privacy) ───────────┼──→ 032.5 (integration)
-                             │                               │
-                             └──→ 032.3 (feedback/diag) ─────┘
-                                     ↑
-                             EPIC-029 + EPIC-030 (optional)
+032.1 ──┬──→ 032.2 ──→ 032.3 ─────────────────┐
+        ├──→ 032.4 ─────────────────────────┼──→ 032.10
+        ├──→ 032.5 ──→ 032.6 ───────────────┤
+        ├──→ 032.7 ────────────────────────┤
+        ├──→ 032.8 ────────────────────────┤
+        └──→ 032.9 ───────────────────────┘
 ```
 
-032.2 and 032.4 can be worked in parallel after 032.1. 032.3 is optional and depends on other EPICs.
+032.4 can proceed in parallel with 032.2 after 032.1. 032.10 gates on semantic completion of spans, metrics, feedback/diagnostics, and privacy.
 
 ## References
 
