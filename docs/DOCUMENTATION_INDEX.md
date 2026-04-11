@@ -1,13 +1,13 @@
 # tapps-brain — Documentation Index
 
-**119 documents** across **7 categories**
+**121 documents** across **7 categories**
 
 ## Overview
 
 | Category | Count |
 |---|---|
 | API Reference | 1 |
-| Architecture | 10 |
+| Architecture | 12 |
 | Getting Started | 6 |
 | Guides | 27 |
 | Operations | 1 |
@@ -29,6 +29,8 @@
 - [ADR-004: Scale — single-node SQLite posture (defer published QPS SLO and service extraction)](planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) — **Status:** Accepted *(updated 2026-04-05)*
 - [ADR-005: SQLCipher operations — passphrase runbook + backup verification (defer KMS product integration)](planning/adr/ADR-005-sqlcipher-key-backup-operations.md) — **Status:** Accepted *(updated 2026-04-05)*
 - [ADR-006: Save-path observability — phase histograms + health summary (defer deeper metrics unless trigger (a))](planning/adr/ADR-006-save-path-observability.md) — **Status:** Accepted *(updated 2026-04-05)*
+- [ADR-007: Postgres-only backends — no SQLite for Hive or Federation (v3 greenfield)](planning/adr/ADR-007-postgres-only-no-sqlite.md) — **Status:** Accepted *(updated 2026-04-10)*
+- [ADR-008: No new public HTTP routes without MCP + library parity](planning/adr/ADR-008-no-http-without-mcp-library-parity.md) — **Status:** Accepted *(updated 2026-04-10)*
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-04-05)*
 
 ## Getting Started

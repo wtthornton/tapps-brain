@@ -45,7 +45,7 @@ Every agent talks to **one `AgentBrain` instance** per session.
 |-------------|-------|
 | Postgres 15+ with **pgvector** | See [Hive deployment guide](hive-deployment.md) for Docker Compose setup |
 | `tapps-brain` Python package | `pip install tapps-brain` or `uv add tapps-brain` |
-| Database user with DML permissions | `tapps_runtime` role recommended — see [DB roles runbook](../operations/db-roles-runbook.md) |
+| Database user with DML permissions | `tapps_runtime` role recommended — see [DB roles runbook](../operations/db-roles-runbook.md) *(EPIC-063 — coming soon)* |
 | pgvector extension created | `CREATE EXTENSION IF NOT EXISTS vector;` |
 
 ---
