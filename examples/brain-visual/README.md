@@ -21,3 +21,31 @@ Snapshot **schema_version** `2` adds retrieval mode, Hive hub stats, access hist
 ## Brand
 
 CSS tokens, typography, and logo usage follow the **NLT Labs** design language. The canonical brand style sheet is an internal NLT Labs asset (not redistributed here). A gap matrix and redistribution notes are at [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
+
+## Motion system — manual test checklist
+
+Motion tokens (`--dur-*`, `--ease-*`) are defined in `:root` and default to **instant / linear** (zero-duration, static-first). Non-zero durations are restored inside `@media (prefers-reduced-motion: no-preference)` only, following [WCAG 2.3.3 / Technique C39](https://www.w3.org/WAI/WCAG22/Techniques/css/C39.html).
+
+**Test: reduced-motion OFF (motion enabled)**
+
+1. macOS → System Settings → Accessibility → Display → **Reduce motion: off**  
+   Windows → Settings → Accessibility → Visual effects → **Animation effects: on**
+2. Open `index.html` in a browser (serve over HTTP or as `file://`).
+3. Scroll down past the hero section — each `dash-section` and the trust bento should fade and slide up gently as it enters the viewport.
+4. Open the **?** help drawer — it should slide in from the right (`transform: translateX`).
+5. Hover a **tile** — it should lift slightly (`translateY(-4px)`).
+
+**Test: reduced-motion ON (motion disabled)**
+
+1. macOS → System Settings → Accessibility → Display → **Reduce motion: on**  
+   Windows → Settings → Accessibility → Visual effects → **Animation effects: off**
+2. Open (or reload) `index.html`.
+3. All sections should be **immediately visible** with no fade or slide — no partial/half-animated states.
+4. The help drawer should open/close **without** a slide animation (instant show/hide).
+5. Tile hover should produce **no transform** (border/colour change only via instant tokens).
+
+**Expected non-motion interactions that are always present (both states):**
+
+- Border colour on tile and nav-link hover (instant under reduced motion).
+- Theme toggle border highlight on hover.
+- Bar fill widths (rendered at full width without animation under reduced motion).

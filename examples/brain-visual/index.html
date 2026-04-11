@@ -35,6 +35,34 @@
       --accent: var(--nlt-accent-primary);
       --flow-ambient: 135deg;
       --header-bg: rgba(240, 237, 230, 0.82);
+
+      /* ── Motion tokens — BRAND-STYLE-GUIDE §5 (WCAG 2.3.3 / C39; W3C Technique C39) ── *
+       * All durations default to instant; only `prefers-reduced-motion: no-preference`    *
+       * sections override them with non-zero values. This means static-first is the base. */
+      --dur-instant: 0ms;
+      --dur-fast:    var(--dur-instant);
+      --dur-base:    var(--dur-instant);
+      --dur-slow:    var(--dur-instant);
+      --dur-drawer:  var(--dur-instant);
+      --dur-reveal:  var(--dur-instant);
+      --ease-standard: linear;
+      --ease-decel:    linear;
+      --ease-enter:    linear;
+    }
+
+    /* Restore non-zero durations only when the user hasn't requested reduced motion.
+     * Reference: https://www.w3.org/WAI/WCAG22/Techniques/css/C39.html          */
+    @media (prefers-reduced-motion: no-preference) {
+      :root {
+        --dur-fast:    150ms;
+        --dur-base:    200ms;
+        --dur-slow:    300ms;
+        --dur-drawer:  280ms;
+        --dur-reveal:  380ms;
+        --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+        --ease-decel:    cubic-bezier(0, 0, 0.2, 1);
+        --ease-enter:    cubic-bezier(0.2, 0, 0, 1);
+      }
     }
 
     html[data-theme="dark"] {
@@ -171,7 +199,7 @@
       background: transparent;
       color: var(--fg);
       cursor: pointer;
-      transition: border-color 0.2s ease, transform 0.2s ease;
+      transition: border-color var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard);
     }
 
     .theme-toggle:hover {
@@ -318,7 +346,7 @@
       background: var(--surface);
       color: var(--fg);
       cursor: pointer;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--dur-base) var(--ease-standard);
     }
 
     .btn-ghost:hover {
@@ -406,7 +434,7 @@
       border: 1px solid var(--border);
       color: var(--fg-dim);
       text-decoration: none;
-      transition: border-color 0.2s ease, color 0.2s ease;
+      transition: border-color var(--dur-base) var(--ease-standard), color var(--dur-base) var(--ease-standard);
     }
 
     .section-nav a:hover,
@@ -467,7 +495,7 @@
       border-radius: 4px;
       background: var(--nlt-gradient);
       min-width: 2px;
-      transition: width 0.4s ease;
+      transition: width var(--dur-slow) var(--ease-decel);
     }
 
     .data-table {
@@ -643,7 +671,7 @@
       font-weight: 700;
       line-height: 1;
       cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
+      transition: border-color var(--dur-base) var(--ease-standard), background var(--dur-base) var(--ease-standard);
     }
 
     .help-pill:hover,
@@ -660,7 +688,7 @@
       background: rgba(0, 0, 0, 0.35);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.25s ease;
+      transition: opacity var(--dur-base) var(--ease-standard);
     }
 
     .help-backdrop.is-on {
@@ -680,7 +708,7 @@
       border-left: 1px solid var(--border);
       box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
       transform: translateX(100%);
-      transition: transform 0.28s ease;
+      transition: transform var(--dur-drawer) var(--ease-enter);
       display: flex;
       flex-direction: column;
     }
@@ -780,12 +808,7 @@
       margin-left: auto;
     }
 
-    @media (prefers-reduced-motion: reduce) {
-      .help-drawer,
-      .help-backdrop {
-        transition: none;
-      }
-    }
+    /* (reduced-motion: consolidated block below) */
 
     .btn-load {
       display: inline-flex;
@@ -800,7 +823,7 @@
       background: var(--nlt-gradient);
       border: none;
       box-shadow: 0 4px 20px rgba(217, 119, 6, 0.2);
-      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      transition: opacity var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
     }
 
     .btn-load:hover {
@@ -871,7 +894,7 @@
       padding: 1.5rem;
       min-height: 160px;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-      transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+      transition: transform var(--dur-slow) var(--ease-standard), box-shadow var(--dur-slow) var(--ease-standard), border-color var(--dur-slow) var(--ease-standard);
     }
 
     html[data-theme="dark"] .tile {
@@ -886,13 +909,7 @@
       background: rgba(15, 20, 25, 0.65);
     }
 
-    @media (prefers-reduced-motion: reduce) {
-      .tile,
-      .btn-load,
-      .theme-toggle {
-        transition: none;
-      }
-    }
+    /* (reduced-motion: consolidated block below) */
 
     .tile:hover {
       transform: translateY(-4px);
@@ -994,6 +1011,56 @@
       font-size: 0.75rem;
       color: var(--fg-dim);
       max-width: 48ch;
+    }
+
+    /* ── Enter-view reveal ─────────────────────────────────────────────────────
+     * Static first: elements are fully visible by default.
+     * Under no-preference only, apply transform/opacity entry animation via JS.
+     * Reference: MDN scroll-driven animations + IntersectionObserver fallback  *
+     * https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion */
+    @media (prefers-reduced-motion: no-preference) {
+      .reveal-on-scroll {
+        opacity: 0;
+        transform: translateY(18px);
+        transition:
+          opacity    var(--dur-reveal) var(--ease-decel),
+          transform  var(--dur-reveal) var(--ease-decel);
+      }
+      .reveal-on-scroll.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ── Consolidated reduced-motion safety net ────────────────────────────────
+     * Because --dur-* tokens already default to 0ms/linear, this block is a
+     * belt-and-suspenders guard for any raw transition/animation that bypassed
+     * the token system (e.g. future additions, third-party snippets).
+     * Reference: WCAG 2.3.3 / https://www.w3.org/WAI/WCAG22/Techniques/css/C39.html */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+      }
+
+      /* Drawer and backdrop: skip to final state immediately */
+      .help-drawer {
+        transition: none;
+      }
+      .help-backdrop {
+        transition: none;
+      }
+
+      /* Reveal elements: show immediately without motion */
+      .reveal-on-scroll {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+      }
     }
   </style>
 </head>
@@ -1097,7 +1164,7 @@
         <li><a href="#privacy">Privacy</a></li>
       </ul>
 
-      <div class="bento" aria-label="Store snapshot summary" id="trust">
+      <div class="bento reveal-on-scroll" aria-label="Store snapshot summary" id="trust">
         <section class="tile hero" aria-label="Brain identity">
           <svg
             class="hero-mark"
@@ -1217,7 +1284,7 @@
         </section>
       </div>
 
-      <section class="dash-section" id="scorecard">
+      <section class="dash-section reveal-on-scroll" id="scorecard">
         <div class="dash-h2-row">
           <h2>Scorecard</h2>
           <button
@@ -1273,7 +1340,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="pulse">
+      <section class="dash-section reveal-on-scroll" id="pulse">
         <div class="dash-h2-row">
           <h2>Pulse</h2>
           <span class="help-pill-group" aria-label="Help topics for Pulse">
@@ -1312,7 +1379,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="retrieval">
+      <section class="dash-section reveal-on-scroll" id="retrieval">
         <div class="dash-h2-row">
           <h2>Retrieval &amp; vectors</h2>
           <button
@@ -1345,7 +1412,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="hive">
+      <section class="dash-section reveal-on-scroll" id="hive">
         <div class="dash-h2-row">
           <h2>Hive hub</h2>
           <button
@@ -1374,7 +1441,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="integrity">
+      <section class="dash-section reveal-on-scroll" id="integrity">
         <div class="dash-h2-row">
           <h2>Integrity &amp; limits</h2>
           <button
@@ -1390,7 +1457,7 @@
         <div id="integrity-body" class="prose-small">—</div>
       </section>
 
-      <section class="dash-section" id="activity">
+      <section class="dash-section reveal-on-scroll" id="activity">
         <div class="dash-h2-row">
           <h2>Activity</h2>
           <button
@@ -1420,7 +1487,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="groups">
+      <section class="dash-section reveal-on-scroll" id="groups">
         <div class="dash-h2-row">
           <h2>Memory groups</h2>
           <button
@@ -1436,7 +1503,7 @@
         <div id="groups-body" class="prose-small">—</div>
       </section>
 
-      <section class="dash-section" id="tags">
+      <section class="dash-section reveal-on-scroll" id="tags">
         <div class="dash-h2-row">
           <h2>Tags</h2>
           <button
@@ -1452,7 +1519,7 @@
         <div id="tags-body"></div>
       </section>
 
-      <section class="dash-section" id="diagnostics">
+      <section class="dash-section reveal-on-scroll" id="diagnostics">
         <div class="dash-h2-row">
           <h2>Diagnostics</h2>
           <button
@@ -1477,7 +1544,7 @@
         </div>
       </section>
 
-      <section class="dash-section" id="privacy">
+      <section class="dash-section reveal-on-scroll" id="privacy">
         <div class="dash-h2-row">
           <h2>Privacy</h2>
           <span class="help-pill-group" aria-label="Privacy help topics">
@@ -1537,6 +1604,41 @@
   <script src="scorecard-derive.js"></script>
   <script src="brain-visual-help.js"></script>
   <script>
+    /* ── Enter-view reveal via IntersectionObserver ────────────────────────────
+     * Static-first: .reveal-on-scroll elements start invisible only when the user
+     * has NOT requested reduced motion (gated in CSS). The observer adds
+     * .is-visible when the element enters the viewport.
+     * Reference: MDN IntersectionObserver
+     * https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API */
+    (function initReveal() {
+      if (!("IntersectionObserver" in window)) {
+        /* Fallback: show all immediately — no motion, no invisible content */
+        document.querySelectorAll(".reveal-on-scroll").forEach(function (el) {
+          el.classList.add("is-visible");
+        });
+        return;
+      }
+      const mq = window.matchMedia("(prefers-reduced-motion: no-preference)");
+      if (!mq.matches) {
+        /* Reduced motion: skip observer, content already visible via CSS */
+        return;
+      }
+      const observer = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.08, rootMargin: "0px 0px -32px 0px" },
+      );
+      document.querySelectorAll(".reveal-on-scroll").forEach(function (el) {
+        observer.observe(el);
+      });
+    })();
+
     const root = document.documentElement;
     const el = (id) => document.getElementById(id);
     const THEME_KEY = "tapps-brain-visual-theme";
