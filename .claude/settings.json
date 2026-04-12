@@ -10,6 +10,24 @@
             "statusMessage": "Injecting Ralph loop context..."
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-session-start.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-session-compact.sh"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -55,35 +73,43 @@
         ]
       }
     ],
-    "PostToolUse": [],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-edit.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__tapps-mcp__tapps_validate_changed",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-validate.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__tapps-mcp__tapps_report",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-report.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "bash .ralph/hooks/on-subagent-done.sh"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "matcher": "rate_limit|server_error",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .ralph/hooks/on-stop-failure.sh",
-            "statusMessage": "Handling API error..."
-          }
-        ]
-      },
-      {
-        "matcher": "rate_limit\\",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "server_error",
-            "statusMessage": "bash .ralph/hooks/on-stop-failure.sh|Handling API error..."
           }
         ]
       }
@@ -109,6 +135,41 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-compact.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-subagent-start.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": [
+      "mcp__tapps-mcp",
+      "mcp__tapps-mcp__*"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Read(.env)",
+      "Read(.env.*)"
     ]
   }
 }
