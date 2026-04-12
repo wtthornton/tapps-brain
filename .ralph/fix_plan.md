@@ -19,7 +19,6 @@
 
 ### Phase C: Docs, benchmarks, test parity <!-- id: 066-phase-c -->
 
-- [ ] **066.13** Postgres integration tests replacing deleted SQLite-coupled tests [LARGE] <!-- story: docs/planning/epics/stories/STORY-066.13.md -->
 
 ### Phase D: Final sweep <!-- id: 066-phase-d -->
 

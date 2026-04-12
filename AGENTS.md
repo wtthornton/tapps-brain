@@ -125,6 +125,35 @@ Override env vars:
 The test is marked `requires_postgres` and `benchmark` — it is excluded from the fast unit
 suite (`-m "not benchmark"`) and auto-skipped when `TAPPS_BRAIN_DATABASE_URL` is unset.
 
+## `requires_postgres` pytest marker
+
+Integration tests that require a live PostgreSQL instance are marked with
+`@pytest.mark.requires_postgres`. The `pytest_collection_modifyitems` hook in
+`tests/conftest.py` auto-skips these tests when `TAPPS_BRAIN_DATABASE_URL` is unset.
+
+```bash
+# Run only Postgres integration tests (requires running Postgres)
+export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5433/tapps_brain
+uv run pytest tests/integration/ -v -m requires_postgres
+
+# Run unit tests only (no Postgres required)
+uv run pytest tests/unit/ -v
+```
+
+### Integration test files (STORY-066.13)
+
+| File | Coverage |
+|------|----------|
+| `tests/integration/test_postgres_private_backend.py` | `PostgresPrivateBackend` save / load_all / delete / search CRUD |
+| `tests/integration/test_feedback_postgres.py` | `FeedbackStore` record / query / strict-mode rejection |
+| `tests/integration/test_session_index_postgres.py` | `SessionIndex` save_chunks / search / delete_expired |
+| `tests/integration/test_agent_identity_postgres.py` | `(project_id, agent_id)` row isolation across multiple agents |
+| `tests/integration/test_pgvector_embeddings.py` | pgvector embedding write + knn_search recall |
+
+All tests generate unique `(project_id, agent_id)` pairs per test via `uuid.uuid4()` to
+prevent row collisions during parallel test execution.  Teardown is implicit — each test
+uses its own rows which never interfere with other tests.
+
 Full parity doc and latency budget: `docs/engineering/v3-behavioral-parity.md`.
 
 ### load_smoke.py (ad-hoc / script runner)
