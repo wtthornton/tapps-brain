@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-04-12
+
 ### Added
 - retrieval pipeline live metrics panel (story-065.7)
 - add memory velocity panel to dashboard (story-065.6)
