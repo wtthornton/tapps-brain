@@ -387,3 +387,102 @@ def test_run_health_check_skips_hive_when_disabled(tmp_path: Path) -> None:
     report = run_health_check(project_root=tmp_path, check_hive=False)
     assert report.hive.connected is False
     assert report.hive.entries == 0
+
+
+# ---------------------------------------------------------------------------
+# StoreHealth pool fields (STORY-066.7)
+# ---------------------------------------------------------------------------
+
+
+def test_store_health_model_has_pool_fields() -> None:
+    """StoreHealth must expose pool_saturation, pool_idle, last_migration_version."""
+    from tapps_brain.health_check import StoreHealth
+
+    sh = StoreHealth()
+    assert sh.pool_saturation is None
+    assert sh.pool_idle is None
+    assert sh.last_migration_version is None
+
+
+def test_store_health_model_pool_fields_set() -> None:
+    """StoreHealth pool fields accept the correct types."""
+    from tapps_brain.health_check import StoreHealth
+
+    sh = StoreHealth(pool_saturation=0.3, pool_idle=7, last_migration_version=5)
+    assert sh.pool_saturation == pytest.approx(0.3)
+    assert sh.pool_idle == 7
+    assert sh.last_migration_version == 5
+
+
+def test_run_health_check_store_pool_stats_populated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """pool_saturation and pool_idle are read from private backend CM when present."""
+    mock_cm = MagicMock()
+    mock_cm.get_pool_stats.return_value = {
+        "pool_saturation": 0.4,
+        "pool_available": 6,
+        "pool_size": 4,
+        "pool_max": 10,
+    }
+
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = mock_cm
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    # Ensure no TAPPS_BRAIN_DATABASE_URL leaks in to trigger migration lookup.
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.pool_saturation == pytest.approx(0.4)
+    assert report.store.pool_idle == 6
+
+
+def test_run_health_check_store_pool_stats_none_when_no_cm(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """StoreHealth pool fields remain None when the backend has no connection manager."""
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = None  # InMemoryPrivateBackend scenario
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.pool_saturation is None
+    assert report.store.pool_idle is None
+
+
+def test_run_health_check_store_last_migration_version_populated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """last_migration_version is read from get_private_schema_status when DSN is set."""
+    from tapps_brain.postgres_migrations import SchemaStatus
+
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = None
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    monkeypatch.setenv("TAPPS_BRAIN_DATABASE_URL", "postgres://localhost/test")
+
+    schema_status = SchemaStatus(current_version=4, applied_versions=[1, 2, 3, 4])
+    import tapps_brain.postgres_migrations as _pm
+
+    monkeypatch.setattr(_pm, "get_private_schema_status", lambda dsn: schema_status)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.last_migration_version == 4
+
+
+def test_run_health_check_store_last_migration_version_none_without_dsn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """last_migration_version is None when TAPPS_BRAIN_DATABASE_URL is not set."""
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = None
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.last_migration_version is None

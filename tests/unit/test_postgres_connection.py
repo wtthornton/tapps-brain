@@ -192,3 +192,92 @@ class TestPostgresConnectionManager:
         stats = cm.get_pool_stats()
         assert stats["pool_saturation"] == 0.0
         assert stats["pool_size"] == 0
+
+    # -- New canonical env vars (TAPPS_BRAIN_PG_POOL_*) -----------------------
+
+    def test_init_reads_new_pg_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS are honoured."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MIN", "3")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX", "15")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS", "20")
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._min_size == 3
+        assert cm._max_size == 15
+        assert cm._connect_timeout == 20.0
+
+    def test_pg_env_vars_take_precedence_over_hive_vars(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """New TAPPS_BRAIN_PG_POOL_* vars override legacy TAPPS_BRAIN_HIVE_* vars."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MIN", "4")
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MIN", "99")  # should be ignored
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX", "20")
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MAX", "99")  # should be ignored
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._min_size == 4
+        assert cm._max_size == 20
+
+    def test_legacy_hive_env_vars_still_work(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Legacy TAPPS_BRAIN_HIVE_* vars remain functional as a fallback."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_PG_POOL_MIN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_PG_POOL_MAX", raising=False)
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MIN", "5")
+        monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MAX", "25")
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._min_size == 5
+        assert cm._max_size == 25
+
+    # -- DSN validation -------------------------------------------------------
+
+    def test_malformed_dsn_raises_value_error(self) -> None:
+        """Non-postgres scheme raises ValueError with ADR-007 reference."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        with pytest.raises(ValueError, match="ADR-007"):
+            PostgresConnectionManager("sqlite:///test.db")
+
+    def test_dsn_without_scheme_raises_value_error(self) -> None:
+        """DSN without scheme raises ValueError."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        with pytest.raises(ValueError, match="postgres://"):
+            PostgresConnectionManager("localhost/mydb")
+
+    def test_empty_dsn_raises_value_error(self) -> None:
+        """Empty DSN raises ValueError."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        with pytest.raises(ValueError):
+            PostgresConnectionManager("")
+
+    def test_postgresql_scheme_is_accepted(self) -> None:
+        """Both 'postgres://' and 'postgresql://' schemes are valid."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgresql://localhost/test")
+        assert cm.dsn == "postgresql://localhost/test"
+
+    # -- Pool size constraints ------------------------------------------------
+
+    def test_pool_max_less_than_one_raises(self) -> None:
+        """max_size < 1 raises ValueError."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        with pytest.raises(ValueError, match="max_size"):
+            PostgresConnectionManager("postgres://localhost/test", max_size=0)
+
+    def test_pool_min_greater_than_max_raises(self) -> None:
+        """min_size > max_size raises ValueError."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        with pytest.raises(ValueError, match="min_size"):
+            PostgresConnectionManager("postgres://localhost/test", min_size=10, max_size=5)

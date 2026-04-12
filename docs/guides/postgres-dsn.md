@@ -21,9 +21,12 @@ It lists every variable that the library, CLI, and MCP server read at runtime.
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Set `true` to run pending Hive schema migrations on startup. | `true` | `false` | ✅ first deploy | optional |
 | `TAPPS_BRAIN_STRICT` | When `1`, missing DSN exits with a clear error (stderr + non-zero). **Not setting this is not for production.** | `1` | `0` | ✅ production | no |
 | **Pool sizing** | | | | | |
-| `TAPPS_BRAIN_HIVE_POOL_MIN` | Minimum connections kept open in the pool. | `2` | `2` | no | no |
-| `TAPPS_BRAIN_HIVE_POOL_MAX` | Maximum simultaneous connections from the pool. | `20` | `10` | tune for workload | no |
-| `TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT` | Seconds to wait when acquiring a connection from the pool. | `10` | `5` | no | no |
+| `TAPPS_BRAIN_PG_POOL_MIN` | Minimum connections kept open in the pool (canonical; takes precedence over legacy `TAPPS_BRAIN_HIVE_POOL_MIN`). | `2` | `2` | no | no |
+| `TAPPS_BRAIN_PG_POOL_MAX` | Maximum simultaneous connections from the pool (canonical; takes precedence over legacy `TAPPS_BRAIN_HIVE_POOL_MAX`). Must be ≥ 1. | `20` | `10` | tune for workload | no |
+| `TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS` | Seconds to wait when acquiring a connection (canonical; takes precedence over legacy `TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT`). | `10` | `5` | no | no |
+| `TAPPS_BRAIN_HIVE_POOL_MIN` | **Legacy alias** for `TAPPS_BRAIN_PG_POOL_MIN`. Still supported; set the canonical var in new deployments. | `2` | `2` | no | no |
+| `TAPPS_BRAIN_HIVE_POOL_MAX` | **Legacy alias** for `TAPPS_BRAIN_PG_POOL_MAX`. | `20` | `10` | no | no |
+| `TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT` | **Legacy alias** for `TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS`. | `10` | `5` | no | no |
 | `TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT` | Seconds before an idle connection is evicted. Set `0` to disable eviction. | `600` | `300` | no | no |
 | **Groups & expert domains** | | | | | |
 | `TAPPS_BRAIN_GROUPS` | CSV group memberships for Hive group propagation. | `dev-pipeline,frontend-guild` | — | if using groups | no |
@@ -68,24 +71,37 @@ TAPPS_BRAIN_HIVE_DSN="postgres:///tapps_hive"
 | Medium team (10–50 agents) | 4 | 50 | Tune against `pg_stat_activity` |
 | Large multi-host cluster | 5 | 100 | Consider PgBouncer in transaction mode |
 
-Pool saturation is exposed in the health/readiness JSON (`hive.pool_saturation`,
-`0.0` – `1.0`). Alert when sustained saturation exceeds `0.8`.
+Pool saturation is exposed in the health/readiness JSON (`store.pool_saturation` for the
+private-memory pool, `hive.pool_saturation` for the Hive pool; both `0.0` – `1.0`).
+Alert when sustained saturation exceeds `0.8`.
 
 ## Health JSON fields (v3)
 
 The `/ready` endpoint and `tapps-brain health` CLI command return a JSON report.
-New fields added in **v3 (EPIC-059.7)**:
+New fields added in **v3 (EPIC-059.7 / STORY-066.7)**:
 
 | JSON path | Type | Description |
 |---|---|---|
-| `hive.pool_saturation` | `float \| null` | Fraction of `POOL_MAX` currently in use |
+| `store.pool_saturation` | `float \| null` | Fraction of private-backend `POOL_MAX` currently in use (0.0–1.0). `null` for in-memory backends. |
+| `store.pool_idle` | `int \| null` | Idle connections available in the private-backend pool. `null` for in-memory backends. |
+| `store.last_migration_version` | `int \| null` | Highest applied private-memory schema migration version. `null` when `TAPPS_BRAIN_DATABASE_URL` is unset. |
+| `hive.pool_saturation` | `float \| null` | Fraction of Hive `POOL_MAX` currently in use |
 | `hive.migration_version` | `int \| null` | Highest applied Hive schema migration version |
+
+Alert when **sustained** `pool_saturation` exceeds `0.8` (either `store` or `hive`).
 
 Example:
 
 ```json
 {
   "status": "ok",
+  "store": {
+    "status": "ok",
+    "entries": 512,
+    "pool_saturation": 0.1,
+    "pool_idle": 9,
+    "last_migration_version": 5
+  },
   "hive": {
     "status": "ok",
     "connected": true,

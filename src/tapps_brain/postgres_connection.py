@@ -25,13 +25,18 @@ class PostgresConnectionManager:
     ----------
     dsn:
         PostgreSQL connection string (``postgres://user:pass@host/db``).
+        Must begin with ``postgres://`` or ``postgresql://`` (ADR-007);
+        a ``ValueError`` is raised at construction time if the scheme is wrong.
     min_size:
-        Minimum pool connections.  Falls back to ``TAPPS_BRAIN_HIVE_POOL_MIN`` env var, then ``2``.
+        Minimum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MIN``
+        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MIN``) env var, then ``2``.
     max_size:
-        Maximum pool connections.  Falls back to ``TAPPS_BRAIN_HIVE_POOL_MAX`` env var, then ``10``.
+        Maximum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MAX``
+        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MAX``) env var, then ``10``.
     connect_timeout:
         Seconds to wait when acquiring a connection.  Falls back to
-        ``TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT`` env var, then ``5``.
+        ``TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS``
+        (or legacy ``TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT``) env var, then ``5``.
     idle_timeout:
         Seconds before an idle connection is closed and evicted from the pool.
         Falls back to ``TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT`` env var, then ``300`` (5 min).
@@ -47,14 +52,42 @@ class PostgresConnectionManager:
         connect_timeout: float | None = None,
         idle_timeout: float | None = None,
     ) -> None:
+        # Validate DSN scheme at construction time (ADR-007 — Postgres-only).
+        if not dsn or not dsn.startswith(("postgres://", "postgresql://")):
+            scheme = dsn.split("://")[0] if "://" in dsn else "(no scheme)"
+            raise ValueError(
+                f"Invalid PostgreSQL DSN: must begin with 'postgres://' or 'postgresql://' "
+                f"(ADR-007 — Postgres-only). Got scheme '{scheme}'. "
+                f"Raw DSN is not logged to protect secrets."
+            )
         self._dsn = dsn
-        self._min_size = min_size or int(os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2"))
-        self._max_size = max_size or int(os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10"))
+        # New canonical env vars (TAPPS_BRAIN_PG_POOL_*) take precedence;
+        # legacy TAPPS_BRAIN_HIVE_* names remain for backward compatibility.
+        self._min_size = min_size or int(
+            os.environ.get("TAPPS_BRAIN_PG_POOL_MIN")
+            or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2")
+        )
+        self._max_size = max_size or int(
+            os.environ.get("TAPPS_BRAIN_PG_POOL_MAX")
+            or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10")
+        )
         self._connect_timeout = connect_timeout or float(
-            os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
+            os.environ.get("TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS")
+            or os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
         )
         _idle_env = float(os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300"))
         self._idle_timeout = idle_timeout if idle_timeout is not None else _idle_env
+        # Validate pool size constraints.
+        if self._max_size < 1:
+            raise ValueError(
+                f"Pool max_size must be >= 1 (TAPPS_BRAIN_PG_POOL_MAX). "
+                f"Got {self._max_size}."
+            )
+        if self._min_size > self._max_size:
+            raise ValueError(
+                f"Pool min_size ({self._min_size}) must be <= max_size ({self._max_size}). "
+                f"Check TAPPS_BRAIN_PG_POOL_MIN / TAPPS_BRAIN_PG_POOL_MAX."
+            )
         self._pool: Any = None
 
     # -- Pool lifecycle --------------------------------------------------------

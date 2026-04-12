@@ -61,6 +61,28 @@ class StoreHealth(BaseModel):
         default=None,
         description="Profile seed recipe label when ``MemoryProfile.seeding.seed_version`` is set.",
     )
+    pool_saturation: float | None = Field(
+        default=None,
+        description=(
+            "Fraction of private-backend pool max_size currently in use (0.0-1.0). "
+            "None when the backend has no pool (e.g. InMemoryPrivateBackend in tests) "
+            "or when pool stats are unavailable."
+        ),
+    )
+    pool_idle: int | None = Field(
+        default=None,
+        description=(
+            "Number of idle connections available in the private-backend pool. "
+            "None when the backend has no pool."
+        ),
+    )
+    last_migration_version: int | None = Field(
+        default=None,
+        description=(
+            "Highest applied private-memory schema migration version. "
+            "None when the DSN is unavailable or the version table is absent."
+        ),
+    )
 
 
 class HiveHealth(BaseModel):
@@ -131,7 +153,7 @@ class HealthReport(BaseModel):
 
 
 def retrieval_health_slice(store: object) -> tuple[str, str]:
-    """Public alias for dashboards/visual export: BM25 vs hybrid vs pgvector HNSW (no model load)."""
+    """Public alias for dashboards/visual export: BM25 vs hybrid vs pgvector HNSW (no model load)."""  # noqa: E501
     return _retrieval_health_from_store(store)
 
 
@@ -225,6 +247,30 @@ def run_health_check(  # noqa: PLR0915
             # Size on disk is no longer reported under the Postgres backend —
             # the database lives in shared infrastructure (ADR-007).
             store_health.size_bytes = 0
+
+            # Pool stats from private backend's connection manager (Postgres only).
+            _priv_backend = getattr(ms, "_persistence", None)
+            _priv_cm = getattr(_priv_backend, "_cm", None)
+            if _priv_cm is not None and hasattr(_priv_cm, "get_pool_stats"):
+                try:
+                    _ps = _priv_cm.get_pool_stats()
+                    store_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
+                    store_health.pool_idle = int(_ps.get("pool_available", 0))
+                except Exception:
+                    pass
+
+            # Last applied private-memory migration version.
+            import os as _os
+
+            _db_url = _os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+            if _db_url:
+                try:
+                    from tapps_brain.postgres_migrations import get_private_schema_status
+
+                    _schema = get_private_schema_status(_db_url)
+                    store_health.last_migration_version = _schema.current_version
+                except Exception:
+                    pass
 
             # Checks
             if report.entry_count == 0:

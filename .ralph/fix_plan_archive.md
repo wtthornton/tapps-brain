@@ -234,7 +234,7 @@
 ### Phase B: Operator readiness (066.6–066.8) <!-- id: 066-phase-b -->
 
 - [x] **066.6** CI workflow with ephemeral Postgres — add `pgvector/pgvector:pg17` service container to `.github/workflows/test.yml`; set `TAPPS_BRAIN_DATABASE_URL`; run migrations before pytest; full unit + integration suite under 15 min; document in `AGENTS.md`. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.6.md -->
-- [ ] **066.7** Connection pool tuning + health JSON pool fields — add `TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS` env vars with defaults; expose `pool_saturation`, `pool_idle`, `last_migration_version` in `/health` JSON; unit tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.7.md -->
+- [x] **066.7** Connection pool tuning + health JSON pool fields — add `TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS` env vars with defaults; expose `pool_saturation`, `pool_idle`, `last_migration_version` in `/health` JSON; unit tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.7.md -->
 - [ ] **066.8** Auto-migrate on startup gate — honour `TAPPS_BRAIN_AUTO_MIGRATE=1`; run `apply_private_migrations` before backend init; raise `MigrationDowngradeError` when DB version > bundled; log applied migrations at INFO; document in `CLAUDE.md` and `AGENTS.md`. [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.8.md -->
 
 ### Phase C: Docs, benchmarks, and test parity (066.9–066.13) <!-- id: 066-phase-c -->
