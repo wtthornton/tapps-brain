@@ -58,7 +58,7 @@ reranker = [
     "flashrank>=0.2.9,<0.3",
 ]
 otel = [
-    "opentelemetry-sdk>=1.20,<2",
+    "opentelemetry-sdk>=1.41.0,<2",
 ]
 visual = [
     "playwright>=1.45,<2",
