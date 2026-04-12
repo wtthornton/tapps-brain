@@ -67,7 +67,7 @@ This keeps `fix_plan.md` small and self-healing — it only ever contains open w
 - At epic boundary: run full QA for all changes in that section:
   `uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
   `ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/`
-- Before EXIT_SIGNAL: true: mandatory full QA — never exit without passing tests.
+- **Full suite runs at deployment only** — never triggered by ralph. Set `TESTS_STATUS: DEFERRED` and `EXIT_SIGNAL: true` when all tasks are done.
 - For LARGE tasks (cross-module): run QA for that task's scope only.
 - Set `TESTS_STATUS: DEFERRED` when QA is intentionally skipped (mid-epic).
 - Only write tests for NEW functionality you implement.

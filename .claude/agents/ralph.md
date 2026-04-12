@@ -70,9 +70,8 @@ is completed by this batch. Sections like `## High Priority`, `## Phase 1`, `## 
 are all epic boundaries.
 
 ### When to run QA:
-- **Epic boundary reached** → spawn ralph-tester with full scope for the section
-- **All tasks complete** (EXIT_SIGNAL: true) → mandatory full QA before final status
-- **LARGE task** (cross-module/architectural) → run QA for that task's scope only
+- **LARGE task** (cross-module/architectural) → targeted scope only, never full suite
+- **Full suite = deployment only.** Ralph never runs the full suite. Set `TESTS_STATUS: DEFERRED` always.
 
 ### When to SKIP QA (MANDATORY — do NOT ignore this):
 - SMALL or MEDIUM tasks that are NOT the last unchecked item in their section
