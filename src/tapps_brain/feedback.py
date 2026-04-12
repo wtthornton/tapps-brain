@@ -350,3 +350,67 @@ class FeedbackStore:
     def close(self) -> None:
         """No-op: the connection manager is owned by the caller."""
         return None
+
+
+# ---------------------------------------------------------------------------
+# In-memory store (unit tests / no-Postgres environments)
+# ---------------------------------------------------------------------------
+
+
+class InMemoryFeedbackStore:
+    """Dict-backed FeedbackStore for unit tests — never used in production.
+
+    Satisfies the same ``record()`` / ``query()`` interface as
+    :class:`FeedbackStore` so that :class:`~tapps_brain.store.MemoryStore`
+    can run feedback operations in test environments that have no Postgres
+    connection.  Thread-safe via :class:`threading.Lock`.
+    """
+
+    def __init__(self, config: FeedbackConfig | None = None) -> None:
+        self._events: list[FeedbackEvent] = []
+        self._lock = threading.Lock()
+        self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
+
+    def record(self, event: FeedbackEvent) -> None:
+        """Persist a feedback event in memory."""
+        if (
+            self._config.strict_event_types
+            and event.event_type not in self._config.known_event_types
+        ):
+            known = sorted(self._config.known_event_types)
+            raise ValueError(
+                f"Unknown event_type {event.event_type!r}. "
+                f"With strict_event_types=True only known types are allowed. "
+                f"Known types: {known}"
+            )
+        with self._lock:
+            self._events.append(event)
+
+    def query(
+        self,
+        *,
+        event_type: str | None = None,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[FeedbackEvent]:
+        """Query feedback events with optional filters (oldest-first)."""
+        with self._lock:
+            results = list(self._events)
+        if event_type is not None:
+            results = [e for e in results if e.event_type == event_type]
+        if entry_key is not None:
+            results = [e for e in results if e.entry_key == entry_key]
+        if session_id is not None:
+            results = [e for e in results if e.session_id == session_id]
+        if since is not None:
+            results = [e for e in results if e.timestamp >= since]
+        if until is not None:
+            results = [e for e in results if e.timestamp <= until]
+        return results[:limit]
+
+    def close(self) -> None:
+        """No-op."""
+        return None

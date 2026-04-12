@@ -63,17 +63,32 @@ class PostgresConnectionManager:
         self._dsn = dsn
         # New canonical env vars (TAPPS_BRAIN_PG_POOL_*) take precedence;
         # legacy TAPPS_BRAIN_HIVE_* names remain for backward compatibility.
-        self._min_size = min_size or int(
-            os.environ.get("TAPPS_BRAIN_PG_POOL_MIN")
-            or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2")
+        # NOTE: Use explicit None-checks rather than truthiness tests so that
+        # caller-supplied 0 (invalid but intentional for validation) is not
+        # silently overridden by the env-var default.
+        self._min_size = (
+            min_size
+            if min_size is not None
+            else int(
+                os.environ.get("TAPPS_BRAIN_PG_POOL_MIN")
+                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2")
+            )
         )
-        self._max_size = max_size or int(
-            os.environ.get("TAPPS_BRAIN_PG_POOL_MAX")
-            or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10")
+        self._max_size = (
+            max_size
+            if max_size is not None
+            else int(
+                os.environ.get("TAPPS_BRAIN_PG_POOL_MAX")
+                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10")
+            )
         )
-        self._connect_timeout = connect_timeout or float(
-            os.environ.get("TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS")
-            or os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
+        self._connect_timeout = (
+            connect_timeout
+            if connect_timeout is not None
+            else float(
+                os.environ.get("TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS")
+                or os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
+            )
         )
         _idle_env = float(os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300"))
         self._idle_timeout = idle_timeout if idle_timeout is not None else _idle_env

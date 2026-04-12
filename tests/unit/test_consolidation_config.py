@@ -107,7 +107,7 @@ def mcp_server(tmp_path: Path):
     pytest.importorskip("mcp")
     from tapps_brain.mcp_server import create_server
 
-    server = create_server(tmp_path, enable_hive=False)
+    server = create_server(tmp_path, enable_hive=False, enable_operator_tools=True)
     yield server
     st = server._tapps_store
     h = getattr(st, "_hive_store", None)

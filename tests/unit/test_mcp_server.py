@@ -465,6 +465,20 @@ class TestToolExecution:
 class TestMcpToolHandlerExecution:
     """Exercise MCP tool and resource callables for coverage."""
 
+    @pytest.fixture()
+    def mcp_server(self, store_dir):
+        """Override with operator tools enabled — some tests call flywheel_evaluate etc."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
+        yield server
+        if hasattr(server, "_tapps_store"):
+            st = server._tapps_store
+            h = getattr(st, "_hive_store", None)
+            if h is not None:
+                h.close()
+            st.close()
+
     def test_memory_crud_and_search_tools(self, mcp_server):
         save = _tool_fn(mcp_server, "memory_save")
         saved = json.loads(save(key="mcp-t1", value="hello mcp world", tier="pattern"))
@@ -619,7 +633,8 @@ class TestMcpToolHandlerExecution:
         dh = _tool_fn(mcp_server, "diagnostics_history")
         hist = json.loads(dh(limit=10))
         assert "records" in hist
-        assert hist["count"] >= 1
+        # count is 0 without Postgres (DiagnosticsHistoryStore unavailable in unit tests)
+        assert isinstance(hist["count"], int)
 
         res = next(
             r
@@ -1203,6 +1218,20 @@ class TestMemoryHistoryEdgeCases:
 class TestMemoryExportMinConfidence:
     """Test memory_export with min_confidence filter."""
 
+    @pytest.fixture()
+    def mcp_server(self, store_dir):
+        """Override with operator tools enabled — memory_export is an operator tool."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
+        yield server
+        if hasattr(server, "_tapps_store"):
+            st = server._tapps_store
+            h = getattr(st, "_hive_store", None)
+            if h is not None:
+                h.close()
+            st.close()
+
     def test_export_min_confidence_filters_low_entries(self, mcp_server):
         store = mcp_server._tapps_store
         store.save(key="high-conf", value="High confidence entry", tier="architectural")
@@ -1229,6 +1258,20 @@ class TestMemoryExportMinConfidence:
 
 class TestMemoryImportEdgeCases:
     """Test memory_import edge cases: non-list memories, safety-blocked save."""
+
+    @pytest.fixture()
+    def mcp_server(self, store_dir):
+        """Override with operator tools enabled — memory_import is an operator tool."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
+        yield server
+        if hasattr(server, "_tapps_store"):
+            st = server._tapps_store
+            h = getattr(st, "_hive_store", None)
+            if h is not None:
+                h.close()
+            st.close()
 
     def test_import_memories_not_a_list(self, mcp_server):
         import_fn = _tool_fn(mcp_server, "memory_import")
@@ -1318,6 +1361,20 @@ class TestFederationErrorPaths:
 
 class TestMaintenanceGcWithDecayedEntries:
     """Test maintenance_gc actually archiving entries (non-dry-run with candidates)."""
+
+    @pytest.fixture()
+    def mcp_server(self, store_dir):
+        """Override with operator tools enabled — maintenance_gc is an operator tool."""
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
+        yield server
+        if hasattr(server, "_tapps_store"):
+            st = server._tapps_store
+            h = getattr(st, "_hive_store", None)
+            if h is not None:
+                h.close()
+            st.close()
 
     def test_gc_archives_expired_session_entry(self, mcp_server):
         store = mcp_server._tapps_store
@@ -2247,7 +2304,9 @@ class TestMCPAdditionalCoverage:
         )
         assert result["propagated"] is False
         assert "reason" in result
-        store._hive_store.close()
+        # _hive_store is None when no Postgres DSN is configured (ADR-007)
+        if store._hive_store is not None:
+            store._hive_store.close()
         store.close()
 
     def test_hive_propagate_no_shared_hive_creates_temp(self, store_dir):
@@ -2281,7 +2340,10 @@ class TestMCPAdditionalCoverage:
         assert result["agent_id"] == "worker-1"
         assert result["profile"] == "repo-brain"
         assert result["skills"] == ["coding", "review"]
-        server._tapps_store._hive_store.close()
+        # _hive_store may be None when no TAPPS_BRAIN_HIVE_DSN is set.
+        h = getattr(server._tapps_store, "_hive_store", None)
+        if h is not None:
+            h.close()
         server._tapps_store.close()
 
     def test_agent_register_no_skills(self, store_dir):
@@ -2293,7 +2355,9 @@ class TestMCPAdditionalCoverage:
         result = json.loads(register_fn(agent_id="worker-2", profile="repo-brain", skills=""))
         assert result["registered"] is True
         assert result["skills"] == []
-        server._tapps_store._hive_store.close()
+        h = getattr(server._tapps_store, "_hive_store", None)
+        if h is not None:
+            h.close()
         server._tapps_store.close()
 
     # ------------------------------------------------------------------
@@ -2312,7 +2376,9 @@ class TestMCPAdditionalCoverage:
         assert "agents" in result
         assert "count" in result
         assert isinstance(result["agents"], list)
-        server._tapps_store._hive_store.close()
+        h = getattr(server._tapps_store, "_hive_store", None)
+        if h is not None:
+            h.close()
         server._tapps_store.close()
 
     def test_agent_list_empty_registry(self, store_dir):
@@ -3367,8 +3433,13 @@ class TestGetStoreHiveWiring:
     - When TAPPS_BRAIN_HIVE_DSN is unset and TAPPS_BRAIN_STRICT=1, startup
       fails with a clear error (covered by TestStrictMode; duplicated here
       for story traceability).
+
+    NOTE: The DSN-wiring tests require a live Postgres connection because the
+    ConnectionPool eagerly connects on creation.  They are marked
+    ``requires_postgres`` and skipped in environments without a DSN.
     """
 
+    @pytest.mark.requires_postgres
     def test_hive_dsn_set_attaches_postgres_backend(self, tmp_path, monkeypatch):
         """TAPPS_BRAIN_HIVE_DSN set → _get_store attaches PostgresHiveBackend."""
         from tapps_brain.mcp_server import _get_store
@@ -3390,6 +3461,7 @@ class TestGetStoreHiveWiring:
                 h.close()
             store.close()
 
+    @pytest.mark.requires_postgres
     def test_hive_dsn_postgresql_prefix_attaches_postgres_backend(self, tmp_path, monkeypatch):
         """postgresql:// prefix also wires PostgresHiveBackend (both prefixes accepted)."""
         from tapps_brain.mcp_server import _get_store

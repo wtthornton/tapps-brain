@@ -289,3 +289,4 @@
 | MemoryStore modularization | Long-term refactor | Backlog; no epic number |
 - [x] **066.12** Engineering docs drift sweep — zero stale SQLite refs [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.12.md -->
 - [x] **066.13** Postgres integration tests replacing deleted SQLite-coupled tests [LARGE] <!-- story: docs/planning/epics/stories/STORY-066.13.md -->
+- [x] **066.14** Final test failure sweep — 90 to zero, tag 3.4.0 [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.14.md -->

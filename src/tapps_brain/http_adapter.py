@@ -275,7 +275,25 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
             )
         return True, version, f"ready (migration_version={version})"
     except Exception as exc:
-        return False, None, f"db_error: {exc}"
+        # Redact DSN components (hostname, port, credentials) from the error
+        # message so that sensitive connection details are not exposed in HTTP
+        # response bodies.  See STORY-060.3.
+        err_str = str(exc)
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(dsn)
+            if parsed.hostname:
+                err_str = err_str.replace(parsed.hostname, "[host]")
+            if parsed.port:
+                err_str = err_str.replace(str(parsed.port), "[port]")
+            if parsed.username:
+                err_str = err_str.replace(parsed.username, "[user]")
+            if parsed.password:
+                err_str = err_str.replace(parsed.password, "[pass]")
+        except Exception:  # noqa: BLE001
+            err_str = "database unreachable"
+        return False, None, f"db_error: {err_str}"
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from tapps_brain._protocols import HiveBackend, PrivateBackend
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
-    from tapps_brain.feedback import FeedbackEvent, FeedbackStore
+    from tapps_brain.feedback import FeedbackEvent, FeedbackStore, InMemoryFeedbackStore
 
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.metrics import (
@@ -314,7 +314,7 @@ class MemoryStore:
                 self._relations.setdefault(src_key, []).append(rel)
 
         # EPIC-029: Lazy-initialized feedback store.
-        self._feedback_store_instance: FeedbackStore | None = None
+        self._feedback_store_instance: FeedbackStore | InMemoryFeedbackStore | None = None
 
         # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
         # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
@@ -2887,44 +2887,41 @@ class MemoryStore:
     # Feedback API (EPIC-029)
     # ------------------------------------------------------------------
 
-    def _get_feedback_store(self) -> FeedbackStore:
-        """Return the lazily-initialized :class:`FeedbackStore`.
+    def _get_feedback_store(self) -> FeedbackStore | InMemoryFeedbackStore:
+        """Return the lazily-initialized feedback store.
 
-        Reuses the ``PostgresPrivateBackend``'s connection manager so feedback
-        events live in the same physical database as the memories they describe
-        (table: ``feedback_events``, migration 003).  ``FeedbackConfig`` is
-        resolved from the active profile when available.
-
-        Raises:
-            RuntimeError: When the active backend has no Postgres connection
-                manager (e.g. the unit-test ``InMemoryPrivateBackend``) and a
-                feedback operation is attempted.  Tests that exercise the
-                feedback path must inject a real ``PostgresPrivateBackend``.
+        Returns a :class:`~tapps_brain.feedback.FeedbackStore` when the active
+        backend is a :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`
+        with a connection manager.  Falls back to an
+        :class:`~tapps_brain.feedback.InMemoryFeedbackStore` when the backend
+        has no Postgres connection (e.g. the unit-test ``InMemoryPrivateBackend``).
+        The in-memory store persists events for the lifetime of the
+        :class:`MemoryStore` instance only — it is not durable.
         """
         if self._feedback_store_instance is None:
-            from tapps_brain.feedback import FeedbackConfig, FeedbackStore
+            from tapps_brain.feedback import FeedbackConfig, FeedbackStore, InMemoryFeedbackStore
 
             cm = getattr(self._persistence, "_cm", None)
             project_id = getattr(self._persistence, "_project_id", None)
             agent_id = getattr(self._persistence, "_agent_id", None)
+
             if cm is None or project_id is None or agent_id is None:
-                msg = (
-                    "FeedbackStore requires a PostgresPrivateBackend with a "
-                    "PostgresConnectionManager, project_id, and agent_id. "
-                    "v3 is Postgres-only (ADR-007)."
+                # No Postgres connection — fall back to in-memory store.
+                # Events are kept in-process and lost on close().
+                config: FeedbackConfig | None = None
+                if self._profile is not None:
+                    config = getattr(self._profile, "feedback", None)
+                self._feedback_store_instance = InMemoryFeedbackStore(config=config)
+            else:
+                config = None
+                if self._profile is not None:
+                    config = getattr(self._profile, "feedback", None)
+                self._feedback_store_instance = FeedbackStore(
+                    cm,
+                    project_id=project_id,
+                    agent_id=agent_id,
+                    config=config,
                 )
-                raise RuntimeError(msg)
-
-            config: FeedbackConfig | None = None
-            if self._profile is not None:
-                config = getattr(self._profile, "feedback", None)
-
-            self._feedback_store_instance = FeedbackStore(
-                cm,
-                project_id=project_id,
-                agent_id=agent_id,
-                config=config,
-            )
         return self._feedback_store_instance
 
     def _propagate_feedback_to_hive(self, event: FeedbackEvent, session_id: str | None) -> None:

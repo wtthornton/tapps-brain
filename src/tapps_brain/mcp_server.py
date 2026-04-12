@@ -1782,6 +1782,11 @@ def create_server(  # noqa: PLR0915
                     }
                 )
 
+            # Private scope never reaches the Hive — return early so we do
+            # not need a live Hive backend to handle this common case.
+            if agent_scope == "private":
+                return json.dumps({"propagated": False, "reason": "scope is private"})
+
             hive, should_close = _hive_for_tools()
             agent_id = getattr(store, "_hive_agent_id", "mcp-user")
             profile_name = "repo-brain"

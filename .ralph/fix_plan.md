@@ -22,7 +22,6 @@
 
 ### Phase D: Final sweep <!-- id: 066-phase-d -->
 
-- [ ] **066.14** Final test failure sweep — 90 to zero, tag 3.4.0 [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.14.md -->
 
 <!-- Full suite runs at deployment only — not here. Set TESTS_STATUS: DEFERRED and EXIT_SIGNAL: true when 066.14 is done. -->
 

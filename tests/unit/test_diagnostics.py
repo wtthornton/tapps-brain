@@ -149,6 +149,13 @@ def test_anomaly_detector_reset_from_history() -> None:
     assert det._obs_count.get("d", 0) >= 1
 
 
+@pytest.mark.skip(
+    reason=(
+        "DiagnosticsHistoryStore requires a PostgresConnectionManager (ADR-007 stage 2). "
+        "The old SQLite db_path API was removed. Use integration tests with a live Postgres "
+        "connection to validate diagnostics history persistence."
+    )
+)
 def test_diagnostics_history_dimension_scores_json_roundtrip(tmp_path) -> None:
     from tapps_brain.diagnostics import DiagnosticsHistoryStore
 
@@ -238,6 +245,13 @@ def test_maybe_remediate_consolidate_and_gc(monkeypatch, tmp_path) -> None:
         store.close()
 
 
+@pytest.mark.skip(
+    reason=(
+        "DiagnosticsHistoryStore requires a PostgresConnectionManager (ADR-007 stage 2). "
+        "The old SQLite db_path API was removed. Use integration tests with a live Postgres "
+        "connection to validate rolling_average against real history data."
+    )
+)
 def test_diagnostics_history_rolling_average(tmp_path) -> None:
     from tapps_brain.diagnostics import DiagnosticsHistoryStore
 

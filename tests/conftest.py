@@ -80,6 +80,13 @@ def _cached_embedding_model():
 # stand-in that satisfies the ``PrivateBackend`` protocol so the unit suite can
 # run without spinning up Docker Postgres.  Integration tests that exercise
 # real Postgres still set ``TAPPS_TEST_POSTGRES_DSN`` and bypass this fixture.
+#
+# SHARED REGISTRY: To support CLI tests that create multiple MemoryStore
+# instances against the same project directory (e.g. setup fixture → CLI
+# command), backends are shared across instances with the same project root.
+# The registry is cleared between tests by the autouse fixture below.
+
+_inmemory_backend_registry: dict[str, "InMemoryPrivateBackend"] = {}
 
 
 class InMemoryPrivateBackend:
@@ -135,20 +142,34 @@ class InMemoryPrivateBackend:
         with self._lock:
             return self._entries.pop(key, None) is not None
 
-    def search(self, query: str, **_kwargs: Any) -> list[Any]:
+    def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Word-level FTS approximation: return entries where ANY query word appears
         in the value or key.  This mimics plainto_tsquery token matching so unit
-        tests that use multi-word queries work correctly without a real tsvector."""
+        tests that use multi-word queries work correctly without a real tsvector.
+
+        Supports ``since`` and ``until`` ISO-8601 timestamp filters so that
+        temporal search tests work without a real Postgres backend.
+        """
+        since: str | None = kwargs.get("since")
+        until: str | None = kwargs.get("until")
+
         if not query.strip():
             return []
         q_words = set(query.lower().split())
         with self._lock:
-            return [
+            results = [
                 e
                 for e in self._entries.values()
                 if q_words & set(e.value.lower().split())
                 or q_words & set(e.key.lower().replace("-", " ").split())
             ]
+
+        # Apply temporal filters using the entry's created_at field.
+        if since is not None:
+            results = [e for e in results if getattr(e, "created_at", "") >= since]
+        if until is not None:
+            results = [e for e in results if getattr(e, "created_at", "") <= until]
+        return results
 
     def list_relations(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -205,10 +226,16 @@ class InMemoryPrivateBackend:
     ) -> None:
         """Write a JSONL audit record to the temp audit file (unit-test only).
 
-        Each line contains at least ``action`` and ``key``; ``extra`` fields are
-        merged into the top level so callers can read them as ``rec["field"]``.
+        Each line contains at least ``action``, ``key``, and ``timestamp``;
+        ``extra`` fields are merged into the top level.
         """
-        record: dict[str, Any] = {"action": action, "key": key}
+        from datetime import UTC, datetime
+
+        record: dict[str, Any] = {
+            "action": action,
+            "key": key,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
         if extra:
             record.update(extra)
         with self._lock:
@@ -252,8 +279,76 @@ class InMemoryPrivateBackend:
         with self._lock:
             return self._gc_archive_bytes
 
+    def query_audit(
+        self,
+        *,
+        key: str | None = None,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Read and filter audit records from the temp JSONL file (unit-test only)."""
+        import json as _json
+
+        results: list[dict[str, Any]] = []
+        try:
+            lines = self._audit_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec: dict[str, Any] = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+
+            # Map 'action' (written by append_audit) to 'event_type'.
+            ev_type = str(rec.get("event_type") or rec.get("action", ""))
+            rec_key = str(rec.get("key", ""))
+            ts = str(rec.get("timestamp", ""))
+            details = {
+                k: v
+                for k, v in rec.items()
+                if k not in ("action", "key", "timestamp", "event_type")
+            }
+
+            if key is not None and rec_key != key:
+                continue
+            if event_type is not None and ev_type != event_type:
+                continue
+            if since is not None and ts < since:
+                continue
+            if until is not None and ts > until:
+                continue
+
+            results.append(
+                {"timestamp": ts, "event_type": ev_type, "key": rec_key, "details": details}
+            )
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def flywheel_meta_set(self, key: str, value: str) -> None:
+        """Store a flywheel metadata value by key (unit-test only)."""
+        with self._lock:
+            if not hasattr(self, "_flywheel_meta"):
+                self._flywheel_meta: dict[str, str] = {}
+            self._flywheel_meta[key] = value
+
+    def flywheel_meta_get(self, key: str) -> str | None:
+        """Retrieve a flywheel metadata value by key (unit-test only)."""
+        with self._lock:
+            return getattr(self, "_flywheel_meta", {}).get(key)
+
     def close(self) -> None:
-        shutil.rmtree(self._tmp_audit_dir, ignore_errors=True)
+        if self._tmp_audit_dir is not None:
+            shutil.rmtree(self._tmp_audit_dir, ignore_errors=True)
+            self._tmp_audit_dir = None  # mark closed — makes close() idempotent
 
 
 @pytest.fixture(autouse=True)
@@ -264,6 +359,11 @@ def _inject_in_memory_private_backend(monkeypatch: pytest.MonkeyPatch) -> Iterat
     Production code raises ``ValueError`` in that case (ADR-007).  This fixture
     only intercepts construction during the unit-test session and does **not**
     touch tests that explicitly pass a backend or set ``TAPPS_BRAIN_DATABASE_URL``.
+
+    Backends are shared per-project-root via ``_inmemory_backend_registry`` so
+    that CLI tests which create multiple MemoryStore instances against the same
+    directory (setup fixture → CLI command) see consistent data.  The registry
+    is cleared at the end of each test to maintain isolation.
     """
     import os
 
@@ -281,11 +381,26 @@ def _inject_in_memory_private_backend(monkeypatch: pytest.MonkeyPatch) -> Iterat
             and not os.environ.get("TAPPS_BRAIN_HIVE_DSN")
             and not os.environ.get("TAPPS_BRAIN_TEST_NO_INMEMORY_BACKEND")
         ):
-            kwargs["private_backend"] = InMemoryPrivateBackend()
+            # Derive the project root to use as a registry key.
+            # MemoryStore's first positional arg is project_root.
+            project_root = args[0] if args else kwargs.get("project_root")
+            reg_key = str(project_root) if project_root is not None else "__default__"
+            if reg_key not in _inmemory_backend_registry:
+                _inmemory_backend_registry[reg_key] = InMemoryPrivateBackend()
+            kwargs["private_backend"] = _inmemory_backend_registry[reg_key]
         _original_init(self, *args, **kwargs)
 
     monkeypatch.setattr(_store_mod.MemoryStore, "__init__", _patched_init)
     yield
+    # Close then clear all registry backends to clean up temp audit directories.
+    # Calling close() before clear() ensures temp dirs are removed even when
+    # tests don't explicitly close their MemoryStore (e.g. audit_project_dir).
+    for _backend in list(_inmemory_backend_registry.values()):
+        try:
+            _backend.close()
+        except Exception:  # noqa: BLE001
+            pass
+    _inmemory_backend_registry.clear()
 
 
 @pytest.fixture()
