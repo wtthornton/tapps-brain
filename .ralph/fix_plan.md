@@ -2,7 +2,7 @@
 
 **Scope:** EPIC-066 (fix 90 failing tests, Postgres hardening) → EPIC-065 (live dashboard).
 **Task sizing:** Each `- [ ]` is ONE Ralph loop unless marked `[BATCH-N: SMALL]`.
-**QA strategy:** Run full QA **only** at `🔒 QA GATE` lines. Everything else → `TESTS_STATUS: DEFERRED`.
+**QA strategy:** ALL testing deferred to 066.14 (final sweep). Do NOT run full test suite at phase boundaries — set `TESTS_STATUS: DEFERRED` for everything until 066.14.
 
 ---
 
@@ -13,7 +13,6 @@
 ### Phase A: Failing test fixes <!-- id: 066-phase-a -->
 
 - [x] **066.1** Consolidation merge audit emission [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.1.md -->
-🔒 **QA GATE — Phase A.** `uv run pytest tests/ -v --tb=short -m "not benchmark and not requires_postgres"` — target: 0 failures.
 
 ### Phase B: Operator readiness <!-- id: 066-phase-b -->
 
@@ -57,4 +56,4 @@
 - [ ] **065.6** Memory velocity panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
 - [ ] **065.7** Retrieval pipeline live metrics panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.7.md -->
 
-🔒 **QA GATE — EPIC-065 complete.** `uv run pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-fail-under=95 && ruff check src/ tests/ && mypy --strict src/tapps_brain/`
+<!-- QA deferred — all testing owned by EPIC-066 story 066.14 -->
