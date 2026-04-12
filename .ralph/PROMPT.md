@@ -59,15 +59,19 @@ After completing a task, you MUST do ALL of the following in the same commit as 
 This keeps `fix_plan.md` small and self-healing — it only ever contains open work. Do NOT leave `[x]` lines in `fix_plan.md`.
 
 ## Testing Guidelines (Epic-Boundary QA)
+
+> **HARD RULE — NO EXCEPTIONS:** Do NOT run `pytest`, `uv run pytest`, `.venv/bin/pytest`, or any test/lint command mid-epic. Do NOT spawn sub-agents to run tests mid-epic. Do NOT use `sleep` to wait for test output. Violating this rule wastes 10-30 minutes per loop and is the #1 cause of slow runs. Set `TESTS_STATUS: DEFERRED` and STOP immediately after committing.
+
 - **Do NOT run tests after every task.** Defer QA to epic boundaries.
 - An **epic boundary** = completing the last `- [ ]` task under a `##` section in fix_plan.md.
 - At epic boundary: run full QA for all changes in that section:
-  `pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
+  `uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
   `ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/`
 - Before EXIT_SIGNAL: true: mandatory full QA — never exit without passing tests.
 - For LARGE tasks (cross-module): run QA for that task's scope only.
 - Set `TESTS_STATUS: DEFERRED` when QA is intentionally skipped (mid-epic).
 - Only write tests for NEW functionality you implement.
+- **Never spawn more than 1 sub-agent for testing.** If ralph-tester fails, run tests yourself once via Bash — do not retry with additional agents.
 
 ## Execution Contract (Per Loop)
 1. Restate the selected fix_plan task in 1-2 lines.

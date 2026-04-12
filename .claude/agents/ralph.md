@@ -108,11 +108,13 @@ You have access to specialized sub-agents. Use them instead of doing everything 
 ### ralph-explorer (fast codebase search)
 - **When:** Before the FIRST task in a new section, or when switching modules. Skip for consecutive SMALL tasks in the same module — the codebase context hasn't changed.
 - **Model:** Haiku (fast, cheap)
+- **Scope:** `src/`, `tests/`, `docs/` only. **Never probe `.ralph/`, `.claude/`, or paths outside the workspace.** If a path is uncertain, skip it — do not guess.
 - **Example:** `Agent(ralph-explorer, "Find all files related to rate limiting and their tests")`
 - **Benefit:** Keeps search output out of your main context.
 
 ### ralph-tester (isolated test runner)
 - **When:** ONLY at epic boundaries or before EXIT_SIGNAL: true. NOT after every task.
+- **HARD LIMIT: Spawn ralph-tester at most ONCE per epic boundary.** If it fails, run tests yourself with a single `uv run pytest` Bash call — do NOT spawn more agents. Never use `sleep` to poll test output.
 - **Model:** Sonnet (worktree-isolated)
 - **Example:** `Agent(ralph-tester, "Run bats tests/unit/test_circuit_breaker.bats and check for lint issues")`
 - **Benefit:** Tests run in separate worktree — no file conflicts.

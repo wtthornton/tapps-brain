@@ -14,7 +14,7 @@ CLAUDE_CODE_CMD="claude"
 
 # Loop settings
 MAX_CALLS_PER_HOUR=100
-CLAUDE_TIMEOUT_MINUTES=20
+CLAUDE_TIMEOUT_MINUTES=35
 CLAUDE_OUTPUT_FORMAT="json"
 
 # Tool permissions
@@ -52,7 +52,7 @@ LOG_MAX_OUTPUT_FILES=20
 DRY_RUN=false
 
 # Auto-update Claude CLI at startup
-CLAUDE_AUTO_UPDATE=true
+CLAUDE_AUTO_UPDATE=false  # set false — npm global update fails on this machine (see bottom of file)
 
 # Agent mode (v1.0+): use --agent ralph instead of -p with --allowedTools
 # Requires CLI v2.1+. Falls back to legacy -p mode if unsupported.
@@ -128,16 +128,16 @@ RALPH_MAX_EXPLORER_RESOLVE=5
 
 # Enable progressive context loading to reduce token usage per iteration
 # When enabled, only the current epic and next N unchecked items are injected
-# RALPH_PROGRESSIVE_CONTEXT=false
+RALPH_PROGRESSIVE_CONTEXT=true
 
 # Maximum unchecked plan items to include in progressive context
-# RALPH_MAX_PLAN_ITEMS=10
+RALPH_MAX_PLAN_ITEMS=10
 # =============================================================================
 # COST OPTIMIZATION (Phase 14)
 # =============================================================================
 
 # Prompt cache optimization — structure prompts for maximum cache hits
-# RALPH_PROMPT_CACHE_ENABLED=false
+RALPH_PROMPT_CACHE_ENABLED=true
 
 # Cost budget in USD (0 = no budget limit)
 # RALPH_COST_BUDGET_USD=0
