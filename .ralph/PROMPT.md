@@ -50,7 +50,13 @@ You have access to **tapps-mcp** and **docs-mcp** via `.claude/mcp.json`. See th
 - .ralphrc (project configuration)
 
 ## Fix Plan Updates (REQUIRED)
-After completing a task from `fix_plan.md`, you MUST update that file to check off the completed item(s) — change `- [ ]` to `- [x]`. This is the ONE exception to the `.ralph/` protection rule. Do this in the same commit as your implementation work, so the plan always reflects reality.
+After completing a task, you MUST do ALL of the following in the same commit as your implementation:
+
+1. **Delete** the completed `- [ ]` line from `.ralph/fix_plan.md` entirely.
+2. **Append** that same line (changed to `- [x]`) to `.ralph/fix_plan_archive.md` under a matching `## EPIC-NNN` heading (create the heading if it doesn't exist).
+3. Both `.ralph/fix_plan.md` and `.ralph/fix_plan_archive.md` are exceptions to the `.ralph/` protection rule.
+
+This keeps `fix_plan.md` small and self-healing — it only ever contains open work. Do NOT leave `[x]` lines in `fix_plan.md`.
 
 ## Testing Guidelines (Epic-Boundary QA)
 - **Do NOT run tests after every task.** Defer QA to epic boundaries.
