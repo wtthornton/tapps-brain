@@ -48,18 +48,25 @@ jobs:
         os: [ubuntu-latest]
         python-version: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       postgres:
         image: pgvector/pgvector:pg17
         ports:
           - 5432:5432
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: tapps_test
+          POSTGRES_USER: tapps
+          POSTGRES_PASSWORD: tapps
+          POSTGRES_DB: tapps_dev
+        options: >-
+          --health-cmd "pg_isready -U tapps -d tapps_dev"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 10s
     env:
-      TAPPS_TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/tapps_test
+      TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_dev
+      TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_dev
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -67,6 +74,8 @@ jobs:
           version: "latest"
           enable-cache: true
       - run: uv sync --group dev --python ${{ matrix.python-version }}
+      - name: Apply schema migrations
+        run: uv run python scripts/apply_all_migrations.py
       - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
   # Weekly cross-platform sanity check (macOS + Windows).

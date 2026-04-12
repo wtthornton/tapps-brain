@@ -16,7 +16,6 @@
 
 ### Phase B: Operator readiness <!-- id: 066-phase-b -->
 
-- [ ] **066.6** CI workflow with ephemeral Postgres service container [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.6.md -->
 - [ ] **066.7** Connection pool tuning + health JSON pool fields [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.7.md -->
 - [ ] **066.8** Auto-migrate on startup gate (`TAPPS_BRAIN_AUTO_MIGRATE=1`) [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.8.md -->
 

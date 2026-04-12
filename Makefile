@@ -17,7 +17,7 @@ MYPY    := uv run mypy
 # DSN used by brain-test and brain-psql
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
 
-.PHONY: help brain-up brain-down brain-restart brain-test brain-test-fast \
+.PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql
 
 help:  ## Show available targets
@@ -44,11 +44,15 @@ brain-restart:  ## Restart the Postgres container (keeps volumes)
 brain-psql:  ## Open a psql shell in the running tapps-db container
 	$(COMPOSE) exec tapps-db psql -U tapps -d tapps_dev
 
+brain-migrate:  ## Apply all pending schema migrations (private, hive, federation)
+	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+	  uv run python scripts/apply_all_migrations.py
+
 # ---------------------------------------------------------------------------
 # Testing
 # ---------------------------------------------------------------------------
 
-brain-test:  ## Full test suite with coverage (requires brain-up or external DSN)
+brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate, or external DSN)
 	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
 	  $(PYTEST) tests/ -v --tb=short \
 	    -m "not benchmark" \
@@ -71,7 +75,8 @@ brain-lint:  ## Ruff lint + format check
 brain-type:  ## Strict mypy type check
 	$(MYPY) --strict src/tapps_brain/
 
-brain-qa:  ## Full QA: lint + type + tests (mirrors CI)
+brain-qa:  ## Full QA: lint + type + migrations + tests (mirrors CI)
 	$(MAKE) brain-lint
 	$(MAKE) brain-type
+	$(MAKE) brain-migrate
 	$(MAKE) brain-test
