@@ -94,8 +94,42 @@ Ralph reads `.ralph/fix_plan.md` and `.ralph/PROMPT.md`. Logs: `.ralph/logs/`. F
 
 ## v3 Load Smoke (concurrent-agent benchmark)
 
-Validates that N concurrent agents can write and recall memories without interference against one
-Postgres. Results are **informational only** (pre-SLO) — no hard latency budget is enforced in v3.0.
+### benchmark-postgres (canonical — STORY-066.9)
+
+Pytest-based load smoke: **50 concurrent agents × 60 s** against one Postgres, recording p95
+latency for `save`, `recall`, and `hive_search`.  Results are **informational only** (pre-SLO).
+Requires `TAPPS_BRAIN_DATABASE_URL` and a running Postgres with schemas applied (`make brain-migrate`).
+
+```bash
+# Quick start: Makefile target (sets DSN from .env if present)
+make benchmark-postgres
+
+# Or run directly:
+TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@localhost:5433/tapps_brain \
+    pytest tests/benchmarks/load_smoke_postgres.py -v -s
+
+# Shorter run for quick local validation (10 seconds instead of 60):
+TAPPS_SMOKE_DURATION=10 \
+TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@localhost:5433/tapps_brain \
+    pytest tests/benchmarks/load_smoke_postgres.py -v -s
+```
+
+Override env vars:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TAPPS_SMOKE_AGENTS` | `50` | Number of concurrent agent threads |
+| `TAPPS_SMOKE_DURATION` | `60` | Wall-clock seconds each agent runs |
+| `TAPPS_BRAIN_DATABASE_URL` | *(required)* | Postgres DSN |
+
+The test is marked `requires_postgres` and `benchmark` — it is excluded from the fast unit
+suite (`-m "not benchmark"`) and auto-skipped when `TAPPS_BRAIN_DATABASE_URL` is unset.
+
+Full parity doc and latency budget: `docs/engineering/v3-behavioral-parity.md`.
+
+### load_smoke.py (ad-hoc / script runner)
+
+Flexible N-agent × M-ops run (not time-bounded). Useful for quick exploratory tests.
 
 ```bash
 # Requires a running Postgres with private-memory schema applied
@@ -112,7 +146,6 @@ python scripts/load_smoke.py --no-postgres
 ```
 
 Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wall time).
-Full parity doc: `docs/engineering/v3-behavioral-parity.md`.
 ## Essential tools (always-on workflow)
 
 | Tool | When to use |

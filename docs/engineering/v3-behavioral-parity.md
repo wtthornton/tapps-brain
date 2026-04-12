@@ -82,18 +82,92 @@ Profile-tunable `hybrid_fusion` parameters (`pool_size`, `rrf_k`) are still supp
 **Decision rationale:** One engine → one backup model, one security surface, and 2026-realistic
 ops for agent fleets. See [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md).
 
-### Partially Deferred in v3.0
+### Audit Emission Timing
 
-The following v2 features use SQLite-backed helpers that are **not yet ported** to Postgres in v3.0.
-They degrade gracefully (no crash) but do not persist to Postgres:
+| Aspect | v2 | v3 |
+|--------|----|----|
+| Audit backend | JSONL file at `{store_dir}/memory/memory_log.jsonl` | Postgres `audit_log` table (migration 005) |
+| Write path | Synchronous `append()` to JSONL on every mutation | Synchronous `INSERT` into `audit_log` (same thread, same transaction window) |
+| v3.0 transitional | v3.0 used `/dev/null` sentinel — audit was a no-op | v3.1+ uses real Postgres `INSERT` via `PostgresPrivateBackend.append_audit` |
+| Read path | Line-by-line JSONL scan via `AuditReader` | Indexed query against `audit_log` (indexed on `(project_id, agent_id, timestamp DESC)`) |
+| Cross-agent visibility | Single file → inherently single-agent | Row-scoped by `(project_id, agent_id)` — agents cannot read each other's audit rows |
 
-| Feature | v2 | v3.0 status |
-|---------|----|-------------|
-| `DiagnosticsHistoryStore` | SQLite JSONL | No-op (`append_audit` is a no-op via `db_path=/dev/null`) |
-| `FeedbackStore` | SQLite | Not supported by `PostgresPrivateBackend`; planned in EPIC-059.7 / EPIC-061 |
-| JSONL audit log | `memory_log.jsonl` | No-op via `/dev/null` sentinel; planned replacement in EPIC-061 |
+Code references: `src/tapps_brain/migrations/private/005_audit_log.sql`,
+`src/tapps_brain/postgres_private.py` (`append_audit`).
 
-Agents that **read** diagnostics or feedback history will receive empty results rather than an error.
+### valid_at / invalid_at Semantics
+
+| Aspect | v2 | v3 |
+|--------|----|----|
+| Column type | `TEXT` (ISO-8601 string, no enforcement) | `TIMESTAMPTZ` — Postgres stores as UTC, comparisons are timezone-aware |
+| Timezone handling | Application responsibility; naive strings accepted silently | Naive strings without UTC suffix may be rejected or mis-parsed by psycopg; callers must pass UTC-aware ISO-8601 strings |
+| Bi-temporal window | `[valid_at, invalid_at)` — modelled by `MemoryEntry.is_active_at()` | Unchanged semantics; Postgres enforces the column constraint at the storage layer |
+| Default | `None` / `None` — entry is always active | Unchanged |
+
+`MemoryEntry.is_active_at()` string-compares ISO-8601 representations — this is unchanged.
+The change is that v3 Postgres enforces `TIMESTAMPTZ`; callers passing naive local-time strings
+will see different behaviour compared to v2 SQLite TEXT storage.
+
+Code references: `src/tapps_brain/models.py` (`valid_at`, `invalid_at`),
+`src/tapps_brain/migrations/private/001_initial.sql`.
+
+### GC Archive Flow
+
+| Aspect | v2 | v3 |
+|--------|----|----|
+| Archive location | `{store_dir}/memory/archive.jsonl` (JSONL on disk) | Postgres `gc_archive` table (migration 006) |
+| Durability | File system — lost if the container FS is ephemeral | Postgres — durable and backed up with the rest of the database |
+| Query | `grep` / line scan | Indexed SQL: `(project_id, agent_id, archived_at DESC)` and `(project_id, agent_id, key)` |
+| `health()` / CLI `maintenance gc` | Reads file size via `os.stat` | Queries `COUNT(*)` from `gc_archive` |
+
+Code references: `src/tapps_brain/migrations/private/006_gc_archive.sql`,
+`src/tapps_brain/gc.py`, `src/tapps_brain/postgres_private.py` (`write_gc_archive`).
+
+### MemoryTier Dimension Constants
+
+`MemoryTier` values and decay half-lives are **unchanged** between v2 and v3:
+
+| Tier | Half-life |
+|------|-----------|
+| `architectural` | 180 days |
+| `pattern` | 60 days |
+| `procedural` | 30 days |
+| `context` | 14 days |
+| `ephemeral` | 1 day |
+| `session` | 7 days |
+
+The composite retrieval score weights (relevance 40 %, confidence 30 %, recency 15 %,
+frequency 15 %) are also unchanged.
+
+Code references: `src/tapps_brain/decay.py` (`DecayConfig`), `src/tapps_brain/models.py` (`MemoryTier`).
+
+### FTS Ranking
+
+| Aspect | v2 | v3 |
+|--------|----|----|
+| Private-memory FTS | SQLite FTS5 (BM25-based, native) | In-memory pure-Python Okapi BM25 (`bm25.py`) applied to the Postgres-loaded entry set |
+| Hive / Federation FTS | SQLite FTS5 or Postgres `tsvector` | Postgres `tsvector` + GIN index; ranked by `ts_rank_cd` in SQL, then re-ranked by in-memory BM25 via Reciprocal Rank Fusion |
+| A/B/C column weighting | Not applicable (single `value` column) | Postgres `setweight` on `key` (A), `value` (B), `tags` (C) before `tsvector` indexing |
+| Ranking note | FTS5 BM25 native to the engine | `ts_rank_cd` is not BM25; it uses cover-density ranking. The pure-Python BM25 in `bm25.py` provides BM25 semantics on top of the Postgres results via RRF. For higher ranking fidelity, the upgrade path to ParadeDB `pg_search` is documented in ADR-007. |
+| Stemming / tokenisation | FTS5 default (Porter stemmer, ASCII) | Postgres `to_tsvector('english', ...)` (Snowball stemmer, Unicode-aware) |
+
+Code references: `src/tapps_brain/bm25.py`, `src/tapps_brain/fusion.py`,
+`src/tapps_brain/postgres_hive.py` (`search`), `src/tapps_brain/migrations/hive/001_initial.sql`.
+
+### Partially Deferred in v3.0 (updated for v3.1+)
+
+The following v2 features used SQLite-backed helpers that were **not ported** to Postgres in v3.0.
+Migration status as of v3.1:
+
+| Feature | v2 | v3.0 status | v3.1+ status |
+|---------|----|-------------|--------------|
+| `DiagnosticsHistoryStore` | SQLite JSONL | No-op (`db_path=/dev/null`) | Postgres table via migration 004 |
+| JSONL audit log | `memory_log.jsonl` | No-op via `/dev/null` sentinel | Postgres `audit_log` table via migration 005 |
+| GC archive | `archive.jsonl` | File-based | Postgres `gc_archive` table via migration 006 |
+| `FeedbackStore` | SQLite | Not supported by `PostgresPrivateBackend` | Planned in EPIC-061 |
+
+Agents reading diagnostics or feedback history on a v3.0 instance receive empty results.
+On v3.1+, diagnostics and audit are persisted to Postgres.
 
 ### Removed Public API
 
@@ -128,11 +202,36 @@ hive = create_hive_backend("postgres://user:pass@host/db")
 
 ## Load Smoke: Concurrent Agents
 
-**Script:** `scripts/load_smoke.py`  
-**Purpose:** Validate that N concurrent agents can write and recall memories without interference.  
+Two interfaces are provided:
+
+### Pytest benchmark (STORY-066.9 canonical)
+
+**File:** `tests/benchmarks/load_smoke_postgres.py`  
+**Marks:** `requires_postgres`, `benchmark` — skipped in unit suite; requires `TAPPS_BRAIN_DATABASE_URL`  
 **Pre-SLO:** Results are **informational only** — no hard latency budget is enforced in v3.0.
 
-Quick run (requires a Postgres DSN):
+```bash
+# Full 60-second run (50 concurrent agents, default):
+TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@localhost:5433/tapps_brain \
+    pytest tests/benchmarks/load_smoke_postgres.py -v -s
+
+# Quick 10-second run (for local validation):
+TAPPS_SMOKE_DURATION=10 \
+TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@localhost:5433/tapps_brain \
+    pytest tests/benchmarks/load_smoke_postgres.py -v -s
+
+# Via Makefile (see AGENTS.md):
+make benchmark-postgres
+```
+
+Override env vars:
+- `TAPPS_SMOKE_AGENTS` — number of concurrent agents (default 50)
+- `TAPPS_SMOKE_DURATION` — wall-clock seconds per agent (default 60)
+
+### Script runner (exploratory / ad-hoc)
+
+**Script:** `scripts/load_smoke.py`  
+**Purpose:** Flexible N-agent × M-ops run (not time-bounded).
 
 ```bash
 export TAPPS_TEST_POSTGRES_DSN="postgres://tapps:tapps@localhost:5432/tapps_test"
@@ -140,3 +239,19 @@ python scripts/load_smoke.py --agents 10 --ops 50
 ```
 
 See `scripts/load_smoke.py --help` for full options.
+
+### Latency budget
+
+**Status: informational only (pre-SLO).** No hard latency ceiling is enforced in v3.0.
+The benchmark is intended to provide a baseline for operators choosing hardware and
+pool sizes. When a GA SLO is defined it will appear here.
+
+Observed reference results (developer workstation, 50 agents × 60 s, Docker Postgres):
+
+| Metric | Typical range |
+|--------|---------------|
+| save p95 | 5 – 30 ms |
+| recall p95 | 2 – 15 ms |
+| hive_search p95 | 10 – 60 ms |
+
+*(Results vary significantly by hardware, network, and pool saturation.)*
