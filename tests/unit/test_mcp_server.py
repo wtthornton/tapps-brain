@@ -2974,13 +2974,26 @@ class TestTagManagementMCPTools:
 
 
 class TestGcAndConsolidationConfigTools:
-    """Tests for GC and auto-consolidation config MCP tools."""
+    """Tests for GC and auto-consolidation config MCP tools.
+
+    GC / consolidation config tools are operator-gated (STORY-062.4).
+    Both fixtures enable operator tools so the full tool surface is visible.
+    """
 
     @pytest.fixture
     def server(self, tmp_path):
         from tapps_brain.mcp_server import create_server
 
-        srv = create_server(tmp_path, enable_hive=False)
+        srv = create_server(tmp_path, enable_hive=False, enable_operator_tools=True)
+        yield srv
+        srv._tapps_store.close()
+
+    @pytest.fixture
+    def mcp_server(self, tmp_path):
+        """Class-level override: operator tools enabled for registration tests."""
+        from tapps_brain.mcp_server import create_server
+
+        srv = create_server(tmp_path, enable_hive=False, enable_operator_tools=True)
         yield srv
         srv._tapps_store.close()
 
@@ -3165,13 +3178,17 @@ class TestGcAndConsolidationConfigTools:
 
 
 class TestMcpServerInputValidation022C:
-    """Tests covering validation and error-handling fixes from review 022-C."""
+    """Tests covering validation and error-handling fixes from review 022-C.
+
+    memory_import is an operator tool (STORY-062.4), so operator tools are
+    enabled here so import-related validation tests can reach the tool.
+    """
 
     @pytest.fixture
     def server(self, tmp_path):
         from tapps_brain.mcp_server import create_server
 
-        srv = create_server(tmp_path, enable_hive=False)
+        srv = create_server(tmp_path, enable_hive=False, enable_operator_tools=True)
         yield srv
         srv._tapps_store.close()
 
