@@ -21,13 +21,13 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 │  (per-agent, isolated) │    │                                         │
 │                        │    │  ┌─────────────────────────────────┐    │
 │  MemoryStore           │    │  │ HiveBackend protocol            │    │
-│  └─ persistence.py     │    │  │  └─ PostgresHiveBackend         │    │
-│     └─ agent's own     │    │  └─────────────────────────────────┘    │
-│        memory.db       │    │  ┌─────────────────────────────────┐    │
-│                        │    │  │ FederationBackend protocol      │    │
-│  No contention between │    │  │  └─ PostgresFederationBackend   │    │
-│  agents — each has its │    │  └─────────────────────────────────┘    │
-│  own SQLite + lock.    │    │                                         │
+│  └─ postgres_private   │    │  │  └─ PostgresHiveBackend         │    │
+│     └─ private_memories│    │  └─────────────────────────────────┘    │
+│        table keyed by  │    │  ┌─────────────────────────────────┐    │
+│        (project_id,    │    │  │ FederationBackend protocol      │    │
+│         agent_id)      │    │  │  └─ PostgresFederationBackend   │    │
+│                        │    │  └─────────────────────────────────┘    │
+│  Isolated by row scope │    │                                         │
 │                        │    │  Factory: create_hive_backend(dsn)      │
 └────────────────────────┘    │  Requires postgres:// DSN (ADR-007)     │
                               │                                         │
@@ -57,8 +57,8 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 - **Store orchestration**: `store.py`
   - Save/update/delete, search, recall orchestration, maintenance, feedback, diagnostics, flywheel
   - Per-agent isolation via `agent_id` parameter (EPIC-053)
-- **Persistence layer**: `persistence.py`
-  - Per-agent SQLite schema, migrations (v1→v17), FTS triggers, optional sqlite-vec path
+- **Persistence layer**: `postgres_private.py`
+  - `PostgresPrivateBackend` — private-memory Postgres backend; schema migrations in `src/tapps_brain/migrations/private/` (001–006)
 - **Backend abstraction**: `_protocols.py`, `backends.py`
   - `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols
   - `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories
@@ -79,14 +79,13 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 
 ## Data boundaries
 
-| Store | Purpose | Backend | Path / DSN |
-|-------|---------|---------|------------|
-| **Agent memory** | Private per-agent store | SQLite (isolated) | `{project}/.tapps-brain/agents/{agent_id}/memory.db` |
-| **Legacy memory** | Shared project store (pre-v3.1) | SQLite | `{project}/.tapps-brain/memory/memory.db` |
+All durable stores live in **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). Per-agent isolation is enforced by a `(project_id, agent_id)` composite key on every row — not by separate database files.
+
+| Store | Purpose | Backend | DSN / table |
+|-------|---------|---------|-------------|
+| **Private memory** | Per-agent isolated store | **PostgreSQL** — `private_memories` table | `TAPPS_BRAIN_DATABASE_URL` (`postgres://...`) |
 | **Hive** | Cross-agent shared memory | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_HIVE_DSN` (`postgres://...`) |
 | **Federation** | Cross-project sharing | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://...`) |
-
-**Why this split:** Agent-local memory is fast embedded SQLite with no cross-agent contention. Shared stores (Hive/Federation) require PostgreSQL for concurrent multi-host access — MVCC, connection pooling, pgvector, and LISTEN/NOTIFY ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)).
 
 ## Feature and technology inventory
 
@@ -104,25 +103,20 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 
 ### Per-agent isolation (the scaling model)
 
-Each agent gets its own `MemoryStore` backed by its own SQLite file. **200 agents = 200 independent SQLite databases.** No shared locks, no contention between agents for private memory.
+Each agent gets its own `MemoryStore` backed by **Postgres rows scoped to `(project_id, agent_id)`**. 200 agents share one Postgres cluster but their rows never overlap. No cross-agent lock contention for private memory.
 
 ### Within a single agent
 
 - **No async core:** Public APIs are synchronous. MCP hosts may call into `MemoryStore` from thread pools; each call still runs the sync stack to completion.
 - **Process-local serialization:** `MemoryStore` uses a `threading.Lock` so **one mutating or read-heavy store operation at a time** per agent per process. This is fine because each agent has its own lock.
-- **Lock ordering (EPIC-050 STORY-050.2):** Acquire the **store** lock (`MemoryStore`'s internal lock via `_serialized()`) **before** mutating `_entries` or other in-memory orchestration state, then call into `MemoryPersistence` / Hive helpers as needed. `MemoryPersistence` uses its **own** lock around the SQLite connection. **Do not** call back into public `MemoryStore` methods from deep inside persistence while holding only the persistence lock — that pattern risks deadlock because the store lock is non-reentrant.
+- **Lock ordering (EPIC-050 STORY-050.2):** Acquire the **store** lock (`MemoryStore`'s internal lock via `_serialized()`) **before** mutating `_entries` or other in-memory orchestration state, then call into `PostgresPrivateBackend` / Hive helpers as needed. **Do not** call back into public `MemoryStore` methods from deep inside persistence while holding only the store lock — that pattern risks deadlock because the store lock is non-reentrant.
 - **Reentrancy:** The store lock is a plain `threading.Lock` (not RLock). **Never** invoke another `MemoryStore` public API from code that already runs under `_serialized()`.
 - **Optional lock timeout:** Set **`TAPPS_STORE_LOCK_TIMEOUT_S`** to a positive float (seconds) or pass `lock_timeout_seconds=` when constructing `MemoryStore`.
 
 ### Shared store concurrency (Hive / Federation)
 
-- **PostgreSQL (production):** MVCC handles concurrent reads/writes from N agents without locking. Connection pooling via `psycopg_pool` (`PostgresConnectionManager`) — configurable `min_size`/`max_size` via `TAPPS_BRAIN_HIVE_POOL_MIN`/`TAPPS_BRAIN_HIVE_POOL_MAX` env vars.
-- **Note:** SQLite Hive/Federation backends were removed (ADR-007). Shared stores require PostgreSQL.
-
-### Agent-local SQLite tuning
-
-- **SQLite WAL mode:** Enabled where configured so readers and writers can overlap at the engine level. Optionally (**``TAPPS_SQLITE_MEMORY_READONLY_SEARCH``**) FTS search and sqlite-vec KNN use a **read-only** second connection.
-- **SQLite busy timeout:** Set **`TAPPS_SQLITE_BUSY_MS`** (milliseconds) to control `PRAGMA busy_timeout`. Default **5000**. See [`docs/guides/sqlite-database-locked.md`](../guides/sqlite-database-locked.md).
+- **PostgreSQL:** MVCC handles concurrent reads/writes from N agents without locking. Connection pooling via `psycopg_pool` (`PostgresConnectionManager`) — configurable `min_size`/`max_size` via `TAPPS_BRAIN_HIVE_POOL_MIN`/`TAPPS_BRAIN_HIVE_POOL_MAX` env vars.
+- All shared stores (Hive, Federation) require PostgreSQL ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)).
 
 ## High-level subsystem map
 
@@ -137,7 +131,7 @@ Each agent gets its own `MemoryStore` backed by its own SQLite file. **200 agent
   - Lifecycle maintenance
   - Diagnostics/flywheel
 - **Persistence**
-  - Per-agent local memory DB (SQLite)
+  - Private memory (`private_memories` table — PostgreSQL, keyed by `(project_id, agent_id)`)
   - Shared Hive DB (PostgreSQL — ADR-007)
   - Federation DB (PostgreSQL — ADR-007)
 - **Egress**
@@ -207,7 +201,7 @@ The CLI is distributed as a Python package (`tapps-brain[cli]`) installed via pi
 
 A single-binary build (e.g., via PyInstaller or Nuitka) has been requested by operations teams. This is tracked as a spike in EPIC-046 (STORY-046.2) and is **not yet scheduled**. Key considerations:
 
-- SQLite and optional native extensions (sqlite-vec) must be bundled correctly.
+- Python runtime and optional native extensions (sentence-transformers, psycopg) must be bundled correctly.
 - Binary size target: under 50 MB compressed.
 - Signing and notarization for macOS distribution.
 - CI matrix: Linux x86_64, macOS arm64, Windows x86_64.

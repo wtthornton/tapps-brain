@@ -109,12 +109,12 @@ pip install tapps-brain[all]
 
 ## Vector search (built-in)
 
-Semantic (embedding-based) search is built into the core install. The base `pip install tapps-brain` includes `sqlite-vec`, `sentence-transformers`, and `numpy` — no extra needed.
+Semantic (embedding-based) search is built into the core install. The base `pip install tapps-brain` includes `sentence-transformers` and `numpy` — no extra needed. Vectors are stored in PostgreSQL via the `pgvector` extension (HNSW index, cosine distance).
 
 **Platform notes:**
 
-- **sqlite-vec** requires a C compiler on some platforms if no pre-built wheel is available. On Ubuntu: `apt install build-essential`.
 - **sentence-transformers** downloads model weights on first use (~90 MB for the default model). Ensure network access or pre-download for air-gapped environments.
+- **pgvector** must be installed in your Postgres cluster (`CREATE EXTENSION IF NOT EXISTS vector;`). The Docker image `pgvector/pgvector:pg17` includes it. See [`hive-deployment.md`](hive-deployment.md) for setup.
 
 
 ---

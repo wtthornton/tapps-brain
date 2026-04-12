@@ -53,22 +53,23 @@ The `run_health_check()` function in `src/tapps_brain/health_check.py` produces 
 |---|---|
 | `entries` / `max_entries` | Current and maximum entry count. |
 | `max_entries_per_group` | Per-`memory_group` cap when a profile sets one (STORY-044.7). |
-| `schema_version` | Current SQLite schema version string. |
-| `size_bytes` | On-disk size of `memory.db`. |
+| `schema_version` | Current private-memory schema migration version (integer, from `private_schema_version` table). |
+| `last_migration_version` | Highest applied private migration version. |
 | `tiers` | Dict mapping tier name to entry count. |
 | `gc_candidates` / `consolidation_candidates` | Counts of entries eligible for GC or consolidation. |
-| `sqlite_vec_enabled` / `sqlite_vec_rows` | Whether the sqlite-vec extension is loaded and its row count. |
-| `retrieval_effective_mode` | Machine-readable mode: `bm25_only`, `hybrid_sqlite_vec_knn`, `hybrid_sqlite_vec_empty`, `hybrid_on_the_fly_embeddings`, or `unknown`. |
+| `vector_index_enabled` / `vector_index_rows` | Whether the pgvector HNSW index is active and its approximate row count. |
+| `retrieval_effective_mode` | Machine-readable mode: `bm25_only`, `hybrid_pgvector_hnsw`, `hybrid_pgvector_empty`, `hybrid_on_the_fly_embeddings`, or `unknown`. |
 | `retrieval_summary` | One-line human-readable explanation of the active retrieval stack. |
 | `save_phase_summary` | Save-phase p50 latencies from in-process metrics (empty if none). |
 | `profile_seed_version` | Profile seed recipe label when set. |
+| `pool_saturation` / `pool_idle` | Fraction of Postgres private-backend pool in use (0.0–1.0); idle connection count. `null` for in-memory backends. |
 
 ### HiveHealth fields
 
 | Field | Description |
 |---|---|
-| `connected` | `true` when the Hive store was successfully opened **and** queried. |
-| `hive_reachable` | `true` when `~/.tapps-brain/hive/hive.db` exists on disk, regardless of whether a connection succeeded. Distinguishes "file missing" from "file present but connection failed" (e.g. encryption mismatch). |
+| `connected` | `true` when the Postgres Hive connection was successfully opened **and** queried. |
+| `hive_reachable` | `true` when the Hive DSN is configured and the Postgres server was reachable. Distinguishes "DSN missing" from "DSN present but connection failed". |
 | `namespaces` | Sorted list of namespace names with entries. |
 | `entries` / `agents` | Total entry count and registered agent count. |
 
@@ -224,7 +225,7 @@ When `strict_event_types` is `true` (the default), `FeedbackStore.record()` reje
 
 ### Retention
 
-The implicit feedback window (`implicit_feedback_window_seconds`, default 300 s / 5 minutes) controls how long the system waits before emitting `implicit_negative`. Feedback events are stored in the `feedback_events` SQLite table alongside `memory.db` and are retained indefinitely (no automatic purge). Diagnostics history has a configurable `retention_days` (default 90, range 1-3650).
+The implicit feedback window (`implicit_feedback_window_seconds`, default 300 s / 5 minutes) controls how long the system waits before emitting `implicit_negative`. Feedback events are stored in the `feedback_events` Postgres table (migration 003, scoped to `(project_id, agent_id)`) and are retained indefinitely (no automatic purge). Diagnostics history has a configurable `retention_days` (default 90, range 1-3650).
 
 ---
 
@@ -317,7 +318,7 @@ Alerts include `threshold_warning` and `threshold_critical` levels with z-score 
 
 ### Diagnostics history
 
-`DiagnosticsHistoryStore` persists snapshots to a `diagnostics_history` SQLite table. It supports:
+`DiagnosticsHistoryStore` persists snapshots to the `diagnostics_history` Postgres table (migration 004, scoped to `(project_id, agent_id)`). It supports:
 
 - `record(report)` -- append a snapshot
 - `history(limit=100)` -- recent snapshots (newest first)

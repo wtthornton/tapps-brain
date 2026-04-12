@@ -58,7 +58,7 @@ link mitigations to existing controls.
 
 | Threat | Scenario | Mitigation | Reference |
 |--------|----------|------------|-----------|
-| Undetected memory writes | Agent denies writing a memory entry; no audit trail. | JSONL audit log (`memory_log.jsonl`) records every mutation with timestamp, `agent_id`, and operation type. Postgres write-through ensures log consistency. | [store.py](../../src/tapps_brain/store.py) |
+| Undetected memory writes | Agent denies writing a memory entry; no audit trail. | Postgres `audit_log` table (migration 005) records every mutation with timestamp, `agent_id`, and operation type. Indexed on `(project_id, agent_id, timestamp DESC)` for efficient per-agent audit queries. | [store.py](../../src/tapps_brain/store.py), `src/tapps_brain/migrations/private/005_audit_log.sql` |
 | Hive propagation without attribution | Entry propagated to Hive with no source record. | `MemoryEntry.agent_id` and `source` fields are required and persisted; Hive backend stores them as non-nullable columns. | [models.py](../../src/tapps_brain/models.py) |
 
 ---

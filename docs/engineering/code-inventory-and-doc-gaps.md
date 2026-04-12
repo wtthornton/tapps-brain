@@ -5,9 +5,9 @@
 - **Core orchestration**
   - `store.py`, `retrieval.py`, `injection.py`, `recall.py`
 - **Persistence and schema**
-  - `persistence.py`, `sqlite_vec_index.py`
+  - `postgres_private.py`, `postgres_connection.py`, `postgres_migrations.py`; migrations in `src/tapps_brain/migrations/private/`
 - **Sharing layers**
-  - `hive.py`, `federation.py`, `memory_relay.py`
+  - `postgres_hive.py`, `postgres_federation.py`, `memory_relay.py`
 - **Quality loop**
   - `feedback.py`, `diagnostics.py`, `flywheel.py`
 - **Interfaces**

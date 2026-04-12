@@ -287,3 +287,4 @@
 |------|-------|-------|
 | DEPLOY-OPENCLAW | PyPI publish + ClawHub listing | 8 tasks, distribution |
 | MemoryStore modularization | Long-term refactor | Backlog; no epic number |
+- [x] **066.12** Engineering docs drift sweep — zero stale SQLite refs [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.12.md -->

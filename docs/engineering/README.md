@@ -10,7 +10,7 @@ If planning docs or guides disagree with this folder, treat this folder as the i
 
 - `system-architecture.md` - components, boundaries, and runtime interfaces
 - `call-flows.md` - save, recall, Hive, federation, and maintenance execution flows
-- `data-stores-and-schema.md` - SQLite stores, schema timeline, indexes, FTS, triggers
+- `data-stores-and-schema.md` - Postgres store schemas, private migration history (001–006), indexes, FTS
 - `optional-features-matrix.md` - extras, feature flags, profile toggles, fallbacks
 - `code-inventory-and-doc-gaps.md` - module inventory and documentation risk audit
 - `v3-behavioral-parity.md` - what changed in v3 vs v2 (Postgres private memory, etc.)
@@ -20,8 +20,7 @@ If planning docs or guides disagree with this folder, treat this folder as the i
 ADRs live in [`docs/planning/adr/`](../planning/adr/). Key decisions relevant to the
 engineering layer:
 
-- [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md) — Postgres-only Hive
-  and Federation backends (SQLite removed from factories).
+- [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md) — Postgres-only persistence plane (private memory, Hive, Federation — no SQLite fallback).
 - [ADR-008](../planning/adr/ADR-008-no-http-without-mcp-library-parity.md) — No new
   public HTTP routes without MCP + library parity. Defines the HTTP surface guardrails
   and CODEOWNERS enforcement strategy.

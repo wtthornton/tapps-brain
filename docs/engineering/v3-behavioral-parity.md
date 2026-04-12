@@ -164,7 +164,7 @@ Migration status as of v3.1:
 | `DiagnosticsHistoryStore` | SQLite JSONL | No-op (`db_path=/dev/null`) | Postgres table via migration 004 |
 | JSONL audit log | `memory_log.jsonl` | No-op via `/dev/null` sentinel | Postgres `audit_log` table via migration 005 |
 | GC archive | `archive.jsonl` | File-based | Postgres `gc_archive` table via migration 006 |
-| `FeedbackStore` | SQLite | Not supported by `PostgresPrivateBackend` | Planned in EPIC-061 |
+| `FeedbackStore` | SQLite | Postgres-backed `feedback_events` table via migration 003 | ✅ Shipped in v3.1 |
 
 Agents reading diagnostics or feedback history on a v3.0 instance receive empty results.
 On v3.1+, diagnostics and audit are persisted to Postgres.

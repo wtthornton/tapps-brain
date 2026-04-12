@@ -8,11 +8,9 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 |---|---|---|---|
 | MCP server | `mcp` extra | MCP runtime in `mcp_server.py` | Startup error with install hint |
 | Vector embeddings | `vector` extra (`sentence-transformers`) | Hybrid retrieval and embedding writes | Falls back to non-vector retrieval |
-| sqlite-vec | `vector` extra (`sqlite-vec`) | `memory_vec` ANN path (per-agent local store) | Silent no-op; retrieval falls back |
 | Reranker | `reranker` extra (`flashrank`) | Local cross-encoder re-ranking in injection pipeline | No-op reranker path |
-| SQLCipher | `encryption` extra (`pysqlcipher3`) | Encrypted local SQLite connections | Plain sqlite when no key set; error if key set and dependency missing |
 | OTel exporter | `otel` extra | exporter creation path | exporter disabled (`None`) |
-| PostgreSQL Hive/Federation | `psycopg[binary]` + `psycopg_pool` (lazy, no extra) | `PostgresHiveBackend` / `PostgresFederationBackend` via `create_hive_backend("postgres://...")` | Falls back to SQLite (`HiveStore` / `FederatedStore`) when no DSN set |
+| PostgreSQL private / Hive / Federation | `psycopg[binary]` + `psycopg_pool` (lazy, no extra) | `PostgresPrivateBackend`, `PostgresHiveBackend`, `PostgresFederationBackend` via factory functions in `backends.py` | **Hard error** — all durable stores require a `postgres://` DSN ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) |
 
 ## Profile and config toggles
 
@@ -31,7 +29,7 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 
 | Surface | Toggle | Current default behavior |
 |---|---|---|
-| CLI | Store helper | Attaches configured Hive backend by default (Postgres if `TAPPS_BRAIN_HIVE_DSN` set, else SQLite) |
+| CLI | Store helper | Attaches configured Hive backend when `TAPPS_BRAIN_HIVE_DSN` is set; skips Hive if unset |
 | CLI | `--agent-id` | Per-agent storage isolation (EPIC-053) |
 | MCP | `--enable-hive / --no-enable-hive` | Enabled by default (`--enable-hive`) |
 | MCP | `--agent-id` | Per-agent storage isolation, passed through to `MemoryStore` |
@@ -47,7 +45,7 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 
 | Surface | What to read |
 |---------|----------------|
-| CLI | `tapps-brain diagnostics health` — includes **sqlite-vec** lines and **Retrieval:** (`retrieval_effective_mode` + summary) |
+| CLI | `tapps-brain diagnostics health` — includes **Retrieval:** (`retrieval_effective_mode` + summary), pool saturation, and migration version |
 | MCP | `tapps_brain_health` — same fields in JSON under `store` |
 | Guide | Optional stack semantics: this matrix; retrieval wording in `health_check.py` (`_retrieval_health_from_store`) |
 
@@ -57,5 +55,5 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 - Federation is explicit sync/publish, not automatic background replication.
 - Federation `hub_path` in `federation.yaml` is honored by `FederatedStore()` when non-empty (see `federated_hub_db_path()` in `federation.py`).
 - **Hive vs federation** (when to use which): `docs/guides/hive-vs-federation.md` (GitHub **#64**).
-- **Backend selection** is by DSN string — `postgres://` → Postgres, path/None → SQLite. Callers never import a concrete backend class. See `backends.py` factory functions.
+- **Backend selection** is by DSN string — only `postgres://` or `postgresql://` DSNs are accepted; non-Postgres DSNs raise an error. Callers never import a concrete backend class. See `backends.py` factory functions.
 - **AgentBrain** (`agent_brain.py`) is the recommended entry point for agents — handles all backend wiring internally based on env vars.

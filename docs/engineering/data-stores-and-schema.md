@@ -2,43 +2,50 @@
 
 ## Store locations
 
-| Store | Backend | Location |
-|-------|---------|----------|
-| **Agent store** (EPIC-053) | SQLite (per-agent, isolated) | `{project}/.tapps-brain/agents/{agent_id}/memory.db` |
-| **Legacy project store** | SQLite | `{project}/.tapps-brain/memory/memory.db` |
+All durable stores use **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). No SQLite fallback exists in v3.
+
+| Store | Backend | DSN / table |
+|-------|---------|-------------|
+| **Private memory** (EPIC-053) | **PostgreSQL** — `private_memories` table | `TAPPS_BRAIN_DATABASE_URL` (`postgres://...`) |
 | **Hive** (EPIC-054/055/059) | **PostgreSQL** only (ADR-007) | `TAPPS_BRAIN_HIVE_DSN` (`postgres://...`) |
 | **Federation** (EPIC-054/055/059) | **PostgreSQL** only (ADR-007) | `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://...`) |
 
 For Postgres Hive schema and migrations, see `src/tapps_brain/migrations/hive/`. For deployment, see [`hive-deployment.md`](../guides/hive-deployment.md).
 
-## Project store (`memory.db`)
+## Private memory store (PostgreSQL — `private_memories`)
+
+Schema managed by `PostgresPrivateBackend` via migration files in `src/tapps_brain/migrations/private/`. Versioned in the `private_schema_version` table.
+
+### Migration history
+
+| Version | File | Added |
+|---------|------|-------|
+| 001 | `001_initial.sql` | `private_memories` table with `(project_id, agent_id, key)` PK; `tsvector` FTS column; pgvector HNSW index; `private_schema_version` tracking |
+| 002 | `002_hnsw_upgrade.sql` | HNSW index upgrade (`m=16, ef_construction=200, vector_cosine_ops`) |
+| 003 | `003_feedback_and_session.sql` | `feedback_events` table; `session_chunks` table |
+| 004 | `004_diagnostics_history.sql` | `diagnostics_history` table |
+| 005 | `005_audit_log.sql` | `audit_log` table (indexed on `project_id, agent_id, timestamp DESC`) |
+| 006 | `006_gc_archive.sql` | `gc_archive` table (indexed on `project_id, agent_id, archived_at DESC`) |
 
 ### Core tables
 
-- `schema_version`
-- `memories`
-- `archived_memories`
-- `session_index`
-- `relations`
-- `feedback_events`
-- `diagnostics_history`
-- `flywheel_meta`
+- `private_memories` — keyed by `(project_id, agent_id, key)`, holds all entry fields + `tsvector` FTS column + pgvector `embedding` column (384-dim, HNSW cosine index)
+- `feedback_events` — scoped to `(project_id, agent_id)` (migration 003)
+- `session_chunks` — session-level context index (migration 003)
+- `diagnostics_history` — periodic EWMA health snapshots (migration 004)
+- `audit_log` — immutable append-only mutation log (migration 005)
+- `gc_archive` — GC'd entries (never deleted; migration 006)
+- `private_schema_version` — tracks applied migration versions
 
-### FTS tables and triggers
+### Full-text search
 
-- `memories_fts` + `memories_ai`, `memories_ad`, `memories_au`
-- `session_index_fts` + `session_index_ai`, `session_index_ad`, `session_index_au`
+- `tsvector` column on `private_memories` with GIN index; `setweight` on `key` (A), `value` (B), `tags` (C)
+- Queried via `plainto_tsquery('english', ...)` in `PostgresPrivateBackend.search`
 
-### Notable indexes
+### Vector search
 
-- Tier/scope/confidence indexes on `memories`
-- Temporal indexes (`valid_at`, `invalid_at`, `valid_from`, `valid_until`)
-- `memory_group` index
-- Feedback and diagnostics indexes for query/report paths
-
-### Optional vector index
-
-- `memory_vec` (`vec0`) via sqlite-vec when extension is available. Operator playbook (rebuild, VACUUM, distance metric, save-path cost): [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md).
+- pgvector `vector(384)` column with HNSW index (`m=16, ef_construction=200, cosine distance`) — migration 002
+- Upgraded from IVFFlat in migration 002 for ~1.5× faster approximate-nearest-neighbor recall at comparable quality
 
 ### Entry cap and eviction (runtime)
 
@@ -49,7 +56,7 @@ The active `memories` row count is bounded by profile **`limits.max_entries`** (
 | **When** | Only when inserting a **new** key (`key` not already present) and the in-memory entry count is already at the cap. |
 | **Policy** | Remove exactly **one** row: the entry with the **lowest stored `confidence`** value (the persisted field, not decay-adjusted effective confidence). |
 | **Ties** | If several entries share the minimum confidence, Python’s `min` on the key iterable returns the **first** such key in **dict iteration order** (insertion order since 3.7). |
-| **Persistence** | The evicted key is deleted from SQLite (`memory_evicted` is logged). |
+| **Persistence** | The evicted key is deleted from `private_memories` (`memory_evicted` is logged). |
 | **Not evicted on** | Updates to an existing key, deletes, or saves that only reinforce/replace the same key. |
 
 ### Per-`memory_group` cap (optional)
@@ -80,12 +87,10 @@ The Hive uses **PostgreSQL** exclusively (`TAPPS_BRAIN_HIVE_DSN`). SQLite Hive b
 ### Full-text search
 
 - **PostgreSQL:** `tsvector` column + GIN index + `plainto_tsquery()`
-- *(SQLite Hive FTS removed — ADR-007)*
 
 ### Semantic search
 
 - **PostgreSQL:** `pgvector` extension, 384-dim `vector` column, L2 distance index
-- **SQLite:** `sqlite-vec` `memory_vec` table (when extension available)
 
 ### Postgres schema migrations
 
@@ -103,98 +108,33 @@ Same backend abstraction as Hive (EPIC-054/055). **PostgreSQL only** (ADR-007) �
 ### Full-text search
 
 - **PostgreSQL:** `tsvector` + GIN index
-- **SQLite:** `federated_fts` content-linked to `federated_memories`
 
 ### Postgres schema migrations
 
 SQL files in `src/tapps_brain/migrations/federation/`. Managed by `apply_federation_migrations()`. Version tracked in `federation_schema_version` table.
 
-## Schema version timeline (`memory.db`)
-
-Current schema version in `persistence.py`: **v17**
-
-- v1: base memories, archive, FTS, core indexes
-- v2: embeddings column
-- v3: session index + FTS
-- v4: relations
-- v5: temporal validity (`valid_at`, `invalid_at`, `superseded_by`)
-- v6: version marker bump for tooling/observability
-- v7: `agent_scope`
-- v8: `integrity_hash`
-- v9: `feedback_events`
-- v10: `diagnostics_history`
-- v11: flywheel counters + `flywheel_meta`
-- v12: provenance columns
-- v13: `valid_from` and `valid_until`
-- v14: `stability` and `difficulty`
-- v15: Bayesian access counters
-- v16: `memory_group` on active + archive tables
-- v17: `embedding_model_id` on active + archive tables (dense provenance)
-
-## SQLite PRAGMAs set on open
-
-Every connection opened via `sqlcipher_util.connect_sqlite()` applies the following PRAGMAs before returning. Read-only connections (`connect_sqlite_readonly()`) skip `journal_mode` but apply the rest.
-
-| PRAGMA | Value | Rationale |
-|--------|-------|-----------|
-| `journal_mode` | `WAL` | Write-Ahead Logging enables concurrent readers during writes; critical for MCP burst patterns where search and save overlap. |
-| `synchronous` | `NORMAL` | Balances durability and throughput. WAL + NORMAL guarantees crash consistency (no corruption) but may lose the last committed transaction on OS crash. `FULL` would add ~2x fsync cost per commit with marginal gain under WAL. |
-| `busy_timeout` | `5000` ms (default, env `TAPPS_SQLITE_BUSY_MS`, clamped 0..3 600 000) | Retries internally for up to the timeout before raising `SQLITE_BUSY`. Avoids spurious "database is locked" under light contention. |
-| `foreign_keys` | `ON` | Enforces referential integrity for `relations`, `feedback_events`, and future FK-linked tables. |
-| `cache_size` | SQLite default (`-2000`, ~2 MB) | Not explicitly set; the default page cache is sufficient for typical project stores (<50 MB). Operators needing larger caches can set `PRAGMA cache_size` via a startup hook. |
-
-### Read-only search connection (EPIC-050.3)
-
-When `TAPPS_SQLITE_MEMORY_READONLY_SEARCH=1`, `MemoryPersistence` opens a second connection via `connect_sqlite_readonly()` using a `file:` URI with `mode=ro`. This handle serves FTS `search()` and sqlite-vec KNN queries so they do not serialize behind the writer lock. The read-only connection:
-
-- Cannot mutate schema or data (enforced by SQLite URI mode).
-- Shares the WAL, so reads see the latest committed snapshot.
-- Falls back to the writer connection if the read-only open fails (logged at DEBUG).
-
-### sqlite_busy_count metric
-
-`MemoryStore` increments a `store.sqlite_busy_count` counter each time a persistence call raises `sqlite3.OperationalError` containing "database is locked". This counter is visible in `get_metrics().counters` and serves as an early warning that `busy_timeout` may need tuning or write serialization is required.
-
 ## Migration execution points
 
-- `MemoryPersistence` runs `_ensure_schema()` at initialization.
-- `MemoryStore` initializes `MemoryPersistence`, so opening a store runs migrations.
-- CLI and MCP create stores through helper constructors, so both surfaces run migrations on open.
-- Hive and federation schema creation is idempotent (`CREATE IF NOT EXISTS`) in respective store constructors.
+- `PostgresPrivateBackend` applies private migrations via `apply_private_migrations(dsn)` at initialization when `TAPPS_BRAIN_AUTO_MIGRATE=1` is set (or called explicitly).
+- `MemoryStore` initializes `PostgresPrivateBackend`, so opening a store with auto-migrate enabled runs pending private migrations.
+- CLI and MCP create stores through helper constructors, so both surfaces can run migrations on open.
+- Hive and federation schema creation is managed by `apply_hive_migrations()` / `apply_federation_migrations()` respectively.
 
-## FTS5 full-text index
+## Postgres full-text index
 
 ### Tokenizer
 
-All FTS5 virtual tables (`memories_fts`, `session_index_fts`, `hive_fts`, `federated_fts`) use the **default `unicode61` tokenizer**. This tokenizer handles Unicode text, removes diacritics, and splits on whitespace and punctuation. It is a good default for mixed natural-language and technical content (code identifiers, file paths split on `/` and `.`).
+Private, Hive, and Federation stores all use PostgreSQL `to_tsvector('english', ...)` (Snowball stemmer, Unicode-aware). `setweight` applies column-level weighting:
 
-### Sync triggers
+| Weight | Column | Effect |
+|--------|--------|--------|
+| A | `key` | Highest match weight (exact key hits rank highest) |
+| B | `value` | Standard content weight |
+| C | `tags` | Lower weight for tag-field matches |
 
-FTS content tables are kept in sync with their base tables via `AFTER INSERT`, `AFTER DELETE`, and `AFTER UPDATE` triggers (e.g., `memories_ai`, `memories_ad`, `memories_au`). This means:
+### Upgrade path
 
-- Insertions are immediately searchable with no explicit rebuild step.
-- Deletions and updates maintain FTS consistency automatically.
-- No application-level FTS maintenance is required under normal operation.
-
-### Rebuild command
-
-If the FTS index becomes inconsistent (e.g., after a crash during a non-WAL write, or after a manual `DELETE` bypassing triggers), rebuild with:
-
-```sql
-INSERT INTO memories_fts(memories_fts) VALUES('rebuild');
-```
-
-Replace `memories_fts` with the appropriate FTS table name for other stores.
-
-### Tokenizer change policy
-
-Changing the tokenizer (e.g., from `unicode61` to `porter` or a custom tokenizer) is a **breaking change** that requires:
-
-1. A **major schema version bump** (not a minor migration step).
-2. A full FTS rebuild on all affected tables.
-3. Documentation and changelog entry for operators.
-
-Do not change the tokenizer in a patch or minor release.
+For higher ranking fidelity (true Okapi BM25 in SQL), the upgrade path to ParadeDB `pg_search` (BM25 on Tantivy) is documented in [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md). The current pure-Python BM25 in `bm25.py` provides BM25 semantics on top of Postgres `ts_rank_cd` results via Reciprocal Rank Fusion (`fusion.py`).
 
 ## Audit trail
 

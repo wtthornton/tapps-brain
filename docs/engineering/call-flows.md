@@ -19,7 +19,7 @@ This document maps the dominant runtime call paths as implemented now.
 3. Dedup fast path and reinforcement when matching normalized content exists.
 4. Optional contradiction/invalidation handling.
 5. Build/merge `MemoryEntry`, compute integrity hash, enforce max-entry cap.
-6. Persist write-through to SQLite via `MemoryPersistence.save`.
+6. Persist write-through to Postgres via `PostgresPrivateBackend.save`.
 7. Optional Hive propagation via `PropagationEngine`.
 8. Relation extraction/persistence.
 9. Optional auto-consolidation trigger.
@@ -40,9 +40,9 @@ This document maps the dominant runtime call paths as implemented now.
 2. `RecallOrchestrator` calls `inject_memories`.
 3. `inject_memories` uses `MemoryRetriever.search`.
 4. Retriever executes lexical + optional vector-hybrid search (`retrieval.py`).
-   - **Lexical path (`_get_candidates`):** `MemoryStore.search` → `MemoryPersistence.search` runs **FTS5** (`memories_fts`); empty/whitespace queries or a query that escapes to nothing yield **no FTS rows**.
+   - **Lexical path (`_get_candidates`):** `MemoryStore.search` → `PostgresPrivateBackend.search` runs a `tsvector` full-text query (`plainto_tsquery`); empty/whitespace queries or a query that escapes to nothing yield **no FTS rows**.
    - **When FTS returns hits:** BM25 scores **only those rows** via `_bm25_score_entries`, but the in-process BM25 index is still built over the **full project corpus** (`store.list_all()` without group) so **IDF** matches the whole store (not just the FTS hit set).
-   - **Full-corpus BM25 scan:** Used when FTS returns **no** rows, when `store.search` **raises** (logged `fts5_search_failed`), or when persistence FTS fails and returns `[]`. Then `_bm25_full_scan` uses `store.list_all(memory_group=…)` and keeps documents with BM25 score > 0.
+   - **Full-corpus BM25 scan:** Used when FTS returns **no** rows, when `store.search` **raises** (logged `fts_search_failed`), or when the backend FTS call fails and returns `[]`. Then `_bm25_full_scan` uses `store.list_all(memory_group=…)` and keeps documents with BM25 score > 0.
    - **Further fallbacks:** BM25 exceptions → word overlap on candidates; full-scan failure → `_like_search` (simple overlap). Hybrid mode runs this BM25 channel in parallel with vector KNN / batch similarity and merges with RRF (`fusion.py`).
 5. Composite scoring and filtering applied.
 6. Injection formatting applies safety and token budget.

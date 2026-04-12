@@ -12,16 +12,16 @@
 
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
-| **Lexical / keyword search** | SQLite **FTS5** + in-process **Okapi BM25** | FTS for candidate generation / filtering paths; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
-| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + **`sqlite-vec`** | Embeddings computed in `embeddings.py` (core dependency); vectors stored on entries and in sqlite-vec table (`memory_vec`). **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
-| **Vector index in DB** | **`sqlite-vec`** (`vec0`, table `memory_vec`) | `persistence.py` / `sqlite_vec_index.py`; KNN path when extension + embeddings available; health reports `sqlite_vec_enabled` / row counts. Ops: [`sqlite-vec-operators.md`](../guides/sqlite-vec-operators.md). |
+| **Lexical / keyword search** | Postgres **tsvector** + in-process **Okapi BM25** | Postgres `plainto_tsquery` for candidate generation; `bm25.py` implements BM25 with stop-word stripping and light normalization (pure Python, no IR server). |
+| **Dense retrieval / semantic search** | **`sentence-transformers`** + **`numpy`** + pgvector HNSW | Embeddings computed in `embeddings.py` (core dependency); vectors stored in `private_memories.embedding` column (pgvector HNSW, cosine). **Model card:** [`embedding-model-card.md`](../guides/embedding-model-card.md). |
+| **Vector index in DB** | **pgvector** HNSW (`m=16, ef_construction=200`, cosine) | Migration 002 (`002_hnsw_upgrade.sql`); KNN path when pgvector installed and embeddings available; health reports `vector_index_enabled` / row counts. |
 | **Hybrid search** | **Reciprocal Rank Fusion (RRF)** | `fusion.py` merges BM25-ranked and vector-ranked lists; **weighted RRF** via `hybrid_rrf_weights_for_query()` (GitHub #40) — deterministic query heuristics, no LLM. Per-channel recall depth and RRF *k* are optional under **`profile.hybrid_fusion`** (`HybridFusionConfig` in `profile.py`; YAML aliases `top_k_lexical` / `top_k_dense`). |
 | **Composite ranking** | Weighted score blend | `retrieval.py`: relevance 40%, confidence 30%, recency 15%, frequency 15%; per-source trust multipliers after composite; profile can tune scoring where wired. |
 | **Re-ranking (local cross-encoder)** | **FlashRank** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when installed; falls back to noop. Runs entirely on-device, no API key needed. |
 | **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
 | **Stale / decayed relevance** | **Exponential decay** + optional **FSRS-like fields** | `decay.py` lazy decay on read; `models.py` carries `stability` / `difficulty`; hybrid model + recall vs reinforce updates in [`memory-decay-and-fsrs.md`](../guides/memory-decay-and-fsrs.md). **Checklist 10.2:** lazy decay + operator GC — no mandatory wall-clock TTL jobs in core; [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md). |
 
-**Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± vectors ± fixed formulas. **Maintainer decision (checklist item 10.1 / EPIC-051):** shipped stack stays **embedded SQLite–first** (BM25 + built-in sqlite-vec hybrid); **learned sparse**, **ColBERT-style** late interaction, and **managed external vector DB** as first-class backends are **out of scope for core** until revisited — see [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
+**Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± pgvector ± fixed formulas. **Maintainer decision (checklist item 10.1 / EPIC-051):** shipped stack is BM25 + built-in pgvector hybrid; **learned sparse**, **ColBERT-style** late interaction, and **managed external vector DB** as first-class backends are **out of scope for core** until revisited — see [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
 
 ---
 
@@ -29,18 +29,17 @@
 
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
-| **Per-agent embedded store** | **SQLite** (isolated per agent) | Each agent: `{project}/.tapps-brain/agents/{agent_id}/memory.db`; legacy shared: `memory/memory.db`. WAL mode. `persistence.py`. No cross-agent contention — each agent has its own DB + lock. (EPIC-053) |
-| **Shared store (Hive)** | **PostgreSQL** (prod) or **SQLite** (dev) | `postgres_hive.py` (`PostgresHiveBackend`) with `pgvector`, `tsvector`, `LISTEN/NOTIFY`, connection pooling. SQLite fallback: `hive.py` (`HiveStore`). Backend selected by `create_hive_backend(dsn)` — Postgres when DSN starts with `postgres://`. (EPIC-054/055) |
-| **Shared store (Federation)** | **PostgreSQL** (prod) or **SQLite** (dev) | `postgres_federation.py` (`PostgresFederationBackend`). SQLite fallback: `federation.py`. Factory: `create_federation_backend(dsn)`. (EPIC-054/055) |
-| **Backend abstraction** | **Protocol** + **factory** pattern | `_protocols.py` defines `HiveBackend`, `FederationBackend`, `AgentRegistryBackend`. `backends.py` provides `create_hive_backend()` / `create_federation_backend()` factories + `SqliteHiveBackend` / `SqliteFederationBackend` adapters. Callers never import a concrete backend. (EPIC-054) |
+| **Private agent store** | **PostgreSQL** `private_memories` table | `postgres_private.py` (`PostgresPrivateBackend`); rows keyed by `(project_id, agent_id, key)`. No cross-agent contention — row-level isolation. Schema managed by `migrations/private/` (001–006). `TAPPS_BRAIN_DATABASE_URL`. (EPIC-053) |
+| **Shared store (Hive)** | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `postgres_hive.py` (`PostgresHiveBackend`) with `pgvector`, `tsvector`, `LISTEN/NOTIFY`, connection pooling. Backend selected by `create_hive_backend(dsn)` — requires `postgres://` DSN. (EPIC-054/055) |
+| **Shared store (Federation)** | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `postgres_federation.py` (`PostgresFederationBackend`). Factory: `create_federation_backend(dsn)`. Requires `postgres://` DSN. (EPIC-054/055) |
+| **Backend abstraction** | **Protocol** + **factory** pattern | `_protocols.py` defines `PrivateBackend`, `HiveBackend`, `FederationBackend`, `AgentRegistryBackend`. `backends.py` provides factory functions. Callers never import a concrete backend. (EPIC-054) |
 | **Postgres connection pooling** | **psycopg** + **psycopg_pool** | `postgres_connection.py` (`PostgresConnectionManager`). Configurable pool min/max via `TAPPS_BRAIN_HIVE_POOL_MIN`/`MAX`. Lazy import — only required when using Postgres. (EPIC-055) |
-| **Postgres schema migrations** | Versioned SQL + runner | `postgres_migrations.py` — `apply_hive_migrations()`, `apply_federation_migrations()`. SQL files in `src/tapps_brain/migrations/hive/` and `migrations/federation/`. Forward-only, idempotent. CLI: `maintenance migrate-hive` / `hive-schema-status`. Auto-migrate: `TAPPS_BRAIN_HIVE_AUTO_MIGRATE`. (EPIC-055) |
-| **Local declarative migrations** | Versioned schema | `persistence.py` `_ensure_schema()` — current **v17** includes `embedding_model_id`, `memory_group`, temporal fields, embeddings, etc. (`data-stores-and-schema.md`). |
-| **Full-text index** | **FTS5** (local) / **tsvector** (Postgres) | Local: `memories_fts`, session FTS via FTS5 + sync triggers. Hive Postgres: `tsvector` GIN index + `plainto_tsquery()`. |
+| **Postgres schema migrations** | Versioned SQL + runner | `postgres_migrations.py` — `apply_private_migrations()`, `apply_hive_migrations()`, `apply_federation_migrations()`. SQL files in `src/tapps_brain/migrations/`. Forward-only, idempotent. CLI: `maintenance migrate-hive` / `hive-schema-status`. Auto-migrate: `TAPPS_BRAIN_AUTO_MIGRATE` (private), `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` (Hive). (EPIC-055) |
+| **Full-text index** | **tsvector** (all stores) | `private_memories`, Hive, Federation all use Postgres `tsvector` GIN index + `plainto_tsquery()`. |
 | **Structured config / validation** | **Pydantic v2** | `models.py`, `profile.py`, API payloads. |
 | **Structured logging** | **structlog** | Used across store, retrieval, MCP, CLI. |
-| **Encryption at rest (optional)** | **SQLCipher** via **`pysqlcipher3`** (`[encryption]` extra) | `sqlcipher_util.py`, optional encrypted connections for local SQLite stores. Postgres: use PostgreSQL native TLS + `pg_tde` if needed. Operator runbook: [`sqlcipher.md`](../guides/sqlcipher.md). **Checklist 10.5:** [`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md). |
-| **Append-only audit** | JSONL | `audit.py` / project `memory_log.jsonl` (see store initialization paths). |
+| **Encryption at rest** | **pg_tde** (storage layer) | Postgres-level TDE via Percona `pg_tde` 2.1.2+. Application code does not handle keys. Operator runbook: [`postgres-tde.md`](../guides/postgres-tde.md). |
+| **Append-only audit** | Postgres `audit_log` table | `postgres_private.py` `append_audit` — migration 005; indexed on `(project_id, agent_id, timestamp DESC)`. |
 
 ---
 
@@ -62,13 +61,13 @@
 
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
-| **Per-agent brain identity** | Isolated per-agent SQLite stores | `MemoryStore(agent_id="frontend-dev")` → `{project}/.tapps-brain/agents/frontend-dev/memory.db`. Auto-registration in `AgentRegistry`. `source_agent` auto-fill on saves. CLI/MCP `--agent-id` passthrough. Migration: `maintenance split-by-agent`. (EPIC-053) |
-| **Cross-agent shared memory** | **Hive** (PostgreSQL or SQLite + namespaces) | `PostgresHiveBackend` (prod) or `SqliteHiveBackend` (dev). `PropagationEngine` routes by `agent_scope`. Backend factory: `create_hive_backend(dsn)`. Guides: [`hive.md`](../guides/hive.md), [`hive-deployment.md`](../guides/hive-deployment.md). (EPIC-054/055) |
+| **Per-agent brain identity** | Isolated rows keyed by `(project_id, agent_id)` | `MemoryStore(agent_id="frontend-dev")` → Postgres rows scoped to that agent. Auto-registration in `AgentRegistry`. `source_agent` auto-fill on saves. CLI/MCP `--agent-id` passthrough. (EPIC-053) |
+| **Cross-agent shared memory** | **Hive** (PostgreSQL only — ADR-007) | `PostgresHiveBackend`. `PropagationEngine` routes by `agent_scope`. Backend factory: `create_hive_backend(dsn)`. Guides: [`hive.md`](../guides/hive.md), [`hive-deployment.md`](../guides/hive-deployment.md). (EPIC-054/055) |
 | **Declarative group membership** | Groups + expert auto-publish | `MemoryStore(groups=["dev-pipeline"], expert_domains=["react"])`. Groups auto-created in Hive. Expert agents auto-publish `architectural`/`pattern` tier saves. Profile YAML: `hive.groups` / `hive.expert_domains`. (EPIC-056) |
-| **Cross-project hub** | **Federation** (PostgreSQL or SQLite + explicit sync) | `PostgresFederationBackend` (prod) or `SqliteFederationBackend` (dev). Publish/subscribe/pull; **not** continuous background replication. (EPIC-054/055) |
+| **Cross-project hub** | **Federation** (PostgreSQL only — ADR-007) | `PostgresFederationBackend`. Publish/subscribe/pull; **not** continuous background replication. (EPIC-054/055) |
 | **Agent / scope routing** | String **`agent_scope`** (+ `group:<name>`) | `agent_scope.py`, propagation rules in profile `HiveConfig`, recall namespace union in `recall.py`. |
 | **Project-local partitioning** | **`memory_group`** column | Filter/list/recall/MCP/CLI; distinct from Hive namespace (see `memory-scopes.md`). |
-| **Change notification** | **LISTEN/NOTIFY** (Postgres) or monotonic revision + sidecar file (SQLite) | Postgres: real-time `LISTEN/NOTIFY` in `PostgresHiveBackend`. SQLite: `hive_write_notify`, MCP `hive_write_revision` / `hive_wait_write`, CLI `hive watch`. |
+| **Change notification** | **LISTEN/NOTIFY** (Postgres) | Real-time `LISTEN/NOTIFY` in `PostgresHiveBackend`; MCP `hive_write_revision` / `hive_wait_write`, CLI `hive watch`. |
 
 ---
 
@@ -91,7 +90,7 @@
 | **User/agent feedback signals** | Typed events + optional strict mode | `feedback.py`, `FeedbackStore`, profile `FeedbackConfig`. |
 | **Diagnostics / SLO-style scorecard** | Deterministic composite + **EWMA** anomalies | `diagnostics.py`, circuit breaker behavior, MCP/CLI diagnostics tools. |
 | **Flywheel (confidence updates)** | Bayesian-style updates + reports | `flywheel.py` — optional **LLM-as-judge** backends detected via `_feature_flags.py` (`openai`, `anthropic`) for **offline/reporting** paths, not core retrieve. |
-| **Health checks** | Aggregated store + Hive + retrieval mode | `health_check.py` — `retrieval_effective_mode`, `retrieval_summary`, sqlite-vec fields (#63). Save-phase timing: `save_phase_summary` + full histograms via `get_metrics()` / MCP **`memory://metrics`**. **Checklist 10.6:** [`ADR-006`](../planning/adr/ADR-006-save-path-observability.md). |
+| **Health checks** | Aggregated store + Hive + retrieval mode | `health_check.py` — `retrieval_effective_mode`, `retrieval_summary`, `vector_index_enabled`, pool saturation, migration version. Save-phase timing: `save_phase_summary` + full histograms via `get_metrics()` / MCP **`memory://metrics`**. **Checklist 10.6:** [`ADR-006`](../planning/adr/ADR-006-save-path-observability.md). |
 | **Distributed tracing (optional)** | **OpenTelemetry** (`[otel]` extra) | `otel_exporter.py` — exporter creation when deps present; wiring documented as optional (`optional-features-matrix.md`, observability guide). |
 | **Rate limiting** | In-process **sliding window** | `rate_limiter.py` + `RateLimiterConfig` on `MemoryStore`. |
 | **Integrity** | Per-entry **hash** | `integrity.py` — `integrity_hash` on `MemoryEntry`. |
@@ -118,10 +117,9 @@
 | `cli` | `typer` | Command-line interface. |
 | `mcp` | `mcp` | MCP server. |
 | `reranker` | `flashrank` | Local cross-encoder re-ranking. |
-| `encryption` | `pysqlcipher3` | SQLCipher (local SQLite encryption). |
 | `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
-| **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers`, `sqlite-vec` | Always installed (vector search built-in since v2.2.0). |
-| **Postgres** (lazy) | `psycopg[binary]`, `psycopg_pool` | Required only when using `postgres://` DSN. Not a declared extra — lazy-imported with helpful error message if missing. Install: `pip install 'psycopg[binary]' psycopg_pool`. |
+| **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers` | Always installed (vector search built-in). |
+| **Postgres** (lazy) | `psycopg[binary]`, `psycopg_pool` | Required for all durable stores. Not a declared extra — lazy-imported with helpful error message if missing. Install: `pip install 'psycopg[binary]' psycopg_pool`. |
 
 Lazy detection: `_feature_flags.py` probes importability for optional LLM SDKs (`anthropic_sdk`, `openai_sdk`). Postgres deps detected lazily in `postgres_connection.py`.
 
@@ -132,11 +130,10 @@ Lazy detection: `_feature_flags.py` probes importability for optional LLM SDKs (
 | Topic | What we use |
 |-------|-------------|
 | **Async** | **None in core** — synchronous API by design. |
-| **Per-agent isolation** | Each agent gets its own `MemoryStore` + own SQLite DB + own `threading.Lock`. **No cross-agent contention** for private memory. 200 agents = 200 independent stores. (EPIC-053) |
-| **Shared store concurrency** | **PostgreSQL MVCC** for Hive/Federation in production — concurrent reads/writes from N agents. Connection pooling via `psycopg_pool`. SQLite fallback for local dev (single-writer). (EPIC-055) |
+| **Per-agent isolation** | Each agent gets its own `MemoryStore` backed by Postgres rows scoped to `(project_id, agent_id)`. **No cross-agent contention** for private memory. 200 agents = 200 independent row scopes. (EPIC-053) |
+| **Shared store concurrency** | **PostgreSQL MVCC** for all shared stores — concurrent reads/writes from N agents. Connection pooling via `psycopg_pool`. (EPIC-055) |
 | **Thread safety** | **`threading.Lock`** per `MemoryStore` instance — scoped to one agent, not shared. |
-| **Agent-local SQLite** | **WAL** mode; optional RO search connection (`TAPPS_SQLITE_MEMORY_READONLY_SEARCH`); configurable busy timeout (`TAPPS_SQLITE_BUSY_MS`). |
-| **Scale posture** | **Per-agent SQLite + shared Postgres Hive** handles 200+ concurrent agents. Per-agent tuning via [`system-architecture.md`](system-architecture.md) *Concurrency model*. Further service extraction deferred: [`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md). |
+| **Scale posture** | **Postgres-only persistence** (private + Hive + Federation) handles 200+ concurrent agents. Pool sizing via `TAPPS_BRAIN_HIVE_POOL_MIN`/`MAX`. Concurrency model: [`system-architecture.md`](system-architecture.md). Further service extraction deferred: [`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md). |
 
 ---
 
@@ -144,23 +141,24 @@ Lazy detection: `_feature_flags.py` probes importability for optional LLM SDKs (
 
 Use this list when comparing to industry alternatives:
 
-1. **Retrieval:** **Decision (2026-04-03, updated 2026-04-07):** BM25 + built-in dense (sqlite-vec, core since v2.2.0) + RRF **is the maintained stack** for core; learned sparse, ColBERT, and managed vector DB are **deferred / out of scope for shipped core** — [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
+1. **Retrieval:** **Decision (2026-04-03, updated 2026-04-11):** BM25 + built-in dense (pgvector HNSW) + RRF **is the maintained stack** for core; learned sparse, ColBERT, and managed vector DB are **deferred / out of scope for shipped core** — [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
 2. **Freshness:** **Decision (2026-04-03):** **Lazy decay on read** + **profile / consolidation tuning** + **operator-invoked GC** (`gc.py`, `maintenance gc` / `maintenance stale`) **are the maintained model**; mandatory wall-clock TTL workers, `maintenance decay-refresh`, and daily “crossed stale threshold” metrics **deferred** — [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md).
 3. **Correctness:** **Decision (2026-04-03):** **Heuristic save-time conflicts** + **offline** candidate export / opt-in external review ([`save-conflict-nli-offline.md`](../guides/save-conflict-nli-offline.md)) **are the maintained model** for core; **curated ontology**, automatic **`needs_review` queues**, and **MCP list/resolve review** workflows **deferred** until explicit product spec + planning trigger **(c)** — [`ADR-003`](../planning/adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md).
-4. **Scale:** **Decision (2026-04-03, updated 2026-04-09):** **Per-agent isolated SQLite + shared Postgres Hive** (EPIC-053/055) is the maintained posture for 200+ agents. Per-agent: own `memory.db` + own lock (no cross-agent contention). Shared: PostgreSQL with MVCC, connection pooling, pgvector. Operator tuning (**WAL**, `busy_timeout`, optional RO search, lock timeout) applies per agent. **Published QPS SLO** and **mandatory service extraction** **deferred** until evidence — [`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
-5. **Security:** **Decision (2026-04-03):** **Passphrase + env / CLI** (`encrypt-db`, `rekey-db`, `decrypt-db`) + **runbook** ([`sqlcipher.md`](../guides/sqlcipher.md): key loss, backup/verify, optional re-key drill) **are maintained**; **vendor-specific KMS envelope** docs **deferred** (host-owned integration) — [`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md).
+4. **Scale:** **Decision (2026-04-03, updated 2026-04-11):** **Postgres-only persistence** (private + Hive + Federation) is the maintained posture for 200+ agents (ADR-007). Per-agent: row-scoped isolation + own `threading.Lock` (no cross-agent contention). Shared: PostgreSQL MVCC, connection pooling, pgvector. Operator tuning (pool sizing, lock timeout) via env vars. **Published QPS SLO** and **mandatory service extraction** **deferred** until evidence — [`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md).
+5. **Security:** **Decision (2026-04-11):** **pg_tde** (Percona, storage-layer TDE) is the at-rest encryption path for Postgres. No application-layer key handling. Key rotation documented in [`postgres-tde.md`](../guides/postgres-tde.md). **Vendor-specific KMS envelope** docs **deferred** (host-owned integration) — [`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md).
 6. **Observability:** **Decision (2026-04-03):** **Save-phase histograms** (`store.save.phase.*`), **`get_metrics()`**, MCP **`memory://metrics`**, and **`save_phase_summary`** on health **are the maintained save-path surface**; **deeper** consolidation/GC correlation metrics **deferred** unless **PLANNING.md** trigger **(a)**; **OpenTelemetry** remains a separate optional track ([`EPIC-032`](../planning/epics/EPIC-032.md)) — [`ADR-006`](../planning/adr/ADR-006-save-path-observability.md).
 
 ---
 
 ## Change log
 
-- **2026-04-09:** Sections 2, 4, 5, 8, 9, 10 — reflect EPIC-053–058 (per-agent SQLite, Postgres Hive/Federation, backend abstraction, AgentBrain API, Docker deployment, group membership). Section 2 rewritten for per-agent stores + Postgres shared backends. Section 4 adds per-agent identity, declarative groups, Postgres notifications. Section 5 adds AgentBrain facade, Docker deployment. Section 8 adds Postgres lazy deps. Section 9 rewritten for per-agent isolation + Postgres concurrency. Section 10.4 updated for per-agent + Postgres scale posture.
+- **2026-04-11:** Sections 1, 2, 4, 6, 8, 9, 10 — reflect ADR-007 (Postgres-only, no SQLite). Replaced FTS5/sqlite-vec with tsvector/pgvector; per-agent store now Postgres `private_memories`; removed SQLCipher row, added pg_tde. Checklist items 1, 4, 5 updated.
+- **2026-04-09:** Sections 2, 4, 5, 8, 9, 10 — reflect EPIC-053–058 (per-agent Postgres private, Postgres Hive/Federation, backend abstraction, AgentBrain API, Docker deployment, group membership).
 - **2026-04-03:** Section 10 item 6 + section 6 health row — save-path observability ([`ADR-006`](../planning/adr/ADR-006-save-path-observability.md)); phase histograms + metrics + health summary maintained; defer deeper metrics unless trigger **(a)**; OTel remains optional.
 - **2026-04-03:** Section 10 item 5 + section 2 encryption row — SQLCipher ops ([`ADR-005`](../planning/adr/ADR-005-sqlcipher-key-backup-operations.md)); `sqlcipher.md` backup/verify + key-loss + enterprise KMS note; defer vendor KMS how-tos.
 - **2026-04-03:** Section 10 item 4 + section 9 scale row — scale posture ([`ADR-004`](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md)); single-node maintained; defer QPS SLO + service extraction until evidence.
 - **2026-04-03:** Section 10 item 3 + section 3 contradiction row — correctness boundary ([`ADR-003`](../planning/adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md)); heuristic conflicts + offline review; defer ontology / review-queue MCP (trigger **(c)** in `PLANNING.md`).
 - **2026-04-03:** Section 10 item 2 + section 1 stale row — freshness decision ([`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md)); lazy decay + operator GC; defer TTL jobs / decay-refresh command / daily stale-crossing metrics.
-- **2026-04-03:** Section 10 item 1 + section 1 boundaries — retrieval stack maintainer decision ([`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md)); embedded SQLite–first; defer learned sparse / ColBERT / managed vector DB for core.
+- **2026-04-03:** Section 10 item 1 + section 1 boundaries — retrieval stack maintainer decision ([`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md)); Postgres BM25+pgvector hybrid; defer learned sparse / ColBERT / managed vector DB for core.
 - **2026-03-31:** Linked improvement program index (EPIC-042–051) for section-by-section research stories.
 - **2026-03-31:** Initial map for architecture review (features ↔ technologies ↔ modules).
