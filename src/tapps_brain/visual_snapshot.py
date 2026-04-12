@@ -78,6 +78,17 @@ class VisualThemeTokens(BaseModel):
     )
 
 
+class NamespaceDetail(BaseModel):
+    """Per-namespace entry count and last write timestamp (no memory text)."""
+
+    namespace: str
+    entry_count: int = Field(default=0, ge=0)
+    last_write_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC of the most recent write to this namespace, or None.",
+    )
+
+
 class HiveHealthSummary(BaseModel):
     """Hive hub telemetry (no memory text)."""
 
@@ -86,6 +97,10 @@ class HiveHealthSummary(BaseModel):
     namespaces: list[str] = Field(default_factory=list)
     entries: int = 0
     agents: int = 0
+    namespace_detail: list[NamespaceDetail] = Field(
+        default_factory=list,
+        description="Per-namespace entry count and last write; populated when connected.",
+    )
 
 
 class AccessBucket(BaseModel):
@@ -233,14 +248,33 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
         if hive is None:
             return HiveHealthSummary(connected=False, status="skipped")
         try:
-            ns_counts = hive.count_by_namespace()
+            # Single GROUP BY query — prefer namespace_detail_list() when available.
+            if hasattr(hive, "namespace_detail_list"):
+                raw_details = hive.namespace_detail_list()
+                ns_detail = [
+                    NamespaceDetail(
+                        namespace=row["namespace"],
+                        entry_count=int(row.get("entry_count", 0)),
+                        last_write_at=row.get("last_write_at"),
+                    )
+                    for row in raw_details
+                ]
+                ns_detail_sorted = sorted(ns_detail, key=lambda d: d.namespace)
+                total_entries = sum(d.entry_count for d in ns_detail_sorted)
+                namespaces = [d.namespace for d in ns_detail_sorted]
+            else:
+                ns_counts = hive.count_by_namespace()
+                ns_detail_sorted = []
+                total_entries = int(sum(ns_counts.values()))
+                namespaces = sorted(ns_counts.keys())
             registry = AgentRegistry()
             return HiveHealthSummary(
                 connected=True,
                 status="ok",
-                namespaces=sorted(ns_counts.keys()),
-                entries=int(sum(ns_counts.values())),
+                namespaces=namespaces,
+                entries=total_entries,
                 agents=len(registry.list_agents()),
+                namespace_detail=ns_detail_sorted,
             )
         finally:
             hive.close()

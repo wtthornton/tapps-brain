@@ -15,8 +15,10 @@ from tapps_brain.visual_snapshot import (
     VISUAL_SNAPSHOT_SCHEMA_VERSION,
     DiagnosticsSummary,
     HiveHealthSummary,
+    NamespaceDetail,
     _access_stats_from_entries,
     _build_scorecard,
+    _collect_hive_health,
     build_visual_snapshot,
     capture_png,
     compute_fingerprint_hex,
@@ -581,3 +583,142 @@ def test_scorecard_retrieval_other_mode() -> None:
 # SQLCipher scorecard check was removed in ADR-007 stage 2 (2026-04-11) —
 # at-rest encryption is delegated to the storage layer (pg_tde) and no
 # longer surfaces in the brain-visual scorecard.
+
+
+# ---------------------------------------------------------------------------
+# NamespaceDetail and HiveHealthSummary.namespace_detail
+# ---------------------------------------------------------------------------
+
+
+def test_namespace_detail_defaults() -> None:
+    """NamespaceDetail has sensible defaults and accepts all fields."""
+    nd = NamespaceDetail(namespace="repo-brain", entry_count=42, last_write_at="2026-01-01T00:00:00Z")
+    assert nd.namespace == "repo-brain"
+    assert nd.entry_count == 42
+    assert nd.last_write_at == "2026-01-01T00:00:00Z"
+
+
+def test_namespace_detail_none_last_write() -> None:
+    nd = NamespaceDetail(namespace="empty-ns")
+    assert nd.entry_count == 0
+    assert nd.last_write_at is None
+
+
+def test_hive_health_summary_namespace_detail_default() -> None:
+    hh = HiveHealthSummary()
+    assert hh.namespace_detail == []
+
+
+def test_hive_health_summary_namespace_detail_populated() -> None:
+    details = [
+        NamespaceDetail(namespace="alpha", entry_count=10, last_write_at="2026-01-01T00:00:00Z"),
+        NamespaceDetail(namespace="beta", entry_count=5, last_write_at=None),
+    ]
+    hh = HiveHealthSummary(connected=True, status="ok", entries=15, agents=2, namespace_detail=details)
+    assert len(hh.namespace_detail) == 2
+    assert hh.namespace_detail[0].namespace == "alpha"
+    assert hh.namespace_detail[1].entry_count == 5
+
+
+def test_hive_health_summary_serialises_namespace_detail() -> None:
+    """HiveHealthSummary with namespace_detail round-trips through model_dump/model_validate."""
+    details = [NamespaceDetail(namespace="ns1", entry_count=7, last_write_at="2026-04-01T10:00:00Z")]
+    hh = HiveHealthSummary(connected=True, status="ok", entries=7, agents=1, namespace_detail=details)
+    dumped = hh.model_dump()
+    restored = HiveHealthSummary.model_validate(dumped)
+    assert restored.namespace_detail[0].namespace == "ns1"
+    assert restored.namespace_detail[0].entry_count == 7
+
+
+def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
+    """_collect_hive_health() populates namespace_detail when hive has namespace_detail_list()."""
+    store = MemoryStore(tmp_path)
+    try:
+        mock_hive = MagicMock()
+        mock_hive.namespace_detail_list.return_value = [
+            {"namespace": "personal", "entry_count": 20, "last_write_at": "2026-04-01T12:00:00+00:00"},
+            {"namespace": "repo-brain", "entry_count": 55, "last_write_at": None},
+        ]
+        mock_registry = MagicMock()
+        mock_registry.list_agents.return_value = ["agent-a", "agent-b", "agent-c"]
+
+        with (
+            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+        ):
+            result = _collect_hive_health(store)
+
+        assert result.connected is True
+        assert result.status == "ok"
+        assert result.entries == 75
+        assert result.agents == 3
+        assert len(result.namespace_detail) == 2
+        # sorted by namespace name
+        assert result.namespace_detail[0].namespace == "personal"
+        assert result.namespace_detail[0].entry_count == 20
+        assert result.namespace_detail[1].namespace == "repo-brain"
+        assert result.namespace_detail[1].last_write_at is None
+        mock_hive.close.assert_called_once()
+    finally:
+        store.close()
+
+
+def test_collect_hive_health_falls_back_when_no_namespace_detail_list(tmp_path: Path) -> None:
+    """_collect_hive_health() falls back to count_by_namespace() when method absent."""
+    store = MemoryStore(tmp_path)
+    try:
+        mock_hive = MagicMock(spec=["count_by_namespace", "close"])
+        mock_hive.count_by_namespace.return_value = {"alpha": 3, "beta": 7}
+        mock_registry = MagicMock()
+        mock_registry.list_agents.return_value = ["agent-x"]
+
+        with (
+            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+        ):
+            result = _collect_hive_health(store)
+
+        assert result.connected is True
+        assert result.entries == 10
+        assert result.agents == 1
+        assert result.namespace_detail == []  # no detail when fallback path used
+        assert sorted(result.namespaces) == ["alpha", "beta"]
+        mock_hive.close.assert_called_once()
+    finally:
+        store.close()
+
+
+def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
+    """_collect_hive_health() returns empty namespace_detail when hive is fresh."""
+    store = MemoryStore(tmp_path)
+    try:
+        mock_hive = MagicMock()
+        mock_hive.namespace_detail_list.return_value = []
+        mock_registry = MagicMock()
+        mock_registry.list_agents.return_value = []
+
+        with (
+            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+        ):
+            result = _collect_hive_health(store)
+
+        assert result.connected is True
+        assert result.entries == 0
+        assert result.namespace_detail == []
+    finally:
+        store.close()
+
+
+def test_collect_hive_health_not_reachable(tmp_path: Path) -> None:
+    """_collect_hive_health() returns connected=False when DSN not set."""
+    store = MemoryStore(tmp_path)
+    try:
+        with patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=None):
+            result = _collect_hive_health(store)
+
+        assert result.connected is False
+        assert result.status == "skipped"
+        assert result.namespace_detail == []
+    finally:
+        store.close()

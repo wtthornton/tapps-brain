@@ -972,6 +972,51 @@
         "Code: <code>diagnostics.py</code> · <code>models.py: RecallResult</code> · " +
         "Scorecard check: <em>Diagnostics circuit</em>",
     },
+
+    hive_namespace_detail: {
+      title: "Hive namespace detail table",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The <strong>namespace detail table</strong> in the Hive hub panel shows one row per namespace " +
+            "currently stored in the shared Hive database. Each row shows the namespace name, its total entry count, " +
+            "and a relative timestamp of the most recent write (<em>e.g.</em> '5m ago', '2h ago').</p>",
+        },
+        {
+          heading: "How it is collected",
+          html:
+            "<p>A single <code>SELECT namespace, COUNT(*), COALESCE(MAX(updated_at), MAX(created_at)) " +
+            "FROM hive_memories GROUP BY namespace</code> query is run against the Postgres Hive at snapshot " +
+            "time. This avoids one query per namespace and keeps the snapshot endpoint fast.</p>",
+        },
+        {
+          heading: "Status badges",
+          html:
+            "<ul>" +
+            "<li><strong style='color:#047857'>● Connected</strong> — Hive is reachable and the table reflects live data.</li>" +
+            "<li><strong style='color:#b45309'>⚠ Degraded</strong> — Hive returned an error but was previously reachable.</li>" +
+            "<li><strong style='color:#b91c1c'>● Offline</strong> — Hive is not reachable from this host or DSN is unset.</li>" +
+            "</ul>",
+        },
+        {
+          heading: "Empty state",
+          html:
+            "<p>When the Hive is connected but no namespaces exist yet (fresh deployment), the table shows " +
+            "<em>No namespaces — Hive has no data yet.</em> This is normal on first startup.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>A namespace that stopped receiving writes, or one that is growing unexpectedly large, " +
+            "is invisible in a single-line prose string. The table makes per-namespace growth and " +
+            "staleness immediately obvious without running <code>psql</code>.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>visual_snapshot.py: HiveHealthSummary.namespace_detail</code> · " +
+        "<code>postgres_hive.py: namespace_detail_list()</code> · STORY-065.4",
+    },
   };
 
   function openBrainVisualHelp(type, id) {

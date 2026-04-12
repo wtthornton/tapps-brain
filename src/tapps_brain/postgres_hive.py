@@ -544,6 +544,31 @@ class PostgresHiveBackend:
             cur.execute("SELECT namespace, COUNT(*) FROM hive_memories GROUP BY namespace")
             return {row[0]: row[1] for row in cur.fetchall()}
 
+    def namespace_detail_list(self) -> list[dict[str, Any]]:
+        """Return per-namespace entry count and last write time in a single GROUP BY query."""
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    namespace,
+                    COUNT(*) AS entry_count,
+                    COALESCE(
+                        MAX(updated_at), MAX(created_at)
+                    )::text AS last_write_at
+                FROM hive_memories
+                GROUP BY namespace
+                ORDER BY namespace
+                """
+            )
+            return [
+                {
+                    "namespace": row[0],
+                    "entry_count": int(row[1]),
+                    "last_write_at": row[2],
+                }
+                for row in cur.fetchall()
+            ]
+
     def count_by_agent(self) -> dict[str, int]:
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT source_agent, COUNT(*) FROM hive_memories GROUP BY source_agent")

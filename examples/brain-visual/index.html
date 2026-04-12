@@ -1312,6 +1312,68 @@
       max-width: 52ch;
     }
 
+    /* ── Hive hub status badge ─────────────────────────────────────────────── */
+    .hive-status-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .hive-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      border: 1px solid;
+    }
+
+    .hive-badge.hive-connected {
+      background: rgba(16, 185, 129, 0.07);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #047857;
+    }
+    html[data-theme="dark"] .hive-badge.hive-connected {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(52, 211, 153, 0.25);
+    }
+
+    .hive-badge.hive-degraded {
+      background: rgba(217, 119, 6, 0.07);
+      border-color: rgba(217, 119, 6, 0.3);
+      color: var(--nlt-accent-dim);
+    }
+
+    .hive-badge.hive-offline {
+      background: rgba(220, 38, 38, 0.07);
+      border-color: rgba(220, 38, 38, 0.3);
+      color: #b91c1c;
+    }
+    html[data-theme="dark"] .hive-badge.hive-offline {
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+      border-color: rgba(248, 113, 113, 0.25);
+    }
+
+    .hive-meta {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+    }
+
+    .hive-ns-empty {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      font-style: italic;
+      padding: 0.6rem 0.65rem;
+    }
+
     .score-dims {
       margin-top: 0.9rem;
       display: flex;
@@ -1927,7 +1989,31 @@
               ?
             </button>
           </div>
-          <div id="hive-detail" class="prose-small">—</div>
+          <div id="hive-status-row" class="hive-status-row">
+            <span id="hive-badge" class="hive-badge hive-offline">● Offline</span>
+            <span id="hive-meta" class="hive-meta">—</span>
+          </div>
+          <table id="hive-ns-table" class="data-table" aria-label="Hive namespace details">
+            <thead>
+              <tr>
+                <th>Namespace</th>
+                <th>Entries</th>
+                <th>Last Write</th>
+                <th>
+                  <button
+                    type="button"
+                    class="help-pill"
+                    data-help="concept:hive_namespace_detail"
+                    aria-label="Explain namespace detail"
+                    style="vertical-align: middle"
+                  >?</button>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="hive-ns-tbody">
+              <tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -2633,27 +2719,73 @@
         svLine.textContent = "—";
       }
 
-      /* Hive hub detail */
-      const hd = el("hive-detail");
-      if (hd) {
+      /* Hive hub detail — structured table */
+      (function renderHiveHub() {
         const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
-        if (hh && hh.connected) {
-          const ns = Array.isArray(hh.namespaces) ? hh.namespaces.join(", ") : "—";
-          hd.textContent =
-            "Connected · " +
-            (Number(hh.entries) || 0) +
-            " entries · " +
-            (Number(hh.agents) || 0) +
-            " registered agents · namespaces: " +
-            (ns || "—") +
-            ".";
-        } else {
-          hd.textContent =
-            "Hub not reachable from this export, or no Hive data. Project store Hive injection: " +
-            (data.hive_attached ? "yes" : "no") +
-            ".";
+        const badgeEl = el("hive-badge");
+        const metaEl = el("hive-meta");
+        const tbody = el("hive-ns-tbody");
+
+        /** Format an ISO timestamp as a relative time string (e.g. '5m ago'). */
+        function relTimeAgo(isoStr) {
+          if (!isoStr) return "—";
+          const ms = Date.now() - new Date(isoStr).getTime();
+          if (isNaN(ms) || ms < 0) return "—";
+          const secs = Math.floor(ms / 1000);
+          if (secs < 60) return secs + "s ago";
+          const mins = Math.floor(secs / 60);
+          if (mins < 60) return mins + "m ago";
+          const hrs = Math.floor(mins / 60);
+          if (hrs < 24) return hrs + "h ago";
+          return Math.floor(hrs / 24) + "d ago";
         }
-      }
+
+        if (hh && hh.connected) {
+          const totalEntries = Number(hh.entries) || 0;
+          const totalAgents = Number(hh.agents) || 0;
+          if (badgeEl) {
+            badgeEl.className = "hive-badge hive-connected";
+            badgeEl.textContent = "● Connected";
+          }
+          if (metaEl) {
+            metaEl.textContent =
+              totalEntries + " entr" + (totalEntries === 1 ? "y" : "ies") +
+              " · " + totalAgents + " agent" + (totalAgents === 1 ? "" : "s");
+          }
+          if (tbody) {
+            const details = Array.isArray(hh.namespace_detail) ? hh.namespace_detail : [];
+            if (details.length === 0) {
+              tbody.innerHTML =
+                '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
+            } else {
+              tbody.innerHTML = details.map(function (row) {
+                return (
+                  "<tr>" +
+                  "<td>" + (row.namespace || "—") + "</td>" +
+                  "<td>" + (Number(row.entry_count) || 0) + "</td>" +
+                  "<td>" + relTimeAgo(row.last_write_at) + "</td>" +
+                  "<td></td>" +
+                  "</tr>"
+                );
+              }).join("");
+            }
+          }
+        } else {
+          const injected = data.hive_attached ? "yes" : "no";
+          const isWarn = hh && hh.status === "warn";
+          if (badgeEl) {
+            badgeEl.className = isWarn ? "hive-badge hive-degraded" : "hive-badge hive-offline";
+            badgeEl.textContent = isWarn ? "⚠ Degraded" : "● Offline";
+          }
+          if (metaEl) {
+            metaEl.textContent = "Hub not reachable from this export. Hive injection: " + injected + ".";
+          }
+          if (tbody) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
+          }
+        }
+      })();
 
       /* Access */
       const acc = data.access_stats && typeof data.access_stats === "object" ? data.access_stats : null;
