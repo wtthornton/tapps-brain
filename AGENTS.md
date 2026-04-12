@@ -56,6 +56,18 @@ make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps"
 
 See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full env-var contract** (all variables, examples, required (prod/dev)). Template: [`.env.example`](.env.example).
 
+### Key environment variables
+
+| Variable | Purpose |
+|---|---|
+| `TAPPS_BRAIN_DATABASE_URL` | Postgres DSN for private memory (required). |
+| `TAPPS_BRAIN_HIVE_DSN` | Postgres DSN for shared Hive (overrides `TAPPS_BRAIN_DATABASE_URL` for Hive). |
+| `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending private schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the DB schema is ahead of bundled migrations. **Single-host / local-dev only** — use a dedicated migration job for multi-host deployments. |
+| `TAPPS_BRAIN_AGENT_ID` | Agent identity string. |
+| `TAPPS_BRAIN_PROJECT_DIR` | Project root path. |
+| `TAPPS_BRAIN_GROUPS` | CSV group memberships (e.g. `dev-pipeline,frontend-guild`). |
+| `TAPPS_BRAIN_EXPERT_DOMAINS` | CSV expert domains for auto-publish. |
+
 ### CI
 
 GitHub Actions (`ci.yml`) runs the same `pytest` command against a

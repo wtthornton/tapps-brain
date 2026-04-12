@@ -81,6 +81,7 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path |
 | `TAPPS_BRAIN_GROUPS` | CSV group memberships (e.g. `dev-pipeline,frontend-guild`) |
 | `TAPPS_BRAIN_EXPERT_DOMAINS` | CSV expert domains for auto-publish (e.g. `css,react`) |
+| `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending *private* schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the live DB schema exceeds the max bundled version (downgrade guard). **Not recommended for multi-host deployments** — use a one-shot migration job instead. |
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Auto-run Postgres schema migrations on startup |
 
 **Docker deployment:** `docker/docker-compose.hive.yaml` (pgvector/pgvector:pg17), `docker/init-hive.sql`, `docker/Dockerfile.migrate`. See `docs/guides/hive-deployment.md` and `docs/guides/agentforge-integration.md`.

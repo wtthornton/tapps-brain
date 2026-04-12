@@ -143,6 +143,20 @@ class AgentBrain:
             except Exception:
                 logger.warning("agent_brain.hive_init_failed", exc_info=True)
 
+        # STORY-066.8: Auto-migrate private schema if TAPPS_BRAIN_AUTO_MIGRATE=1.
+        # MemoryStore.__init__ also performs this check, but we call it here so
+        # AgentBrain users see the error before the backend is constructed.
+        _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
+        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
+            try:
+                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+                maybe_auto_migrate_private(_auto_migrate_dsn)
+            except Exception:
+                # MigrationDowngradeError and ImportError propagate; other
+                # transient errors are logged and deferred to the store.
+                raise
+
         # ADR-007: resolve the Postgres private backend from
         # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is
         # unset, MemoryStore.__init__ raises ValueError.

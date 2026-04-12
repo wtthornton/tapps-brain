@@ -2,11 +2,13 @@
 
 EPIC-055 STORY-055.9 — reads SQL migration files and applies them in order,
 tracking applied versions in ``hive_schema_version`` / ``federation_schema_version``.
+STORY-066.8 — auto-migrate private schema on startup when TAPPS_BRAIN_AUTO_MIGRATE=1.
 """
 
 from __future__ import annotations
 
 import importlib.resources
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -231,3 +233,67 @@ def apply_private_migrations(dsn: str, *, dry_run: bool = False) -> list[int]:
     """
     migrations = discover_private_migrations()
     return _apply_migrations(dsn, "private_schema_version", migrations, dry_run=dry_run)
+
+
+# ---------------------------------------------------------------------------
+# Auto-migrate gate (STORY-066.8)
+# ---------------------------------------------------------------------------
+
+
+class MigrationDowngradeError(RuntimeError):
+    """Raised when the live DB schema version exceeds the max bundled migration.
+
+    This means the database was previously migrated by a *newer* binary and
+    auto-migrating now would be unsafe (downgrade footgun).  An operator must
+    manually resolve the schema version mismatch before restarting.
+    """
+
+
+def maybe_auto_migrate_private(dsn: str) -> None:
+    """Apply pending private migrations when ``TAPPS_BRAIN_AUTO_MIGRATE=1``.
+
+    Safe to call unconditionally — is a no-op when the env var is absent or
+    set to any value other than ``"1"``.
+
+    Raises:
+        MigrationDowngradeError: when the DB's current schema version is
+            greater than the highest bundled migration version.  This guards
+            against running an old binary against a schema that was already
+            advanced by a newer deployment.
+        ImportError: when ``psycopg`` is not installed.
+    """
+    if os.environ.get("TAPPS_BRAIN_AUTO_MIGRATE", "0") != "1":
+        return
+
+    migrations = discover_private_migrations()
+    if not migrations:
+        logger.info("postgres.auto_migrate.no_bundled_migrations")
+        return
+
+    max_bundled_version = max(v for v, _, _ in migrations)
+
+    # Read current DB version without applying anything.
+    status = get_private_schema_status(dsn)
+
+    if status.current_version > max_bundled_version:
+        msg = (
+            f"DB private schema version {status.current_version} exceeds the "
+            f"max bundled migration version {max_bundled_version}. "
+            "Refusing to auto-migrate — the database was advanced by a newer "
+            "binary.  Run migrations manually or upgrade the binary."
+        )
+        logger.error(
+            "postgres.auto_migrate.downgrade_refused",
+            db_version=status.current_version,
+            max_bundled=max_bundled_version,
+        )
+        raise MigrationDowngradeError(msg)
+
+    applied = apply_private_migrations(dsn)
+    if applied:
+        logger.info(
+            "postgres.auto_migrate.completed",
+            applied_versions=applied,
+        )
+    else:
+        logger.info("postgres.auto_migrate.already_up_to_date")

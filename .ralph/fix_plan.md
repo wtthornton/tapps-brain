@@ -16,7 +16,6 @@
 
 ### Phase B: Operator readiness <!-- id: 066-phase-b -->
 
-- [ ] **066.8** Auto-migrate on startup gate (`TAPPS_BRAIN_AUTO_MIGRATE=1`) [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.8.md -->
 
 ### Phase C: Docs, benchmarks, test parity <!-- id: 066-phase-c -->
 

@@ -225,6 +225,15 @@ class MemoryStore:
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
 
+        # STORY-066.8: Auto-migrate private schema on startup when
+        # TAPPS_BRAIN_AUTO_MIGRATE=1.  Runs before the backend is constructed
+        # so the schema is up-to-date before the first connection.
+        _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
+        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
+            from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+            maybe_auto_migrate_private(_auto_migrate_dsn)
+
         # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
         # When the caller does not pass one, resolve it from
         # TAPPS_BRAIN_DATABASE_URL via backends.resolve_private_backend_from_env.
