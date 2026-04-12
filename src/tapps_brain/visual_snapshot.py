@@ -2,6 +2,11 @@
 
 Contract: aggregated metadata only — no memory bodies. Tag names and group names
 are omitted unless ``privacy="local"``. See ``docs/planning/brain-visual-implementation-plan.md``.
+
+Key public API: :func:`compute_fingerprint_hex`, :func:`theme_from_fingerprint`,
+:class:`DiagnosticsSummary`, :class:`AccessBucket`, :class:`AccessStats`.
+The :func:`build_visual_snapshot` function assembles the full
+:class:`VisualSnapshot` from a live ``MemoryStore``.
 """
 
 from __future__ import annotations

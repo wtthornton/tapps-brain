@@ -3,6 +3,9 @@
 Uses FastMCP to expose MemoryStore operations as MCP tools, resources,
 and prompts over stdio transport. Requires the ``mcp`` optional extra.
 
+Key public API: :func:`create_server` returns a configured ``FastMCP``
+instance; call ``mcp.run()`` to start the stdio server.
+
 Entry point: ``tapps-brain-mcp`` (see pyproject.toml).
 """
 

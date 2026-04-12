@@ -193,7 +193,7 @@ hive = create_hive_backend("postgres://user:pass@host/db")
 
 - [EPIC-059](../planning/epics/EPIC-059.md) — full acceptance criteria
 - [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md) — Postgres-only decision
-- [ADR-004](../planning/adr/ADR-004-scale-out.md) — original scale-out rationale (narrowed by ADR-007)
+- [ADR-004](../planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) — original scale-out rationale (narrowed by ADR-007)
 - `docs/guides/hive-deployment.md` — Postgres setup for Hive
 - `docs/guides/memory-decay-and-fsrs.md` — decay details
 - `scripts/load_smoke.py` — concurrent-agent benchmark (see below)

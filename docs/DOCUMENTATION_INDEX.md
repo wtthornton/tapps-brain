@@ -31,16 +31,17 @@
 - [ADR-006: Save-path observability — phase histograms + health summary (defer deeper metrics unless trigger (a))](planning/adr/ADR-006-save-path-observability.md) — **Status:** Accepted *(updated 2026-04-05)*
 - [ADR-007: Postgres-only backends — no SQLite for Hive or Federation (v3 greenfield)](planning/adr/ADR-007-postgres-only-no-sqlite.md) — **Status:** Accepted *(updated 2026-04-10)*
 - [ADR-008: No new public HTTP routes without MCP + library parity](planning/adr/ADR-008-no-http-without-mcp-library-parity.md) — **Status:** Accepted *(updated 2026-04-10)*
+- [ADR-009: Row Level Security on hive_memories — Ship in GA vs Defer](planning/adr/ADR-009-rls-ship-vs-defer.md) — **Status:** Accepted *(updated 2026-04-11)*
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-04-05)*
 
 ## Getting Started
 
 - [Ralph Setup Guide (Windows + WSL)](RALPH_SETUP_GUIDE.md) — Step-by-step guide for setting up Ralph on a new project. Covers the common pitfalls. *(updated 2026-04-05)*
+- [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — GitHub configurations that cannot be set via repository files — required API or UI setup steps for new contributors. *(updated 2026-04-05)*
 - [Engineering Documentation Baseline](engineering/README.md) — This folder is the code-aligned engineering reference for tapps-brain runtime behavior. *(updated 2026-04-05)*
 - [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-04-09)*
 - [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-04-08)*
 - [Install and upgrade tapps-brain for OpenClaw from GitHub (no PyPI)](guides/openclaw-install-from-git.md) — Use this guide when you want the **Python** package and **`tapps-brain-mcp`** installed or upgraded from the Git repo... *(updated 2026-04-05)*
-- [SQLCipher platform installation](guides/sqlcipher-platform-install.md) — This guide covers installing the system SQLCipher library and the `pysqlcipher3` Python binding on each supported pla... *(updated 2026-04-05)*
 
 ## Guides
 
@@ -67,15 +68,13 @@
 - [Profile Limits: Research and Rationale](guides/profile-limits-rationale.md) — This document explains the evidence behind tapps-brain's built-in profile defaults. *(updated 2026-04-05)*
 - [Memory Profiles: Designing Custom Memory for Any AI Agent](guides/profiles.md) — tapps-brain ships with a configurable profile system that lets you define custom memory layers, decay models, scoring... *(updated 2026-04-10)*
 - [Save conflicts: offline review and NLI backlog](guides/save-conflict-nli-offline.md) — Save-time conflict detection uses deterministic text similarity (`detect_save_conflicts` in `contradictions.py`) when... *(updated 2026-04-05)*
-- [SQLCipher (optional at-rest encryption)](guides/sqlcipher.md) — `tapps-brain` can open project `memory.db`, feedback/diagnostics tables on that file, and the Hive `hive.db` with **S... *(updated 2026-04-05)*
-- [SQLite “database is locked” — operator runbook](guides/sqlite-database-locked.md) — tapps-brain uses SQLite with **WAL** journal mode for project memory, Hive, federation hub, feedback, and diagnostics... *(updated 2026-04-05)*
-- [sqlite-vec index — operator playbook](guides/sqlite-vec-operators.md) — This guide covers the **`memory_vec`** virtual table (**vec0** from [sqlite-vec](https://github.com/asg017/sqlite-vec... *(updated 2026-04-07)*
 - [Visual snapshot (`brain-visual.json`)](guides/visual-snapshot.md) — Export a **versioned JSON snapshot** of store health, tier mix, and related signals for static dashboards and the bra... *(updated 2026-04-09)*
 - [Brain-visual dashboard](../examples/brain-visual/README.md) — Load a real or demo snapshot in the static dashboard; motion test checklist; brand and NLT Labs design language notes. *(updated 2026-04-11)*
 
 ## Operations
 
 - [Deploying tapps-brain to OpenClaw](planning/DEPLOY-OPENCLAW.md) — There are **two complementary deployment paths** for getting tapps-brain into OpenClaw: *(updated 2026-04-05)*
+- [Epic Validation — Regression Runbook](operations/epic-validation-regression.md) — Step-by-step regression checklist for validating completed epics against acceptance criteria. *(updated 2026-04-11)*
 
 ## Other
 
@@ -153,6 +152,7 @@
 - [EPIC-056: Declarative Group Membership & Expert Publishing](planning/epics/EPIC-056.md) — Today Hive groups exist (`create_group()`, `add_group_member()`) but are **imperatively managed** — callers must expl... *(updated 2026-04-09)*
 - [EPIC-057: Unified Agent API — Hide the Complexity](planning/epics/EPIC-057.md) — After EPIC-053 through EPIC-056, tapps-brain has per-agent brains, backend abstraction, Postgres backends, declarativ... *(updated 2026-04-09)*
 - [EPIC-058: Docker & Deployment Support](planning/epics/EPIC-058.md) — tapps-brain is currently distributed as a Python package with no Docker artifacts. The target architecture requires: *(updated 2026-04-09)*
+- [EPIC-065: Live Always-On Dashboard](planning/epics/EPIC-065.md) — Replace static snapshot-file model with live polling dashboard backed by GET /snapshot on HttpAdapter; add Hive and agent-registry panels. *(updated 2026-04-12)*
+- [EPIC-066: Postgres-Only Persistence Plane — Production Readiness](planning/epics/EPIC-066.md) — Closes out EPIC-059 stage 2: green CI suite against ephemeral Postgres, operator runbooks for TDE/backup, pool health, auto-migrate, and behavioural parity. *(updated 2026-04-12)*
 - [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy everything below the line into a new chat (or Ralph task) as the **user message**. *(updated 2026-04-09)*
 - [Open Issues Roadmap](planning/open-issues-roadmap.md) — Last updated: 2026-04-09 — **v3.2.0** — EPIC-048 complete (all 6 stories); default embedding → `BAAI/bge-small-en-v1.... *(updated 2026-04-09)*
-- [SQLite to Postgres - Meeting Notes](planning/sqlite-to-postgres-meeting-notes.md) — Status: active discussion *(updated 2026-04-05)*

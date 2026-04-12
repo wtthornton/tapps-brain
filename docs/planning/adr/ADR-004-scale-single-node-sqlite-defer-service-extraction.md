@@ -13,7 +13,7 @@ Checklist item 4 asks how far **single-node SQLite** and **`threading.Lock`** ca
 
 Documented today:
 
-- [`system-architecture.md`](../../engineering/system-architecture.md) **Concurrency model** — store serialization, lock ordering, optional `TAPPS_STORE_LOCK_TIMEOUT_S`, SQLite **WAL**, **`TAPPS_SQLITE_BUSY_MS`**, optional **read-only** search connection (`TAPPS_SQLITE_MEMORY_READONLY_SEARCH`), operator triage in [`sqlite-database-locked.md`](../../guides/sqlite-database-locked.md) and [`openclaw-runbook.md`](../../guides/openclaw-runbook.md).
+- [`system-architecture.md`](../../engineering/system-architecture.md) **Concurrency model** — store serialization, lock ordering, optional `TAPPS_STORE_LOCK_TIMEOUT_S`, Postgres connection pool tuning (`TAPPS_BRAIN_PG_POOL_MAX`), operator triage in [`openclaw-runbook.md`](../../guides/openclaw-runbook.md) and [`postgres-backup-restore.md`](../../operations/postgres-backup-runbook.md) *(sqlite-database-locked.md removed — SQLite retired in ADR-007)*.
 - Roadmap **MemoryStore modularization** (tracking table row 22) — long-term refactor, design-first only until sustained pain or capacity.
 
 ## Decision

@@ -40,6 +40,8 @@ python3 -m http.server 8080 --directory examples/brain-visual
 # → open http://localhost:8080, click "Load snapshot", pick brain-visual.json
 ```
 
+> **Live polling mode (EPIC-065):** if the HTTP adapter is running (`TAPPS_BRAIN_DATABASE_URL` set, adapter started), the dashboard automatically polls `/snapshot` every 5 seconds and shows a **LIVE / STALE / ERROR** connection badge with a last-refreshed timestamp. No manual export needed. The static "Load snapshot" flow still works for offline use.
+
 > **No real store yet?** Click **Load demo** — a rich synthetic snapshot (`brain-visual.demo.json`) populates every panel instantly. Requires serving over HTTP as shown above.
 
 → [Visual snapshot guide](docs/guides/visual-snapshot.md) · [Dashboard README](examples/brain-visual/README.md)
@@ -57,6 +59,8 @@ pip install tapps-brain
 make brain-up   # starts Postgres + pgvector on localhost:5432
 export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_dev
 ```
+
+> **Dev tip:** set `TAPPS_BRAIN_AUTO_MIGRATE=1` to enable auto-migration of the private schema on startup — no need to run `make brain-migrate` manually in local dev. In production, run migrations explicitly before deploying.
 
 ```python
 from pathlib import Path
@@ -102,6 +106,13 @@ chain = store.history("pricing-plan")
 ```
 
 </details>
+
+---
+
+## What's new in v3.3.0
+
+- **Postgres production-readiness (EPIC-066):** ephemeral-Postgres CI, connection pool health in `/health`, `TAPPS_BRAIN_AUTO_MIGRATE=1` startup gate, pg_tde encryption runbook, and behavioural parity load smoke against 50 concurrent agents.
+- **Live always-on dashboard (EPIC-065):** GET `/snapshot` endpoint on the HTTP adapter; dashboard polls every 5 s with LIVE/STALE/ERROR badge; Hive hub deep monitoring panel and agent registry live table.
 
 ---
 

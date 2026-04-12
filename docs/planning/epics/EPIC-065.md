@@ -54,6 +54,16 @@ tapps-brain 3.3.0 is now fully Docker-deployed and always-on. The visual dashboa
 <!-- docsmcp:start:stories -->
 ## Stories
 
+| Story | Title | Points |
+|-------|-------|--------|
+| [STORY-065.1](stories/STORY-065.1.md) | GET /snapshot live endpoint on HttpAdapter | 5 |
+| [STORY-065.2](stories/STORY-065.2.md) | Dashboard live polling mode | 5 |
+| [STORY-065.3](stories/STORY-065.3.md) | Purge stale and privacy-gated components | 3 |
+| [STORY-065.4](stories/STORY-065.4.md) | Hive hub deep monitoring panel | 8 |
+| [STORY-065.5](stories/STORY-065.5.md) | Agent registry live table | 5 |
+| [STORY-065.6](stories/STORY-065.6.md) | Memory velocity panel | 5 |
+| [STORY-065.7](stories/STORY-065.7.md) | Retrieval pipeline live metrics panel | 5 |
+
 ### 65.1 -- GET /snapshot live endpoint on HttpAdapter
 
 **Points:** 5

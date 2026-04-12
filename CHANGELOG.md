@@ -2,459 +2,572 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
----
-
-## v3.3.0 (2026-04-11)
-
-### Changed
-
-- **Docker infrastructure — full rebuild:** Removed all prior `tapps-visual` and `tapps-hive-migrate` images and containers; rebuilt from scratch with `--no-cache` to pick up latest base image patches (`python:3.13-slim`, `nginx:alpine`). The `Dockerfile.migrate` wheel reference is updated to `tapps_brain-3.3.0`.
-- **Version bump to 3.3.0:** `pyproject.toml` and `openclaw-plugin/package.json` versions aligned to `3.3.0`.
-
----
-
-## v3.2.0 (2026-04-09)
+## [Unreleased]
 
 ### Added
-
-- **STORY-048.6 — Visual snapshot PNG capture:** `capture_png(html_path, json_path, output, *, width, height, theme, wait_ms)` in `visual_snapshot.py` opens the brain-visual demo in headless Chromium, injects snapshot data via `applySnapshot()`, and writes a full-page PNG. CLI: `tapps-brain visual capture --json brain-visual.json --output out.png [--theme dark] [--width N] [--height N] [--html path/to/index.html]`. New `[visual]` optional extra (`playwright>=1.45,<2`). Install: `uv sync --extra visual && playwright install chromium`. Manual checklist and programmatic usage in `docs/guides/visual-snapshot.md`.
-- **STORY-048.5 — Doc validation strict mode + guide:** `StrictValidationError` raised by `validate_batch(strict=True)` / `store.validate_entries(strict=True)`; `scripts/run_doc_validation.py --strict` exits 1 on flagged entries. `docs/guides/doc-validation-lookup-engine.md` documents stub, HTTP, Context7-style, wiring, and caching patterns for third-party lookup engines.
-- **STORY-048.3 — Markdown round-trip:** `MEMORY_MD_SCHEMA_VERSION = 1` embedded as YAML front matter in every exported `MEMORY.md`; parser skips the front matter block on import. Round-trip test: memory → md → memory is lossless for the documented field subset.
-- **STORY-048.4 — Eval CI golden set:** `scripts/run_eval_golden.py` runs the lexical golden retrieval suite and writes `eval-report.json` (MRR/nDCG/Recall@k); new `eval-golden` CI job in `.github/workflows/ci.yml` executes on every PR and uploads the report as a build artifact via `actions/upload-artifact@v4`.
-- **STORY-048.1 — Session index retention policy:** `GCConfig.session_index_ttl_days` (default 90) added; `store.gc()` now prunes session FTS5 rows aligned with memory GC and returns `GCResult.session_chunks_deleted`; `maintenance gc-config --session-index-ttl-days` CLI flag exposed.
-- **STORY-048.1 — Session summary token budget:** `session_summary_save(max_chars=)` truncates the summary at the last word boundary before the limit and appends `" …"`; returns `truncated=True` when applied.
-- **STORY-048.2 — `memory_relations_get_batch` MCP tool:** Batch relations lookup — accepts a JSON array of keys, returns `{results: {key: [...]}, total_count: N}`; `store.get_relations_batch(keys)` method added.
-- **STORY-048.2 — Cycle detection:** `detect_relation_cycles(relations)` in `relations.py` identifies self-loops and direct-reversal pairs; structured warning logged at save time.
-- **STORY-048.2 — Max edges per key:** `RelationEntry.MAX_EDGES_PER_KEY = 20`; `store.save()` caps new relations per key to this limit.
-- **SKILL.md sync:** MCP surface updated to 69 tools — added `memory_relations_get_batch` and six `brain_*` tools (EPIC-057 gap); removed two stale entries (`openclaw_migrate`, `profile_tier_migrate`).
-
-## v3.1.0 (2026-04-08)
+- retrieval pipeline live metrics panel (story-065.7)
+- add memory velocity panel to dashboard (story-065.6)
+- agent registry live table in dashboard (story-065.5)
+- Hive hub deep monitoring panel with per-namespace table (story-065.4)
+- purge stale and privacy-gated dashboard components (story-065.3)
+- dashboard live polling mode (story-065.2)
+- add GET /snapshot live endpoint to HttpAdapter (story-065.1)
+- add Postgres integration tests replacing deleted SQLite-coupled tests (story-066.13)
+- engineering docs drift sweep — zero stale SQLite refs (story-066.12)
+- behavioral parity doc + load smoke benchmark (story-066.9)
+- auto-migrate private schema on startup via TAPPS_BRAIN_AUTO_MIGRATE=1 (story-066.8)
+- connection pool tuning env vars, health JSON pool fields, DSN validation (story-066.7)
+- CI workflow with ephemeral Postgres service container (story-066.6)
+- bump distribution version strings from 3.2.0 to 3.3.0 (story-066.5)
+- GC archive Postgres table (migration 006) (story-066.3)
+- bi-temporal as_of filter on PostgresPrivateBackend.search (story-066.2)
+- partial — add delete_relations + audit to backends (story-066.1)
+- complete SQLite rip-out — Postgres-only persistence plane (stage 2) (adr-007)
+- add demo snapshot and Load demo control to brain-visual (story-064.5)
+- add deep insight panels — retrieval pipeline, diagnostics, privacy (story-064.4)
+- add CSS motion token system with WCAG 2.3.3-compliant reduced-motion gates (story-064.3)
+- narrative & IA refresh — decision-first copy, story beats order, microcopy (story-064.2)
+- NLT Labs brand audit — gap matrix + fetch path doc (story-064.1)
+- add end-to-end OTel integration tests (story-032.10)
+- add privacy controls + OTelConfig.capture_content from environment (story-032.9)
+- add feedback and diagnostics OTel span events (story-032.7+032.8)
+- add tapps_brain.* custom metrics + export hook (story-032.6)
+- add standard GenAI + MCP metrics via GenAIMetricsRecorder (story-032.5)
+- add non-retrieval OTel spans (delete, reinforce, save) (story-032.4)
+- retrieval document events + MCP params._meta traceparent extraction (story-032.3)
+- add GenAI semconv v1.35.0 MCP tool call spans (story-032.2)
+- add OTelConfig, HAS_OTEL flag, and bootstrap_tracer() (story-032.1)
+- CI epic validation gate + regression runbook (story-062.7+062.8)
+- canonical env-var contract + .env.example (story-062.5+062.6)
+- gate operator/maintenance MCP tools behind --enable-operator-tools flag (story-062.4)
+- freeze MCP core tool list and regenerate manifest (story-062.3)
+- strict startup — clean stderr + non-zero exit + not-for-prod docs (story-062.2)
+- add unit tests for _get_store Hive backend wiring from unified DSN (story-062.1)
+- scope audit matrix doc and code checklist (story-063.5+063.6)
+- RLS benchmark script + ADR-009 ship decision (story-063.4)
+- RLS spike — namespace isolation on hive_memories (story-063.3)
+- add least-privilege DB roles migration and runbook (story-063.1+063.2)
+- add MemoryBodyRedactionFilter log handler and OTel metric Views (story-061.7)
+- K8s liveness/readiness probe docs + explicit liveness test (story-061.4/061.5)
+- metrics gauges, error counters, pool stats, bounded label policy (story-061.2)
+- add OTel trace spans to remember/recall/search/hive hot paths (story-061.1)
+- rewrite agentforge-integration.md for v3 Postgres DSN (story-060.7+060.8)
+- ADR-008 no HTTP without MCP parity + CODEOWNERS guardrails (story-060.5+060.6)
+- HTTP adapter optional routes, auth middleware, and OpenAPI spec (story-060.4)
+- add minimal HTTP adapter with /health, /ready, /metrics (story-060.3)
+- add typed exception taxonomy + v3 breaking changes docs (story-060.2)
+- Compose, Makefile, and AGENTS.md onboarding for v3 Postgres dev workflow (story-059.7)
+- DSN table, pool idle timeout, pool saturation + migration version in health JSON (story-059.7)
+- behavioral parity doc + concurrent-agent load smoke (story-059.6)
+- private memory integration tests — round-trip save/recall with N entries (story-059.5)
+- private memory Postgres schema + migrations (story-059.4)
+- no silent SQLite in runtime + v3 doc sweep (story-059.3)
+- remove SQLite hive/federation; move AgentRegistration/AgentRegistry to models/backends (story-059.2)
+- add edge-case tests for Postgres-only backend factories (story-059.1)
+- remove SQLite backends, add Postgres-only factory and CI (epic-059)
+- add tapps-visual nginx service for brain-visual frontend (docker)
+- visual snapshot PNG capture with Playwright + scorecard branch coverage (STORY-048.6)
+- doc validation strict mode + pluggable lookup engine guide (EPIC-048.5)
+- complete stories 048.1–048.4 (session, relations, markdown, eval) (EPIC-048)
+- temporal query filtering + consolidation threshold profile-config (#70/#71)
+- implement EPIC-053–058 — per-agent brains, Postgres Hive, unified API, Docker deployment
 
 ### Changed
-
-- **Default embedding model:** Switched from `all-MiniLM-L6-v2` to `BAAI/bge-small-en-v1.5` (~10% better retrieval quality, same 384 dimensions).
-- **Reranker: FlashRank replaces Cohere:** The `[reranker]` extra now installs FlashRank (local cross-encoder, ~4MB model, CPU-only, no API key). Cohere reranker has been removed. Reranking is automatic when flashrank is installed; falls back to noop otherwise.
-- **Simplified reranker config:** `InjectionConfig` no longer has `reranker_provider` or `reranker_api_key` fields. Reranking is controlled by `reranker_enabled` (bool) only.
-- **FTS5 tokenizer:** All FTS5 tables now use `porter unicode61` tokenizer for English stemming and Unicode normalization.
-- **SQLite pragma audit:** Added `PRAGMA synchronous=NORMAL` to federation connections (was already set for memory and hive).
-- **SQLite version warning:** Logs a warning on startup if SQLite < 3.51.3 (WAL-reset corruption bug).
-
-### Removed
-
-- **CohereReranker and `cohere` dependency:** Replaced by local FlashRank. No memory data is sent to external APIs for reranking.
-- **`TAPPS_SEMANTIC_SEARCH` env var:** Semantic search is now always enabled (sentence-transformers is a core dependency). The opt-out env var has been removed.
-- **`[faiss]` optional extra:** FAISS was never used in any code path; sqlite-vec is the sole vector backend. All FAISS references removed from docs.
-- **Schema migration history:** 16 incremental migration methods replaced by a single `_create_schema()`. Schema version reset to 1.
-- **Sigmoid relevance normalization:** Min-max is the only normalization path.
-- **NoopProvider / EmbeddingProvider protocol:** `SentenceTransformerProvider` is the only embedding implementation.
-- **Legacy backwards compatibility:** Removed tier enum union logic, decay config legacy field mapping, FTS5 LIKE fallbacks, Cohere v1/v2 shim, schema version guards, and BM25/vector alias fields.
-
-## v2.2.0 (2026-04-07)
-
-### Changed
-
-- **sqlite-vec promoted to core dependency:** `sqlite-vec`, `sentence-transformers`, and `numpy` moved from the `[vector]` optional extra to core `dependencies`. Semantic vector search is now enabled by default on every install — no extra needed.
-- **`[vector]` extra renamed to `[faiss]`:** Now contains only `faiss-cpu` for optional FAISS vector indexing.
-- **MemoryStore auto-enables embeddings:** `MemoryStore()` automatically creates an embedding provider when none is passed. Pass `embedding_provider=None` to explicitly disable, or set `TAPPS_SEMANTIC_SEARCH=0`.
-- **`get_embedding_provider()` defaults to enabled:** `semantic_search_enabled` parameter now defaults to `True`.
-- Version bumped to **2.2.0** (new defaults, no breaking API changes).
+- stage-delete scorecard-derive.js missed in prior commit (story-065.3)
+- add Postgres backup and restore runbook (story-066.11)
+- pg_tde 2.1.2 operator runbook (story-066.10)
+- full suite runs at deployment only — never during ralph loops (ralph)
+- remove premature QA gates — all testing deferred to 066.14 (ralph)
+- session continuity, team mode, effort scaling by task size (ralph)
+- raise maxTurns 50→100 for main agent and architect (ralph)
+- speed optimizations — stop loop, harden deferred-QA rule (ralph)
+- check off 066.1 — 5 consolidation audit tests fixed (story-066.1)
+- completed tasks delete from fix_plan, append to archive (ralph)
+- archive completed tasks to fix_plan_archive.md (ralph)
+- shrink fix_plan to story pointers only — was 11k tokens (ralph)
+- reorder fix_plan — EPIC-066 (bug fixes) before EPIC-065 (new feature) (ralph)
+- update PROMPT.md for EPIC-065/066 campaign (ralph)
+- enable agent mode, bump effort, tighten timeout (ralph)
+- WIP private backend, Ralph state, planning updates (checkpoint)
+- add EPIC-065 live always-on dashboard epic with 7 stories (065)
+- bump to v3.3.0 — Docker infrastructure rebuild (release)
+- doc + a11y + MCP gate — EPIC-064 complete (064.CLEAN)
+- add "See it in action" CTA and cross-links for brain-visual dashboard (064.6)
+- fix mcp.md doc drift — add 6 undocumented core tools, remove phantom tool (062.CLEAN)
+- manual security scan + doc cross-ref validation (063.CLEAN)
+- add negative scope-enforcement tests (story-063.7)
+- add STRIDE threat model one-pager for v3.0 (story-063.8)
+- add operator observability runbook with alert examples (story-061.8)
+- add telemetry policy doc and PR template review slot (story-061.6)
+- check off already-implemented trace context propagation task (061.3)
+- add ADR-007/008 to doc index, fix broken db-roles link (060.CLEAN)
+- refresh agent-integration guide with full AgentBrain API surface (story-060.1)
+- sweep stale SQLite references from docs and source docstrings (059.CLEAN)
+- check off story-059.2 in fix_plan (ralph)
+- Merge branch 'worktree-agent-a030f3aa'
+- use uv sync --group dev; Ralph setup verified (dev)
+- Claude MCP for tapps/docs, fix_plan cleanup tasks, roadmap v3 queue (ralph)
+- refine ADR-007, greenfield epics EPIC-032/059-063, CLAUDE backend note (planning)
+- add v3 greenfield epics and fix review findings (planning)
+- add index, contributing, llms.txt; fix internal links and IDE config
+- sync docs and Docker to v3.2.0 (release)
+- sync all engineering docs to EPIC-053–058 architecture (v3.1.0)
+- add agentforge-integration.md — generic guide for connecting projects
+- bump version to 3.2.0, finalize CHANGELOG for EPIC-048
+- epic status hygiene sweep — mark EPIC-040/042/044/050/053-058 done (planning)
+- add EPIC-053–058 — per-agent brains, Postgres Hive, unified API
+- bump version to v3.1.0
+- phase 11 — replace Cohere reranker with FlashRank local cross-encoder
+- phases 7/10/12 — env var docs, embedding model upgrade, SQLite best practices
+- execute phases 5-6 — remove sigmoid normalization + collapse schema migrations
+- execute phases 3-4 — formalize core deps + remove backwards compat
+- reduce GitHub Actions cost — drop cross-platform from PRs, add caching + concurrency
+- execute phases 1-2 — dead code removal + dependency updates
+- v2.2.0 — sqlite-vec promoted to core, async wrapper fixes + tests
 
 ### Fixed
+- resolve all 136 unit test failures — zero failures achieved (066.14)
+- enable tapps-mcp permissions + upgrade to v2.4.0 (ralph)
+- enable operator tools in GC/consolidation MCP test fixtures (story-066.4)
+- resolve 18 ruff errors across OTel and HTTP adapter files (lint)
+- OTel code quality + span names in architecture doc (061.CLEAN)
+- fix remaining test files importing deleted SQLite modules (story-059.2)
+- update test expectations for STORY-048.1 and STORY-048.2 (tests)
+- install from local wheel + psycopg, fix entrypoint duplication (docker)
+- explicitly disable embedding provider in no-embedding test (test)
+- additional pre-existing test failures from full suite run
+- quality gate — ruff, mypy, format, and pre-existing test failures
 
-- **AsyncMemoryStore.reinforce():** Fixed positional argument bug — `confidence_boost` is keyword-only on `MemoryStore.reinforce()` but was passed positionally by the async wrapper.
-- **AsyncMemoryStore.audit():** Fixed positional argument bug — `key` is keyword-only on `MemoryStore.audit()` but was passed positionally by the async wrapper.
-- **aio.py lint cleanup:** Removed unused imports (`inspect`, `ConsolidationConfig`), moved `Path` to `TYPE_CHECKING` block, added `ANN401` per-file-ignore for the inherently dynamic async wrapper.
-
-### Added
-
-- **AsyncMemoryStore test suite:** 27 new tests in `tests/unit/test_aio.py` covering CRUD, search, recall, lifecycle, maintenance, properties, context manager, and `__getattr__` auto-wrapping.
-
-### Documentation
-
-- Updated README, getting-started guide, embedding model card, sqlite-vec operator playbook, features-and-technologies, ADR-001, EPIC-042, EPIC-049, next-session-prompt, and open-issues-roadmap to reflect sqlite-vec as a core dependency and `[vector]` → `[faiss]` rename.
-- README version badge updated to 2.2.0; test count badge updated to 2900+.
-
-## v2.1.0 (2026-04-06)
-
-### Added
-
-- **Issue #66 — Async API wrapper:** New `AsyncMemoryStore` class in `tapps_brain.aio` wraps every public `MemoryStore` method via `asyncio.to_thread()`. Supports `async with await AsyncMemoryStore.open(root)` context manager. Exported from `tapps_brain.__init__`.
-- **Issue #67 — Personal-assistant extraction patterns:** 28 new rule-based extraction patterns for preferences, relationships, health/allergies, routines, and short-term context. Activated when profile is `personal-assistant`; repo-brain extraction is unchanged. Patterns route to appropriate PA tiers (identity, long-term, procedural, short-term).
-- **Issue #68 — Procedural tier for personal-assistant profile:** New `procedural` layer (30-day half-life) between `long-term` and `short-term`. Fills the 7d→90d decay gap for routines, how-to knowledge, and workflows. Promotion/demotion chain updated: `ephemeral → short-term → procedural → long-term → identity`. Tier aliases added: `how-to`, `routine`, `workflow` → `procedural`.
-- **Issue #70 — Temporal query filtering:** `search()`, `recall()`, and the retrieval pipeline accept `since`, `until`, and `time_field` parameters for time-range filtering. SQL-level WHERE clauses on `created_at`/`updated_at`/`last_accessed` for efficient filtering. `RecallConfig` includes temporal fields.
-- **Issue #71 — Profile-driven consolidation threshold:** New `ConsolidationProfileConfig` model on `MemoryProfile`. Personal-assistant profile defaults to threshold 0.65 (more conservative than the 0.7 default) to reduce false merges on semantically varied personal data. Precedence: explicit parameter > profile config > hardcoded default.
+## [2.1.0] - 2026-04-06
 
 ### Changed
+- v2.1.0 — async API, PA extraction, procedural tier, temporal filtering, profile consolidation
 
-- Version bumped to **2.1.0** (new features, no breaking changes).
-- Personal-assistant profile now has **5 layers** (was 4).
-- `long-term` layer demotes to `procedural` (was `short-term`); `short-term` promotes to `procedural` (was `long-term`).
+## [2.0.4] - 2026-04-05
 
-### Documentation
+### Added
+- operator docs, observability, verify-integrity CLI (epic-043/045/046/047/049)
+- offline save-conflict export; docs: ADR-001-006 and planning sync (044)
+- merge undo, per-group entry caps, docs sync (epic-044)
+- consolidation sweep CLI, seed version on health/stats, docs sync (epic-044)
+- GC metrics, consolidation sweep, seeding version, eviction docs (epic-044)
+- embeddings v17, hybrid profile RRF, RO sqlite, conflict exclude_key (epic-042,044,050)
+- decay/FSRS decision doc and reinforce stability (epic-042.8)
+- injection tokenizer hook and telemetry (epic-042.7)
+- align composite scoring weight validation and docs (epic-042.5)
+- SQLite busy tuning, locked runbook, lexical retrieval (epic-050, epic-042)
+- save-path phase latency histograms for observability (store)
+- Hive group agent_scope, recall union, and test alignment (story-041.2)
+- engineering Phase 2 (#55-62) (docs,federation,mcp)
+- carry publisher memory_group through hive propagation (closes #51) (hive)
 
-- Updated `docs/guides/profile-catalog.md`: personal-assistant layer table, importance tags, and design decisions reflect the procedural tier, consolidation threshold, and 5-layer architecture.
-
-## v2.0.4 (2026-04-05)
+### Changed
+- v2.0.4 — EPIC-052 code review sweep fixes + doc sync
+- add EPIC-052 full codebase code review sweep (planning)
+- troubleshoot provenance warning (#65) (openclaw)
+- expand help coverage and document help keys (brain-visual)
+- refresh next-session prompt with prioritized next slices (planning)
+- help pills for Hive, Entries, DB tiles and guide notes (brain-visual)
+- record GitHub #52 reopened for checklist alignment (planning)
+- sync roadmap after closing GitHub #52 #63 #64 (#51 already closed) (planning)
+- close EPIC-041 loop, refresh roadmap, document concurrency (planning)
+- add features-and-technologies map and link from architecture (engineering)
+- align EPIC-042-051 stories with tests and verification (planning)
+- sync CLAUDE, Cursor rules, Ralph AGENT with v16 + manifest (ai)
+- remove mem0-review vendored tree
 
 ### Fixed
+- 2026-Q2 code review sweep — write-through consistency + hygiene (epic-052)
 
-- **EPIC-052** — 2026-Q2 full codebase code review sweep landed all 18 stories. Patched issues:
-  - **Write-through consistency (store.py):** `MemoryStore.reinforce()` and `MemoryStore.record_access()` persisted updates without rolling back the in-memory cache on exception; now wrap `self._persistence.save(updated)` in try/except and restore the prior entry on failure, matching the invariant already held by `get()`, `delete()`, and `update_fields()`.
-  - **Pydantic validator consistency (models.py):** `_validate_memory_group` now raises `ValueError` (not `TypeError`) for non-string input, matching every other Pydantic validator in `MemoryEntry`.
-  - **Feature-flag docstring (_feature_flags.py):** `as_dict()` now documents all 8 flags evaluated (faiss, numpy, sentence_transformers, sqlite_vec, memory_semantic_search, anthropic_sdk, openai_sdk, otel); previously listed only 5.
-  - **CLI exit-code drift (cli.py):** `tapps-brain visual export --privacy <invalid>` now exits with code 1 (user error) instead of 2, matching the file-wide convention.
-- **Auto-consolidation:** Persisting a merged row uses `skip_consolidation=True` so saving the consolidated entry does not immediately trigger another merge pass.
+## [2.0.3] - 2026-03-30
 
 ### Added
-
-- **EPIC-044 STORY-044.3 (offline):** `evaluation.run_save_conflict_candidate_report` and CLI `tapps-brain maintenance save-conflict-candidates` (`--json`, `--threshold`, `--include-contradicted`) to export deterministic save-time conflict pairs for external NLI review — no model on the sync `MemoryStore.save` path. Guide: `docs/guides/save-conflict-nli-offline.md`.
-- **EPIC-044 STORY-044.4:** Deterministic **merge undo** — `MemoryStore.undo_consolidation_merge` / `auto_consolidation.undo_consolidation_merge`, JSONL audit action `consolidation_merge_undo`, CLI `tapps-brain maintenance consolidation-merge-undo CONSOLIDATED_KEY` (`--json`). Uses the last matching `consolidation_merge` row and strict validation on superseded sources.
-- **EPIC-044 operator surfaces:** `StoreHealthReport.profile_seed_version` (from `MemoryProfile.seeding.seed_version`); text `tapps-brain maintenance health` prints it when set; JSON health and native `run_health_check` expose `profile_seed_version`; MCP resource `memory://stats` includes `profile_seed_version`.
-- **CLI:** `tapps-brain maintenance consolidation-threshold-sweep` — read-only consolidation sensitivity report (`evaluation.run_consolidation_threshold_sweep`), optional `--thresholds`, `--min-group-size`, `--include-contradicted`, `--json`.
-- **EPIC-044 STORY-044.7:** Optional **`limits.max_entries_per_group`** — per-`memory_group` bucket (plus ungrouped) caps with lowest-confidence eviction inside the bucket; when set, global `max_entries` overflow prefers evicting from the incoming row's group (`StoreHealthReport.max_entries_per_group`, MCP `memory://stats`, native health, CLI `store stats`). See `docs/engineering/data-stores-and-schema.md`.
-
-### Changed
-
-- Version and distribution alignment: Python package, OpenClaw plugin/skill manifests, MCP `server.json`, and SKILL.md bumped to **2.0.4** (no API changes).
-- Pre-existing `ruff format` drift cleared in `visual_snapshot.py`, `test_federation.py`, `test_memory_persistence.py`, `test_mcp_server.py`.
-
-### Documentation
-
-- **EPIC-051** (complete): Section 10 checklist decisions as **ADR-001**–**ADR-006** under `docs/planning/adr/` (retrieval, freshness, correctness, scale, SQLCipher ops, save-path observability); cross-links from `docs/engineering/features-and-technologies.md` and `docs/planning/PLANNING.md` (`adr/` in directory tree). **`docs/guides/sqlcipher.md`** — key loss, backup/restore verification, enterprise KMS note (**051.5**).
-- EPIC-052 findings notes landed per story in [`docs/planning/epics/EPIC-052.md`](docs/planning/epics/EPIC-052.md) with close-out summary; `persistence.delete_relations` O(n) cleanup path deferred to the open-issues roadmap as a non-blocking optimization candidate.
-
-## v2.0.3 (2026-03-30)
+- recall diagnostics, agent integration, OpenClaw capture
+- optional memory_group on relay import; plan 49-E federation-only (relay)
+- project-local memory_group (schema v16, retrieval, MCP/CLI) (#49)
+- GC stale listing and profile tier migrate (#21, #20)
+- adaptive hybrid fusion (#40) and hive batch push (#18)
+- sub-agent memory relay import/export (GitHub #19) (relay)
+- optional SQLCipher at-rest and planning sync (encryption)
+- session summarization — CLI, Python API, and MCP tool (#17)
+- write notifications, hive watch, MCP poll (#12) (hive)
+- sqlite-vec index, health sqlite-vec fields, profile onboarding MCP (week1-2)
 
 ### Changed
-
-- Version and distribution alignment: Python package, OpenClaw plugin/skill manifests, MCP `server.json`, and planning snapshot docs bumped to **2.0.3** (no API changes).
-
-## v2.0.2 (2026-03-29)
-
-### Added
-
-- **Agent integration:** `docs/guides/agent-integration.md`, MCP resource `memory://agent-contract`, `recall_diagnostics` on `memory_recall` / `RecallResult` (empty-reason codes), `StoreHealthReport.package_version` / `profile_name`, `memory://stats` includes package + profile, CLI `tapps-brain memory save`, `scripts/generate_mcp_tool_manifest.py` → `docs/generated/mcp-tools-manifest.json`.
-- **Sub-agent memory relay (GitHub #19):** `relay_version` 1.0 schema (`docs/guides/memory-relay.md`), CLI `tapps-brain relay import` (file or `--stdin`), MCP `tapps_brain_relay_export`, rate-limit exempt batch context `memory_relay`. Optional per-item `memory_group` / `group` preserves project-local partitions on import (GitHub #49).
-- Adaptive query-aware hybrid search fusion (GitHub **#40**, EPIC-040 **040.10**): `hybrid_rrf_weights_for_query()` and weighted RRF in `MemoryRetriever` when `semantic_enabled=True`. Set `hybrid_config.adaptive_fusion=False` for legacy equal BM25/vector RRF weights.
-- Hive batch promotion (GitHub **#18**): CLI `tapps-brain hive push` and `hive push-tagged`; MCP tool `hive_push`; `select_local_entries_for_hive_push` and `push_memory_entries_to_hive` in `hive.py`. `PropagationEngine.propagate` supports `dry_run` and `bypass_profile_hive_rules`; `hive_propagate` accepts `force` and `dry_run`.
-- **GC stale listing (GitHub #21):** `MemoryGarbageCollector.stale_candidate_details`, `StaleCandidateDetail`, `MemoryStore.list_gc_stale_details`, CLI `tapps-brain maintenance stale`, MCP `maintenance_stale` (machine-readable reasons for GC candidates).
-- **Profile tier migration (GitHub #20):** `tapps_brain.profile_migrate`, `MemoryStore.migrate_entry_tiers`, CLI `tapps-brain profile migrate-tiers --map from:to`, MCP `profile_tier_migrate` (`tier_map_json`, `dry_run`); audit log action `tier_migrate`.
-
-### Changed
-
-- **GC / decay alignment:** CLI `maintenance gc`, MCP `maintenance_gc`, `MemoryStore.gc()`, and `health()` GC candidate counts use profile-derived `DecayConfig` plus store `gc_config` (same rules as `list_gc_stale_details`).
-- **OpenClaw auto-capture (tapp-workspace #12):** `extract_durable_facts` recognizes additional phrases common in agent/dev text (`note:`, `summary:`, `we use`, `remember that`, `root cause`, `final approach`, etc.). ContextEngine `ingest` logs `captured=N` from `memory_capture`; `assemble` distinguishes recall-empty vs already-injected. `openclaw.plugin.json` `captureRateLimit` default aligned to `3` (was `5`, inconsistent with plugin runtime default).
-
-## v2.0.1 (2026-03-28)
+- tapps-brain v2.0.3 — version and OpenClaw manifest alignment (release)
+- restore ≥95% gate for Linux/Python 3.12 (coverage)
+- v2.0.2 — changelog, STATUS, OpenClaw manifests (release)
+- close epic #49; track backlog #51 and #52 (planning)
+- bump to v2.0.1 (PyPI, plugin, manifests) (release)
+- sync roadmap and fix_plan with GitHub issue closures (planning)
+- feature intake governance, GitHub templates, and agent rules
+- update uv.lock
+- check off 040.22 in fix_plan
 
 ### Fixed
+- update stale schema version and entry limit assertions (v15→v16, 500→5000) (tests)
+- Merge pull request #50 from wtthornton/fix/openclaw-tier-normalize-ci
+- MCP tool text unwrap; feat(store): tier normalization (openclaw)
+- singleton McpClient — one MCP process per workspace, not per session (plugin)
+- add SIGTERM/SIGINT handler to prevent stray MCP process leak (plugin)
+- profile-aware tier validation in MCP memory_save (closes #16) (story-022)
 
-- **OpenClaw plugin (GitHub #46):** Unwrap MCP `CallToolResult` / structured content when calling recall tools (`mcp_tool_text`, `McpClient.callTool`) so `assemble()` receives memory text.
-- **Memory injection:** Include recall `value` in assembled summaries (`inject_memories`).
-- **Save tier aliases (GitHub #48):** `tier_normalize.normalize_save_tier` on `MemoryStore.save`, `memory_save` MCP, and relay import; profile layer names matched before global aliases.
+## [2.0.0] - 2026-03-25
+
+### Added
+- Groups as first-class Hive layer — create, manage, search across groups (GitHub #37) (040.21)
+- per-entry conflict detection on save (GitHub #44) (040.16)
+- PageRank scoring for memory relationship graphs (GitHub #33) (040.15)
+- Louvain community detection for smarter consolidation (GitHub #36) (040.13)
+- tapps-brain openclaw init/upgrade commands (GitHub #26) (040.20)
+- assemble() injects memory recall nudge (GitHub #27) (040.19)
+- periodic mid-session memory flush every N messages (GitHub #25) (040.18)
+- flush recentMessages on dispose() — prevent session context loss (GitHub #24) (040.17)
+- write deduplication with Bloom filter fast-path (GitHub #31) (040.14)
+- TextRank conversation summarization — no LLM required (GitHub #32) (040.12)
+- RAKE keyword extraction for automatic key generation (GitHub #42) (040.11)
+- enhanced 6-signal composite scoring formula (GitHub #41) (040.8)
+- stability-based promotion/demotion strategy (GitHub #39) (040.7)
+- Bayesian confidence updates — learn from actual usage (GitHub #35) (040.6)
+- adaptive stability schema + FSRS-style stability updates (GitHub #28) (040.5)
+- memory health stats CLI command (GitHub #43) (040.4)
+- temporal fact validity — valid_from/valid_until columns, query filtering, historical support (GitHub #29) (040.3)
+- add provenance metadata columns — source_session_id, source_channel, source_message_id, triggered_by (GitHub #38) (040.2)
+- switch BM25 to BM25+ variant with lower-bound delta (GitHub #34) (040.1)
 
 ### Changed
-
-- **Tool naming (GitHub #47, mitigated):** Plugin registers `tapps_memory_search` / `tapps_memory_get`; host hygiene documented in `docs/guides/openclaw.md`.
-
-### Added
-
-- **Planning:** `docs/planning/design-issue-49-multi-scope-memory.md` for epic #49 (named groups vs Hive namespaces vs profile scopes).
-
-### Chore
-
-- Ruff 0.15.x alignment, `ruff format`, and strict mypy fixes across core and tests.
-
-## v2.0.0 (2026-03-26)
-
-### Research-Driven Upgrades (EPIC-040)
-
-**Algorithm Improvements:**
-- BM25+ variant with lower-bound delta for better variable-length scoring (#34)
-- FSRS-style adaptive stability — memories that prove useful persist longer (#28)
-- Bayesian confidence updates — learn from actual usage patterns (#35)
-- Stability-based promotion/demotion strategy (#39)
-- Enhanced 6-signal composite scoring with graph centrality and provenance trust (#41)
-- TextRank extractive summarization — no LLM required (#32)
-- RAKE keyword extraction for automatic key generation (#42)
-- Louvain community detection for smarter consolidation (#36)
-- PageRank scoring for memory relationship graphs (#33)
-- Bloom filter write deduplication (#31)
-
-**Temporal & Provenance:**
-- Temporal fact validity windows — valid_from/valid_until (#29)
-- Rich provenance metadata — source_session_id, source_channel, triggered_by (#38)
-- Per-entry conflict detection and resolution API (#44)
-
-**OpenClaw Plugin:**
-- dispose() now flushes conversation context before shutdown (#24)
-- Periodic mid-session memory flush every N messages (#25)
-- assemble() injects memory recall nudge (#27)
-- openclaw init/upgrade CLI commands (#26)
-
-**Multi-Agent:**
-- Groups as first-class Hive layer — SESSION → BRAIN → GROUP → HIVE (#37)
-- Memory health stats CLI command (#43)
-
-**Schema:** v11 → v15 (4 migrations, all backward-compatible)
-
----
-
-## [1.4.2] — 2026-03-24
-
-### Changed — Profile limits recalibrated (research-backed)
-
-- **`max_entries` raised from 500 to 5,000** (default) / 10,000 (research-knowledge).
-  Old default was the most conservative of any comparable system (Mem0: 10K,
-  Obsidian: 10K-12K comfortable, MemGPT/Letta: unbounded). Pure-Python BM25
-  at 5K entries runs in ~5-10 ms on desktop, ~15-30 ms on Pi 5. GC and
-  auto-consolidation keep the active set well below the limit.
-- **`default_token_budget` raised**: repo-brain/customer-support/project-management
-  2,000→3,000; personal-assistant 3,000→4,000; research-knowledge 2,000→4,000.
-- **Source trust/confidence/ceilings differentiated per profile**:
-  customer-support boosts agent trust (0.7→0.8); home-automation boosts system
-  trust (0.9→0.95); personal-assistant raises human ceiling (0.95→0.98);
-  research-knowledge lowers inferred ceiling (0.70→0.55).
-- **GC thresholds differentiated per profile**: personal-assistant/research
-  floor 30→60 days; customer-support floor 30→14 days, session 7→3 days;
-  home-automation floor 30→7 days; personal-assistant session 7→14 days.
-- **Recall thresholds differentiated**: research-knowledge stricter
-  (min_score 0.35, min_confidence 0.25); personal-assistant/home-automation
-  looser (min_score 0.2).
-- **`max_entries` is now profile-aware**: `MemoryStore._max_entries` reads
-  from the active profile, falling back to the module default. CLI and MCP
-  stats/health endpoints reflect the actual configured limit.
-- OpenClaw skill version synced to 1.4.2 (was stale at 1.3.1).
-
-### Added
-
-- `docs/guides/profile-limits-rationale.md` — full research document with
-  hardware benchmarks, comparable system analysis, and per-parameter rationale.
-
----
-
-## [1.4.1] — 2026-03-24
+- tapps-brain v2.0.0 — research-driven upgrades (EPIC-040) (release)
+- check off 040.21 in fix_plan.md
+- check off 040.16 in fix_plan.md
+- check off 040.15 in fix_plan.md
+- check off 040.13 in fix_plan.md
+- check off 040.20 in fix_plan.md
+- check off 040.19 in fix_plan.md
+- check off 040.18 in fix_plan
+- check off 040.17 in fix_plan.md
+- check off 040.14 in fix_plan.md
+- check off 040.12 in fix_plan.md
+- check off 040.11 in fix_plan.md
+- check off 040.8 in fix_plan.md
+- check off 040.7 in fix_plan.md
+- check off 040.6 in fix_plan.md
+- check off 040.5 in fix_plan.md
+- check off 040.4 in fix_plan
+- mark 040.3 complete
+- mark 040.2 complete
+- mark 040.1 complete
 
 ### Fixed
+- resolve tool name conflicts, tier fallback, hive status counts (#9, #11, #22)
 
-- **F-string SQL hardening in `migration.py`** — added explicit allowlist validation
-  for table and column names before f-string interpolation in `PRAGMA table_info` and
-  `SELECT` queries. Inputs were already hardcoded tuples (not exploitable), but the
-  guards silence static-analysis scanners (Bandit/Semgrep) and protect against future
-  maintainer mistakes.
-- **Silent exception swallowing** — two `except Exception: pass` blocks now log with
-  `exc_info=True`: `store.py` (`decay_config_from_profile` fallback) and
-  `diagnostics.py` (`query_feedback` gap count). Failures in these paths were
-  previously invisible to debugging.
-
----
-
-## [1.4.0] — 2026-03-24
-
-### Changed — EPIC-039: Official MCP SDK transport for OpenClaw plugin
-
-- **MCP client rewritten** — replaced 466-line hand-rolled JSON-RPC 2.0 client
-  (Content-Length framing, manual stdio parsing, request/response ID matching)
-  with the official `@modelcontextprotocol/sdk` (`StdioClientTransport` + `Client`).
-  This is the same SDK used by OpenClaw, Claude Desktop, and Cursor.
-- **Reconnection model** — exponential-backoff retry loops replaced with
-  OpenClaw's session-invalidation pattern (tear down on error, lazy re-create).
-- **Stderr logging** — MCP server diagnostic output now piped and logged.
-- **Dead process detection** — native `transport.pid` replaces health check timer.
-- **No public API change** — `index.ts` required zero modifications.
-
-### Changed — EPIC-037/038: SDK realignment and simplification
-
-- **Plugin SDK types** — ambient `openclaw-sdk.d.ts` replaced with real SDK imports.
-- **API contract fixes** — `resolveAgentWorkspaceDir`, `registerTool`,
-  `definePluginEntry`, and `registerContextEngine` signatures match real OpenClaw SDK.
-- **Dead compat layers removed** — hook-only and tools-only fallback modes removed;
-  plugin now requires OpenClaw v2026.3.7+ (`minimumVersion` in manifest).
+## [1.4.3] - 2026-03-25
 
 ### Added
+- recalibrate profile limits based on research benchmarks (v1.4.2)
+- replace custom MCP client with official @modelcontextprotocol/sdk (epic-039)
+- realign OpenClaw plugin with real SDK, remove dead compat layers (epic-037-038)
 
-- `@modelcontextprotocol/sdk@^1.27.0` as a runtime dependency of the OpenClaw plugin.
+### Changed
+- bump tapps-brain to v1.4.3 (release)
+- fix stale references after EPIC-039 SDK transport migration
+- bump tapps-brain to v1.4.0 (release)
 
----
+### Fixed
+- add ephemeral and session tiers to MemoryTier enum
+- normalize message.content and improve logging (fixes #8, #10) (openclaw-plugin)
+- eliminate top-level require("openclaw") crash (openclaw-plugin)
+- harden f-string SQL and replace silent exception swallowing (v1.4.1)
+- add all optional ContextEngine methods to ambient types (openclaw-sdk)
+- bump minimumVersion, remove stale toolGroups schema, accept bootstrap params (openclaw-plugin)
+- fix BootstrapResult field name and compact param types (epic-039)
 
-## [1.3.1] — 2026-03-24
+## [1.3.1] - 2026-03-24
 
 ### Added
-
-- **Release gate** — `scripts/release-ready.sh`: packaging build, wheel smoke import, version consistency tests, pytest (optional `SKIP_FULL_PYTEST=1` in CI), ruff, mypy, `openclaw-plugin` npm ci/build/test.
-- **OpenClaw docs checker** — `scripts/check_openclaw_docs_consistency.py` (canonical install command, SKILL tool/resource counts vs baseline, runbook presence).
-- **CI** — `.github/workflows/ci.yml`: lint runs docs checker; `release-ready` job runs the shell gate after the test matrix.
-- **Operator docs** — `docs/guides/openclaw-runbook.md` (canonical PyPI + Git install/upgrade); cross-links from OpenClaw guide, plugin README, skill docs, and `scripts/publish-checklist.md`.
-
----
-
-## [1.3.0] — 2026-03-23
-
-### Added — EPIC-031: Evaluation & continuous-improvement flywheel
-
-- **Offline evaluation** — BEIR-style loaders, IR metrics, optional LLM judges
-  (`evaluation` module, CLI `flywheel evaluate`).
-- **Feedback → confidence** — `MemoryStore.process_feedback()`, schema **v11**
-  (`positive_feedback_count` / `negative_feedback_count` on entries,
-  `flywheel_meta` KV for cursors).
-- **Knowledge gaps** — `GapTracker`, zero-result recall signals, optional
-  semantic clustering hook; `flywheel gaps` CLI / `flywheel_gaps` MCP tool.
-- **Quality reports** — `generate_report`, `ReportRegistry`, `memory://report`
-  resource, CLI `flywheel report`.
-- **Hive flywheel** — `aggregate_hive_feedback`, `process_hive_feedback`, MCP
-  `flywheel_hive_feedback`.
-- **MCP / CLI** — `diagnostics_report`, `diagnostics_history`, flywheel tools;
-  `tapps-brain-mcp --version`.
-
-### Changed
-
-- **MCP surface** — **54** tools and **7** resources (feedback, diagnostics,
-  flywheel, prior graph/audit/Hive coverage).
-- **CLI** — **`flywheel`** command group (`process`, `gaps`, `report`,
-  `evaluate`, `hive-feedback`).
-- **Diagnostics** — recommendations can include flywheel gap summary.
-
----
-
-## [1.2.0] — 2026-03-22
-
-### Added — EPICs 014–016: Hardening, Analytics & Test Suite
-
-#### Hardening (EPIC-014)
-- **`agent_scope` enum validation** — invalid values now return clear errors instead
-  of silently defaulting to `private`.
-- **CLI `agent create` command** — matches MCP `agent_create` composite tool behavior,
-  closing the 3-interface parity gap.
-- **SQLite corruption detection** — corrupted databases detected at startup with
-  recovery instructions instead of hard crashes.
-- **Getting Started guide** (`docs/guides/getting-started.md`) — use-case map with
-  quick examples for Library, CLI, and MCP interfaces.
-- **CHANGELOG** — release history now tracked in Keep a Changelog format.
-
-#### Analytics & Operational Surface (EPIC-015)
-- **Knowledge graph MCP tools + CLI commands** — `memory_relations`,
-  `memory_find_related`, `memory_query_relations` exposed via all interfaces.
-- **Audit trail queryable** — `memory_audit` MCP tool and `memory audit` CLI command
-  for querying the JSONL audit log.
-- **Tag management** — `memory_tags`, `memory_tag_update`, `memory_by_tag` tools and
-  CLI equivalents for listing, updating, and filtering by tags.
-- **Runtime GC configuration** — `maintenance_gc_config` MCP tool and CLI command to
-  view/set GC thresholds without restarting.
-- **Auto-consolidation config** — `maintenance_consolidation_config` exposed via MCP
-  and CLI.
-- **Agent lifecycle tools** — `agent_delete`, `agent_list` MCP tools and CLI commands.
-- **Hive statistics** — `hive_status` now includes entry counts per namespace.
-
-#### Test Suite Hardening (EPIC-016)
-- **CLI federation command tests** — `subscribe`, `unsubscribe`, `publish` now tested.
-- **Thread safety verification** — concurrent tests for `MemoryStore`, `HiveStore`,
-  metrics, and recall.
-- **Resource leak fixes** — eliminated 15 `ResourceWarning: unclosed database`
-  warnings across the test suite.
-- **Unicode and boundary value tests** — emoji, CJK, RTL, and max key/value length
-  boundary tests added.
+- QA gate, OpenClaw docs, release automation (epic-034-036)
+- diagnostics scorecard, v10 history, MCP/CLI, QA fixes (EPIC-030)
+- MCP/CLI feedback tools, Hive propagation, integration test (story-029)
+- implicit feedback reformulation and correction detection (story-029.3)
+- implicit positive/negative feedback tracking (story-029.3)
+- add explicit feedback API to MemoryStore (story-029.2)
+- add FeedbackConfig with custom event types and strict validation (story-029.2)
+- add FeedbackEvent model, FeedbackStore, and v8→v9 migration (story-029.1a)
+- fix migration script to read config.plugins.entries/installs (story-033.4)
+- import SDK types and fix API drift in openclaw plugin (story-033.1,033.2,033.3)
+- per-agent tool routing and permissions (story-027.8)
+- expose MCP resources and prompts as OpenClaw tools (story-027.7)
+- register federation tools as OpenClaw native tools (story-027.2)
+- register maintenance and config tools (story-027.4)
+- register audit, tags, profile tools (story-027.5)
+- register knowledge graph tools as OpenClaw native tools (story-027.3)
+- register Hive tools as OpenClaw native tools (story-027.1)
+- register lifecycle tools as OpenClaw native tools (story-027.6)
+- memory-core migration tool (story-026.5)
+- bidirectional MEMORY.md sync (story-026.4)
+- register tapps-brain as OpenClaw memory slot plugin (story-026.1)
+- add OpenClaw version compatibility layer (story-028.6)
+- integrate session memory search (story-028.5)
+- add citation support to recall results (story-028.4)
+- add MCP client auto-reconnection (story-028.1)
+- source trust multipliers for per-source scoring (M2)
+- add Hive awareness to OpenClaw agents, integrity hashing, and rate limiting
 
 ### Changed
-- **MCP tool count** — expanded from 29 to **41 tools** (knowledge graph, audit,
-  tags, GC config, consolidation config, agent lifecycle, health, migrate).
-- **CLI command count** — expanded from 19 to **36 commands** across 7 groups.
-- **Test count** — grew from 1226 to **1683 tests** with 96.48% coverage.
+- bump tapps-brain to v1.3.1 (release)
+- note 41-tool historical scope vs 54 tools today (epic-027)
+- reconcile EPIC-034/035/036 and story statuses (planning)
+- update STATUS.md — mark EPIC-017–028 done, add missing epics (HK-002.1)
+- close resolved GitHub issues #4, #5, #6 (HK-001.1)
+- Git-only install and upgrade guide (openclaw)
+- v1.3.0 — flywheel/eval, docs, OpenClaw sync
+- fix_plan roadmap for EPIC-029 QA through EPIC-032 (ralph)
+- add unit tests for FeedbackStore.record/query (story-029.1b)
+- add EPICs 029-032 for feedback, diagnostics, flywheel, and OTel
+- prune fix_plan.md — all 94 tasks complete
+- mark EPICs 017-028 as done with all stories checked off
+- add epic planning docs and Ralph runtime artifacts
+- fix pre-existing ruff lint and format violations
+- complete tool reference and integration guide (story-027.9)
+- integration tests for OpenClaw memory replacement (story-026.6)
+- mark 026-B and 026-C as done (already implemented in 026-A commit)
+- comprehensive OpenClaw integration guide (story-028.8)
+- add TypeScript tests for ContextEngine (story-028.3)
+- add TypeScript tests for MCP client (story-028.3)
+- configuration and manifest files review (story-025.7)
+- OpenClaw TypeScript plugin review (story-025.6)
+- test infrastructure and benchmarks review (story-025.5)
+- remaining integration tests review (story-025.4)
+- federation, cross-profile, validation integration tests review (story-025.3)
+- OpenClaw, profile, Hive integration tests review (story-025.2)
+- MCP and retrieval integration tests review (story-025.1)
+- remaining small unit tests review (story-024.14)
+- trust, consolidation config, decay, BM25 tests review (story-024.13)
+- contradictions, models, GC, relations tests review (story-024.12)
+- markdown, reranker, embeddings tests review (story-024.11)
+- foundation, promotion, IO tests review (story-024.10)
+- concurrency and recall tests review (story-024.9)
+- similarity and safety tests review (story-024.8)
+- consolidation tests review (story-024.7)
+- profile and retrieval tests review (story-024.6)
+- federation and hive tests review (story-024.5)
+- coverage gaps and validation tests review (story-024.4)
+- store and persistence tests review (story-024.3)
+- test_cli.py review (story-024.2)
+- test_mcp_server.py review (story-024.1)
+- auto-reformat 10 files with ruff format
+- fix pre-existing lint/format issues from prior epic reviews
+- metrics and OTel review (story-023.3)
+- profile YAML files review (story-023.2)
+- profile.py review (story-023.1)
+- markdown_import.py review (story-022.7)
+- io.py import/export review (story-022.6)
+- cli.py advanced commands review (story-022.5)
+- cli.py core commands review (story-022.4)
+- mcp_server.py config and agent tools review (story-022.3)
+- mcp_server.py Hive and graph tools review (story-022.2)
+- mcp_server.py core tools review (lines 1–500) (story-022.1)
+- relations.py knowledge graph review (story-021.4)
+- hive.py registry and propagation review (story-021.3)
+- hive.py HiveStore core review (story-021.2)
+- federation.py cross-project review (story-021.1)
+- rate limiter review (story-020.5)
+- seeding bootstrap review (story-020.4)
+- contradictions detection review (story-020.3)
+- doc_validation.py review (story-020.2)
+- safety and injection defense review (story-020.1)
+- reinforcement and extraction review (story-019.5)
+- GC and promotion review (story-019.4)
+- auto_consolidation.py lifecycle review (story-019.3)
+- consolidation.py merging review (story-019.2)
+- decay.py exponential decay review (story-019.1)
+- embeddings and reranker review (story-018.5)
+- similarity computation review (story-018.4)
+- BM25 and fusion scoring review (story-018.3)
+- recall.py orchestration review (story-018.2)
+- retrieval.py scoring engine review (story-018.1)
+- integrity verification review (story-017.8)
+- audit and session index review (story-017.7)
+- protocols and feature flags review (story-017.6)
+- __init__.py public API review (story-017.5)
+- models.py data model review (story-017.4)
+- persistence.py SQLite layer review (story-017.3)
+- store.py advanced features review (story-017.2)
+- style and quality cleanup from prior review loops
+- store.py core CRUD review (story-017.1)
+- verify updated consolidation thresholds in repo-brain profile
+- sync fix_plan.md — mark BUG-001-B/C/D/E/G complete
+- v1.2.0 — modernize README, update docs, bump version
 
----
+### Fixed
+- optional SDK imports for mypy; CliRunner; WSL/Windows venv note
+- fix openclaw-plugin test failures — defensive agent guard + test mocks (033-QA)
+- resolve plugin load failures and missing migration path (openclaw-plugin)
+- add structured error logging to OpenClaw plugin (story-028.7)
+- resolve bootstrap race condition in OpenClaw plugin (story-028.2)
+- update integrity hash computation for new model fields
+- update schema version assertions from v7 to v8
+- inject_memories respects profile scoring weights (BUG-002-B)
+- thread scoring_config through inject_memories to prevent source trust regression
+- narrow exception handling in MCP Hive tools
+- include server.json in version consistency check
+- log warning on unknown tier fallback in decay
+- prevent HiveStore connection leak on MCP handler exceptions
+- restore type safety in decay_config_from_profile
+- select_tier handles custom profile tier priorities
+- rewrite OpenClaw plugin against real ContextEngine API (v2026.3.7)
+- update openclaw-plugin/plugin.json version to 1.2.0
 
-## [1.1.0] — 2026-07-15
+## [1.1.0] - 2026-03-22
 
-### Added — EPIC-013: Hive-Aware MCP Surface
+### Added
+- agent lifecycle and Hive stats (story-015.9)
+- auto-consolidation config MCP tools and CLI (story-015.8)
+- GC config MCP tools and CLI (story-015.7)
+- tag management CLI commands (story-015.6)
+- tag management MCP tools (story-015.5)
+- audit trail CLI command (story-015.4)
+- audit trail MCP tool (story-015.3)
+- knowledge graph CLI commands (story-015.2)
+- knowledge graph MCP tools (story-015.1)
+- graceful SQLite corruption handling (story-014.3)
+- CLI agent create command (story-014.2)
+- validate agent_scope enum values (story-014.1)
+- deploy v1.8.7 performance optimizations (ralph)
+- OpenClaw plugin agent identity and Hive config (story-013.6)
+- agent_create composite MCP tool (story-013.5)
+- hive_propagate uses server agent identity (story-013.4)
+- Hive tools reuse shared HiveStore (story-013.4)
+- source_agent parameter in memory_save (story-013.3)
+- agent_scope parameter in memory_save (story-013.2)
+- MCP server --agent-id and --enable-hive flags (story-013.1)
+- ClawHub skill directory (story-012.6)
+- pyproject.toml metadata for PyPI (story-012.6)
+- pre-compaction compact hook (story-012.5)
+- auto-capture afterTurn hook (story-012.4)
+- auto-recall ingest hook (story-012.3)
+- bootstrap hook with MCP spawn (story-012.2)
+- openclaw plugin skeleton (story-012.2)
+- daily note import and workspace importer (story-012.1)
+- markdown import parser (story-012.1)
+- implement Hive — multi-agent shared brain with domain namespaces (EPIC-011)
+- add configurable memory profiles with pluggable layers and scoring (EPIC-010)
+- add EPICs 010-012 for configurable profiles, hive, and OpenClaw
+- expose session index, search, and capture as MCP tools
+- optional OpenTelemetry exporter (story-007.5)
+- store.audit() convenience method (story-007.3)
+- instrument lifecycle operation metrics (story-007.2)
+- instrument save/get/search metrics (story-007.2)
+- MCP registry server.json (story-009.4)
+- entry points and unified version (story-009.3)
+- optional extras for cli and mcp (story-009.1)
+- curated __all__ and py.typed (story-009.2)
+- merge relations on consolidation (story-006.5)
+- transfer relations on supersede (story-006.5)
+- graph-based recall boost (story-006.4)
+- query_relations filter API (story-006.3)
+- find_related graph traversal (story-006.3)
+- load relations on cold start (story-006.2)
+- auto-extract relations on save/ingest (story-006.2)
+- relation persistence methods (story-006.1)
+- MCP protocol-level integration tests (story-008.7)
+- federation & maintenance MCP tools (story-008.5)
+- MCP prompts, console script entry point, fix_plan update (story-008.6)
+- schema v6, store health/metrics, MCP deps and tests
+- add MCP server interfaces and tighten Ralph task execution (epic-008)
+- implement bi-temporal fact versioning with validity windows (epic-004)
+- implement auto-recall orchestrator with capture pipeline (epic-003)
+- wire standalone modules into MemoryStore runtime — 839 tests, 97.17% coverage (epic-002)
+- raise test suite to A+ — 792 tests, 96.59% coverage (epic-001)
 
-- **`--agent-id` and `--enable-hive` MCP server flags** — wire agent identity and
-  Hive participation directly from the MCP server CLI. Backward compatible: omitting
-  flags preserves current behavior.
-- **`agent_scope` parameter in `memory_save`** — callers can now mark memories as
-  `private`, `domain`, or `hive` scope directly from MCP. Propagation to the Hive
-  DB happens automatically when Hive is enabled.
-- **`source_agent` parameter in `memory_save`** — records the originating agent ID
-  for every saved memory. Falls back to the server's `--agent-id` when omitted.
-- **Shared `HiveStore` instance across Hive MCP tools** — `hive_status`,
-  `hive_search`, `hive_propagate`, `agent_register`, and `agent_list` all reuse the
-  server's single `HiveStore` instead of creating throwaway instances per call.
-- **`hive_propagate` uses server agent identity** — propagation now reads the
-  server's resolved agent ID and profile rather than hardcoded defaults.
-- **`agent_create` composite MCP tool** — single call to register an agent in
-  `AgentRegistry`, validate its profile (built-in or project), and receive a
-  namespace assignment with profile summary. Invalid profiles return an error listing
-  all available profiles.
-- **OpenClaw plugin `agentId` and `hiveEnabled` config fields** — plugin bootstrap
-  hook passes `--agent-id` / `--enable-hive` flags to the spawned MCP server and
-  auto-calls `agent_register` on first run.
-- **Multi-agent Hive patterns in OpenClaw guide** — new section in
-  `docs/guides/openclaw.md` covering orchestrator + child agent setup, profile
-  inheritance, scope usage, and shared-profile scenarios.
-- **Multi-agent Hive round-trip integration tests** — two agents with different
-  profiles sharing a Hive: verifies propagation, recall merging, conflict resolution,
-  and scope isolation (`private` / `domain` / `hive`).
+### Changed
+- final validation and status update (epic-016)
+- unicode and boundary value tests (story-016.6)
+- concurrent GC and Hive stress tests (story-016.4)
+- concurrent save and recall stress tests (story-016.3)
+- CLI gc archive and agent create error tests (story-016.2)
+- CLI federation command tests (story-016.1)
+- final validation and status update (epic-015)
+- final validation and status update (epic-014)
+- CHANGELOG.md (story-014.5)
+- getting started guide (story-014.4)
+- add EPIC-015 — Analytics & Operational Surface (graph, audit, tags, GC, consolidation)
+- fix grep stat parsing in hooks, strengthen QA-skip rules, add mypy ignores
+- add EPIC-014 — hardening (validation, CLI parity, resilience, onboarding docs)
+- mark EPIC-013 complete — update all status markers, acceptance criteria, and tool count
+- remove stale noqa E501 directive in test_mcp_server.py
+- final validation and status update (epic-013)
+- sync Ralph config updates and EPIC-013 test/formatting artifacts
+- multi-agent Hive round-trip integration tests (story-013.8)
+- multi-agent Hive patterns in OpenClaw guide (story-013.7)
+- add EPIC-013 — Hive-aware MCP surface for multi-agent OpenClaw wiring
+- add Profile Design Guide, Hive Guide, Profile Catalog; rewrite README
+- sync pending doc and config updates
+- mark EPIC-012 complete — update all status markers and acceptance criteria
+- deploy Ralph v1.2.0 hooks, agents, and skills
+- clean orphaned temp files, add feedback report, update gitignore
+- final validation and status update (epic-012)
+- ClawHub submission guide (story-012.6)
+- PyPI publish checklist (story-012.6)
+- version consistency check (story-012.6)
+- openclaw guide with ContextEngine plugin (story-012.7)
+- recall capture round-trip integration (story-012.7)
+- markdown import integration tests (story-012.7)
+- markdown import unit tests (story-012.1)
+- add Ralph hooks, Claude Code project config, and updated tooling
+- break EPIC-011 into Ralph tasks and update project status
+- sync epic statuses — mark EPICs 005-010 stories done, check all acceptance criteria
+- mark EPICs 006-009 done, add EPIC-010 tasks to fix_plan
+- add MCP protocol integration tests and fix persistence method call
+- add configurable memory profiles and hive architecture design
+- add OpenClaw integration guide and deployment plan
+- rewrite README in polished GitHub style
+- update all docs for session index, search, and capture MCP tools
+- bump Ralph timeout and document JSONL crash bug
+- observability integration tests (story-007.6)
+- extras-aware test markers (story-009.5)
+- add ralph runtime files to gitignore, stage pending changes
+- graph lifecycle integration tests (story-006.6)
+- tune for Max Plan unattended operation (ralph)
+- configure for unattended overnight runs (ralph)
+- MCP server guide with client config examples (story-008)
+- sync fix_plan with completed work, require checkoffs (ralph)
+- Ralph setup guide, WSL scripts, optimized .ralphrc settings
+- default integrated terminal to WSL Ubuntu (workspace) (vscode)
+- add WSL Claude Code upgrade script (user-local npm) (scripts)
+- add WSL background Ralph launcher and PS1 wrapper (scripts)
+- add WSL Ralph setup scripts and CLAUDE.md notes
+- add explicit done-when criteria to fix plan (ralph)
+- add Ralph autonomous loop configuration
+- bump version to 1.1.0, fix lint and format issues
+- update README for EPIC-003/004, fix mypy error, plan EPICs 005-007
+- add planned EPIC-003 (auto-recall) and EPIC-004 (bi-temporal versioning)
+- update README, PLANNING.md for Epic 2 completion
+- mark all acceptance criteria complete after CI pass (epic-001)
+- fix ruff lint errors (TC001, F841, E501, I001)
 
----
+### Fixed
+- close leaked SQLite connections in tests (story-016.5)
+- repair Ralph WSL/Windows version divergence and on-stop hook parsing
+- reinforce STATUS rules with scenarios and CRITICAL note (ralph)
+- use IN_PROGRESS status for completed tasks with remaining work (ralph)
+- run background Ralph in tmux (survives WSL exit) (scripts)
 
-## [1.0.0] — 2026-06-15
+## [1.0.1] - 2026-03-19
 
-### Added — EPICs 001–012: Initial Release
+### Changed
+- run ruff format on all files for CI compliance
+- remove PyPI publish workflow (private repo, not needed)
 
-#### Core Memory Engine (EPICs 001–005)
-- **Test suite quality** (EPIC-001) — property-based tests, edge-case coverage,
-  95 %+ coverage gate enforced by CI.
-- **Integration wiring** (EPIC-002) — full end-to-end save → recall → decay →
-  consolidation pipeline with real SQLite.
-- **Auto-recall orchestrator** (EPIC-003) — token-budgeted ranked memory injection
-  into agent prompts; automatic fact extraction from agent responses.
-- **Bi-temporal fact versioning** (EPIC-004) — separate `valid_from`/`valid_until`
-  (when true) from `recorded_at` (when written). Point-in-time queries and version
-  chains. Schema v5.
-- **CLI tool** (EPIC-005) — `tapps-brain` command with `save`, `recall`, `list`,
-  `delete`, `stats`, and `export` sub-commands via Typer.
+### Fixed
+- use venv for build job, add .gitattributes for LF enforcement (ci)
+- resolve all ruff, mypy, and formatting issues for CI
 
-#### Retrieval & Quality (EPICs 006–007)
-- **Knowledge graph** (EPIC-006) — relation triples (subject → predicate → object)
-  stored in SQLite; `add_relation`, `get_relations`, `find_related`, and
-  `query_relations` APIs.
-- **Observability** (EPIC-007) — `health()` and `get_metrics()` on `MemoryStore`;
-  structured JSON audit log (`memory_log.jsonl`); optional OpenTelemetry traces and
-  Prometheus-compatible metrics.
+## [1.0.0] - 2026-03-19
 
-#### Distribution (EPICs 008–009)
-- **MCP server** (EPIC-008) — 29 MCP tools, 4 resources, 3 prompts. Covers save,
-  recall, ingest, sessions, GC, consolidation, validation, knowledge graph, and
-  observability.
-- **Multi-interface distribution** (EPIC-009) — single engine exposed as Python
-  library, CLI, and MCP server. `tapps-brain-mcp` entry-point. PyPI-ready wheel.
+### Added
+- initial tapps-brain v1.0.0 - standalone memory system
 
-#### Profiles & Federation (EPICs 010–011)
-- **Configurable memory profiles** (EPIC-010) — YAML-defined profiles with custom
-  layers, decay models, scoring weights, and promotion rules. 6 built-in profiles
-  (`default`, `coding`, `research`, `creative`, `ops`, `minimal`). YAML inheritance
-  via `extends`.
-- **Hive — multi-agent shared brain** (EPIC-011) — cross-agent memory sharing via
-  `~/.tapps-brain/hive/hive.db`. Namespace isolation, 4 conflict resolution policies
-  (`supersede`, `source_authority`, `confidence_max`, `last_write_wins`),
-  auto-propagation based on `agent_scope`. Hive-aware recall merges local + Hive
-  results with configurable weight.
-
-#### OpenClaw Integration (EPIC-012)
-- **Markdown import** — `import_memory_md` and `import_openclaw_workspace` parse
-  MEMORY.md and daily notes into tier-classified memories. Idempotent (key-based
-  deduplication).
-- **OpenClaw ContextEngine plugin** (TypeScript) — `openclaw-plugin/` with
-  `bootstrap`, `ingest`, `afterTurn`, and `compact` hooks wired to MCP tools.
-- **ClawHub skill** — `openclaw-skill/` with `SKILL.md` manifest and
-  `openclaw.plugin.json` for one-click MCP server configuration.
-- **PyPI publish preparation** — `project.urls`, wheel + sdist verified,
-  publish checklist at `scripts/publish-checklist.md`.
-
-[Unreleased]: https://github.com/wtthornton/tapps-brain/compare/v1.3.1...HEAD
-[1.3.1]: https://github.com/wtthornton/tapps-brain/compare/v1.3.0...v1.3.1
-[1.3.0]: https://github.com/wtthornton/tapps-brain/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/wtthornton/tapps-brain/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/wtthornton/tapps-brain/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/wtthornton/tapps-brain/releases/tag/v1.0.0
+### Changed
+- add PyPI publish workflow via OIDC trusted publishing

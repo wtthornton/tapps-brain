@@ -14,15 +14,15 @@ Shipped baseline:
 
 - Env vars `TAPPS_BRAIN_ENCRYPTION_KEY` / `TAPPS_BRAIN_HIVE_ENCRYPTION_KEY`, programmatic `encryption_key=`, `sqlcipher_util.py`, encrypted paths in persistence / Hive / feedback / diagnostics.
 - CLI **`maintenance encrypt-db`**, **`decrypt-db`**, **`rekey-db`**; health reports **`sqlcipher_enabled`**.
-- Guide [`sqlcipher.md`](../../guides/sqlcipher.md).
+- Guide `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)*.
 
 **EPIC-043** STORY-043.6 research notes mention **KMS/HSM** and **backup** portability as operator-critical.
 
 ## Decision
 
-1. **Shipped / maintained path (do):** Keep **passphrase-based** SQLCipher as the **only** first-class encryption mode in core. Operators use **env / explicit key**, **CLI migrate and rekey**, and the **expanded** [`sqlcipher.md`](../../guides/sqlcipher.md) sections: **lost passphrase = data loss**, **backup + restore verification checklist**, and a short **enterprise** note that KMS envelope patterns are **host-owned**.
+1. **Shipped / maintained path (do):** Keep **passphrase-based** SQLCipher as the **only** first-class encryption mode in core. Operators use **env / explicit key**, **CLI migrate and rekey**, and the **expanded** `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)* sections: **lost passphrase = data loss**, **backup + restore verification checklist**, and a short **enterprise** note that KMS envelope patterns are **host-owned**.
 
-2. **Documentation delivered with this ADR:** [`sqlcipher.md`](../../guides/sqlcipher.md) gains explicit **backup / restore verification** steps and **key-loss** warning so the runbook matches checklist expectations without new code.
+2. **Documentation delivered with this ADR:** `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)* gains explicit **backup / restore verification** steps and **key-loss** warning so the runbook matches checklist expectations without new code.
 
 3. **Out of scope for core / deferred (not shipping now):**
    - **Vendor-specific** “envelope encryption” how-tos (AWS KMS, GCP KMS, Azure Key Vault, HSM PKCS#11) as **canonical** project docs — integrators follow their platform’s patterns to **inject** a passphrase or unlock a DEK before opening `MemoryStore` / `HiveStore`.
@@ -37,6 +37,6 @@ Revisit with a **new** story if a **product** commitment requires a **reference 
 
 ## References
 
-- [`sqlcipher.md`](../../guides/sqlcipher.md) — install, keys, CLI, backup checklist, enterprise note.
+- `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)* — install, keys, CLI, backup checklist, enterprise note.
 - [`EPIC-043.md`](../epics/EPIC-043.md) — STORY-043.6 baseline.
 - [`EPIC-051.md`](../epics/EPIC-051.md) — STORY-051.5.

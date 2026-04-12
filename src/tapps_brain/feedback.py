@@ -11,6 +11,10 @@ optionally enable strict validation (reject unknown types at record time).
 defined by ``migrations/private/003_feedback_and_session.sql``.  Thread-safe
 via ``threading.Lock``.
 
+``InMemoryFeedbackStore`` is a lightweight in-process implementation of the
+same interface — used in tests and offline environments where no Postgres
+connection is available.
+
 Standard event types (non-exhaustive — open enum):
     recall_rated, gap_reported, issue_flagged,
     implicit_positive, implicit_negative, implicit_correction.

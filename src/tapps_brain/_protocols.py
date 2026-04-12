@@ -4,6 +4,9 @@ These protocols allow the brain to work with external systems
 (project profiling, doc lookup, path validation) without depending
 on specific implementations. Consumers pass concrete objects that
 satisfy these protocols.
+
+Key public API: :class:`ProjectProfileLike` (project-profile duck-type),
+:class:`PathValidatorLike` (path-validation duck-type).
 """
 
 from __future__ import annotations

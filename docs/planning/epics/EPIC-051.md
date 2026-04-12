@@ -29,7 +29,7 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
   - **10.2 Freshness (lazy vs TTL):** done — [`ADR-002`](../adr/ADR-002-freshness-lazy-decay-vs-ttl.md); owner @wtthornton; **2026-04-03**.
   - **10.3 Correctness / review queue:** done — [`ADR-003`](../adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md); owner @wtthornton; **2026-04-03**.
   - **10.4 Scale / service extraction:** done — [`ADR-004`](../adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md); owner @wtthornton; **2026-04-03**.
-  - **10.5 Security (SQLCipher ops):** done — [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md); owner @wtthornton; **2026-04-03**; runbook [`sqlcipher.md`](../../guides/sqlcipher.md).
+  - **10.5 Security (SQLCipher ops):** done — [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md); owner @wtthornton; **2026-04-03**; runbook `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)*.
   - **10.6 Save-path observability:** done — [`ADR-006`](../adr/ADR-006-save-path-observability.md); owner @wtthornton; **2026-04-03** (histograms + `save_phase_summary` shipped; deeper metrics per trigger **(a)**).
 
 ## Stories
@@ -107,13 +107,13 @@ Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-
 
 **Status:** done | **Effort:** L | **Depends on:** none  
 **Owner / closed:** @wtthornton — **2026-04-03**  
-**Context refs:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md), [`sqlcipher.md`](../../guides/sqlcipher.md), [`EPIC-043.md`](EPIC-043.md) (STORY-043.6), `tests/unit/test_sqlcipher_util.py`, `tests/unit/test_encryption_migrate.py`  
-**Verification:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) + expanded [`sqlcipher.md`](../../guides/sqlcipher.md). `pytest -m "requires_encryption and not benchmark" -v --tb=short` when native SQLCipher available (else skipped in CI). Baseline without cipher round-trips: `pytest tests/unit/test_sqlcipher_util.py tests/unit/test_encryption_migrate.py -v --tb=short -m "not benchmark and not requires_encryption"` (green on **2026-04-03**).
+**Context refs:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md), `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)*, [`EPIC-043.md`](EPIC-043.md) (STORY-043.6), `tests/unit/test_sqlcipher_util.py`, `tests/unit/test_encryption_migrate.py`  
+**Verification:** [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) + expanded `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)*. `pytest -m "requires_encryption and not benchmark" -v --tb=short` when native SQLCipher available (else skipped in CI). Baseline without cipher round-trips: `pytest tests/unit/test_sqlcipher_util.py tests/unit/test_encryption_migrate.py -v --tb=short -m "not benchmark and not requires_encryption"` (green on **2026-04-03**).
 
 #### Implementation themes
 
-- [ ] **Deferred:** Vendor-specific **envelope encryption / KMS** how-to in-repo — host-owned; see [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) and **Enterprise key handling** in [`sqlcipher.md`](../../guides/sqlcipher.md).
-- [x] **Backup / verify** — **lost passphrase** warning + **backup and restore verification** checklist + optional re-key drill in [`sqlcipher.md`](../../guides/sqlcipher.md).
+- [ ] **Deferred:** Vendor-specific **envelope encryption / KMS** how-to in-repo — host-owned; see [`ADR-005`](../adr/ADR-005-sqlcipher-key-backup-operations.md) *(sqlcipher.md guide removed — SQLite retired in ADR-007)*.
+- [x] **Backup / verify** — **lost passphrase** warning + **backup and restore verification** checklist + optional re-key drill in `sqlcipher.md` *(guide removed — SQLite retired in ADR-007)*.
 
 ---
 

@@ -99,7 +99,7 @@ Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-a
 
 #### Implementation themes
 
-- [x] Operator doc: **rebuild / vacuum** playbook — [`docs/guides/sqlite-vec-operators.md`](../../guides/sqlite-vec-operators.md) (2026-04-02).
+- [x] Operator doc: **rebuild / vacuum** playbook — `docs/guides/sqlite-vec-operators.md` *(guide removed — SQLite retired in ADR-007)* (2026-04-02).
 - [x] Notes: **incremental** index updates vs per-save cost (delete+insert upsert, no batching) in operator doc + `persistence.py` / `sqlite_vec_index.py` docstrings (2026-04-02).
 - [x] Align **distance metric** with vec0 default **L2** and actual `MATCH` SQL + `retrieval.py` comment on `1/(1+dist)` (2026-04-02).
 

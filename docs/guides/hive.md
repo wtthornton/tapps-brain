@@ -638,7 +638,7 @@ cp /path/to/backup/agents-20260404.yaml ~/.tapps-brain/hive/agents.yaml
 
 ### Encrypted Hive databases
 
-If SQLCipher encryption is enabled (see [SQLCipher Guide](sqlcipher.md)), the `sqlite3` CLI backup command will not work. Use the SQLCipher CLI or the Python `sqlcipher_util` module instead.
+SQLCipher at-rest encryption is no longer supported — SQLite was retired in ADR-007. For Postgres at-rest encryption, see the [pg_tde runbook](postgres-tde.md) and the [Postgres backup/restore runbook](postgres-backup.md) *(guide removed — SQLite retired in ADR-007)*.
 
 ---
 

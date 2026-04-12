@@ -11,6 +11,10 @@ In-process retrieval counters (STORY-065.7) accumulate since process start
 and are readable via :func:`get_retrieval_meter_snapshot`.  These are plain
 Python ints/floats — not OTel exportable — so they remain available with
 OTel API-only installs (no SDK required).  All values reset on restart.
+
+Key public API: :func:`get_tracer`, :func:`start_mcp_tool_span`,
+:func:`extract_trace_context_from_mcp_params`,
+:func:`record_retrieval_document_events`, :func:`record_diagnostics_event`.
 """
 
 from __future__ import annotations

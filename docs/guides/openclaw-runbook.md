@@ -165,7 +165,7 @@ Tracked in [GitHub #65](https://github.com/wtthornton/tapps-brain/issues/65).
 
 ## Long-lived MCP and SQLite WAL
 
-The memory MCP server stays up with the gateway. Project **`memory.db`** uses **WAL** mode, so a **`-wal`** file can grow on disk under steady writes even though reads remain consistent. That is normal; SQLite auto-checkpoints as needed. If you need **smaller WAL files** or calmer on-disk state before backups, see **[`sqlite-database-locked.md`](sqlite-database-locked.md)** § *WAL checkpoint* — when to checkpoint, **`PRAGMA wal_checkpoint`** modes, and links to the official SQLite **[wal_checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint)** and **[WAL](https://www.sqlite.org/wal.html)** documentation.
+The memory MCP server stays up with the gateway. As of ADR-007, tapps-brain uses PostgreSQL — there is no SQLite WAL file to manage. For Postgres backup guidance before maintenance windows, see [`docs/operations/postgres-backup-restore.md`](../operations/postgres-backup-runbook.md) *(SQLite WAL guide removed — SQLite retired in ADR-007)*.
 
 ## Maintainers (pre-release)
 

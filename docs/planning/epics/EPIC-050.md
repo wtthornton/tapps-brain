@@ -68,13 +68,13 @@ Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-a
 #### Research notes (2026-forward)
 
 - **busy_timeout** ms tuning.
-- **WAL checkpoint** for long-lived MCP — operator guidance in [`sqlite-database-locked.md`](../../guides/sqlite-database-locked.md) § *WAL checkpoint* and [`openclaw-runbook.md`](../../guides/openclaw-runbook.md) § *Long-lived MCP and SQLite WAL* (2026-04-02).
+- **WAL checkpoint** for long-lived MCP — operator guidance in `sqlite-database-locked.md` *(guide removed — SQLite retired in ADR-007)* § *WAL checkpoint* and [`openclaw-runbook.md`](../../guides/openclaw-runbook.md) § *Long-lived MCP and SQLite WAL* (2026-04-02).
 - Evaluate **read_uncommitted** — generally **avoid**; document why.
 
 #### Implementation themes
 
 - [x] Default **busy_timeout** env `TAPPS_SQLITE_BUSY_MS` (if not present) — `resolve_sqlite_busy_timeout_ms()` in `sqlcipher_util.py`, federation hub aligned (2026-04-02).
-- [x] Operator **runbook**: “Database is locked” triage flowchart — [`docs/guides/sqlite-database-locked.md`](../../guides/sqlite-database-locked.md) (2026-04-02).
+- [x] Operator **runbook**: “Database is locked” triage flowchart — `docs/guides/sqlite-database-locked.md` *(guide removed — SQLite retired in ADR-007)* (2026-04-02).
 - [x] Spike: **read connection** for search-only paths — opt-in ``TAPPS_SQLITE_MEMORY_READONLY_SEARCH``; second RO URI connection + ``_read_lock`` for FTS search + sqlite-vec KNN; fallback to writer on failure; runbook + ``connect_sqlite_readonly`` (2026-04-02).
 - [x] Operator **WAL checkpoint** note (long-lived MCP): `sqlite-database-locked.md` + `openclaw-runbook.md` with links to SQLite pragma / WAL docs (2026-04-02).
 

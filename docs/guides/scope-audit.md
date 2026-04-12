@@ -2,7 +2,7 @@
 
 > **EPIC-063 STORY-063.5 / STORY-063.6** — Scope matrix + code checklist.  
 > Related: [`hive.md`](hive.md), [`ADR-007`](../planning/adr/ADR-007-postgres-only-no-sqlite.md),
-> [`ADR-008`](../planning/adr/ADR-008-rls-deferred.md), [`threat-model.md`](../engineering/threat-model.md)
+> [`ADR-009`](../planning/adr/ADR-009-rls-ship-vs-defer.md), [`threat-model.md`](../engineering/threat-model.md)
 
 ---
 
@@ -126,7 +126,7 @@ Automated negative tests validate the enforcement points above:
 - [`memory-scopes.md`](memory-scopes.md) — Local MemoryScope (project/branch/session) — distinct from `agent_scope`
 - [`threat-model.md`](../engineering/threat-model.md) — STRIDE one-pager
 - [`ADR-007`](../planning/adr/ADR-007-postgres-only-no-sqlite.md) — Postgres-only persistence decision
-- [`ADR-008`](../planning/adr/ADR-008-rls-deferred.md) — RLS deferred; compensating controls
+- [`ADR-009`](../planning/adr/ADR-009-rls-ship-vs-defer.md) — RLS ship vs defer decision
 - `src/tapps_brain/agent_scope.py` — Scope normalization and validation
 - `src/tapps_brain/backends.py` — `PropagationEngine` (scope routing)
 - `src/tapps_brain/store.py` — `MemoryStore.save()` (group membership check, group routing)

@@ -102,7 +102,7 @@ GET /ready    → 200 ready | 503 degraded (readiness — Postgres ping + migrat
 | `TAPPS_BRAIN_POOL_IDLE_TIMEOUT` | Idle connection timeout (s) | `300` |
 | `TAPPS_BRAIN_AUTO_CONSOLIDATE` | Enable auto-consolidation | `1` |
 
-Full env table: [`docs/guides/env-contract.md`](../guides/env-contract.md).
+Full env table: [`docs/guides/postgres-dsn.md`](../guides/postgres-dsn.md) (env-contract.md was merged into postgres-dsn.md).
 
 ---
 
@@ -165,6 +165,6 @@ groups:
 - [`telemetry-policy.md`](telemetry-policy.md) — allowed / forbidden span attributes and metric labels
 - [`k8s-probes.md`](k8s-probes.md) — liveness / readiness probe spec
 - [`docs/guides/hive-deployment.md`](../guides/hive-deployment.md) — Postgres deployment guide
-- [`docs/guides/env-contract.md`](../guides/env-contract.md) — full environment variable table
+- [`docs/guides/postgres-dsn.md`](../guides/postgres-dsn.md) — full environment variable table
 - [EPIC-061](../planning/epics/EPIC-061.md) — observability epic
 - [EPIC-063](../planning/epics/EPIC-063.md) — trust boundaries (DB roles, RLS)

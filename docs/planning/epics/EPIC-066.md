@@ -55,6 +55,23 @@ EPIC-059 was scoped as "rip out SQLite". That work shipped on 2026-04-11 with th
 <!-- docsmcp:start:stories -->
 ## Stories
 
+| Story | Title | Points |
+|-------|-------|--------|
+| [STORY-066.1](stories/STORY-066.1.md) | Consolidation merge audit emission | 3 |
+| [STORY-066.2](stories/STORY-066.2.md) | Bi-temporal as_of filter on PostgresPrivateBackend.search | 5 |
+| [STORY-066.3](stories/STORY-066.3.md) | GC archive Postgres table (migration 006) | 5 |
+| [STORY-066.4](stories/STORY-066.4.md) | MCP tool registration audit and fix | 3 |
+| [STORY-066.5](stories/STORY-066.5.md) | Version consistency unblock for openclaw-skill | 1 |
+| [STORY-066.6](stories/STORY-066.6.md) | CI workflow with ephemeral Postgres service container | 5 |
+| [STORY-066.7](stories/STORY-066.7.md) | Connection pool tuning + health JSON pool fields | 5 |
+| [STORY-066.8](stories/STORY-066.8.md) | Auto-migrate on startup gate | 3 |
+| [STORY-066.9](stories/STORY-066.9.md) | Behavioural parity doc + load smoke benchmark | 8 |
+| [STORY-066.10](stories/STORY-066.10.md) | pg_tde operator runbook | 5 |
+| [STORY-066.11](stories/STORY-066.11.md) | Postgres backup and restore runbook | 5 |
+| [STORY-066.12](stories/STORY-066.12.md) | Engineering docs drift sweep | 5 |
+| [STORY-066.13](stories/STORY-066.13.md) | Postgres integration tests replacing deleted SQLite-coupled tests | 8 |
+| [STORY-066.14](stories/STORY-066.14.md) | Final test failure sweep — 90 to zero | 5 |
+
 ### 66.1 -- Consolidation merge audit emission
 
 **Points:** 3
