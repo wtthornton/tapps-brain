@@ -418,6 +418,18 @@
       margin-top: 0.2rem;
     }
 
+    .kpi-arrow-up {
+      color: #15803d;
+      font-size: 1rem;
+      margin-left: 0.2em;
+    }
+
+    .kpi-arrow-down {
+      color: var(--nlt-accent-dim);
+      font-size: 1rem;
+      margin-left: 0.2em;
+    }
+
     .section-nav {
       display: flex;
       flex-wrap: wrap;
@@ -1727,6 +1739,7 @@
         <li><a href="#hive">Hive</a></li>
         <li><a href="#agents">Agents</a></li>
         <li><a href="#integrity">Integrity</a></li>
+        <li><a href="#velocity">Velocity</a></li>
         <li><a href="#activity">Activity</a></li>
         <li><a href="#diagnostics">Diagnostics</a></li>
         <li><a href="#privacy">Privacy</a></li>
@@ -2089,6 +2102,36 @@
         </div>
         <p class="prose-small">Relations, tamper detection, rate-limit anomalies, and GC candidates — the safety layer for this store.</p>
         <div id="integrity-body" class="prose-small">—</div>
+      </section>
+
+      <section class="dash-section reveal-on-scroll" id="velocity">
+        <div class="dash-h2-row">
+          <h2>Velocity</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:memory_velocity"
+            aria-label="Explain memory velocity"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Write and recall rate over the last 1 h and 24 h — derived from Postgres timestamps, no extra instrumentation required.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Write / recall rate</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:memory_velocity"
+              aria-label="Explain memory velocity"
+            >
+              ?
+            </button>
+          </div>
+          <div id="velocity-grid" class="kpi-strip" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;padding:0;"></div>
+          <p class="sub" id="velocity-meta">—</p>
+        </div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="activity">
@@ -2638,6 +2681,55 @@
       }
     }
 
+    function renderVelocity(velocity) {
+      const grid = el("velocity-grid");
+      const meta = el("velocity-meta");
+      if (!grid) return;
+
+      const v = velocity && typeof velocity === "object" ? velocity : {};
+      const w1h  = Number(v.writes_1h)  || 0;
+      const r1h  = Number(v.recalls_1h) || 0;
+      const w24h = Number(v.writes_24h) || 0;
+      const r24h = Number(v.recalls_24h)|| 0;
+
+      /** Returns "↑" when the 1 h rate exceeds the 24 h hourly average, else "↓". */
+      function arrow(count1h, count24h) {
+        const hourlyAvg = count24h / 24;
+        return count1h > hourlyAvg ? "↑" : "↓";
+      }
+
+      function arrowClass(count1h, count24h) {
+        return count1h > count24h / 24 ? "kpi-arrow-up" : "kpi-arrow-down";
+      }
+
+      const tiles = [
+        { lbl: "Writes 1 h",  val: String(w1h),  arrow: arrow(w1h,  w24h), cls: arrowClass(w1h,  w24h) },
+        { lbl: "Recalls 1 h", val: String(r1h),  arrow: arrow(r1h,  r24h), cls: arrowClass(r1h,  r24h) },
+        { lbl: "Writes 24 h", val: String(w24h), arrow: "",                 cls: "" },
+        { lbl: "Recalls 24 h",val: String(r24h), arrow: "",                 cls: "" },
+      ];
+
+      grid.innerHTML = tiles.map(function (t) {
+        const arrowSpan = t.arrow
+          ? ' <span class="' + t.cls + '" aria-label="' + (t.cls === "kpi-arrow-up" ? "trending up" : "trending down") + '">' + t.arrow + "</span>"
+          : "";
+        return (
+          '<div class="kpi">' +
+          '<div class="kpi-lbl">' + t.lbl + "</div>" +
+          '<div class="kpi-val">' + t.val + arrowSpan + "</div>" +
+          "</div>"
+        );
+      }).join("");
+
+      if (meta) {
+        meta.textContent =
+          "writes_1h=" + w1h +
+          " · writes_24h=" + w24h +
+          " · recalls_1h=" + r1h +
+          " · recalls_24h=" + r24h;
+      }
+    }
+
     function applySnapshot(data) {
       if (!data || typeof data !== "object") return;
 
@@ -2935,6 +3027,7 @@
         ib.textContent = parts.join(" · ");
       }
 
+      renderVelocity(data.velocity);
       renderScorecard(data);
       renderDiagnosticsInsight(data);
 

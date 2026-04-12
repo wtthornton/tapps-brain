@@ -586,6 +586,59 @@
       reference: "Code: <code>visual_snapshot.py</code> · <code>_access_stats_from_entries</code>",
     },
 
+    memory_velocity: {
+      title: "Memory velocity (write / recall rate)",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Four counters showing how many memories were <strong>written</strong> and <strong>recalled</strong> " +
+            "in the last <strong>1 hour</strong> and last <strong>24 hours</strong>.</p>" +
+            "<ul>" +
+            "<li><strong>Writes 1 h / 24 h</strong> — entries whose <code>created_at</code> timestamp falls within the window.</li>" +
+            "<li><strong>Recalls 1 h / 24 h</strong> — entries whose <code>last_accessed</code> timestamp falls within the window " +
+            "<em>and</em> <code>last_accessed ≠ created_at</code> (the save event is excluded).</li>" +
+            "</ul>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Postgres <code>COUNT(*) FILTER (WHERE created_at &gt; NOW() - INTERVAL '1 hour')</code> scoped to the current " +
+            "<code>(project_id, agent_id)</code> pair. No sampling or smoothing — exact counts at export time.</p>" +
+            "<p>The <strong>↑ / ↓ arrow</strong> on 1 h tiles compares the 1 h count to the 24 h hourly average " +
+            "(<code>writes_1h &gt; writes_24h / 24</code>). An up-arrow means recent activity is above the daily average rate.</p>",
+        },
+        {
+          heading: "Caveats",
+          html:
+            "<ul>" +
+            "<li><strong>Recall approximation</strong> — <code>last_accessed</code> is updated on every recall, but also on save. " +
+            "The <code>last_accessed ≠ created_at</code> guard reduces false positives yet does not eliminate all of them " +
+            "(e.g. a memory saved and immediately recalled within the same second).</li>" +
+            "<li><strong>Reset on wipe</strong> — velocity counts drop to zero if the store is wiped; this is expected.</li>" +
+            "<li><strong>No history</strong> — the panel shows point-in-time counts, not a time series. " +
+            "For trends, export snapshots over time and compare.</li>" +
+            "<li><strong>Postgres only</strong> — velocity queries require a live Postgres connection. " +
+            "The panel shows all zeros on in-memory or offline exports.</li>" +
+            "</ul>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Answers the most fundamental operational question: <em>is the memory system being used right now?</em> " +
+            "An operator can tell at a glance whether agents are actively writing and recalling, or whether the store has gone silent.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>_collect_velocity(store)</code> in <code>visual_snapshot.py</code> runs four <code>COUNT</code> queries " +
+            "against the <code>private_memories</code> Postgres table using existing <code>created_at</code> and " +
+            "<code>last_accessed</code> columns — no new instrumentation required.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>_collect_velocity</code> · STORY-065.6",
+    },
+
     agent_scope: {
       title: "Agent scope (private / domain / hive / group)",
       sections: [

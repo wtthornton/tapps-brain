@@ -274,7 +274,7 @@
 
 ### Phase C: Velocity and retrieval panels (065.6–065.7) <!-- id: 065-phase-c -->
 
-- [ ] **065.6** Memory velocity panel — add `MemoryVelocity` (writes_1h, recalls_1h, writes_24h, recalls_24h) to `VisualSnapshot` via COUNT queries on `created_at`/`last_accessed`; render 2×2 stat grid with delta arrows. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
+- [x] **065.6** Memory velocity panel — add `MemoryVelocity` (writes_1h, recalls_1h, writes_24h, recalls_24h) to `VisualSnapshot` via COUNT queries on `created_at`/`last_accessed`; render 2×2 stat grid with delta arrows. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
 - [ ] **065.7** Retrieval pipeline live metrics panel — add `RetrievalMetrics` from OTel in-process counters to `VisualSnapshot`; replace static step-flow diagram with 5-tile metrics panel (queries, BM25 hits, vector hits, RRF fusions, avg latency). [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.7.md -->
 
 🔒 **QA GATE — EPIC-065 complete.** Run: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95 && ruff check src/ tests/ && ruff format --check src/ tests/ && mypy --strict src/tapps_brain/` — then visual review of dashboard against NLT Labs style guide.

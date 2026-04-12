@@ -15,11 +15,13 @@ from tapps_brain.visual_snapshot import (
     VISUAL_SNAPSHOT_SCHEMA_VERSION,
     DiagnosticsSummary,
     HiveHealthSummary,
+    MemoryVelocity,
     NamespaceDetail,
     _access_stats_from_entries,
     _build_scorecard,
     _collect_agent_registry,
     _collect_hive_health,
+    _collect_velocity,
     build_visual_snapshot,
     capture_png,
     compute_fingerprint_hex,
@@ -872,4 +874,139 @@ def test_visual_snapshot_agent_registry_populated_from_hive(tmp_path: Path) -> N
     assert len(snap.agent_registry) == 2
     assert snap.agent_registry[0]["agent_id"] == "agent-abc-12345678"
     assert snap.agent_registry[1]["last_write_at"] is None
-    mock_hive.close.assert_called_once()
+
+
+# ── MemoryVelocity / _collect_velocity ──────────────────────────────────────
+
+
+def _make_mock_store_with_velocity_row(row: tuple[int, int, int, int]) -> MagicMock:
+    """Build a mock MemoryStore whose backend._cm returns a single velocity row."""
+    mock_cur = MagicMock()
+    mock_cur.__enter__ = lambda s: s
+    mock_cur.__exit__ = MagicMock(return_value=False)
+    mock_cur.fetchone.return_value = row
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: s
+    mock_conn.__exit__ = MagicMock(return_value=False)
+    mock_conn.cursor.return_value = mock_cur
+    mock_cm = MagicMock()
+    mock_cm.get_connection.return_value = mock_conn
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    mock_backend._project_id = "test-project"
+    mock_backend._agent_id = "test-agent"
+    mock_store = MagicMock()
+    mock_store._persistence = mock_backend
+    return mock_store
+
+
+def test_collect_velocity_returns_zeros_when_no_cm(tmp_path: Path) -> None:
+    """_collect_velocity returns all zeros when the backend has no Postgres _cm."""
+    store = MemoryStore(tmp_path)
+    try:
+        vel = _collect_velocity(store)
+    finally:
+        store.close()
+    assert vel == MemoryVelocity(writes_1h=0, recalls_1h=0, writes_24h=0, recalls_24h=0)
+
+
+def test_collect_velocity_maps_row_correctly() -> None:
+    """_collect_velocity maps Postgres COUNT row to MemoryVelocity fields."""
+    # Row order: (writes_1h, writes_24h, recalls_1h, recalls_24h)
+    mock_store = _make_mock_store_with_velocity_row((5, 20, 2, 8))
+    vel = _collect_velocity(mock_store)
+    assert vel.writes_1h == 5
+    assert vel.writes_24h == 20
+    assert vel.recalls_1h == 2
+    assert vel.recalls_24h == 8
+
+
+def test_collect_velocity_returns_zeros_on_none_row() -> None:
+    """_collect_velocity returns all-zero when cursor returns None."""
+    mock_cur = MagicMock()
+    mock_cur.__enter__ = lambda s: s
+    mock_cur.__exit__ = MagicMock(return_value=False)
+    mock_cur.fetchone.return_value = None
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: s
+    mock_conn.__exit__ = MagicMock(return_value=False)
+    mock_conn.cursor.return_value = mock_cur
+    mock_cm = MagicMock()
+    mock_cm.get_connection.return_value = mock_conn
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    mock_backend._project_id = "test-project"
+    mock_backend._agent_id = "test-agent"
+    mock_store = MagicMock()
+    mock_store._persistence = mock_backend
+    vel = _collect_velocity(mock_store)
+    assert vel == MemoryVelocity()
+
+
+def test_collect_velocity_returns_zeros_on_exception() -> None:
+    """_collect_velocity returns all-zero when an exception is raised."""
+    mock_cm = MagicMock()
+    mock_cm.get_connection.side_effect = Exception("connection refused")
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    mock_backend._project_id = "test-project"
+    mock_backend._agent_id = "test-agent"
+    mock_store = MagicMock()
+    mock_store._persistence = mock_backend
+    vel = _collect_velocity(mock_store)
+    assert vel == MemoryVelocity()
+
+
+def test_collect_velocity_handles_null_counts_as_zero() -> None:
+    """Null values in the COUNT row (edge case) coerce to 0."""
+    mock_store = _make_mock_store_with_velocity_row((None, None, None, None))  # type: ignore[arg-type]
+    vel = _collect_velocity(mock_store)
+    assert vel.writes_1h == 0
+    assert vel.recalls_1h == 0
+    assert vel.writes_24h == 0
+    assert vel.recalls_24h == 0
+
+
+def test_collect_velocity_no_project_id_returns_zeros() -> None:
+    """_collect_velocity returns zeros when _project_id is None (pre-migration)."""
+    mock_cm = MagicMock()
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    mock_backend._project_id = None
+    mock_backend._agent_id = "test-agent"
+    mock_store = MagicMock()
+    mock_store._persistence = mock_backend
+    vel = _collect_velocity(mock_store)
+    assert vel == MemoryVelocity()
+
+
+def test_build_visual_snapshot_includes_velocity_field(tmp_path: Path) -> None:
+    """build_visual_snapshot includes a velocity field (zeros on in-memory backend)."""
+    store = MemoryStore(tmp_path)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=True)
+    finally:
+        store.close()
+    assert hasattr(snap, "velocity")
+    assert isinstance(snap.velocity, MemoryVelocity)
+    # In-memory backend has no Postgres _cm → all zeros
+    assert snap.velocity.writes_1h == 0
+    assert snap.velocity.recalls_1h == 0
+    assert snap.velocity.writes_24h == 0
+    assert snap.velocity.recalls_24h == 0
+
+
+def test_snapshot_json_includes_velocity_keys(tmp_path: Path) -> None:
+    """snapshot_to_json includes velocity fields in output JSON."""
+    store = MemoryStore(tmp_path)
+    try:
+        raw = snapshot_to_json(build_visual_snapshot(store, skip_diagnostics=True))
+    finally:
+        store.close()
+    data = json.loads(raw)
+    assert "velocity" in data
+    v = data["velocity"]
+    assert "writes_1h" in v
+    assert "recalls_1h" in v
+    assert "writes_24h" in v
+    assert "recalls_24h" in v

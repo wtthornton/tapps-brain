@@ -138,6 +138,21 @@ class TagStat(BaseModel):
     count: int = Field(ge=1)
 
 
+class MemoryVelocity(BaseModel):
+    """Recent write and recall velocity counts (derived from Postgres timestamps).
+
+    writes_*  — entries whose ``created_at`` falls within the window.
+    recalls_* — entries whose ``last_accessed`` falls within the window
+                *and* ``last_accessed != created_at`` (guards against counting
+                the initial save as a recall).
+    """
+
+    writes_1h: int = Field(default=0, ge=0)
+    recalls_1h: int = Field(default=0, ge=0)
+    writes_24h: int = Field(default=0, ge=0)
+    recalls_24h: int = Field(default=0, ge=0)
+
+
 ScorecardStatus = Literal["ok", "warn", "fail", "info", "unknown"]
 
 
@@ -186,6 +201,10 @@ class VisualSnapshot(BaseModel):
     memory_group_counts: dict[str, int] | None = Field(
         default=None,
         description="Named group → entry count; set only for privacy_tier=local.",
+    )
+    velocity: MemoryVelocity = Field(
+        default_factory=MemoryVelocity,
+        description="Recent write/recall rate (1 h and 24 h windows) from Postgres timestamps.",
     )
     access_stats: AccessStats | None = None
     tag_stats: list[TagStat] | None = Field(
@@ -746,6 +765,54 @@ def _build_scorecard(  # noqa: PLR0915
     return checks
 
 
+def _collect_velocity(store: MemoryStore) -> MemoryVelocity:
+    """Best-effort velocity counts from Postgres ``private_memories`` (never raises).
+
+    Returns :class:`MemoryVelocity` with all zeros when the store backend has no
+    Postgres connection manager (e.g. the in-process unit-test backend).
+    """
+    try:
+        cm = getattr(store._persistence, "_cm", None)
+        project_id = getattr(store._persistence, "_project_id", None)
+        agent_id = getattr(store._persistence, "_agent_id", None)
+        if cm is None or project_id is None or agent_id is None:
+            return MemoryVelocity()
+        with cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE created_at > NOW() - INTERVAL '1 hour'
+                    ) AS writes_1h,
+                    COUNT(*) FILTER (
+                        WHERE created_at > NOW() - INTERVAL '24 hours'
+                    ) AS writes_24h,
+                    COUNT(*) FILTER (
+                        WHERE last_accessed > NOW() - INTERVAL '1 hour'
+                          AND last_accessed != created_at
+                    ) AS recalls_1h,
+                    COUNT(*) FILTER (
+                        WHERE last_accessed > NOW() - INTERVAL '24 hours'
+                          AND last_accessed != created_at
+                    ) AS recalls_24h
+                FROM private_memories
+                WHERE project_id = %s AND agent_id = %s
+                """,
+                (project_id, agent_id),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return MemoryVelocity()
+        return MemoryVelocity(
+            writes_1h=int(row[0] or 0),
+            writes_24h=int(row[1] or 0),
+            recalls_1h=int(row[2] or 0),
+            recalls_24h=int(row[3] or 0),
+        )
+    except Exception:  # noqa: BLE001
+        return MemoryVelocity()
+
+
 def build_visual_snapshot(
     store: MemoryStore,
     *,
@@ -794,6 +861,7 @@ def build_visual_snapshot(
     tag_stats: list[TagStat] | None = (
         _tag_stats_local(entries, limit=_TOP_TAGS_LIMIT) if privacy == "local" else None
     )
+    velocity = _collect_velocity(store)
 
     hive_health = _collect_hive_health(store)
 
@@ -837,6 +905,7 @@ def build_visual_snapshot(
         vector_index_rows=sv_n,
         memory_group_count=mg_count,
         memory_group_counts=mg_counts,
+        velocity=velocity,
         access_stats=access_stats,
         tag_stats=tag_stats,
         diagnostics=diagnostics,

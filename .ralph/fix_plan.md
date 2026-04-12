@@ -38,7 +38,6 @@
 
 ### Phase C: Velocity and retrieval panels <!-- id: 065-phase-c -->
 
-- [ ] **065.6** Memory velocity panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
 - [ ] **065.7** Retrieval pipeline live metrics panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.7.md -->
 
 <!-- QA deferred — all testing owned by EPIC-066 story 066.14 -->
