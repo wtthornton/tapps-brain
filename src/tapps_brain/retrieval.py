@@ -38,6 +38,7 @@ from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource
+from tapps_brain.otel_tracer import rm_add_bm25_candidates, rm_add_vector_candidates, rm_increment_rrf_fusions
 from tapps_brain.profile import (
     SCORING_WEIGHT_SUM_MAX,
     SCORING_WEIGHT_SUM_MIN,
@@ -606,12 +607,16 @@ class MemoryRetriever:
                 time_field=time_field,
             )
             if fts_results:
-                return self._bm25_score_entries(query, fts_results, store)
+                results = self._bm25_score_entries(query, fts_results, store)
+                rm_add_bm25_candidates(len(results))
+                return results
         except Exception:
             logger.debug("fts5_search_failed", query=query)
 
         # Fallback: full corpus BM25 scan
-        return self._bm25_full_scan(query, store, memory_group=memory_group)
+        results = self._bm25_full_scan(query, store, memory_group=memory_group)
+        rm_add_bm25_candidates(len(results))
+        return results
 
     def _get_hybrid_candidates(
         self,
@@ -681,6 +686,10 @@ class MemoryRetriever:
             f2 = ex.submit(run_vector)
             for f in as_completed([f1, f2]):
                 f.result()
+
+        rm_add_vector_candidates(len(vector_keys))
+        if bm25_keys and vector_keys:
+            rm_increment_rrf_fusions()
 
         fused = reciprocal_rank_fusion_weighted(
             bm25_keys,

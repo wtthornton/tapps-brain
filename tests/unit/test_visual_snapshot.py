@@ -17,10 +17,12 @@ from tapps_brain.visual_snapshot import (
     HiveHealthSummary,
     MemoryVelocity,
     NamespaceDetail,
+    RetrievalMetrics,
     _access_stats_from_entries,
     _build_scorecard,
     _collect_agent_registry,
     _collect_hive_health,
+    _collect_retrieval_metrics,
     _collect_velocity,
     build_visual_snapshot,
     capture_png,
@@ -1010,3 +1012,215 @@ def test_snapshot_json_includes_velocity_keys(tmp_path: Path) -> None:
     assert "recalls_1h" in v
     assert "writes_24h" in v
     assert "recalls_24h" in v
+
+
+# ---------------------------------------------------------------------------
+# STORY-065.7: RetrievalMetrics and _collect_retrieval_metrics tests
+# ---------------------------------------------------------------------------
+
+
+def test_retrieval_metrics_defaults() -> None:
+    """RetrievalMetrics defaults to zeros."""
+    rm = RetrievalMetrics()
+    assert rm.total_queries == 0
+    assert rm.bm25_hits == 0
+    assert rm.vector_hits == 0
+    assert rm.rrf_fusions == 0
+    assert rm.mean_latency_ms == 0.0
+
+
+def test_collect_retrieval_metrics_returns_zeros_when_no_queries() -> None:
+    """_collect_retrieval_metrics returns RetrievalMetrics with zeros if no queries run."""
+    import tapps_brain.otel_tracer as _otel
+
+    # Save original counter state and reset to ensure clean test
+    orig = (
+        _otel._rm_recall_total,
+        _otel._rm_bm25_candidates,
+        _otel._rm_vector_candidates,
+        _otel._rm_rrf_fusions,
+        _otel._rm_latency_sum_ms,
+        _otel._rm_latency_count,
+    )
+    try:
+        _otel._rm_recall_total = 0
+        _otel._rm_bm25_candidates = 0
+        _otel._rm_vector_candidates = 0
+        _otel._rm_rrf_fusions = 0
+        _otel._rm_latency_sum_ms = 0.0
+        _otel._rm_latency_count = 0
+
+        rm = _collect_retrieval_metrics()
+        assert rm.total_queries == 0
+        assert rm.bm25_hits == 0
+        assert rm.vector_hits == 0
+        assert rm.rrf_fusions == 0
+        assert rm.mean_latency_ms == 0.0
+    finally:
+        _otel._rm_recall_total = orig[0]
+        _otel._rm_bm25_candidates = orig[1]
+        _otel._rm_vector_candidates = orig[2]
+        _otel._rm_rrf_fusions = orig[3]
+        _otel._rm_latency_sum_ms = orig[4]
+        _otel._rm_latency_count = orig[5]
+
+
+def test_collect_retrieval_metrics_reflects_increments() -> None:
+    """_collect_retrieval_metrics reads incremented values from otel_tracer accumulators."""
+    import tapps_brain.otel_tracer as _otel
+
+    orig = (
+        _otel._rm_recall_total,
+        _otel._rm_bm25_candidates,
+        _otel._rm_vector_candidates,
+        _otel._rm_rrf_fusions,
+        _otel._rm_latency_sum_ms,
+        _otel._rm_latency_count,
+    )
+    try:
+        _otel._rm_recall_total = 5
+        _otel._rm_bm25_candidates = 12
+        _otel._rm_vector_candidates = 8
+        _otel._rm_rrf_fusions = 3
+        _otel._rm_latency_sum_ms = 250.0
+        _otel._rm_latency_count = 5  # mean = 50.0
+
+        rm = _collect_retrieval_metrics()
+        assert rm.total_queries == 5
+        assert rm.bm25_hits == 12
+        assert rm.vector_hits == 8
+        assert rm.rrf_fusions == 3
+        assert abs(rm.mean_latency_ms - 50.0) < 0.001
+    finally:
+        _otel._rm_recall_total = orig[0]
+        _otel._rm_bm25_candidates = orig[1]
+        _otel._rm_vector_candidates = orig[2]
+        _otel._rm_rrf_fusions = orig[3]
+        _otel._rm_latency_sum_ms = orig[4]
+        _otel._rm_latency_count = orig[5]
+
+
+def test_collect_retrieval_metrics_fallback_when_import_fails() -> None:
+    """_collect_retrieval_metrics returns zeros when otel_tracer is unavailable."""
+    with patch.dict(sys.modules, {"tapps_brain.otel_tracer": None}):
+        rm = _collect_retrieval_metrics()
+    assert rm.total_queries == 0
+    assert rm.mean_latency_ms == 0.0
+
+
+def test_snapshot_includes_retrieval_metrics(tmp_path: "Path") -> None:
+    """build_visual_snapshot includes retrieval_metrics with all 5 fields."""
+    store = MemoryStore(tmp_path)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=True)
+    finally:
+        store.close()
+    rm = snap.retrieval_metrics
+    assert isinstance(rm, RetrievalMetrics)
+    assert isinstance(rm.total_queries, int)
+    assert isinstance(rm.bm25_hits, int)
+    assert isinstance(rm.vector_hits, int)
+    assert isinstance(rm.rrf_fusions, int)
+    assert isinstance(rm.mean_latency_ms, float)
+    assert rm.total_queries >= 0
+    assert rm.mean_latency_ms >= 0.0
+
+
+def test_snapshot_json_includes_retrieval_metrics(tmp_path: "Path") -> None:
+    """snapshot_to_json serializes retrieval_metrics with all 5 expected keys."""
+    store = MemoryStore(tmp_path)
+    try:
+        raw = snapshot_to_json(build_visual_snapshot(store, skip_diagnostics=True))
+    finally:
+        store.close()
+    data = json.loads(raw)
+    assert "retrieval_metrics" in data
+    rm = data["retrieval_metrics"]
+    assert "total_queries" in rm
+    assert "bm25_hits" in rm
+    assert "vector_hits" in rm
+    assert "rrf_fusions" in rm
+    assert "mean_latency_ms" in rm
+
+
+def test_otel_tracer_increment_functions() -> None:
+    """rm_* helper functions in otel_tracer update module-level counters."""
+    from tapps_brain.otel_tracer import (
+        get_retrieval_meter_snapshot,
+        rm_add_bm25_candidates,
+        rm_add_recall_latency_ms,
+        rm_add_vector_candidates,
+        rm_increment_recall_total,
+        rm_increment_rrf_fusions,
+    )
+    import tapps_brain.otel_tracer as _otel
+
+    orig = (
+        _otel._rm_recall_total,
+        _otel._rm_bm25_candidates,
+        _otel._rm_vector_candidates,
+        _otel._rm_rrf_fusions,
+        _otel._rm_latency_sum_ms,
+        _otel._rm_latency_count,
+    )
+    try:
+        _otel._rm_recall_total = 0
+        _otel._rm_bm25_candidates = 0
+        _otel._rm_vector_candidates = 0
+        _otel._rm_rrf_fusions = 0
+        _otel._rm_latency_sum_ms = 0.0
+        _otel._rm_latency_count = 0
+
+        rm_increment_recall_total()
+        rm_increment_recall_total()
+        rm_add_bm25_candidates(5)
+        rm_add_vector_candidates(3)
+        rm_increment_rrf_fusions()
+        rm_add_recall_latency_ms(100.0)
+        rm_add_recall_latency_ms(200.0)
+
+        snap = get_retrieval_meter_snapshot()
+        assert snap["total_queries"] == 2
+        assert snap["bm25_hits"] == 5
+        assert snap["vector_hits"] == 3
+        assert snap["rrf_fusions"] == 1
+        assert abs(snap["mean_latency_ms"] - 150.0) < 0.001
+    finally:
+        _otel._rm_recall_total = orig[0]
+        _otel._rm_bm25_candidates = orig[1]
+        _otel._rm_vector_candidates = orig[2]
+        _otel._rm_rrf_fusions = orig[3]
+        _otel._rm_latency_sum_ms = orig[4]
+        _otel._rm_latency_count = orig[5]
+
+
+def test_rm_add_bm25_candidates_ignores_nonpositive() -> None:
+    """rm_add_bm25_candidates ignores n <= 0."""
+    from tapps_brain.otel_tracer import rm_add_bm25_candidates
+    import tapps_brain.otel_tracer as _otel
+
+    orig = _otel._rm_bm25_candidates
+    try:
+        _otel._rm_bm25_candidates = 10
+        rm_add_bm25_candidates(0)
+        rm_add_bm25_candidates(-5)
+        assert _otel._rm_bm25_candidates == 10
+    finally:
+        _otel._rm_bm25_candidates = orig
+
+
+def test_rm_add_recall_latency_ignores_negative() -> None:
+    """rm_add_recall_latency_ms ignores negative values."""
+    from tapps_brain.otel_tracer import rm_add_recall_latency_ms
+    import tapps_brain.otel_tracer as _otel
+
+    orig_sum = _otel._rm_latency_sum_ms
+    orig_count = _otel._rm_latency_count
+    try:
+        _otel._rm_latency_sum_ms = 0.0
+        _otel._rm_latency_count = 0
+        rm_add_recall_latency_ms(-1.0)
+        assert _otel._rm_latency_count == 0
+    finally:
+        _otel._rm_latency_sum_ms = orig_sum
+        _otel._rm_latency_count = orig_count

@@ -1992,6 +1992,46 @@
           <p class="sub" id="sqlite-vec-line">—</p>
         </div>
 
+        <!-- STORY-065.7: Retrieval pipeline live metrics tiles -->
+        <div class="tile-row" style="margin-top:1rem">
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Queries</p>
+              <button type="button" class="help-pill" data-help="retrieval_metrics" aria-label="Explain retrieval metrics">?</button>
+            </div>
+            <div class="stat mono-small" id="rm-queries">0</div>
+            <p class="sub">since restart</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">BM25 Hits</p>
+            </div>
+            <div class="stat mono-small" id="rm-bm25">0</div>
+            <p class="sub">cumulative candidates</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Vector Hits</p>
+            </div>
+            <div class="stat mono-small" id="rm-vector">0</div>
+            <p class="sub">cumulative candidates</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">RRF Fusions</p>
+            </div>
+            <div class="stat mono-small" id="rm-rrf">0</div>
+            <p class="sub">both legs fired</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Avg Latency</p>
+            </div>
+            <div class="stat mono-small" id="rm-latency">0.0ms</div>
+            <p class="sub">mean recall latency</p>
+          </div>
+        </div>
+
       </section>
 
       <section class="dash-section reveal-on-scroll" id="hive">
@@ -2868,6 +2908,18 @@
           "Re-export with tapps-brain CLI (visual export schema v2) for BM25/hybrid/pgvector mode.";
         svLine.textContent = "—";
       }
+
+      /* STORY-065.7: Retrieval pipeline live metrics tiles */
+      (function renderRetrievalMetrics(metrics) {
+        const rm = (metrics && typeof metrics === "object") ? metrics : {};
+        const setRm = (id, val) => { const e = el(id); if (e) e.textContent = val; };
+        setRm("rm-queries", Number(rm.total_queries) || 0);
+        setRm("rm-bm25", Number(rm.bm25_hits) || 0);
+        setRm("rm-vector", Number(rm.vector_hits) || 0);
+        setRm("rm-rrf", Number(rm.rrf_fusions) || 0);
+        const lat = typeof rm.mean_latency_ms === "number" ? rm.mean_latency_ms : 0;
+        setRm("rm-latency", lat.toFixed(1) + "ms");
+      })(data.retrieval_metrics);
 
       /* Hive hub detail — structured table */
       (function renderHiveHub() {

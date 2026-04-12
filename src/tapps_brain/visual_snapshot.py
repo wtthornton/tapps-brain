@@ -169,6 +169,25 @@ class ScorecardCheck(BaseModel):
     )
 
 
+class RetrievalMetrics(BaseModel):
+    """In-process retrieval pipeline counters (resets on process restart).
+
+    All values accumulate since the last process start.  They are 0 when no
+    queries have been issued since startup.  Collected from module-level
+    accumulators in :mod:`tapps_brain.otel_tracer`; never raises.
+    """
+
+    total_queries: int = Field(default=0, ge=0, description="store.recall()/search() calls.")
+    bm25_hits: int = Field(default=0, ge=0, description="Cumulative BM25 candidate count.")
+    vector_hits: int = Field(default=0, ge=0, description="Cumulative vector candidate count.")
+    rrf_fusions: int = Field(
+        default=0, ge=0, description="Queries where both BM25+vector legs had candidates."
+    )
+    mean_latency_ms: float = Field(
+        default=0.0, ge=0.0, description="Running mean recall/search latency (ms)."
+    )
+
+
 class VisualSnapshot(BaseModel):
     """``brain-visual.json`` contract (schema version 2)."""
 
@@ -210,6 +229,10 @@ class VisualSnapshot(BaseModel):
     tag_stats: list[TagStat] | None = Field(
         default=None,
         description="Top tags by frequency; set only for privacy_tier=local.",
+    )
+    retrieval_metrics: RetrievalMetrics = Field(
+        default_factory=RetrievalMetrics,
+        description="In-process BM25/vector/RRF counters and mean latency since last restart.",
     )
     diagnostics: DiagnosticsSummary | None = None
     scorecard: list[ScorecardCheck] = Field(
@@ -813,6 +836,27 @@ def _collect_velocity(store: MemoryStore) -> MemoryVelocity:
         return MemoryVelocity()
 
 
+def _collect_retrieval_metrics() -> RetrievalMetrics:
+    """Read in-process retrieval counters from otel_tracer accumulators.
+
+    Returns :class:`RetrievalMetrics` with zeros when the module is absent or
+    any error occurs — this helper never raises.
+    """
+    try:
+        from tapps_brain.otel_tracer import get_retrieval_meter_snapshot
+
+        snap = get_retrieval_meter_snapshot()
+        return RetrievalMetrics(
+            total_queries=int(snap.get("total_queries", 0)),
+            bm25_hits=int(snap.get("bm25_hits", 0)),
+            vector_hits=int(snap.get("vector_hits", 0)),
+            rrf_fusions=int(snap.get("rrf_fusions", 0)),
+            mean_latency_ms=float(snap.get("mean_latency_ms", 0.0)),
+        )
+    except Exception:  # noqa: BLE001
+        return RetrievalMetrics()
+
+
 def build_visual_snapshot(
     store: MemoryStore,
     *,
@@ -901,6 +945,7 @@ def build_visual_snapshot(
         hive_health=hive_health,
         retrieval_effective_mode=mode,
         retrieval_summary=summary,
+        retrieval_metrics=_collect_retrieval_metrics(),
         vector_index_enabled=True,
         vector_index_rows=sv_n,
         memory_group_count=mg_count,

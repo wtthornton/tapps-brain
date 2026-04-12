@@ -347,6 +347,46 @@
       reference: "Docs: <code>docs/guides/hive.md</code> · Code: <code>hive.py</code>",
     },
 
+    retrieval_metrics: {
+      title: "Retrieval pipeline live metrics",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Five in-process counters that accumulate since the last process start. " +
+            "<strong>Queries</strong> — total <code>store.recall()</code> / <code>store.search()</code> calls. " +
+            "<strong>BM25 Hits</strong> — cumulative BM25 candidate entries scored across all queries. " +
+            "<strong>Vector Hits</strong> — cumulative pgvector candidates (0 in BM25-only mode). " +
+            "<strong>RRF Fusions</strong> — queries where <em>both</em> BM25 and vector legs returned candidates and RRF merged them. " +
+            "<strong>Avg Latency</strong> — running mean recall wall time in milliseconds.</p>",
+        },
+        {
+          heading: "Zero-on-restart caveat",
+          html:
+            "<p>All values reset to 0 when the tapps-brain process restarts. " +
+            "They reflect only activity since the current process started — not historical totals. " +
+            "Use the Pulse section for Postgres-backed write/recall velocity across restarts.</p>",
+        },
+        {
+          heading: "Diagnosing retrieval",
+          html:
+            "<p>If <strong>Vector Hits = 0</strong> despite hybrid mode being configured, " +
+            "embeddings may not be stored or the vector index may be empty — check the Retrieval mode badge above. " +
+            "If <strong>RRF Fusions = 0</strong> but Vector Hits > 0, one leg may be returning an empty list — inspect " +
+            "the <code>bm25.candidates</code> and <code>vector.candidates</code> counters via <code>brain_visual_snapshot()</code>. " +
+            "High <strong>Avg Latency</strong> may indicate slow pgvector queries or embedding compute on every call.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p>Counters are incremented in <code>otel_tracer.py</code> (module-level accumulators) " +
+            "and read by <code>visual_snapshot._collect_retrieval_metrics()</code> on each snapshot request. " +
+            "No OTel SDK is required — the accumulators are plain Python ints.</p>",
+        },
+      ],
+      reference: "Code: <code>otel_tracer.py</code> · <code>retrieval.py</code> · <code>visual_snapshot.py</code>",
+    },
+
     retrieval_stack: {
       title: "Retrieval stack",
       sections: [

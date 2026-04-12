@@ -57,6 +57,8 @@ from tapps_brain.otel_tracer import (
     SPAN_SEARCH,
     SPAN_UPDATE,
     record_retrieval_document_events,
+    rm_add_recall_latency_ms,
+    rm_increment_recall_total,
     start_span,
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
@@ -1351,6 +1353,8 @@ class MemoryStore:
             max_group_results: Maximum results per group namespace (STORY-056.5).
         """
         self._metrics.increment("store.search")
+        rm_increment_recall_total()
+        _search_t0 = time.monotonic()
         with (
             start_span(SPAN_SEARCH) as _search_span,
             MetricsTimer(self._metrics, "store.search_ms"),
@@ -1433,6 +1437,7 @@ class MemoryStore:
             self._metrics.increment("store.search.results", len(results))
             if _search_span is not None:
                 _search_span.set_attribute("search.result_count", len(results))
+            rm_add_recall_latency_ms((time.monotonic() - _search_t0) * 1000.0)
             return results
 
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
@@ -2043,6 +2048,8 @@ class MemoryStore:
         session_id: str | None = str(_raw_sid) if _raw_sid is not None else None
 
         self._metrics.increment("store.recall")
+        rm_increment_recall_total()
+        _recall_t0 = time.monotonic()
         with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
                 # Wire Hive store and profile for hive-aware recall (EPIC-011)
@@ -2152,6 +2159,7 @@ class MemoryStore:
             with self._serialized():
                 self._zero_result_queries.append((message.strip(), _utc_now_iso()))
 
+        rm_add_recall_latency_ms((time.monotonic() - _recall_t0) * 1000.0)
         return result
 
     def health(self) -> StoreHealthReport:

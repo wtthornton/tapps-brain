@@ -6,11 +6,17 @@ always available as a no-op when no SDK is configured; actual export
 requires ``pip install tapps-brain[otel]``.
 
 Span names are aligned with ``docs/engineering/system-architecture.md``.
+
+In-process retrieval counters (STORY-065.7) accumulate since process start
+and are readable via :func:`get_retrieval_meter_snapshot`.  These are plain
+Python ints/floats — not OTel exportable — so they remain available with
+OTel API-only installs (no SDK required).  All values reset on restart.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -533,3 +539,104 @@ def record_diagnostics_event(
         add_event(EVENT_DIAGNOSTICS_REPORT, event_attrs)
     except Exception:
         pass  # OTel SDK errors must never propagate to callers
+
+
+# ---------------------------------------------------------------------------
+# In-process retrieval counters — STORY-065.7
+# ---------------------------------------------------------------------------
+# These are plain Python accumulators (not OTel exportable) that reset on
+# process restart.  They are incremented from the retrieval hot path and
+# read by ``visual_snapshot._collect_retrieval_metrics()``.
+#
+# Instrument names (mirrored from OTel metric intent):
+#   tapps_brain.recall.total       — total store.recall()/store.search() calls
+#   tapps_brain.bm25.candidates    — cumulative BM25 candidate count
+#   tapps_brain.vector.candidates  — cumulative vector candidate count
+#   tapps_brain.rrf.fusions        — times RRF fused both BM25+vector legs
+#   tapps_brain.recall.latency_ms  — running mean recall latency (ms)
+
+_rm_lock: threading.Lock = threading.Lock()
+_rm_recall_total: int = 0
+_rm_bm25_candidates: int = 0
+_rm_vector_candidates: int = 0
+_rm_rrf_fusions: int = 0
+_rm_latency_sum_ms: float = 0.0
+_rm_latency_count: int = 0
+
+
+def rm_increment_recall_total() -> None:
+    """Increment the in-process recall/search query counter by 1."""
+    global _rm_recall_total  # noqa: PLW0603
+    with _rm_lock:
+        _rm_recall_total += 1
+
+
+def rm_add_bm25_candidates(n: int) -> None:
+    """Add *n* to the cumulative BM25 candidate counter."""
+    global _rm_bm25_candidates  # noqa: PLW0603
+    if n <= 0:
+        return
+    with _rm_lock:
+        _rm_bm25_candidates += n
+
+
+def rm_add_vector_candidates(n: int) -> None:
+    """Add *n* to the cumulative vector candidate counter."""
+    global _rm_vector_candidates  # noqa: PLW0603
+    if n <= 0:
+        return
+    with _rm_lock:
+        _rm_vector_candidates += n
+
+
+def rm_increment_rrf_fusions() -> None:
+    """Increment the RRF fusion counter by 1."""
+    global _rm_rrf_fusions  # noqa: PLW0603
+    with _rm_lock:
+        _rm_rrf_fusions += 1
+
+
+def rm_add_recall_latency_ms(ms: float) -> None:
+    """Record one recall latency observation (milliseconds)."""
+    global _rm_latency_sum_ms, _rm_latency_count  # noqa: PLW0603
+    if ms < 0:
+        return
+    with _rm_lock:
+        _rm_latency_sum_ms += ms
+        _rm_latency_count += 1
+
+
+def get_retrieval_meter_snapshot() -> dict[str, int | float]:
+    """Return a snapshot of the in-process retrieval counters.
+
+    Returns a dict with keys matching the OTel instrument intent:
+
+    - ``total_queries`` — cumulative store.recall()/store.search() calls
+    - ``bm25_hits`` — cumulative BM25 candidates across all queries
+    - ``vector_hits`` — cumulative vector candidates (0 when BM25-only)
+    - ``rrf_fusions`` — number of queries where both legs had candidates
+    - ``mean_latency_ms`` — running mean latency in milliseconds (0.0 if none)
+
+    All values are 0 / 0.0 until the first query since process start.
+    This function never raises.
+    """
+    try:
+        with _rm_lock:
+            mean_lat = (
+                _rm_latency_sum_ms / _rm_latency_count if _rm_latency_count > 0 else 0.0
+            )
+            return {
+                "total_queries": _rm_recall_total,
+                "bm25_hits": _rm_bm25_candidates,
+                "vector_hits": _rm_vector_candidates,
+                "rrf_fusions": _rm_rrf_fusions,
+                "mean_latency_ms": mean_lat,
+            }
+    except Exception:  # pragma: no cover
+        return {
+            "total_queries": 0,
+            "bm25_hits": 0,
+            "vector_hits": 0,
+            "rrf_fusions": 0,
+            "mean_latency_ms": 0.0,
+        }
