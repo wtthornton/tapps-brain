@@ -35,6 +35,10 @@ services:
       dockerfile: docker/Dockerfile.migrate
     environment:
       TAPPS_BRAIN_HIVE_DSN: "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"
+      # Private store DSN for wiring HttpAdapter /snapshot endpoint (STORY-065.1).
+      # Set this to the private-memory Postgres DSN so the HTTP adapter can inject
+      # a live MemoryStore into GET /snapshot at container startup.
+      TAPPS_BRAIN_DATABASE_URL: "${TAPPS_BRAIN_DATABASE_URL:-}"
     depends_on:
       tapps-hive-db:
         condition: service_healthy

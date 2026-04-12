@@ -1,4 +1,4 @@
-"""HTTP adapter for tapps-brain runtime API (STORY-060.3 / STORY-060.4).
+"""HTTP adapter for tapps-brain runtime API (STORY-060.3 / STORY-060.4 / STORY-065.1).
 
 Exposes probe/metrics endpoints using **only** the Python standard library —
 no external HTTP framework is required.
@@ -14,6 +14,10 @@ Routes
                         (public)
 ``GET /info``         — Extended runtime info: version, Python, uptime, config flags.
                         **Auth-protected** when ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` is set.
+``GET /snapshot``     — Live system snapshot (VisualSnapshot JSON). 15s TTL cache.
+                        **Auth-protected** when ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` is set.
+                        Returns ``503`` when no store is injected at construction time.
+                        CORS header ``Access-Control-Allow-Origin: *`` always present.
 ``GET /openapi.json`` — OpenAPI 3.1 spec for this adapter (public).
 
 Authentication
@@ -40,10 +44,16 @@ Or as a context manager::
     with HttpAdapter(port=8080, dsn="postgres://...", auth_token="secret") as adapter:
         ...  # adapter is running
 
+Pass a live ``MemoryStore`` to expose the ``/snapshot`` endpoint::
+
+    with HttpAdapter(port=8080, dsn="...", store=my_store) as adapter:
+        ...
+
 The ``dsn`` and ``auth_token`` parameters are never included in response bodies
 or log output (ADR-007 / EPIC-063 secret hygiene).
 
 EPIC-060 STORY-060.3 / STORY-060.4
+EPIC-065 STORY-065.1
 """
 
 from __future__ import annotations
@@ -55,9 +65,12 @@ import platform
 import sys
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from tapps_brain.store import MemoryStore
 
 from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
 
@@ -193,6 +206,39 @@ _OPENAPI_SPEC: dict[str, Any] = {
                 },
             }
         },
+        "/snapshot": {
+            "get": {
+                "summary": "Live system snapshot",
+                "description": (
+                    "Returns the current VisualSnapshot as JSON, built from the injected "
+                    "MemoryStore. Responses are cached for 15 seconds to limit store reads. "
+                    "Returns 503 when the adapter was constructed without a store. "
+                    "Auth-protected when TAPPS_BRAIN_HTTP_AUTH_TOKEN is configured. "
+                    "Always includes Access-Control-Allow-Origin: * for dashboard access."
+                ),
+                "operationId": "getSnapshot",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {
+                        "description": "Live VisualSnapshot JSON.",
+                        "content": {"application/json": {}},
+                    },
+                    "401": {"description": "Missing or malformed Authorization header."},
+                    "403": {"description": "Invalid token."},
+                    "503": {
+                        "description": "No store configured — adapter started without a store.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"error": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                },
+            }
+        },
         "/openapi.json": {
             "get": {
                 "summary": "OpenAPI spec",
@@ -230,6 +276,9 @@ _SERVICE_NAME = "tapps-brain"
 
 # Number of parts in a valid "Bearer <token>" Authorization header.
 _BEARER_PARTS = 2
+
+# TTL for the /snapshot cache (seconds).
+_SNAPSHOT_TTL_SECONDS: float = 15.0
 
 
 def _service_version() -> str:
@@ -369,6 +418,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     _dsn: str | None = None
     _version: str = "unknown"
     _auth_token: str | None = None  # None → auth disabled
+    _store: Any = None  # MemoryStore | None; Any to avoid import at class level
+
+    # /snapshot TTL cache — shared across all handler instances via class (STORY-065.1).
+    # Overridden per-BoundHandler subclass in HttpAdapter.start() so each adapter
+    # instance has its own independent cache and lock.
+    _snapshot_lock: threading.Lock = threading.Lock()
+    _snapshot_cache: Any = None  # VisualSnapshot | None
+    _snapshot_cache_at: float = 0.0
 
     # Routes that are always public — no auth check applied.
     _PUBLIC_PATHS: frozenset[str] = frozenset(
@@ -433,6 +490,19 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     # Route dispatch
     # ------------------------------------------------------------------
 
+    def do_OPTIONS(self) -> None:
+        """Handle OPTIONS preflight requests for CORS (STORY-065.1).
+
+        Returns the CORS headers required by browsers when the dashboard at
+        port 8088 calls the adapter at port 8080 directly.
+        """
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         """Handle GET requests.
 
@@ -472,6 +542,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._handle_metrics()
             elif path == "/info":
                 self._handle_info()
+            elif path == "/snapshot":
+                self._handle_snapshot()
             elif path == "/openapi.json":
                 self._handle_openapi()
             else:
@@ -524,6 +596,37 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         """Return the OpenAPI 3.1 spec as JSON (always public)."""
         self._send_json(200, _OPENAPI_SPEC)
 
+    def _handle_snapshot(self) -> None:
+        """Return the live VisualSnapshot as JSON with a 15s TTL cache (STORY-065.1).
+
+        - Returns 503 when the adapter was constructed without a store.
+        - Caches the snapshot for ``_SNAPSHOT_TTL_SECONDS`` to avoid hammering
+          the store with O(n) list_all() calls on rapid polls.
+        - Always includes ``Access-Control-Allow-Origin: *`` so the nginx-served
+          dashboard at port 8088 can reach the adapter at port 8080 directly.
+        """
+        if self._store is None:
+            self._send_json_cors(503, {"error": "no store configured"})
+            return
+
+        cls = type(self)
+        with cls._snapshot_lock:
+            now = time.time()
+            cache_hit = cls._snapshot_cache is not None and (
+                now - cls._snapshot_cache_at
+            ) < _SNAPSHOT_TTL_SECONDS
+            if cache_hit:
+                snapshot = cls._snapshot_cache
+            else:
+                # Import at call site to avoid circular imports at module load.
+                from tapps_brain.visual_snapshot import build_visual_snapshot
+
+                snapshot = build_visual_snapshot(self._store, privacy="standard")
+                cls._snapshot_cache = snapshot
+                cls._snapshot_cache_at = now
+
+        self._send_json_cors(200, snapshot.model_dump(mode="json"))
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -533,6 +636,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_json_cors(self, status: int, body: dict[str, Any]) -> None:
+        """Send a JSON response with CORS headers (used by /snapshot)."""
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -567,11 +680,16 @@ class HttpAdapter:
         then ``TAPPS_BRAIN_HIVE_DSN``.  When neither is set, ``/ready``
         returns ``503`` and ``/metrics`` reports ``tapps_brain_db_ready 0``.
     auth_token:
-        Bearer token required for protected routes (``/info``).
+        Bearer token required for protected routes (``/info``, ``/snapshot``).
         Falls back to the ``TAPPS_BRAIN_HTTP_AUTH_TOKEN`` environment variable.
         When neither is set, protected routes are open (**not for production**).
         Probe routes (``/health``, ``/ready``, ``/metrics``, ``/openapi.json``)
         are always public regardless of this setting.
+    store:
+        Optional live ``MemoryStore`` instance.  When provided, enables the
+        ``GET /snapshot`` endpoint which returns a ``VisualSnapshot`` as JSON
+        with a 15-second TTL cache.  When ``None`` (default), ``/snapshot``
+        returns ``503``.
     """
 
     def __init__(
@@ -581,11 +699,13 @@ class HttpAdapter:
         port: int = 8080,
         dsn: str | None = None,
         auth_token: str | None = None,
+        store: MemoryStore | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._dsn = dsn or self._resolve_dsn_from_env()
         self._auth_token = auth_token or self._resolve_auth_token_from_env()
+        self._store = store
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._version = _service_version()
@@ -599,15 +719,23 @@ class HttpAdapter:
         if self._server is not None:
             return  # already running
 
-        # Build a handler subclass with the DSN and auth token bound in
+        # Build a handler subclass with DSN, auth token, and store bound in.
+        # Each BoundHandler gets its own lock and cache so multiple adapter
+        # instances running in the same process don't share snapshot state.
         dsn = self._dsn
         version = self._version
         auth_token = self._auth_token
+        store = self._store
+        _lock = threading.Lock()
 
         class BoundHandler(_Handler):
             _dsn = dsn
             _version = version
             _auth_token = auth_token
+            _store = store
+            _snapshot_lock = _lock
+            _snapshot_cache: Any = None
+            _snapshot_cache_at: float = 0.0
 
         self._server = http.server.HTTPServer((self._host, self._port), BoundHandler)
         self._thread = threading.Thread(

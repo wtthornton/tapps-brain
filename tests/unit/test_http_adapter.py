@@ -1,10 +1,11 @@
-"""Contract tests for tapps_brain.http_adapter (STORY-060.3 / STORY-060.4).
+"""Contract tests for tapps_brain.http_adapter (STORY-060.3 / STORY-060.4 / STORY-065.1).
 
 Tests cover:
 - /health: always 200, JSON body
 - /ready: 200 when DB reachable, 503 when DB down / DSN missing
 - /metrics: Prometheus text format, correct Content-Type, key gauge names
 - /info: auth-protected runtime info
+- /snapshot: live VisualSnapshot endpoint with TTL cache and CORS
 - /openapi.json: public OpenAPI spec
 - Auth: 401 on missing header, 403 on wrong token, 200 on correct token
 - 404 for unknown routes
@@ -65,6 +66,37 @@ def _get_with_headers(
         if "application/json" in content_type:
             return resp.status, json.loads(raw)
         return resp.status, raw
+    finally:
+        conn.close()
+
+
+def _get_full(
+    port: int, path: str, headers: dict[str, str] | None = None
+) -> tuple[int, dict[str, Any] | str, dict[str, str]]:
+    """Issue a GET request and return (status_code, parsed_body, response_headers)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+        content_type = resp.getheader("Content-Type", "")
+        if "application/json" in content_type:
+            return resp.status, json.loads(raw), resp_headers
+        return resp.status, raw, resp_headers
+    finally:
+        conn.close()
+
+
+def _options(port: int, path: str) -> tuple[int, dict[str, str]]:
+    """Issue an OPTIONS request and return (status_code, response_headers)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("OPTIONS", path)
+        resp = conn.getresponse()
+        resp.read()  # drain
+        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+        return resp.status, resp_headers
     finally:
         conn.close()
 
@@ -757,3 +789,262 @@ class TestTraceContextPropagation:
 
         _, kwargs = mock_tracer.start_as_current_span.call_args
         assert kwargs.get("kind") == SpanKind.SERVER
+
+
+# ---------------------------------------------------------------------------
+# /snapshot endpoint (STORY-065.1)
+# ---------------------------------------------------------------------------
+
+# Minimal VisualSnapshot-shaped dict returned by the mock
+_FAKE_SNAPSHOT_DICT: dict[str, Any] = {
+    "schema_version": 2,
+    "generated_at": "2026-04-11T00:00:00+00:00",
+    "fingerprint_sha256": "abc123",
+    "identity_schema_version": 2,
+    "privacy_tier": "standard",
+    "privacy": "aggregated",
+    "health": {},
+    "agent_scope_counts": {},
+    "hive_attached": False,
+    "hive_health": {},
+    "retrieval_effective_mode": "bm25_only",
+    "retrieval_summary": "",
+    "vector_index_enabled": False,
+    "vector_index_rows": 0,
+    "memory_group_count": 0,
+    "scorecard": [],
+    "access_stats": None,
+    "tag_stats": None,
+    "diagnostics": None,
+    "memory_group_counts": None,
+    "theme": None,
+}
+
+
+def _make_mock_snapshot() -> MagicMock:
+    """Return a mock VisualSnapshot whose model_dump returns the fake dict."""
+    snap = MagicMock()
+    snap.model_dump.return_value = dict(_FAKE_SNAPSHOT_DICT)
+    return snap
+
+
+class TestSnapshotEndpointNoStore:
+    """GET /snapshot returns 503 when no store is injected."""
+
+    def test_returns_503_without_store(self) -> None:
+        port = _free_port()
+        adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=None)
+        with adapter:
+            _wait_for_server(port)
+            status, body = _get(port, "/snapshot")
+        assert status == 503
+        assert isinstance(body, dict)
+        assert "error" in body
+
+    def test_error_body_mentions_store(self) -> None:
+        port = _free_port()
+        adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=None)
+        with adapter:
+            _wait_for_server(port)
+            _, body = _get(port, "/snapshot")
+        assert isinstance(body, dict)
+        assert "store" in body.get("error", "").lower()
+
+    def test_cors_header_present_even_on_503(self) -> None:
+        port = _free_port()
+        adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=None)
+        with adapter:
+            _wait_for_server(port)
+            _, _, resp_headers = _get_full(port, "/snapshot")
+        assert resp_headers.get("access-control-allow-origin") == "*"
+
+
+class TestSnapshotEndpointWithStore:
+    """GET /snapshot returns 200 + VisualSnapshot JSON when store is injected."""
+
+    def test_returns_200_with_store(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+            with adapter:
+                _wait_for_server(port)
+                status, body = _get(port, "/snapshot")
+        assert status == 200
+        assert isinstance(body, dict)
+
+    def test_body_contains_schema_version(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+            with adapter:
+                _wait_for_server(port)
+                _, body = _get(port, "/snapshot")
+        assert isinstance(body, dict)
+        assert body.get("schema_version") == 2
+
+    def test_cors_header_present(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+            with adapter:
+                _wait_for_server(port)
+                _, _, resp_headers = _get_full(port, "/snapshot")
+        assert resp_headers.get("access-control-allow-origin") == "*"
+
+    def test_ttl_cache_prevents_double_call(self) -> None:
+        """Two requests within 15s must return the same body (cached)."""
+        port = _free_port()
+        mock_store = MagicMock()
+        call_count = 0
+
+        def _build(*args: Any, **kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            return _make_mock_snapshot()
+
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_build):
+            adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+            with adapter:
+                _wait_for_server(port)
+                status1, _body1 = _get(port, "/snapshot")
+                status2, _body2 = _get(port, "/snapshot")
+
+        assert status1 == 200
+        assert status2 == 200
+        # build_visual_snapshot must have been called exactly once (second hit uses cache)
+        assert call_count == 1, f"Expected 1 snapshot build call; got {call_count}"
+
+    def test_cache_refresh_after_ttl(self) -> None:
+        """After the TTL expires, the next request triggers a fresh snapshot build."""
+        import tapps_brain.http_adapter as _mod
+
+        original_ttl = _mod._SNAPSHOT_TTL_SECONDS
+        port = _free_port()
+        mock_store = MagicMock()
+        call_count = 0
+
+        def _build(*args: Any, **kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            return _make_mock_snapshot()
+
+        # Patch TTL to near-zero so second request triggers a rebuild
+        _mod._SNAPSHOT_TTL_SECONDS = 0.0
+        try:
+            with patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_build):
+                adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+                with adapter:
+                    _wait_for_server(port)
+                    _get(port, "/snapshot")
+                    time.sleep(0.05)  # TTL=0 → guaranteed miss
+                    _get(port, "/snapshot")
+        finally:
+            _mod._SNAPSHOT_TTL_SECONDS = original_ttl
+
+        assert call_count == 2, f"Expected 2 snapshot build calls after TTL; got {call_count}"
+
+    def test_content_type_is_json(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        conn = None
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+            with adapter:
+                _wait_for_server(port)
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                try:
+                    conn.request("GET", "/snapshot")
+                    resp = conn.getresponse()
+                    ct = resp.getheader("Content-Type", "")
+                    resp.read()
+                finally:
+                    if conn:
+                        conn.close()
+        assert "application/json" in ct
+
+
+class TestSnapshotEndpointAuth:
+    """GET /snapshot auth follows the same bearer-token gate as /info."""
+
+    def test_returns_401_without_token_when_auth_configured(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        adapter = HttpAdapter(
+            host="127.0.0.1", port=port, dsn=None, auth_token=_TEST_TOKEN, store=mock_store
+        )
+        with adapter:
+            _wait_for_server(port)
+            status, _ = _get(port, "/snapshot")
+        assert status == 401
+
+    def test_returns_403_with_wrong_token(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        adapter = HttpAdapter(
+            host="127.0.0.1", port=port, dsn=None, auth_token=_TEST_TOKEN, store=mock_store
+        )
+        with adapter:
+            _wait_for_server(port)
+            status, _ = _get_with_headers(
+                port, "/snapshot", {"Authorization": "Bearer wrong-token"}
+            )
+        assert status == 403
+
+    def test_returns_200_with_correct_token(self) -> None:
+        port = _free_port()
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        adapter = HttpAdapter(
+            host="127.0.0.1", port=port, dsn=None, auth_token=_TEST_TOKEN, store=mock_store
+        )
+        with (
+            patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap),
+            adapter,
+        ):
+            _wait_for_server(port)
+            status, _ = _get_with_headers(
+                port, "/snapshot", {"Authorization": f"Bearer {_TEST_TOKEN}"}
+            )
+        assert status == 200
+
+
+class TestSnapshotCorsPreflight:
+    """OPTIONS /snapshot returns CORS preflight headers."""
+
+    def test_options_returns_204_or_200(self) -> None:
+        port = _free_port()
+        adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None)
+        with adapter:
+            _wait_for_server(port)
+            status, _ = _options(port, "/snapshot")
+        assert status in (200, 204)
+
+    def test_options_includes_allow_origin_star(self) -> None:
+        port = _free_port()
+        adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None)
+        with adapter:
+            _wait_for_server(port)
+            _, resp_headers = _options(port, "/snapshot")
+        assert resp_headers.get("access-control-allow-origin") == "*"
+
+
+class TestSnapshotOpenApiSpec:
+    """/snapshot must appear in the OpenAPI spec."""
+
+    def test_snapshot_in_openapi_paths(self, adapter_no_dsn: HttpAdapter) -> None:
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+        assert "/snapshot" in body.get("paths", {}), "/snapshot must be in OpenAPI spec paths"
+
+    def test_snapshot_spec_has_503_response(self, adapter_no_dsn: HttpAdapter) -> None:
+        _, body = _get(adapter_no_dsn.address[1], "/openapi.json")
+        assert isinstance(body, dict)
+        snapshot_spec = body.get("paths", {}).get("/snapshot", {}).get("get", {})
+        assert "503" in snapshot_spec.get("responses", {}), "/snapshot spec must document 503"
