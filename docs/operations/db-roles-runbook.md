@@ -2,6 +2,10 @@
 
 **Covers EPIC-063 STORY-063.1 + STORY-063.2: least-privilege Postgres roles.**
 
+> **Backup & recovery:** See [Postgres Backup Guide](../guides/postgres-backup.md) and
+> [Postgres Backup Runbook](./postgres-backup-runbook.md) for backup strategies,
+> point-in-time recovery, and the Hive failover procedure.
+
 ## Roles overview
 
 tapps-brain uses three Postgres roles to enforce least-privilege access:

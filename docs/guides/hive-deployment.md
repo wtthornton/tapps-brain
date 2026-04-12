@@ -226,3 +226,20 @@ For production deployments requiring at-rest encryption, choose one of:
 
 See the full runbook: [docs/guides/postgres-tde.md](./postgres-tde.md)
 | Migration sidecar exits with error | Network timing | Check `depends_on` health condition; increase retries |
+
+---
+
+## Backup and Disaster Recovery
+
+All durable Hive state lives in Postgres. Back it up regularly.
+
+- **Guide (strategies + config):** [docs/guides/postgres-backup.md](./postgres-backup.md)
+- **On-call checklist:** [docs/operations/postgres-backup-runbook.md](../operations/postgres-backup-runbook.md)
+
+Key runbooks to rehearse before production go-live:
+
+| Scenario | Runbook |
+|----------|---------|
+| Daily pg_dump backup | [Runbook 1](../operations/postgres-backup-runbook.md#runbook-1--daily-backup-pg_dump) |
+| Full restore from pg_dump | [Runbook 2](../operations/postgres-backup-runbook.md#runbook-2--restore-from-pg_dump) |
+| Hive replica failover | [Runbook 5](../operations/postgres-backup-runbook.md#runbook-5--hive-replica-failover) |
