@@ -33,7 +33,6 @@
 
 ### Phase A: Live endpoint + polling <!-- id: 065-phase-a -->
 
-- [ ] **065.2** Dashboard live polling mode [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.2.md -->
 - [ ] **065.3** Purge stale and privacy-gated components [SMALL] <!-- story: docs/planning/epics/stories/STORY-065.3.md -->
 
 ### Phase B: Hive and agent monitoring panels <!-- id: 065-phase-b -->

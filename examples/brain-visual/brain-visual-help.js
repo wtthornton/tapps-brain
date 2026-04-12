@@ -405,6 +405,45 @@
   };
 
   const HELP_CONCEPTS = {
+    live_connection_status: {
+      title: "Live connection status badge",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The <strong>status badge</strong> in the top-right header shows whether the dashboard is receiving " +
+            "live data from the tapps-brain <code>/snapshot</code> HTTP endpoint.</p>" +
+            "<ul>" +
+            "<li><strong style='color:#15803d'>LIVE</strong> — last successful fetch within 90 seconds; timestamp shown.</li>" +
+            "<li><strong style='color:#b45309'>STALE</strong> — last fetch was more than 90 seconds ago, or no fetch yet (OFFLINE).</li>" +
+            "<li><strong style='color:#b91c1c'>ERROR</strong> — 3 consecutive fetch failures; error message shown.</li>" +
+            "</ul>",
+        },
+        {
+          heading: "The polling loop",
+          html:
+            "<p>The dashboard calls <code>fetch('/snapshot', { cache: 'no-store' })</code> on page load and " +
+            "then on the selected interval (default 30 s). Use the <strong>Refresh</strong> selector in the header " +
+            "to change the cadence to 15 s, 60 s, or Manual (fetch once, no auto-refresh).</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Without live polling the dashboard shows stale exported JSON. With the HttpAdapter running, " +
+            "every panel updates automatically — no <code>tapps-brain visual export</code> needed.</p>",
+        },
+        {
+          heading: "Setup",
+          html:
+            "<p>Start the HttpAdapter: <code>tapps-brain mcp start --http</code> or " +
+            "<code>docker compose up tapps-brain-mcp</code>. When running the visual dashboard in Docker, " +
+            "nginx proxies <code>/snapshot</code> to <code>http://tapps-brain-mcp:8080/snapshot</code> " +
+            "so the browser fetch is same-origin (no CORS issues).</p>",
+        },
+      ],
+      reference: "Code: <code>examples/brain-visual/index.html</code> · <code>initLivePolling()</code> · STORY-065.2",
+    },
+
     fingerprint: {
       title: "Fingerprint (SHA-256)",
       sections: [

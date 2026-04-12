@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f0ede6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0e13" />
+  <meta name="tapps-snapshot-url" content="/snapshot" />
   <title>tapps-brain · NLT visual snapshot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1404,6 +1405,127 @@
       color: var(--fg-dim);
       line-height: 1.45;
     }
+
+    /* ── Live polling status badge ─────────────────────────────────────────── */
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      transition: background var(--dur-base), color var(--dur-base), border-color var(--dur-base);
+    }
+    .live-badge[data-state="live"] {
+      background: rgba(34, 197, 94, 0.12);
+      color: #15803d;
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+    html[data-theme="dark"] .live-badge[data-state="live"] {
+      color: #4ade80;
+      background: rgba(34, 197, 94, 0.15);
+    }
+    .live-badge[data-state="stale"] {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--nlt-accent-dim);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    html[data-theme="dark"] .live-badge[data-state="stale"] {
+      color: var(--nlt-accent-secondary);
+      background: rgba(245, 158, 11, 0.12);
+    }
+    .live-badge[data-state="error"] {
+      background: rgba(239, 68, 68, 0.12);
+      color: #b91c1c;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    html[data-theme="dark"] .live-badge[data-state="error"] {
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.15);
+    }
+    .live-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .live-badge[data-state="live"] .live-badge-dot {
+        animation: live-pulse 2s ease-in-out infinite;
+      }
+      @keyframes live-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+    }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .interval-selector {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .interval-selector label {
+      font-size: 0.75rem;
+      color: var(--fg-dim);
+    }
+    .interval-selector select {
+      font-size: 0.75rem;
+      font-family: var(--font-body);
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      cursor: pointer;
+    }
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+      display: none;
+      text-align: center;
+      padding: 3.5rem 2rem;
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      margin: 2rem 0;
+    }
+    .empty-state.is-visible {
+      display: block;
+    }
+    .empty-state-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .empty-state-title {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      margin: 0 0 0.6rem;
+    }
+    .empty-state-body {
+      color: var(--fg-dim);
+      max-width: 480px;
+      margin: 0 auto 1.25rem;
+      font-size: 0.875rem;
+    }
+    .empty-state-code {
+      display: inline-block;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-align: left;
+      white-space: pre;
+    }
   </style>
 </head>
 <body>
@@ -1434,9 +1556,24 @@
           <p class="brand-subtitle">New Logic Tech Labs</p>
         </div>
       </div>
-      <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
-        Dark theme
-      </button>
+      <div class="header-controls">
+        <div class="interval-selector">
+          <label for="poll-interval">Refresh</label>
+          <select id="poll-interval" aria-label="Poll interval">
+            <option value="15000">15 s</option>
+            <option value="30000" selected>30 s</option>
+            <option value="60000">60 s</option>
+            <option value="0">Manual</option>
+          </select>
+        </div>
+        <span class="live-badge" id="live-badge" data-state="stale" aria-live="polite" aria-atomic="true">
+          <span class="live-badge-dot" aria-hidden="true"></span>
+          <span id="live-badge-label">OFFLINE</span>
+        </span>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+          Dark theme
+        </button>
+      </div>
     </div>
   </header>
 
@@ -1475,10 +1612,21 @@
 
       <div class="load-row">
         <input id="snapshot-file" class="sr-only" type="file" accept="application/json,.json" />
-        <label class="btn-load" for="snapshot-file">Load snapshot</label>
-        <button type="button" class="btn-ghost" id="load-demo">Load demo</button>
+        <label class="btn-load" for="snapshot-file">Load snapshot file</label>
+        <button type="button" class="btn-ghost" id="load-demo">Load static demo</button>
         <button type="button" class="btn-ghost" id="copy-fp" disabled>Copy fingerprint</button>
-        <span id="status" class="muted">No file loaded; placeholders shown.</span>
+        <span id="status" class="muted">Connecting to live endpoint…</span>
+      </div>
+
+      <div class="empty-state" id="empty-state" role="status" aria-label="No snapshot available">
+        <div class="empty-state-icon" aria-hidden="true">📡</div>
+        <h2 class="empty-state-title">No snapshot available</h2>
+        <p class="empty-state-body">
+          The live <code>/snapshot</code> endpoint is unreachable and no file has been loaded.
+          Start the HttpAdapter to enable live polling, or use <strong>Load snapshot file</strong> above.
+        </p>
+        <code class="empty-state-code">tapps-brain mcp start --http
+# or: docker compose up tapps-brain-mcp</code>
       </div>
 
       <div class="kpi-strip-outer" aria-label="Key metrics">
@@ -2864,6 +3012,7 @@
       r.onload = () => {
         try {
           applySnapshot(JSON.parse(String(r.result)));
+          if (typeof _liveHideEmpty === "function") _liveHideEmpty();
         } catch (e) {
           setStatus("Invalid JSON: " + e, false);
         }
@@ -2877,16 +3026,106 @@
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
         .then((data) => {
           applySnapshot(data);
-          setStatus("Demo snapshot loaded.", true);
+          if (typeof _liveHideEmpty === "function") _liveHideEmpty();
+          setStatus("Static demo loaded.", true);
         })
         .catch((err) => setStatus("Could not load demo: " + err, false));
     });
 
-    const snapshotUrl = new URL("brain-visual.json", document.baseURI).href;
-    fetch(snapshotUrl)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(applySnapshot)
-      .catch(() => {});
+    // ── Live polling ──────────────────────────────────────────────────────────
+    // Track whether any data has been loaded (live OR manual file load)
+    let _liveHasData = false;
+
+    function _liveHideEmpty() {
+      const el = document.getElementById("empty-state");
+      if (el) el.classList.remove("is-visible");
+      _liveHasData = true;
+    }
+
+    function _liveShowEmpty() {
+      const el = document.getElementById("empty-state");
+      if (el) el.classList.add("is-visible");
+    }
+
+    function getSnapshotUrl() {
+      const meta = document.querySelector('meta[name="tapps-snapshot-url"]');
+      if (meta && meta.getAttribute("content") && !meta.getAttribute("content").startsWith("__")) {
+        return meta.getAttribute("content");
+      }
+      return "/snapshot";
+    }
+
+    (function initLivePolling() {
+      const badge = document.getElementById("live-badge");
+      const badgeLabel = document.getElementById("live-badge-label");
+      const intervalSelect = document.getElementById("poll-interval");
+
+      let consecutiveErrors = 0;
+      let lastSuccessMs = null;
+      let pollTimer = null;
+      const STALE_THRESHOLD_MS = 90_000;
+      const ERROR_THRESHOLD = 3;
+
+      function setBadgeState(state, label) {
+        if (badge) badge.dataset.state = state;
+        if (badgeLabel) badgeLabel.textContent = label;
+      }
+
+      function updateBadge() {
+        if (consecutiveErrors >= ERROR_THRESHOLD) return; // already set in fetchSnapshot
+        if (!lastSuccessMs) { setBadgeState("stale", "OFFLINE"); return; }
+        const ageMs = Date.now() - lastSuccessMs;
+        if (ageMs > STALE_THRESHOLD_MS) {
+          const s = Math.round(ageMs / 1000);
+          setBadgeState("stale", "STALE · " + (s < 60 ? s + "s ago" : Math.round(s / 60) + "m ago"));
+        } else {
+          setBadgeState("live", "LIVE · " + new Date(lastSuccessMs).toLocaleTimeString());
+        }
+      }
+
+      async function fetchSnapshot() {
+        const url = getSnapshotUrl();
+        let data;
+        try {
+          const resp = await fetch(url, { cache: "no-store" });
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          data = await resp.json();
+        } catch (err) {
+          consecutiveErrors = Math.min(consecutiveErrors + 1, ERROR_THRESHOLD);
+          if (consecutiveErrors >= ERROR_THRESHOLD) {
+            const msg = String(err).replace(/^Error:\s*/, "").slice(0, 48);
+            setBadgeState("error", "ERROR · " + msg);
+            setStatus("Live endpoint unreachable: " + msg, false);
+          }
+          if (!_liveHasData) _liveShowEmpty();
+          return;
+        }
+        consecutiveErrors = 0;
+        lastSuccessMs = Date.now();
+        _liveHideEmpty();
+        applySnapshot(data);
+        updateBadge();
+      }
+
+      function startPolling(intervalMs) {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        fetchSnapshot();
+        if (intervalMs > 0) {
+          pollTimer = setInterval(fetchSnapshot, intervalMs);
+          // Tick badge every 10 s to keep stale timer current
+          setInterval(updateBadge, 10_000);
+        }
+      }
+
+      if (intervalSelect) {
+        intervalSelect.addEventListener("change", () => {
+          startPolling(parseInt(intervalSelect.value, 10));
+        });
+      }
+
+      // Kick off with 30 s default
+      startPolling(30_000);
+    })();
   </script>
 </body>
 </html>

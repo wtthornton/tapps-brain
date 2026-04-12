@@ -1,3 +1,9 @@
 FROM nginx:alpine
+
+# Copy dashboard static files
 COPY examples/brain-visual/ /usr/share/nginx/html/
+
+# Copy custom nginx config (adds /snapshot proxy + TAPPS_SNAPSHOT_URL injection)
+COPY docker/nginx-visual.conf /etc/nginx/conf.d/default.conf
+
 EXPOSE 80

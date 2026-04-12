@@ -264,7 +264,7 @@
 ### Phase A: Live endpoint + polling (065.1–065.3) <!-- id: 065-phase-a -->
 
 - [ ] **065.1** GET /snapshot live endpoint on HttpAdapter — add `GET /snapshot` to `http_adapter.py` calling `build_visual_snapshot()` with 15s TTL cache; wire auth token gate; add CORS header; update OpenAPI spec; unit tests. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.1.md -->
-- [ ] **065.2** Dashboard live polling mode — replace static `brain-visual.json` fetch in `index.html` with `setInterval` poll against `/snapshot`; add LIVE/STALE/ERROR connection badge and last-refreshed timestamp; remove demo JSON as silent default. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.2.md -->
+- [x] **065.2** Dashboard live polling mode — replace static `brain-visual.json` fetch in `index.html` with `setInterval` poll against `/snapshot`; add LIVE/STALE/ERROR connection badge and last-refreshed timestamp; remove demo JSON as silent default. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.2.md -->
 - [ ] **065.3** Purge stale and privacy-gated components — delete Tags section, Memory Groups section, static pipeline step-flow diagram, and `scorecard-derive.js`; replace privacy footer with dynamic badge; ship empty `brain-visual.json` stub. [SMALL] <!-- story: docs/planning/epics/stories/STORY-065.3.md -->
 
 ### Phase B: Hive and agent monitoring panels (065.4–065.5) <!-- id: 065-phase-b -->
