@@ -27,7 +27,7 @@ CLAUDE_OUTPUT_FORMAT="json"
 
 # Session management
 # false = fresh context per loop (patched ralph_loop.sh line 1342 to fix live mode extraction)
-SESSION_CONTINUITY=false
+SESSION_CONTINUITY=true
 SESSION_EXPIRY_HOURS=24
 
 # Task sources (for ralph enable --sync)
@@ -61,7 +61,7 @@ RALPH_USE_AGENT=true
 RALPH_AGENT_NAME="ralph"
 
 # Parallelism (v1.1.0 — Experimental)
-RALPH_ENABLE_TEAMS=false
+RALPH_ENABLE_TEAMS=true
 RALPH_MAX_TEAMMATES=3
 RALPH_BG_TESTING=false
 RALPH_TEAMMATE_MODE="tmux"
