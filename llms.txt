@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.2.0
+- Version: 3.3.0
 - License: MIT
 - Repository: https://github.com/wtthornton/tapps-brain
 

@@ -13,8 +13,6 @@
 ### Phase A: Failing test fixes <!-- id: 066-phase-a -->
 
 - [x] **066.1** Consolidation merge audit emission [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.1.md -->
-- [ ] **066.5** Version consistency — bump `openclaw-skill/SKILL.md` to match `pyproject.toml` [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.5.md -->
-
 🔒 **QA GATE — Phase A.** `uv run pytest tests/ -v --tb=short -m "not benchmark and not requires_postgres"` — target: 0 failures.
 
 ### Phase B: Operator readiness <!-- id: 066-phase-b -->
