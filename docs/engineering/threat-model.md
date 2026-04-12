@@ -104,7 +104,7 @@ decisions or infrastructure outside this codebase:
 | HSM-backed credential storage | Operator responsibility via secret store (Vault, AWS Secrets Manager, etc.). tapps-brain only consumes DSN from env. |
 | Network-level TLS enforcement | Postgres TLS settings are operator-configured (Postgres `ssl=require` / `sslmode`). tapps-brain passes the DSN as-is. |
 | Zero-trust mesh / mTLS between agents | Agent SDK / orchestration layer responsibility, not tapps-brain. |
-| Key rotation automation | Out of scope for v3.0; documented in `docs/guides/postgres-dsn.md` as operator procedure. |
+| Key rotation automation | Documented in `docs/guides/postgres-tde.md` — [Key Rotation Procedure](../guides/postgres-tde.md#key-rotation-procedure) covers planned and emergency rotation steps. |
 | DoS from external internet (rate limiting, WAF) | HTTP adapter is not expected to face the public internet without an API gateway. |
 
 ---
@@ -132,4 +132,5 @@ For any **new HTTP route** or **new MCP tool**, the PR author must confirm:
 - [hive.md — scopes and namespaces](../guides/hive.md)
 - [telemetry-policy.md — allowed vs forbidden telemetry](../operations/telemetry-policy.md)
 - [postgres-dsn.md — DSN configuration](../guides/postgres-dsn.md)
+- [postgres-tde.md — pg_tde at-rest encryption runbook](../guides/postgres-tde.md)
 - [data-stores-and-schema.md — schema reference](data-stores-and-schema.md)

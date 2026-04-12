@@ -209,4 +209,20 @@ tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_HIVE_DSN"
 | `connection refused` | DB not running or wrong port | Check `docker ps` and `TAPPS_HIVE_PORT` |
 | `password authentication failed` | Mismatched secret vs env var | Ensure `TAPPS_HIVE_PASSWORD` matches `secrets/tapps_hive_password.txt` |
 | `extension "vector" does not exist` | Wrong Postgres image | Use `pgvector/pgvector:pg17` |
+
+---
+
+## At-Rest Encryption (pg_tde)
+
+The development Docker image (`pgvector/pgvector:pg17`) does **not** include pg_tde.
+For production deployments requiring at-rest encryption, choose one of:
+
+1. **pg_tde 2.1.2 on Percona Distribution for PostgreSQL 17** — full WAL + heap
+   encryption with Vault/OpenBao key management. Requires replacing the Docker base
+   image with `perconalab/percona-distribution-postgresql:17`.
+
+2. **Cloud provider TDE** — AWS RDS, Google Cloud SQL, or Azure Database for PostgreSQL
+   all provide managed at-rest encryption with no image changes required.
+
+See the full runbook: [docs/guides/postgres-tde.md](./postgres-tde.md)
 | Migration sidecar exits with error | Network timing | Check `depends_on` health condition; increase retries |

@@ -41,4 +41,4 @@ Greenfield v3 policy: **SQLite does not exist anywhere in the product surface** 
 
 - **pgvector HNSW vs IVFFlat** — AWS / Google Cloud / pgvector project guidance converges on HNSW as the default for RAG and semantic-recall workloads in 2026; IVFFlat retains an edge only at 50M+ rows with memory/build-time pressure.
 - **Postgres `tsvector` vs ParadeDB `pg_search`** — `tsvector` is adequate for short-document lexical recall with A/B/C weighting; `pg_search` (Tantivy/BM25) is the upgrade path when IDF-aware ranking matters. Noted: Neon stopped offering `pg_search` for new projects as of 2026-03-19 (existing projects unaffected) — relevant for Neon-hosted deployments.
-- **Percona `pg_tde` 2.1.2** (2026-03-02) — first open-source Postgres TDE with production-ready WAL encryption, Vault/OpenBao key storage, bundled with Percona Distribution for PostgreSQL 17+.
+- **Percona `pg_tde` 2.1.2** (2026-03-02) — first open-source Postgres TDE with production-ready WAL encryption, Vault/OpenBao key storage, bundled with Percona Distribution for PostgreSQL 17+. See the operator runbook: [docs/guides/postgres-tde.md](../../guides/postgres-tde.md).
