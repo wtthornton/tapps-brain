@@ -418,4 +418,33 @@ class PrivateBackend(Protocol):
         extra: dict[str, Any] | None = None,
     ) -> None: ...
 
+    # -- GC archive (migration 006) ------------------------------------------
+
+    def archive_entry(self, entry: MemoryEntry) -> int:
+        """Archive a single entry (GC-evicted).
+
+        Writes the entry to the ``gc_archive`` table introduced in migration 006.
+        Returns the byte count of the serialised payload so the caller can
+        accumulate ``GCResult.archive_bytes`` without an extra DB round-trip.
+
+        Best-effort: implementations should log and return 0 on failure rather
+        than raising, so GC is never blocked by an archive write error.
+        """
+        ...
+
+    def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return the most recent *limit* rows from the ``gc_archive`` table.
+
+        Each dict contains at minimum ``key``, ``archived_at`` (ISO-8601), and
+        ``byte_count``.  The ``payload`` field may be included for inspection.
+        """
+        ...
+
+    def total_archive_bytes(self) -> int:
+        """Return ``SUM(byte_count)`` across all rows in ``gc_archive`` for this
+        ``(project_id, agent_id)`` scope.  Returns 0 on any error or when the
+        table is empty.
+        """
+        ...
+
     def close(self) -> None: ...

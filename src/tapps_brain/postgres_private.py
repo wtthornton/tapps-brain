@@ -662,6 +662,100 @@ class PostgresPrivateBackend:
         return results
 
     # ------------------------------------------------------------------
+    # GC archive (migration 006, STORY-066.3)
+    # ------------------------------------------------------------------
+
+    def archive_entry(self, entry: MemoryEntry) -> int:
+        """INSERT a GC-evicted entry into ``gc_archive`` and return byte_count.
+
+        The payload is the full ``MemoryEntry.model_dump()`` serialised to JSON.
+        ``byte_count`` is denormalised at insert time to keep ``total_archive_bytes``
+        cheap (``SUM(byte_count)`` instead of ``SUM(octet_length(payload::text))``).
+
+        Best-effort: logs and returns 0 on failure — GC must not be blocked by
+        an archive write error.
+        """
+        try:
+            payload_dict = entry.model_dump()
+            payload_json = json.dumps(payload_dict, default=str)
+            byte_count = len(payload_json.encode("utf-8"))
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO gc_archive
+                        (project_id, agent_id, archived_at, key, payload, byte_count)
+                    VALUES (%s, %s, now(), %s, %s::jsonb, %s)
+                    ON CONFLICT (project_id, agent_id, archived_at, key) DO NOTHING
+                    """,
+                    (
+                        self._project_id,
+                        self._agent_id,
+                        entry.key,
+                        payload_json,
+                        byte_count,
+                    ),
+                )
+            return byte_count
+        except Exception:
+            logger.warning(
+                "postgres_private.gc_archive_entry_failed",
+                key=entry.key,
+                exc_info=True,
+            )
+            return 0
+
+    def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return the most recent *limit* rows from ``gc_archive``."""
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT key, archived_at, byte_count, payload
+                    FROM gc_archive
+                    WHERE project_id = %s AND agent_id = %s
+                    ORDER BY archived_at DESC
+                    LIMIT %s
+                    """,
+                    (self._project_id, self._agent_id, limit),
+                )
+                rows = cur.fetchall()
+        except Exception:
+            logger.debug("postgres_private.gc_archive_list_failed", exc_info=True)
+            return []
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            key, archived_at, byte_count, payload = row
+            ts_str = archived_at.isoformat() if hasattr(archived_at, "isoformat") else str(archived_at)
+            results.append(
+                {
+                    "key": str(key),
+                    "archived_at": ts_str,
+                    "byte_count": int(byte_count),
+                    "payload": payload if isinstance(payload, dict) else {},
+                }
+            )
+        return results
+
+    def total_archive_bytes(self) -> int:
+        """Return ``SUM(byte_count)`` from ``gc_archive`` for this agent scope."""
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COALESCE(SUM(byte_count), 0)
+                    FROM gc_archive
+                    WHERE project_id = %s AND agent_id = %s
+                    """,
+                    (self._project_id, self._agent_id),
+                )
+                row = cur.fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            logger.debug("postgres_private.gc_archive_total_bytes_failed", exc_info=True)
+            return 0
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 

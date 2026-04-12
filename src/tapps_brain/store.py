@@ -1777,9 +1777,9 @@ class MemoryStore:
         Returns:
             Count of deleted chunks.
         """
-        from tapps_brain.session_index import delete_expired_sessions
-
         try:
+            from tapps_brain.session_index import delete_expired_sessions
+
             return delete_expired_sessions(self._project_root, ttl_days)
         except Exception:
             logger.debug("session_cleanup_failed", exc_info=True)
@@ -2258,15 +2258,17 @@ class MemoryStore:
             rag_safety_sanitized_count=int(_ctr.get("rag_safety.sanitized", 0)),
             gc_runs_total=int(_ctr.get("store.gc", 0)),
             gc_archived_rows_total=int(_ctr.get("store.gc.archived", 0)),
-            gc_archive_bytes_total=int(_ctr.get("store.gc.archive_bytes", 0)),
+            # Read total archive bytes from the Postgres gc_archive table so the
+            # value survives process restarts (STORY-066.3).
+            gc_archive_bytes_total=self._persistence.total_archive_bytes(),
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
 
-        Appends archived rows to ``{store_dir}/archive.jsonl`` (UTF-8 JSONL).
-        Counters: ``store.gc`` (invocations), ``store.gc.archived`` (rows),
-        ``store.gc.archive_bytes`` (bytes appended).
+        Archives stale rows to the ``gc_archive`` Postgres table (migration 006,
+        STORY-066.3).  Counters: ``store.gc`` (invocations),
+        ``store.gc.archived`` (rows), ``store.gc.archive_bytes`` (bytes written).
 
         Args:
             dry_run: If True, only identify candidates without archiving.
@@ -2312,9 +2314,12 @@ class MemoryStore:
                 estimated_archive_bytes=est_bytes,
             )
 
-        # Archive to JSONL (canonical name per docs) and delete from store
-        archive_path = self._persistence.store_dir / "archive.jsonl"
-        appended = MemoryGarbageCollector.append_to_archive(candidates, archive_path)
+        # Archive to Postgres gc_archive table (STORY-066.3) and delete from store.
+        # archive_entry() is best-effort — returns 0 on failure so we accumulate
+        # only successfully written bytes.
+        appended = 0
+        for entry in candidates:
+            appended += self._persistence.archive_entry(entry)
         for key in candidate_keys:
             self.delete(key)
 

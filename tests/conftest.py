@@ -92,6 +92,8 @@ class InMemoryPrivateBackend:
         self._agent_id = agent_id
         self._entries: dict[str, Any] = {}
         self._relations: list[dict[str, Any]] = []
+        self._gc_archive: list[dict[str, Any]] = []
+        self._gc_archive_bytes: int = 0
         self._lock = threading.Lock()
         self._db_path = Path("/dev/null")
         self._store_dir = Path("/dev/null").parent
@@ -215,6 +217,40 @@ class InMemoryPrivateBackend:
                     fh.write(json.dumps(record, default=str) + "\n")
             except OSError:
                 pass  # best-effort — must not raise on hot path
+
+    def archive_entry(self, entry: Any) -> int:
+        """Best-effort in-memory GC archive (unit-test only)."""
+        import json as _json
+
+        try:
+            payload = entry.model_dump()
+            line = _json.dumps(payload, default=str)
+            byte_count = len(line.encode("utf-8"))
+            with self._lock:
+                from datetime import UTC, datetime
+
+                self._gc_archive.append(
+                    {
+                        "key": entry.key,
+                        "archived_at": datetime.now(UTC).isoformat(),
+                        "byte_count": byte_count,
+                        "payload": payload,
+                    }
+                )
+                self._gc_archive_bytes += byte_count
+            return byte_count
+        except Exception:
+            return 0
+
+    def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return most-recent GC archive rows (unit-test only)."""
+        with self._lock:
+            return list(reversed(self._gc_archive))[:limit]
+
+    def total_archive_bytes(self) -> int:
+        """Return total archived byte count (unit-test only)."""
+        with self._lock:
+            return self._gc_archive_bytes
 
     def close(self) -> None:
         shutil.rmtree(self._tmp_audit_dir, ignore_errors=True)
