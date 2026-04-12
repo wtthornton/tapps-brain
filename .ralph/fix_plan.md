@@ -13,7 +13,6 @@
 ### Phase A: Failing test fixes <!-- id: 066-phase-a -->
 
 - [x] **066.1** Consolidation merge audit emission [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.1.md -->
-- [ ] **066.2** Bi-temporal `as_of` filter on `PostgresPrivateBackend.search()` [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.2.md -->
 - [ ] **066.3** GC archive Postgres table (migration 006) [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.3.md -->
 - [ ] **066.4** MCP tool registration audit and fix [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.4.md -->
 - [ ] **066.5** Version consistency — bump `openclaw-skill/SKILL.md` to match `pyproject.toml` [SMALL] <!-- story: docs/planning/epics/stories/STORY-066.5.md -->

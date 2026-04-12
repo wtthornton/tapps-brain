@@ -94,6 +94,7 @@ markers = [
     "benchmark: performance benchmarks (deselect with '-m not benchmark')",
     "requires_cli: tests requiring the [cli] extra (typer)",
     "requires_mcp: tests requiring the [mcp] extra (mcp SDK)",
+    "requires_postgres: tests requiring a live PostgreSQL instance (set TAPPS_BRAIN_DATABASE_URL)",
 ]
 filterwarnings = [
     "error::ResourceWarning",

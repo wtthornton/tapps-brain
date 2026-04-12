@@ -281,6 +281,7 @@ class PostgresPrivateBackend:
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
+        as_of: str | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -294,6 +295,14 @@ class PostgresPrivateBackend:
             since: ISO-8601 lower bound (inclusive) on *time_field*.
             until: ISO-8601 upper bound (exclusive) on *time_field*.
             time_field: Column to filter on.
+            as_of: ISO-8601 timestamp for bi-temporal point-in-time filtering.
+                When set, adds ``(valid_at IS NULL OR valid_at <= as_of)`` and
+                ``(invalid_at IS NULL OR invalid_at > as_of)`` predicates so only
+                the version of an entry that was valid at *as_of* is returned.
+                The value is passed as a parameterised ``%s::timestamptz``
+                placeholder — never string-concatenated (SQL injection safe).
+                Corresponds to the ``valid_at``/``invalid_at`` columns from
+                migration 001 (``migrations/private/001_initial.sql``).
         """
         if time_field not in _VALID_TIME_FIELDS:
             msg = f"time_field must be one of {sorted(_VALID_TIME_FIELDS)}, got {time_field!r}"
@@ -319,6 +328,16 @@ class PostgresPrivateBackend:
         if until is not None:
             sql += f" AND {time_field} < %s"
             params.append(until)
+
+        # Bi-temporal as_of filter (STORY-066.2).
+        # NULL valid_at / invalid_at means "unbounded" — always visible.
+        if as_of is not None:
+            sql += (
+                " AND (valid_at IS NULL OR valid_at <= %s::timestamptz)"
+                " AND (invalid_at IS NULL OR invalid_at > %s::timestamptz)"
+            )
+            params.append(as_of)
+            params.append(as_of)
 
         sql += " ORDER BY _rank DESC LIMIT 100"
 

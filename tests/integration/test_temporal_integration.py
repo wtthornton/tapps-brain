@@ -1,6 +1,8 @@
 """Integration tests for bi-temporal fact versioning (EPIC-004, STORY-004.7).
 
-All tests use real MemoryStore + SQLite (no mocks).
+Tests use MemoryStore backed by InMemoryPrivateBackend (no mocks, no Docker needed)
+unless the test is marked ``requires_postgres``, in which case it needs a live
+Postgres instance via ``TAPPS_BRAIN_DATABASE_URL``.
 """
 
 from __future__ import annotations
@@ -175,6 +177,7 @@ class TestConsolidationTemporal:
 class TestPersistenceRoundTrip:
     """Temporal fields survive a cold restart."""
 
+    @pytest.mark.requires_postgres
     def test_supersede_persists_across_restart(self, tmp_path: Path) -> None:
         s1 = MemoryStore(tmp_path)
         s1.save(key="db-version", value="PostgreSQL 15 database server")
@@ -210,3 +213,57 @@ class TestRecallExcludesSuperseded:
         if result.memories:
             memory_keys = [m.get("key", "") for m in result.memories]
             assert "lang-old" not in memory_keys
+
+
+class TestAsOfSearch:
+    """Bi-temporal as_of filter on store.search() (STORY-066.2)."""
+
+    def test_ac1_as_of_returns_version_valid_at_timestamp(self, store: MemoryStore) -> None:
+        """store.search(as_of=ts) returns the entry version valid at ts.
+
+        After superseding an entry, searching as_of a timestamp before the
+        supersede operation should return the OLD version, not the new one.
+        """
+        store.save(key="db-version", value="We use PostgreSQL 15 database engine")
+
+        old = store.get("db-version")
+        assert old is not None
+        before_supersede = old.created_at  # timestamp before supersede
+
+        store.supersede(
+            "db-version", "We use PostgreSQL 17 database engine", key="db-version-v2"
+        )
+
+        # as_of=before_supersede → old version must appear
+        results = store.search("PostgreSQL database engine", as_of=before_supersede)
+        keys = [r.key for r in results]
+        assert "db-version" in keys, "as_of should return the version valid at that timestamp"
+
+    def test_ac2_default_search_excludes_superseded(self, store: MemoryStore) -> None:
+        """Default search (no as_of) excludes superseded entries."""
+        store.save(key="api-old", value="Our API uses REST protocol interface")
+        store.supersede(
+            "api-old", "Our API uses GraphQL protocol interface", key="api-new"
+        )
+
+        results = store.search("API protocol interface")
+        keys = [r.key for r in results]
+        assert "api-old" not in keys, "superseded entry must not appear in default search"
+        assert "api-new" in keys, "new version must appear in default search"
+
+    def test_ac3_as_of_excludes_future_valid_entry(self, store: MemoryStore) -> None:
+        """An entry with valid_at in the future is excluded from as_of=now queries."""
+        store.save(key="future-entry", value="Future release announcement details")
+        store.update_fields("future-entry", valid_at="2099-01-01T00:00:00+00:00")
+
+        # Current-time search must not include it
+        results = store.search("Future release announcement")
+        keys = [r.key for r in results]
+        assert "future-entry" not in keys
+
+        # Searching as_of the future date includes it
+        results_future = store.search(
+            "Future release announcement", as_of="2099-06-01T00:00:00+00:00"
+        )
+        keys_future = [r.key for r in results_future]
+        assert "future-entry" in keys_future

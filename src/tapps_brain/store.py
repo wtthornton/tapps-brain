@@ -1357,6 +1357,7 @@ class MemoryStore:
                 since=since,
                 until=until,
                 time_field=time_field,
+                as_of=as_of,
             )
 
             if tier is not None:

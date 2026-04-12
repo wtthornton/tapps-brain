@@ -365,7 +365,31 @@ class PrivateBackend(Protocol):
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
-    ) -> list[MemoryEntry]: ...
+        as_of: str | None = None,
+    ) -> list[MemoryEntry]:
+        """Search entries using full-text matching.
+
+        Args:
+            query: Plain-text search query.
+            memory_group: Restrict results to a project-local group.
+            since: ISO-8601 lower bound (inclusive) on *time_field*.
+            until: ISO-8601 upper bound (exclusive) on *time_field*.
+            time_field: Column to filter on (``created_at``, ``updated_at``,
+                ``last_accessed``).
+            as_of: ISO-8601 timestamp for bi-temporal point-in-time filtering.
+                When set, the SQL query adds::
+
+                    (valid_at IS NULL OR valid_at <= as_of::timestamptz)
+                    AND (invalid_at IS NULL OR invalid_at > as_of::timestamptz)
+
+                These predicates map to the ``valid_at`` and ``invalid_at`` columns
+                introduced in migration 001 (``migrations/private/001_initial.sql``).
+                ``NULL`` in either column means "unbounded", so entries without
+                temporal bounds are always visible.  When ``as_of`` is ``None``
+                the backend returns all FTS-matching rows; the store layer applies
+                its own in-memory ``is_temporally_valid`` filter.
+        """
+        ...
 
     # -- Relations -----------------------------------------------------------
 

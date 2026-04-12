@@ -26,14 +26,22 @@ _HAS_SENTENCE_TRANSFORMERS = importlib.util.find_spec("sentence_transformers") i
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip tests marked requires_cli / requires_mcp when extras are missing."""
+    """Auto-skip tests marked requires_cli / requires_mcp / requires_postgres when deps are missing."""
+    import os
+
     skip_cli = pytest.mark.skip(reason="requires [cli] extra (typer)")
     skip_mcp = pytest.mark.skip(reason="requires [mcp] extra (mcp)")
+    skip_pg = pytest.mark.skip(
+        reason="requires live Postgres (set TAPPS_BRAIN_DATABASE_URL)"
+    )
+    _has_postgres = bool(os.environ.get("TAPPS_BRAIN_DATABASE_URL"))
     for item in items:
         if "requires_cli" in item.keywords and not _HAS_TYPER:
             item.add_marker(skip_cli)
         if "requires_mcp" in item.keywords and not _HAS_MCP:
             item.add_marker(skip_mcp)
+        if "requires_postgres" in item.keywords and not _has_postgres:
+            item.add_marker(skip_pg)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -126,11 +134,19 @@ class InMemoryPrivateBackend:
             return self._entries.pop(key, None) is not None
 
     def search(self, query: str, **_kwargs: Any) -> list[Any]:
+        """Word-level FTS approximation: return entries where ANY query word appears
+        in the value or key.  This mimics plainto_tsquery token matching so unit
+        tests that use multi-word queries work correctly without a real tsvector."""
         if not query.strip():
             return []
-        q = query.lower()
+        q_words = set(query.lower().split())
         with self._lock:
-            return [e for e in self._entries.values() if q in e.value.lower() or q in e.key.lower()]
+            return [
+                e
+                for e in self._entries.values()
+                if q_words & set(e.value.lower().split())
+                or q_words & set(e.key.lower().replace("-", " ").split())
+            ]
 
     def list_relations(self) -> list[dict[str, Any]]:
         with self._lock:
