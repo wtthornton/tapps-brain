@@ -1367,6 +1367,22 @@
       color: var(--fg-dim);
     }
 
+    /* ── Agent registry table row states ──────────────────────────────────── */
+    .agent-row-amber td {
+      background: rgba(217, 119, 6, 0.06);
+    }
+    html[data-theme="dark"] .agent-row-amber td {
+      background: rgba(217, 119, 6, 0.10);
+    }
+    .agent-row-grey td {
+      color: var(--fg-dim);
+    }
+    .agents-empty {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      text-align: center;
+    }
+
     .hive-ns-empty {
       font-size: 0.8125rem;
       color: var(--fg-dim);
@@ -1709,6 +1725,7 @@
         <li><a href="#pulse">Pulse</a></li>
         <li><a href="#retrieval">Retrieval</a></li>
         <li><a href="#hive">Hive</a></li>
+        <li><a href="#agents">Agents</a></li>
         <li><a href="#integrity">Integrity</a></li>
         <li><a href="#activity">Activity</a></li>
         <li><a href="#diagnostics">Diagnostics</a></li>
@@ -2012,6 +2029,47 @@
             </thead>
             <tbody id="hive-ns-tbody">
               <tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="dash-section reveal-on-scroll" id="agents">
+        <div class="dash-h2-row">
+          <h2>Agents</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:agent_registry"
+            aria-label="Explain agent registry table"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Registered agents — sorted by most-recently-active first. Amber rows have been silent &gt;24h; grey rows have never written a memory.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Agent registry</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:agent_registry"
+              aria-label="Explain agent registry"
+            >
+              ?
+            </button>
+          </div>
+          <table id="agents-table" class="data-table" aria-label="Agent registry">
+            <thead>
+              <tr>
+                <th>Agent ID</th>
+                <th>Namespace</th>
+                <th>Scope</th>
+                <th>Last Write</th>
+              </tr>
+            </thead>
+            <tbody id="agents-tbody">
+              <tr><td colspan="4" class="agents-empty">No agents registered.</td></tr>
             </tbody>
           </table>
         </div>
@@ -2785,6 +2843,51 @@
               '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
           }
         }
+      })();
+
+      /* Agent registry */
+      (function renderAgentRegistry() {
+        const tbody = el("agents-tbody");
+        if (!tbody) return;
+        const agents = Array.isArray(data.agent_registry) ? data.agent_registry : [];
+        if (agents.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="agents-empty">No agents registered.</td></tr>';
+          return;
+        }
+
+        /** Format an ISO timestamp as a relative time string (e.g. '5m ago'). */
+        function agentRelTime(isoStr) {
+          if (!isoStr) return "—";
+          const ms = Date.now() - new Date(isoStr).getTime();
+          if (isNaN(ms) || ms < 0) return "—";
+          const secs = Math.floor(ms / 1000);
+          if (secs < 60) return secs + "s ago";
+          const mins = Math.floor(secs / 60);
+          if (mins < 60) return mins + "m ago";
+          const hrs = Math.floor(mins / 60);
+          if (hrs < 24) return hrs + "h ago";
+          return Math.floor(hrs / 24) + "d ago";
+        }
+
+        const _24h = 24 * 60 * 60 * 1000;
+        tbody.innerHTML = agents.map(function (a) {
+          const lw = a.last_write_at || null;
+          let rowClass = "";
+          if (!lw) {
+            rowClass = "agent-row-grey";
+          } else {
+            const age = Date.now() - new Date(lw).getTime();
+            if (!isNaN(age) && age > _24h) rowClass = "agent-row-amber";
+          }
+          return (
+            '<tr class="' + rowClass + '">' +
+            "<td>" + (a.agent_id || "—") + "</td>" +
+            "<td>" + (a.namespace || "—") + "</td>" +
+            "<td>" + (a.scope || "—") + "</td>" +
+            "<td>" + agentRelTime(lw) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
       })();
 
       /* Access */

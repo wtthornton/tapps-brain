@@ -1017,6 +1017,54 @@
         "Code: <code>visual_snapshot.py: HiveHealthSummary.namespace_detail</code> · " +
         "<code>postgres_hive.py: namespace_detail_list()</code> · STORY-065.4",
     },
+
+    agent_registry: {
+      title: "Agent registry live table",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>The <strong>Agents</strong> panel lists every agent registered in the Hive. " +
+            "Each row shows the agent's (truncated) ID, the Hive namespace it writes to, " +
+            "its scope level, and when it last wrote a memory to the shared store.</p>",
+        },
+        {
+          heading: "Scope types",
+          html:
+            "<ul>" +
+            "<li><strong>hive</strong> — agent is globally registered and writes to the shared Hive store.</li>" +
+            "<li><strong>domain</strong> — agent participates in a domain-scoped namespace only.</li>" +
+            "<li><strong>private</strong> — agent writes only to its own private memory; Hive propagation is disabled.</li>" +
+            "</ul>",
+        },
+        {
+          heading: "Last-write interpretation",
+          html:
+            "<ul>" +
+            "<li><strong>Amber row</strong> — last write was more than 24 hours ago. The agent may be idle, stopped, or misconfigured.</li>" +
+            "<li><strong>Grey row</strong> — agent has never written a memory to the Hive. This is normal immediately after registration.</li>" +
+            "<li><strong>No highlight</strong> — agent wrote within the last 24 hours and is considered active.</li>" +
+            "</ul>",
+        },
+        {
+          heading: "Privacy note",
+          html:
+            "<p>On <strong>standard</strong> and <strong>strict</strong> privacy tiers, agent IDs are truncated " +
+            "to the first 8 characters followed by '…' to avoid leaking agent identity details. " +
+            "Use the <strong>local</strong> privacy tier to see full agent IDs.</p>",
+        },
+        {
+          heading: "How it is collected",
+          html:
+            "<p>A single <code>SELECT … FROM agent_registry LEFT JOIN hive_memories ON source_agent = id</code> " +
+            "query is run at snapshot time to derive <code>last_write_at</code> without storing it in the registry table. " +
+            "The panel shows an empty state when no agents are registered or when the Hive is not reachable.</p>",
+        },
+      ],
+      reference:
+        "Code: <code>visual_snapshot.py: _collect_agent_registry()</code> · " +
+        "<code>postgres_hive.py: PostgresAgentRegistry</code> · STORY-065.5",
+    },
   };
 
   function openBrainVisualHelp(type, id) {

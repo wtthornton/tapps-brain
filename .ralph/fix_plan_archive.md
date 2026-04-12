@@ -269,8 +269,8 @@
 
 ### Phase B: Hive and agent monitoring panels (065.4–065.5) <!-- id: 065-phase-b -->
 
-- [ ] **065.4** Hive hub deep monitoring panel — extend `HiveHealthSummary` with per-namespace entry counts and `last_write_at`; render as structured table (not prose string) in dashboard; unit tests. [LARGE] <!-- story: docs/planning/epics/stories/STORY-065.4.md -->
-- [ ] **065.5** Agent registry live table — add `agent_registry` list to `VisualSnapshot` from `AgentRegistry.list_agents()`; render sortable table with last-write delta, silence highlighting, and empty state. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.5.md -->
+- [x] **065.4** Hive hub deep monitoring panel — extend `HiveHealthSummary` with per-namespace entry counts and `last_write_at`; render as structured table (not prose string) in dashboard; unit tests. [LARGE] <!-- story: docs/planning/epics/stories/STORY-065.4.md -->
+- [x] **065.5** Agent registry live table — add `agent_registry` list to `VisualSnapshot` from `AgentRegistry.list_agents()`; render sortable table with last-write delta, silence highlighting, and empty state. [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.5.md -->
 
 ### Phase C: Velocity and retrieval panels (065.6–065.7) <!-- id: 065-phase-c -->
 

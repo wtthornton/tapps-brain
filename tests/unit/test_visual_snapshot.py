@@ -18,6 +18,7 @@ from tapps_brain.visual_snapshot import (
     NamespaceDetail,
     _access_stats_from_entries,
     _build_scorecard,
+    _collect_agent_registry,
     _collect_hive_health,
     build_visual_snapshot,
     capture_png,
@@ -722,3 +723,153 @@ def test_collect_hive_health_not_reachable(tmp_path: Path) -> None:
         assert result.namespace_detail == []
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# _collect_agent_registry — STORY-065.5
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_backend_with_rows(rows: list[tuple[str, str, str, str | None]]) -> MagicMock:
+    """Build a mock hive backend whose _cm executes the agent registry query."""
+    mock_cur = MagicMock()
+    mock_cur.__enter__ = lambda s: s
+    mock_cur.__exit__ = MagicMock(return_value=False)
+    mock_cur.fetchall.return_value = rows
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: s
+    mock_conn.__exit__ = MagicMock(return_value=False)
+    mock_conn.cursor.return_value = mock_cur
+    mock_cm = MagicMock()
+    mock_cm.get_connection.return_value = mock_conn
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    return mock_backend
+
+
+def test_collect_agent_registry_full_registry() -> None:
+    """Full registry: 3 agents returned with correct mapping."""
+    rows = [
+        ("agent-alpha-12345678", "repo-brain", "2026-01-01T00:00:00+00:00", "2026-04-10T10:00:00+00:00"),
+        ("agent-beta-87654321", "universal", "2026-02-01T00:00:00+00:00", "2026-04-09T08:00:00+00:00"),
+        ("agent-gamma-aabbcc", "custom-ns", "2026-03-01T00:00:00+00:00", None),
+    ]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="local")
+
+    assert len(result) == 3
+    # Full agent_id preserved in local tier
+    assert result[0]["agent_id"] == "agent-alpha-12345678"
+    assert result[0]["namespace"] == "repo-brain"
+    assert result[0]["scope"] == "hive"
+    assert result[0]["registered_at"] == "2026-01-01T00:00:00+00:00"
+    assert result[0]["last_write_at"] == "2026-04-10T10:00:00+00:00"
+
+
+def test_collect_agent_registry_privacy_standard_truncates_agent_id() -> None:
+    """Standard privacy tier truncates agent_id to 8 chars + ellipsis."""
+    rows = [("agent-alpha-long-id-here", "repo-brain", "2026-01-01T00:00:00+00:00", None)]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="standard")
+
+    assert len(result) == 1
+    assert result[0]["agent_id"] == "agent-al\u2026"  # 8 chars + …
+
+
+def test_collect_agent_registry_privacy_strict_truncates_agent_id() -> None:
+    """Strict privacy tier also truncates agent_id."""
+    rows = [("agent-beta-long-id-here", "universal", "2026-01-01T00:00:00+00:00", None)]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="strict")
+
+    assert len(result) == 1
+    assert result[0]["agent_id"] == "agent-be\u2026"
+
+
+def test_collect_agent_registry_short_id_not_truncated() -> None:
+    """Agent IDs of 8 chars or fewer are not truncated even on standard tier."""
+    rows = [("short-id", "ns", "2026-01-01T00:00:00+00:00", None)]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="standard")
+
+    assert result[0]["agent_id"] == "short-id"
+    assert "\u2026" not in result[0]["agent_id"]
+
+
+def test_collect_agent_registry_null_last_write_at() -> None:
+    """Agent that has never written has last_write_at=None."""
+    rows = [("agent-gamma", "repo-brain", "2026-03-01T00:00:00+00:00", None)]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="local")
+
+    assert result[0]["last_write_at"] is None
+
+
+def test_collect_agent_registry_no_cm_returns_empty() -> None:
+    """Backend without _cm returns empty list (non-Postgres backend)."""
+    mock_backend = MagicMock(spec=[])  # no _cm attribute
+    result = _collect_agent_registry(mock_backend)
+    assert result == []
+
+
+def test_collect_agent_registry_registry_table_missing_returns_empty() -> None:
+    """Returns [] without raising when agent_registry table does not exist."""
+    mock_cm = MagicMock()
+    mock_cm.get_connection.side_effect = Exception("relation agent_registry does not exist")
+    mock_backend = MagicMock()
+    mock_backend._cm = mock_cm
+    result = _collect_agent_registry(mock_backend)
+    assert result == []
+
+
+def test_collect_agent_registry_empty_registry() -> None:
+    """Empty agent_registry table returns [] (no error)."""
+    backend = _make_mock_backend_with_rows([])
+    result = _collect_agent_registry(backend)
+    assert result == []
+
+
+def test_collect_agent_registry_null_profile_defaults_to_universal() -> None:
+    """Null profile field defaults namespace to 'universal'."""
+    rows = [("agent-xyz", None, "2026-01-01T00:00:00+00:00", None)]
+    backend = _make_mock_backend_with_rows(rows)
+    result = _collect_agent_registry(backend, privacy="local")
+    assert result[0]["namespace"] == "universal"
+
+
+def test_visual_snapshot_has_agent_registry_field(tmp_path: Path) -> None:
+    """build_visual_snapshot returns agent_registry field (empty when no hive)."""
+    store = MemoryStore(tmp_path)
+    try:
+        with patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=None):
+            snap = build_visual_snapshot(store, skip_diagnostics=True)
+    finally:
+        store.close()
+    assert hasattr(snap, "agent_registry")
+    assert isinstance(snap.agent_registry, list)
+
+
+def test_visual_snapshot_agent_registry_populated_from_hive(tmp_path: Path) -> None:
+    """build_visual_snapshot populates agent_registry when hive backend is available."""
+    rows = [
+        ("agent-abc-12345678", "repo-brain", "2026-01-01T00:00:00+00:00", "2026-04-10T10:00:00+00:00"),
+        ("agent-def-abcdefgh", "universal", "2026-02-01T00:00:00+00:00", None),
+    ]
+    mock_hive = _make_mock_backend_with_rows(rows)
+    mock_hive.close = MagicMock()
+    store = MemoryStore(tmp_path)
+    try:
+        with (
+            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch(
+                "tapps_brain.visual_snapshot._collect_hive_health",
+                return_value=HiveHealthSummary(connected=False, status="skipped"),
+            ),
+        ):
+            snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+    finally:
+        store.close()
+    assert len(snap.agent_registry) == 2
+    assert snap.agent_registry[0]["agent_id"] == "agent-abc-12345678"
+    assert snap.agent_registry[1]["last_write_at"] is None
+    mock_hive.close.assert_called_once()

@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,16 @@ _SCORE_WARN_MIN = 0.55
 _CAP_WARN_RATIO = 0.8
 _CAP_FAIL_RATIO = 0.95
 _MAINT_BACKLOG_WARN = 200
+
+
+class AgentEntry(TypedDict):
+    """Per-agent row for the agent registry live table."""
+
+    agent_id: str
+    namespace: str
+    scope: str
+    registered_at: str
+    last_write_at: str | None
 
 
 class DiagnosticsSummary(BaseModel):
@@ -187,6 +197,15 @@ class VisualSnapshot(BaseModel):
         default_factory=list,
         description="Deterministic pass/warn/fail rows for operators and issue templates.",
     )
+    agent_registry: list[AgentEntry] = Field(
+        default_factory=list,
+        description=(
+            "Per-agent rows from the Hive agent_registry table; "
+            "populated only when Hive is connected. "
+            "Sorted by last_write_at descending (most-recently-active first). "
+            "agent_id is truncated to 8 chars on standard/strict privacy tiers."
+        ),
+    )
     theme: VisualThemeTokens
 
 
@@ -280,6 +299,62 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
             hive.close()
     except Exception:
         return HiveHealthSummary(connected=False, status="warn")
+
+
+_AGENT_ID_TRUNCATE_LEN = 8
+_AGENT_SILENT_HOURS = 24
+
+
+def _collect_agent_registry(
+    hive_backend: object, *, privacy: PrivacyTier = "standard"
+) -> list[AgentEntry]:
+    """Best-effort agent registry rows with last_write_at (never raises).
+
+    Queries agent_registry LEFT JOIN hive_memories to derive last_write_at.
+    Returns [] if the backend is not Postgres-backed, the table does not exist,
+    or any other error occurs (pre-migration schema guard).
+
+    Args:
+        hive_backend: An open HiveBackend (must have ``._cm`` for Postgres queries).
+        privacy: Privacy tier — for ``local`` the full agent_id is preserved;
+            for ``standard`` / ``strict`` it is truncated to 8 chars + ``…``.
+    """
+    try:
+        cm = getattr(hive_backend, "_cm", None)
+        if cm is None:
+            return []
+        with cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    ar.id,
+                    ar.profile,
+                    ar.registered_at::text,
+                    MAX(COALESCE(hm.updated_at, hm.created_at))::text AS last_write_at
+                FROM agent_registry ar
+                LEFT JOIN hive_memories hm ON hm.source_agent = ar.id
+                GROUP BY ar.id, ar.profile, ar.registered_at
+                ORDER BY MAX(COALESCE(hm.updated_at, hm.created_at)) DESC NULLS LAST
+                """
+            )
+            rows = cur.fetchall()
+        result: list[AgentEntry] = []
+        for row in rows:
+            agent_id = str(row[0]) if row[0] is not None else ""
+            if privacy != "local" and len(agent_id) > _AGENT_ID_TRUNCATE_LEN:
+                agent_id = agent_id[:_AGENT_ID_TRUNCATE_LEN] + "\u2026"
+            result.append(
+                AgentEntry(
+                    agent_id=agent_id,
+                    namespace=str(row[1]) if row[1] else "universal",
+                    scope="hive",
+                    registered_at=str(row[2]) if row[2] else "",
+                    last_write_at=row[3],
+                )
+            )
+        return result
+    except Exception:
+        return []
 
 
 def _memory_group_stats(
@@ -721,6 +796,21 @@ def build_visual_snapshot(
     )
 
     hive_health = _collect_hive_health(store)
+
+    # Collect agent registry (separate connection; best-effort, never raises).
+    agent_registry: list[AgentEntry] = []
+    try:
+        from tapps_brain.backends import resolve_hive_backend_from_env
+
+        _hive_for_agents = resolve_hive_backend_from_env()
+        if _hive_for_agents is not None:
+            try:
+                agent_registry = _collect_agent_registry(_hive_for_agents, privacy=privacy)
+            finally:
+                _hive_for_agents.close()
+    except Exception:
+        pass
+
     scorecard = _build_scorecard(
         report,
         diagnostics=diagnostics,
@@ -751,6 +841,7 @@ def build_visual_snapshot(
         tag_stats=tag_stats,
         diagnostics=diagnostics,
         scorecard=scorecard,
+        agent_registry=agent_registry,
         theme=theme,
     )
 

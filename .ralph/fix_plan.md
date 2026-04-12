@@ -36,8 +36,6 @@
 
 ### Phase B: Hive and agent monitoring panels <!-- id: 065-phase-b -->
 
-- [ ] **065.5** Agent registry live table [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.5.md -->
-
 ### Phase C: Velocity and retrieval panels <!-- id: 065-phase-c -->
 
 - [ ] **065.6** Memory velocity panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.6.md -->
