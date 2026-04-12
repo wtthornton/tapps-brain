@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
+import tempfile
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -84,7 +87,11 @@ class InMemoryPrivateBackend:
         self._lock = threading.Lock()
         self._db_path = Path("/dev/null")
         self._store_dir = Path("/dev/null").parent
-        self._audit_path = Path("/dev/null")
+        # Use a real temp directory + JSONL file so append_audit / find_last_consolidation_merge_audit
+        # work in unit tests without a Postgres connection.  The temp dir is cleaned up on close().
+        self._tmp_audit_dir: str = tempfile.mkdtemp(prefix="tapps_test_audit_")
+        self._audit_path = Path(self._tmp_audit_dir) / "audit.jsonl"
+        self._audit_path.touch()
         # Sentinel attributes that store.py / FeedbackStore / DiagnosticsHistoryStore
         # introspect to reach the underlying connection manager. Tests that need
         # FeedbackStore must inject a real backend instead.
@@ -154,6 +161,15 @@ class InMemoryPrivateBackend:
         with self._lock:
             return [r for r in self._relations if key in r["source_entry_keys"]]
 
+    def delete_relations(self, key: str) -> int:
+        """Remove all relations whose ``source_entry_keys`` contains *key*."""
+        with self._lock:
+            before = len(self._relations)
+            self._relations = [
+                r for r in self._relations if key not in r.get("source_entry_keys", [])
+            ]
+            return before - len(self._relations)
+
     def get_schema_version(self) -> int:
         return 1
 
@@ -169,10 +185,23 @@ class InMemoryPrivateBackend:
         key: str,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        return None
+        """Write a JSONL audit record to the temp audit file (unit-test only).
+
+        Each line contains at least ``action`` and ``key``; ``extra`` fields are
+        merged into the top level so callers can read them as ``rec["field"]``.
+        """
+        record: dict[str, Any] = {"action": action, "key": key}
+        if extra:
+            record.update(extra)
+        with self._lock:
+            try:
+                with open(self._audit_path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record, default=str) + "\n")
+            except OSError:
+                pass  # best-effort — must not raise on hot path
 
     def close(self) -> None:
-        return None
+        shutil.rmtree(self._tmp_audit_dir, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

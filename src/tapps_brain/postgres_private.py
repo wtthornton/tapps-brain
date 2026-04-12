@@ -490,6 +490,37 @@ class PostgresPrivateBackend:
         """Return relations whose ``source_entry_keys`` contains *key*."""
         return [r for r in self.list_relations() if key in r["source_entry_keys"]]
 
+    def delete_relations(self, key: str) -> int:
+        """Delete all relations whose ``source_entry_keys`` contains *key*.
+
+        Called during consolidation undo to remove relation rows for the
+        deleted consolidated entry.  Returns the count of rows removed.
+        """
+        self._ensure_relations_table()
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM private_relations
+                    WHERE project_id = %s
+                      AND agent_id   = %s
+                      AND source_entry_keys::jsonb @> %s::jsonb
+                    """,
+                    (
+                        self._project_id,
+                        self._agent_id,
+                        json.dumps([key], ensure_ascii=False),
+                    ),
+                )
+                return cur.rowcount or 0
+        except Exception:
+            logger.debug(
+                "postgres_private.delete_relations_failed",
+                key=key,
+                exc_info=True,
+            )
+            return 0
+
     # ------------------------------------------------------------------
     # Schema / version
     # ------------------------------------------------------------------
