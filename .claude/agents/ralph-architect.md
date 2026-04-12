@@ -23,7 +23,7 @@ disallowedTools:
   - Bash(rm -rf *)
 model: opus
 permissionMode: bypassPermissions
-maxTurns: 50
+maxTurns: 100
 memory: project
 effort: high
 ---
