@@ -613,32 +613,7 @@
       reference: "Docs: <code>docs/guides/memory-scopes.md</code> · <code>hive.md</code>",
     },
 
-    memory_group: {
-      title: "Memory group (project-local)",
-      sections: [
-        {
-          heading: "What it is",
-          html:
-            "<p>Optional <strong>project-local</strong> partition for retrieval (e.g. feature team). Not the same as Hive namespace.</p>",
-        },
-        {
-          heading: "The math",
-          html:
-            "<p>Distinct group names and counts; names only in <code>--privacy local</code> exports.</p>",
-        },
-        {
-          heading: "Why it matters",
-          html:
-            "<p>Lets multiple tracks of memory in one repo without mixing retrieval contexts.</p>",
-        },
-        {
-          heading: "What tapps-brain does",
-          html:
-            "<p><code>memory_group</code> column + <code>list_memory_groups()</code>; retriever accepts <code>memory_group</code> filter.</p>",
-        },
-      ],
-      reference: "GitHub #49 / EPIC-049 docs",
-    },
+    /* memory_group: archived — section removed from dashboard (STORY-065.3, privacy-gated) */
 
     integrity_panel: {
       title: "Integrity & rate limits (panel)",
@@ -670,33 +645,7 @@
       reference: "Code: <code>store.verify_integrity()</code> · <code>relations</code> · <code>metrics.py</code>",
     },
 
-    tags_panel: {
-      title: "Tags (in exports)",
-      sections: [
-        {
-          heading: "What it is",
-          html:
-            "<p>Tags are small labels on memories for FTS and filtering. They appear in this dashboard only when you export with " +
-            "<code>--privacy local</code> (frequency table).</p>",
-        },
-        {
-          heading: "The math",
-          html:
-            "<p>Top-N tags by total uses across entries; capped in the exporter to limit JSON size.</p>",
-        },
-        {
-          heading: "Why it matters",
-          html:
-            "<p>Tags reveal project vocabulary—treat local exports as sensitive.</p>",
-        },
-        {
-          heading: "What tapps-brain does",
-          html:
-            "<p>FTS5 indexes key, value, tags; retriever can filter by tag set.</p>",
-        },
-      ],
-      reference: "Code: <code>visual_snapshot.py</code> · <code>persistence.py</code> FTS",
-    },
+    /* tags_panel: archived — section removed from dashboard (STORY-065.3, privacy-gated) */
 
     privacy_notice: {
       title: "Privacy (this page)",

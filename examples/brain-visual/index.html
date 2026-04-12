@@ -1600,7 +1600,7 @@
           <p>
             Serving this folder over HTTP loads <code>brain-visual.json</code> when it sits next to
             <code>index.html</code>. Opening the HTML as <code>file://</code> uses <strong>Load snapshot</strong>
-            instead. Also loads <code>scorecard-derive.js</code> and <code>brain-visual-help.js</code>.
+            instead. Also loads <code>brain-visual-help.js</code>.
           </p>
           <p>
             <strong>?</strong> buttons open a side panel with definitions, math, and code references aligned to
@@ -1649,8 +1649,6 @@
         <li><a href="#hive">Hive</a></li>
         <li><a href="#integrity">Integrity</a></li>
         <li><a href="#activity">Activity</a></li>
-        <li><a href="#groups">Groups</a></li>
-        <li><a href="#tags">Tags</a></li>
         <li><a href="#diagnostics">Diagnostics</a></li>
         <li><a href="#privacy">Privacy</a></li>
       </ul>
@@ -1902,56 +1900,6 @@
           <p class="sub" id="sqlite-vec-line">—</p>
         </div>
 
-        <!-- Deep insight: retrieval pipeline stepped explainer -->
-        <div class="insight-panel">
-          <div class="insight-panel-header">
-            <p class="insight-panel-title">Retrieval pipeline</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="concept:retrieval_pipeline"
-              aria-label="Explain retrieval pipeline"
-            >
-              ?
-            </button>
-          </div>
-          <div class="insight-panel-body">
-            <div class="step-flow" id="retrieval-step-flow" aria-label="Retrieval pipeline steps">
-              <div class="step-node step-active" id="rstep-query">
-                <div class="step-icon" aria-hidden="true">🔍</div>
-                <span class="step-label">Query</span>
-                <span class="step-detail-note">recall request</span>
-              </div>
-              <div class="step-arrow" aria-hidden="true">→</div>
-              <div class="step-node" id="rstep-bm25">
-                <div class="step-icon" aria-hidden="true">📊</div>
-                <span class="step-label">BM25</span>
-                <span class="step-detail-note">Okapi term scoring</span>
-              </div>
-              <div class="step-arrow" id="rstep-arrow-vec" aria-hidden="true">→</div>
-              <div class="step-node" id="rstep-vec">
-                <div class="step-icon" aria-hidden="true">🧠</div>
-                <span class="step-label">pgvector KNN</span>
-                <span class="step-detail-note">semantic search</span>
-              </div>
-              <div class="step-arrow" id="rstep-arrow-rrf" aria-hidden="true">→</div>
-              <div class="step-node" id="rstep-rrf">
-                <div class="step-icon" aria-hidden="true">⚖️</div>
-                <span class="step-label">RRF fusion</span>
-                <span class="step-detail-note">rank merge</span>
-              </div>
-              <div class="step-arrow" aria-hidden="true">→</div>
-              <div class="step-node step-active" id="rstep-result">
-                <div class="step-icon" aria-hidden="true">✅</div>
-                <span class="step-label">Result</span>
-                <span class="step-detail-note">ranked memories</span>
-              </div>
-            </div>
-            <p class="step-mode-desc" id="retrieval-mode-desc">
-              Load a snapshot to see which path is active for this brain.
-            </p>
-          </div>
-        </div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="hive">
@@ -2027,38 +1975,6 @@
           <div id="access-bars" class="bar-chart"></div>
           <p class="sub" id="access-meta">—</p>
         </div>
-      </section>
-
-      <section class="dash-section reveal-on-scroll" id="groups">
-        <div class="dash-h2-row">
-          <h2>Memory groups</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:memory_group"
-            aria-label="Explain memory groups"
-          >
-            ?
-          </button>
-        </div>
-        <p class="prose-small">Project-local <code>memory_group</code> partitions — count always exported; names only with <code>--privacy local</code>.</p>
-        <div id="groups-body" class="prose-small">—</div>
-      </section>
-
-      <section class="dash-section reveal-on-scroll" id="tags">
-        <div class="dash-h2-row">
-          <h2>Tags</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:tags_panel"
-            aria-label="Explain tags in export"
-          >
-            ?
-          </button>
-        </div>
-        <p class="prose-small">Tag frequency counts — shown only for <code>--privacy local</code> exports.</p>
-        <div id="tags-body"></div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="diagnostics">
@@ -2172,34 +2088,9 @@
         </div>
         <p class="prose-small">
           Memory content is never exported. Aggregates only: counts, histograms, and schema versions.
-          Tag and group names appear only with <code>--privacy local</code> (single-user, local-trust mode).
         </p>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
-
-        <!-- Three-bullet privacy footer pattern -->
-        <ul class="privacy-bullets" aria-label="Privacy guarantees for this export">
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">🚫</span>
-            <p class="privacy-bullet-title">Excluded</p>
-            <p class="privacy-bullet-desc">
-              Memory content, entry keys, raw queries, and session IDs are <strong>never</strong> included in any export tier.
-            </p>
-          </li>
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">📦</span>
-            <p class="privacy-bullet-title">Aggregated</p>
-            <p class="privacy-bullet-desc">
-              Counts, tier histograms, access buckets, schema versions, and health scores — no per-entry data.
-            </p>
-          </li>
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">🏠</span>
-            <p class="privacy-bullet-title">Local-only</p>
-            <p class="privacy-bullet-desc">
-              Tag and group names appear only in <code>--privacy local</code> mode (single-user, local-trust stores).
-            </p>
-          </li>
-        </ul>
+        <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite">—</span>
       </section>
     </div>
   </main>
@@ -2230,7 +2121,6 @@
     </p>
   </footer>
 
-  <script src="scorecard-derive.js"></script>
   <script src="brain-visual-help.js"></script>
   <script>
     /* ── Enter-view reveal via IntersectionObserver ────────────────────────────
@@ -2355,7 +2245,7 @@
       if (grid) {
         if (!checks.length) {
           grid.innerHTML =
-            '<p class="prose-small">No scorecard data. Serve this folder over HTTP so <code>scorecard-derive.js</code> loads, or re-export with the latest CLI.</p>';
+            '<p class="prose-small">No scorecard data. Re-export with the latest CLI to generate a scorecard.</p>';
         } else {
           grid.innerHTML = checks
             .map((c) => {
@@ -2482,66 +2372,6 @@
       const s = el("status");
       s.textContent = text;
       s.className = loaded ? "status-pill" : "muted";
-    }
-
-    /* ── Deep insight: retrieval pipeline ─────────────────────────────────
-     * Activates step nodes that correspond to the effective retrieval mode.
-     * Modes: "bm25" → BM25 only; "hybrid" / "hybrid_pgvector" → full path;
-     * "hybrid_novectors" → BM25 + RRF (no vec rows).                       */
-    function renderRetrievalInsight(data) {
-      const mode = (typeof data.retrieval_effective_mode === "string"
-        ? data.retrieval_effective_mode
-        : ""
-      ).toLowerCase();
-
-      /* Always active: query + result */
-      const alwaysOn = ["rstep-query", "rstep-result"];
-      /* BM25 active in all modes */
-      const bm25Always = ["rstep-bm25"];
-      /* Vector + RRF only for hybrid modes */
-      const hybridOnly = ["rstep-vec", "rstep-rrf"];
-      const hybridArrows = ["rstep-arrow-vec", "rstep-arrow-rrf"];
-
-      const isHybrid = mode.startsWith("hybrid");
-      const hasVectors = isHybrid && !mode.includes("novectors");
-
-      const allStepIds = [...alwaysOn, ...bm25Always, ...hybridOnly];
-      allStepIds.forEach((id) => {
-        const node = el(id);
-        if (!node) return;
-        const isActive =
-          alwaysOn.includes(id) ||
-          bm25Always.includes(id) ||
-          (hybridOnly.includes(id) && isHybrid);
-        node.classList.toggle("step-active", isActive);
-      });
-
-      /* Dim vector/RRF arrows when not active */
-      hybridArrows.forEach((id) => {
-        const arrow = el(id);
-        if (arrow) arrow.style.opacity = isHybrid ? "" : "0.18";
-      });
-
-      const descEl = el("retrieval-mode-desc");
-      if (descEl) {
-        if (!mode) {
-          descEl.textContent = "Load a snapshot to see which path is active for this brain.";
-        } else if (mode === "bm25" || mode === "bm25-only") {
-          descEl.textContent =
-            "BM25-only mode: Okapi term scoring over tokenized memory entries. " +
-            "pgvector extension not available or embeddings not enabled — lexical recall only.";
-        } else if (hasVectors) {
-          descEl.textContent =
-            "Hybrid mode (BM25 + pgvector KNN): lexical ranks merged with semantic vector ranks via " +
-            "Reciprocal Rank Fusion (RRF). Best recall coverage for ambiguous or paraphrased queries.";
-        } else if (isHybrid) {
-          descEl.textContent =
-            "Hybrid mode with empty vector index (BM25 + RRF structure ready, no vector rows yet). " +
-            "Add embeddings to activate semantic search — BM25 ranks in the meantime.";
-        } else {
-          descEl.textContent = "Mode: " + mode + ". Load a v2 snapshot for full pipeline detail.";
-        }
-      }
     }
 
     /* ── Deep insight: diagnostics composite + circuit breaker ────────────
@@ -2849,64 +2679,6 @@
         if (am) am.textContent = isV2 ? "No access_stats in file." : "Schema v1 export — re-export for histograms.";
       }
 
-      /* Groups */
-      const gb = el("groups-body");
-      if (gb) {
-        if (isV2) {
-          const ng = Number(data.memory_group_count) || 0;
-          const mc = data.memory_group_counts;
-          if (mc && typeof mc === "object" && Object.keys(mc).length) {
-            const rows = Object.entries(mc)
-              .sort((a, b) => b[1] - a[1])
-              .map(
-                ([name, cnt]) =>
-                  "<tr><td class='mono-small'>" +
-                  name +
-                  "</td><td>" +
-                  cnt +
-                  "</td></tr>",
-              )
-              .join("");
-            gb.innerHTML =
-              "<p>Distinct groups: " +
-              ng +
-              ".</p><table class='data-table'><thead><tr><th>Group</th><th>Entries</th></tr></thead><tbody>" +
-              rows +
-              "</tbody></table>";
-          } else {
-            gb.textContent =
-              "Distinct memory_group values: " +
-              ng +
-              (data.privacy_tier === "local" ? "." : " (names only with --privacy local).");
-          }
-        } else {
-          gb.textContent = "Re-export with schema v2 for memory_group stats.";
-        }
-      }
-
-      /* Tags */
-      const tb = el("tags-body");
-      if (tb) {
-        const ts = Array.isArray(data.tag_stats) ? data.tag_stats : [];
-        if (ts.length) {
-          const rows = ts.map(
-            (t) =>
-              "<tr><td class='mono-small'>" +
-              t.tag +
-              "</td><td>" +
-              t.count +
-              "</td></tr>",
-          );
-          tb.innerHTML =
-            "<table class='data-table'><thead><tr><th>Tag</th><th>Count</th></tr></thead><tbody>" +
-            rows.join("") +
-            "</tbody></table>";
-        } else {
-          tb.innerHTML =
-            '<p class="prose-small" style="margin:0">No tag_stats — use <code>--privacy local</code> export.</p>';
-        }
-      }
-
       /* Integrity */
       const ib = el("integrity-body");
       if (ib) {
@@ -2929,8 +2701,15 @@
       }
 
       renderScorecard(data);
-      renderRetrievalInsight(data);
       renderDiagnosticsInsight(data);
+
+      /* Privacy tier badge */
+      const ptBadge = el("privacy-tier-badge");
+      if (ptBadge) {
+        const tier = isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard";
+        ptBadge.textContent = "Privacy tier: " + tier;
+        ptBadge.setAttribute("data-tier", tier);
+      }
 
       setStatus(
         "Loaded · snapshot v" +
