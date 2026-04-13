@@ -20,7 +20,7 @@ TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql \
-        hive-build hive-deploy hive-up hive-down hive-logs
+        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-hive-secrets
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -92,16 +92,38 @@ hive-build:  ## Build wheel + Docker images (cleans dist first to avoid stale wh
 	uv build
 	$(HIVE_COMPOSE) build
 
+check-hive-secrets:  ## Abort if default credentials are still in place
+	@if grep -qxF 'tapps' docker/secrets/tapps_hive_password.txt 2>/dev/null; then \
+	  echo ""; \
+	  echo "ERROR: docker/secrets/tapps_hive_password.txt contains the default password 'tapps'."; \
+	  echo "       Generate a strong password and write it to that file before deploying."; \
+	  echo "       Example: openssl rand -base64 32 > docker/secrets/tapps_hive_password.txt"; \
+	  echo ""; \
+	  exit 1; \
+	fi
+	@if grep -qxF 'change-me-before-production' docker/secrets/tapps_http_auth_token.txt 2>/dev/null; then \
+	  echo ""; \
+	  echo "ERROR: docker/secrets/tapps_http_auth_token.txt contains the default token."; \
+	  echo "       Generate a strong token and write it to that file before deploying."; \
+	  echo "       Example: openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt"; \
+	  echo ""; \
+	  exit 1; \
+	fi
+
 hive-deploy:  ## Full deploy to local Docker: build → migrate → restart (safe to rerun)
+	$(MAKE) check-hive-secrets
 	$(MAKE) hive-build
 	$(HIVE_COMPOSE) run --rm tapps-hive-migrate
-	$(HIVE_COMPOSE) up -d tapps-visual
+	$(HIVE_COMPOSE) up -d tapps-brain-http tapps-visual
 
 hive-up:  ## Start hive services without rebuilding
-	$(HIVE_COMPOSE) up -d tapps-hive-db tapps-visual
+	$(HIVE_COMPOSE) up -d tapps-hive-db tapps-brain-http tapps-visual
 
 hive-down:  ## Stop hive containers (keeps volumes)
 	$(HIVE_COMPOSE) down
 
 hive-logs:  ## Tail logs from running hive services
 	$(HIVE_COMPOSE) logs -f
+
+hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints, tears down)
+	@bash scripts/hive_smoke.sh

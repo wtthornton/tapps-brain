@@ -28,6 +28,35 @@ from tapps_brain.store import ConsolidationConfig, MemoryStore
 from tests.factories import make_entry as _make_entry
 
 
+def _read_audit_records(store: MemoryStore) -> list[dict]:
+    """Return all audit records for *store*, preferring Postgres ``query_audit``
+    and falling back to the JSONL file used by the in-memory test fake.
+    """
+    persistence = store._persistence
+    if hasattr(persistence, "query_audit"):
+        try:
+            rows = persistence.query_audit(limit=10_000)
+        except Exception:
+            rows = []
+        if rows:
+            return [
+                {
+                    "action": r.get("event_type"),
+                    "key": r.get("key"),
+                    **(r.get("details") or {}),
+                }
+                for r in rows
+            ]
+    path = persistence.audit_path
+    if not path.is_file():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 @pytest.fixture
 def temp_project_root() -> Path:
     """Create a temporary project root directory."""
@@ -275,12 +304,7 @@ class TestCheckConsolidationOnSave:
         assert result.triggered is True
         assert result.consolidated_entry is not None
         ck = result.consolidated_entry.key
-        path = mock_store._persistence.audit_path
-        records = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        records = _read_audit_records(mock_store)
         merges = [r for r in records if r.get("action") == "consolidation_merge"]
         assert merges
         last_merge = merges[-1]
@@ -394,12 +418,7 @@ class TestConsolidationMergeUndo:
             assert e.contradicted is False
             assert e.superseded_by is None
             assert e.invalid_at is None
-        path = mock_store._persistence.audit_path
-        records = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        records = _read_audit_records(mock_store)
         undos = [r for r in records if r.get("action") == "consolidation_merge_undo"]
         assert undos
         assert undos[-1]["key"] == ck
@@ -600,12 +619,7 @@ class TestRunPeriodicConsolidationScan:
         )
         assert result.scanned is True
         assert result.consolidated_entries, "fixture should yield at least one merged group"
-        path = mock_store._persistence.audit_path
-        records = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        records = _read_audit_records(mock_store)
         periodic_merges = [
             r
             for r in records

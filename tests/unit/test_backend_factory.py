@@ -127,14 +127,17 @@ class TestCreateFederationBackend:
 class TestResolveHiveBackendFromEnv:
     def test_returns_none_when_env_unset(self, monkeypatch) -> None:
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         assert resolve_hive_backend_from_env() is None
 
     def test_returns_none_when_env_empty(self, monkeypatch) -> None:
         monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "")
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         assert resolve_hive_backend_from_env() is None
 
     def test_returns_none_when_env_whitespace(self, monkeypatch) -> None:
         monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "   ")
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         assert resolve_hive_backend_from_env() is None
 
     def test_returns_postgres_backend_when_dsn_set(self, monkeypatch) -> None:

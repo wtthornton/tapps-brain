@@ -1,0 +1,5 @@
+FROM python:3.13-slim
+COPY dist/tapps_brain-*.whl /tmp/
+RUN whl=$(ls /tmp/tapps_brain-*.whl) && pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]"
+EXPOSE 8080
+ENTRYPOINT ["tapps-brain", "serve"]

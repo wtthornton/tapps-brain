@@ -7,6 +7,7 @@ scoring -> promotion -> recall, using real MemoryStore + SQLite.
 from __future__ import annotations
 
 import math
+import os
 from datetime import UTC, datetime, timedelta
 
 import pytest

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, cast
@@ -3341,6 +3342,57 @@ def visual_capture_cmd(  # pragma: no cover
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Wrote {output.resolve()}")
+
+
+# ---------------------------------------------------------------------------
+# HTTP adapter server (EPIC-067 STORY-067.1)
+# ---------------------------------------------------------------------------
+
+
+@app.command("serve")
+def cmd_serve(
+    host: Annotated[
+        str,
+        typer.Option("--host", envvar="TAPPS_BRAIN_HTTP_HOST", help="Bind address."),
+    ] = "0.0.0.0",
+    port: Annotated[
+        int,
+        typer.Option("--port", envvar="TAPPS_BRAIN_HTTP_PORT", help="TCP port."),
+    ] = 8080,
+    dsn: Annotated[
+        str | None,
+        typer.Option(
+            "--dsn",
+            envvar="TAPPS_BRAIN_HIVE_DSN",
+            help="Postgres DSN for /ready probe (falls back to TAPPS_BRAIN_DATABASE_URL).",
+        ),
+    ] = None,
+) -> None:
+    """Start the HTTP adapter (liveness, readiness, metrics, /snapshot).
+
+    Reads TAPPS_BRAIN_HTTP_AUTH_TOKEN and TAPPS_BRAIN_HIVE_DSN from the
+    environment automatically; the --dsn flag overrides the env var.
+
+    Blocks until interrupted (SIGINT / SIGTERM).
+    """
+    import signal
+
+    from tapps_brain.http_adapter import HttpAdapter
+
+    adapter = HttpAdapter(host=host, port=port, dsn=dsn)
+    adapter.start()
+    typer.echo(f"tapps-brain HTTP adapter listening on {host}:{port}")
+
+    stop_event = threading.Event()
+
+    def _handle_signal(signum: int, frame: object) -> None:  # noqa: ARG001
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+
+    stop_event.wait()
+    adapter.stop()
 
 
 # ---------------------------------------------------------------------------

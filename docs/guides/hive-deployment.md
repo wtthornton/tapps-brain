@@ -165,7 +165,10 @@ data:
 
 ### SSL / TLS
 
-Use `sslmode=require` (or `verify-full`) in your DSN:
+For HTTPS on the brain-visual dashboard endpoint, see [hive-tls.md](hive-tls.md)
+for nginx SSL and Caddy reverse-proxy options.
+
+For database connections, use `sslmode=require` (or `verify-full`) in your DSN:
 
 ```
 postgres://tapps:SECRET@db-host:5432/tapps_hive?sslmode=verify-full&sslrootcert=/path/to/ca.crt

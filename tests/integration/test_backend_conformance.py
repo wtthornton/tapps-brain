@@ -53,6 +53,15 @@ def hive_backend() -> Any:
     if _SKIP_PG:
         pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
     backend = _make_postgres_hive()
+    # Clean up shared tables before the test so prior runs don't cause
+    # unique-constraint violations or state pollution.
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+
+    cm = PostgresConnectionManager(_PG_DSN)
+    with cm.get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM hive_feedback_events")
+        cur.execute("DELETE FROM hive_memories")
+    cm.close()
     yield backend
     backend.close()
 

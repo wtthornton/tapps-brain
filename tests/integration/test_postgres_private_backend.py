@@ -124,9 +124,9 @@ class TestSaveLoadAll:
     def test_tier_round_trip(self, backend: Any) -> None:
         from tapps_brain.models import MemoryTier
 
-        backend.save(_make_entry("tier-k", "architectural fact", tier=MemoryTier.ARCHITECTURAL))
+        backend.save(_make_entry("tier-k", "architectural fact", tier=MemoryTier.architectural))
         loaded = backend.load_all()
-        assert loaded[0].tier == MemoryTier.ARCHITECTURAL
+        assert loaded[0].tier == MemoryTier.architectural
 
 
 # ---------------------------------------------------------------------------

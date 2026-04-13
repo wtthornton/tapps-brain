@@ -1,0 +1,38 @@
+name: Hive Stack Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - "docker/**"
+      - "Makefile"
+      - "scripts/hive_smoke.sh"
+      - "src/tapps_brain/http_adapter.py"
+      - "src/tapps_brain/cli.py"
+  workflow_dispatch:
+
+jobs:
+  hive-smoke:
+    name: End-to-end Docker hive stack smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Run hive smoke test
+        run: bash scripts/hive_smoke.sh
+        env:
+          # Use non-default ports to avoid conflicts on the runner.
+          TAPPS_VISUAL_PORT: "18088"
+          TAPPS_BRAIN_HTTP_PORT: "18080"

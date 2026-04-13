@@ -713,6 +713,7 @@ class TestMcpMain:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--project-dir", str(tmp_path)])
 
         with pytest.raises(SystemExit) as exc_info:
@@ -730,6 +731,7 @@ class TestMcpMain:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         monkeypatch.setattr(sys, "argv", ["tapps-brain-mcp", "--project-dir", str(tmp_path)])
 
         with pytest.raises(SystemExit):
@@ -1030,6 +1032,7 @@ class TestStrictMode:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT=1"):
             store = _get_store(tmp_path, enable_hive=True)
@@ -1041,6 +1044,7 @@ class TestStrictMode:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         # enable_hive=False skips the Hive backend check entirely
         store = _get_store(tmp_path, enable_hive=False)
@@ -1052,6 +1056,7 @@ class TestStrictMode:
 
         monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         store = _get_store(tmp_path, enable_hive=True)
         # hive_store is None — Hive tools fail lazily at invocation time
@@ -1064,6 +1069,7 @@ class TestStrictMode:
 
         monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         # Should not raise regardless of enable_hive
         store = _get_store(tmp_path, enable_hive=True)
@@ -1074,6 +1080,7 @@ class TestStrictMode:
         from tapps_brain.mcp_server import _get_store
 
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         for value in ("0", "true", "yes", "false", ""):
             monkeypatch.setenv("TAPPS_BRAIN_STRICT", value)
@@ -3389,6 +3396,7 @@ class TestStrictStartupMode:
             import os as _os
 
             _os.environ.pop("TAPPS_BRAIN_HIVE_DSN", None)
+            _os.environ.pop("TAPPS_BRAIN_DATABASE_URL", None)
             with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT"):
                 create_server(tmp_path, enable_hive=True)
 
@@ -3486,6 +3494,7 @@ class TestGetStoreHiveWiring:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT", "1")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
 
         with pytest.raises(RuntimeError, match="TAPPS_BRAIN_STRICT=1"):
             store = _get_store(tmp_path, enable_hive=True)
@@ -3496,6 +3505,7 @@ class TestGetStoreHiveWiring:
         from tapps_brain.mcp_server import _get_store
 
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         monkeypatch.delenv("TAPPS_BRAIN_STRICT", raising=False)
 
         store = _get_store(tmp_path, enable_hive=True)

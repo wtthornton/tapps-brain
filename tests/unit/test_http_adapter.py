@@ -119,8 +119,15 @@ def _wait_for_server(port: int, timeout: float = 3.0) -> None:
 
 
 @pytest.fixture()
-def adapter_no_dsn():
-    """Start an HttpAdapter without a DSN (no DB probing)."""
+def adapter_no_dsn(monkeypatch: pytest.MonkeyPatch):
+    """Start an HttpAdapter without a DSN (no DB probing).
+
+    Clears ``TAPPS_BRAIN_DATABASE_URL`` / ``TAPPS_BRAIN_HIVE_DSN`` so the
+    adapter's env-var fallback can't reintroduce a DSN when the test env
+    has one set (e.g. CI with a live Postgres service container).
+    """
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
     port = _free_port()
     adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None)
     adapter.start()
@@ -492,8 +499,10 @@ def adapter_with_auth():
 
 
 @pytest.fixture()
-def adapter_no_auth():
+def adapter_no_auth(monkeypatch: pytest.MonkeyPatch):
     """Start an HttpAdapter without auth (same as adapter_no_dsn but named for clarity)."""
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
     port = _free_port()
     adapter = HttpAdapter(host="127.0.0.1", port=port, dsn=None, auth_token=None)
     adapter.start()

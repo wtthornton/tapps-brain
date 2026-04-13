@@ -155,10 +155,10 @@ class TestRoundTrip:
     def test_tier_preserved(self, backend: Any) -> None:
         from tapps_brain.models import MemoryTier
 
-        entry = _make_entry("tier-key", "architectural memory", tier=MemoryTier.ARCHITECTURAL)
+        entry = _make_entry("tier-key", "architectural memory", tier=MemoryTier.architectural)
         backend.save(entry)
         loaded = backend.load_all()
-        assert loaded[0].tier == MemoryTier.ARCHITECTURAL
+        assert loaded[0].tier == MemoryTier.architectural
 
 
 # ---------------------------------------------------------------------------

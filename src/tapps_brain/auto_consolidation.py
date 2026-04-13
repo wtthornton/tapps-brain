@@ -68,8 +68,35 @@ class ConsolidationUndoResult:
 def find_last_consolidation_merge_audit(
     audit_path: Path,
     consolidated_key: str,
+    persistence: Any = None,
 ) -> dict[str, Any] | None:
-    """Return the last JSONL record for ``action=consolidation_merge`` and this key."""
+    """Return the last ``consolidation_merge`` audit record for *consolidated_key*.
+
+    Prefers ``persistence.query_audit()`` (Postgres ``audit_log`` table) when
+    available; falls back to the JSONL ``audit_path`` for in-memory/test
+    backends.  Returns ``None`` when no matching row is found.
+    """
+    if persistence is not None and hasattr(persistence, "query_audit"):
+        try:
+            rows = persistence.query_audit(
+                key=consolidated_key,
+                event_type="consolidation_merge",
+                limit=1000,
+            )
+        except Exception:
+            rows = []
+        if rows:
+            last_row = rows[-1]
+            details = last_row.get("details") or {}
+            rec: dict[str, Any] = {
+                "action": last_row.get("event_type"),
+                "key": last_row.get("key"),
+                **details,
+            }
+            return rec
+        # fall through to JSONL when Postgres returned nothing — the
+        # in-memory fake still writes JSONL.
+
     if not audit_path.is_file():
         return None
     last: dict[str, Any] | None = None
@@ -108,7 +135,11 @@ def undo_consolidation_merge(  # noqa: PLR0911
     The store serialization lock is held for the full in-memory + SQLite sequence so
     concurrent saves do not interleave with undo.
     """
-    merge_rec = find_last_consolidation_merge_audit(store._persistence.audit_path, consolidated_key)
+    merge_rec = find_last_consolidation_merge_audit(
+        store._persistence.audit_path,
+        consolidated_key,
+        persistence=store._persistence,
+    )
     if merge_rec is None:
         return ConsolidationUndoResult(
             ok=False,

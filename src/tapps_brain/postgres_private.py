@@ -373,7 +373,7 @@ class PostgresPrivateBackend:
 
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         sql = (
-            "SELECT key, embedding <-> %s::vector AS distance "
+            "SELECT key, embedding <=> %s::vector AS distance "
             "FROM private_memories "
             "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL "
             "ORDER BY distance "
@@ -662,6 +662,49 @@ class PostgresPrivateBackend:
         return results
 
     # ------------------------------------------------------------------
+    # Flywheel metadata (migration 007, STORY-066.14)
+    # ------------------------------------------------------------------
+
+    def flywheel_meta_get(self, key: str) -> str | None:
+        """Return the stored flywheel metadata value for *key*, or ``None``.
+
+        Best-effort: failures log and return ``None`` so the flywheel pipeline
+        can still run (it will just reprocess from the beginning).
+        """
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT value FROM flywheel_meta "
+                    "WHERE project_id = %s AND agent_id = %s AND key = %s",
+                    (self._project_id, self._agent_id, key),
+                )
+                row = cur.fetchone()
+                return str(row[0]) if row else None
+        except Exception:
+            logger.debug("postgres_private.flywheel_meta_get_failed", key=key, exc_info=True)
+            return None
+
+    def flywheel_meta_set(self, key: str, value: str) -> None:
+        """Upsert a flywheel metadata value for *key*.
+
+        Best-effort: failures log and are swallowed so a transient DB issue
+        can't break the feedback pipeline's in-memory state.
+        """
+        try:
+            with self._cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO flywheel_meta (project_id, agent_id, key, value, updated_at)
+                    VALUES (%s, %s, %s, %s, now())
+                    ON CONFLICT (project_id, agent_id, key)
+                    DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+                    """,
+                    (self._project_id, self._agent_id, key, value),
+                )
+        except Exception:
+            logger.debug("postgres_private.flywheel_meta_set_failed", key=key, exc_info=True)
+
+    # ------------------------------------------------------------------
     # GC archive (migration 006, STORY-066.3)
     # ------------------------------------------------------------------
 
@@ -798,6 +841,19 @@ class PostgresPrivateBackend:
                 return v.isoformat()  # type: ignore[no-any-return]
             return str(v)
 
+        def _iso_or_none(v: Any) -> str | None:  # noqa: ANN401
+            """ISO-8601 with ``T`` separator, or ``None``.
+
+            Used for nullable temporal columns so downstream string comparisons
+            (``is_temporally_valid``) stay consistent with ``created_at``/
+            ``updated_at`` which already use ``isoformat()``.
+            """
+            if v is None:
+                return None
+            if hasattr(v, "isoformat"):
+                return v.isoformat()  # type: ignore[no-any-return]
+            return str(v)
+
         # Tier — accept enum values or raw strings (profile layers).
         tier_raw = row.get("tier", "pattern")
         try:
@@ -833,15 +889,15 @@ class PostgresPrivateBackend:
             useful_access_count=int(row.get("useful_access_count", 0)),
             total_access_count=int(row.get("total_access_count", 0)),
             branch=_str_or_none(row.get("branch")),
-            last_reinforced=_str_or_none(row.get("last_reinforced")),
+            last_reinforced=_iso_or_none(row.get("last_reinforced")),
             reinforce_count=int(row.get("reinforce_count", 0)),
             contradicted=bool(row.get("contradicted", False)),
             contradiction_reason=_str_or_none(row.get("contradiction_reason")),
             seeded_from=_str_or_none(row.get("seeded_from")),
             agent_scope=str(row.get("agent_scope", "private")),
             memory_group=_str_or_none(row.get("memory_group")),
-            valid_at=_str_or_none(row.get("valid_at")),
-            invalid_at=_str_or_none(row.get("invalid_at")),
+            valid_at=_iso_or_none(row.get("valid_at")),
+            invalid_at=_iso_or_none(row.get("invalid_at")),
             superseded_by=_str_or_none(row.get("superseded_by")),
             valid_from=str(row.get("valid_from") or ""),
             valid_until=str(row.get("valid_until") or ""),

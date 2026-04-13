@@ -457,12 +457,17 @@ def resolve_hive_backend_from_env(
 ) -> HiveBackend | None:
     """Return a Postgres :class:`HiveBackend` from ``TAPPS_BRAIN_HIVE_DSN``, or ``None``.
 
-    When the env var is unset or empty, returns ``None`` (no Hive). Never opens
-    a SQLite Hive (ADR-007).
+    Falls back to ``TAPPS_BRAIN_DATABASE_URL`` (v3 unified DSN) when
+    ``TAPPS_BRAIN_HIVE_DSN`` is not set.  When neither var is set, returns
+    ``None`` (no Hive). Never opens a SQLite Hive (ADR-007).
     """
     import os
 
-    dsn = (os.environ.get("TAPPS_BRAIN_HIVE_DSN") or "").strip()
+    dsn = (
+        os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+        or os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+        or ""
+    ).strip()
     if not dsn:
         return None
     return create_hive_backend(dsn, encryption_key=encryption_key)

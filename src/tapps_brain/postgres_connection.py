@@ -232,7 +232,13 @@ class PostgresConnectionManager:
         self._ensure_pool()
         with self._pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SET LOCAL tapps.current_namespace = %s", (namespace,))
+                from psycopg import sql as pgsql
+
+                cur.execute(
+                    pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(
+                        pgsql.Literal(namespace)
+                    )
+                )
             yield conn
 
     @property

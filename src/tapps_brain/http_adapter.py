@@ -65,6 +65,7 @@ import platform
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -805,5 +806,15 @@ class HttpAdapter:
 
     @staticmethod
     def _resolve_auth_token_from_env() -> str | None:
+        # Plain env var takes precedence.
         token = os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "").strip()
-        return token or None
+        if token:
+            return token
+        # Docker secrets pattern: _FILE variant points to a file containing the token.
+        token_file = os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE", "").strip()
+        if token_file:
+            try:
+                return Path(token_file).read_text().strip() or None
+            except OSError:
+                pass
+        return None

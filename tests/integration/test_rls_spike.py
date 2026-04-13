@@ -28,6 +28,7 @@ import os
 import uuid
 
 import pytest
+from psycopg import sql as pgsql
 
 # ---------------------------------------------------------------------------
 # Skip guard — all tests require a live Postgres instance
@@ -35,6 +36,14 @@ import pytest
 
 _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
+
+# Runtime DSN: same host/db as _PG_DSN but uses tapps_runtime (non-superuser,
+# RLS is enforced).  Derived by replacing the user:password segment.
+_RUNTIME_DSN = (
+    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1)
+    if _PG_DSN
+    else ""
+)
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -57,6 +66,13 @@ def _make_manager() -> "PostgresConnectionManager":  # type: ignore[name-defined
     return PostgresConnectionManager(_PG_DSN)
 
 
+def _make_runtime_manager() -> "PostgresConnectionManager":  # type: ignore[name-defined]
+    """Return a manager connected as tapps_runtime (non-superuser, RLS enforced)."""
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+
+    return PostgresConnectionManager(_RUNTIME_DSN)
+
+
 def _unique_ns() -> str:
     """Generate a unique namespace so parallel runs do not interfere."""
     return f"test-rls-ns-{uuid.uuid4().hex[:8]}"
@@ -69,7 +85,7 @@ def _unique_key() -> str:
 def _insert_row(conn: object, namespace: str, key: str, value: str) -> None:
     """Insert (or upsert) a hive_memories row with admin bypass (session var = '')."""
     with conn.cursor() as cur:  # type: ignore[union-attr]
-        cur.execute("SET LOCAL tapps.current_namespace = %s", ("",))
+        cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
         cur.execute(
             """
             INSERT INTO hive_memories (namespace, key, value)
@@ -83,7 +99,7 @@ def _insert_row(conn: object, namespace: str, key: str, value: str) -> None:
 def _cleanup_rows(conn: object, ns_a: str, ns_b: str, key: str) -> None:
     """Delete test rows using admin bypass (session var = '')."""
     with conn.cursor() as cur:  # type: ignore[union-attr]
-        cur.execute("SET LOCAL tapps.current_namespace = %s", ("",))
+        cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
         cur.execute(
             "DELETE FROM hive_memories WHERE namespace IN (%s, %s) AND key = %s",
             (ns_a, ns_b, key),
@@ -104,6 +120,7 @@ def test_rls_namespace_isolation_select() -> None:
     """
     _apply_migrations()
     cm = _make_manager()
+    runtime_cm = _make_runtime_manager()
 
     ns_a = _unique_ns()
     ns_b = _unique_ns()
@@ -115,8 +132,8 @@ def test_rls_namespace_isolation_select() -> None:
             _insert_row(conn, ns_a, key, "value-for-A")
             _insert_row(conn, ns_b, key, "value-for-B")
 
-        # --- Query under ns_a context ------------------------------------
-        with cm.namespace_context(ns_a) as conn:
+        # --- Query under ns_a context (as tapps_runtime, RLS enforced) ----
+        with runtime_cm.namespace_context(ns_a) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT namespace, value FROM hive_memories WHERE key = %s",
@@ -130,8 +147,8 @@ def test_rls_namespace_isolation_select() -> None:
             f"ns_b row leaked into ns_a context (RLS not enforced): {rows}"
         )
 
-        # --- Query under ns_b context ------------------------------------
-        with cm.namespace_context(ns_b) as conn:
+        # --- Query under ns_b context (as tapps_runtime, RLS enforced) ----
+        with runtime_cm.namespace_context(ns_b) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT namespace, value FROM hive_memories WHERE key = %s",
@@ -149,6 +166,7 @@ def test_rls_namespace_isolation_select() -> None:
         with cm.get_connection() as conn:
             _cleanup_rows(conn, ns_a, ns_b, key)
         cm.close()
+        runtime_cm.close()
 
 
 def test_rls_admin_bypass_empty_string_sees_all() -> None:
@@ -173,7 +191,7 @@ def test_rls_admin_bypass_empty_string_sees_all() -> None:
         # Query with admin bypass (session var = '').
         with cm.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SET LOCAL tapps.current_namespace = %s", ("",))
+                cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
                 cur.execute(
                     "SELECT namespace FROM hive_memories"
                     " WHERE namespace IN (%s, %s) AND key = %s",
@@ -237,19 +255,21 @@ def test_rls_namespace_context_write_isolation() -> None:
     """
     _apply_migrations()
     cm = _make_manager()
+    runtime_cm = _make_runtime_manager()
 
     ns_a = _unique_ns()
     ns_b = _unique_ns()
     key = _unique_key()
 
     try:
-        # Attempt to INSERT a ns_b row while session var is ns_a.
+        # Attempt to INSERT a ns_b row while session var is ns_a, using
+        # tapps_runtime (non-superuser) so RLS WITH CHECK is enforced.
         # The hive_namespace_isolation WITH CHECK will fail because
         # namespace='ns_b' != current_setting('tapps.current_namespace') = 'ns_a'.
         # The hive_admin_bypass WITH CHECK will also fail because ns_a != ''.
         # So the INSERT should raise an exception (policy violation).
         with pytest.raises(Exception):  # psycopg raises e.g. InFailedSqlTransaction
-            with cm.namespace_context(ns_a) as conn:
+            with runtime_cm.namespace_context(ns_a) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO hive_memories (namespace, key, value)"
@@ -260,7 +280,7 @@ def test_rls_namespace_context_write_isolation() -> None:
         # Verify the row was not written (check under admin bypass).
         with cm.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SET LOCAL tapps.current_namespace = %s", ("",))
+                cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
                 cur.execute(
                     "SELECT COUNT(*) FROM hive_memories"
                     " WHERE namespace = %s AND key = %s",
@@ -273,6 +293,7 @@ def test_rls_namespace_context_write_isolation() -> None:
         with cm.get_connection() as conn:
             _cleanup_rows(conn, ns_a, ns_b, key)
         cm.close()
+        runtime_cm.close()
 
 
 def test_namespace_context_helper_sets_session_var() -> None:

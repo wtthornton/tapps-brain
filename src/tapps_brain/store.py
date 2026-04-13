@@ -377,7 +377,16 @@ class MemoryStore:
         from tapps_brain.backends import AgentRegistry
         from tapps_brain.models import AgentRegistration
 
-        registry_path = self._hive_store._db_path.parent / "agents.yaml"
+        # _db_path is /dev/null for Postgres hive backends (sentinel value).
+        # Only derive a local registry path for file-based backends.
+        import pathlib
+
+        _db_path = getattr(self._hive_store, "_db_path", None)
+        registry_path = (
+            _db_path.parent / "agents.yaml"
+            if _db_path is not None and _db_path != pathlib.Path("/dev/null")
+            else None
+        )
         registry = AgentRegistry(registry_path=registry_path)
         if registry.get(self._agent_id) is not None:
             return  # already registered
