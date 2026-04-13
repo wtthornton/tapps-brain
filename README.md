@@ -109,10 +109,11 @@ chain = store.history("pricing-plan")
 
 ---
 
-## What's new in v3.3.0
+## What's new in v3.4.0
 
 - **Postgres production-readiness (EPIC-066):** ephemeral-Postgres CI, connection pool health in `/health`, `TAPPS_BRAIN_AUTO_MIGRATE=1` startup gate, pg_tde encryption runbook, and behavioural parity load smoke against 50 concurrent agents.
 - **Live always-on dashboard (EPIC-065):** GET `/snapshot` endpoint on the HTTP adapter; dashboard polls every 5 s with LIVE/STALE/ERROR badge; Hive hub deep monitoring panel and agent registry live table.
+- **OpenTelemetry instrumentation (EPIC-032):** GenAI semconv spans for save/recall/search/delete/reinforce, custom `tapps_brain.*` metrics, OTel export bootstrap, and a privacy-aware `MemoryBodyRedactionFilter`.
 
 ---
 
@@ -150,7 +151,7 @@ from tapps_brain import MemoryStore
 store = MemoryStore(Path("."))
 ```
 
-Direct access to all 38 modules. Thread-safe, synchronous, zero setup.
+Direct access to all modules. Thread-safe, synchronous, zero setup.
 
 ### CLI — 43 commands
 
@@ -479,7 +480,7 @@ All writes pass through prompt injection detection and content sanitization. The
 
 ## Architecture
 
-38 modules, zero LLM dependencies, fully synchronous:
+62 modules, zero LLM dependencies, fully synchronous:
 
 ```
                          ┌──────────────────┐
@@ -497,9 +498,9 @@ All writes pass through prompt injection detection and content sanitization. The
        │          │       │       │       │           │
   ┌────▼───┐ ┌───▼──┐ ┌──▼───┐ ┌─▼────┐ ┌─▼───────┐ ┌▼───────┐
   │ recall │ │search│ │decay │ │safety│ │ persist │ │profiles│
-  │capture │ │ bm25 │ │promo │ │inject│ │ SQLite  │ │  hive  │
-  │inject  │ │fusion│ │  gc  │ │sanit │ │  FTS5   │ │ agents │
-  └────────┘ └──────┘ └──────┘ └──────┘ │  WAL    │ └────────┘
+  │capture │ │ bm25 │ │promo │ │inject│ │Postgres │ │  hive  │
+  │inject  │ │fusion│ │  gc  │ │sanit │ │pgvector │ │ agents │
+  └────────┘ └──────┘ └──────┘ └──────┘ │tsvector │ └────────┘
                                          └─────────┘
        │          │          │
   ┌────▼───┐ ┌───▼─────┐ ┌──▼────────┐
@@ -514,17 +515,17 @@ All writes pass through prompt injection detection and content sanitization. The
 
 | Layer | Modules | Purpose |
 |-------|---------|---------|
-| **Storage** | `store`, `persistence` | In-memory dict + SQLite write-through (WAL, FTS5, schema v1–v11) |
+| **Storage** | `store`, `postgres_private` | In-memory dict + PostgreSQL write-through (pgvector HNSW + tsvector GIN) |
 | **Data** | `models`, `profile` | `MemoryEntry` (Pydantic v2), `MemoryProfile` with configurable layers |
 | **Retrieval** | `retrieval`, `bm25`, `fusion` | Composite-scored ranked search, optional hybrid BM25+vector |
 | **Lifecycle** | `decay`, `consolidation`, `auto_consolidation`, `gc`, `promotion` | Dual decay models, Jaccard+TF-IDF merging, archival GC, tier promotion |
 | **Recall** | `recall`, `injection` | Orchestrator, capture pipeline, token-budgeted prompt injection |
-| **Multi-Agent** | `hive` | Hive shared brain, namespace isolation, agent registry, propagation engine |
+| **Multi-Agent** | `postgres_hive`, `agent_brain`, `backends`, `agent_scope`, `memory_group` | Hive shared brain, namespace isolation, agent registry, propagation engine |
 | **Integrations** | `reinforcement`, `extraction`, `session_index`, `doc_validation` | Boost, fact extraction, session search, doc scoring |
 | **Safety** | `safety` | Prompt injection detection, content sanitization |
 | **Federation** | `postgres_federation` | Cross-project pub/sub via PostgreSQL (ADR-007) |
 | **Relations** | `relations`, `contradictions` | Entity/relation extraction, contradiction detection |
-| **Extensions** | `embeddings`, `reranker`, `similarity` | sqlite-vec vectors, FlashRank local reranking, TF-IDF similarity |
+| **Extensions** | `embeddings`, `reranker`, `similarity` | pgvector HNSW semantic search, FlashRank local reranking, TF-IDF similarity |
 | **Observability** | `metrics`, `audit`, `diagnostics`, `feedback`, `evaluation`, `flywheel`, `otel_exporter` | Counters, audit, quality scorecard, feedback store, eval/flywheel loop, optional OTel |
 | **I/O** | `io`, `seeding` | JSON/Markdown import/export, project profile seeding |
 | **Interfaces** | `cli`, `mcp_server` | Typer CLI (multi sub-app), FastMCP server (counts in `docs/generated/mcp-tools-manifest.json`) |
@@ -534,8 +535,8 @@ All writes pass through prompt injection detection and content sanitization. The
 
 ### Key design decisions
 
-- **Synchronous core** — no async/await anywhere in the engine
-- **Write-through cache** — every mutation updates both the in-memory dict and SQLite atomically
+- **Synchronous core** — no async/await in the engine itself; `aio.AsyncMemoryStore` provides a thin `asyncio.to_thread` wrapper for async callers (EPIC-067)
+- **Write-through cache** — every mutation updates both the in-memory dict and PostgreSQL atomically
 - **Lazy decay** — dual-model decay evaluated on read, no background tasks or timers
 - **Deterministic merging** — consolidation uses Jaccard + TF-IDF similarity thresholds, never LLM calls
 - **Configurable limits** — max entries per profile (default 500, up to 1500+) with lowest-confidence eviction
@@ -566,7 +567,7 @@ bash scripts/release-ready.sh
 ```
 tests/
 ├── unit/                35+ files — pure unit tests, no I/O
-├── integration/         11+ files — real MemoryStore + SQLite
+├── integration/         11+ files — real MemoryStore + Postgres
 ├── benchmarks/          pytest-benchmark performance suite
 ├── factories.py         Shared make_entry() factory
 └── conftest.py          Shared fixtures

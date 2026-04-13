@@ -66,8 +66,7 @@ For teams sharing a single Hive across multiple machines:
    export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:SECRET@db-host:5432/tapps_hive"
    ```
 
-4. Each client's local SQLite store remains independent; only the shared Hive
-   layer is remote.
+4. Each client's local Postgres store remains independent (scoped by `(project_id, agent_id)`); only the shared Hive layer is remote.
 
 ## Kubernetes Patterns
 

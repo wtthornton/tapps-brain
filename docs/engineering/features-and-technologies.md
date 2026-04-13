@@ -117,9 +117,9 @@
 | `cli` | `typer` | Command-line interface. |
 | `mcp` | `mcp` | MCP server. |
 | `reranker` | `flashrank` | Local cross-encoder re-ranking. |
-| `otel` | `opentelemetry-api`, `opentelemetry-sdk` | Telemetry export. |
-| **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers` | Always installed (vector search built-in). |
-| **Postgres** (lazy) | `psycopg[binary]`, `psycopg_pool` | Required for all durable stores. Not a declared extra — lazy-imported with helpful error message if missing. Install: `pip install 'psycopg[binary]' psycopg_pool`. |
+| `otel` | `opentelemetry-sdk` | Telemetry export (SDK + exporters). `opentelemetry-api` is a **core** dep — no-op without the SDK. |
+| `visual` | `playwright` | Headless PNG capture (`tapps-brain visual capture`). Requires `playwright install chromium` after install. |
+| **Core** | `pydantic`, `structlog`, `pyyaml`, `numpy`, `sentence-transformers`, `psycopg[binary,pool]`, `opentelemetry-api` | Always installed. Postgres driver is a required core dep — no lazy install needed. |
 
 Lazy detection: `_feature_flags.py` probes importability for optional LLM SDKs (`anthropic_sdk`, `openai_sdk`). Postgres deps detected lazily in `postgres_connection.py`.
 

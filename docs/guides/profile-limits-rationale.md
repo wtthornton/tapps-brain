@@ -32,28 +32,32 @@ and rebuilt only when entries change, but `score()` always iterates all N entrie
 SciFact 5.2K = 21 ms/query on Xeon 2.7 GHz), adjusted for tapps-brain's short
 documents (~200-500 chars vs multi-paragraph academic papers).*
 
-### SQLite is not the bottleneck
+### Postgres + BM25 is not the bottleneck
 
-SQLite FTS5 uses an inverted index and returns results in sub-millisecond time
-even at 50K-100K rows. A real-world deployment measured **4 ms vs 50 ms** (92%
-improvement) after switching to FTS5. On 18.2M rows, FTS5 trigram queries
-returned in **10-30 ms** vs 1,750 ms for LIKE scans.
+PostgreSQL `tsvector` + GIN index returns candidate rows in sub-millisecond time
+even at large corpus sizes. tapps-brain uses `plainto_tsquery` for candidate
+pre-filtering, then re-scores hits with the pure-Python Okapi BM25 scorer
+(`bm25.py`). The Python scorer is the throughput ceiling for private-store
+recall, not Postgres.
 
-tapps-brain uses FTS5 for candidate pre-filtering, then re-scores with the
-pure-Python BM25 scorer. The Python scorer is the ceiling, not SQLite.
+*Historical context (v1.x, SQLite FTS5):* a real-world deployment measured
+**4 ms vs 50 ms** (92% improvement) after switching to FTS5. On 18.2M rows,
+FTS5 trigram queries returned in **10–30 ms** vs 1,750 ms for LIKE scans.
+The relative advantage of an inverted index holds for Postgres `tsvector` as well.
 
 ### Storage footprint
 
-At ~4 KB average per entry (value + metadata + FTS5 index overhead):
+At ~4 KB average per entry (value + metadata + pgvector embedding overhead):
 
-| Entries | Database size | Practical on Pi SD card? |
-|---------|--------------|--------------------------|
-| 5,000 | ~20 MB | Yes |
-| 10,000 | ~40 MB | Yes |
-| 50,000 | ~200 MB | Yes (keep under 100 MB recommended) |
+| Entries | Approximate size |
+|---------|-----------------|
+| 5,000 | ~20 MB |
+| 10,000 | ~40 MB |
+| 50,000 | ~200 MB |
 
-SQLite with WAL mode handles databases up to 100 MB comfortably on Pi 5 with
-a decent SD card (Class 10 / A2). NVMe via PCIe HAT+ pushes this to 800+ MB/s.
+PostgreSQL is optimized for large datasets; the 5,000-entry default is a
+practical active-set target for a well-maintained store (GC + consolidation
+keep the live count lean), not a hard technical ceiling.
 
 ---
 
@@ -68,8 +72,9 @@ a decent SD card (Class 10 / A2). NVMe via PCIe HAT+ pushes this to 800+ MB/s.
 | **Obsidian** | ~10K-12K notes comfortable | File-based markdown |
 | **Zep** | No hard limit | Temporal knowledge graph |
 | **LangChain window** | k=5 turns | In-memory buffer |
-| **tapps-brain (v1.4.1)** | 500 entries | SQLite + BM25 |
-| **tapps-brain (v1.4.2)** | **5,000 entries** | SQLite + BM25 |
+| **tapps-brain (v1.4.1)** | 500 entries | SQLite + BM25 *(historical)* |
+| **tapps-brain (v1.4.2+)** | **5,000 entries** | SQLite + BM25 *(historical)* |
+| **tapps-brain (v3+)** | **5,000 entries** | PostgreSQL + tsvector + pgvector |
 
 The old default of 500 was the most conservative limit of any comparable system.
 5,000 aligns with the practical comfortable range for file-based knowledge stores

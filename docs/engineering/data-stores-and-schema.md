@@ -138,23 +138,27 @@ For higher ranking fidelity (true Okapi BM25 in SQL), the upgrade path to Parade
 
 ## Audit trail
 
-### File and format
+### Table and schema (migration 005)
 
-The append-only audit log is written to `{store_dir}/memory_log.jsonl` (typically `.tapps-brain/memory/memory_log.jsonl`). Each line is a JSON object with at minimum:
+The append-only audit log lives in the `audit_log` Postgres table (migration 005 — `005_audit_log.sql`). The legacy `memory_log.jsonl` file was removed in the v3 Postgres-only persistence plane (ADR-007, EPIC-059 stage 2).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `timestamp` | ISO 8601 string | UTC wall-clock time of the action. |
-| `action` | string | One of `save`, `delete`, `archive`, `reinforce`, `update_fields`, etc. |
-| `key` | string | The memory entry key affected. |
+`AuditReader` (`audit.py`) queries `audit_log` via the `PostgresPrivateBackend.query_audit` method. It retains a fallback path for unit tests that pass a `Path` directly (JSONL legacy test mode).
 
-Additional fields vary by action (e.g., `value`, `tier`, `tags` on `save`; `reason` on `delete`).
+| Column | Type | Description |
+|--------|------|-------------|
+| `project_id` | TEXT | Project identifier. |
+| `agent_id` | TEXT | Agent identifier. |
+| `id` | BIGSERIAL | Auto-incrementing row ID (part of PK). |
+| `event_type` | TEXT | One of `save`, `delete`, `archive`, `reinforce`, `update_fields`, `consolidation_merge`, `consolidation_merge_undo`, etc. |
+| `key` | TEXT | Memory entry key affected (empty string for non-key events). |
+| `details` | JSONB | Additional details (tier, tags, reason, etc.) — varies by event type. |
+| `timestamp` | TIMESTAMPTZ | UTC wall-clock time of the action. |
 
-### Rotation
+Indexes: chronological scan `(project_id, agent_id, timestamp DESC)`, per-key lookup `(project_id, agent_id, key)`, per-event-type filter `(project_id, agent_id, event_type)`.
 
-The audit log is automatically truncated when it exceeds **10,000 lines** (`_MAX_AUDIT_LINES` in `persistence.py`). Truncation keeps the most recent lines and discards the oldest.
+### No rotation
 
-**Operator recommendation:** Back up `memory_log.jsonl` before it reaches the rotation threshold if you need a complete audit history. Consider a cron job or pre-session hook that copies the file to long-term storage when `wc -l` approaches 9,000.
+The `audit_log` table is never truncated — it is a durable immutable record. Use standard Postgres archival / table partitioning for long-term retention management if needed.
 
 ## Logging conventions
 

@@ -52,7 +52,7 @@ instead (see [Environment variables](#environment-variables) below).
 | `expert_domains` | `list[str] \| None` | `TAPPS_BRAIN_EXPERT_DOMAINS` (CSV) | Expert domains for auto-publish to Hive. |
 | `profile` | `str` | — | Built-in profile name (default `"repo-brain"`). See [Profile catalog](profile-catalog.md). |
 | `hive_dsn` | `str \| None` | `TAPPS_BRAIN_HIVE_DSN` | Hive shared-store DSN. Must be `postgres://` or `postgresql://`. |
-| `encryption_key` | `str \| None` | — | Optional SQLCipher key (v2 legacy compat). |
+| `encryption_key` | `str \| None` | — | Accepted for v2 API compatibility; **no-op in v3** (SQLCipher removed; use `pg_tde` at the storage layer). |
 
 ---
 

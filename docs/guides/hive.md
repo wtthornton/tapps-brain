@@ -61,10 +61,10 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents to share k
 ```
 
 Key properties:
-- **SQLite with WAL mode** — concurrent reads, single writer, FTS5 full-text search
+- **PostgreSQL (pgvector + tsvector)** — MVCC concurrent reads/writes, HNSW vector search, GIN full-text search ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md))
 - **Namespace isolation** — each agent writes to its own namespace; cross-namespace search available
 - **Backward compatible core model** — local single-agent behavior remains valid. In practice, whether Hive is attached depends on interface/runtime configuration.
-- **Thread-safe** — all operations are protected by `threading.Lock`
+- **Thread-safe** — connection pooling via `psycopg_pool`; Postgres MVCC handles concurrent writes
 
 ### Who attaches `HiveStore`?
 
@@ -82,10 +82,11 @@ Profile `hive` settings (tiers, conflict policy, `recall_weight`) apply only whe
 
 ### Storage
 
-The Hive uses a single SQLite database at `~/.tapps-brain/hive/hive.db` with:
-- **WAL mode** for concurrent read access
-- **FTS5 virtual table** for full-text search across namespaces
-- **Primary key**: `(namespace, key)` — the same key can exist in different namespaces without collision
+The Hive uses **PostgreSQL** (`TAPPS_BRAIN_HIVE_DSN`) via `PostgresHiveBackend` with:
+- **pgvector HNSW** (`m=16, ef_construction=200`, cosine) for semantic search
+- **tsvector + GIN** for full-text search across namespaces
+- **LISTEN/NOTIFY** for real-time change notification (`hive_write_revision` / `hive_wait_write`)
+- **Primary key** on `hive_memories`: `(namespace, key)` — the same key can exist in different namespaces without collision
 
 ### Schema
 

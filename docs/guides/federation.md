@@ -20,8 +20,8 @@ subscribe to receive memories from other projects. No data is shared
 automatically.
 
 ```
-Project A ──publish──> Hub (federated.db) <──publish── Project B
-Project A <──sync────> Hub (federated.db) <──sync────> Project B
+Project A ──publish──> Hub (PostgreSQL) <──publish── Project B
+Project A <──sync────> Hub (PostgreSQL) <──sync────> Project B
 ```
 
 Key properties:
@@ -217,17 +217,15 @@ print(config.hub_path)        # optional override; empty => ~/.tapps-brain/memor
 print(config.projects)        # list[FederationProject]
 print(config.subscriptions)   # list[FederationSubscription]
 
-# Optional: relocate the hub SQLite file (persists in federation.yaml)
-config.hub_path = "/custom/hub/federated.db"
-save_federation_config(config)
-# Subsequent FederatedStore() / CLI / MCP publish use this path unless db_path= is passed.
+# v3: hub is PostgreSQL — configure via TAPPS_BRAIN_FEDERATION_DSN, not a file path.
+# config.hub_path is a v2 field (SQLite era); ignored in v3.
 ```
 
 `FederationConfig` fields:
 
 | Field           | Type                         | Description                        |
 |-----------------|------------------------------|------------------------------------|
-| `hub_path`      | `str`                        | Hub SQLite path; when non-empty, `FederatedStore()` and federation tools use it (`expanduser` applied). Empty string selects the default `~/.tapps-brain/memory/federated.db`. Pass `db_path=` to override without reading YAML. |
+| `hub_path`      | `str`                        | **v2 / SQLite legacy field** — ignored in v3. In v3 the federation hub is PostgreSQL; configure via `TAPPS_BRAIN_FEDERATION_DSN`. |
 | `projects`      | `list[FederationProject]`    | Registered projects                |
 | `subscriptions` | `list[FederationSubscription]`| Active subscriptions              |
 
@@ -328,5 +326,4 @@ for entry in local_entries:
 5. **Provenance tracking** -- imported entries are tagged with their source
    project for auditability.
 
-6. **SQLite + FTS5** -- the hub uses the same WAL-mode SQLite + FTS5 stack
-   as the local store for consistency and portability.
+6. **PostgreSQL + tsvector** -- the hub uses the same PostgreSQL stack (tsvector + pgvector) as the local store (ADR-007).

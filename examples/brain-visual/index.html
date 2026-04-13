@@ -209,7 +209,7 @@
     }
 
     main {
-      padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
+      padding: 0;
     }
 
     /* Single elevated surface so the page reads as a dashboard, not a readme on linen */
@@ -229,6 +229,317 @@
       box-shadow:
         0 1px 0 rgba(255, 255, 255, 0.06) inset,
         0 16px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    /* ── Health-summary strip (STORY-068.2) ─────────────────────────────────── */
+    .health-summary-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin: 1.25rem 0 0;
+    }
+
+    .hs-banner {
+      width: 100%;
+      padding: 0.55rem 1rem;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background:
+        linear-gradient(var(--surface), var(--surface)) padding-box,
+        var(--nlt-gradient) border-box;
+      color: var(--nlt-accent-dim);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    html[data-theme="dark"] .hs-banner {
+      background:
+        linear-gradient(rgba(15,20,25,0.65), rgba(15,20,25,0.65)) padding-box,
+        var(--nlt-gradient) border-box;
+    }
+
+    .hs-badge {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.55rem 1rem;
+      min-width: 68px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      background: var(--bg-alt);
+      transition: border-color var(--dur-base) var(--ease-standard),
+                  background var(--dur-base) var(--ease-standard);
+    }
+
+    .hs-badge:hover,
+    .hs-badge:focus-visible {
+      border-color: var(--nlt-accent-primary);
+      background: rgba(217, 119, 6, 0.07);
+    }
+
+    .hs-badge:focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    .hs-count {
+      font-family: var(--font-mono);
+      font-size: 1.4rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--fg);
+    }
+
+    .hs-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--fg-dim);
+    }
+
+    .hs-warn[data-nonzero] .hs-count { color: var(--nlt-accent-primary); }
+    .hs-fail[data-nonzero] .hs-count { color: var(--nlt-accent-dim); }
+
+    /* ── Quick-nav tiles (STORY-068.2) ──────────────────────────────────────── */
+    .qnav-grid {
+      container-type: inline-size;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .qnav-tile {
+      display: flex;
+      flex-direction: column;
+      padding: 1rem 1.1rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg-alt);
+      text-decoration: none;
+      transition: border-color var(--dur-base) var(--ease-standard),
+                  box-shadow var(--dur-base) var(--ease-standard);
+    }
+
+    .qnav-tile:hover,
+    .qnav-tile:focus-visible {
+      border-color: var(--nlt-accent-primary);
+      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+    }
+
+    .qnav-tile:focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    html[data-theme="dark"] .qnav-tile {
+      background: rgba(15, 20, 25, 0.55);
+    }
+
+    .qnav-title {
+      font-family: var(--font-display);
+      font-size: 0.9375rem;
+      font-weight: 700;
+      color: var(--fg);
+      margin: 0 0 0.3rem;
+    }
+
+    .qnav-desc {
+      font-size: 0.8rem;
+      color: var(--fg-dim);
+      line-height: 1.45;
+      margin: 0 0 0.75rem;
+      flex: 1;
+    }
+
+    .qnav-metric {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--nlt-accent-primary);
+    }
+
+    /* ── Skip link ──────────────────────────────────────────────────────────── */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 1rem;
+      z-index: 9999;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border: 2px solid var(--nlt-accent-primary);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--nlt-accent-primary);
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      top: 0.5rem;
+    }
+
+    /* ── App shell: side-nav + content grid ─────────────────────────────────── */
+    main.app-shell {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: 1fr;
+      padding: 0;
+      min-height: calc(100vh - 4rem);
+    }
+
+    /* ── Side-nav ───────────────────────────────────────────────────────────── */
+    .side-nav {
+      container-type: inline-size;
+      container-name: nav-shell;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      width: 200px;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem 0;
+      background: var(--header-bg);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-right: 1px solid var(--border);
+      z-index: 100;
+      overflow-y: auto;
+    }
+
+    .side-nav ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .side-nav a {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--fg-dim);
+      text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: color var(--dur-base) var(--ease-standard),
+                  border-color var(--dur-base) var(--ease-standard),
+                  background var(--dur-base) var(--ease-standard);
+    }
+
+    .side-nav a:hover,
+    .side-nav a:focus-visible {
+      color: var(--fg);
+      background: rgba(217, 119, 6, 0.06);
+    }
+
+    .side-nav a[aria-current="page"] {
+      color: var(--nlt-accent-primary);
+      border-left-color: var(--nlt-accent-primary);
+      background: rgba(217, 119, 6, 0.08);
+      font-weight: 600;
+    }
+
+    .side-nav a:focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    /* ── Nav badge ──────────────────────────────────────────────────────────── */
+    .nav-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.25rem;
+      height: 1.25rem;
+      padding: 0 0.3rem;
+      border-radius: 999px;
+      background: var(--nlt-accent-primary);
+      color: #fff;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      line-height: 1;
+      margin-left: auto;
+    }
+
+    /* ── Nav hamburger (480px) ──────────────────────────────────────────────── */
+    .nav-hamburger {
+      display: none;
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      z-index: 200;
+      width: 2.25rem;
+      height: 2.25rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--fg);
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Page content area ───────────────────────────────────────────────────── */
+    .page-content {
+      padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
+      min-width: 0;
+    }
+
+    /* ── View Transitions ───────────────────────────────────────────────────── */
+    @media (prefers-reduced-motion: no-preference) {
+      ::view-transition-old(root) {
+        animation: vt-out var(--dur-fast, 120ms) var(--ease-standard, ease) both;
+      }
+      ::view-transition-new(root) {
+        animation: vt-in var(--dur-fast, 120ms) var(--ease-standard, ease) both;
+      }
+      @keyframes vt-out {
+        from { opacity: 1; transform: translateX(0); }
+        to   { opacity: 0; transform: translateX(-8px); }
+      }
+      @keyframes vt-in {
+        from { opacity: 0; transform: translateX(8px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+    }
+
+    /* ── Responsive nav — container queries ─────────────────────────────────── */
+    @container nav-shell (max-width: 160px) {
+      .side-nav .nav-label { display: none; }
+      .side-nav a { justify-content: center; gap: 0; padding: 0.65rem; }
+      .side-nav .nav-badge { margin-left: 0; }
+    }
+
+    @media (max-width: 768px) {
+      .side-nav { width: 160px; }
+    }
+
+    @media (max-width: 480px) {
+      main.app-shell { grid-template-columns: 1fr; }
+      .side-nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100dvh;
+        transform: translateX(-100%);
+        transition: transform var(--dur-base, 0ms) var(--ease-standard, ease);
+        box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+      }
+      .side-nav.nav-open {
+        transform: translateX(0);
+      }
+      .nav-hamburger { display: flex; }
     }
 
     .product-tag {
@@ -882,18 +1193,19 @@
 
     /* Bento — BRAND-STYLE-GUIDE §4 */
     .bento {
+      container-type: inline-size;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 24px;
     }
 
-    @media (max-width: 900px) {
+    @container (max-width: 640px) {
       .bento {
         grid-template-columns: repeat(2, 1fr);
       }
     }
 
-    @media (max-width: 600px) {
+    @container (max-width: 480px) {
       .bento {
         grid-template-columns: 1fr;
       }
@@ -1619,6 +1931,7 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <header
     class="site-header"
     aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual demo."
@@ -1667,8 +1980,78 @@
     </div>
   </header>
 
-  <main>
-    <div class="content-shell">
+  <main class="app-shell">
+    <nav class="side-nav" id="side-nav" aria-label="Dashboard pages">
+      <button class="nav-hamburger" id="nav-hamburger" type="button" aria-expanded="false" aria-label="Toggle navigation" aria-controls="side-nav">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+          <rect x="2" y="4" width="14" height="1.5" rx="1" fill="currentColor"/>
+          <rect x="2" y="8.25" width="14" height="1.5" rx="1" fill="currentColor"/>
+          <rect x="2" y="12.5" width="14" height="1.5" rx="1" fill="currentColor"/>
+        </svg>
+      </button>
+      <ul>
+        <li>
+          <a href="#overview" data-nav="overview" aria-current="page">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="1.5" y="1.5" width="5" height="5" rx="1"/>
+              <rect x="9.5" y="1.5" width="5" height="5" rx="1"/>
+              <rect x="1.5" y="9.5" width="5" height="5" rx="1"/>
+              <rect x="9.5" y="9.5" width="5" height="5" rx="1"/>
+            </svg>
+            <span class="nav-label">Overview</span>
+          </a>
+        </li>
+        <li>
+          <a href="#health" data-nav="health">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 3C6 3 4 4.5 4 6.5c0 3 4 6.5 4 6.5s4-3.5 4-6.5C12 4.5 10 3 8 3z"/>
+            </svg>
+            <span class="nav-label">Health</span>
+            <span class="nav-badge" id="badge-health" aria-label="0 issues" hidden></span>
+          </a>
+        </li>
+        <li>
+          <a href="#memory" data-nav="memory">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <ellipse cx="8" cy="8" rx="6" ry="3.5"/>
+              <path d="M2 8c0 3 2.69 5.5 6 5.5s6-2.5 6-5.5"/>
+            </svg>
+            <span class="nav-label">Memory</span>
+          </a>
+        </li>
+        <li>
+          <a href="#retrieval" data-nav="retrieval">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="7" cy="7" r="4.5"/>
+              <path d="M10.5 10.5L14 14"/>
+            </svg>
+            <span class="nav-label">Retrieval</span>
+          </a>
+        </li>
+        <li>
+          <a href="#agents" data-nav="agents">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="2.5"/>
+              <circle cx="2.5" cy="4" r="1.5"/>
+              <circle cx="13.5" cy="4" r="1.5"/>
+              <circle cx="2.5" cy="12" r="1.5"/>
+              <circle cx="13.5" cy="12" r="1.5"/>
+              <path d="M4 4.5L5.8 6.5M12 4.5L10.2 6.5M4 11.5L5.8 9.5M12 11.5L10.2 9.5"/>
+            </svg>
+            <span class="nav-label">Agents</span>
+          </a>
+        </li>
+        <li>
+          <a href="#integrity" data-nav="integrity">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 1.5L2 4.5v4c0 3.5 2.5 6.5 6 7 3.5-.5 6-3.5 6-7v-4L8 1.5z"/>
+            </svg>
+            <span class="nav-label">Integrity</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+    <div class="content-shell page-content" id="main-content" tabindex="-1">
       <p class="product-tag">tapps-brain</p>
       <h1 class="page-title">Memory health, <span class="gradient-text">at a glance</span></h1>
       <p class="page-subtitle">
@@ -1731,20 +2114,7 @@
         </button>
       </div>
 
-      <ul class="section-nav" aria-label="On-page sections">
-        <li><a href="#trust">Trust</a></li>
-        <li><a href="#scorecard">Scorecard</a></li>
-        <li><a href="#pulse">Pulse</a></li>
-        <li><a href="#retrieval">Retrieval</a></li>
-        <li><a href="#hive">Hive</a></li>
-        <li><a href="#agents">Agents</a></li>
-        <li><a href="#integrity">Integrity</a></li>
-        <li><a href="#velocity">Velocity</a></li>
-        <li><a href="#activity">Activity</a></li>
-        <li><a href="#diagnostics">Diagnostics</a></li>
-        <li><a href="#privacy">Privacy</a></li>
-      </ul>
-
+      <div data-page="overview">
       <div class="bento reveal-on-scroll" aria-label="Store snapshot summary" id="trust">
         <section class="tile hero" aria-label="Brain identity">
           <svg
@@ -1865,6 +2235,53 @@
         </section>
       </div>
 
+      <div class="health-summary-strip" id="health-summary-strip" aria-live="polite">
+        <div class="hs-banner" id="hs-banner" hidden></div>
+        <a href="#health" class="hs-badge hs-pass" id="hs-pass" aria-label="— passing checks — view health">
+          <span class="hs-count" id="hs-pass-count">—</span>
+          <span class="hs-label">Pass</span>
+        </a>
+        <a href="#health" class="hs-badge hs-warn" id="hs-warn" aria-label="— warnings — view health">
+          <span class="hs-count" id="hs-warn-count">—</span>
+          <span class="hs-label">Warn</span>
+        </a>
+        <a href="#health" class="hs-badge hs-fail" id="hs-fail" aria-label="— failures — view health">
+          <span class="hs-count" id="hs-fail-count">—</span>
+          <span class="hs-label">Fail</span>
+        </a>
+      </div>
+
+      <nav class="qnav-grid" aria-label="Dashboard pages">
+        <a href="#health" class="qnav-tile">
+          <p class="qnav-title">Health</p>
+          <p class="qnav-desc">Scorecard — pass, warn, and fail checks for this brain</p>
+          <span class="qnav-metric" id="qnav-health-metric">—</span>
+        </a>
+        <a href="#memory" class="qnav-tile">
+          <p class="qnav-title">Memory</p>
+          <p class="qnav-desc">Tier distribution, groups, tags, and access patterns</p>
+          <span class="qnav-metric" id="qnav-memory-metric">—</span>
+        </a>
+        <a href="#retrieval" class="qnav-tile">
+          <p class="qnav-title">Retrieval</p>
+          <p class="qnav-desc">Effective mode, query stats, and vector index details</p>
+          <span class="qnav-metric" id="qnav-retrieval-metric">—</span>
+        </a>
+        <a href="#agents" class="qnav-tile">
+          <p class="qnav-title">Agents &amp; Hive</p>
+          <p class="qnav-desc">Agent topology, namespace registry, and Hive hub status</p>
+          <span class="qnav-metric" id="qnav-agents-metric">—</span>
+        </a>
+        <a href="#integrity" class="qnav-tile">
+          <p class="qnav-title">Integrity</p>
+          <p class="qnav-desc">Data checks, privacy tier, velocity, and export workflow</p>
+          <span class="qnav-metric" id="qnav-integrity-metric">—</span>
+        </a>
+      </nav>
+
+      </div>
+
+      <div data-page="health" hidden>
       <section class="dash-section reveal-on-scroll" id="scorecard">
         <div class="dash-h2-row">
           <h2>Scorecard</h2>
@@ -1920,7 +2337,9 @@
           <p class="sub" id="copy-issue-status" style="margin-top: 0.65rem"></p>
         </div>
       </section>
+      </div>
 
+      <div data-page="memory" hidden>
       <section class="dash-section reveal-on-scroll" id="pulse">
         <div class="dash-h2-row">
           <h2>Pulse</h2>
@@ -1959,7 +2378,9 @@
           <div id="tier-bars" class="bar-chart"></div>
         </div>
       </section>
+      </div>
 
+      <div data-page="retrieval" hidden>
       <section class="dash-section reveal-on-scroll" id="retrieval">
         <div class="dash-h2-row">
           <h2>Retrieval &amp; vectors</h2>
@@ -2033,7 +2454,9 @@
         </div>
 
       </section>
+      </div>
 
+      <div data-page="agents" hidden>
       <section class="dash-section reveal-on-scroll" id="hive">
         <div class="dash-h2-row">
           <h2>Hive hub</h2>
@@ -2127,7 +2550,9 @@
           </table>
         </div>
       </section>
+      </div>
 
+      <div data-page="integrity" hidden>
       <section class="dash-section reveal-on-scroll" id="integrity">
         <div class="dash-h2-row">
           <h2>Integrity &amp; limits</h2>
@@ -2319,6 +2744,7 @@
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
         <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite">—</span>
       </section>
+      </div>
     </div>
   </main>
 
@@ -2348,6 +2774,7 @@
     </p>
   </footer>
 
+  <script src="brain-visual-router.js"></script>
   <script src="brain-visual-help.js"></script>
   <script>
     /* ── Enter-view reveal via IntersectionObserver ────────────────────────────
@@ -2770,6 +3197,93 @@
       }
     }
 
+    // ── Nav badge counts (STORY-068.1) ────────────────────────────────────────
+    // ── Overview health-summary strip + quick-nav metrics (STORY-068.2) ────────
+    var _lastFailCount = 0;
+
+    function updateHealthSummaryStrip(data) {
+      var checks = Array.isArray(data && data.scorecard) ? data.scorecard : [];
+      var pass = 0, warn = 0, fail = 0;
+      checks.forEach(function (c) {
+        if (c.status === "ok") pass++;
+        else if (c.status === "warn") warn++;
+        else if (c.status === "fail") fail++;
+      });
+
+      var passCountEl = document.getElementById("hs-pass-count");
+      var warnCountEl = document.getElementById("hs-warn-count");
+      var failCountEl = document.getElementById("hs-fail-count");
+      var passA = document.getElementById("hs-pass");
+      var warnA = document.getElementById("hs-warn");
+      var failA = document.getElementById("hs-fail");
+      var banner = document.getElementById("hs-banner");
+
+      if (passCountEl) passCountEl.textContent = String(pass);
+      if (warnCountEl) warnCountEl.textContent = String(warn);
+      if (failCountEl) failCountEl.textContent = String(fail);
+      if (passA) passA.setAttribute("aria-label", pass + " passing check" + (pass === 1 ? "" : "s") + " — view health");
+      if (warnA) {
+        warnA.setAttribute("aria-label", warn + " warning" + (warn === 1 ? "" : "s") + " — view health");
+        warn > 0 ? warnA.setAttribute("data-nonzero", "") : warnA.removeAttribute("data-nonzero");
+      }
+      if (failA) {
+        failA.setAttribute("aria-label", fail + " failure" + (fail === 1 ? "" : "s") + " — view health");
+        fail > 0 ? failA.setAttribute("data-nonzero", "") : failA.removeAttribute("data-nonzero");
+      }
+
+      // Banner: role=alert on first 0→N fail transition; role=status otherwise
+      if (banner) {
+        if (fail > 0) {
+          banner.textContent = fail + " FAIL — navigate to Health to triage";
+          if (_lastFailCount === 0) banner.setAttribute("role", "alert");
+          else banner.setAttribute("role", "status");
+          banner.removeAttribute("hidden");
+        } else if (warn > 0) {
+          banner.textContent = warn + " WARN — navigate to Health to review";
+          banner.setAttribute("role", "status");
+          banner.removeAttribute("hidden");
+        } else {
+          banner.setAttribute("hidden", "");
+        }
+      }
+      _lastFailCount = fail;
+
+      // Quick-nav live metrics
+      var health = (data && data.health) ? data.health : {};
+      var scopeCounts = (data && data.agent_scope_counts) ? data.agent_scope_counts : {};
+      var totalScopes = Object.keys(scopeCounts).reduce(function (n, k) { return n + Number(scopeCounts[k] || 0); }, 0);
+      var tampered = health.integrity_tampered !== undefined ? Number(health.integrity_tampered) : 0;
+
+      var metrics = {
+        "qnav-health-metric":    fail > 0 ? fail + " fail" : warn > 0 ? warn + " warn" : "All pass",
+        "qnav-memory-metric":    health.entry_count !== undefined ? String(health.entry_count) + " entries" : "—",
+        "qnav-retrieval-metric": data && data.retrieval_effective_mode ? String(data.retrieval_effective_mode) : "—",
+        "qnav-agents-metric":    totalScopes > 0 ? totalScopes + " scopes" : "—",
+        "qnav-integrity-metric": tampered > 0 ? tampered + " tampered" : "Clean"
+      };
+      Object.keys(metrics).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = metrics[id];
+      });
+    }
+
+    function updateNavBadges(data) {
+      var badge = document.getElementById("badge-health");
+      if (!badge) return;
+      var checks = (data && Array.isArray(data.scorecard)) ? data.scorecard : [];
+      var issues = checks.filter(function (c) {
+        return c && (c.status === "fail" || c.status === "warn");
+      }).length;
+      if (issues > 0) {
+        badge.textContent = String(issues);
+        badge.setAttribute("aria-label", String(issues) + " issue" + (issues === 1 ? "" : "s"));
+        badge.removeAttribute("hidden");
+      } else {
+        badge.setAttribute("hidden", "");
+        badge.setAttribute("aria-label", "0 issues");
+      }
+    }
+
     function applySnapshot(data) {
       if (!data || typeof data !== "object") return;
 
@@ -3099,6 +3613,8 @@
           (fpStr ? " · fingerprint ready" : ""),
         true,
       );
+      if (typeof updateHealthSummaryStrip === "function") { updateHealthSummaryStrip(data); }
+      if (typeof updateNavBadges === "function") { updateNavBadges(data); }
     }
 
     el("copy-fp").addEventListener("click", async () => {

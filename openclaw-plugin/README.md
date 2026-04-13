@@ -90,7 +90,7 @@ OpenClaw
   └── tapps-brain plugin (TypeScript, this package)
         └── @modelcontextprotocol/sdk (StdioClientTransport + Client)
               └── tapps-brain-mcp (Python, spawned as child process)
-                    └── MemoryStore (SQLite, WAL, FTS5)
+                    └── MemoryStore (PostgreSQL, pgvector, tsvector)
 ```
 
 The plugin is a thin wrapper. All memory logic lives in the Python MCP backend.

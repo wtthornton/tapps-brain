@@ -186,7 +186,7 @@ resources:
   - uri: memory://stats
     description: Entry count, tier distribution, schema version, package version, profile name, capacity
   - uri: memory://health
-    description: Store health report — DB status, WAL mode, decay health, consolidation readiness
+    description: Store health report — DB status, connection pool health, decay health, consolidation readiness
   - uri: memory://metrics
     description: Operation counters and latency histograms for all operations
   - uri: memory://feedback

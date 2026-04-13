@@ -777,26 +777,21 @@ entry counts, tier distribution, schema version, and last GC run.
 
 ## Where data is stored
 
-```
-{project-dir}/
-└── .tapps-brain/
-    └── memory/
-        ├── memory.db              # SQLite (WAL mode, FTS5)
-        ├── memory_log.jsonl       # Audit log of all mutations
-        └── archive.jsonl          # GC'd entries (never deleted)
-```
+All durable stores use **PostgreSQL** (ADR-007). No local `.db` files exist in v3.
 
-Global federation hub:
+| Store | DSN env var | Table |
+|-------|-------------|-------|
+| Private memory (per-project/agent) | `TAPPS_BRAIN_DATABASE_URL` | `private_memories` |
+| Audit log | same | `audit_log` |
+| GC archive | same | `gc_archive` |
+| Hive (cross-agent) | `TAPPS_BRAIN_HIVE_DSN` | `hive_memories` |
+| Federation hub | `TAPPS_BRAIN_FEDERATION_DSN` | `federated_memories` |
 
-```
-~/.tapps-brain/
-├── memory/
-│   └── federated.db              # Cross-project federation hub
-└── hive/
-    └── hive.db                   # Multi-agent Hive store
-```
+Local files written by v3:
+- `{project-dir}/.tapps-brain/profile.yaml` — custom profile (if any)
+- `{project-dir}/.tapps-brain/agents.yaml` — agent registry (file-based fallback; Postgres registry used when DSN is set)
 
-Max 500 entries per project. Lowest-confidence entries are evicted when the cap is hit.
+Max **5,000** entries per project (default). Lowest-confidence entries are evicted when the cap is hit.
 
 ---
 

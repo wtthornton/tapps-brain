@@ -1158,7 +1158,7 @@ function registerResourceAndPromptTools(
   // Resource-backed tools (wrap MCP resources/read)
   for (const [name, desc, uri] of [
     ["memory_stats", "Return store statistics: entry count, tier distribution, capacity.", "memory://stats"],
-    ["memory_health", "Return store health: DB status, WAL mode, decay health.", "memory://health"],
+    ["memory_health", "Return store health: DB status, connection pool health, decay health.", "memory://health"],
     ["memory_metrics", "Return operation metrics: counters and latency histograms.", "memory://metrics"],
   ] as const) {
     api.registerTool({
@@ -1244,7 +1244,7 @@ export default definePluginEntry({
   name: "tapps-brain — Persistent Memory",
   description:
     "Persistent cross-session memory powered by tapps-brain. " +
-    "SQLite-backed knowledge store with BM25 ranking, exponential decay, " +
+    "PostgreSQL-backed knowledge store with BM25 ranking, exponential decay, " +
     "automatic consolidation, cross-project federation, and Hive multi-agent sharing.",
   kind: "context-engine",
 

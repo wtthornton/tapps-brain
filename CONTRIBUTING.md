@@ -8,7 +8,7 @@ Thanks for helping improve tapps-brain. This project uses **uv** for environment
 git clone https://github.com/wtthornton/tapps-brain.git
 cd tapps-brain
 uv sync --group dev
-# Optional extras: see pyproject.toml (e.g. --extra encryption)
+# Optional extras: cli, mcp, reranker, otel, visual (see pyproject.toml)
 ```
 
 Activate the virtualenv uv creates (`.venv` at the repo root) or prefix commands with `uv run`.

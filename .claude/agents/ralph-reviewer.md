@@ -57,6 +57,6 @@ If the work relates to new features, GitHub issues, labels, or planning docs:
 2. Confirm the proposal has a completed scorecard + hard gates (no blank gates).
 3. Confirm a single triage decision label is appropriate (`triage:approved`, `triage:rescope`, `triage:defer`, `triage:close-candidate`).
 4. For `triage:close-candidate`, verify acceptance criteria against shipped behavior with evidence.
-5. Flag architecture invariant violations (deterministic core, synchronous core, SQLite write-through, backward compatibility).
+5. Flag architecture invariant violations (deterministic core, synchronous core, PostgreSQL write-through, backward compatibility).
 
 Include governance findings under **Warnings** or **Critical Issues** as appropriate.

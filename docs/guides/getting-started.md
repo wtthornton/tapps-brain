@@ -103,7 +103,7 @@ pip install tapps-brain[mcp]
 pip install tapps-brain[all]
 ```
 
-> **Note:** The `[all]` extra does not include `[encryption]` or `[otel]` because they require platform-specific system libraries. Install those explicitly when needed.
+> **Note:** The `[all]` extra bundles `cli + mcp + reranker` only — it does not include `[otel]` or `[visual]`. Install those explicitly when needed (`pip install tapps-brain[otel]`, `pip install tapps-brain[visual]`).
 
 ---
 

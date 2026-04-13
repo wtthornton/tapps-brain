@@ -15,7 +15,7 @@ User message
     ▼
 ┌──────────────────┐
 │ RecallOrchestrator│
-│   .recall()      │──→ MemoryRetriever (BM25/FTS5/vector)
+│   .recall()      │──→ MemoryRetriever (BM25/tsvector/pgvector)
 │                  │──→ Safety checks
 │                  │──→ Token budget enforcement
 │                  │──→ Scope/tier/branch filters

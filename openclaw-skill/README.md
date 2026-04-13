@@ -53,7 +53,7 @@ plugin:
 4. **Compact** — flush session context via `memory_ingest` / session indexing.
 5. **Dispose** — stop the MCP child cleanly.
 
-All storage is local SQLite with WAL mode -- no cloud dependencies.
+All storage is PostgreSQL (pgvector + tsvector) -- no cloud dependencies. Requires `TAPPS_BRAIN_DATABASE_URL` pointing to a Postgres instance.
 
 ## Configuration
 

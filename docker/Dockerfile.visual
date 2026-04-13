@@ -6,6 +6,7 @@ FROM nginx:alpine
 #   docker run -v ./my-export.json:/usr/share/nginx/html/brain-visual.json ...
 COPY examples/brain-visual/index.html /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-help.js /usr/share/nginx/html/
+COPY examples/brain-visual/brain-visual-router.js /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual.demo.json /usr/share/nginx/html/
 COPY examples/brain-visual/nlt-an-mark-sm.svg /usr/share/nginx/html/
 COPY examples/brain-visual/README.md /usr/share/nginx/html/
