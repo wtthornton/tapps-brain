@@ -15,21 +15,42 @@ Quick reference for Docker-based Hive deployment.
 
 ## Quick Start
 
+The recommended way to build and deploy is through the Makefile targets from the repository root:
+
+```bash
+# Full deploy: build wheel → build images → run migrations → restart services
+make hive-deploy
+```
+
+Other useful targets:
+
+| Target | What it does |
+|--------|--------------|
+| `make hive-deploy` | Full deploy (safe to rerun on every release) |
+| `make hive-build` | Build wheel + Docker images only |
+| `make hive-up` | Start services without rebuilding |
+| `make hive-down` | Stop containers (keeps volumes) |
+| `make hive-logs` | Tail logs from all hive services |
+
+### Manual steps (if not using make)
+
 ```bash
 # 1. Create the secrets directory and password file
 echo "your-secure-password" > docker/secrets/tapps_hive_password.txt
 
-# 2. Copy and edit environment
-cp docker/.env.example docker/.env
+# 2. Build the wheel
+uv build
 
-# 3. Start the stack
-docker compose -f docker/docker-compose.hive.yaml up -d
+# 3. Build images and start the stack
+docker compose -f docker/docker-compose.hive.yaml build
+docker compose -f docker/docker-compose.hive.yaml run --rm tapps-hive-migrate
+docker compose -f docker/docker-compose.hive.yaml up -d tapps-visual
 
 # 4. Verify
 docker compose -f docker/docker-compose.hive.yaml ps
 ```
 
-The migration sidecar runs once on startup, applies any pending schema
+The migration container (`tapps-hive-migrate`) runs once, applies any pending schema
 migrations, and exits. The database container stays running with a health
 check on `pg_isready`.
 

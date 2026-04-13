@@ -207,7 +207,7 @@ tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_HIVE_DSN"
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | `connection refused` | DB not running or wrong port | Check `docker ps` and `TAPPS_HIVE_PORT` |
-| `password authentication failed` | Mismatched secret vs env var | Ensure `TAPPS_HIVE_PASSWORD` matches `secrets/tapps_hive_password.txt` |
+| `password authentication failed` | Mismatched secret vs env var | Ensure `TAPPS_HIVE_PASSWORD` matches `docker/secrets/tapps_hive_password.txt` |
 | `extension "vector" does not exist` | Wrong Postgres image | Use `pgvector/pgvector:pg17` |
 
 ---
@@ -240,6 +240,6 @@ Key runbooks to rehearse before production go-live:
 
 | Scenario | Runbook |
 |----------|---------|
-| Daily pg_dump backup | [Runbook 1](../operations/postgres-backup-runbook.md#runbook-1--daily-backup-pg_dump) |
-| Full restore from pg_dump | [Runbook 2](../operations/postgres-backup-runbook.md#runbook-2--restore-from-pg_dump) |
-| Hive replica failover | [Runbook 5](../operations/postgres-backup-runbook.md#runbook-5--hive-replica-failover) |
+| Daily pg_dump backup | [Runbook 1](../operations/postgres-backup-runbook.md) |
+| Full restore from pg_dump | [Runbook 2](../operations/postgres-backup-runbook.md) |
+| Hive replica failover | [Runbook 5](../operations/postgres-backup-runbook.md) |

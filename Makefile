@@ -9,16 +9,18 @@
 #
 # See docs/guides/postgres-dsn.md for all env-var options.
 
-COMPOSE := docker compose
-PYTEST  := uv run pytest
-RUFF    := uv run ruff
-MYPY    := uv run mypy
+COMPOSE       := docker compose
+HIVE_COMPOSE  := docker compose -f docker/docker-compose.hive.yaml
+PYTEST        := uv run pytest
+RUFF          := uv run ruff
+MYPY          := uv run mypy
 
 # DSN used by brain-test and brain-psql
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
-        brain-lint brain-type brain-qa brain-psql
+        brain-lint brain-type brain-qa brain-psql \
+        hive-build hive-deploy hive-up hive-down hive-logs
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -80,3 +82,26 @@ brain-qa:  ## Full QA: lint + type + migrations + tests (mirrors CI)
 	$(MAKE) brain-type
 	$(MAKE) brain-migrate
 	$(MAKE) brain-test
+
+# ---------------------------------------------------------------------------
+# Local hive (Docker) deployment
+# ---------------------------------------------------------------------------
+
+hive-build:  ## Build wheel + Docker images (cleans dist first to avoid stale wheels)
+	rm -f dist/*.whl dist/*.tar.gz
+	uv build
+	$(HIVE_COMPOSE) build
+
+hive-deploy:  ## Full deploy to local Docker: build → migrate → restart (safe to rerun)
+	$(MAKE) hive-build
+	$(HIVE_COMPOSE) run --rm tapps-hive-migrate
+	$(HIVE_COMPOSE) up -d tapps-visual
+
+hive-up:  ## Start hive services without rebuilding
+	$(HIVE_COMPOSE) up -d tapps-hive-db tapps-visual
+
+hive-down:  ## Stop hive containers (keeps volumes)
+	$(HIVE_COMPOSE) down
+
+hive-logs:  ## Tail logs from running hive services
+	$(HIVE_COMPOSE) logs -f

@@ -253,7 +253,7 @@ This integration guide intentionally **does not** cover:
   tools as the primary memory surface.  There is no duplicate REST memory API
   for list/get/create/delete operations.  Use the MCP server for IDE-connected
   agents; use `AgentBrain` for in-process Python agents.  See
-  [HTTP adapter ADR](../planning/adr/ADR-009-no-http-without-mcp-library-parity.md)
+  [HTTP adapter ADR](../planning/adr/ADR-008-no-http-without-mcp-library-parity.md)
   for the parity requirement.
 - **AgentForge internal routing** — how AgentForge selects agents for a prompt
   is out of scope; this guide covers only the memory integration layer.

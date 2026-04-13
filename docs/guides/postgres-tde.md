@@ -20,7 +20,7 @@ tapps-brain Postgres deployment.
 5. [Key Provider Configuration](#key-provider-configuration)
    - [HashiCorp Vault](#hashicorp-vault)
    - [OpenBao (open-source Vault fork)](#openbao-open-source-vault-fork)
-   - [File-based key (dev / air-gapped)](#file-based-key-dev--air-gapped)
+   - [File-based key (dev and air-gapped)](#file-based-key-dev-and-air-gapped)
 6. [Encrypt Tables and WAL](#encrypt-tables-and-wal)
 7. [Key Rotation Procedure](#key-rotation-procedure)
 8. [Verifying Encryption](#verifying-encryption)
@@ -241,7 +241,7 @@ SELECT pg_tde_set_principal_key('tapps-brain-master', 'openbao-provider');
 OpenBao self-hosted is the recommended default for new deployments where Vault Enterprise
 licensing is a concern.
 
-### File-based key (dev / air-gapped)
+### File-based key (dev and air-gapped)
 
 > **Warning:** File-based keys are stored on the same host as the data. This provides
 > protection against cold-storage theft only, not against a compromised host. Do not use
