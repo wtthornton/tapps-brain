@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
 
 from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
+from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -280,6 +281,26 @@ _BEARER_PARTS = 2
 
 # TTL for the /snapshot cache (seconds).
 _SNAPSHOT_TTL_SECONDS: float = 15.0
+
+
+def _filter_snapshot_by_project(
+    payload: dict[str, Any],
+    project_id: str,
+) -> dict[str, Any]:
+    """Return a shallow copy of *payload* with diagnostics/feedback scoped to
+    *project_id* (STORY-069.7).
+
+    Entries missing ``project_id`` are **excluded** when the filter is active;
+    this prevents legacy single-tenant rows from leaking across tenants.
+    """
+    filtered = dict(payload)
+    for key in ("diagnostics_history", "feedback_events"):
+        rows = filtered.get(key) or []
+        filtered[key] = [
+            row for row in rows
+            if isinstance(row, dict) and row.get("project_id") == project_id
+        ]
+    return filtered
 
 
 def _service_version() -> str:
@@ -606,25 +627,28 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if path not in self._PUBLIC_PATHS and not self._check_auth():
                 return  # _check_auth already sent the 401/403 response
 
-            if path in ("/", "/health"):
-                self._handle_health()
-            elif path == "/ready":
-                self._handle_ready()
-            elif path == "/metrics":
-                self._handle_metrics()
-            elif path == "/info":
-                self._handle_info()
-            elif path == "/snapshot":
-                self._handle_snapshot()
-            elif path == "/openapi.json":
-                self._handle_openapi()
-            elif path == "/admin/projects":
-                self._handle_admin_projects_list()
-            elif path.startswith("/admin/projects/"):
-                pid = path[len("/admin/projects/") :]
-                self._handle_admin_project_show(pid)
-            else:
-                self._send_json(404, {"error": "not_found", "path": path})
+            try:
+                if path in ("/", "/health"):
+                    self._handle_health()
+                elif path == "/ready":
+                    self._handle_ready()
+                elif path == "/metrics":
+                    self._handle_metrics()
+                elif path == "/info":
+                    self._handle_info()
+                elif path == "/snapshot":
+                    self._handle_snapshot()
+                elif path == "/openapi.json":
+                    self._handle_openapi()
+                elif path == "/admin/projects":
+                    self._handle_admin_projects_list()
+                elif path.startswith("/admin/projects/"):
+                    pid = path[len("/admin/projects/") :]
+                    self._handle_admin_project_show(pid)
+                else:
+                    self._send_json(404, {"error": "not_found", "path": path})
+            except _ProjectNotRegisteredError as exc:  # STORY-069.4
+                self._send_project_not_registered(exc.project_id)
 
     # ------------------------------------------------------------------
     # Write methods — EPIC-069 admin surface
@@ -633,22 +657,28 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler contract)
         """Handle POST requests — today only the admin project surface."""
         path = self.path.split("?", 1)[0]
-        if path == "/admin/projects":
-            self._handle_admin_projects_register()
-        elif path.startswith("/admin/projects/") and path.endswith("/approve"):
-            pid = path[len("/admin/projects/") : -len("/approve")]
-            self._handle_admin_project_approve(pid)
-        else:
-            self._send_json(404, {"error": "not_found", "path": path})
+        try:
+            if path == "/admin/projects":
+                self._handle_admin_projects_register()
+            elif path.startswith("/admin/projects/") and path.endswith("/approve"):
+                pid = path[len("/admin/projects/") : -len("/approve")]
+                self._handle_admin_project_approve(pid)
+            else:
+                self._send_json(404, {"error": "not_found", "path": path})
+        except _ProjectNotRegisteredError as exc:  # STORY-069.4
+            self._send_project_not_registered(exc.project_id)
 
     def do_DELETE(self) -> None:  # noqa: N802
         """Handle DELETE requests — admin project removal."""
         path = self.path.split("?", 1)[0]
-        if path.startswith("/admin/projects/"):
-            pid = path[len("/admin/projects/") :]
-            self._handle_admin_project_delete(pid)
-        else:
-            self._send_json(404, {"error": "not_found", "path": path})
+        try:
+            if path.startswith("/admin/projects/"):
+                pid = path[len("/admin/projects/") :]
+                self._handle_admin_project_delete(pid)
+            else:
+                self._send_json(404, {"error": "not_found", "path": path})
+        except _ProjectNotRegisteredError as exc:  # STORY-069.4
+            self._send_project_not_registered(exc.project_id)
 
     def _handle_health(self) -> None:
         """Liveness: always 200 while process is alive."""
@@ -705,10 +735,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
           the store with O(n) list_all() calls on rapid polls.
         - Always includes ``Access-Control-Allow-Origin: *`` so the nginx-served
           dashboard at port 8088 can reach the adapter at port 8080 directly.
+
+        STORY-069.7: when a ``?project=<id>`` query parameter is provided,
+        ``diagnostics_history`` and ``feedback_events`` are filtered to rows
+        whose ``project_id`` matches exactly.  Rows missing ``project_id``
+        (legacy / single-tenant) are excluded when the filter is active.
+        Unfiltered behavior (no ``?project=``) is unchanged.
         """
         if self._store is None:
             self._send_json_cors(503, {"error": "no store configured"})
             return
+
+        # Parse the optional ``project`` query param.  Empty string = unfiltered.
+        from urllib.parse import parse_qs, urlparse
+
+        _query = urlparse(self.path).query
+        _params = parse_qs(_query)
+        _project_values = _params.get("project") or []
+        project_filter = (_project_values[0].strip() if _project_values else "") or None
 
         cls = type(self)
         with cls._snapshot_lock:
@@ -726,7 +770,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 cls._snapshot_cache = snapshot
                 cls._snapshot_cache_at = now
 
-        self._send_json_cors(200, snapshot.model_dump(mode="json"))
+        payload = snapshot.model_dump(mode="json")
+        if project_filter is not None:
+            payload = _filter_snapshot_by_project(payload, project_filter)
+        self._send_json_cors(200, payload)
 
     # ------------------------------------------------------------------
     # EPIC-069 admin handlers (/admin/projects/*)
@@ -916,6 +963,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _send_project_not_registered(self, project_id: str) -> None:
+        """STORY-069.4: map ProjectNotRegisteredError to a structured 403."""
+        self._send_json(
+            403,
+            {"error": "project_not_registered", "project_id": project_id},
+        )
 
     def _send_json(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body).encode("utf-8")

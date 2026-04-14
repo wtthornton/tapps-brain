@@ -22,6 +22,10 @@ def _make_registry() -> tuple:
     mock_cursor = MagicMock()
     mock_cm.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.get_connection.return_value.__exit__ = MagicMock(return_value=False)
+    # EPIC-069 STORY-069.8: registry now runs under admin_context so it can
+    # bypass the per-tenant RLS policy on project_profiles.
+    mock_cm.admin_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+    mock_cm.admin_context.return_value.__exit__ = MagicMock(return_value=False)
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
     return ProjectRegistry(mock_cm), mock_cursor, mock_conn

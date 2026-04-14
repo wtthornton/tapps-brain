@@ -6,15 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-04-14
+
 ### Added
 - multi-tenant project registration — `project_profiles` registry table (migration 008), `ProjectRegistry` module, `project_resolver` with `_meta > X-Tapps-Project > TAPPS_BRAIN_PROJECT > "default"` precedence (epic-069, adr-010)
 - `tapps-brain project register|list|show|approve|delete` CLI sub-app for profile authoring against a deployed brain (story-069.5)
 - HTTP admin surface `GET/POST /admin/projects`, `POST /admin/projects/{id}/approve`, `DELETE /admin/projects/{id}`, gated by `TAPPS_BRAIN_ADMIN_TOKEN` (story-069.5)
 - `MemoryStore` honors `TAPPS_BRAIN_PROJECT` env as a human-readable `project_id` slug and consults the project-profile registry before falling back to built-in defaults (story-069.2)
+- per-call MCP dispatch — bounded LRU `_StoreCache` keyed by `_meta.project_id` with close-on-evict; `TAPPS_BRAIN_STORE_CACHE_SIZE` env (default 16); stdio path unchanged (story-069.3)
+- structured tenant-rejection errors — HTTP 403 `{"error":"project_not_registered","project_id":...}` and JSON-RPC `-32002` with structured `data` payload (story-069.4)
+- `project_id` bound into structlog save/recall/feedback contexts; `/snapshot?project=<id>` filter; project dropdown in brain-visual dashboard (story-069.7)
+- migration `009_project_rls.sql` enables RLS on `private_memories` (fail-closed — missing `app.project_id` returns zero rows) and `project_profiles` (admin bypass via `app.is_admin='true'`) (story-069.8)
+- `PostgresConnectionManager.project_context()` / `admin_context()` using `SET LOCAL` (transaction-scoped) for RLS session vars (story-069.8)
+- `tests/integration/test_tenant_isolation.py` — 6 live-Postgres tenant-isolation tests gated on `TAPPS_TEST_POSTGRES_DSN` (story-069.8)
 - Agents page with SVG topology diagram + agent-detail drawer (story-068.6)
 
 ### Changed
 - Profile selection for deployed brains no longer uses filesystem discovery — `.tapps-brain/profile.yaml` is now a seed document consumed by `tapps-brain project register`; in-process `AgentBrain` / `MemoryStore` usage is unchanged (adr-010)
+- ADR-009 revisited (2026-04-14): RLS is now shipped on `private_memories` and `project_profiles`, not deferred, now that ADR-010 makes tenancy explicit end-to-end
+
+### Security
+- Row-Level Security enabled on private-backend tenanted tables (`private_memories`, `project_profiles`) as defence-in-depth against app-layer filter bugs. A code path that forgets to pass `project_id` now returns zero rows instead of silently leaking another tenant's data. Relies on the application connecting as a non-owner, non-superuser role; migration 009 does NOT set `FORCE ROW LEVEL SECURITY` (matches existing `hive_memories` pattern). (story-069.8)
 
 ### Removed
 - Demo snapshot fallback in brain-visual dashboard: deleted `brain-visual.demo.json`, the "Load static demo" button, and the "Load snapshot file" manual upload; dashboard is live-only against the `/snapshot` endpoint

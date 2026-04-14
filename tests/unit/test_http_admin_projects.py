@@ -174,6 +174,57 @@ class TestAdminRouting:
         assert status == 503
 
 
+class TestProjectNotRegisteredMapping:
+    """STORY-069.4: ProjectNotRegisteredError → 403 with structured body."""
+
+    def test_get_maps_to_403_structured(
+        self, adapter_admin, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import http_adapter as mod
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        _, port = adapter_admin
+
+        def _boom(self, project_id: str) -> None:
+            raise ProjectNotRegisteredError(project_id)
+
+        monkeypatch.setattr(
+            mod._Handler, "_handle_admin_project_show", _boom, raising=True
+        )
+        status, body = _request(
+            port,
+            "GET",
+            "/admin/projects/ghost",
+            headers={"Authorization": "Bearer s3cret"},
+        )
+        assert status == 403
+        assert body == {"error": "project_not_registered", "project_id": "ghost"}
+
+    def test_post_maps_to_403_structured(
+        self, adapter_admin, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain import http_adapter as mod
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        _, port = adapter_admin
+
+        def _boom(self) -> None:
+            raise ProjectNotRegisteredError("ghost")
+
+        monkeypatch.setattr(
+            mod._Handler, "_handle_admin_projects_register", _boom, raising=True
+        )
+        status, body = _request(
+            port,
+            "POST",
+            "/admin/projects",
+            headers={"Authorization": "Bearer s3cret"},
+            body={"project_id": "ghost"},
+        )
+        assert status == 403
+        assert body == {"error": "project_not_registered", "project_id": "ghost"}
+
+
 class TestCorsPreflight:
     def test_options_advertises_write_methods(self, adapter_admin) -> None:
         _, port = adapter_admin

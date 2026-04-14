@@ -3524,3 +3524,210 @@ class TestGetStoreHiveWiring:
         with pytest.raises(ValueError, match="ADR-007"):
             store = _get_store(tmp_path, enable_hive=True)
             store.close()
+
+
+class TestProjectNotRegisteredMapping:
+    """STORY-069.4: ProjectNotRegisteredError → JSON-RPC -32002 with structured data."""
+
+    def test_create_server_maps_to_mcp_error_minus_32002(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from mcp.shared.exceptions import McpError
+
+        from tapps_brain import mcp_server as ms
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        def _boom(*args, **kwargs):
+            raise ProjectNotRegisteredError("ghost")
+
+        monkeypatch.setattr(ms, "_get_store", _boom)
+
+        with pytest.raises(McpError) as exc:
+            ms.create_server(tmp_path, enable_hive=False)
+
+        err = exc.value.error
+        assert err.code == -32002
+        assert err.message == "project_not_registered"
+        assert err.data == {"project_id": "ghost"}
+
+
+# ---------------------------------------------------------------------------
+# STORY-069.3 — per-call project_id dispatch
+# ---------------------------------------------------------------------------
+
+
+class _FakeStore:
+    """Minimal stand-in for MemoryStore used to exercise the LRU cache
+    without touching Postgres."""
+
+    instances: list["_FakeStore"] = []
+
+    def __init__(self, project_id: str) -> None:
+        self.project_id = project_id
+        self.closed = False
+        self.close_calls = 0
+        _FakeStore.instances.append(self)
+
+    def close(self) -> None:
+        self.closed = True
+        self.close_calls += 1
+
+
+class TestStoreCacheLRU:
+    """STORY-069.3 — bounded LRU of MemoryStores keyed by project_id."""
+
+    def test_same_project_id_returns_same_instance(self) -> None:
+        from tapps_brain.mcp_server import _StoreCache
+
+        cache = _StoreCache(maxsize=4)
+        made: list[_FakeStore] = []
+
+        def factory_for(pid: str):
+            def _f() -> _FakeStore:
+                s = _FakeStore(pid)
+                made.append(s)
+                return s
+
+            return _f
+
+        s1 = cache.get_or_create("proj-a", factory_for("proj-a"))
+        s2 = cache.get_or_create("proj-a", factory_for("proj-a"))
+        assert s1 is s2
+        assert len(made) == 1
+
+    def test_eviction_closes_store(self) -> None:
+        from tapps_brain.mcp_server import _StoreCache
+
+        cache = _StoreCache(maxsize=2)
+        stores: dict[str, _FakeStore] = {}
+
+        def factory_for(pid: str):
+            def _f() -> _FakeStore:
+                s = _FakeStore(pid)
+                stores[pid] = s
+                return s
+
+            return _f
+
+        cache.get_or_create("a", factory_for("a"))
+        cache.get_or_create("b", factory_for("b"))
+        # Touch 'a' so 'b' becomes LRU.
+        cache.get_or_create("a", factory_for("a"))
+        cache.get_or_create("c", factory_for("c"))
+
+        assert stores["b"].closed is True
+        assert stores["a"].closed is False
+        assert stores["c"].closed is False
+        assert "b" not in cache
+        assert "a" in cache and "c" in cache
+
+    def test_maxsize_respects_env(self, monkeypatch) -> None:
+        from tapps_brain.mcp_server import _StoreCache
+
+        monkeypatch.setenv("TAPPS_BRAIN_STORE_CACHE_SIZE", "3")
+        cache = _StoreCache()
+        assert cache.maxsize == 3
+
+    def test_concurrent_get_or_create_same_key(self) -> None:
+        """Two threads racing on the same project_id must share one store."""
+        import threading
+
+        from tapps_brain.mcp_server import _StoreCache
+
+        cache = _StoreCache(maxsize=4)
+        barrier = threading.Barrier(2)
+        made: list[_FakeStore] = []
+
+        def factory() -> _FakeStore:
+            # Force interleave so both threads enter the factory near-
+            # simultaneously if the lock isn't doing its job.
+            barrier.wait(timeout=2)
+            s = _FakeStore("race")
+            made.append(s)
+            return s
+
+        results: list[Any] = [None, None]
+
+        def worker(idx: int) -> None:
+            results[idx] = cache.get_or_create("race", factory)
+
+        t1 = threading.Thread(target=worker, args=(0,))
+        t2 = threading.Thread(target=worker, args=(1,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert results[0] is not None
+        assert results[0] is results[1]
+        # One of the two may have been built-then-discarded — verify the
+        # losing store was closed so no pool leaks.
+        assert len(made) <= 2
+        if len(made) == 2:
+            losers = [s for s in made if s is not results[0]]
+            assert len(losers) == 1
+            assert losers[0].closed is True
+
+
+class TestPerCallProjectDispatch:
+    """STORY-069.3 — ``_meta.project_id`` overrides the startup store."""
+
+    def test_stdio_no_meta_uses_default_store(self, monkeypatch) -> None:
+        from tapps_brain import mcp_server as ms
+
+        default = _FakeStore("default")
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
+        # No request context set → _current_request_project_id() → None.
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: None)
+        assert proxy._resolve() is default
+
+    def test_meta_project_id_overrides_env(self, monkeypatch) -> None:
+        from tapps_brain import mcp_server as ms
+
+        default = _FakeStore("default")
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: "tenant-b")
+
+        tenant_store = _FakeStore("tenant-b")
+        monkeypatch.setattr(
+            ms,
+            "_get_store",
+            lambda *a, **kw: tenant_store,
+        )
+        ms._STORE_CACHE.clear()
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
+        assert proxy._resolve() is tenant_store
+        # Second call hits the cache — same instance, factory not re-run.
+        assert proxy._resolve() is tenant_store
+
+    def test_meta_matching_default_reuses_default(self, monkeypatch) -> None:
+        from tapps_brain import mcp_server as ms
+
+        default = _FakeStore("tenant-x")
+        default._tapps_project_id = "tenant-x"
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: "tenant-x")
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
+        assert proxy._resolve() is default
+
+    def test_project_not_registered_maps_to_mcp_error(self, monkeypatch) -> None:
+        from mcp.shared.exceptions import McpError
+
+        from tapps_brain import mcp_server as ms
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        default = _FakeStore("default")
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: "ghost")
+
+        def _boom(*a, **kw):
+            raise ProjectNotRegisteredError("ghost")
+
+        monkeypatch.setattr(ms, "_get_store", _boom)
+        ms._STORE_CACHE.clear()
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
+
+        with pytest.raises(McpError) as exc:
+            proxy._resolve()
+
+        err = exc.value.error
+        assert err.code == -32002
+        assert err.message == "project_not_registered"
+        assert err.data == {"project_id": "ghost"}

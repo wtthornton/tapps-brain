@@ -17,6 +17,8 @@ import json
 import logging
 import os
 import sys
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +108,274 @@ def _get_store(
     )
 
 
+# --------------------------------------------------------------------------
+# STORY-069.3: Per-call project_id dispatch with a bounded LRU store cache.
+# --------------------------------------------------------------------------
+
+_DEFAULT_STORE_CACHE_SIZE = 16
+
+
+class _StoreCache:
+    """Bounded LRU cache of ``MemoryStore`` instances keyed by project_id.
+
+    Thread-safe (protected by a ``threading.Lock``).  On eviction, the
+    displaced store has ``close()`` called so Postgres connection pools
+    are not leaked.  ``maxsize`` is read from the
+    ``TAPPS_BRAIN_STORE_CACHE_SIZE`` env var (default 16).
+    """
+
+    def __init__(self, *, maxsize: int | None = None) -> None:
+        if maxsize is None:
+            try:
+                maxsize = int(
+                    os.environ.get("TAPPS_BRAIN_STORE_CACHE_SIZE", "")
+                    or _DEFAULT_STORE_CACHE_SIZE
+                )
+            except ValueError:
+                maxsize = _DEFAULT_STORE_CACHE_SIZE
+        self._maxsize = max(1, maxsize)
+        self._entries: "OrderedDict[str, Any]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    @property
+    def maxsize(self) -> int:
+        return self._maxsize
+
+    def get_or_create(self, project_id: str, factory: Any) -> Any:
+        """Return the cached store for *project_id*, creating via *factory* on miss.
+
+        On eviction, the displaced store's ``close()`` is invoked (best
+        effort).  *factory* is called **outside** the lock so a slow store
+        construction does not block other tenants.
+        """
+        with self._lock:
+            if project_id in self._entries:
+                self._entries.move_to_end(project_id)
+                return self._entries[project_id]
+
+        # Slow path — construct outside the lock.
+        store = factory()
+
+        evicted: list[Any] = []
+        with self._lock:
+            # Double-check another thread didn't beat us to it.
+            existing = self._entries.get(project_id)
+            if existing is not None:
+                self._entries.move_to_end(project_id)
+                evicted.append(store)  # discard the one we just built
+                result = existing
+            else:
+                self._entries[project_id] = store
+                self._entries.move_to_end(project_id)
+                while len(self._entries) > self._maxsize:
+                    _, old = self._entries.popitem(last=False)
+                    evicted.append(old)
+                result = store
+
+        for victim in evicted:
+            _safe_close_store(victim)
+        return result
+
+    def clear(self) -> None:
+        """Drop all cached stores and close each one."""
+        with self._lock:
+            victims = list(self._entries.values())
+            self._entries.clear()
+        for victim in victims:
+            _safe_close_store(victim)
+
+    def __contains__(self, project_id: str) -> bool:
+        with self._lock:
+            return project_id in self._entries
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+def _safe_close_store(store: Any) -> None:
+    """Best-effort ``store.close()`` — swallows exceptions so a bad pool
+    teardown never corrupts the cache's invariants."""
+    close = getattr(store, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception:  # noqa: BLE001 - eviction must not raise
+        logger.debug("store_cache.close_failed", exc_info=True)
+
+
+#: Module-level cache shared across all ``create_server`` invocations in
+#: this process.  Tests that need a clean slate should call ``.clear()``.
+_STORE_CACHE = _StoreCache()
+
+
+def _resolve_project_dir_for_id(project_id: str) -> Path:
+    """Resolve the on-disk project dir for a per-call *project_id*.
+
+    For EPIC-069 deployed brains the Postgres profile registry is the
+    source of truth — the filesystem path is a minor detail used by
+    ``MemoryStore`` for profile.yaml fallback.  Returning cwd keeps the
+    registry-driven code paths untouched while still giving
+    ``MemoryStore`` a valid directory for legacy code that still reads
+    ``project_dir``.
+    """
+    return Path.cwd().resolve()
+
+
+def _get_store_for_project(
+    project_id: str | None,
+    *,
+    default_store: Any,
+    enable_hive: bool = True,
+    agent_id: str = "unknown",
+) -> Any:  # noqa: ANN401
+    """Return the ``MemoryStore`` bound to *project_id*.
+
+    ``project_id=None`` or the literal ``"default"`` returns the startup
+    store — preserving stdio transport behaviour exactly (stdio clients
+    declare their tenant via ``TAPPS_BRAIN_PROJECT`` env which is already
+    baked into ``default_store`` at ``create_server`` time).
+
+    For any other value the bounded LRU cache is consulted, and a new
+    ``MemoryStore`` is constructed on miss.  Raises
+    ``ProjectNotRegisteredError`` (propagated from ``_get_store``) when
+    strict mode rejects the id.
+    """
+    if not project_id:
+        return default_store
+    # If the caller explicitly passed the same project_id the default
+    # store was built for, reuse it rather than duplicating the pool.
+    default_pid = getattr(default_store, "_tapps_project_id", None)
+    if default_pid and project_id == default_pid:
+        return default_store
+
+    def _factory() -> Any:
+        # Temporarily inject the project_id into env so downstream
+        # ProjectRegistry lookups see it.  _get_store reads project_dir
+        # but the registry uses env (TAPPS_BRAIN_PROJECT).
+        prev = os.environ.get("TAPPS_BRAIN_PROJECT")
+        os.environ["TAPPS_BRAIN_PROJECT"] = project_id
+        try:
+            return _get_store(
+                _resolve_project_dir_for_id(project_id),
+                enable_hive=enable_hive,
+                agent_id=agent_id,
+            )
+        finally:
+            if prev is None:
+                os.environ.pop("TAPPS_BRAIN_PROJECT", None)
+            else:
+                os.environ["TAPPS_BRAIN_PROJECT"] = prev
+
+    return _STORE_CACHE.get_or_create(project_id, _factory)
+
+
+def _current_request_project_id() -> str | None:
+    """Extract ``_meta.project_id`` from the active FastMCP request, if any.
+
+    Returns ``None`` when called outside a tool-call context (stdio
+    startup, background tasks) so callers fall back to the startup store.
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        rc = request_ctx.get()
+    except LookupError:
+        return None
+    meta = getattr(rc, "meta", None)
+    if meta is None:
+        return None
+    # RequestParams.Meta uses extra="allow" so project_id lands as an
+    # attribute (pydantic) or in model_extra.
+    pid = getattr(meta, "project_id", None)
+    if pid is None:
+        extra = getattr(meta, "model_extra", None) or {}
+        pid = extra.get("project_id")
+    if not pid:
+        return None
+    return str(pid).strip() or None
+
+
+def _raise_project_not_registered(project_id: str | None) -> None:
+    """Raise the JSON-RPC -32002 McpError that STORY-069.4 mapped at
+    startup, but from a per-call fire point."""
+    from mcp.shared.exceptions import McpError
+    from mcp.types import ErrorData
+
+    raise McpError(
+        ErrorData(
+            code=-32002,
+            message="project_not_registered",
+            data={"project_id": project_id},
+        )
+    )
+
+
+class _StoreProxy:
+    """Per-call dispatch shim that looks like a ``MemoryStore``.
+
+    Every attribute access resolves to the store for the active request's
+    project_id (``_meta.project_id`` on the MCP tool call, else the
+    startup ``default_store``).  This preserves the 100+ ``store.X``
+    call-sites in ``create_server`` without a wholesale refactor.
+
+    A ``ProjectNotRegisteredError`` raised during per-call resolution is
+    remapped to ``McpError(code=-32002)`` with structured ``data``,
+    matching the STORY-069.4 startup mapping.
+    """
+
+    __slots__ = ("_default_store", "_enable_hive", "_agent_id")
+
+    def __init__(
+        self,
+        default_store: Any,
+        *,
+        enable_hive: bool,
+        agent_id: str,
+    ) -> None:
+        object.__setattr__(self, "_default_store", default_store)
+        object.__setattr__(self, "_enable_hive", enable_hive)
+        object.__setattr__(self, "_agent_id", agent_id)
+
+    def _resolve(self) -> Any:
+        pid = _current_request_project_id()
+        try:
+            return _get_store_for_project(
+                pid,
+                default_store=self._default_store,
+                enable_hive=self._enable_hive,
+                agent_id=self._agent_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from tapps_brain.project_registry import ProjectNotRegisteredError
+
+            if isinstance(exc, ProjectNotRegisteredError):
+                _raise_project_not_registered(exc.project_id)
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in self.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._resolve(), name, value)
+
+    @property  # type: ignore[override]
+    def __class__(self) -> type:  # type: ignore[override]
+        """Spoof ``isinstance(proxy, MemoryStore)`` checks — downstream
+        callables (e.g. ``FeedbackProcessor.process_feedback``) validate
+        the argument type."""
+        try:
+            return self._resolve().__class__
+        except Exception:  # noqa: BLE001
+            return _StoreProxy  # fallback if resolution fails before use
+
+
 def create_server(  # noqa: PLR0915
     project_dir: Path | None = None,
     *,
@@ -147,7 +417,36 @@ def create_server(  # noqa: PLR0915
     fastmcp_cls = _lazy_import_mcp()
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
-    store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
+    try:
+        default_store = _get_store(
+            resolved_dir, enable_hive=enable_hive, agent_id=agent_id
+        )
+    except Exception as exc:  # STORY-069.4
+        # Map ProjectNotRegisteredError to a JSON-RPC -32002 structured error.
+        # Imported lazily to avoid pulling psycopg/postgres at module import.
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        if isinstance(exc, ProjectNotRegisteredError):
+            from mcp.shared.exceptions import McpError
+            from mcp.types import ErrorData
+
+            raise McpError(
+                ErrorData(
+                    code=-32002,
+                    message="project_not_registered",
+                    data={"project_id": exc.project_id},
+                )
+            ) from exc
+        raise
+
+    # STORY-069.3: expose a proxy that dispatches per-call based on
+    # _meta.project_id.  All tool handler closures below capture ``store``
+    # — the proxy's __getattr__ forwards to the per-request store.
+    store = _StoreProxy(
+        default_store,
+        enable_hive=enable_hive,
+        agent_id=agent_id,
+    )
 
     def _hive_for_tools() -> tuple[Any, bool]:
         """Return ``(hive_backend, should_close)`` for Hive MCP tools (ADR-007)."""
@@ -2419,11 +2718,12 @@ def create_server(  # noqa: PLR0915
     # Attach store and Hive metadata to server for testing / tool access
     # ------------------------------------------------------------------
     mcp._tapps_store = store
+    mcp._tapps_default_store = default_store
     mcp._tapps_agent_id = agent_id
     mcp._tapps_hive_enabled = enable_hive
     mcp._tapps_operator_tools_enabled = enable_operator_tools
     # Expose the shared Hive backend (if any) so Hive tools can reuse it
-    mcp._tapps_hive_store = getattr(store, "_hive_store", None)
+    mcp._tapps_hive_store = getattr(default_store, "_hive_store", None)
 
     return mcp
 

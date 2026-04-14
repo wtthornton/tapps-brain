@@ -116,6 +116,31 @@ If benchmarks in a specific deployment exceeded the 15% threshold, the defer opt
 - **Document the gap** — file a GitHub issue tagged `security` referencing this ADR,
   with the measured overhead numbers as evidence.
 
+## Revisited (EPIC-069, 2026-04-14)
+
+**Status update.** Revisited 2026-04-14 in context of EPIC-069 / ADR-010
+(multi-tenant `project_id` on the wire, Postgres-backed project registry).
+This ADR previously scoped RLS to `hive_memories` and deferred the
+private-backend tables to a follow-up story.  STORY-069.8 closes that gap.
+
+**Decision change.** RLS is now **shipped** on `private_memories` and
+`project_profiles` (migration `private/009_project_rls.sql`), not
+deferred.  ADR-010 made tenancy explicit on every request
+(`project_id` header/URL + per-call MCP routing + structured errors in
+069.3/069.4); the application already carries a first-class tenant
+identity end-to-end, so the incremental cost of RLS is limited to a single
+`SET LOCAL app.project_id` per transaction and one policy each on two
+tables.  The cost/benefit now clearly favours defence-in-depth: a bug in
+the app-layer filter — or a future code path that forgets to pass
+`project_id` — no longer silently leaks another tenant's data, because
+the DB returns zero rows under the fail-closed policy.  The
+`private_memories` policy is intentionally stricter than the
+`hive_memories` admin-bypass pattern: missing `app.project_id` yields
+zero rows, because the private backend has no legitimate unscoped read
+path at runtime.  `project_profiles` keeps an admin bypass (keyed on
+`app.is_admin = 'true'`) because the registry genuinely needs to list
+every tenant.
+
 ## Related
 
 - STORY-063.3 — RLS policy implementation and integration tests

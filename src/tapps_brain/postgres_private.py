@@ -87,6 +87,30 @@ class PostgresPrivateBackend:
         self._relations_ensured = False
 
     # ------------------------------------------------------------------
+    # Connection helper — enforces tenant RLS (EPIC-069 STORY-069.8)
+    # ------------------------------------------------------------------
+
+    def _scoped_conn(self) -> Any:
+        """Return a connection-context bound to this store's project_id.
+
+        Delegates to :meth:`PostgresConnectionManager.project_context`,
+        which runs ``SET LOCAL app.project_id`` inside the transaction so
+        the RLS policies on ``private_memories`` (migration 009) restrict
+        every read and write to this tenant.  ``SET LOCAL`` is
+        transaction-scoped so the identity cannot leak across pool
+        borrows.
+
+        Falls back to :meth:`PostgresConnectionManager.get_connection`
+        when the underlying manager does not expose ``project_context``
+        (keeps mocked unit-test managers and non-Postgres dev fakes
+        working; RLS is a no-op against an in-memory backend).
+        """
+        pc = getattr(self._cm, "project_context", None)
+        if pc is not None:
+            return pc(self._project_id)
+        return self._cm.get_connection()
+
+    # ------------------------------------------------------------------
     # Protocol-required properties
     # ------------------------------------------------------------------
 
@@ -121,7 +145,7 @@ class PostgresPrivateBackend:
         scope = entry.scope.value if hasattr(entry.scope, "value") else str(entry.scope)
         tags_json = json.dumps(entry.tags, ensure_ascii=False)
 
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO private_memories (
@@ -245,7 +269,7 @@ class PostgresPrivateBackend:
 
         Used by :class:`MemoryStore` on cold-start to populate the in-memory cache.
         """
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM private_memories WHERE project_id = %s AND agent_id = %s",
                 (self._project_id, self._agent_id),
@@ -258,7 +282,7 @@ class PostgresPrivateBackend:
 
     def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s",
                 (self._project_id, self._agent_id, key),
@@ -341,7 +365,7 @@ class PostgresPrivateBackend:
 
         sql += " ORDER BY _rank DESC LIMIT 100"
 
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
             if not rows:
@@ -380,7 +404,7 @@ class PostgresPrivateBackend:
             "LIMIT %s"
         )
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(sql, (vec_str, self._project_id, self._agent_id, k))
                 rows = cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
@@ -390,7 +414,7 @@ class PostgresPrivateBackend:
 
     def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(*) FROM private_memories "
                 "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL",
@@ -408,14 +432,14 @@ class PostgresPrivateBackend:
         with self._lock:
             if self._relations_ensured:
                 return
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(_RELATIONS_DDL)
             self._relations_ensured = True
 
     def list_relations(self) -> list[dict[str, Any]]:
         """Return all relations for this ``(project_id, agent_id)`` scope."""
         self._ensure_relations_table()
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT subject, predicate, object_entity, "
                 "       source_entry_keys, confidence, created_at "
@@ -458,7 +482,7 @@ class PostgresPrivateBackend:
     def count_relations(self) -> int:
         """Total relation count for this ``(project_id, agent_id)`` scope."""
         self._ensure_relations_table()
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(*) FROM private_relations WHERE project_id = %s AND agent_id = %s",
                 (self._project_id, self._agent_id),
@@ -477,7 +501,7 @@ class PostgresPrivateBackend:
         self._ensure_relations_table()
         now = datetime.now(tz=UTC).isoformat()
         count = 0
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._scoped_conn() as conn, conn.cursor() as cur:
             for rel in relations:
                 source_keys: list[str] = list(dict.fromkeys([*rel.source_entry_keys, key]))
                 cur.execute(
@@ -517,7 +541,7 @@ class PostgresPrivateBackend:
         """
         self._ensure_relations_table()
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     DELETE FROM private_relations
@@ -547,7 +571,7 @@ class PostgresPrivateBackend:
     def get_schema_version(self) -> int:
         """Return the private-memory schema version (from ``private_schema_version``)."""
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute("SELECT MAX(version) FROM private_schema_version")
                 row = cur.fetchone()
             return int(row[0]) if row and row[0] is not None else _PRIVATE_SCHEMA_VERSION
@@ -571,7 +595,7 @@ class PostgresPrivateBackend:
         block the hot save/delete path.
         """
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO audit_log
@@ -630,7 +654,7 @@ class PostgresPrivateBackend:
         )
         params.append(limit)
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
         except Exception:
@@ -672,7 +696,7 @@ class PostgresPrivateBackend:
         can still run (it will just reprocess from the beginning).
         """
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     "SELECT value FROM flywheel_meta "
                     "WHERE project_id = %s AND agent_id = %s AND key = %s",
@@ -691,7 +715,7 @@ class PostgresPrivateBackend:
         can't break the feedback pipeline's in-memory state.
         """
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO flywheel_meta (project_id, agent_id, key, value, updated_at)
@@ -722,7 +746,7 @@ class PostgresPrivateBackend:
             payload_dict = entry.model_dump()
             payload_json = json.dumps(payload_dict, default=str)
             byte_count = len(payload_json.encode("utf-8"))
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO gc_archive
@@ -750,7 +774,7 @@ class PostgresPrivateBackend:
     def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Return the most recent *limit* rows from ``gc_archive``."""
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT key, archived_at, byte_count, payload
@@ -783,7 +807,7 @@ class PostgresPrivateBackend:
     def total_archive_bytes(self) -> int:
         """Return ``SUM(byte_count)`` from ``gc_archive`` for this agent scope."""
         try:
-            with self._cm.get_connection() as conn, conn.cursor() as cur:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT COALESCE(SUM(byte_count), 0)

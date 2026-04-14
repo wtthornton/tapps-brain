@@ -274,6 +274,11 @@ class MemoryStore:
         # kept in the signature for API compatibility but ignored on Postgres.
         _ = (store_dir, encryption_key, _lexical)
         self._persistence: PrivateBackend = private_backend
+        # STORY-069.7: stash resolved project_id so instance methods can bind
+        # it into structured logs without reaching into the backend each time.
+        # Falls back to None for backends (e.g. InMemoryPrivateBackend) that
+        # don't carry a project_id.
+        self._project_id: str | None = getattr(private_backend, "_project_id", None)
         self._lock = threading.Lock()
         if lock_timeout_seconds is not None:
             self._lock_timeout_sec = (
@@ -668,6 +673,8 @@ class MemoryStore:
                 Similarity cutoff comes from ``profile.conflict_check`` when a
                 profile is loaded. Defaults to True for safer writes.
         """
+        log = logger.bind(project_id=self._project_id, op="save", key=key)
+        log.debug("store.save.begin")
         try:
             agent_scope = normalize_agent_scope(agent_scope)
         except ValueError as exc:
@@ -2111,6 +2118,8 @@ class MemoryStore:
         """
         from tapps_brain.recall import RecallOrchestrator
 
+        log = logger.bind(project_id=self._project_id, op="recall")
+        log.debug("store.recall.begin")
         # EPIC-029 story 029.3: extract session_id before forwarding kwargs.
         _raw_sid = kwargs.pop("session_id", None)
         session_id: str | None = str(_raw_sid) if _raw_sid is not None else None
@@ -2620,14 +2629,22 @@ class MemoryStore:
         return report
 
     def diagnostics_history(self, *, limit: int = 100) -> list[dict[str, Any]]:
-        """Return recent diagnostics snapshots from SQLite (EPIC-030)."""
+        """Return recent diagnostics snapshots from SQLite (EPIC-030).
+
+        STORY-069.7: each returned row carries ``project_id`` (or ``None``
+        for legacy single-tenant backends) so downstream filters and the
+        ``/snapshot?project=`` query can scope rows by tenant.
+        """
         self._ensure_diagnostics_history()
         if self._diagnostics_history_store is None:
             return []
-        return cast(
+        rows = cast(
             "list[dict[str, Any]]",
             self._diagnostics_history_store.history(limit=limit),
         )
+        for row in rows:
+            row.setdefault("project_id", self._project_id)
+        return rows
 
     # ------------------------------------------------------------------
     # Relations (EPIC-006)
@@ -3084,12 +3101,15 @@ class MemoryStore:
         if rating not in _RATING_SCORES:
             raise ValueError(f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}")
 
+        log = logger.bind(project_id=self._project_id, op="feedback", event_type="recall_rated")
+        log.debug("store.feedback.recall_rated")
         event = FeedbackEvent(
             event_type="recall_rated",
             entry_key=entry_key,
             session_id=session_id,
             utility_score=_RATING_SCORES[rating],
             details={"rating": rating, **(details or {})},
+            project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.recall_rated")
@@ -3118,10 +3138,13 @@ class MemoryStore:
         """
         from tapps_brain.feedback import FeedbackEvent
 
+        log = logger.bind(project_id=self._project_id, op="feedback", event_type="gap_reported")
+        log.debug("store.feedback.gap_reported")
         event = FeedbackEvent(
             event_type="gap_reported",
             session_id=session_id,
             details={"query": query, **(details or {})},
+            project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.gap_reported")
@@ -3151,11 +3174,14 @@ class MemoryStore:
         """
         from tapps_brain.feedback import FeedbackEvent
 
+        log = logger.bind(project_id=self._project_id, op="feedback", event_type="issue_flagged")
+        log.debug("store.feedback.issue_flagged")
         event = FeedbackEvent(
             event_type="issue_flagged",
             entry_key=entry_key,
             session_id=session_id,
             details={"issue": issue, **(details or {})},
+            project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.issue_flagged")
@@ -3195,12 +3221,15 @@ class MemoryStore:
         """
         from tapps_brain.feedback import FeedbackEvent
 
+        log = logger.bind(project_id=self._project_id, op="feedback", event_type=event_type)
+        log.debug("store.feedback.recorded")
         event = FeedbackEvent(
             event_type=event_type,
             entry_key=entry_key,
             session_id=session_id,
             utility_score=utility_score,
             details=details or {},
+            project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
         self._metrics.increment("store.feedback.recorded")

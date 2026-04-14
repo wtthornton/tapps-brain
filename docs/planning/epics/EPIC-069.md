@@ -1,7 +1,7 @@
 # Epic 69: Multi-tenant project registration and profile delivery over MCP
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** Done — shipped in v3.5.0 (2026-04-14)
 **Priority:** P0 — Blocker for every downstream MCP tenant (Alpaca, openclaw, etc.)
 **Estimated LOE:** ~2.5 weeks (1 developer)
 **Dependencies:** ADR-007 (Postgres-only persistence), ADR-008 (MCP–HTTP parity), ADR-010 (this design)
@@ -63,7 +63,7 @@ is removed from runtime — file is still parseable for admin CLI import.
   error; unknown + lax → auto-create + serve `repo-brain`.
 - Store opens against a registered tenant and honors its profile.
 
-### Story 69.3 — Transport-layer project resolution
+### Story 69.3 — Transport-layer project resolution — Done (2026-04-14)
 `tapps_brain/project_resolver.py :: resolve_project_id(request) -> str`
 with precedence `_meta.project_id` → `X-Tapps-Project` header →
 `TAPPS_BRAIN_PROJECT` env → `"default"`. Wire into both the MCP server
@@ -77,7 +77,7 @@ resolved ID to every log line via `structlog` context.
 - MCP tool call with `_meta.project_id=override` overrides the
   session-level ID.
 
-### Story 69.4 — Strict-mode rejection + structured error codes
+### Story 69.4 — Strict-mode rejection + structured error codes — Done (2026-04-14)
 `TAPPS_BRAIN_STRICT_PROJECTS=1` makes unknown project IDs a hard error.
 HTTP: 403 with `{error: "project_not_registered", project_id}`. MCP:
 JSON-RPC error code `-32002` with the same payload. Strict mode is the
@@ -115,7 +115,7 @@ and `README.md`. Add a "Register your project" walkthrough.
 - Getting-started has a 60-second "register + connect" flow.
 - `docs-mcp docs_check_drift` passes on all touched pages.
 
-### Story 69.7 — Observability: `project_id` in logs, diagnostics, feedback
+### Story 69.7 — Observability: `project_id` in logs, diagnostics, feedback — Done (2026-04-14)
 Thread `project_id` through structured logs, `diagnostics_history`,
 `feedback_events`, and the `/snapshot` dashboard endpoint. Add a
 per-project filter to the brain-visual dashboard Hive Hub view.
@@ -125,7 +125,7 @@ per-project filter to the brain-visual dashboard Hive Hub view.
 - `/snapshot?project=alpaca` returns only that tenant's data.
 - Dashboard filter toggle works against multi-tenant seed data.
 
-### Story 69.8 — Data isolation hardening + RLS follow-through
+### Story 69.8 — Data isolation hardening + RLS follow-through — Done (2026-04-14)
 Add row-level security policies keyed on `project_id`. Service role can
 see all; tenant role sees only its own. Integration tests prove a
 compromised tenant connection cannot read another tenant's rows.

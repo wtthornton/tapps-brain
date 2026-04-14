@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-09 (America/Chicago) — **v3.2.0** — EPIC-048 complete (all 6 stories done); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank local reranker; porter unicode61 FTS5 tokenizer; schema reset to v1; Docker base → python:3.13-slim; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-14 (America/Chicago) — **v3.5.0** — EPIC-069 / ADR-010: multi-tenant `project_id` on the wire + Postgres project registry + RLS on private tenanted tables (done); ADR-007: PostgreSQL-only (SQLite removed); EPIC-067: `AsyncMemoryStore` (`aio.py`); EPIC-066: async public-API wrapper; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
-**Package version (PyPI / `pyproject.toml`):** **3.2.0**
+**Package version (`pyproject.toml`):** **3.5.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -27,25 +27,22 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Storage / schema
 
-- **SQLite schema version:** **v17** (forward migrations from v1). See `src/tapps_brain/persistence.py` (`_SCHEMA_VERSION`).
-- **v5:** bi-temporal columns (`valid_at`, `invalid_at`, `superseded_by`) for EPIC-004.
-- **v6:** version bump for observability alignment (no new columns).
-- **v7:** `agent_scope` column for Hive propagation (EPIC-011).
-- **v8:** `integrity_hash` on `memories` (tamper detection).
-- **v9:** `feedback_events` table (EPIC-029).
-- **v10:** `diagnostics_history` table (EPIC-030).
-- **v11:** `positive_feedback_count` / `negative_feedback_count` on `memories`, `flywheel_meta` KV (EPIC-031).
-- **v12–v15:** provenance, temporal window, FSRS stability/difficulty, Bayesian access counters (see migrations in `persistence.py`).
-- **v16:** `memory_group` on `memories` (optional project-local partition; GitHub **#49** v1 **closed** 2026-03-29). Relay import accepts optional per-item `memory_group` / `group` (`memory-relay.md`).
-- **v17:** `embedding_model_id` on `memories` / `archived_memories` (STORY-042.2 — dense model provenance for reindex).
-- **Federation hub:** `~/.tapps-brain/memory/federated.db` — `federated_memories` carries optional publisher **`memory_group`** (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
-- **Hive DB:** separate SQLite at `~/.tapps-brain/hive/hive.db` with WAL, FTS5, namespace-aware schema.
+All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schema managed by versioned migrations in `src/tapps_brain/migrations/private/` (001–006) and `src/tapps_brain/migrations/` (Hive/Federation).
+
+- **Migration 001:** initial private schema (`private_memories`, `archived_memories`, `session_chunks`).
+- **Migration 002:** pgvector HNSW index (`m=16, ef_construction=200`, cosine ops).
+- **Migration 003:** feedback + session tables.
+- **Migration 004:** diagnostics history table.
+- **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
+- **Migration 006:** GC archive table.
+- **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
+- **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
 ## Dependencies (high level)
 
-- **Runtime (core):** `pydantic`, `structlog`, `pyyaml` — no typer/mcp in core.
-- **Extras:** `[cli]` adds `typer`; `[mcp]` adds `mcp`; `[all]` includes both.
-- **Optional:** `reranker` (cohere); `anthropic_sdk` and `openai_sdk` for LLM-as-judge evaluation.
+- **Runtime (core):** `pydantic`, `structlog`, `pyyaml`, `psycopg[binary,pool]`, `opentelemetry-api` — no typer/mcp in core.
+- **Extras:** `[cli]` adds `typer`; `[mcp]` adds `mcp`; `[reranker]` adds `flashrank`; `[otel]` adds `opentelemetry-sdk`; `[visual]` adds `playwright`; `[all]` = `cli + mcp + reranker`.
+- **Optional:** `anthropic_sdk` and `openai_sdk` for LLM-as-judge evaluation.
 - **Dev:** test stack + `mcp` so MCP unit tests run under `uv sync --group dev`.
 
 Install for contributors:

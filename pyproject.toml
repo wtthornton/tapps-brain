@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tapps-brain"
-version = "3.4.0"
+version = "3.5.0"
 description = "Persistent cross-session memory system for AI coding assistants"
 license = "MIT"
 requires-python = ">=3.12"
@@ -80,11 +80,16 @@ dev = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tapps_brain/"]
+include = ["src/tapps_brain/", "examples/coding-project-init/"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tapps_brain"]
 artifacts = ["src/tapps_brain/profiles/*.yaml"]
+
+# Ship the coding-project-init scaffold as package data so `tapps-brain init`
+# works from an installed wheel (examples/ lives outside the wheel normally).
+[tool.hatch.build.targets.wheel.force-include]
+"examples/coding-project-init" = "tapps_brain/_scaffolds/coding-project-init"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

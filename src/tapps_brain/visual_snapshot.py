@@ -253,6 +253,20 @@ class VisualSnapshot(BaseModel):
             "agent_id is truncated to 8 chars on standard/strict privacy tiers."
         ),
     )
+    diagnostics_history: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "STORY-069.7: recent diagnostics history rows (most recent first). "
+            "Each row carries ``project_id`` so /snapshot?project= can filter."
+        ),
+    )
+    feedback_events: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "STORY-069.7: recent feedback events (default 200). "
+            "Each event carries ``project_id`` for /snapshot?project= filtering."
+        ),
+    )
     theme: VisualThemeTokens
 
 
@@ -928,6 +942,31 @@ def build_visual_snapshot(
     except Exception:
         pass
 
+    # STORY-069.7: include recent diagnostics history + feedback events with
+    # project_id so /snapshot?project= can filter per-tenant views.  Both are
+    # best-effort and must never fail the snapshot build.
+    diagnostics_history: list[dict[str, Any]] = []
+    try:
+        _diag_hist = store.diagnostics_history(limit=100)
+        for _row in _diag_hist:
+            if "project_id" not in _row:
+                _row["project_id"] = getattr(store, "_project_id", None)
+            diagnostics_history.append(_row)
+    except Exception:
+        diagnostics_history = []
+
+    feedback_events: list[dict[str, Any]] = []
+    try:
+        _events = store.query_feedback(limit=200)
+        for _ev in _events:
+            _dump = _ev.model_dump(mode="json")
+            # Do NOT impute project_id here — preserve None for legacy/unknown
+            # rows so /snapshot?project=<id> can safely exclude them.
+            _dump.setdefault("project_id", None)
+            feedback_events.append(_dump)
+    except Exception:
+        feedback_events = []
+
     scorecard = _build_scorecard(
         report,
         diagnostics=diagnostics,
@@ -961,6 +1000,8 @@ def build_visual_snapshot(
         diagnostics=diagnostics,
         scorecard=scorecard,
         agent_registry=agent_registry,
+        diagnostics_history=diagnostics_history,
+        feedback_events=feedback_events,
         theme=theme,
     )
 

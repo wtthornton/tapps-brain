@@ -55,6 +55,11 @@ def _make_mocks(
 
     cm = MagicMock()
     cm.get_connection.return_value = _FakeCM(conn)
+    # EPIC-069 STORY-069.8: project_context is the tenant-scoped path; route
+    # it to the same fake connection so tests exercising RLS-wired code paths
+    # still see the configured cursor / rows.
+    cm.project_context.return_value = _FakeCM(conn)
+    cm.admin_context.return_value = _FakeCM(conn)
     return cm, conn, cur, conn  # last element unused; kept for symmetry
 
 

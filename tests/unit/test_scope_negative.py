@@ -250,6 +250,12 @@ class TestCrossTenantWriteIsolation:
 
         mock_cm.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_cm.get_connection.return_value.__exit__ = MagicMock(return_value=False)
+        # EPIC-069 STORY-069.8: project_context is the tenant-scoped entry;
+        # route it to the same mock connection so RLS-wired paths still work.
+        mock_cm.project_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.project_context.return_value.__exit__ = MagicMock(return_value=False)
+        mock_cm.admin_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.admin_context.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -275,6 +281,12 @@ class TestCrossTenantWriteIsolation:
 
         mock_cm.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_cm.get_connection.return_value.__exit__ = MagicMock(return_value=False)
+        # EPIC-069 STORY-069.8: project_context is the tenant-scoped entry;
+        # route it to the same mock connection so RLS-wired paths still work.
+        mock_cm.project_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.project_context.return_value.__exit__ = MagicMock(return_value=False)
+        mock_cm.admin_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.admin_context.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -330,6 +342,12 @@ class TestCrossTenantWriteIsolation:
 
         mock_cm.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_cm.get_connection.return_value.__exit__ = MagicMock(return_value=False)
+        # EPIC-069 STORY-069.8: project_context is the tenant-scoped entry;
+        # route it to the same mock connection so RLS-wired paths still work.
+        mock_cm.project_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.project_context.return_value.__exit__ = MagicMock(return_value=False)
+        mock_cm.admin_context.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.admin_context.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 

@@ -1224,3 +1224,157 @@ def test_rm_add_recall_latency_ignores_negative() -> None:
     finally:
         _otel._rm_latency_sum_ms = orig_sum
         _otel._rm_latency_count = orig_count
+
+
+# ---------------------------------------------------------------------------
+# STORY-069.7: per-tenant filtering of diagnostics_history + feedback_events
+# ---------------------------------------------------------------------------
+
+
+def _fake_store_with_tenant_data(
+    *,
+    project_id: str = "tenant-a",
+    extra_history: list[dict] | None = None,
+    extra_feedback: list | None = None,
+) -> MagicMock:
+    """Build a minimal MemoryStore-like mock for build_visual_snapshot."""
+    from tapps_brain.feedback import FeedbackEvent
+
+    store = MagicMock()
+    store._project_id = project_id
+
+    # health() report
+    report = StoreHealthReport(
+        entry_count=0,
+        tier_distribution={},
+        schema_version=1,
+        store_path="/tmp/mock",
+        profile_name="default",
+        federation_enabled=False,
+    )
+    store.health.return_value = report
+    store.list_all.return_value = []
+    store.vector_row_count = 0
+
+    # diagnostics() is called when skip_diagnostics is False; return a stub.
+    _diag = MagicMock()
+    _diag.composite_score = 0.9
+    _diag.circuit_state = "closed"
+    _diag.recorded_at = "2026-04-14T00:00:00+00:00"
+    store.diagnostics.return_value = _diag
+
+    # diagnostics_history() → mix of project-scoped + a legacy row (no pid)
+    history = [
+        {
+            "id": "d1",
+            "recorded_at": "2026-04-14T00:00:00+00:00",
+            "composite_score": 0.9,
+            "dimension_scores": "{}",
+            "circuit_state": "closed",
+            "full_report": {},
+            "project_id": project_id,
+        },
+        {
+            "id": "d2",
+            "recorded_at": "2026-04-13T00:00:00+00:00",
+            "composite_score": 0.8,
+            "dimension_scores": "{}",
+            "circuit_state": "closed",
+            "full_report": {},
+            "project_id": None,  # legacy
+        },
+    ]
+    if extra_history:
+        history.extend(extra_history)
+    store.diagnostics_history.return_value = history
+
+    events = [
+        FeedbackEvent(
+            event_type="recall_rated",
+            entry_key="k1",
+            utility_score=1.0,
+            project_id=project_id,
+        ),
+        FeedbackEvent(event_type="gap_reported", project_id=None),  # legacy
+    ]
+    if extra_feedback:
+        events.extend(extra_feedback)
+    store.query_feedback.return_value = events
+
+    # agent_scope_counts etc. — provide empty dicts via attribute access
+    store._hive_store = None
+    return store
+
+
+def test_store_binds_project_id_into_structured_logs(tmp_path: Path) -> None:
+    """STORY-069.7: save/recall/feedback bind project_id into the logger.
+
+    Uses structlog.testing.capture_logs to intercept bound context.
+    """
+    import structlog
+    from structlog.testing import capture_logs
+
+    store = MemoryStore(tmp_path)
+    try:
+        with capture_logs() as events:
+            # Re-configure structlog for the test so DEBUG events are emitted
+            # (the MCP server configures CRITICAL at import time globally).
+            structlog.configure(
+                wrapper_class=structlog.make_filtering_bound_logger(0),
+            )
+            store.save(key="log-k", value="v", tier="pattern", agent_scope="private")
+            store.recall("log-k")
+            store.record_feedback("recall_rated", entry_key="log-k", utility_score=1.0)
+
+        ops = {e.get("op") for e in events if "op" in e}
+        assert {"save", "recall", "feedback"}.issubset(ops), (
+            f"Expected save/recall/feedback bound ops, got {ops}"
+        )
+        # Each captured event must carry project_id (may be None when backend
+        # doesn't expose one — but the key MUST be in the bound context).
+        for ev in events:
+            if ev.get("op") in {"save", "recall", "feedback"}:
+                assert "project_id" in ev, f"project_id missing from event: {ev}"
+    finally:
+        store.close()
+
+
+def test_build_visual_snapshot_carries_project_id_in_history_and_events() -> None:
+    """STORY-069.7: diagnostics_history and feedback_events include project_id."""
+    store = _fake_store_with_tenant_data(project_id="tenant-a")
+    snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="standard")
+    assert len(snap.diagnostics_history) == 2
+    assert snap.diagnostics_history[0]["project_id"] == "tenant-a"
+    # Legacy row's project_id stays as None (don't silently impute).
+    assert snap.diagnostics_history[1]["project_id"] is None
+
+    assert len(snap.feedback_events) == 2
+    assert snap.feedback_events[0]["project_id"] == "tenant-a"
+    assert snap.feedback_events[1]["project_id"] is None
+
+
+def test_filter_snapshot_by_project_excludes_legacy_rows() -> None:
+    """STORY-069.7: the filter helper drops rows missing project_id."""
+    from tapps_brain.http_adapter import _filter_snapshot_by_project
+
+    payload = {
+        "diagnostics_history": [
+            {"id": "d1", "project_id": "tenant-a"},
+            {"id": "d2", "project_id": "tenant-b"},
+            {"id": "d3", "project_id": None},
+        ],
+        "feedback_events": [
+            {"id": "e1", "project_id": "tenant-a"},
+            {"id": "e2", "project_id": None},
+        ],
+        "schema_version": 2,
+    }
+    out = _filter_snapshot_by_project(payload, "tenant-a")
+    assert [r["id"] for r in out["diagnostics_history"]] == ["d1"]
+    assert [r["id"] for r in out["feedback_events"]] == ["e1"]
+    # Unrelated keys pass through unchanged.
+    assert out["schema_version"] == 2
+    # Unknown project yields empty arrays, not missing keys.
+    out2 = _filter_snapshot_by_project(payload, "ghost")
+    assert out2["diagnostics_history"] == []
+    assert out2["feedback_events"] == []

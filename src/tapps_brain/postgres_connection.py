@@ -241,6 +241,72 @@ class PostgresConnectionManager:
                 )
             yield conn
 
+    @contextmanager
+    def project_context(self, project_id: str) -> Iterator[Any]:
+        """Yield a connection with ``app.project_id`` session variable set.
+
+        EPIC-069 STORY-069.8 — enforces tenant Row Level Security on
+        ``private_memories`` and ``project_profiles`` (migration
+        ``private/009_project_rls.sql``).  Within the yielded transaction
+        RLS restricts visible rows to those whose ``project_id`` column
+        matches *project_id*; rows for any other tenant are invisible
+        (and cross-tenant INSERTs fail the WITH CHECK clause).
+
+        ``SET LOCAL`` is used so the variable is automatically cleared when
+        the transaction ends (commit or rollback) — safe for pooled
+        connections; no identity can leak across pool borrows.
+
+        Parameters
+        ----------
+        project_id:
+            The tenant identity to bind for this transaction.  Must be a
+            non-empty string.  An empty string would collapse into the
+            fail-closed policy and hide every row; callers that want to
+            list all projects must use :meth:`admin_context` instead.
+
+        Raises
+        ------
+        ValueError
+            If *project_id* is empty or whitespace only.
+        """
+        if not project_id or not project_id.strip():
+            raise ValueError(
+                "project_context requires a non-empty project_id; "
+                "use admin_context() for registry / admin paths."
+            )
+        self._ensure_pool()
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                from psycopg import sql as pgsql
+
+                cur.execute(
+                    pgsql.SQL("SET LOCAL app.project_id = {}").format(
+                        pgsql.Literal(project_id)
+                    )
+                )
+            yield conn
+
+    @contextmanager
+    def admin_context(self) -> Iterator[Any]:
+        """Yield a connection with ``app.is_admin = 'true'`` set.
+
+        EPIC-069 STORY-069.8 — unlocks the admin-bypass policy on
+        ``project_profiles`` so the registry (list_all / register / approve
+        / delete) can see and mutate every row regardless of tenant.
+
+        ``SET LOCAL`` ensures the elevated flag dies with the transaction
+        and cannot leak across pool borrows.  This context does NOT unlock
+        ``private_memories`` — that table is fail-closed and has no admin
+        policy; genuine admin maintenance against ``private_memories``
+        must connect as the table owner (``tapps_migrator``) which bypasses
+        RLS by default.
+        """
+        self._ensure_pool()
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL app.is_admin = 'true'")
+            yield conn
+
     @property
     def dsn(self) -> str:
         """Return the DSN this manager was created with."""

@@ -792,7 +792,92 @@
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
+      min-height: 200px;
+      justify-content: center;
     }
+
+    .bar-chart.bar-chart-tall {
+      min-height: 300px;
+    }
+
+    /* STORY-068.4 — Memory page layout */
+    .memory-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    @media (min-width: 640px) {
+      .memory-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .memory-col-left { grid-column: 1; }
+      .memory-col-right { grid-column: 2; }
+    }
+
+    .pulse-callouts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.85rem;
+    }
+
+    .pulse-callout {
+      padding: 0.85rem 1rem;
+      min-height: auto;
+    }
+
+    .pulse-callout .kpi-lbl {
+      margin: 0;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-dim);
+    }
+
+    .pulse-callout .kpi-val {
+      margin: 0.25rem 0 0.15rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--fg);
+    }
+
+    .pulse-callout .kpi-sub {
+      margin: 0;
+      font-size: 0.75rem;
+      color: var(--fg-dim);
+    }
+
+    .tag-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .tag-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      font-size: 0.8125rem;
+      line-height: 1.2;
+    }
+
+    .tag-chip-count {
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg-dim);
+    }
+
+    .tag-chip[data-weight="xl"] { font-size: 1rem; font-weight: 700; }
+    .tag-chip[data-weight="lg"] { font-size: 0.9rem; font-weight: 600; }
+    .tag-chip[data-weight="md"] { font-size: 0.8125rem; }
+    .tag-chip[data-weight="sm"] { font-size: 0.75rem; color: var(--fg-dim); }
 
     .bar-row {
       display: grid;
@@ -944,7 +1029,7 @@
       font-size: 0.875rem;
       line-height: 1.5;
       resize: vertical;
-      min-height: 5rem;
+      min-height: 8rem;
     }
 
     .issue-actions {
@@ -952,6 +1037,120 @@
       flex-wrap: wrap;
       gap: 0.75rem;
       margin-top: 0.85rem;
+    }
+
+    .sc-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.75rem 0 0.85rem;
+    }
+
+    .sc-filter-bar {
+      display: inline-flex;
+      gap: 0.25rem;
+      padding: 0.2rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .sc-filter-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--fg-dim);
+      font: inherit;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .sc-filter-btn:hover {
+      color: var(--fg);
+    }
+
+    .sc-filter-btn:focus-visible {
+      outline: 2px solid var(--nlt-accent-primary);
+      outline-offset: 2px;
+    }
+
+    .sc-filter-btn[aria-checked="true"] {
+      background: linear-gradient(135deg, var(--nlt-accent-primary), var(--nlt-accent-secondary));
+      color: #fff;
+      border-color: var(--nlt-accent-dim);
+    }
+
+    .sc-sort-btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      font: inherit;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .sc-sort-btn:hover {
+      border-color: var(--nlt-accent-primary);
+    }
+
+    .sc-sort-btn:focus-visible {
+      outline: 2px solid var(--nlt-accent-primary);
+      outline-offset: 2px;
+    }
+
+    .sc-row-count {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      margin-left: auto;
+    }
+
+    .sc-sticky-actions {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      margin-top: 1rem;
+      padding: 0.75rem 0.85rem;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .sc-card {
+      position: relative;
+    }
+
+    .diff-badge {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--nlt-accent-primary), var(--nlt-accent-secondary));
+      color: #fff;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .diff-badge {
+        animation: diffBadgeFadeIn 240ms ease-out;
+      }
+      @keyframes diffBadgeFadeIn {
+        from { opacity: 0; transform: translateY(-2px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
     }
 
     body.help-drawer-open {
@@ -1691,6 +1890,107 @@
       color: var(--fg-dim);
     }
 
+    /* ── Hive badge in section header (prominent) ─────────────────────────── */
+    .hive-badge-prominent {
+      margin-left: 0.75rem;
+      padding: 0.3rem 0.85rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .hive-badge-prominent.hive-connected {
+      background: linear-gradient(135deg, rgba(217, 119, 6, 0.18), rgba(245, 158, 11, 0.08));
+      border-color: rgba(217, 119, 6, 0.45);
+      color: #92400e;
+    }
+    html[data-theme="dark"] .hive-badge-prominent.hive-connected {
+      color: #fbbf24;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.08));
+      border-color: rgba(245, 158, 11, 0.45);
+    }
+    .hive-badge-prominent.hive-offline,
+    .hive-badge-prominent.hive-degraded {
+      background: rgba(120, 120, 120, 0.06);
+      color: var(--fg-dim);
+      border-color: var(--border);
+    }
+
+    /* ── Agent topology diagram ──────────────────────────────────────────── */
+    .agent-topology-wrap {
+      margin-bottom: 0.85rem;
+    }
+    .agent-topology {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 420px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .agent-topology .topo-hub {
+      fill: rgba(217, 119, 6, 0.15);
+      stroke: rgba(217, 119, 6, 0.8);
+      stroke-width: 1.5;
+    }
+    .agent-topology .topo-ns {
+      fill: rgba(120, 120, 120, 0.06);
+      stroke: var(--border);
+      stroke-width: 1;
+    }
+    .agent-topology .topo-edge {
+      fill: none;
+      stroke: rgba(217, 119, 6, 0.4);
+      stroke-width: 1;
+    }
+    .agent-topology .topo-agent {
+      fill: rgba(217, 119, 6, 0.55);
+      stroke: rgba(217, 119, 6, 0.9);
+      stroke-width: 1;
+      cursor: pointer;
+    }
+    .agent-topology .topo-agent:hover,
+    .agent-topology .topo-agent:focus {
+      fill: rgba(217, 119, 6, 0.85);
+      outline: none;
+    }
+    .agent-topology text {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      fill: var(--fg-dim);
+    }
+    .agent-topology .topo-hub-label {
+      font-weight: 700;
+      fill: var(--fg);
+    }
+    .agent-topology-note {
+      margin: 0.4rem 0 0;
+      font-size: 0.78rem;
+      color: var(--fg-dim);
+    }
+
+    /* ── Agent-detail drawer (reuses .help-drawer look) ───────────────────── */
+    .agent-drawer-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      margin: 0 0 0.85rem;
+    }
+    .agent-drawer-field .k {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--nlt-accent-primary);
+    }
+    .agent-drawer-field .v {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--fg);
+      word-break: break-all;
+    }
+    #agents-tbody tr { cursor: pointer; }
+    #agents-tbody tr:focus { outline: 2px solid rgba(217, 119, 6, 0.55); outline-offset: -2px; }
+
     /* ── Agent registry table row states ──────────────────────────────────── */
     .agent-row-amber td {
       background: rgba(217, 119, 6, 0.06);
@@ -1934,7 +2234,7 @@
   <a href="#main-content" class="skip-link">Skip to main content</a>
   <header
     class="site-header"
-    aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual demo."
+    aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual."
   >
     <div class="header-inner">
       <div class="brand-lockup" aria-label="NLT Labs wordmark and AN mark">
@@ -1960,6 +2260,12 @@
         </div>
       </div>
       <div class="header-controls">
+        <div class="interval-selector">
+          <label for="project-filter">Project</label>
+          <select id="project-filter" aria-label="Project filter (STORY-069.7)">
+            <option value="">All projects</option>
+          </select>
+        </div>
         <div class="interval-selector">
           <label for="poll-interval">Refresh</label>
           <select id="poll-interval" aria-label="Poll interval">
@@ -2056,24 +2362,16 @@
       <h1 class="page-title">Memory health, <span class="gradient-text">at a glance</span></h1>
       <p class="page-subtitle">
         Persistent, deterministic memory for AI coding agents — no raw text in the export by default.
-        See recall mode, Hive sync, capacity, and trust signals for this brain.
-        Load a snapshot from your project to get started, or use <strong>Load snapshot</strong> below.
+        See recall mode, Hive sync, capacity, and trust signals for this brain — live from the running hub.
       </p>
 
       <details class="dev-details">
-        <summary>Refresh data (CLI and files)</summary>
+        <summary>About this dashboard</summary>
         <div class="dev-body">
           <p>
-            From a project with the CLI: run
-            <code>tapps-brain visual export -o brain-visual.json</code>
-            (add <code>--skip-diagnostics</code> for speed; use
-            <code>--privacy strict</code> or <code>--privacy local</code> for redaction or tag/group
-            detail).
-          </p>
-          <p>
-            Serving this folder over HTTP loads <code>brain-visual.json</code> when it sits next to
-            <code>index.html</code>. Opening the HTML as <code>file://</code> uses <strong>Load snapshot</strong>
-            instead. Also loads <code>brain-visual-help.js</code>.
+            This page polls the live <code>/snapshot</code> endpoint on the running tapps-brain HTTP adapter
+            every 30 seconds (configurable via the interval selector). There is no file-load fallback —
+            if the endpoint is unreachable, start the adapter.
           </p>
           <p>
             <strong>?</strong> buttons open a side panel with definitions, math, and code references aligned to
@@ -2084,19 +2382,16 @@
       </details>
 
       <div class="load-row">
-        <input id="snapshot-file" class="sr-only" type="file" accept="application/json,.json" />
-        <label class="btn-load" for="snapshot-file">Load snapshot file</label>
-        <button type="button" class="btn-ghost" id="load-demo">Load static demo</button>
         <button type="button" class="btn-ghost" id="copy-fp" disabled>Copy fingerprint</button>
         <span id="status" class="muted">Connecting to live endpoint…</span>
       </div>
 
       <div class="empty-state" id="empty-state" role="status" aria-label="No snapshot available">
         <div class="empty-state-icon" aria-hidden="true">📡</div>
-        <h2 class="empty-state-title">No snapshot available</h2>
+        <h2 class="empty-state-title">Live endpoint unreachable</h2>
         <p class="empty-state-body">
-          The live <code>/snapshot</code> endpoint is unreachable and no file has been loaded.
-          Start the HttpAdapter to enable live polling, or use <strong>Load snapshot file</strong> above.
+          The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter
+          to enable live polling.
         </p>
         <code class="empty-state-code">tapps-brain mcp start --http
 # or: docker compose up tapps-brain-mcp</code>
@@ -2310,6 +2605,27 @@
             ?
           </button>
         </div>
+        <div class="sc-toolbar">
+          <div
+            id="sc-filter-bar"
+            class="sc-filter-bar"
+            role="radiogroup"
+            aria-label="Filter scorecard by status"
+          >
+            <button type="button" class="sc-filter-btn" role="radio" aria-checked="true" data-filter="all" tabindex="0">All</button>
+            <button type="button" class="sc-filter-btn" role="radio" aria-checked="false" data-filter="fail" tabindex="-1">Fail</button>
+            <button type="button" class="sc-filter-btn" role="radio" aria-checked="false" data-filter="warn" tabindex="-1">Warn</button>
+            <button type="button" class="sc-filter-btn" role="radio" aria-checked="false" data-filter="ok" tabindex="-1">Pass</button>
+          </div>
+          <button
+            type="button"
+            class="sc-sort-btn"
+            id="sc-sort-toggle"
+            aria-label="Sort scorecard"
+            data-sort="severity"
+          >Sort: Severity</button>
+          <p class="sc-row-count" id="sc-row-count" aria-live="polite"></p>
+        </div>
         <div id="scorecard-grid" class="scorecard-grid" aria-live="polite"></div>
         <div class="tile tile-wide" style="margin-top: 1.5rem; min-height: auto">
           <div class="section-tag-row">
@@ -2330,17 +2646,18 @@
             placeholder="What went wrong? What did you expect? Steps to reproduce (optional)."
             autocomplete="off"
           ></textarea>
-          <div class="issue-actions">
-            <button type="button" class="btn-load" id="copy-issue-md">Copy GitHub issue (Markdown)</button>
-            <button type="button" class="btn-ghost" id="copy-feedback-txt">Copy plain summary</button>
-          </div>
           <p class="sub" id="copy-issue-status" style="margin-top: 0.65rem"></p>
+        </div>
+        <div class="sc-sticky-actions issue-actions">
+          <button type="button" class="btn-load" id="copy-issue-md">Copy GitHub issue (Markdown)</button>
+          <button type="button" class="btn-ghost" id="copy-feedback-txt">Copy plain summary</button>
         </div>
       </section>
       </div>
 
       <div data-page="memory" hidden>
-      <section class="dash-section reveal-on-scroll" id="pulse">
+      <div class="memory-grid">
+      <section class="dash-section reveal-on-scroll memory-col-left" id="pulse">
         <div class="dash-h2-row">
           <h2>Pulse</h2>
           <span class="help-pill-group" aria-label="Help topics for Pulse">
@@ -2377,7 +2694,92 @@
           </div>
           <div id="tier-bars" class="bar-chart"></div>
         </div>
+        <div class="pulse-callouts" id="pulse-callouts">
+          <div class="tile pulse-callout" id="pulse-oldest-tile" hidden>
+            <p class="kpi-lbl">Oldest entry</p>
+            <p class="kpi-val" id="pulse-oldest-val">—</p>
+            <p class="kpi-sub" id="pulse-oldest-sub">age in days</p>
+          </div>
+          <div class="tile pulse-callout" id="pulse-size-tile" hidden>
+            <p class="kpi-lbl">Total size estimate</p>
+            <p class="kpi-val" id="pulse-size-val">—</p>
+            <p class="kpi-sub" id="pulse-size-sub" title="Approximate: entry_count × ~2 KB per entry. Actual DB footprint may differ.">approximate · hover for details</p>
+          </div>
+        </div>
       </section>
+
+      <section class="dash-section reveal-on-scroll memory-col-right" id="memory-groups">
+        <div class="dash-h2-row">
+          <h2>Memory groups</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:memory_groups"
+            aria-label="Explain memory groups"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Named groups and their entry counts (privacy tier permitting).</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Groups</p>
+          </div>
+          <div id="memory-groups-body"><p class="prose-small" style="margin:0">—</p></div>
+        </div>
+      </section>
+
+      <section class="dash-section reveal-on-scroll memory-col-right" id="tag-cloud">
+        <div class="dash-h2-row">
+          <h2>Tag cloud</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:tag_cloud"
+            aria-label="Explain tag cloud"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Top tags by frequency — local privacy tier only.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Frequencies</p>
+          </div>
+          <div id="tag-cloud-body"><p class="prose-small" style="margin:0">—</p></div>
+        </div>
+      </section>
+
+      <section class="dash-section reveal-on-scroll memory-col-left" id="activity">
+        <div class="dash-h2-row">
+          <h2>Activity</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:access_histogram"
+            aria-label="Explain access histogram"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">Aggregated access counters — no per-memory keys or content.</p>
+        <div class="tile tile-wide" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Access histogram</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:access_histogram"
+              aria-label="Explain access histogram"
+            >
+              ?
+            </button>
+          </div>
+          <div id="access-bars" class="bar-chart"></div>
+          <p class="sub" id="access-meta">—</p>
+        </div>
+      </section>
+      </div>
       </div>
 
       <div data-page="retrieval" hidden>
@@ -2410,7 +2812,76 @@
             </button>
           </div>
           <div class="stat mono-small" id="retrieval-mode">—</div>
+          <p class="sub" id="retrieval-mode-label">—</p>
           <p class="sub" id="sqlite-vec-line">—</p>
+        </div>
+
+        <!-- STORY-068.5: Latency percentile KPI tiles -->
+        <div class="tile-row" style="margin-top:1rem" aria-label="Retrieval latency percentiles">
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">P50 latency</p>
+              <button type="button" class="help-pill" data-help="concept:latency_percentiles" aria-label="Explain P50 latency">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-p50">—</div>
+            <p class="sub">median recall ms</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">P95 latency</p>
+              <button type="button" class="help-pill" data-help="concept:latency_percentiles" aria-label="Explain P95 latency">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-p95">—</div>
+            <p class="sub">95th-pct recall ms</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">P99 latency</p>
+              <button type="button" class="help-pill" data-help="concept:latency_percentiles" aria-label="Explain P99 latency">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-p99">—</div>
+            <p class="sub">99th-pct recall ms</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Mean latency</p>
+              <button type="button" class="help-pill" data-help="concept:latency_percentiles" aria-label="Explain mean latency">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-mean">—</div>
+            <p class="sub">running mean ms</p>
+          </div>
+        </div>
+
+        <!-- STORY-068.5: Latency histogram placeholder (populated when snapshot contains retrieval.latency_histogram) -->
+        <div class="tile tile-wide" style="margin-top:1rem;min-height:auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Latency histogram</p>
+            <button type="button" class="help-pill" data-help="concept:latency_percentiles" aria-label="Explain latency histogram">?</button>
+          </div>
+          <div id="latency-bars" class="bar-chart bar-chart-tall"></div>
+          <p class="sub" id="latency-meta">—</p>
+        </div>
+
+        <!-- STORY-068.5: Vector index + Query stats tiles -->
+        <div class="tile-row" style="margin-top:1rem">
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Vector index</p>
+              <button type="button" class="help-pill" data-help="concept:vector_index" aria-label="Explain vector index">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-vec-rows">—</div>
+            <p class="sub" id="rtl-vec-meta">pgvector rows · enabled flag</p>
+            <p class="sub" id="rtl-vec-model">embedding model: —</p>
+          </div>
+          <div class="tile" style="min-height:auto">
+            <div class="section-tag-row">
+              <p class="section-tag">Query stats</p>
+              <button type="button" class="help-pill" data-help="concept:query_stats" aria-label="Explain query stats">?</button>
+            </div>
+            <div class="stat mono-small" id="rtl-queries-total">—</div>
+            <p class="sub" id="rtl-queries-meta">total queries since restart</p>
+            <p class="sub" id="rtl-hit-ratio">hit ratio: —</p>
+          </div>
         </div>
 
         <!-- STORY-065.7: Retrieval pipeline live metrics tiles -->
@@ -2460,6 +2931,11 @@
       <section class="dash-section reveal-on-scroll" id="hive">
         <div class="dash-h2-row">
           <h2>Hive hub</h2>
+          <span
+            id="hive-badge"
+            class="hive-badge hive-badge-prominent hive-offline"
+            aria-live="polite"
+          >● Offline</span>
           <button
             type="button"
             class="help-pill"
@@ -2470,6 +2946,19 @@
           </button>
         </div>
         <p class="prose-small">Shared store telemetry (not your project path).</p>
+        <div class="tile tile-wide agent-topology-wrap" style="min-height: auto">
+          <div class="section-tag-row">
+            <p class="section-tag">Topology</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:agent_topology"
+              aria-label="Explain agent topology diagram"
+            >?</button>
+          </div>
+          <div id="agent-topology-host"></div>
+          <p id="agent-topology-note" class="agent-topology-note" hidden></p>
+        </div>
         <div class="tile tile-wide" style="min-height: auto">
           <div class="section-tag-row">
             <p class="section-tag">Hub status</p>
@@ -2483,7 +2972,6 @@
             </button>
           </div>
           <div id="hive-status-row" class="hive-status-row">
-            <span id="hive-badge" class="hive-badge hive-offline">● Offline</span>
             <span id="hive-meta" class="hive-meta">—</span>
           </div>
           <table id="hive-ns-table" class="data-table" aria-label="Hive namespace details">
@@ -2596,36 +3084,6 @@
           </div>
           <div id="velocity-grid" class="kpi-strip" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;padding:0;"></div>
           <p class="sub" id="velocity-meta">—</p>
-        </div>
-      </section>
-
-      <section class="dash-section reveal-on-scroll" id="activity">
-        <div class="dash-h2-row">
-          <h2>Activity</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:access_histogram"
-            aria-label="Explain access histogram"
-          >
-            ?
-          </button>
-        </div>
-        <p class="prose-small">Aggregated access counters — no per-memory keys or content.</p>
-        <div class="tile tile-wide" style="min-height: auto">
-          <div class="section-tag-row">
-            <p class="section-tag">Access histogram</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="concept:access_histogram"
-              aria-label="Explain access histogram"
-            >
-              ?
-            </button>
-          </div>
-          <div id="access-bars" class="bar-chart"></div>
-          <p class="sub" id="access-meta">—</p>
         </div>
       </section>
 
@@ -2766,6 +3224,23 @@
     <div id="help-drawer-body" class="help-drawer-body"></div>
   </aside>
 
+  <aside
+    id="agent-drawer"
+    class="help-drawer"
+    role="dialog"
+    aria-modal="true"
+    aria-hidden="true"
+    aria-labelledby="agent-drawer-title"
+  >
+    <div class="help-drawer-header">
+      <h3 id="agent-drawer-title">Agent detail</h3>
+      <button type="button" class="help-drawer-close" id="agent-drawer-close" aria-label="Close agent detail">
+        Close
+      </button>
+    </div>
+    <div id="agent-drawer-body" class="help-drawer-body"></div>
+  </aside>
+
   <footer class="site-footer">
     <p class="footer-quote">“Intelligence is the ability to adapt to change.”</p>
     <p class="footer-attrib">
@@ -2815,6 +3290,141 @@
     const root = document.documentElement;
     const el = (id) => document.getElementById(id);
     const THEME_KEY = "tapps-brain-visual-theme";
+
+    /* STORY-068.3 — Health page filter / sort / diff-badge module */
+    let activeHealthFilter = "all";
+    let activeHealthSort = "severity";
+    let previousScorecardStatuses = new Map();
+    let hasPriorScorecard = false;
+
+    function refilterScorecard(filter) {
+      activeHealthFilter = filter;
+      const grid = document.getElementById("scorecard-grid");
+      if (!grid) return;
+      const rows = grid.querySelectorAll(".sc-card");
+      let shown = 0;
+      rows.forEach((row) => {
+        const st = row.getAttribute("data-status") || "unknown";
+        const match =
+          filter === "all" ||
+          (filter === "warn" && (st === "warn" || st === "unknown")) ||
+          st === filter;
+        if (match) {
+          row.removeAttribute("hidden");
+          shown += 1;
+        } else {
+          row.setAttribute("hidden", "");
+        }
+      });
+      const countEl = document.getElementById("sc-row-count");
+      if (countEl) {
+        countEl.textContent = shown + " of " + rows.length + " checks";
+      }
+      const btns = document.querySelectorAll("#sc-filter-bar .sc-filter-btn");
+      btns.forEach((b) => {
+        const active = b.getAttribute("data-filter") === filter;
+        b.setAttribute("aria-checked", active ? "true" : "false");
+        b.setAttribute("tabindex", active ? "0" : "-1");
+      });
+    }
+
+    function sortScorecard(mode) {
+      activeHealthSort = mode;
+      const grid = document.getElementById("scorecard-grid");
+      if (!grid) return;
+      const rows = Array.from(grid.querySelectorAll(".sc-card"));
+      if (!rows.length) return;
+      rows.sort((a, b) => {
+        if (mode === "category") {
+          const ca = a.getAttribute("data-category") || "";
+          const cb = b.getAttribute("data-category") || "";
+          return ca.localeCompare(cb);
+        }
+        const sa = parseInt(a.getAttribute("data-severity") || "9", 10);
+        const sb = parseInt(b.getAttribute("data-severity") || "9", 10);
+        return sa - sb;
+      });
+      rows.forEach((r) => grid.insertBefore(r, null));
+      const sortBtn = document.getElementById("sc-sort-toggle");
+      if (sortBtn) {
+        sortBtn.setAttribute("data-sort", mode);
+        sortBtn.textContent = "Sort: " + (mode === "severity" ? "Severity" : "Category");
+      }
+    }
+
+    function applyDiffBadges(checks) {
+      const grid = document.getElementById("scorecard-grid");
+      if (!grid) return;
+      const nextStatuses = new Map();
+      (checks || []).forEach((c) => {
+        const hid = String(c.id || "").replace(/[^a-z0-9_]/gi, "");
+        if (hid) nextStatuses.set(hid, c.status || "unknown");
+      });
+      if (hasPriorScorecard) {
+        grid.querySelectorAll(".sc-card").forEach((row) => {
+          const hid = row.getAttribute("data-check-id") || "";
+          const prev = previousScorecardStatuses.get(hid);
+          const curr = nextStatuses.get(hid);
+          let label = "";
+          if (!previousScorecardStatuses.has(hid)) {
+            label = "NEW";
+          } else if (prev !== curr) {
+            label = "CHANGED";
+          }
+          if (label) {
+            const badge = document.createElement("span");
+            badge.className = "diff-badge";
+            badge.textContent = label;
+            row.appendChild(badge);
+          }
+        });
+      }
+      previousScorecardStatuses = nextStatuses;
+      hasPriorScorecard = true;
+    }
+
+    function onScorecardRendered(checks) {
+      applyDiffBadges(checks);
+      sortScorecard(activeHealthSort);
+      refilterScorecard(activeHealthFilter);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      const bar = document.getElementById("sc-filter-bar");
+      if (bar) {
+        const btns = Array.from(bar.querySelectorAll(".sc-filter-btn"));
+        bar.addEventListener("click", function (e) {
+          const btn = e.target.closest(".sc-filter-btn");
+          if (!btn) return;
+          refilterScorecard(btn.getAttribute("data-filter") || "all");
+        });
+        bar.addEventListener("keydown", function (e) {
+          const idx = btns.indexOf(document.activeElement);
+          if (idx === -1) return;
+          let next = -1;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % btns.length;
+          else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + btns.length) % btns.length;
+          else if (e.key === " " || e.key === "Enter") {
+            e.preventDefault();
+            refilterScorecard(btns[idx].getAttribute("data-filter") || "all");
+            return;
+          }
+          if (next !== -1) {
+            e.preventDefault();
+            btns[next].focus();
+            refilterScorecard(btns[next].getAttribute("data-filter") || "all");
+          }
+        });
+      }
+      const sortBtn = document.getElementById("sc-sort-toggle");
+      if (sortBtn) {
+        sortBtn.addEventListener("click", function () {
+          const next = sortBtn.getAttribute("data-sort") === "severity" ? "category" : "severity";
+          sortScorecard(next);
+          refilterScorecard(activeHealthFilter);
+        });
+      }
+    });
 
     function applyTheme(dark) {
       const btn = el("theme-toggle");
@@ -2901,6 +3511,7 @@
           grid.innerHTML =
             '<p class="prose-small">No scorecard data. Re-export with the latest CLI to generate a scorecard.</p>';
         } else {
+          const sevMap = { fail: 0, warn: 1, unknown: 2, info: 3, ok: 4 };
           grid.innerHTML = checks
             .map((c) => {
               const st = c.status || "unknown";
@@ -2908,13 +3519,20 @@
                 ? '<p class="sc-hint"><strong>Next:</strong> ' + escapeHtml(c.ticket_hint) + "</p>"
                 : "";
               const hid = String(c.id || "").replace(/[^a-z0-9_]/gi, "");
+              const cat = (String(c.id || "").split("_")[0] || "other").toLowerCase();
+              const sev = sevMap[st] != null ? sevMap[st] : 9;
+              const stSafe = escapeHtml(st);
               return (
                 '<article class="sc-card sc-' +
-                st +
+                stSafe +
+                '" data-status="' + stSafe +
+                '" data-severity="' + sev +
+                '" data-category="' + escapeHtml(cat) +
+                '" data-check-id="' + escapeHtml(hid) +
                 '"><div class="sc-head"><span class="sc-title">' +
                 escapeHtml(c.title) +
                 '</span><span class="sc-badge">' +
-                st +
+                stSafe +
                 '</span><button type="button" class="help-pill" data-help="scorecard:' +
                 hid +
                 '" aria-label="Explain: ' +
@@ -2927,6 +3545,9 @@
               );
             })
             .join("");
+        }
+        if (typeof onScorecardRendered === "function") {
+          onScorecardRendered(checks);
         }
       }
 
@@ -3125,12 +3746,223 @@
       }
     }
 
+    /* STORY-068.4 — Memory page renderers */
+    function renderPulseCallouts(health, entryCount) {
+      const oldestTile = el("pulse-oldest-tile");
+      const sizeTile = el("pulse-size-tile");
+      if (oldestTile) {
+        const age = health && typeof health.oldest_entry_age_days === "number"
+          ? health.oldest_entry_age_days : null;
+        if (age !== null && isFinite(age)) {
+          el("pulse-oldest-val").textContent = age.toFixed(1) + " d";
+          const newest = health && typeof health.newest_entry_age_days === "number"
+            ? health.newest_entry_age_days : null;
+          el("pulse-oldest-sub").textContent = newest !== null
+            ? "newest " + newest.toFixed(1) + " d ago"
+            : "age in days";
+          oldestTile.removeAttribute("hidden");
+        } else {
+          oldestTile.setAttribute("hidden", "");
+        }
+      }
+      if (sizeTile) {
+        if (entryCount !== null && entryCount > 0) {
+          const bytes = entryCount * 2048; /* ~2 KB/entry approximate */
+          let label;
+          if (bytes >= 1048576) label = (bytes / 1048576).toFixed(1) + " MB";
+          else if (bytes >= 1024) label = (bytes / 1024).toFixed(1) + " KB";
+          else label = bytes + " B";
+          el("pulse-size-val").textContent = "~" + label;
+          el("pulse-size-sub").textContent = "≈ " + entryCount + " entries × 2 KB";
+          sizeTile.removeAttribute("hidden");
+        } else {
+          sizeTile.setAttribute("hidden", "");
+        }
+      }
+    }
+
+    function renderMemoryGroups(data) {
+      const body = el("memory-groups-body");
+      if (!body) return;
+      const counts = data && data.memory_group_counts && typeof data.memory_group_counts === "object"
+        ? data.memory_group_counts : null;
+      body.replaceChildren();
+      if (!counts || !Object.keys(counts).length) {
+        const tier = data && data.privacy_tier ? String(data.privacy_tier) : "standard";
+        const msg = tier === "local"
+          ? "No named memory groups in this snapshot."
+          : "Memory group names hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal.";
+        const p = document.createElement("p");
+        p.className = "prose-small";
+        p.style.margin = "0";
+        p.textContent = msg;
+        body.appendChild(p);
+        return;
+      }
+      const rows = Object.keys(counts)
+        .map((k) => ({ name: k, count: Number(counts[k]) || 0 }))
+        .sort((a, b) => b.count - a.count);
+      const table = document.createElement("table");
+      table.className = "data-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Group", "Entries"].forEach((h) => {
+        const th = document.createElement("th");
+        th.setAttribute("scope", "col");
+        th.textContent = h;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      rows.forEach((r) => {
+        const tr = document.createElement("tr");
+        const tdName = document.createElement("td");
+        tdName.textContent = r.name;
+        const tdCount = document.createElement("td");
+        tdCount.textContent = String(r.count);
+        tr.appendChild(tdName);
+        tr.appendChild(tdCount);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      body.appendChild(table);
+    }
+
+    function renderTagCloud(data) {
+      const body = el("tag-cloud-body");
+      if (!body) return;
+      body.replaceChildren();
+      const tier = data && data.privacy_tier ? String(data.privacy_tier) : "standard";
+      const stats = data && Array.isArray(data.tag_stats) ? data.tag_stats : null;
+      if (!stats || !stats.length) {
+        const p = document.createElement("p");
+        p.className = "prose-small";
+        p.style.margin = "0";
+        p.textContent = tier === "local"
+          ? "No tag frequencies in this snapshot."
+          : "Tag frequencies hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal.";
+        body.appendChild(p);
+        return;
+      }
+      const top = stats.slice(0, 40);
+      const max = Math.max(1, ...top.map((t) => Number(t.count) || 0));
+      const cloud = document.createElement("div");
+      cloud.className = "tag-cloud";
+      top.forEach((t) => {
+        const count = Number(t.count) || 0;
+        const ratio = count / max;
+        let weight = "sm";
+        if (ratio >= 0.75) weight = "xl";
+        else if (ratio >= 0.5) weight = "lg";
+        else if (ratio >= 0.25) weight = "md";
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        chip.setAttribute("data-weight", weight);
+        const name = document.createElement("span");
+        name.textContent = String(t.tag || "");
+        const cnt = document.createElement("span");
+        cnt.className = "tag-chip-count";
+        cnt.textContent = String(count);
+        chip.appendChild(name);
+        chip.appendChild(cnt);
+        cloud.appendChild(chip);
+      });
+      body.appendChild(cloud);
+      if (stats.length > 40) {
+        const more = document.createElement("p");
+        more.className = "sub";
+        more.style.marginTop = "0.5rem";
+        more.textContent = "Showing top 40 of " + stats.length + " tags.";
+        body.appendChild(more);
+      }
+    }
+
+    /* STORY-068.5 — Retrieval page extras (latency percentiles, vector/query stats) */
+    function renderRetrievalExtras(data) {
+      const retrieval = data && typeof data.retrieval === "object" && data.retrieval ? data.retrieval : null;
+      const metrics = data && typeof data.retrieval_metrics === "object" && data.retrieval_metrics
+        ? data.retrieval_metrics : null;
+
+      function latencyMs(source, key) {
+        const v = source && typeof source[key] === "number" ? source[key] : null;
+        return (v !== null && isFinite(v)) ? v : null;
+      }
+      const p50 = latencyMs(retrieval, "latency_p50_ms");
+      const p95 = latencyMs(retrieval, "latency_p95_ms");
+      const p99 = latencyMs(retrieval, "latency_p99_ms");
+      const mean = metrics && typeof metrics.mean_latency_ms === "number" ? metrics.mean_latency_ms : null;
+
+      function setLatTile(id, ms, tileId) {
+        const e = el(id); if (!e) return;
+        e.textContent = ms !== null ? ms.toFixed(1) + " ms" : "—";
+        const tile = tileId ? el(tileId) : null;
+        if (tile && ms === null) tile.setAttribute("title", "Latency percentile not captured in this snapshot.");
+      }
+      setLatTile("rtl-p50", p50);
+      setLatTile("rtl-p95", p95);
+      setLatTile("rtl-p99", p99);
+      setLatTile("rtl-mean", mean);
+
+      /* Latency histogram: render if retrieval.latency_histogram array is provided; otherwise explanatory empty state */
+      const histBody = el("latency-bars");
+      const histMeta = el("latency-meta");
+      const buckets = retrieval && Array.isArray(retrieval.latency_histogram) ? retrieval.latency_histogram : null;
+      if (histBody && buckets && buckets.length) {
+        const rows = buckets.map((b) => ({
+          label: String(b.label || b.bucket || ""),
+          count: Number(b.count) || 0
+        }));
+        renderBarChart("latency-bars", rows);
+        if (histMeta) histMeta.textContent = "Buckets: " + rows.length;
+      } else if (histBody) {
+        histBody.replaceChildren();
+        const p = document.createElement("p");
+        p.className = "prose-small";
+        p.style.margin = "0";
+        p.textContent = "Latency histogram not captured in this snapshot. P50/P95/P99 tiles above show percentiles when available.";
+        histBody.appendChild(p);
+        if (histMeta) histMeta.textContent = "—";
+      }
+
+      /* Vector index tile */
+      const vecRowsEl = el("rtl-vec-rows");
+      const vecMetaEl = el("rtl-vec-meta");
+      const vecModelEl = el("rtl-vec-model");
+      const vecRows = Number(data && (data.vector_index_rows != null ? data.vector_index_rows : data.sqlite_vec_rows)) || 0;
+      const vecOn = (data && (data.vector_index_enabled === true || data.sqlite_vec_enabled === true)) || false;
+      if (vecRowsEl) vecRowsEl.textContent = String(vecRows);
+      if (vecMetaEl) vecMetaEl.textContent = (vecOn ? "pgvector enabled" : "pgvector disabled") + " · " + vecRows + " indexed row(s)";
+      if (vecModelEl) {
+        const model = retrieval && typeof retrieval.embedding_model === "string" && retrieval.embedding_model
+          ? retrieval.embedding_model
+          : (data && typeof data.embedding_model === "string" && data.embedding_model ? data.embedding_model : "");
+        vecModelEl.textContent = model ? "embedding model: " + model : "embedding model: not reported";
+      }
+
+      /* Query stats tile */
+      const qTotalEl = el("rtl-queries-total");
+      const qMetaEl = el("rtl-queries-meta");
+      const qHitEl = el("rtl-hit-ratio");
+      const totalQ = metrics && typeof metrics.total_queries === "number" ? metrics.total_queries : null;
+      if (qTotalEl) qTotalEl.textContent = totalQ !== null ? String(totalQ) : "—";
+      if (qMetaEl) qMetaEl.textContent = totalQ !== null
+        ? "total queries since last process restart"
+        : "retrieval_metrics not present";
+      const hit = retrieval && typeof retrieval.cache_hit_ratio === "number" ? retrieval.cache_hit_ratio : null;
+      if (qHitEl) qHitEl.textContent = hit !== null ? "hit ratio: " + (hit * 100).toFixed(1) + "%" : "hit ratio: not reported";
+    }
+
     function renderBarChart(containerId, rows) {
       const c = el(containerId);
       if (!c) return;
-      c.innerHTML = "";
+      c.replaceChildren();
       if (!rows.length) {
-        c.innerHTML = '<p class="prose-small" style="margin:0">No data.</p>';
+        const p = document.createElement("p");
+        p.className = "prose-small";
+        p.style.margin = "0";
+        p.textContent = "No data.";
+        c.appendChild(p);
         return;
       }
       const max = Math.max(1, ...rows.map((r) => r.count));
@@ -3138,12 +3970,16 @@
         const row = document.createElement("div");
         row.className = "bar-row";
         const pct = Math.min(100, Math.round((count / max) * 100));
-        row.innerHTML =
-          "<span>" +
-          label +
-          '</span><div class="bar-track"><div class="bar-fill" style="width:' +
-          pct +
-          '%"></div></div>';
+        const labelSpan = document.createElement("span");
+        labelSpan.textContent = String(label);
+        const track = document.createElement("div");
+        track.className = "bar-track";
+        const fill = document.createElement("div");
+        fill.className = "bar-fill";
+        fill.style.width = pct + "%";
+        track.appendChild(fill);
+        row.appendChild(labelSpan);
+        row.appendChild(track);
         c.appendChild(row);
       }
     }
@@ -3403,25 +4239,45 @@
         .map((k) => ({ label: k, count: Number(tiers[k]) || 0 }));
       renderBarChart("tier-bars", tierRows);
 
+      /* STORY-068.4 — Memory page extras */
+      renderPulseCallouts(health, entryCount);
+      renderMemoryGroups(data);
+      renderTagCloud(data);
+
       /* Retrieval */
       const rsum = el("retrieval-summary");
       const rmode = el("retrieval-mode");
+      const rmodeLabel = el("retrieval-mode-label");
       const svLine = el("sqlite-vec-line");
+      const MODE_LABELS = {
+        "bm25_only": "BM25 only (no vector leg)",
+        "hybrid": "Hybrid (BM25 + pgvector, RRF fusion)",
+        "hybrid_pgvector_hnsw": "Hybrid (BM25 + pgvector HNSW index)",
+        "hybrid_pgvector_empty": "Hybrid configured, pgvector table empty",
+        "hybrid_on_the_fly_embeddings": "Hybrid (on-the-fly embeddings, no persisted vectors)",
+        "unknown": "Mode not reported by this snapshot"
+      };
       if (isV2 && typeof data.retrieval_effective_mode === "string") {
-        rmode.textContent = data.retrieval_effective_mode;
+        const mode = data.retrieval_effective_mode;
+        rmode.textContent = mode;
+        if (rmodeLabel) rmodeLabel.textContent = MODE_LABELS[mode] || mode;
         rsum.textContent =
           typeof data.retrieval_summary === "string" ? data.retrieval_summary : "";
-        const svOn = data.sqlite_vec_enabled === true;
-        const svRows = Number(data.sqlite_vec_rows) || 0;
+        const svOn = data.sqlite_vec_enabled === true || data.vector_index_enabled === true;
+        const svRows = Number(data.sqlite_vec_rows) || Number(data.vector_index_rows) || 0;
         svLine.textContent = svOn
           ? "pgvector on · " + svRows + " vector row(s)"
           : "pgvector off";
       } else {
         rmode.textContent = "—";
+        if (rmodeLabel) rmodeLabel.textContent = "Re-export with tapps-brain CLI (visual export schema v2) for mode details.";
         rsum.textContent =
           "Re-export with tapps-brain CLI (visual export schema v2) for BM25/hybrid/pgvector mode.";
         svLine.textContent = "—";
       }
+
+      /* STORY-068.5 — Retrieval page extras */
+      renderRetrievalExtras(data);
 
       /* STORY-065.7: Retrieval pipeline live metrics tiles */
       (function renderRetrievalMetrics(metrics) {
@@ -3460,7 +4316,7 @@
           const totalEntries = Number(hh.entries) || 0;
           const totalAgents = Number(hh.agents) || 0;
           if (badgeEl) {
-            badgeEl.className = "hive-badge hive-connected";
+            badgeEl.className = "hive-badge hive-badge-prominent hive-connected";
             badgeEl.textContent = "● Connected";
           }
           if (metaEl) {
@@ -3490,7 +4346,7 @@
           const injected = data.hive_attached ? "yes" : "no";
           const isWarn = hh && hh.status === "warn";
           if (badgeEl) {
-            badgeEl.className = isWarn ? "hive-badge hive-degraded" : "hive-badge hive-offline";
+            badgeEl.className = "hive-badge hive-badge-prominent " + (isWarn ? "hive-degraded" : "hive-offline");
             badgeEl.textContent = isWarn ? "⚠ Degraded" : "● Offline";
           }
           if (metaEl) {
@@ -3528,7 +4384,7 @@
         }
 
         const _24h = 24 * 60 * 60 * 1000;
-        tbody.innerHTML = agents.map(function (a) {
+        tbody.innerHTML = agents.map(function (a, idx) {
           const lw = a.last_write_at || null;
           let rowClass = "";
           if (!lw) {
@@ -3538,15 +4394,266 @@
             if (!isNaN(age) && age > _24h) rowClass = "agent-row-amber";
           }
           return (
-            '<tr class="' + rowClass + '">' +
-            "<td>" + (a.agent_id || "—") + "</td>" +
-            "<td>" + (a.namespace || "—") + "</td>" +
-            "<td>" + (a.scope || "—") + "</td>" +
+            '<tr class="' + rowClass + '" data-agent-idx="' + idx + '" tabindex="0">' +
+            "<td>" + escHTML(a.agent_id || "—") + "</td>" +
+            "<td>" + escHTML(a.namespace || "—") + "</td>" +
+            "<td>" + escHTML(a.scope || "—") + "</td>" +
             "<td>" + agentRelTime(lw) + "</td>" +
             "</tr>"
           );
         }).join("");
+
+        function openRowDrawer(ev) {
+          const tr = ev.target && ev.target.closest ? ev.target.closest("tr[data-agent-idx]") : null;
+          if (!tr) return;
+          const i = Number(tr.getAttribute("data-agent-idx"));
+          const a = agents[i];
+          if (a) openAgentDetailDrawer(a, tr);
+        }
+        tbody.addEventListener("click", openRowDrawer);
+        tbody.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRowDrawer(e); }
+        });
       })();
+
+      /* Agent topology (SVG) — STORY-068.6 */
+      (function renderAgentTopology() {
+        const host = el("agent-topology-host");
+        const note = el("agent-topology-note");
+        if (!host) return;
+        const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
+        const allAgents = Array.isArray(data.agent_registry) ? data.agent_registry.slice() : [];
+        const nsFromHh = hh && Array.isArray(hh.namespaces) ? hh.namespaces.slice() : [];
+        const nsSet = new Set(nsFromHh);
+        allAgents.forEach(function (a) { if (a && a.namespace) nsSet.add(a.namespace); });
+        let namespaces = Array.from(nsSet);
+        if (namespaces.length === 0 && (!hh || !hh.connected)) {
+          host.innerHTML = '<p class="agent-topology-note">No topology data — Hive not reachable.</p>';
+          if (note) note.hidden = true;
+          return;
+        }
+        if (namespaces.length === 0) namespaces = ["(default)"];
+
+        const CAP = 50;
+        const totalAgents = allAgents.length || (hh && Number(hh.agents)) || 0;
+        const agentsTruncated = allAgents.length > CAP;
+        const shownAgents = agentsTruncated ? allAgents.slice(0, CAP) : allAgents;
+        if (agentsTruncated) {
+          console.info("[topology] truncated at " + CAP + " of " + allAgents.length + " agents");
+        }
+
+        // Layout
+        const W = 720, H = 340;
+        const hubCx = W / 2, hubCy = 52, hubR = 24;
+        const nsY = 130, nsH = 170, nsPadX = 28;
+        const innerW = W - 2 * nsPadX;
+        const nsGap = 12;
+        const nsW = Math.max(90, (innerW - nsGap * (namespaces.length - 1)) / namespaces.length);
+
+        // Bucket agents per namespace
+        const buckets = {};
+        namespaces.forEach(function (n) { buckets[n] = []; });
+        if (shownAgents.length > 0) {
+          shownAgents.forEach(function (a) {
+            const n = (a && a.namespace) || namespaces[0];
+            if (!buckets[n]) buckets[n] = [];
+            buckets[n].push(a);
+          });
+        } else if (hh && hh.connected) {
+          // Synthesize placeholder agents from hive_health.agents spread across ns
+          const n = Math.min(CAP, Number(hh.agents) || 0);
+          for (let i = 0; i < n; i++) {
+            const ns = namespaces[i % namespaces.length];
+            buckets[ns].push({ agent_id: "(agent-" + (i + 1) + ")", namespace: ns, _placeholder: true });
+          }
+        }
+
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("class", "agent-topology");
+        svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label",
+          "Agent topology: " + namespaces.length + " namespace(s), " + totalAgents + " agent(s), hub " +
+          (hh && hh.connected ? "online" : "offline"));
+        const titleEl = document.createElementNS(NS, "title");
+        titleEl.textContent = "Agent topology diagram";
+        svg.appendChild(titleEl);
+
+        function mkText(x, y, content, opts) {
+          const t = document.createElementNS(NS, "text");
+          t.setAttribute("x", x); t.setAttribute("y", y);
+          t.setAttribute("font-family", "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif");
+          t.setAttribute("font-size", (opts && opts.size) || "11");
+          if (opts && opts.anchor) t.setAttribute("text-anchor", opts.anchor);
+          if (opts && opts.cls) t.setAttribute("class", opts.cls);
+          t.textContent = content;
+          return t;
+        }
+
+        // Namespace rects + edges from hub
+        namespaces.forEach(function (ns, i) {
+          const nx = nsPadX + i * (nsW + nsGap);
+          const midX = nx + nsW / 2;
+
+          // Edge: quadratic bezier from hub to namespace top-center
+          const edge = document.createElementNS(NS, "path");
+          const dx = midX - hubCx;
+          edge.setAttribute("d", "M " + hubCx + " " + (hubCy + hubR) +
+            " Q " + (hubCx + dx / 2) + " " + (hubCy + 45) +
+            " " + midX + " " + nsY);
+          edge.setAttribute("class", "topo-edge");
+          svg.appendChild(edge);
+
+          // Namespace rounded rect
+          const rect = document.createElementNS(NS, "rect");
+          rect.setAttribute("x", nx); rect.setAttribute("y", nsY);
+          rect.setAttribute("width", nsW); rect.setAttribute("height", nsH);
+          rect.setAttribute("rx", 8); rect.setAttribute("ry", 8);
+          rect.setAttribute("class", "topo-ns");
+          const rectTitle = document.createElementNS(NS, "title");
+          rectTitle.textContent = "Namespace: " + ns;
+          rect.appendChild(rectTitle);
+          svg.appendChild(rect);
+
+          svg.appendChild(mkText(midX, nsY + 16, ns, { anchor: "middle", size: "11" }));
+
+          // Agents in this namespace
+          const list = buckets[ns] || [];
+          const cols = Math.max(1, Math.min(4, Math.ceil(Math.sqrt(list.length))));
+          const rows = Math.max(1, Math.ceil(list.length / cols));
+          const agentR = 7;
+          const gridTop = nsY + 30;
+          const gridH = nsH - 40;
+          list.forEach(function (a, j) {
+            const r = Math.floor(j / cols), c = j % cols;
+            const cxx = nx + nsW * (c + 1) / (cols + 1);
+            const cyy = gridTop + gridH * (r + 1) / (rows + 1);
+            const circle = document.createElementNS(NS, "circle");
+            circle.setAttribute("cx", cxx); circle.setAttribute("cy", cyy);
+            circle.setAttribute("r", agentR);
+            circle.setAttribute("class", "topo-agent");
+            circle.setAttribute("tabindex", "0");
+            const aid = (a && a.agent_id) || "(agent)";
+            circle.setAttribute("aria-label", "Agent " + aid + " in " + ns);
+            const cTitle = document.createElementNS(NS, "title");
+            cTitle.textContent = aid + " · " + ns;
+            circle.appendChild(cTitle);
+            if (a && !a._placeholder) {
+              circle.addEventListener("click", function () { openAgentDetailDrawer(a, circle); });
+              circle.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openAgentDetailDrawer(a, circle); }
+              });
+            }
+            svg.appendChild(circle);
+          });
+        });
+
+        // Hub octagon (centered at hubCx, hubCy)
+        function octagonPoints(cx, cy, r) {
+          const pts = [];
+          for (let k = 0; k < 8; k++) {
+            const ang = Math.PI / 8 + k * (Math.PI / 4);
+            pts.push((cx + r * Math.cos(ang)).toFixed(1) + "," + (cy + r * Math.sin(ang)).toFixed(1));
+          }
+          return pts.join(" ");
+        }
+        const hub = document.createElementNS(NS, "polygon");
+        hub.setAttribute("points", octagonPoints(hubCx, hubCy, hubR));
+        hub.setAttribute("class", "topo-hub");
+        const hubTitle = document.createElementNS(NS, "title");
+        hubTitle.textContent = "Hive hub · " + (hh && hh.connected ? "online" : "offline");
+        hub.appendChild(hubTitle);
+        svg.appendChild(hub);
+        svg.appendChild(mkText(hubCx, hubCy + 4, "Hive", { anchor: "middle", size: "12", cls: "topo-hub-label" }));
+
+        if (agentsTruncated) {
+          const moreN = allAgents.length - CAP;
+          svg.appendChild(mkText(W - 12, H - 10, "+ " + moreN + " more", { anchor: "end", size: "11" }));
+          if (note) {
+            note.hidden = false;
+            note.textContent = "Showing 50 of " + allAgents.length + " agents (" + moreN + " more not drawn).";
+          }
+        } else if (note) {
+          note.hidden = true;
+        }
+
+        host.innerHTML = "";
+        host.appendChild(svg);
+      })();
+
+      /* Agent-detail drawer — open/close (reuses .help-drawer CSS) */
+      let _agentDrawerLastFocus = null;
+      function openAgentDetailDrawer(a, triggerEl) {
+        const drawer = el("agent-drawer");
+        const body = el("agent-drawer-body");
+        const title = el("agent-drawer-title");
+        if (!drawer || !body) return;
+        _agentDrawerLastFocus = triggerEl || document.activeElement;
+        if (title) title.textContent = "Agent · " + (a.agent_id || "—");
+        function fmt(v) { return v == null || v === "" ? "—" : String(v); }
+        function rel(iso) {
+          if (!iso) return "—";
+          const ms = Date.now() - new Date(iso).getTime();
+          if (isNaN(ms) || ms < 0) return fmt(iso);
+          const secs = Math.floor(ms / 1000);
+          let rel;
+          if (secs < 60) rel = secs + "s ago";
+          else if (secs < 3600) rel = Math.floor(secs / 60) + "m ago";
+          else if (secs < 86400) rel = Math.floor(secs / 3600) + "h ago";
+          else rel = Math.floor(secs / 86400) + "d ago";
+          return iso + " (" + rel + ")";
+        }
+        const rows = [
+          ["Agent ID", fmt(a.agent_id)],
+          ["Namespace", fmt(a.namespace)],
+          ["Scope", fmt(a.scope)],
+          ["Registered at", rel(a.registered_at)],
+          ["Last write at", rel(a.last_write_at)],
+        ];
+        body.innerHTML = rows.map(function (r) {
+          return '<div class="agent-drawer-field">' +
+            '<span class="k">' + escHTML(r[0]) + '</span>' +
+            '<span class="v">' + escHTML(r[1]) + '</span>' +
+            '</div>';
+        }).join("");
+        drawer.classList.add("is-open");
+        drawer.setAttribute("aria-hidden", "false");
+        const backdrop = el("help-backdrop");
+        if (backdrop) { backdrop.hidden = false; backdrop.classList.add("is-on"); }
+        document.body.classList.add("help-drawer-open");
+        const closeBtn = el("agent-drawer-close");
+        if (closeBtn) closeBtn.focus();
+      }
+      function closeAgentDetailDrawer() {
+        const drawer = el("agent-drawer");
+        if (!drawer) return;
+        if (!drawer.classList.contains("is-open")) return;
+        drawer.classList.remove("is-open");
+        drawer.setAttribute("aria-hidden", "true");
+        const backdrop = el("help-backdrop");
+        if (backdrop) { backdrop.hidden = true; backdrop.classList.remove("is-on"); }
+        document.body.classList.remove("help-drawer-open");
+        if (_agentDrawerLastFocus && typeof _agentDrawerLastFocus.focus === "function") {
+          _agentDrawerLastFocus.focus();
+        }
+        _agentDrawerLastFocus = null;
+      }
+      (function bindAgentDrawer() {
+        const closeBtn = el("agent-drawer-close");
+        if (closeBtn) closeBtn.addEventListener("click", closeAgentDetailDrawer);
+        const backdrop = el("help-backdrop");
+        if (backdrop) backdrop.addEventListener("click", closeAgentDetailDrawer);
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") closeAgentDetailDrawer();
+        });
+      })();
+
+      function escHTML(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
 
       /* Access */
       const acc = data.access_stats && typeof data.access_stats === "object" ? data.access_stats : null;
@@ -3680,35 +4787,7 @@
       });
     }
 
-    document.getElementById("snapshot-file").addEventListener("change", (ev) => {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        try {
-          applySnapshot(JSON.parse(String(r.result)));
-          if (typeof _liveHideEmpty === "function") _liveHideEmpty();
-        } catch (e) {
-          setStatus("Invalid JSON: " + e, false);
-        }
-      };
-      r.readAsText(f);
-    });
-
-    document.getElementById("load-demo").addEventListener("click", () => {
-      const demoUrl = new URL("brain-visual.demo.json", document.baseURI).href;
-      fetch(demoUrl)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((data) => {
-          applySnapshot(data);
-          if (typeof _liveHideEmpty === "function") _liveHideEmpty();
-          setStatus("Static demo loaded.", true);
-        })
-        .catch((err) => setStatus("Could not load demo: " + err, false));
-    });
-
     // ── Live polling ──────────────────────────────────────────────────────────
-    // Track whether any data has been loaded (live OR manual file load)
     let _liveHasData = false;
 
     function _liveHideEmpty() {
@@ -3724,10 +4803,39 @@
 
     function getSnapshotUrl() {
       const meta = document.querySelector('meta[name="tapps-snapshot-url"]');
+      let base = "/snapshot";
       if (meta && meta.getAttribute("content") && !meta.getAttribute("content").startsWith("__")) {
-        return meta.getAttribute("content");
+        base = meta.getAttribute("content");
       }
-      return "/snapshot";
+      // STORY-069.7: append ?project=<id> when a project filter is selected.
+      const projSel = document.getElementById("project-filter");
+      const proj = projSel && projSel.value ? projSel.value.trim() : "";
+      if (!proj) return base;
+      const sep = base.indexOf("?") >= 0 ? "&" : "?";
+      return base + sep + "project=" + encodeURIComponent(proj);
+    }
+
+    // STORY-069.7: self-populate project dropdown from snapshot data.
+    function _updateProjectFilterOptions(data) {
+      const sel = document.getElementById("project-filter");
+      if (!sel) return;
+      const ids = new Set();
+      const hist = (data && data.diagnostics_history) || [];
+      const events = (data && data.feedback_events) || [];
+      for (const r of hist) { if (r && r.project_id) ids.add(r.project_id); }
+      for (const r of events) { if (r && r.project_id) ids.add(r.project_id); }
+      const current = sel.value;
+      const existing = new Set(Array.from(sel.options).map(o => o.value));
+      const sorted = Array.from(ids).sort();
+      for (const pid of sorted) {
+        if (!existing.has(pid)) {
+          const opt = document.createElement("option");
+          opt.value = pid;
+          opt.textContent = pid;
+          sel.appendChild(opt);
+        }
+      }
+      if (current) sel.value = current;
     }
 
     (function initLivePolling() {
@@ -3778,6 +4886,7 @@
         consecutiveErrors = 0;
         lastSuccessMs = Date.now();
         _liveHideEmpty();
+        _updateProjectFilterOptions(data);
         applySnapshot(data);
         updateBadge();
       }
@@ -3795,6 +4904,15 @@
       if (intervalSelect) {
         intervalSelect.addEventListener("change", () => {
           startPolling(parseInt(intervalSelect.value, 10));
+        });
+      }
+
+      // STORY-069.7: project filter change → immediate refetch at current interval.
+      const projectFilter = document.getElementById("project-filter");
+      if (projectFilter) {
+        projectFilter.addEventListener("change", () => {
+          const iv = intervalSelect ? parseInt(intervalSelect.value, 10) : 30_000;
+          startPolling(iv);
         });
       }
 

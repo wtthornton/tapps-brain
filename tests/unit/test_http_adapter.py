@@ -1057,3 +1057,87 @@ class TestSnapshotOpenApiSpec:
         assert isinstance(body, dict)
         snapshot_spec = body.get("paths", {}).get("/snapshot", {}).get("get", {})
         assert "503" in snapshot_spec.get("responses", {}), "/snapshot spec must document 503"
+
+
+# ---------------------------------------------------------------------------
+# STORY-069.7: /snapshot?project=<id> filter
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_WITH_TENANT_ROWS: dict[str, Any] = {
+    **_FAKE_SNAPSHOT_DICT,
+    "diagnostics_history": [
+        {"id": "d1", "project_id": "tenant-a", "recorded_at": "2026-04-14T00:00:00+00:00"},
+        {"id": "d2", "project_id": "tenant-b", "recorded_at": "2026-04-14T00:00:00+00:00"},
+        {"id": "d3", "project_id": None, "recorded_at": "2026-04-13T00:00:00+00:00"},
+    ],
+    "feedback_events": [
+        {"id": "e1", "project_id": "tenant-a", "event_type": "recall_rated"},
+        {"id": "e2", "project_id": "tenant-b", "event_type": "gap_reported"},
+        {"id": "e3", "project_id": None, "event_type": "recall_rated"},
+    ],
+}
+
+
+def _make_mock_snapshot_with_tenants() -> MagicMock:
+    snap = MagicMock()
+    snap.model_dump.return_value = dict(_SNAPSHOT_WITH_TENANT_ROWS)
+    return snap
+
+
+class TestSnapshotProjectFilter:
+    """STORY-069.7: /snapshot?project=<id> filters diagnostics_history + feedback_events."""
+
+    def _with_mock(self, port: int) -> Any:
+        mock_store = MagicMock()
+        patcher = patch(
+            "tapps_brain.visual_snapshot.build_visual_snapshot",
+            side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
+        )
+        return patcher, HttpAdapter(host="127.0.0.1", port=port, dsn=None, store=mock_store)
+
+    def test_unfiltered_returns_all_rows(self) -> None:
+        port = _free_port()
+        patcher, adapter = self._with_mock(port)
+        with patcher, adapter:
+            _wait_for_server(port)
+            status, body = _get(port, "/snapshot")
+        assert status == 200
+        assert isinstance(body, dict)
+        assert len(body["diagnostics_history"]) == 3
+        assert len(body["feedback_events"]) == 3
+
+    def test_project_filter_scopes_rows(self) -> None:
+        port = _free_port()
+        patcher, adapter = self._with_mock(port)
+        with patcher, adapter:
+            _wait_for_server(port)
+            status, body = _get(port, "/snapshot?project=tenant-a")
+        assert status == 200
+        assert isinstance(body, dict)
+        assert [r["id"] for r in body["diagnostics_history"]] == ["d1"]
+        assert [r["id"] for r in body["feedback_events"]] == ["e1"]
+
+    def test_project_filter_excludes_legacy_none_rows(self) -> None:
+        """Rows with project_id=None must NOT leak into a filtered response."""
+        port = _free_port()
+        patcher, adapter = self._with_mock(port)
+        with patcher, adapter:
+            _wait_for_server(port)
+            _, body = _get(port, "/snapshot?project=tenant-b")
+        assert isinstance(body, dict)
+        ids = {r["id"] for r in body["diagnostics_history"]} | {
+            r["id"] for r in body["feedback_events"]
+        }
+        assert "d3" not in ids
+        assert "e3" not in ids
+
+    def test_unknown_project_returns_empty_arrays_not_404(self) -> None:
+        port = _free_port()
+        patcher, adapter = self._with_mock(port)
+        with patcher, adapter:
+            _wait_for_server(port)
+            status, body = _get(port, "/snapshot?project=ghost")
+        assert status == 200
+        assert isinstance(body, dict)
+        assert body["diagnostics_history"] == []
+        assert body["feedback_events"] == []

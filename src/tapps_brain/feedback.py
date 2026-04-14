@@ -173,6 +173,13 @@ class FeedbackEvent(BaseModel):
         default_factory=_utc_now_iso,
         description="ISO-8601 UTC timestamp of when the event was recorded.",
     )
+    project_id: str | None = Field(
+        default=None,
+        description=(
+            "STORY-069.7: project_id this event was recorded under. None for "
+            "legacy single-tenant events or backends without a resolved id."
+        ),
+    )
 
     @field_validator("event_type")
     @classmethod
@@ -345,6 +352,7 @@ class FeedbackStore:
                         utility_score=row[4],
                         details=details,
                         timestamp=ts_str,
+                        project_id=self._project_id,
                     )
                 )
             except Exception:

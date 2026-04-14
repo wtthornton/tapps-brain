@@ -74,7 +74,7 @@ class ProjectRegistry:
 
     def get(self, project_id: str) -> ProjectRecord | None:
         """Return the stored record for *project_id*, or ``None`` if absent."""
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT project_id, profile, approved, source, notes "
                 "FROM project_profiles WHERE project_id = %s",
@@ -105,7 +105,7 @@ class ProjectRegistry:
             sql += " WHERE approved = %s"
             params = (approved,)
         sql += " ORDER BY project_id"
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [
@@ -145,7 +145,7 @@ class ProjectRegistry:
             raise ValueError(msg)
 
         profile_json = profile.model_dump(mode="json")
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO project_profiles
@@ -178,7 +178,7 @@ class ProjectRegistry:
     def approve(self, project_id: str) -> bool:
         """Flip ``approved=true`` on an existing row.  Returns ``True`` if
         a row was updated, ``False`` if the ID was unknown."""
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
                 "UPDATE project_profiles SET approved = TRUE "
                 "WHERE project_id = %s",
@@ -195,7 +195,7 @@ class ProjectRegistry:
         callers that want a full purge must delete memory rows explicitly.
         Returns ``True`` if a row was deleted.
         """
-        with self._cm.get_connection() as conn, conn.cursor() as cur:
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM project_profiles WHERE project_id = %s",
                 (project_id,),
