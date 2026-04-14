@@ -3524,6 +3524,8 @@ def _open_project_registry() -> tuple[object, object]:
     Returns ``(registry, connection_manager)`` so the caller can close
     the pool when it's done.
     """
+    import os
+
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.project_registry import ProjectRegistry
 
