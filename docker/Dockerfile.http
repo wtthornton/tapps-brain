@@ -1,5 +1,25 @@
 FROM python:3.13-slim
+
+# Install the [http] extra (FastAPI + uvicorn + starlette + mcp) and [mcp]
+# so FastMCP's Streamable HTTP transport is available.  Matches the install
+# pattern used by the other Dockerfiles in this directory (single pip invoke
+# against the pre-built wheel copied into /tmp).
 COPY dist/tapps_brain-*.whl /tmp/
-RUN whl=$(ls /tmp/tapps_brain-*.whl) && pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && whl=$(ls /tmp/tapps_brain-*.whl) \
+    && pip install --no-cache-dir "${whl}[cli,mcp,http]" "psycopg[binary]"
+
+# Data plane + /mcp + /admin/* are all served by the same FastAPI app on 8080
+# (one Uvicorn worker -- FastMCP's session_manager is per-process, so we must
+# NOT scale workers horizontally inside a single container).  The former 8088
+# admin port has been collapsed into 8080 to match the EPIC-070 single-worker
+# model.
 EXPOSE 8080
-ENTRYPOINT ["tapps-brain", "serve"]
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=15s \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+CMD ["uvicorn", "src.tapps_brain.http_adapter:app", \
+     "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

@@ -2559,11 +2559,15 @@ class MemoryStore:
         cm = getattr(self._persistence, "_cm", None)
         project_id = getattr(self._persistence, "_project_id", None)
         agent_id = getattr(self._persistence, "_agent_id", None)
-        if cm is None or project_id is None or agent_id is None:
-            # Backend has no Postgres connection manager (e.g. unit-test
-            # InMemoryPrivateBackend).  Diagnostics history is silently
-            # unavailable in that case — record() / history() are no-ops.
-            logger.debug("diagnostics_history.skipped_no_postgres_cm")
+        if cm is None:
+            # No Postgres connection manager (e.g. InMemoryPrivateBackend in tests).
+            # Fall back to an in-memory store so diagnostics history still works.
+            from tapps_brain.diagnostics import InMemoryDiagnosticsHistoryStore
+
+            self._diagnostics_history_store = InMemoryDiagnosticsHistoryStore()
+            return
+        if project_id is None or agent_id is None:
+            logger.debug("diagnostics_history.skipped_no_project_or_agent")
             return
         self._diagnostics_history_store = DiagnosticsHistoryStore(
             cm,
@@ -3000,11 +3004,16 @@ class MemoryStore:
 
             if cm is None or project_id is None or agent_id is None:
                 # No Postgres connection — fall back to in-memory store.
-                # Events are kept in-process and lost on close().
+                # Use backend._feedback_events if available so all MemoryStore
+                # instances sharing the same InMemoryPrivateBackend (same
+                # project_root in tests) see the same feedback data.
                 config: FeedbackConfig | None = None
                 if self._profile is not None:
                     config = getattr(self._profile, "feedback", None)
-                self._feedback_store_instance = InMemoryFeedbackStore(config=config)
+                shared = getattr(self._persistence, "_feedback_events", None)
+                self._feedback_store_instance = InMemoryFeedbackStore(
+                    config=config, shared_events=shared
+                )
             else:
                 config = None
                 if self._profile is not None:

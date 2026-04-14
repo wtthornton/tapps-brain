@@ -26,10 +26,19 @@ services:
     environment:
       TAPPS_BRAIN_HIVE_DSN: "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"
       TAPPS_BRAIN_DATABASE_URL: "${TAPPS_BRAIN_DATABASE_URL:-}"
+      TAPPS_BRAIN_AUTO_MIGRATE: "1"
       TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_PORT: "8080"
       TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE: /run/secrets/tapps_http_auth_token
+      # EPIC-070 STORY-070.6: data plane + /mcp + /admin/* all served by the
+      # same FastAPI app on 8080 (previous 8088 admin port collapsed).
+      TAPPS_BRAIN_AUTH_TOKEN: "${TAPPS_BRAIN_AUTH_TOKEN:-}"
+      TAPPS_BRAIN_ADMIN_TOKEN: "${TAPPS_BRAIN_ADMIN_TOKEN:-}"
+      TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
+      TAPPS_BRAIN_STRICT: "1"
     ports:
+      # Single port: /mcp, data plane, and /admin/* share one Uvicorn worker
+      # (FastMCP session_manager is per-process, so scaling workers is unsafe).
       - "${TAPPS_HTTP_PORT:-8080}:8080"
     secrets:
       - tapps_http_auth_token
@@ -50,6 +59,8 @@ services:
       dockerfile: docker/Dockerfile.visual
     ports:
       - "${TAPPS_VISUAL_PORT:-8088}:80"
+    secrets:
+      - tapps_http_auth_token
     depends_on:
       tapps-brain-http:
         condition: service_healthy

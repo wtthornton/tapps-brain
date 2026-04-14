@@ -547,6 +547,70 @@ class DiagnosticsHistoryStore:
 
 
 # ---------------------------------------------------------------------------
+# In-memory diagnostics history (no-Postgres fallback for tests / local dev)
+# ---------------------------------------------------------------------------
+
+
+class InMemoryDiagnosticsHistoryStore:
+    """Thread-safe in-memory diagnostics history — used when no Postgres ``cm``
+    is available (e.g. ``InMemoryPrivateBackend`` in unit/integration tests).
+
+    Provides the same public interface as :class:`DiagnosticsHistoryStore` so
+    ``store.py`` can use either interchangeably.
+    """
+
+    def __init__(self) -> None:
+        self._records: list[dict[str, Any]] = []
+        self._lock = threading.Lock()
+
+    def close(self) -> None:
+        pass
+
+    def record(self, report: "DiagnosticsReport", *, circuit_state: str = "closed") -> str:
+        rid = str(uuid.uuid4())
+        dim_json = json.dumps({k: v.score for k, v in report.dimensions.items()})
+        recorded = report.recorded_at
+        recorded_str = recorded.isoformat() if hasattr(recorded, "isoformat") else str(recorded)
+        row: dict[str, Any] = {
+            "id": rid,
+            "recorded_at": recorded_str,
+            "composite_score": float(report.composite_score),
+            "dimension_scores": dim_json,
+            "circuit_state": circuit_state,
+            "full_report": report.model_dump(mode="json"),
+        }
+        with self._lock:
+            self._records.append(row)
+        return rid
+
+    def history(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock:
+            # Most recent first, matching Postgres ORDER BY recorded_at DESC
+            return list(reversed(self._records[-limit:])) if self._records else []
+
+    def prune_older_than(self, days: int) -> int:
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        with self._lock:
+            before = len(self._records)
+            self._records = [r for r in self._records if r["recorded_at"] >= cutoff]
+            return before - len(self._records)
+
+    def rolling_average(self, *, dimension: str, window: int = 20) -> float | None:
+        rows = self.history(limit=window)
+        if not rows:
+            return None
+        vals: list[float] = []
+        for r in rows:
+            try:
+                d = json.loads(r["dimension_scores"])
+                if dimension in d and isinstance(d[dimension], (int, float)):
+                    vals.append(float(d[dimension]))
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+        return sum(vals) / len(vals) if vals else None
+
+
+# ---------------------------------------------------------------------------
 # Anomaly detection (EWMA)
 # ---------------------------------------------------------------------------
 

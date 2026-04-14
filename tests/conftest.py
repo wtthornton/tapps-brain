@@ -113,6 +113,10 @@ class InMemoryPrivateBackend:
         # introspect to reach the underlying connection manager. Tests that need
         # FeedbackStore must inject a real backend instead.
         self._cm = None
+        # Shared feedback events list — all MemoryStore instances that share this
+        # backend (same project_root) see the same feedback data, matching how
+        # a real Postgres FeedbackStore scopes events to (project_id, agent_id).
+        self._feedback_events: list[Any] = []
 
     @property
     def store_dir(self) -> Path:
@@ -147,21 +151,29 @@ class InMemoryPrivateBackend:
         in the value or key.  This mimics plainto_tsquery token matching so unit
         tests that use multi-word queries work correctly without a real tsvector.
 
+        Punctuation is stripped before comparison so that tokens like ``"openclaw."``
+        match a query word ``"openclaw"`` (mirrors ``plainto_tsquery`` behaviour).
+
         Supports ``since`` and ``until`` ISO-8601 timestamp filters so that
         temporal search tests work without a real Postgres backend.
         """
+        import re
+
+        def _tokens(text: str) -> set[str]:
+            return set(re.findall(r"[a-z0-9]+", text.lower()))
+
         since: str | None = kwargs.get("since")
         until: str | None = kwargs.get("until")
 
         if not query.strip():
             return []
-        q_words = set(query.lower().split())
+        q_words = _tokens(query)
         with self._lock:
             results = [
                 e
                 for e in self._entries.values()
-                if q_words & set(e.value.lower().split())
-                or q_words & set(e.key.lower().replace("-", " ").split())
+                if q_words & _tokens(e.value)
+                or q_words & _tokens(e.key.replace("-", " "))
             ]
 
         # Apply temporal filters using the entry's created_at field.
