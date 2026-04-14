@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-14 (America/Chicago) — **v3.5.0** — EPIC-069 / ADR-010: multi-tenant `project_id` on the wire + Postgres project registry + RLS on private tenanted tables (done); ADR-007: PostgreSQL-only (SQLite removed); EPIC-067: `AsyncMemoryStore` (`aio.py`); EPIC-066: async public-API wrapper; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-14 (America/Chicago) — **v3.5.1** — EPIC-069 / ADR-010: multi-tenant `project_id` on the wire + Postgres project registry + RLS on private tenanted tables (done); ADR-007: PostgreSQL-only (SQLite removed); EPIC-067: `AsyncMemoryStore` (`aio.py`); EPIC-066: async public-API wrapper; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
 
-**Package version (`pyproject.toml`):** **3.5.0**
+**Package version (`pyproject.toml`):** **3.5.1**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 

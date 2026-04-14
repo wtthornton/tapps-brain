@@ -124,7 +124,7 @@ chain = store.history("pricing-plan")
 
 ---
 
-## What's new in v3.5.0
+## What's new in v3.5.1
 
 - **Multi-tenant project registration (EPIC-069 / ADR-010):** one shared `tapps-brain` deployment serves many client projects with per-project profiles and real data isolation. `project_id` travels on every request (`_meta.project_id` > `X-Tapps-Project` header > `TAPPS_BRAIN_PROJECT` env > `"default"`), profiles live in a Postgres `project_profiles` registry, per-call MCP dispatch via a bounded LRU store cache, structured rejection errors in strict mode, and RLS on `private_memories` / `project_profiles` (migration 009) as defence-in-depth.
 - **Postgres production-readiness (EPIC-066):** ephemeral-Postgres CI, connection pool health in `/health`, `TAPPS_BRAIN_AUTO_MIGRATE=1` startup gate, pg_tde encryption runbook, and behavioural parity load smoke against 50 concurrent agents.

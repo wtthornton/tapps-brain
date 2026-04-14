@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-04-14
+
+### Fixed
+- `AgentBrain.__init__` now honors `TAPPS_BRAIN_PROJECT` when resolving `project_id`, matching `MemoryStore.__init__`. Previously the library's primary entry point unconditionally called `derive_project_id(project_dir)` and bypassed the project registry — every library-path user got a per-directory hash instead of the registered slug. Caught by dogfood after registering the first live tenant. (epic-069)
+- `tapps-brain project {register,list,show,approve,delete}` CLI commands crashed with `NameError: name 'os' is not defined` when invoked against a live DSN. `_open_project_registry` was missing the `os` import in its local scope. (epic-069)
+- `tests/integration/test_tenant_isolation.py` fixtures — `MemoryProfile(name="repo-brain")` replaced with `get_builtin_profile("repo-brain")` (layers is required), and `PostgresPrivateBackend.get(key)` replaced with `load_all()` filter (no `.get` method exists). 6/6 tests now pass against live Postgres. (story-069.8)
+
 ## [3.5.0] - 2026-04-14
 
 ### Added
