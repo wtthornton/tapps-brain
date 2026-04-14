@@ -267,13 +267,13 @@ def test_memory_store_isolation_via_public_api() -> None:
         alpha_backend.save(MemoryEntry(key=key, value="alpha-only"))
 
         # Beta's store must not see alpha's memory by key.
-        got = beta_backend.get(key)
-        assert got is None, f"beta store saw alpha's row: {got!r}"
+        beta_rows = [e for e in beta_backend.load_all() if e.key == key]
+        assert beta_rows == [], f"beta store saw alpha's row: {beta_rows!r}"
 
         # Alpha's store sees its own.
-        mine = alpha_backend.get(key)
-        assert mine is not None, "alpha store could not read its own row"
-        assert mine.value == "alpha-only"
+        alpha_rows = [e for e in alpha_backend.load_all() if e.key == key]
+        assert len(alpha_rows) == 1, "alpha store could not read its own row"
+        assert alpha_rows[0].value == "alpha-only"
     finally:
         _cleanup_memories(owner_cm, [alpha, beta])
         owner_cm.close()  # type: ignore[attr-defined]
@@ -289,7 +289,7 @@ def test_project_profiles_admin_bypass_lists_all() -> None:
     """Registry (admin_context) sees every row regardless of tenant."""
     _apply_migrations()
 
-    from tapps_brain.profile import MemoryProfile
+    from tapps_brain.profile import get_builtin_profile
     from tapps_brain.project_registry import ProjectRegistry
 
     owner_cm = _owner_manager()
@@ -299,7 +299,7 @@ def test_project_profiles_admin_bypass_lists_all() -> None:
     beta = _unique_project()
 
     try:
-        profile = MemoryProfile(name="repo-brain")
+        profile = get_builtin_profile("repo-brain")
         registry = ProjectRegistry(runtime_cm)
         registry.register(alpha, profile, source="admin", approved=True)
         registry.register(beta, profile, source="admin", approved=True)
@@ -322,7 +322,7 @@ def test_project_profiles_tenant_isolation_without_admin() -> None:
     """A plain project_context connection only sees its own profile row."""
     _apply_migrations()
 
-    from tapps_brain.profile import MemoryProfile
+    from tapps_brain.profile import get_builtin_profile
     from tapps_brain.project_registry import ProjectRegistry
 
     owner_cm = _owner_manager()
@@ -333,7 +333,7 @@ def test_project_profiles_tenant_isolation_without_admin() -> None:
 
     try:
         registry = ProjectRegistry(runtime_cm)
-        profile = MemoryProfile(name="repo-brain")
+        profile = get_builtin_profile("repo-brain")
         registry.register(alpha, profile, source="admin", approved=True)
         registry.register(beta, profile, source="admin", approved=True)
 
