@@ -165,7 +165,17 @@ class AgentBrain:
         try:
             from tapps_brain.backends import derive_project_id, resolve_private_backend_from_env
 
-            _project_id = derive_project_id(self._project_dir)
+            # EPIC-069 / ADR-010: honor TAPPS_BRAIN_PROJECT (human-readable
+            # slug) before the legacy path-hash.  Matches MemoryStore.__init__
+            # so library-path users hit the project registry by slug, not by
+            # per-directory hash.
+            _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
+            if _env_project:
+                from tapps_brain.project_resolver import validate_project_id
+
+                _project_id = validate_project_id(_env_project)
+            else:
+                _project_id = derive_project_id(self._project_dir)
             _private_backend = resolve_private_backend_from_env(_project_id, _effective_agent_id)
         except Exception:
             logger.warning("agent_brain.private_backend_init_failed", exc_info=True)
