@@ -280,14 +280,22 @@ def _current_request_agent_id() -> str | None:
 
 
 def _raise_project_not_registered(project_id: str | None) -> None:
+    """Raise an MCP error for an unregistered project_id.
+
+    Uses the STORY-070.4 error taxonomy (code=-32002, error="project_not_registered").
+    Wire shape is backward-compatible with EPIC-069.
+    """
     from mcp.shared.exceptions import McpError
     from mcp.types import ErrorData
 
+    from tapps_brain.errors import ErrorCode, jsonrpc_code, mcp_error_data
+
+    err_code = ErrorCode.PROJECT_NOT_REGISTERED
     raise McpError(
         ErrorData(
-            code=-32002,
-            message="project_not_registered",
-            data={"project_id": project_id},
+            code=jsonrpc_code(err_code),
+            message=err_code.value,
+            data=mcp_error_data(err_code, err_code.value, project_id=project_id),
         )
     )
 
@@ -382,11 +390,16 @@ def create_server(  # noqa: PLR0915
             from mcp.shared.exceptions import McpError
             from mcp.types import ErrorData
 
+            from tapps_brain.errors import ErrorCode, jsonrpc_code, mcp_error_data
+
+            err_code = ErrorCode.PROJECT_NOT_REGISTERED
             raise McpError(
                 ErrorData(
-                    code=-32002,
-                    message="project_not_registered",
-                    data={"project_id": exc.project_id},
+                    code=jsonrpc_code(err_code),
+                    message=err_code.value,
+                    data=mcp_error_data(
+                        err_code, err_code.value, project_id=exc.project_id
+                    ),
                 )
             ) from exc
         raise

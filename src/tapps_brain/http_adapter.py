@@ -52,6 +52,15 @@ except ImportError as exc:  # pragma: no cover — http extra not installed
 if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
 
+from tapps_brain.errors import (
+    BrainDegradedError as _BrainDegradedError,
+)
+from tapps_brain.errors import (
+    BrainRateLimitedError as _BrainRateLimitedError,
+)
+from tapps_brain.errors import (
+    TaxonomyError as _TaxonomyError,
+)
 from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
 from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
@@ -837,13 +846,49 @@ def create_app(
 
     # STORY-069.4: map ProjectNotRegisteredError → structured 403 so admin
     # routes that touch the registry report the same envelope as the
-    # legacy handler.
+    # legacy handler.  Shape preserved for backward compat.
     @app.exception_handler(_ProjectNotRegisteredError)
     async def _pne_handler(_request: Request,
                            exc: _ProjectNotRegisteredError) -> JSONResponse:
         return JSONResponse(
             status_code=403,
-            content={"error": "project_not_registered", "project_id": exc.project_id},
+            content={"error": "project_not_registered",
+                     "message": str(exc),
+                     "project_id": exc.project_id},
+        )
+
+    # STORY-070.4: map taxonomy exceptions to structured responses.
+    # BrainDegradedError and BrainRateLimitedError set Retry-After header.
+    @app.exception_handler(_BrainDegradedError)
+    async def _brain_degraded_handler(
+        _request: Request, exc: _BrainDegradedError
+    ) -> JSONResponse:
+        retry_after: int = exc.details.get("retry_after", 30)
+        return JSONResponse(
+            status_code=503,
+            content=exc.http_body(retry_after=retry_after),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    @app.exception_handler(_BrainRateLimitedError)
+    async def _brain_rate_limited_handler(
+        _request: Request, exc: _BrainRateLimitedError
+    ) -> JSONResponse:
+        retry_after = exc.details.get("retry_after", 60)
+        return JSONResponse(
+            status_code=429,
+            content=exc.http_body(retry_after=retry_after),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    @app.exception_handler(_TaxonomyError)
+    async def _taxonomy_handler(
+        _request: Request, exc: _TaxonomyError
+    ) -> JSONResponse:
+        """Catch-all for all remaining TaxonomyError subclasses."""
+        return JSONResponse(
+            status_code=exc.http_status,
+            content=exc.http_body(),
         )
 
     # /mcp mount is installed by the lifespan handler above once the

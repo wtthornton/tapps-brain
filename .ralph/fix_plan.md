@@ -1,43 +1,92 @@
-# Ralph Fix Plan — tapps-brain
+# Ralph Fix Plan — EPIC-070 AgentForge Integration (Remote-First Brain as a Shared Service)
 
-**Scope:** EPIC-066 (fix 90 failing tests, Postgres hardening) → EPIC-065 (live dashboard).
-**Task sizing:** Each `- [ ]` is ONE Ralph loop unless marked `[BATCH-N: SMALL]`.
-**QA strategy:** ALL testing deferred to 066.14 (final sweep). Do NOT run full test suite at phase boundaries — set `TESTS_STATUS: DEFERRED` for everything until 066.14.
-
----
-
-## EPIC-066: Postgres-Only Persistence Plane — Production Readiness
-
-**Read first:** `docs/planning/epics/EPIC-066.md`
-
-### Phase A: Failing test fixes <!-- id: 066-phase-a -->
-
-- [x] **066.1** Consolidation merge audit emission [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-066.1.md -->
-
-### Phase B: Operator readiness <!-- id: 066-phase-b -->
-
-
-### Phase C: Docs, benchmarks, test parity <!-- id: 066-phase-c -->
-
-
-### Phase D: Final sweep <!-- id: 066-phase-d -->
-
-
-<!-- Full suite runs at deployment only — not here. Set TESTS_STATUS: DEFERRED and EXIT_SIGNAL: true when 066.14 is done. -->
+**Scope:** EPIC-070 — make tapps-brain deployable as a shared networked service consumable by AgentForge workers, Claude Code sessions, and AGENT.md-driven agents via MCP Streamable HTTP.
+**Reference:** [EPIC-070](../docs/epics/EPIC-070-agentforge-integration.md) | Stories in `docs/stories/`
+**Already done:** STORY-070.1 (Streamable-HTTP MCP transport), STORY-070.2 (service layer), STORY-070.3 (FastAPI HTTP adapter). Start from 070.4.
+**Task sizing:** One story per Ralph loop unless marked [BATCH].
+**Commits:** Use `feat(story-070.N): description` format.
 
 ---
 
-## EPIC-065: Live Always-On Dashboard
+## EPIC-070: Remote-First Brain as a Shared Service
 
-**Read first:** `docs/planning/epics/EPIC-065.md`
+- [ ] **STORY-070.5** — Idempotency keys for writes (S, 3 pts)
+  - `POST /v1/remember` and `POST /v1/reinforce` accept `X-Idempotency-Key` header
+  - Duplicate key within 24h returns original response
+  - Migration `010_idempotency_keys.sql`: table `idempotency_keys(key PK, project_id, response_hash, created_at)`
+  - Feature-flagged: `TAPPS_BRAIN_IDEMPOTENCY=1`
+  - Reference: `docs/stories/STORY-070.5-idempotency-keys.md`
 
-### Phase A: Live endpoint + polling <!-- id: 065-phase-a -->
+- [ ] **STORY-070.6** — Bulk operations (M, 5 pts)
+  - `POST /v1/remember:batch` (max 100 entries), `GET /v1/recall:batch` (max 50 queries), `POST /v1/reinforce:batch`
+  - MCP tools: `memory_save_many`, `memory_recall_many`, `memory_reinforce_many`
+  - Single Postgres transaction per batch; partial failure returns per-item status array
+  - Benchmark: 100-entry save batch ≤ 3× single-entry latency
+  - Reference: `docs/stories/STORY-070.6-bulk-operations.md`
 
+- [ ] **STORY-070.7** — Per-call identity — agent_id / scope / group (M, 5 pts)
+  - Every memory operation accepts `agent_id`, `scope`, `memory_group` as per-call parameters
+  - Precedence: request param > `_meta.agent_id` / `X-Tapps-Agent` header > env default
+  - MCP tools accept `agent_id`, `scope`, `group` as named params
+  - HTTP: `X-Tapps-Agent`, `X-Tapps-Scope`, `X-Tapps-Group` headers
+  - Backward compat: calls without per-call identity use env-level defaults
+  - Reference: `docs/stories/STORY-070.7-per-call-identity.md`
 
-### Phase B: Hive and agent monitoring panels <!-- id: 065-phase-b -->
+- [ ] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
+  - `project_profiles` gains `hashed_token` column (migration 011, argon2id)
+  - Auth middleware: bearer → hash → project_id; falls back to global token if `TAPPS_BRAIN_PER_TENANT_AUTH` not set
+  - CLI: `tapps-brain project rotate-token <slug>` and `revoke-token <slug>`
+  - Feature flag: `TAPPS_BRAIN_PER_TENANT_AUTH=1`
+  - Integration test: token A cannot recall project B entries
+  - Reference: `docs/stories/STORY-070.8-per-tenant-auth.md`
 
-### Phase C: Velocity and retrieval panels <!-- id: 065-phase-c -->
+- [ ] **STORY-070.9** — Operator-tool separation (S, 3 pts)
+  - Split into `tapps_brain/mcp_server/standard.py` and `tapps_brain/mcp_server/operator.py`
+  - Standard: all memory tools. Operator: gc_run, consolidation_merge, consolidation_undo, import, export, migration
+  - Two entry points: `tapps-brain-mcp` and `tapps-brain-operator-mcp`
+  - Write `docs/guides/agent-md-wiring.md` with safe AGENT.md grant example
+  - Reference: `docs/stories/STORY-070.9-operator-tools-split.md`
 
-- [x] **065.7** Retrieval pipeline live metrics panel [MEDIUM] <!-- story: docs/planning/epics/stories/STORY-065.7.md -->
+- [ ] **STORY-070.10** — Native async parity (M, 5 pts)
+  - `AsyncMemoryStore` covers every sync `MemoryStore` public method (save, recall, reinforce, hive_search, relay_export, relay_import, consolidate, gc_run, delete, search)
+  - Uses `psycopg` async connection pool internally
+  - Benchmark: 100-concurrent async recalls ≤ 2× single recall latency
+  - Reference: `docs/stories/STORY-070.10-async-parity.md`
 
-<!-- QA deferred — all testing owned by EPIC-066 story 066.14 -->
+- [ ] **STORY-070.11** — Official TappsBrainClient sync + async (L, 8 pts)
+  - `tapps_brain.client.TappsBrainClient` and `AsyncTappsBrainClient` with method parity vs `AgentBrain`
+  - URL scheme selects transport: `http(s)://` → HTTP adapter; `mcp+stdio://` → subprocess; `mcp+http://` → Streamable-HTTP MCP
+  - One `BrainClientProtocol` implemented by three backends; pooled `httpx.AsyncClient` for HTTP
+  - Per-call identity, error taxonomy exceptions, idempotency key auto-generated on retry
+  - Published in the wheel — no separate package
+  - Write `docs/guides/client.md`
+  - Reference: `docs/stories/STORY-070.11-tapps-brain-client.md`
+
+- [ ] **STORY-070.12** — OTel + Prometheus label enrichment (S, 3 pts)
+  - All memory-op spans carry: `tapps.project_id`, `tapps.agent_id`, `tapps.scope`, `tapps.tool`, `tapps.rows_returned`, `tapps.latency_ms`
+  - Prometheus counters and histograms gain `project_id`, `agent_id`, `tool`, `status` labels
+  - Label cardinality capped: `agent_id` top-100 per scrape, overflow → `"other"`
+  - Add Grafana dashboard JSON at `examples/observability/grafana-per-tenant.json`
+  - Reference: `docs/stories/STORY-070.12-otel-prom-labels.md`
+
+- [ ] **STORY-070.13** — AgentForge BrainBridge port — reference implementation (L, 8 pts)
+  - Port AgentForge's `BrainBridge` (~925 LOC) to use `TappsBrainClient` in `examples/agentforge_bridge/`
+  - Circuit breaker + bounded write queue preserved but thin; target < 250 LOC
+  - Tests mirror `test_brain_bridge.py` against a live dockerized brain
+  - Does NOT become a runtime dep — lives in `examples/` as documentation
+  - Reference: `docs/stories/STORY-070.13-agentforge-bridge-example.md`
+
+- [ ] **STORY-070.14** — Compatibility test suite (S, 3 pts)
+  - `tests/compat/test_embedded_3_5_parity.py` pins embedded `AgentBrain` public-method behavior
+  - Runs against live Postgres in CI
+  - CI job fails PR if any pinned behavior shifts
+  - Document policy in `CONTRIBUTING.md`
+  - Reference: `docs/stories/STORY-070.14-compat-suite.md`
+
+- [ ] **STORY-070.15** — Docker + docs: one binary, both transports (S, 3 pts)
+  - `tapps-brain serve` starts HTTP adapter + Streamable-HTTP MCP on distinct ports in one process
+  - Config: `TAPPS_BRAIN_HTTP_PORT` and `TAPPS_BRAIN_MCP_HTTP_PORT`
+  - `docker/docker-compose.hive.yaml` updated — single `tapps-brain` service
+  - Write `docs/guides/deployment.md` with shared-service pattern, AgentForge client snippet, AGENT.md example
+  - Write `docs/guides/migration-3.5-to-3.6.md`
+  - Reference: `docs/stories/STORY-070.15-docker-unified.md`
