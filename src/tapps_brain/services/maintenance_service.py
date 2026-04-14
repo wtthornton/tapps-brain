@@ -39,6 +39,15 @@ def maintenance_gc(
         payload["candidate_keys"] = raw.archived_keys
     else:
         payload["dry_run"] = False
+
+    # STORY-070.5: sweep expired idempotency keys when feature is enabled.
+    if not dry_run:
+        from tapps_brain.idempotency import is_idempotency_enabled, sweep_expired_keys
+
+        if is_idempotency_enabled():
+            swept = sweep_expired_keys()
+            payload["idempotency_keys_swept"] = swept
+
     return payload
 
 

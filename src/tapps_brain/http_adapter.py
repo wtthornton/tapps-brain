@@ -662,6 +662,225 @@ def create_app(
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
+    # -------- memory data-plane routes (EPIC-070 STORY-070.5) --------
+
+    def _get_store_or_503() -> Any:
+        """Return cfg.store or raise 503 when no store is configured."""
+        if cfg.store is None:
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "store_unavailable",
+                        "detail": "No MemoryStore is configured for this adapter instance."},
+            )
+        return cfg.store
+
+    def _idempotency_check(request: Request, project_id: str) -> tuple[str | None, Any | None]:
+        """Return (ikey, cached_response_json) when idempotency is enabled and a hit exists.
+
+        Returns (ikey, None) when the key is present but not yet cached.
+        Returns (None, None) when idempotency is disabled or no key header.
+        """
+        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        if not is_idempotency_enabled():
+            return None, None
+        ikey = (request.headers.get("x-idempotency-key") or "").strip() or None
+        if not ikey or not cfg.dsn:
+            return ikey, None
+        istore = IdempotencyStore(cfg.dsn)
+        try:
+            cached = istore.check(project_id, ikey)
+        finally:
+            istore.close()
+        if cached is None:
+            return ikey, None
+        _status, _body = cached
+        return ikey, JSONResponse(
+            status_code=_status,
+            content=_body,
+            headers={"Idempotency-Replayed": "true"},
+        )
+
+    def _idempotency_save(project_id: str, ikey: str, status: int, body: dict[str, Any]) -> None:
+        """Persist idempotency key → response when enabled and a DSN is available."""
+        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        if not is_idempotency_enabled() or not cfg.dsn:
+            return
+        istore = IdempotencyStore(cfg.dsn)
+        try:
+            istore.save(project_id, ikey, status, body)
+        finally:
+            istore.close()
+
+    @app.post("/v1/remember", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_remember(request: Request) -> JSONResponse:
+        """Save a memory entry.
+
+        Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
+        A duplicate key within 24 h replays the original response.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
+
+        Request body (JSON):
+          ``{ "key": str, "value": str, "tier"?: str, "source"?: str,
+              "tags"?: list[str], "scope"?: str, "confidence"?: float,
+              "agent_scope"?: str, "group"?: str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request",
+                        "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        # Idempotency check.
+        ikey, replay = _idempotency_check(request, project_id)
+        if replay is not None:
+            return replay  # type: ignore[return-value]
+
+        try:
+            raw = await request.body()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Read error: {exc}"})
+        if not raw:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Empty request body."})
+        if len(raw) > 65_536:
+            raise HTTPException(status_code=413,
+                                detail={"error": "payload_too_large",
+                                        "detail": "Max 65536 bytes."})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Invalid JSON: {exc}"})
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Request body must be a JSON object."})
+
+        mem_key = (body.get("key") or "").strip()
+        mem_value = body.get("value") or ""
+        if not mem_key or not mem_value:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "key and value are required."})
+
+        from tapps_brain.services import memory_service as _ms
+
+        result = _ms.memory_save(
+            store, project_id, agent_id,
+            key=mem_key,
+            value=mem_value,
+            tier=body.get("tier", "pattern"),
+            source=body.get("source", "agent"),
+            tags=body.get("tags"),
+            scope=body.get("scope", "project"),
+            confidence=float(body.get("confidence", -1.0)),
+            agent_scope=body.get("agent_scope", "private"),
+            group=body.get("group"),
+        )
+        if isinstance(result, dict) and "error" in result:
+            status_code = 400
+        else:
+            status_code = 200
+
+        if ikey:
+            _idempotency_save(project_id, ikey, status_code, result)
+
+        return JSONResponse(status_code=status_code, content=result)
+
+    @app.post("/v1/reinforce", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_reinforce(request: Request) -> JSONResponse:
+        """Reinforce an existing memory entry.
+
+        Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
+        A duplicate key within 24 h replays the original response.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
+
+        Request body (JSON):
+          ``{ "key": str, "confidence_boost"?: float }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request",
+                        "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        # Idempotency check.
+        ikey, replay = _idempotency_check(request, project_id)
+        if replay is not None:
+            return replay  # type: ignore[return-value]
+
+        try:
+            raw = await request.body()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Read error: {exc}"})
+        if not raw:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Empty request body."})
+        if len(raw) > 65_536:
+            raise HTTPException(status_code=413,
+                                detail={"error": "payload_too_large",
+                                        "detail": "Max 65536 bytes."})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Invalid JSON: {exc}"})
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Request body must be a JSON object."})
+
+        mem_key = (body.get("key") or "").strip()
+        if not mem_key:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "key is required."})
+
+        from tapps_brain.services import memory_service as _ms
+
+        result = _ms.memory_reinforce(
+            store, project_id, agent_id,
+            key=mem_key,
+            confidence_boost=float(body.get("confidence_boost", 0.0)),
+        )
+        if isinstance(result, dict) and "error" in result:
+            status_code = 400
+        else:
+            status_code = 200
+
+        if ikey:
+            _idempotency_save(project_id, ikey, status_code, result)
+
+        return JSONResponse(status_code=status_code, content=result)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:

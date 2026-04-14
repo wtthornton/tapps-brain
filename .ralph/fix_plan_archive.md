@@ -295,3 +295,4 @@
 ## EPIC-070: Remote-First Brain as a Shared Service
 
 - [x] **STORY-070.4** — Error taxonomy + retry-ability semantics (S, 3 pts)
+- [x] **STORY-070.5** — Idempotency keys for writes (S, 3 pts)

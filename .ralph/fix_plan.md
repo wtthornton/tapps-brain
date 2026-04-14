@@ -10,12 +10,6 @@
 
 ## EPIC-070: Remote-First Brain as a Shared Service
 
-- [ ] **STORY-070.5** — Idempotency keys for writes (S, 3 pts)
-  - `POST /v1/remember` and `POST /v1/reinforce` accept `X-Idempotency-Key` header
-  - Duplicate key within 24h returns original response
-  - Migration `010_idempotency_keys.sql`: table `idempotency_keys(key PK, project_id, response_hash, created_at)`
-  - Feature-flagged: `TAPPS_BRAIN_IDEMPOTENCY=1`
-  - Reference: `docs/stories/STORY-070.5-idempotency-keys.md`
 
 - [ ] **STORY-070.6** — Bulk operations (M, 5 pts)
   - `POST /v1/remember:batch` (max 100 entries), `GET /v1/recall:batch` (max 50 queries), `POST /v1/reinforce:batch`

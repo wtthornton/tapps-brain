@@ -279,6 +279,39 @@ def _current_request_agent_id() -> str | None:
     return str(agent).strip() or None
 
 
+def _current_request_idempotency_key() -> str | None:
+    """Return ``_meta.idempotency_key`` from the active MCP request context.
+
+    When ``TAPPS_BRAIN_IDEMPOTENCY=1`` is set, the MCP client can pass an
+    ``idempotency_key`` UUID inside the JSON-RPC ``_meta`` envelope to get
+    duplicate-safe ``memory_save`` / ``memory_reinforce`` calls::
+
+        {"method": "tools/call", "params": {
+            "name": "memory_save",
+            "arguments": {"key": "...", "value": "..."},
+            "_meta": {"idempotency_key": "uuid-here"}
+        }}
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        rc = request_ctx.get()
+    except LookupError:
+        return None
+    if rc is None:
+        return None
+    meta = getattr(rc, "meta", None)
+    if meta is None:
+        return None
+    ikey = getattr(meta, "idempotency_key", None)
+    if ikey is None:
+        extra = getattr(meta, "model_extra", None) or {}
+        ikey = extra.get("idempotency_key")
+    return str(ikey).strip() or None if ikey else None
+
+
 def _raise_project_not_registered(project_id: str | None) -> None:
     """Raise an MCP error for an unregistered project_id.
 
@@ -557,15 +590,43 @@ def create_server(  # noqa: PLR0915
         source_agent: str = "",
         group: str | None = None,
     ) -> str:
-        """Save or update a memory entry."""
-        return json.dumps(
-            memory_service.memory_save(
-                store, _pid(), agent_id,
-                key=key, value=value, tier=tier, source=source, tags=tags,
-                scope=scope, confidence=confidence, agent_scope=agent_scope,
-                source_agent=source_agent, group=group,
-            )
+        """Save or update a memory entry.
+
+        When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
+        in the JSON-RPC envelope for duplicate-safe writes.
+        """
+        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        ikey = _current_request_idempotency_key()
+        project_id = _pid()
+        dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
+
+        if ikey and is_idempotency_enabled() and dsn and project_id:
+            istore = IdempotencyStore(dsn)
+            try:
+                cached = istore.check(project_id, ikey)
+                if cached is not None:
+                    _status, body = cached
+                    return json.dumps(body)
+            finally:
+                istore.close()
+
+        result = memory_service.memory_save(
+            store, project_id, agent_id,
+            key=key, value=value, tier=tier, source=source, tags=tags,
+            scope=scope, confidence=confidence, agent_scope=agent_scope,
+            source_agent=source_agent, group=group,
         )
+
+        if ikey and is_idempotency_enabled() and dsn and project_id:
+            status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
+            istore2 = IdempotencyStore(dsn)
+            try:
+                istore2.save(project_id, ikey, status_code, result)
+            finally:
+                istore2.close()
+
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_get(key: str) -> str:
@@ -626,12 +687,40 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_reinforce(key: str, confidence_boost: float = 0.0) -> str:
-        """Reinforce a memory entry, boosting its confidence and resetting decay."""
-        return json.dumps(
-            memory_service.memory_reinforce(
-                store, _pid(), agent_id, key=key, confidence_boost=confidence_boost,
-            )
+        """Reinforce a memory entry, boosting its confidence and resetting decay.
+
+        When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
+        in the JSON-RPC envelope for duplicate-safe writes.
+        """
+        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        ikey = _current_request_idempotency_key()
+        project_id = _pid()
+        dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
+
+        if ikey and is_idempotency_enabled() and dsn and project_id:
+            istore = IdempotencyStore(dsn)
+            try:
+                cached = istore.check(project_id, ikey)
+                if cached is not None:
+                    _status, body = cached
+                    return json.dumps(body)
+            finally:
+                istore.close()
+
+        result = memory_service.memory_reinforce(
+            store, project_id, agent_id, key=key, confidence_boost=confidence_boost,
         )
+
+        if ikey and is_idempotency_enabled() and dsn and project_id:
+            status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
+            istore2 = IdempotencyStore(dsn)
+            try:
+                istore2.save(project_id, ikey, status_code, result)
+            finally:
+                istore2.close()
+
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_ingest(
