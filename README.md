@@ -29,22 +29,37 @@ Cross-agent memory sharing with namespace isolation, 4 conflict resolution polic
 
 ## See it in action
 
-The **brain-visual** dashboard shows your memory store at a glance — tier mix, scorecard health, retrieval stack, Hive status, tag cloud, and diagnostics — no code required.
+The **brain-visual** dashboard shows your memory store at a glance — tier mix, scorecard health, retrieval stack, Hive status, agent topology, tag cloud, and diagnostics — no code required. It polls the live `/snapshot` endpoint exposed by the tapps-brain HTTP adapter.
 
 ```bash
-# export a snapshot from your project
-tapps-brain visual export -o brain-visual.json
+# bring up the full hive stack (Postgres + HTTP adapter + nginx dashboard)
+docker compose -f docker/docker-compose.hive.yaml up -d --build
 
-# serve the dashboard and open it
-python3 -m http.server 8080 --directory examples/brain-visual
-# → open http://localhost:8080, click "Load snapshot", pick brain-visual.json
+# open the dashboard
+# → http://localhost:8088
 ```
 
-> **Live polling mode (EPIC-065):** if the HTTP adapter is running (`TAPPS_BRAIN_DATABASE_URL` set, adapter started), the dashboard automatically polls `/snapshot` every 5 seconds and shows a **LIVE / STALE / ERROR** connection badge with a last-refreshed timestamp. No manual export needed. The static "Load snapshot" flow still works for offline use.
-
-> **No real store yet?** Click **Load demo** — a rich synthetic snapshot (`brain-visual.demo.json`) populates every panel instantly. Requires serving over HTTP as shown above.
+The dashboard polls `/snapshot` every 30 seconds (configurable) and shows a **LIVE / STALE / OFFLINE / ERROR** connection badge with a last-refreshed timestamp. There is no file-load or demo fallback — if the endpoint is unreachable, start the adapter.
 
 → [Visual snapshot guide](docs/guides/visual-snapshot.md) · [Dashboard README](examples/brain-visual/README.md)
+
+---
+
+## Connect a coding project
+
+Drop tapps-brain into an existing project in one command:
+
+```bash
+cd your-project
+tapps-brain init                 # writes .mcp.json, brain_init.py, profile.yaml, .env.example
+```
+
+That scaffold gives you two independent entry points:
+
+- **Design-time** — a `.mcp.json` that points your IDE's coding agent (Claude Code, Cursor) at the deployed tapps-brain hub via MCP. Save/recall memories as you code.
+- **Runtime** — a `brain_init.py` factory for embedding `AgentBrain` in your shipped app's agent loop.
+
+The scaffold lives at [examples/coding-project-init/](examples/coding-project-init/) if you'd rather copy files manually. See its [README](examples/coding-project-init/README.md) for the full walkthrough and for how the two entry points differ.
 
 ---
 
@@ -323,10 +338,12 @@ Profiles make tapps-brain a universal brain for **any** AI agent — not just co
 store = MemoryStore(Path("."), profile_name="personal-assistant")
 ```
 
-<details>
-<summary><strong>Create a custom profile</strong></summary>
+> **Deployed / multi-tenant brains:** profile selection happens via a registered `project_id` (env `TAPPS_BRAIN_PROJECT`, header `X-Tapps-Project`, or MCP `_meta.project_id`) — not by filesystem discovery. See [ADR-010](docs/planning/adr/ADR-010-multi-tenant-project-registration.md), [EPIC-069](docs/planning/epics/EPIC-069.md), and [docs/guides/mcp.md](docs/guides/mcp.md#project-identity-multi-tenant). Register with `tapps-brain project register <id> --profile ./profile.yaml`.
 
-Drop a YAML file at `{project}/.tapps-brain/profile.yaml`:
+<details>
+<summary><strong>Create a custom profile (in-process / seed document)</strong></summary>
+
+Author the YAML locally, then either load it in-process or register it against a deployed brain:
 
 ```yaml
 profile:
@@ -606,7 +623,7 @@ tests/
 | [Publish checklist](scripts/publish-checklist.md) | PyPI pre-flight (includes release gate command) |
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup |
 | [Visual snapshot guide](docs/guides/visual-snapshot.md) | Export a `brain-visual.json` snapshot and explore the brain-visual dashboard |
-| [Dashboard README](examples/brain-visual/README.md) | Load demo, motion test checklist, brand notes |
+| [Dashboard README](examples/brain-visual/README.md) | Live `/snapshot` polling, motion test checklist, brand notes |
 | [Changelog](CHANGELOG.md) | Version history |
 
 <details>

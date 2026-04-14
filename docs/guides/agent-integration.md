@@ -4,6 +4,8 @@ This page is the **operator contract** for AI agents using tapps-brain: the
 `AgentBrain` Python API surface, environment-variable reference, and how to
 handle empty recall.
 
+> **Multi-tenant note.** When connecting to a shared deployed brain over MCP or HTTP, you **must** declare a `project_id` (via `TAPPS_BRAIN_PROJECT` env, `X-Tapps-Project` header, or MCP `_meta.project_id`) and register a profile for it first. See [ADR-010](../planning/adr/ADR-010-multi-tenant-project-registration.md), [EPIC-069](../planning/epics/EPIC-069.md), and [MCP guide — Project identity](mcp.md#project-identity-multi-tenant). In-process `AgentBrain` (documented below) derives `project_id` from `project_dir` automatically.
+
 ---
 
 ## AgentBrain — Python API (EPIC-057, v3)
@@ -212,7 +214,10 @@ pool sizing, health JSON fields, and DSN format details, see
 | Variable | Example | Required (prod) | Description |
 |----------|---------|-----------------|-------------|
 | `TAPPS_BRAIN_AGENT_ID` | `claude-code` | ✅ | Agent identity string. Scopes private memory rows and Hive propagation. |
-| `TAPPS_BRAIN_PROJECT_DIR` | `/home/user/myrepo` | ✅ | Project root — used to derive the stable `project_id` hash. Defaults to `cwd`. |
+| `TAPPS_BRAIN_PROJECT` | `alpaca` | ✅ (deployed MCP) | Project identifier for a shared/deployed brain. Selects the registered profile and partitions private memory. See [ADR-010](../planning/adr/ADR-010-multi-tenant-project-registration.md). stdio transport reads this env; HTTP uses `X-Tapps-Project` header; MCP tool calls may override via `_meta.project_id`. |
+| `TAPPS_BRAIN_PROJECT_DIR` | `/home/user/myrepo` | ✅ (in-process) | Project root for in-process `AgentBrain` use. Defaults to `cwd`. Not used when connecting to a deployed brain. |
+| `TAPPS_BRAIN_STRICT_PROJECTS` | `1` | ✅ prod deployment | Server-side flag: when `1`, unknown `project_id` is rejected with `-32002 project_not_registered` instead of auto-creating. |
+| `TAPPS_BRAIN_ADMIN_TOKEN` | (secret) | ✅ prod deployment | Server-side admin token guarding `POST /admin/projects` and the `tapps-brain project …` CLI when talking to a remote brain. |
 | `TAPPS_BRAIN_DATABASE_URL` | `postgres://tapps:s3cr3t@db:5432/tapps` | ✅ (v3) | Unified v3 DSN for private memory + Hive fallback. `postgres://` or `postgresql://` required. |
 | `TAPPS_BRAIN_HIVE_DSN` | `postgres://tapps:s3cr3t@db:5432/tapps_hive` | ✅ if using Hive | Hive shared-store DSN. Falls back to `TAPPS_BRAIN_DATABASE_URL`. |
 | `TAPPS_BRAIN_FEDERATION_DSN` | `postgres://tapps:s3cr3t@db:5432/tapps_fed` | if using federation | Cross-project federation DSN. |

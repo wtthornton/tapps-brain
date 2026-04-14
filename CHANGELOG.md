@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- multi-tenant project registration — `project_profiles` registry table (migration 008), `ProjectRegistry` module, `project_resolver` with `_meta > X-Tapps-Project > TAPPS_BRAIN_PROJECT > "default"` precedence (epic-069, adr-010)
+- `tapps-brain project register|list|show|approve|delete` CLI sub-app for profile authoring against a deployed brain (story-069.5)
+- HTTP admin surface `GET/POST /admin/projects`, `POST /admin/projects/{id}/approve`, `DELETE /admin/projects/{id}`, gated by `TAPPS_BRAIN_ADMIN_TOKEN` (story-069.5)
+- `MemoryStore` honors `TAPPS_BRAIN_PROJECT` env as a human-readable `project_id` slug and consults the project-profile registry before falling back to built-in defaults (story-069.2)
+- Agents page with SVG topology diagram + agent-detail drawer (story-068.6)
+
+### Changed
+- Profile selection for deployed brains no longer uses filesystem discovery — `.tapps-brain/profile.yaml` is now a seed document consumed by `tapps-brain project register`; in-process `AgentBrain` / `MemoryStore` usage is unchanged (adr-010)
+
+### Removed
+- Demo snapshot fallback in brain-visual dashboard: deleted `brain-visual.demo.json`, the "Load static demo" button, and the "Load snapshot file" manual upload; dashboard is live-only against the `/snapshot` endpoint
+
 ## [3.4.0] - 2026-04-12
 
 ### Added

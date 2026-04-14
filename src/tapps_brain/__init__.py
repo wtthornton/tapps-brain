@@ -97,6 +97,21 @@ from tapps_brain.models import (
 from tapps_brain.profile import MemoryProfile as MemoryProfile
 from tapps_brain.profile import ScoringConfig as ScoringConfig
 
+# Multi-tenant project identity (EPIC-069)
+from tapps_brain.project_registry import (
+    ProjectNotRegisteredError as ProjectNotRegisteredError,
+)
+from tapps_brain.project_registry import ProjectRecord as ProjectRecord
+from tapps_brain.project_registry import ProjectRegistry as ProjectRegistry
+from tapps_brain.project_resolver import (
+    DEFAULT_PROJECT_ID as DEFAULT_PROJECT_ID,
+)
+from tapps_brain.project_resolver import (
+    InvalidProjectIdError as InvalidProjectIdError,
+)
+from tapps_brain.project_resolver import resolve_project_id as resolve_project_id
+from tapps_brain.project_resolver import validate_project_id as validate_project_id
+
 # Rate Limiting (H6a)
 from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
 from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
@@ -151,7 +166,12 @@ __all__ = [
     "InjectionConfig",
     "MemoryEntry",
     "MemoryGarbageCollector",
+    "DEFAULT_PROJECT_ID",
+    "InvalidProjectIdError",
     "MemoryProfile",
+    "ProjectNotRegisteredError",
+    "ProjectRecord",
+    "ProjectRegistry",
     "MemoryRetriever",
     "MemoryScope",
     "MemorySnapshot",
@@ -192,7 +212,9 @@ __all__ = [
     "inject_memories",
     "is_stale",
     "resolve_hive_backend_from_env",
+    "resolve_project_id",
     "resolve_safety_ruleset_version",
+    "validate_project_id",
     "sync_from_markdown",
     "sync_to_markdown",
     "verify_integrity_hash",

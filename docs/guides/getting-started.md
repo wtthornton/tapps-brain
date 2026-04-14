@@ -67,7 +67,18 @@ The AI assistant gets the full MCP tool surface — core memory, sessions, Hive,
 
 ## Choosing a profile
 
-All three interfaces accept a `--profile` (CLI/MCP) or `profile_name=` (library) argument:
+A profile bundles tier half-lives, recall budgets, limits, and importance tags. How you select one depends on how you connect:
+
+- **In-process / CLI** — pass `profile_name=` to `AgentBrain` / `MemoryStore`, or `--profile` on CLI commands.
+- **Deployed brain over MCP/HTTP (multi-tenant)** — the profile is selected by your project's `project_id` (set via `TAPPS_BRAIN_PROJECT` env, `X-Tapps-Project` header, or per-call `_meta.project_id`). Register the project once before connecting:
+
+  ```bash
+  tapps-brain project register alpaca --profile ./profile.yaml
+  ```
+
+  See [ADR-010](../planning/adr/ADR-010-multi-tenant-project-registration.md), [EPIC-069](../planning/epics/EPIC-069.md), and the [MCP guide — Project identity](mcp.md#project-identity-multi-tenant) section for the full flow. A `.tapps-brain/profile.yaml` at the project root is a seed document consumed at registration — it is not read by a deployed server at runtime.
+
+Built-in profiles (starting templates for new projects):
 
 | Profile | Use case |
 |---------|----------|

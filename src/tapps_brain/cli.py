@@ -113,6 +113,13 @@ relay_app = typer.Typer(
 )
 app.add_typer(relay_app, name="relay")
 
+# EPIC-069: per-project profile registry for multi-tenant deployments.
+project_app = typer.Typer(
+    help="Register and manage per-project profiles (EPIC-069, ADR-010).",
+    no_args_is_help=True,
+)
+app.add_typer(project_app, name="project")
+
 # ---------------------------------------------------------------------------
 # Global options
 # ---------------------------------------------------------------------------
@@ -836,6 +843,102 @@ def memory_tag(
             typer.echo(f"Updated tags for '{key}': {tag_str}")
     finally:
         store.close()
+
+
+# ===================================================================
+# INIT COMMAND
+# ===================================================================
+
+
+@app.command("init")
+def init_cmd(
+    target_dir: Annotated[
+        Path | None,
+        typer.Argument(help="Directory to scaffold into (defaults to cwd)."),
+    ] = None,
+    project_id: Annotated[
+        str | None,
+        typer.Option(
+            "--project-id",
+            help="Stable project slug used in .mcp.json and profile.yaml. Defaults to the target directory name.",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force/--no-force", help="Overwrite existing scaffold files if present."),
+    ] = False,
+) -> None:
+    """Scaffold a new coding project to connect to a deployed tapps-brain hub.
+
+    Writes the following into ``target_dir`` (a copy of ``examples/coding-project-init/``
+    with ``{{PROJECT_ID}}`` substituted and ``.mcp.json.template`` renamed to ``.mcp.json``):
+
+      - ``.mcp.json``       — MCP server entry for Claude Code / Cursor
+      - ``brain_init.py``   — runtime AgentBrain factory
+      - ``.env.example``    — environment variable reference
+      - ``profile.yaml``    — per-project memory profile
+      - ``README.md``       — scaffold-specific quickstart
+
+    Nothing runs, nothing connects — this just drops files into your project.
+    Open and read them before committing.
+    """
+    import importlib.resources
+    import shutil
+
+    dest = (target_dir or Path.cwd()).resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+    pid = project_id or dest.name
+
+    # Locate the packaged scaffold. We prefer the installed package resource so
+    # the command works from a wheel; fall back to the repo path for dev.
+    scaffold_src: Path | None = None
+    try:
+        with importlib.resources.as_file(
+            importlib.resources.files("tapps_brain") / "_scaffolds" / "coding-project-init"
+        ) as p:
+            if p.exists():
+                scaffold_src = p
+    except (ModuleNotFoundError, FileNotFoundError):
+        scaffold_src = None
+    if scaffold_src is None:
+        # Dev fallback: examples/ relative to the source tree.
+        repo_example = Path(__file__).resolve().parents[2] / "examples" / "coding-project-init"
+        if repo_example.exists():
+            scaffold_src = repo_example
+    if scaffold_src is None:
+        typer.echo(
+            "Error: scaffold sources not found in the installed package or repo.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    rename_map = {".mcp.json.template": ".mcp.json"}
+    written: list[Path] = []
+    skipped: list[Path] = []
+    for src in sorted(scaffold_src.iterdir()):
+        if not src.is_file():
+            continue
+        out_name = rename_map.get(src.name, src.name)
+        out_path = dest / out_name
+        if out_path.exists() and not force:
+            skipped.append(out_path)
+            continue
+        content = src.read_text(encoding="utf-8")
+        content = content.replace("{{PROJECT_ID}}", pid)
+        out_path.write_text(content, encoding="utf-8")
+        written.append(out_path)
+        if out_name == "brain_init.py":
+            out_path.chmod(0o644)
+
+    for p in written:
+        typer.echo(f"  wrote  {p.relative_to(dest)}")
+    for p in skipped:
+        typer.echo(f"  skip   {p.relative_to(dest)} (exists; pass --force to overwrite)")
+
+    typer.echo(
+        f"\nScaffold installed into {dest} (project_id={pid!r}). "
+        "Read README.md next; nothing is wired until you commit the files and open your editor."
+    )
 
 
 # ===================================================================
@@ -3375,11 +3478,26 @@ def cmd_serve(
 
     Blocks until interrupted (SIGINT / SIGTERM).
     """
+    import os
     import signal
 
     from tapps_brain.http_adapter import HttpAdapter
 
-    adapter = HttpAdapter(host=host, port=port, dsn=dsn)
+    store = None
+    if os.environ.get("TAPPS_BRAIN_DATABASE_URL"):
+        from tapps_brain.backends import resolve_hive_backend_from_env
+        from tapps_brain.store import MemoryStore
+
+        project_root = Path(os.environ.get("TAPPS_BRAIN_SERVE_ROOT", "/var/lib/tapps-brain"))
+        project_root.mkdir(parents=True, exist_ok=True)
+        store = MemoryStore(
+            project_root,
+            agent_id="http-adapter",
+            hive_store=resolve_hive_backend_from_env(),
+            hive_agent_id="http-adapter",
+        )
+
+    adapter = HttpAdapter(host=host, port=port, dsn=dsn, store=store)
     adapter.start()
     typer.echo(f"tapps-brain HTTP adapter listening on {host}:{port}")
 
@@ -3393,6 +3511,168 @@ def cmd_serve(
 
     stop_event.wait()
     adapter.stop()
+
+
+# ---------------------------------------------------------------------------
+# EPIC-069: project registry commands
+# ---------------------------------------------------------------------------
+
+
+def _open_project_registry() -> tuple[object, object]:
+    """Build a :class:`ProjectRegistry` against the env DSN.
+
+    Returns ``(registry, connection_manager)`` so the caller can close
+    the pool when it's done.
+    """
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.project_registry import ProjectRegistry
+
+    dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
+    if not dsn:
+        typer.echo(
+            "error: TAPPS_BRAIN_DATABASE_URL must be set "
+            "(postgres:// or postgresql:// DSN).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    cm = PostgresConnectionManager(dsn)
+    return ProjectRegistry(cm), cm
+
+
+@project_app.command("register")
+def project_register(
+    project_id: str = typer.Argument(..., help="Project slug (e.g. 'alpaca')."),
+    profile_path: Path = typer.Option(
+        ...,
+        "--profile",
+        "-p",
+        exists=True,
+        readable=True,
+        help="Path to a profile.yaml seed document.",
+    ),
+    approved: bool = typer.Option(
+        True, "--approved/--pending", help="Mark registered row approved."
+    ),
+    source: str = typer.Option("admin", "--source", help="admin|auto|import"),
+    notes: str = typer.Option("", "--notes", help="Optional notes for admin audit."),
+) -> None:
+    """Register (or overwrite) a project profile from a YAML seed file."""
+    from tapps_brain.profile import load_profile
+
+    profile = load_profile(profile_path)
+    registry, cm = _open_project_registry()
+    try:
+        record = registry.register(
+            project_id,
+            profile,
+            source=source,
+            approved=approved,
+            notes=notes,
+        )
+    finally:
+        cm.close()
+    typer.echo(
+        f"Registered project '{record.project_id}' "
+        f"(profile={record.profile.name}, approved={record.approved}, "
+        f"source={record.source})"
+    )
+
+
+@project_app.command("list")
+def project_list(
+    approved_only: bool = typer.Option(
+        False, "--approved-only", help="Only show approved rows."
+    ),
+    pending_only: bool = typer.Option(
+        False, "--pending-only", help="Only show pending (unapproved) rows."
+    ),
+) -> None:
+    """List registered projects."""
+    registry, cm = _open_project_registry()
+    approved_filter: bool | None = None
+    if approved_only and pending_only:
+        typer.echo("error: pass at most one of --approved-only / --pending-only", err=True)
+        raise typer.Exit(code=2)
+    if approved_only:
+        approved_filter = True
+    elif pending_only:
+        approved_filter = False
+    try:
+        rows = registry.list_all(approved=approved_filter)
+    finally:
+        cm.close()
+    if not rows:
+        typer.echo("(no projects registered)")
+        return
+    for r in rows:
+        badge = "OK" if r.approved else "PENDING"
+        typer.echo(
+            f"[{badge:7s}] {r.project_id:<32s} profile={r.profile.name:<24s} source={r.source}"
+        )
+
+
+@project_app.command("show")
+def project_show(
+    project_id: str = typer.Argument(..., help="Project slug to inspect."),
+) -> None:
+    """Show a registered project's profile summary."""
+    registry, cm = _open_project_registry()
+    try:
+        record = registry.get(project_id)
+    finally:
+        cm.close()
+    if record is None:
+        typer.echo(f"no project '{project_id}' registered", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"project_id:  {record.project_id}")
+    typer.echo(f"approved:    {record.approved}")
+    typer.echo(f"source:      {record.source}")
+    typer.echo(f"notes:       {record.notes or '(none)'}")
+    typer.echo(f"profile:     {record.profile.name} (v{record.profile.version})")
+    typer.echo(f"layers:      {[la.name for la in record.profile.layers]}")
+    typer.echo(f"max_entries: {record.profile.limits.max_entries}")
+
+
+@project_app.command("approve")
+def project_approve(
+    project_id: str = typer.Argument(..., help="Project to approve."),
+) -> None:
+    """Flip ``approved=true`` on an existing row."""
+    registry, cm = _open_project_registry()
+    try:
+        updated = registry.approve(project_id)
+    finally:
+        cm.close()
+    if not updated:
+        typer.echo(f"no project '{project_id}' registered", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Approved project '{project_id}'")
+
+
+@project_app.command("delete")
+def project_delete(
+    project_id: str = typer.Argument(..., help="Project to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Remove a project's profile row.
+
+    Does **not** delete the project's memory rows from ``private_memories``.
+    """
+    if not yes:
+        typer.confirm(
+            f"Delete profile for project '{project_id}'? "
+            "(memory rows are NOT deleted)",
+            abort=True,
+        )
+    registry, cm = _open_project_registry()
+    try:
+        deleted = registry.delete(project_id)
+    finally:
+        cm.close()
+    if not deleted:
+        typer.echo(f"no project '{project_id}' registered", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Deleted project '{project_id}'")
 
 
 # ---------------------------------------------------------------------------

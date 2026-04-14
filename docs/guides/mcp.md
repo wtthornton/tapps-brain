@@ -4,6 +4,42 @@ tapps-brain exposes its full API via the [Model Context Protocol](https://modelc
 
 **Tool and resource counts** ship in [`docs/generated/mcp-tools-manifest.json`](../generated/mcp-tools-manifest.json) (`tool_count`, `resource_count`, lists). Regenerate after `mcp_server.py` changes: `python scripts/generate_mcp_tool_manifest.py`. Do not cite stale integers in other docs unless labeled historical.
 
+## Project identity (multi-tenant)
+
+A single deployed `tapps-brain` serves many client projects. Every connection **must declare a `project_id`** so the server can load the right memory profile and partition data. See [ADR-010](../planning/adr/ADR-010-multi-tenant-project-registration.md) and [EPIC-069](../planning/epics/EPIC-069.md) for the design.
+
+**Resolution precedence** (first match wins):
+
+1. Per-call MCP `_meta.project_id` (override on a single tool call)
+2. HTTP header `X-Tapps-Project: <id>` (streamable HTTP / SSE transport)
+3. Env var `TAPPS_BRAIN_PROJECT=<id>` (stdio transport)
+4. Literal `"default"` (dev only — strict-mode deployments reject this)
+
+**Before you connect:** register your project once against the deployed brain:
+
+```bash
+tapps-brain project register alpaca --profile ./profile.yaml
+tapps-brain project approve alpaca   # strict-mode deployments only
+```
+
+Or via the admin HTTP surface (requires `TAPPS_BRAIN_ADMIN_TOKEN` on the server):
+
+```bash
+# Register (or overwrite) a project profile
+curl -X POST http://brain.internal:8088/admin/projects \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @payload.json       # {"project_id":"alpaca","profile":{…},"approved":true}
+
+# Inspect / list / approve / delete
+curl      http://brain.internal:8088/admin/projects            -H "Authorization: Bearer $ADMIN_TOKEN"
+curl      http://brain.internal:8088/admin/projects/alpaca     -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X POST http://brain.internal:8088/admin/projects/alpaca/approve -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X DELETE http://brain.internal:8088/admin/projects/alpaca       -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+The `profile.yaml` format is unchanged from [EPIC-010](../planning/epics/EPIC-010.md) — it is now a seed document consumed at registration time rather than read by the server at runtime.
+
 ## Installation
 
 ```bash
@@ -24,18 +60,36 @@ This installs the `tapps-brain-mcp` command, which runs a stdio-based MCP server
 
 Add to your project's `.mcp.json` (or `~/.claude/mcp.json` for global):
 
+**stdio (local) transport:**
+
 ```json
 {
   "mcpServers": {
     "tapps-brain": {
       "command": "tapps-brain-mcp",
-      "args": ["--project-dir", "/path/to/your/project"]
+      "env": {
+        "TAPPS_BRAIN_PROJECT": "alpaca",
+        "TAPPS_BRAIN_DATABASE_URL": "postgresql://brain:brain@localhost:5433/brain"
+      }
     }
   }
 }
 ```
 
-Omit `--project-dir` to use the current working directory.
+**Deployed-brain (HTTP) transport:**
+
+```json
+{
+  "mcpServers": {
+    "tapps-brain": {
+      "url": "http://brain.internal:8088/mcp",
+      "headers": { "X-Tapps-Project": "alpaca" }
+    }
+  }
+}
+```
+
+The legacy `--project-dir` flag is accepted for local dev but no longer selects a profile — identity comes from `TAPPS_BRAIN_PROJECT` / `X-Tapps-Project`.
 
 ### Cursor
 
@@ -43,7 +97,8 @@ In Cursor Settings > MCP, add a new server:
 
 - **Name:** `tapps-brain`
 - **Type:** `command`
-- **Command:** `tapps-brain-mcp --project-dir /path/to/your/project`
+- **Command:** `tapps-brain-mcp`
+- **Env:** `TAPPS_BRAIN_PROJECT=<your-project-id>`
 
 Or add to `.cursor/mcp.json`:
 
@@ -52,7 +107,7 @@ Or add to `.cursor/mcp.json`:
   "mcpServers": {
     "tapps-brain": {
       "command": "tapps-brain-mcp",
-      "args": ["--project-dir", "/path/to/your/project"]
+      "env": { "TAPPS_BRAIN_PROJECT": "your-project-id" }
     }
   }
 }
@@ -68,7 +123,7 @@ Add to `.vscode/mcp.json`:
     "tapps-brain": {
       "type": "stdio",
       "command": "tapps-brain-mcp",
-      "args": ["--project-dir", "${workspaceFolder}"]
+      "env": { "TAPPS_BRAIN_PROJECT": "your-project-id" }
     }
   }
 }
@@ -84,7 +139,7 @@ Add to `~/.openclaw/openclaw.json` (top-level `mcp` key):
     "servers": {
       "tapps-brain": {
         "command": "tapps-brain-mcp",
-        "args": ["--project-dir", "/path/to/your/project"],
+        "env": { "TAPPS_BRAIN_PROJECT": "your-project-id" },
         "transport": "stdio"
       }
     }

@@ -247,7 +247,17 @@ class MemoryStore:
             )
 
             _resolved_agent_id = agent_id or "default"
-            _project_id = derive_project_id(project_root)
+            # EPIC-069: honor TAPPS_BRAIN_PROJECT (human-readable slug) before
+            # falling back to the legacy path-hash.  The env var is how MCP
+            # clients connecting over stdio declare project identity — see
+            # ADR-010 and project_resolver.resolve_project_id.
+            _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
+            if _env_project:
+                from tapps_brain.project_resolver import validate_project_id
+
+                _project_id = validate_project_id(_env_project)
+            else:
+                _project_id = derive_project_id(project_root)
             private_backend = resolve_private_backend_from_env(
                 _project_id, _resolved_agent_id
             )
@@ -483,21 +493,70 @@ class MemoryStore:
 
     @staticmethod
     def _resolve_profile(project_root: Path, profile: Any) -> Any:  # noqa: ANN401
-        """Resolve the active memory profile (EPIC-010).
+        """Resolve the active memory profile (EPIC-010, amended by EPIC-069).
 
-        When *profile* is an explicit ``MemoryProfile``, use it directly.
-        Otherwise, attempt resolution from project/user/built-in defaults.
-        Falls back gracefully to ``None`` if the profile module isn't
-        available or no profile files exist.
+        Order of precedence:
+
+        1. Explicit ``profile=`` argument (any ``MemoryProfile``).
+        2. **Project registry** when ``TAPPS_BRAIN_PROJECT`` and
+           ``TAPPS_BRAIN_DATABASE_URL`` are both set — see ADR-010.
+           Strict mode (``TAPPS_BRAIN_STRICT_PROJECTS=1``) will raise
+           :class:`ProjectNotRegisteredError` for unknown IDs.
+        3. Filesystem / built-in defaults from
+           :func:`tapps_brain.profile.resolve_profile` (legacy path).
+
+        Falls back gracefully to ``None`` if none of the above apply.
         """
         if profile is not None:
             return profile
+
+        registry_profile = MemoryStore._resolve_profile_from_registry()
+        if registry_profile is not None:
+            return registry_profile
+
         try:
             from tapps_brain.profile import resolve_profile as _resolve
 
             return _resolve(project_root)
         except Exception:
             return None
+
+    @staticmethod
+    def _resolve_profile_from_registry() -> Any:  # noqa: ANN401
+        """Hit the ``project_profiles`` registry when env is configured.
+
+        Returns ``None`` when either env var is missing (preserving the
+        single-tenant code path).  Strict-mode errors propagate so
+        misconfigured clients fail loudly.
+        """
+        project_id = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
+        dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
+        if not project_id or not dsn.startswith(("postgres://", "postgresql://")):
+            return None
+        try:
+            from tapps_brain.postgres_connection import PostgresConnectionManager
+            from tapps_brain.project_registry import (
+                ProjectNotRegisteredError,
+                ProjectRegistry,
+            )
+            from tapps_brain.project_resolver import validate_project_id
+        except ImportError:
+            return None
+
+        validate_project_id(project_id)
+        cm = PostgresConnectionManager(dsn)
+        try:
+            registry = ProjectRegistry(cm)
+            # resolve() raises ProjectNotRegisteredError in strict mode.
+            return registry.resolve(project_id)
+        except ProjectNotRegisteredError:
+            raise
+        except Exception:
+            # Any transport-level hiccup falls back to legacy resolution;
+            # strict mode still surfaces the structured error above.
+            return None
+        finally:
+            cm.close()
 
     @property
     def profile(self) -> Any:  # noqa: ANN401

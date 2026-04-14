@@ -32,6 +32,7 @@
 - [ADR-007: Postgres-only backends — no SQLite for Hive or Federation (v3 greenfield)](planning/adr/ADR-007-postgres-only-no-sqlite.md) — **Status:** Accepted *(updated 2026-04-10)*
 - [ADR-008: No new public HTTP routes without MCP + library parity](planning/adr/ADR-008-no-http-without-mcp-library-parity.md) — **Status:** Accepted *(updated 2026-04-10)*
 - [ADR-009: Row Level Security on hive_memories — Ship in GA vs Defer](planning/adr/ADR-009-rls-ship-vs-defer.md) — **Status:** Accepted *(updated 2026-04-11)*
+- [ADR-010: Multi-tenant project identification and profile registration over MCP](planning/adr/ADR-010-multi-tenant-project-registration.md) — **Status:** Proposed *(2026-04-14)* — tracked as **EPIC-069**
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-04-05)*
 
 ## Getting Started
@@ -152,7 +153,7 @@
 - [EPIC-056: Declarative Group Membership & Expert Publishing](planning/epics/EPIC-056.md) — Today Hive groups exist (`create_group()`, `add_group_member()`) but are **imperatively managed** — callers must expl... *(updated 2026-04-09)*
 - [EPIC-057: Unified Agent API — Hide the Complexity](planning/epics/EPIC-057.md) — After EPIC-053 through EPIC-056, tapps-brain has per-agent brains, backend abstraction, Postgres backends, declarativ... *(updated 2026-04-09)*
 - [EPIC-058: Docker & Deployment Support](planning/epics/EPIC-058.md) — tapps-brain is currently distributed as a Python package with no Docker artifacts. The target architecture requires: *(updated 2026-04-09)*
-- [EPIC-065: Live Always-On Dashboard](planning/epics/EPIC-065.md) — Replace static snapshot-file model with live polling dashboard backed by GET /snapshot on HttpAdapter; add Hive and agent-registry panels. *(updated 2026-04-12)*
+- [EPIC-065: Live Always-On Dashboard](planning/epics/EPIC-065.md) — Live polling dashboard backed by GET /snapshot on HttpAdapter; Hive and agent-registry panels; no file-load fallback. *(updated 2026-04-13)*
 - [EPIC-066: Postgres-Only Persistence Plane — Production Readiness](planning/epics/EPIC-066.md) — Closes out EPIC-059 stage 2: green CI suite against ephemeral Postgres, operator runbooks for TDE/backup, pool health, auto-migrate, and behavioural parity. *(updated 2026-04-12)*
 - [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy everything below the line into a new chat (or Ralph task) as the **user message**. *(updated 2026-04-09)*
 - [Open Issues Roadmap](planning/open-issues-roadmap.md) — Last updated: 2026-04-09 — **v3.2.0** — EPIC-048 complete (all 6 stories); default embedding → `BAAI/bge-small-en-v1.... *(updated 2026-04-09)*

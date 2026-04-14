@@ -419,6 +419,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     _dsn: str | None = None
     _version: str = "unknown"
     _auth_token: str | None = None  # None → auth disabled
+    _admin_token: str | None = None  # None → admin routes return 503 (EPIC-069)
     _store: Any = None  # MemoryStore | None; Any to avoid import at class level
 
     # /snapshot TTL cache — shared across all handler instances via class (STORY-065.1).
@@ -499,10 +500,80 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         """
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, X-Tapps-Project",
+        )
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    # ------------------------------------------------------------------
+    # Admin auth (EPIC-069 STORY-069.5)
+    # ------------------------------------------------------------------
+
+    def _check_admin_auth(self) -> bool:
+        """Gate for ``/admin/*`` routes using a separate token.
+
+        Returns False (and sends the response) on any failure.  Admin
+        routes short-circuit to 503 when ``TAPPS_BRAIN_ADMIN_TOKEN`` is
+        not configured — registering projects against a brain with no
+        admin token would bypass the trust model.
+        """
+        if not self._admin_token:
+            self._send_json(
+                503,
+                {
+                    "error": "admin_disabled",
+                    "detail": "Admin routes require TAPPS_BRAIN_ADMIN_TOKEN to be set.",
+                },
+            )
+            return False
+        header = self.headers.get("Authorization", "")
+        parts = header.split(" ", 1)
+        if len(parts) != _BEARER_PARTS or parts[0].lower() != "bearer":
+            self._send_json(
+                401,
+                {"error": "unauthorized", "detail": "Bearer token required for admin routes."},
+            )
+            return False
+        if parts[1] != self._admin_token:
+            self._send_json(403, {"error": "forbidden", "detail": "Invalid admin token."})
+            return False
+        return True
+
+    def _read_json_body(self, *, max_bytes: int = 65_536) -> dict[str, Any] | None:
+        """Read and decode a JSON request body.
+
+        Returns the parsed object, or ``None`` after sending a 400/413
+        response on any failure — callers must ``return`` immediately.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(400, {"error": "bad_request", "detail": "Invalid Content-Length."})
+            return None
+        if length <= 0:
+            self._send_json(400, {"error": "bad_request", "detail": "Empty request body."})
+            return None
+        if length > max_bytes:
+            self._send_json(
+                413, {"error": "payload_too_large", "detail": f"Max {max_bytes} bytes."}
+            )
+            return None
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            self._send_json(400, {"error": "bad_request", "detail": f"Invalid JSON: {exc}"})
+            return None
+        if not isinstance(data, dict):
+            self._send_json(
+                400,
+                {"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+            return None
+        return data
 
     def do_GET(self) -> None:
         """Handle GET requests.
@@ -547,8 +618,37 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._handle_snapshot()
             elif path == "/openapi.json":
                 self._handle_openapi()
+            elif path == "/admin/projects":
+                self._handle_admin_projects_list()
+            elif path.startswith("/admin/projects/"):
+                pid = path[len("/admin/projects/") :]
+                self._handle_admin_project_show(pid)
             else:
                 self._send_json(404, {"error": "not_found", "path": path})
+
+    # ------------------------------------------------------------------
+    # Write methods — EPIC-069 admin surface
+    # ------------------------------------------------------------------
+
+    def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler contract)
+        """Handle POST requests — today only the admin project surface."""
+        path = self.path.split("?", 1)[0]
+        if path == "/admin/projects":
+            self._handle_admin_projects_register()
+        elif path.startswith("/admin/projects/") and path.endswith("/approve"):
+            pid = path[len("/admin/projects/") : -len("/approve")]
+            self._handle_admin_project_approve(pid)
+        else:
+            self._send_json(404, {"error": "not_found", "path": path})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        """Handle DELETE requests — admin project removal."""
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/admin/projects/"):
+            pid = path[len("/admin/projects/") :]
+            self._handle_admin_project_delete(pid)
+        else:
+            self._send_json(404, {"error": "not_found", "path": path})
 
     def _handle_health(self) -> None:
         """Liveness: always 200 while process is alive."""
@@ -629,6 +729,191 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._send_json_cors(200, snapshot.model_dump(mode="json"))
 
     # ------------------------------------------------------------------
+    # EPIC-069 admin handlers (/admin/projects/*)
+    # ------------------------------------------------------------------
+
+    def _open_registry(self) -> tuple[Any, Any] | None:
+        """Return ``(registry, connection_manager)`` or ``None`` after
+        sending a 503 when no DSN is configured."""
+        if not self._dsn:
+            self._send_json(
+                503,
+                {
+                    "error": "db_unavailable",
+                    "detail": "TAPPS_BRAIN_DATABASE_URL is not configured.",
+                },
+            )
+            return None
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+        from tapps_brain.project_registry import ProjectRegistry
+
+        cm = PostgresConnectionManager(self._dsn)
+        return ProjectRegistry(cm), cm
+
+    def _handle_admin_projects_list(self) -> None:
+        """GET /admin/projects — list all registered projects."""
+        if not self._check_admin_auth():
+            return
+        opened = self._open_registry()
+        if opened is None:
+            return
+        registry, cm = opened
+        try:
+            rows = registry.list_all()
+        finally:
+            cm.close()
+        self._send_json(
+            200,
+            {
+                "projects": [
+                    {
+                        "project_id": r.project_id,
+                        "profile_name": r.profile.name,
+                        "approved": r.approved,
+                        "source": r.source,
+                        "notes": r.notes,
+                    }
+                    for r in rows
+                ]
+            },
+        )
+
+    def _handle_admin_project_show(self, project_id: str) -> None:
+        """GET /admin/projects/<id> — return one project's record."""
+        if not self._check_admin_auth():
+            return
+        opened = self._open_registry()
+        if opened is None:
+            return
+        registry, cm = opened
+        try:
+            record = registry.get(project_id)
+        finally:
+            cm.close()
+        if record is None:
+            self._send_json(404, {"error": "not_found", "project_id": project_id})
+            return
+        self._send_json(
+            200,
+            {
+                "project_id": record.project_id,
+                "profile": record.profile.model_dump(mode="json"),
+                "approved": record.approved,
+                "source": record.source,
+                "notes": record.notes,
+            },
+        )
+
+    def _handle_admin_projects_register(self) -> None:
+        """POST /admin/projects — register (or overwrite) a project profile.
+
+        Body::
+
+            {
+                "project_id": "alpaca",
+                "profile": { ...MemoryProfile JSON... },
+                "approved": true,
+                "source": "admin",
+                "notes": ""
+            }
+        """
+        if not self._check_admin_auth():
+            return
+        body = self._read_json_body()
+        if body is None:
+            return
+
+        project_id = (body.get("project_id") or "").strip()
+        profile_json = body.get("profile")
+        approved = bool(body.get("approved", True))
+        source = body.get("source") or "admin"
+        notes = body.get("notes") or ""
+
+        if not project_id or not isinstance(profile_json, dict):
+            self._send_json(
+                400,
+                {
+                    "error": "bad_request",
+                    "detail": "project_id and profile (JSON object) are required.",
+                },
+            )
+            return
+
+        try:
+            from tapps_brain.profile import MemoryProfile
+            from tapps_brain.project_resolver import validate_project_id
+
+            validate_project_id(project_id)
+            profile = MemoryProfile.model_validate(profile_json)
+        except Exception as exc:
+            self._send_json(400, {"error": "bad_request", "detail": str(exc)})
+            return
+
+        opened = self._open_registry()
+        if opened is None:
+            return
+        registry, cm = opened
+        try:
+            record = registry.register(
+                project_id,
+                profile,
+                source=source,
+                approved=approved,
+                notes=notes,
+            )
+        except ValueError as exc:
+            self._send_json(400, {"error": "bad_request", "detail": str(exc)})
+            return
+        finally:
+            cm.close()
+        self._send_json(
+            201,
+            {
+                "project_id": record.project_id,
+                "profile_name": record.profile.name,
+                "approved": record.approved,
+                "source": record.source,
+            },
+        )
+
+    def _handle_admin_project_approve(self, project_id: str) -> None:
+        """POST /admin/projects/<id>/approve — flip approved=true."""
+        if not self._check_admin_auth():
+            return
+        opened = self._open_registry()
+        if opened is None:
+            return
+        registry, cm = opened
+        try:
+            updated = registry.approve(project_id)
+        finally:
+            cm.close()
+        if not updated:
+            self._send_json(404, {"error": "not_found", "project_id": project_id})
+            return
+        self._send_json(200, {"project_id": project_id, "approved": True})
+
+    def _handle_admin_project_delete(self, project_id: str) -> None:
+        """DELETE /admin/projects/<id> — remove a profile row.
+
+        Does not cascade to ``private_memories``.
+        """
+        if not self._check_admin_auth():
+            return
+        opened = self._open_registry()
+        if opened is None:
+            return
+        registry, cm = opened
+        try:
+            deleted = registry.delete(project_id)
+        finally:
+            cm.close()
+        if not deleted:
+            self._send_json(404, {"error": "not_found", "project_id": project_id})
+            return
+        self._send_json(200, {"project_id": project_id, "deleted": True})
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -700,12 +985,14 @@ class HttpAdapter:
         port: int = 8080,
         dsn: str | None = None,
         auth_token: str | None = None,
+        admin_token: str | None = None,
         store: MemoryStore | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._dsn = dsn or self._resolve_dsn_from_env()
         self._auth_token = auth_token or self._resolve_auth_token_from_env()
+        self._admin_token = admin_token or self._resolve_admin_token_from_env()
         self._store = store
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -726,6 +1013,7 @@ class HttpAdapter:
         dsn = self._dsn
         version = self._version
         auth_token = self._auth_token
+        admin_token = self._admin_token
         store = self._store
         _lock = threading.Lock()
 
@@ -733,6 +1021,7 @@ class HttpAdapter:
             _dsn = dsn
             _version = version
             _auth_token = auth_token
+            _admin_token = admin_token
             _store = store
             _snapshot_lock = _lock
             _snapshot_cache: Any = None
@@ -812,6 +1101,20 @@ class HttpAdapter:
             return token
         # Docker secrets pattern: _FILE variant points to a file containing the token.
         token_file = os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE", "").strip()
+        if token_file:
+            try:
+                return Path(token_file).read_text().strip() or None
+            except OSError:
+                pass
+        return None
+
+    @staticmethod
+    def _resolve_admin_token_from_env() -> str | None:
+        """Read the admin-route bearer token (EPIC-069)."""
+        token = os.environ.get("TAPPS_BRAIN_ADMIN_TOKEN", "").strip()
+        if token:
+            return token
+        token_file = os.environ.get("TAPPS_BRAIN_ADMIN_TOKEN_FILE", "").strip()
         if token_file:
             try:
                 return Path(token_file).read_text().strip() or None
