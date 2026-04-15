@@ -245,7 +245,8 @@ class TestProperties:
         with _make_brain(tmp_path) as brain:
             assert brain.store is not None
 
-    def test_hive_property(self, tmp_path: Path) -> None:
+    def test_hive_property(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
         with _make_brain(tmp_path) as brain:
             # v3 Postgres-only: without a DSN the Hive backend is None
             assert brain.hive is None

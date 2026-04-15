@@ -66,7 +66,7 @@ def _cached_embedding_model():
 
     _original = _emb.get_embedding_provider
     _provider = _emb.SentenceTransformerProvider()
-    _emb.get_embedding_provider = lambda model=_emb._DEFAULT_MODEL: _provider  # noqa: SLF001
+    _emb.get_embedding_provider = lambda model=_emb._DEFAULT_MODEL: _provider
     yield
     _emb.get_embedding_provider = _original
 
@@ -86,7 +86,7 @@ def _cached_embedding_model():
 # command), backends are shared across instances with the same project root.
 # The registry is cleared between tests by the autouse fixture below.
 
-_inmemory_backend_registry: dict[str, "InMemoryPrivateBackend"] = {}
+_inmemory_backend_registry: dict[str, InMemoryPrivateBackend] = {}
 
 
 class InMemoryPrivateBackend:
@@ -386,7 +386,7 @@ def _inject_in_memory_private_backend(monkeypatch: pytest.MonkeyPatch) -> Iterat
     # Tests that want to verify the Postgres-only hard-fail set
     # ``TAPPS_BRAIN_TEST_NO_INMEMORY_BACKEND=1`` to disable this fixture and
     # let MemoryStore raise ValueError naturally.
-    def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+    def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
         if (
             kwargs.get("private_backend") is None
             and not os.environ.get("TAPPS_BRAIN_DATABASE_URL")
@@ -410,7 +410,7 @@ def _inject_in_memory_private_backend(monkeypatch: pytest.MonkeyPatch) -> Iterat
     for _backend in list(_inmemory_backend_registry.values()):
         try:
             _backend.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     _inmemory_backend_registry.clear()
 

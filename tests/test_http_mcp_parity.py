@@ -54,10 +54,14 @@ CURATED_TOOLS = (
 
 
 def _count_tool_decorators() -> int:
-    """Count ``@mcp.tool()`` decorators in ``mcp_server.py`` as a sanity bound."""
+    """Count ``@mcp.tool()`` decorators across the mcp_server package."""
     here = Path(__file__).resolve().parent.parent
-    src = (here / "src" / "tapps_brain" / "mcp_server.py").read_text(encoding="utf-8")
-    return len(re.findall(r"^\s*@mcp\.tool\(\)", src, flags=re.MULTILINE))
+    pkg = here / "src" / "tapps_brain" / "mcp_server"
+    total = 0
+    for py_file in pkg.glob("*.py"):
+        src = py_file.read_text(encoding="utf-8")
+        total += len(re.findall(r"^\s*@mcp\.tool\(\)", src, flags=re.MULTILINE))
+    return total
 
 
 def _build_app_and_mcp():
@@ -114,45 +118,42 @@ async def test_streamable_http_curated_tools_respond() -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport,
                                  base_url="http://parity.local") as client:
-        # Drive the FastAPI lifespan so the MCP session manager is running
-        # and /mcp is mounted.
-        async with client:
-            for tool_name in CURATED_TOOLS:
-                payload = {
-                    "jsonrpc": "2.0",
-                    "id": f"parity-{tool_name}",
-                    "method": "tools/call",
-                    "params": {"name": tool_name, "arguments": {}},
-                }
-                resp = await client.post("/mcp", json=payload, headers=headers)
-                # Streamable HTTP with json_response=True returns 200 for both
-                # successful results and JSON-RPC-level errors.  4xx/5xx would
-                # indicate a transport-layer problem, which this test guards
-                # against.
-                assert resp.status_code < 400, (
-                    f"{tool_name}: transport error {resp.status_code} "
-                    f"body={resp.text[:500]}"
+        for tool_name in CURATED_TOOLS:
+            payload = {
+                "jsonrpc": "2.0",
+                "id": f"parity-{tool_name}",
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": {}},
+            }
+            resp = await client.post("/mcp", json=payload, headers=headers)
+            # Streamable HTTP with json_response=True returns 200 for both
+            # successful results and JSON-RPC-level errors.  4xx/5xx would
+            # indicate a transport-layer problem, which this test guards
+            # against.
+            assert resp.status_code < 400, (
+                f"{tool_name}: transport error {resp.status_code} "
+                f"body={resp.text[:500]}"
+            )
+
+            ctype = resp.headers.get("content-type", "")
+            if "application/json" in ctype:
+                body = resp.json()
+            elif "text/event-stream" in ctype:
+                # Parse the first JSON-RPC frame out of the SSE stream.
+                text = resp.text
+                data_line = next(
+                    (ln[len("data:"):].strip()
+                     for ln in text.splitlines()
+                     if ln.startswith("data:")),
+                    "",
                 )
+                assert data_line, f"{tool_name}: empty SSE body"
+                body = json.loads(data_line)
+            else:
+                pytest.fail(f"{tool_name}: unexpected content-type {ctype!r}")
 
-                ctype = resp.headers.get("content-type", "")
-                if "application/json" in ctype:
-                    body = resp.json()
-                elif "text/event-stream" in ctype:
-                    # Parse the first JSON-RPC frame out of the SSE stream.
-                    text = resp.text
-                    data_line = next(
-                        (ln[len("data:"):].strip()
-                         for ln in text.splitlines()
-                         if ln.startswith("data:")),
-                        "",
-                    )
-                    assert data_line, f"{tool_name}: empty SSE body"
-                    body = json.loads(data_line)
-                else:
-                    pytest.fail(f"{tool_name}: unexpected content-type {ctype!r}")
-
-                assert body.get("jsonrpc") == "2.0", body
-                assert "result" in body or "error" in body, body
-                if "error" in body:
-                    err = body["error"]
-                    assert "code" in err and "message" in err, err
+            assert body.get("jsonrpc") == "2.0", body
+            assert "result" in body or "error" in body, body
+            if "error" in body:
+                err = body["error"]
+                assert "code" in err and "message" in err, err

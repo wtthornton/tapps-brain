@@ -183,7 +183,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ANN", "PLR", "TCH", "E402", "F841", "E741", "RUF002"]
+"tests/**/*.py" = [
+    "ANN", "PLR", "TCH", "E402", "F841", "E741", "RUF002",
+    # Style rules that are fine in test code
+    "E501",   # long lines acceptable in test assertions / fixture data
+    "SIM",    # simplify style — clarity beats brevity in tests
+    "B904",   # raise-without-from — test helpers re-raise deliberately
+    "B017",   # assert-raises-exception — used for broad smoke tests
+    "B905",   # zip-without-strict — test data is always matched
+    "RUF001", "RUF003",  # ambiguous unicode chars in test strings/comments
+    "N806", "N814",      # naming conventions relaxed in tests
+    "RUF012",            # mutable class defaults fine in test fixtures
+    "F821",              # forward-ref return annotations in lazy-import helpers
+]
 "src/tapps_brain/_protocols.py" = ["ANN401"]
 "src/tapps_brain/aio.py" = ["ANN401"]
 "src/tapps_brain/client.py" = ["ANN401"]
@@ -191,3 +203,23 @@ ignore = [
 "src/tapps_brain/evaluation.py" = ["RUF002", "TC003", "N818", "PLR2004", "E501"]
 "src/tapps_brain/flywheel.py" = ["TC001", "N815", "N814", "ANN401", "SIM108", "SIM102", "PLR2004"]
 "src/tapps_brain/store.py" = ["PLR0915", "PLR2004", "N806"]
+# Service layer uses Any extensively for generic JSON/dict dispatch — intentional
+"src/tapps_brain/services/*.py" = ["ANN401"]
+"src/tapps_brain/mcp_server/__init__.py" = [
+    "ANN401", "PLR0911", "N806",
+    "E402",   # conditional imports after module-level contextvars setup
+]
+"src/tapps_brain/http_adapter.py" = [
+    "ANN401",
+    "B904",     # HTTP adapters re-raise as HTTPException deliberately
+    "PLR0915",  # large dispatch function — refactor is out of scope here
+    "RUF003",   # × char in comments is intentional (cross-product notation)
+    "PLR2004",  # 65_536 byte limit is self-documenting; constant adds no clarity
+    "SIM108",   # status_code ternary is less readable than if/else here
+    "E501",     # inline OpenAPI spec dict literals and docstrings exceed 100 chars
+]
+"src/tapps_brain/visual_snapshot.py" = ["PLR0915"]  # large snapshot fn; refactor tracked separately
+"src/tapps_brain/retrieval.py" = ["PLR2004"]  # 384-dim embedding size is domain knowledge
+"src/tapps_brain/postgres_private.py" = ["ANN401"]
+"src/tapps_brain/auto_consolidation.py" = ["ANN401"]
+"src/tapps_brain/cli.py" = ["B904", "B008"]  # typer.Option() in defaults is idiomatic typer

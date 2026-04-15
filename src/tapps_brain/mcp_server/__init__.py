@@ -23,6 +23,7 @@ EPIC-070 STORY-070.9: operator-tool separation. The **standard** server
 from __future__ import annotations
 
 import argparse
+import contextlib
 import contextvars
 import importlib.metadata
 import json
@@ -74,7 +75,7 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 
-def _lazy_import_mcp() -> Any:  # noqa: ANN401
+def _lazy_import_mcp() -> Any:
     """Import ``mcp`` lazily so the module can be imported without the extra."""
     try:
         from mcp.server.fastmcp import FastMCP
@@ -97,7 +98,7 @@ def _get_store(
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
-) -> Any:  # noqa: ANN401
+) -> Any:
     """Open a MemoryStore for the given project directory.
 
     When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is
@@ -151,7 +152,7 @@ class _StoreCache:
             except ValueError:
                 maxsize = _DEFAULT_STORE_CACHE_SIZE
         self._maxsize = max(1, maxsize)
-        self._entries: "OrderedDict[str, Any]" = OrderedDict()
+        self._entries: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.Lock()
 
     @property
@@ -207,7 +208,7 @@ def _safe_close_store(store: Any) -> None:
         return
     try:
         close()
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("store_cache.close_failed", exc_info=True)
 
 
@@ -225,7 +226,7 @@ def _get_store_for_project(
     enable_hive: bool = True,
     agent_id: str = "unknown",
     call_agent_id: str | None = None,
-) -> Any:  # noqa: ANN401
+) -> Any:
     """Resolve a ``MemoryStore`` for *project_id*, optionally scoped to a per-call agent.
 
     STORY-070.7 — when *call_agent_id* is supplied and differs from the
@@ -292,7 +293,7 @@ def _current_request_project_id() -> str | None:
         return str(pid).strip() or None
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001
+    except Exception:
         request_ctx = None  # type: ignore[assignment]
     if request_ctx is not None:
         try:
@@ -331,7 +332,7 @@ def _current_request_agent_id() -> str | None:
     # clients can multiplex agents without a header layer.
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     try:
         rc = request_ctx.get()
@@ -406,7 +407,7 @@ def _current_request_idempotency_key() -> str | None:
     """
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     try:
         rc = request_ctx.get()
@@ -448,7 +449,7 @@ def _raise_project_not_registered(project_id: str | None) -> None:
 class _StoreProxy:
     """Per-call dispatch shim that looks like a ``MemoryStore``."""
 
-    __slots__ = ("_default_store", "_enable_hive", "_agent_id")
+    __slots__ = ("_agent_id", "_default_store", "_enable_hive")
 
     def __init__(
         self,
@@ -470,7 +471,7 @@ class _StoreProxy:
                 enable_hive=self._enable_hive,
                 agent_id=self._agent_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
 
             if isinstance(exc, ProjectNotRegisteredError):
@@ -491,7 +492,7 @@ class _StoreProxy:
         try:
             resolved_class: type = self._resolve().__class__
             return resolved_class
-        except Exception:  # noqa: BLE001
+        except Exception:
             return _StoreProxy
 
 
@@ -516,7 +517,7 @@ def create_server(  # noqa: PLR0915
     enable_hive: bool = True,
     agent_id: str = "unknown",
     enable_operator_tools: bool = False,
-) -> Any:  # noqa: ANN401
+) -> Any:
     """Create and configure a FastMCP server instance.
 
     See module docstring for behaviour notes; tool bodies live in
@@ -585,7 +586,7 @@ def create_server(  # noqa: PLR0915
                 agent_id=_server_agent_id,
                 call_agent_id=eff,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
 
             if isinstance(exc, ProjectNotRegisteredError):
@@ -631,7 +632,7 @@ def create_server(  # noqa: PLR0915
 
     # The original ``instructions=`` block kept below is unused now that
     # mcp_kwargs carries it; left as a no-op assignment for diff hygiene.
-    _unused = (  # noqa: F841
+    _unused = (
             "tapps-brain is a persistent cross-session memory system. "
             "Use memory tools to save, retrieve, search, and manage "
             "knowledge across coding sessions.\n\n"
@@ -1667,7 +1668,7 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def agent_register(
-        agent_id: str,  # noqa: ARG001 — shadows outer agent_id intentionally (was the original signature)
+        agent_id: str,
         profile: str = "repo-brain",
         skills: str = "",
     ) -> str:
@@ -1681,7 +1682,7 @@ def create_server(  # noqa: PLR0915
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def agent_create(
-        agent_id: str,  # noqa: ARG001
+        agent_id: str,
         profile: str = "repo-brain",
         skills: str = "",
     ) -> str:
@@ -1699,7 +1700,7 @@ def create_server(  # noqa: PLR0915
         return json.dumps(agents_service.agent_list(store, _pid(), agent_id))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def agent_delete(agent_id: str) -> str:  # noqa: ARG001
+    def agent_delete(agent_id: str) -> str:
         """Delete a registered agent from the Hive."""
         return json.dumps(
             agents_service.agent_delete(
@@ -1866,10 +1867,8 @@ def create_server(  # noqa: PLR0915
 
     if not enable_operator_tools:
         for _op_tool in _OPERATOR_TOOL_NAMES:
-            try:
+            with contextlib.suppress(Exception):
                 mcp._tool_manager.remove_tool(_op_tool)
-            except Exception:  # noqa: BLE001
-                pass
 
     # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access
@@ -1951,7 +1950,7 @@ def create_operator_server(
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
-) -> Any:  # noqa: ANN401
+) -> Any:
     """Create a FastMCP server with **operator tools always enabled**.
 
     Exposes the full set of maintenance tools (GC, consolidation, import,

@@ -33,7 +33,7 @@ def tapps_brain_health(
             store=store,
         )
         return report.model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {
             "status": "error",
             "errors": [str(exc)],

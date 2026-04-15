@@ -328,9 +328,9 @@ class TestMaybeAutoMigratePrivate:
     # AC5: env var documented — verified via presence in source files (doc tests below)
     def test_env_var_name_constant(self) -> None:
         """Sanity-check that the module reads the correct env var name."""
-        import tapps_brain.postgres_migrations as m
-
         import inspect
+
+        import tapps_brain.postgres_migrations as m
 
         src = inspect.getsource(m.maybe_auto_migrate_private)
         assert "TAPPS_BRAIN_AUTO_MIGRATE" in src

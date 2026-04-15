@@ -412,7 +412,7 @@ def start_mcp_tool_span(
                 _pid = REQUEST_PROJECT_ID.get()
             if _aid is None:
                 _aid = REQUEST_AGENT_ID.get()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     if _pid:
         attributes[ATTR_PROJECT_ID] = str(_pid)
@@ -611,10 +611,8 @@ def record_retrieval_document_events(
             event_attrs[ATTR_RETRIEVAL_DOC_SCORE] = float(score)
         if tier and isinstance(tier, str):
             event_attrs[ATTR_RETRIEVAL_DOC_TIER] = tier
-        try:
+        with contextlib.suppress(Exception):
             add_event(EVENT_RETRIEVAL_DOCUMENT, event_attrs)
-        except Exception:
-            pass  # OTel SDK errors must never propagate to callers
 
 
 # ---------------------------------------------------------------------------
@@ -674,10 +672,8 @@ def record_feedback_event(
     if utility_score is not None and isinstance(utility_score, (int, float)):
         event_attrs[ATTR_FEEDBACK_UTILITY_SCORE] = float(utility_score)
 
-    try:
+    with contextlib.suppress(Exception):
         add_event(EVENT_FEEDBACK, event_attrs)
-    except Exception:
-        pass  # OTel SDK errors must never propagate to callers
 
 
 # ---------------------------------------------------------------------------
@@ -714,7 +710,7 @@ def record_diagnostics_event(
 
     Only safe, bounded attributes are emitted:
 
-    - ``tapps_brain.diagnostics.composite_score`` — float 0.0–1.0.
+    - ``tapps_brain.diagnostics.composite_score`` — float 0.0-1.0.
     - ``tapps_brain.diagnostics.circuit_state`` — bounded enum string.
     - ``tapps_brain.diagnostics.gap_count`` — integer ≥ 0.
     - ``tapps_brain.diagnostics.anomaly_count`` — length of anomalies list.
@@ -753,10 +749,8 @@ def record_diagnostics_event(
     if isinstance(anomalies, (list, tuple)):
         event_attrs[ATTR_DIAGNOSTICS_ANOMALY_COUNT] = len(anomalies)
 
-    try:
+    with contextlib.suppress(Exception):
         add_event(EVENT_DIAGNOSTICS_REPORT, event_attrs)
-    except Exception:
-        pass  # OTel SDK errors must never propagate to callers
 
 
 # ---------------------------------------------------------------------------
@@ -784,14 +778,14 @@ _rm_latency_count: int = 0
 
 def rm_increment_recall_total() -> None:
     """Increment the in-process recall/search query counter by 1."""
-    global _rm_recall_total  # noqa: PLW0603
+    global _rm_recall_total
     with _rm_lock:
         _rm_recall_total += 1
 
 
 def rm_add_bm25_candidates(n: int) -> None:
     """Add *n* to the cumulative BM25 candidate counter."""
-    global _rm_bm25_candidates  # noqa: PLW0603
+    global _rm_bm25_candidates
     if n <= 0:
         return
     with _rm_lock:
@@ -800,7 +794,7 @@ def rm_add_bm25_candidates(n: int) -> None:
 
 def rm_add_vector_candidates(n: int) -> None:
     """Add *n* to the cumulative vector candidate counter."""
-    global _rm_vector_candidates  # noqa: PLW0603
+    global _rm_vector_candidates
     if n <= 0:
         return
     with _rm_lock:
@@ -809,14 +803,14 @@ def rm_add_vector_candidates(n: int) -> None:
 
 def rm_increment_rrf_fusions() -> None:
     """Increment the RRF fusion counter by 1."""
-    global _rm_rrf_fusions  # noqa: PLW0603
+    global _rm_rrf_fusions
     with _rm_lock:
         _rm_rrf_fusions += 1
 
 
 def rm_add_recall_latency_ms(ms: float) -> None:
     """Record one recall latency observation (milliseconds)."""
-    global _rm_latency_sum_ms, _rm_latency_count  # noqa: PLW0603
+    global _rm_latency_sum_ms, _rm_latency_count
     if ms < 0:
         return
     with _rm_lock:

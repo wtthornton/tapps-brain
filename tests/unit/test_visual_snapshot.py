@@ -1108,7 +1108,7 @@ def test_collect_retrieval_metrics_fallback_when_import_fails() -> None:
     assert rm.mean_latency_ms == 0.0
 
 
-def test_snapshot_includes_retrieval_metrics(tmp_path: "Path") -> None:
+def test_snapshot_includes_retrieval_metrics(tmp_path: Path) -> None:
     """build_visual_snapshot includes retrieval_metrics with all 5 fields."""
     store = MemoryStore(tmp_path)
     try:
@@ -1126,7 +1126,7 @@ def test_snapshot_includes_retrieval_metrics(tmp_path: "Path") -> None:
     assert rm.mean_latency_ms >= 0.0
 
 
-def test_snapshot_json_includes_retrieval_metrics(tmp_path: "Path") -> None:
+def test_snapshot_json_includes_retrieval_metrics(tmp_path: Path) -> None:
     """snapshot_to_json serializes retrieval_metrics with all 5 expected keys."""
     store = MemoryStore(tmp_path)
     try:
@@ -1145,6 +1145,7 @@ def test_snapshot_json_includes_retrieval_metrics(tmp_path: "Path") -> None:
 
 def test_otel_tracer_increment_functions() -> None:
     """rm_* helper functions in otel_tracer update module-level counters."""
+    import tapps_brain.otel_tracer as _otel
     from tapps_brain.otel_tracer import (
         get_retrieval_meter_snapshot,
         rm_add_bm25_candidates,
@@ -1153,7 +1154,6 @@ def test_otel_tracer_increment_functions() -> None:
         rm_increment_recall_total,
         rm_increment_rrf_fusions,
     )
-    import tapps_brain.otel_tracer as _otel
 
     orig = (
         _otel._rm_recall_total,
@@ -1196,8 +1196,8 @@ def test_otel_tracer_increment_functions() -> None:
 
 def test_rm_add_bm25_candidates_ignores_nonpositive() -> None:
     """rm_add_bm25_candidates ignores n <= 0."""
-    from tapps_brain.otel_tracer import rm_add_bm25_candidates
     import tapps_brain.otel_tracer as _otel
+    from tapps_brain.otel_tracer import rm_add_bm25_candidates
 
     orig = _otel._rm_bm25_candidates
     try:
@@ -1211,8 +1211,8 @@ def test_rm_add_bm25_candidates_ignores_nonpositive() -> None:
 
 def test_rm_add_recall_latency_ignores_negative() -> None:
     """rm_add_recall_latency_ms ignores negative values."""
-    from tapps_brain.otel_tracer import rm_add_recall_latency_ms
     import tapps_brain.otel_tracer as _otel
+    from tapps_brain.otel_tracer import rm_add_recall_latency_ms
 
     orig_sum = _otel._rm_latency_sum_ms
     orig_count = _otel._rm_latency_count

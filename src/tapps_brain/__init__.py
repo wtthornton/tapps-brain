@@ -29,6 +29,11 @@ from tapps_brain.backends import resolve_hive_backend_from_env as resolve_hive_b
 
 # BM25
 from tapps_brain.bm25 import BM25Scorer as BM25Scorer
+
+# TappsBrainClient — network client (STORY-070.11)
+from tapps_brain.client import AsyncTappsBrainClient as AsyncTappsBrainClient
+from tapps_brain.client import BrainClientProtocol as BrainClientProtocol
+from tapps_brain.client import TappsBrainClient as TappsBrainClient
 from tapps_brain.consolidation import consolidate as consolidate
 
 # Decay
@@ -116,11 +121,6 @@ from tapps_brain.project_resolver import validate_project_id as validate_project
 from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
 from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
 
-# TappsBrainClient — network client (STORY-070.11)
-from tapps_brain.client import AsyncTappsBrainClient as AsyncTappsBrainClient
-from tapps_brain.client import BrainClientProtocol as BrainClientProtocol
-from tapps_brain.client import TappsBrainClient as TappsBrainClient
-
 # Recall (EPIC-003)
 from tapps_brain.recall import RecallConfig as RecallConfig
 from tapps_brain.recall import RecallOrchestrator as RecallOrchestrator
@@ -151,35 +151,32 @@ from tapps_brain.store import MemoryStore as MemoryStore
 from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 
 __all__ = [
+    "DEFAULT_PROJECT_ID",
     "DEFAULT_SAFETY_RULESET_VERSION",
     "VALID_AGENT_SCOPES",
     "AgentBrain",
     "AgentRegistryBackend",
     "AsyncMemoryStore",
-    "BM25Scorer",
     "AsyncTappsBrainClient",
+    "BM25Scorer",
     "BrainClientProtocol",
     "BrainConfigError",
     "BrainError",
     "BrainTransientError",
     "BrainValidationError",
-    "TappsBrainClient",
     "ConsolidatedEntry",
     "ConsolidationConfig",
     "ConsolidationReason",
     "DecayConfig",
     "FederationBackend",
+    "FileAgentRegistryBackend",
     "GCResult",
     "HiveBackend",
     "InjectionConfig",
+    "InvalidProjectIdError",
     "MemoryEntry",
     "MemoryGarbageCollector",
-    "DEFAULT_PROJECT_ID",
-    "InvalidProjectIdError",
     "MemoryProfile",
-    "ProjectNotRegisteredError",
-    "ProjectRecord",
-    "ProjectRegistry",
     "MemoryRetriever",
     "MemoryScope",
     "MemorySnapshot",
@@ -188,6 +185,9 @@ __all__ = [
     "MemoryStoreLockTimeout",
     "MemoryTier",
     "MetricsSnapshot",
+    "ProjectNotRegisteredError",
+    "ProjectRecord",
+    "ProjectRegistry",
     "RateLimiterConfig",
     "RecallConfig",
     "RecallOrchestrator",
@@ -197,9 +197,9 @@ __all__ = [
     "ScoredMemory",
     "ScoringConfig",
     "SimilarityResult",
-    "FileAgentRegistryBackend",
     "SlidingWindowRateLimiter",
     "StoreHealthReport",
+    "TappsBrainClient",
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
@@ -222,8 +222,8 @@ __all__ = [
     "resolve_hive_backend_from_env",
     "resolve_project_id",
     "resolve_safety_ruleset_version",
-    "validate_project_id",
     "sync_from_markdown",
     "sync_to_markdown",
+    "validate_project_id",
     "verify_integrity_hash",
 ]

@@ -38,7 +38,11 @@ from tapps_brain.bm25 import BM25Scorer
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource
-from tapps_brain.otel_tracer import rm_add_bm25_candidates, rm_add_vector_candidates, rm_increment_rrf_fusions
+from tapps_brain.otel_tracer import (
+    rm_add_bm25_candidates,
+    rm_add_vector_candidates,
+    rm_increment_rrf_fusions,
+)
 from tapps_brain.profile import (
     SCORING_WEIGHT_SUM_MAX,
     SCORING_WEIGHT_SUM_MIN,

@@ -787,7 +787,10 @@ class TestRecordRetrievalDocumentEvents:
         assert mock_span.add_event.call_count == 2
 
     def test_event_name_is_gen_ai_retrieval_document(self) -> None:
-        from tapps_brain.otel_tracer import EVENT_RETRIEVAL_DOCUMENT, record_retrieval_document_events
+        from tapps_brain.otel_tracer import (
+            EVENT_RETRIEVAL_DOCUMENT,
+            record_retrieval_document_events,
+        )
 
         mock_span = MagicMock()
         record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "context"}])
@@ -823,7 +826,10 @@ class TestRecordRetrievalDocumentEvents:
         assert id1 == id2
 
     def test_score_attribute_is_float(self) -> None:
-        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_SCORE, record_retrieval_document_events
+        from tapps_brain.otel_tracer import (
+            ATTR_RETRIEVAL_DOC_SCORE,
+            record_retrieval_document_events,
+        )
 
         mock_span = MagicMock()
         record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.85, "tier": "pattern"}])
@@ -832,7 +838,10 @@ class TestRecordRetrievalDocumentEvents:
         assert abs(attrs[ATTR_RETRIEVAL_DOC_SCORE] - 0.85) < 1e-9
 
     def test_tier_attribute_is_present(self) -> None:
-        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_TIER, record_retrieval_document_events
+        from tapps_brain.otel_tracer import (
+            ATTR_RETRIEVAL_DOC_TIER,
+            record_retrieval_document_events,
+        )
 
         mock_span = MagicMock()
         record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "architectural"}])
@@ -848,7 +857,10 @@ class TestRecordRetrievalDocumentEvents:
         assert ATTR_RETRIEVAL_DOC_ID not in attrs
 
     def test_missing_score_defaults_to_float(self) -> None:
-        from tapps_brain.otel_tracer import ATTR_RETRIEVAL_DOC_SCORE, record_retrieval_document_events
+        from tapps_brain.otel_tracer import (
+            ATTR_RETRIEVAL_DOC_SCORE,
+            record_retrieval_document_events,
+        )
 
         mock_span = MagicMock()
         record_retrieval_document_events(mock_span, [{"key": "k", "tier": "context"}])
@@ -1287,7 +1299,10 @@ class TestRecordDiagnosticsEvent:
         assert call_name == EVENT_DIAGNOSTICS_REPORT
 
     def test_event_attrs_composite_score(self) -> None:
-        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_COMPOSITE_SCORE, record_diagnostics_event
+        from tapps_brain.otel_tracer import (
+            ATTR_DIAGNOSTICS_COMPOSITE_SCORE,
+            record_diagnostics_event,
+        )
 
         mock_span = MagicMock()
         record_diagnostics_event(mock_span, self._make_report(composite_score=0.72))
@@ -1363,7 +1378,10 @@ class TestRecordDiagnosticsEvent:
 
     def test_works_with_real_diagnostics_report(self, tmp_path: Any) -> None:
         """Verify with actual DiagnosticsReport from run_diagnostics() when module present."""
-        from tapps_brain.otel_tracer import ATTR_DIAGNOSTICS_COMPOSITE_SCORE, record_diagnostics_event
+        from tapps_brain.otel_tracer import (
+            ATTR_DIAGNOSTICS_COMPOSITE_SCORE,
+            record_diagnostics_event,
+        )
 
         try:
             from tapps_brain.diagnostics import run_diagnostics

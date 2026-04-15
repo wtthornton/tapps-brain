@@ -8,7 +8,6 @@ bool). Wrappers in ``mcp_server`` / ``http_adapter`` are responsible for
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 import structlog

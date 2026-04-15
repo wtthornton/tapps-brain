@@ -21,12 +21,10 @@ from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _adapter_mod
 from tapps_brain.http_adapter import (
-    HttpAdapter,
-    _Settings,
     _service_version,
+    _Settings,
     create_app,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -300,7 +298,7 @@ class TestV1RememberBatch:
 
     def test_ac1_post_v1rememberbatch_entries(self) -> None:
         """AC-1: POST /v1/remember:batch saves entries and returns per-item results."""
-        client, store = self._setup()
+        client, _ = self._setup()
         with client:
             resp = client.post(
                 "/v1/remember:batch",
@@ -371,7 +369,7 @@ class TestV1RecallBatch:
 
     def test_ac3_post_v1recallbatch_queries(self) -> None:
         """AC-3: POST /v1/recall:batch recalls for each query."""
-        client, store = self._setup()
+        client, _ = self._setup()
         with client:
             resp = client.post(
                 "/v1/recall:batch",
@@ -437,7 +435,7 @@ class TestV1ReinforceBatch:
 
     def test_ac5_post_v1reinforcebatch(self) -> None:
         """AC-5: POST /v1/reinforce:batch reinforces all valid entries."""
-        client, store = self._setup()
+        client, _ = self._setup()
         with client:
             resp = client.post(
                 "/v1/reinforce:batch",

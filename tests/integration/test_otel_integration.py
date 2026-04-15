@@ -14,8 +14,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import pytest
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -152,9 +150,6 @@ class TestSpanInstrumentation:
         from unittest.mock import patch
 
         from tapps_brain.otel_tracer import (
-            GEN_AI_OPERATION_EXECUTE_TOOL,
-            GEN_AI_SYSTEM,
-            MCP_METHOD_TOOLS_CALL,
             start_mcp_tool_span,
         )
 
@@ -181,7 +176,6 @@ class TestSpanInstrumentation:
     def test_retrieval_document_events_on_real_recall(self, tmp_path: Path) -> None:
         """record_retrieval_document_events attaches events to span for real recall results."""
         from tapps_brain.otel_tracer import (
-            ATTR_RETRIEVAL_DOC_SCORE,
             EVENT_RETRIEVAL_DOCUMENT,
             record_retrieval_document_events,
         )
@@ -272,7 +266,7 @@ class TestPrivacyModes:
         """By default, should_capture_content() returns False."""
         from unittest.mock import patch
 
-        from tapps_brain.otel_exporter import OTelConfig, should_capture_content
+        from tapps_brain.otel_exporter import should_capture_content
 
         with (
             patch.dict("os.environ", {}, clear=False),

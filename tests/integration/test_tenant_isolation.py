@@ -29,12 +29,10 @@ project_profiles — tenant isolation + admin bypass.
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 
 import pytest
-from psycopg import sql as pgsql
 
 _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN

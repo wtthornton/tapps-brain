@@ -31,7 +31,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -143,9 +142,8 @@ class TestErrorTypes:
     def test_invalid_tier_raises_validation_error(self, tmp_path: Path) -> None:
         from tapps_brain.agent_brain import BrainValidationError
 
-        with _brain(tmp_path) as brain:
-            with pytest.raises(BrainValidationError):
-                brain.remember("fact with bad tier", tier="not-a-real-tier")
+        with _brain(tmp_path) as brain, pytest.raises(BrainValidationError):
+            brain.remember("fact with bad tier", tier="not-a-real-tier")
 
     def test_brain_validation_error_is_brain_error(self) -> None:
         from tapps_brain.agent_brain import BrainError, BrainValidationError

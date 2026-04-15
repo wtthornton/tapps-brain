@@ -27,7 +27,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -259,12 +258,12 @@ class TestClientImport:
     """TappsBrainClient must be importable from the top-level package."""
 
     def test_sync_client_importable(self) -> None:
-        from tapps_brain import TappsBrainClient  # noqa: F401
+        from tapps_brain import TappsBrainClient
 
         assert TappsBrainClient is not None
 
     def test_async_client_importable(self) -> None:
-        from tapps_brain import AsyncTappsBrainClient  # noqa: F401
+        from tapps_brain import AsyncTappsBrainClient
 
         assert AsyncTappsBrainClient is not None
 
@@ -293,13 +292,13 @@ class TestMcpOperatorSplit:
 
     @pytest.mark.requires_mcp
     def test_create_server_importable(self) -> None:
-        from tapps_brain.mcp_server import create_server  # noqa: F401
+        from tapps_brain.mcp_server import create_server
 
         assert create_server is not None
 
     @pytest.mark.requires_mcp
     def test_create_operator_server_importable(self) -> None:
-        from tapps_brain.mcp_server import create_operator_server  # noqa: F401
+        from tapps_brain.mcp_server import create_operator_server
 
         assert create_operator_server is not None
 
@@ -310,7 +309,7 @@ class TestMcpOperatorSplit:
 
         try:
             server = create_server(tmp_path, enable_operator_tools=False)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pytest.skip("MCP server could not be created (likely missing Postgres)")
             return
 

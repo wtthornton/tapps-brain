@@ -7,6 +7,7 @@ import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -3564,7 +3565,7 @@ class _FakeStore:
     """Minimal stand-in for MemoryStore used to exercise the LRU cache
     without touching Postgres."""
 
-    instances: list["_FakeStore"] = []
+    instances: list[_FakeStore] = []
 
     def __init__(self, project_id: str) -> None:
         self.project_id = project_id

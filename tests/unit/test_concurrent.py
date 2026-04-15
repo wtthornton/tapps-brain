@@ -333,7 +333,7 @@ class TestConcurrentHivePropagation:
         def propagate(agent_id: int) -> None:
             try:
                 for i in range(entries_per_agent):
-                    hive_store.save(  # noqa: F821
+                    hive_store.save(
                         key=f"agent-{agent_id}-entry-{i}",
                         value=f"from agent {agent_id}, item {i}",
                         namespace="universal",
@@ -356,7 +356,7 @@ class TestConcurrentHivePropagation:
         assert not errors, f"Threads raised exceptions: {errors}"
 
         # All unique keys must be present
-        results = hive_store.search("agent", namespaces=["universal"], limit=200)  # noqa: F821
+        results = hive_store.search("agent", namespaces=["universal"], limit=200)
         saved_keys = {r["key"] for r in results}
         expected_count = num_agents * entries_per_agent
         assert len(saved_keys) == expected_count, (
@@ -372,7 +372,7 @@ class TestConcurrentHivePropagation:
         def ns_writer(ns: str) -> None:
             try:
                 for i in range(entries_per_ns):
-                    hive_store.save(  # noqa: F821
+                    hive_store.save(
                         key=f"ns-entry-{i}",
                         value=f"value for {ns} item {i}",
                         namespace=ns,
@@ -393,7 +393,7 @@ class TestConcurrentHivePropagation:
 
         # Each namespace should have exactly entries_per_ns entries
         for ns in namespaces:
-            results = hive_store.search("value for", namespaces=[ns], limit=50)  # noqa: F821
+            results = hive_store.search("value for", namespaces=[ns], limit=50)
             assert len(results) == entries_per_ns, (
                 f"Namespace {ns!r}: expected {entries_per_ns}, got {len(results)}"
             )
@@ -412,7 +412,7 @@ class TestConcurrentHiveRecallDuringPropagation:
         """Searches must not raise even when concurrent saves are in progress."""
         # Seed with some entries so searches return results from the start
         for i in range(20):
-            hive_store.save(  # noqa: F821
+            hive_store.save(
                 key=f"seed-{i}",
                 value=f"seed content item {i}",
                 namespace="universal",
@@ -427,7 +427,7 @@ class TestConcurrentHiveRecallDuringPropagation:
             idx = 0
             try:
                 while not stop_event.is_set():
-                    hive_store.save(  # noqa: F821
+                    hive_store.save(
                         key=f"live-{thread_id}-{idx}",
                         value=f"live content from {thread_id} idx {idx}",
                         namespace="universal",
@@ -442,7 +442,7 @@ class TestConcurrentHiveRecallDuringPropagation:
         def reader(thread_id: int) -> None:
             try:
                 while not stop_event.is_set():
-                    hive_store.search("content", namespaces=["universal"], limit=20)  # noqa: F821
+                    hive_store.search("content", namespaces=["universal"], limit=20)
                     time.sleep(0.005)
             except Exception as exc:
                 errors.append(exc)

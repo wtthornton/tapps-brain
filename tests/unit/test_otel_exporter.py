@@ -868,7 +868,7 @@ class TestBootstrapTracer:
         from unittest.mock import MagicMock
 
         from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
-        from tapps_brain.otel_tracer import start_span, SPAN_REMEMBER
+        from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
 
         cfg = OTelConfig(enabled=False)
         tracer = bootstrap_tracer(cfg)

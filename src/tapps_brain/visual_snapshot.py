@@ -515,7 +515,7 @@ def _privacy_copy(tier: PrivacyTier) -> str:
     return PRIVACY_STANDARD
 
 
-def _build_scorecard(  # noqa: PLR0915
+def _build_scorecard(
     report: StoreHealthReport,
     *,
     diagnostics: DiagnosticsSummary | None,
@@ -782,7 +782,9 @@ def _build_scorecard(  # noqa: PLR0915
         rdetail = "BM25-only retrieval (vector stack unavailable or empty)."
     elif retrieval_mode == "hybrid_pgvector_empty":
         rstat = "warn"
-        rdetail = "pgvector HNSW index ready but no embedded rows yet — vector leg may run on the fly."
+        rdetail = (
+            "pgvector HNSW index ready but no embedded rows yet — vector leg may run on the fly."
+        )
     elif retrieval_mode == "hybrid_on_the_fly_embeddings":
         rstat = "info"
         rdetail = "Hybrid without precomputed pgvector HNSW; vectors computed on demand."
@@ -851,7 +853,7 @@ def _collect_velocity(store: MemoryStore) -> MemoryVelocity:
             recalls_1h=int(row[2] or 0),
             recalls_24h=int(row[3] or 0),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         return MemoryVelocity()
 
 
@@ -872,7 +874,7 @@ def _collect_retrieval_metrics() -> RetrievalMetrics:
             rrf_fusions=int(snap.get("rrf_fusions", 0)),
             mean_latency_ms=float(snap.get("mean_latency_ms", 0.0)),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         return RetrievalMetrics()
 
 

@@ -35,7 +35,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -50,6 +50,8 @@ except ImportError as exc:  # pragma: no cover — http extra not installed
     ) from exc
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from tapps_brain.store import MemoryStore
 
 from tapps_brain.errors import (
@@ -199,7 +201,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 err_str = err_str.replace(parsed.username, "[user]")
             if parsed.password:
                 err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:  # noqa: BLE001
+        except Exception:
             err_str = "database unreachable"
         return False, None, f"db_error: {err_str}"
 
@@ -668,7 +670,7 @@ def create_app(
             try:
                 mcp = _build_mcp_server()
                 mcp_holder["mcp"] = mcp
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.error("http_adapter.mcp_build_failed", error=str(exc))
                 mcp = None
 
@@ -679,7 +681,7 @@ def create_app(
                 try:
                     session_cm = sm.run()
                     await session_cm.__aenter__()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.error("http_adapter.session_manager_start_failed",
                                  error=str(exc))
                     session_cm = None
@@ -710,7 +712,7 @@ def create_app(
             if session_cm is not None:
                 try:
                     await session_cm.__aexit__(None, None, None)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.debug("http_adapter.session_manager_stop_failed",
                                  exc_info=True)
 
@@ -901,7 +903,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=400,
                                 detail={"error": "bad_request",
                                         "detail": f"Read error: {exc}"})
@@ -988,7 +990,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=400,
                                 detail={"error": "bad_request",
                                         "detail": f"Read error: {exc}"})
@@ -1062,7 +1064,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=400,
                                 detail={"error": "bad_request",
                                         "detail": f"Read error: {exc}"})
@@ -1123,7 +1125,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=400,
                                 detail={"error": "bad_request",
                                         "detail": f"Read error: {exc}"})
@@ -1184,7 +1186,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=400,
                                 detail={"error": "bad_request",
                                         "detail": f"Read error: {exc}"})
@@ -1258,7 +1260,7 @@ def create_app(
     async def _admin_projects_register(request: Request) -> JSONResponse:
         try:
             raw = await request.body()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "bad_request", "detail": f"Read error: {exc}"},
@@ -1305,7 +1307,7 @@ def create_app(
 
             validate_project_id(project_id)
             profile = MemoryProfile.model_validate(profile_json)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "bad_request", "detail": str(exc)},

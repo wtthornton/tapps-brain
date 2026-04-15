@@ -8,8 +8,8 @@ returns ``(hive_backend, should_close)``.
 
 from __future__ import annotations
 
-import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 

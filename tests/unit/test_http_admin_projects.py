@@ -11,12 +11,10 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _mod
-from tapps_brain.http_adapter import _Settings, _service_version, create_app
-
+from tapps_brain.http_adapter import _service_version, _Settings, create_app
 
 # ---------------------------------------------------------------------------
 # Shared test helpers (replaces real-server helpers from old test)

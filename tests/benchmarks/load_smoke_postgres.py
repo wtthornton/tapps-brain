@@ -169,7 +169,7 @@ def _run_agent(
                     "access_count": 0,
                 }
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass  # Hive may not be fully wired; hive_search will return []
 
         # Synchronise: wait for all threads before starting the timed loop.
@@ -190,7 +190,7 @@ def _run_agent(
             try:
                 store.save(key, value, tier="pattern")
                 save_bucket.record(time.perf_counter() - t0)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 save_bucket.record_error()
 
             # --- recall ---
@@ -199,7 +199,7 @@ def _run_agent(
             try:
                 store.search(query)
                 recall_bucket.record(time.perf_counter() - t0)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 recall_bucket.record_error()
 
             # --- hive_search (every 5th op to avoid overwhelming the pool) ---
@@ -211,7 +211,7 @@ def _run_agent(
                         namespace=_HIVE_NAMESPACE,
                     )
                     hive_search_bucket.record(time.perf_counter() - t0)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     hive_search_bucket.record_error()
 
             op_index += 1
@@ -219,10 +219,10 @@ def _run_agent(
         store.close()
         try:
             cm.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         errors.append(f"[{agent_id}] fatal: {exc}\n{traceback.format_exc()}")
 
 
@@ -306,7 +306,7 @@ def test_load_smoke_50_agents(capsys: pytest.CaptureFixture[str]) -> None:  # ty
         apply_hive_migrations(dsn)
         _hive_cm = PostgresConnectionManager(dsn)
         hive_backend = PostgresHiveBackend(_hive_cm)
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Hive may not be available in all test environments.
         # hive_search ops will record errors but the test still runs.
         pass
@@ -357,7 +357,7 @@ def test_load_smoke_50_agents(capsys: pytest.CaptureFixture[str]) -> None:  # ty
     if hive_backend is not None:
         try:
             hive_backend.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     _print_results(
@@ -373,7 +373,7 @@ def test_load_smoke_50_agents(capsys: pytest.CaptureFixture[str]) -> None:  # ty
     assert not still_alive, f"Timed-out agent threads: {still_alive}"
 
     # Fatal errors (backend init failures, uncaught exceptions) must be zero.
-    assert not errors, f"Agent fatal errors:\n" + "\n".join(errors)
+    assert not errors, "Agent fatal errors:\n" + "\n".join(errors)
 
     # At least one save and recall recorded per agent (sanity check).
     assert save_bucket.count >= n_agents, (

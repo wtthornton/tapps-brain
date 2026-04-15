@@ -248,8 +248,11 @@ def test_run_health_check_hive_migration_version_populated(
     assert report.hive.migration_version == 5
 
 
-def test_run_health_check_hive_no_dsn_reports_skipped(tmp_path: Path) -> None:
+def test_run_health_check_hive_no_dsn_reports_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Without TAPPS_BRAIN_HIVE_DSN and no explicit hive_store, hive status is 'skipped'."""
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
     # v3: no SQLite fallback — hive requires Postgres DSN (ADR-007)
     report = run_health_check(project_root=tmp_path, check_hive=True)
     assert report.hive.status == "skipped"

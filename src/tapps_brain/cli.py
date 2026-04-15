@@ -11,10 +11,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast
-
-if TYPE_CHECKING:
-    from tapps_brain.models import MemoryEntry
+from typing import Annotated, Any, cast
 
 import structlog
 
@@ -860,7 +857,8 @@ def init_cmd(
         str | None,
         typer.Option(
             "--project-id",
-            help="Stable project slug used in .mcp.json and profile.yaml. Defaults to the target directory name.",
+            help="Stable project slug used in .mcp.json and profile.yaml. "
+            "Defaults to the target directory name.",
         ),
     ] = None,
     force: Annotated[
@@ -883,7 +881,6 @@ def init_cmd(
     Open and read them before committing.
     """
     import importlib.resources
-    import shutil
 
     dest = (target_dir or Path.cwd()).resolve()
     dest.mkdir(parents=True, exist_ok=True)
@@ -998,7 +995,6 @@ def stats_cmd(  # noqa: PLR0915
         top5 = top_accessed[:5]
 
         # DB size is no longer reported under the Postgres backend (ADR-007).
-        db_size_bytes = 0
         db_size_kb = 0.0
 
         tier_avg = {
@@ -3453,7 +3449,7 @@ def visual_capture_cmd(  # pragma: no cover
 
 
 @app.command("serve")
-def cmd_serve(  # noqa: PLR0912, PLR0915
+def cmd_serve(
     host: Annotated[
         str,
         typer.Option("--host", envvar="TAPPS_BRAIN_HTTP_HOST", help="Bind address."),
@@ -3560,7 +3556,7 @@ def cmd_serve(  # noqa: PLR0912, PLR0915
 
     stop_event = threading.Event()
 
-    def _handle_signal(signum: int, frame: object) -> None:  # noqa: ARG001
+    def _handle_signal(signum: int, frame: object) -> None:
         stop_event.set()
 
     signal.signal(signal.SIGINT, _handle_signal)

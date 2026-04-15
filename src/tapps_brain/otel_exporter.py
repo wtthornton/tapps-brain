@@ -780,10 +780,8 @@ class GenAIMetricsRecorder:
             attrs["gen_ai.system"] = system
         if error_type:
             attrs["error.type"] = error_type
-        try:
+        with contextlib.suppress(Exception):
             self._gen_ai_duration.record(duration_s, attrs)
-        except Exception:
-            pass
 
     def record_mcp_operation(
         self,
@@ -813,10 +811,8 @@ class GenAIMetricsRecorder:
             attrs["gen_ai.tool.name"] = tool_name
         if error_type:
             attrs["error.type"] = error_type
-        try:
+        with contextlib.suppress(Exception):
             self._mcp_duration.record(duration_s, attrs)
-        except Exception:
-            pass
 
     def record_token_usage(
         self,
@@ -842,10 +838,8 @@ class GenAIMetricsRecorder:
             attrs["gen_ai.operation.name"] = operation
         if system:
             attrs["gen_ai.system"] = system
-        try:
+        with contextlib.suppress(Exception):
             self._token_usage.record(token_count, attrs)
-        except Exception:
-            pass
 
 
 def _has_otel_sdk() -> bool:

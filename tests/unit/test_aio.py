@@ -269,7 +269,7 @@ class TestAsyncConcurrentLoad:
         # Advisory: log timing so engineers can track improvements toward the
         # strict 2× goal (requires native async psycopg pool — future work).
         ratio = concurrent_ms / max(single_ms, 0.001)
-        print(  # noqa: T201
+        print(
             f"\nSTORY-070.10 benchmark: single={single_ms:.2f}ms "
             f"concurrent_100={concurrent_ms:.2f}ms ratio={ratio:.1f}×"
         )

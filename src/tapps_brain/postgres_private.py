@@ -793,7 +793,9 @@ class PostgresPrivateBackend:
         results: list[dict[str, Any]] = []
         for row in rows:
             key, archived_at, byte_count, payload = row
-            ts_str = archived_at.isoformat() if hasattr(archived_at, "isoformat") else str(archived_at)
+            ts_str = (
+                archived_at.isoformat() if hasattr(archived_at, "isoformat") else str(archived_at)
+            )
             results.append(
                 {
                     "key": str(key),
@@ -855,17 +857,17 @@ class PostgresPrivateBackend:
         else:
             tags = []
 
-        def _str_or_none(v: Any) -> str | None:  # noqa: ANN401
+        def _str_or_none(v: Any) -> str | None:
             return str(v) if v is not None else None
 
-        def _to_iso(v: Any) -> str:  # noqa: ANN401
+        def _to_iso(v: Any) -> str:
             if v is None:
                 return datetime.now(tz=UTC).isoformat()
             if hasattr(v, "isoformat"):
                 return v.isoformat()  # type: ignore[no-any-return]
             return str(v)
 
-        def _iso_or_none(v: Any) -> str | None:  # noqa: ANN401
+        def _iso_or_none(v: Any) -> str | None:
             """ISO-8601 with ``T`` separator, or ``None``.
 
             Used for nullable temporal columns so downstream string comparisons

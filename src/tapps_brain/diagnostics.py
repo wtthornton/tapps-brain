@@ -15,7 +15,6 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import structlog
@@ -566,7 +565,7 @@ class InMemoryDiagnosticsHistoryStore:
     def close(self) -> None:
         pass
 
-    def record(self, report: "DiagnosticsReport", *, circuit_state: str = "closed") -> str:
+    def record(self, report: DiagnosticsReport, *, circuit_state: str = "closed") -> str:
         rid = str(uuid.uuid4())
         dim_json = json.dumps({k: v.score for k, v in report.dimensions.items()})
         recorded = report.recorded_at

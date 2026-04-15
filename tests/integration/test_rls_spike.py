@@ -60,13 +60,13 @@ def _apply_migrations() -> None:
     apply_hive_migrations(_PG_DSN)
 
 
-def _make_manager() -> "PostgresConnectionManager":  # type: ignore[name-defined]
+def _make_manager() -> PostgresConnectionManager:  # type: ignore[name-defined]
     from tapps_brain.postgres_connection import PostgresConnectionManager
 
     return PostgresConnectionManager(_PG_DSN)
 
 
-def _make_runtime_manager() -> "PostgresConnectionManager":  # type: ignore[name-defined]
+def _make_runtime_manager() -> PostgresConnectionManager:  # type: ignore[name-defined]
     """Return a manager connected as tapps_runtime (non-superuser, RLS enforced)."""
     from tapps_brain.postgres_connection import PostgresConnectionManager
 
@@ -133,13 +133,12 @@ def test_rls_namespace_isolation_select() -> None:
             _insert_row(conn, ns_b, key, "value-for-B")
 
         # --- Query under ns_a context (as tapps_runtime, RLS enforced) ----
-        with runtime_cm.namespace_context(ns_a) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT namespace, value FROM hive_memories WHERE key = %s",
-                    (key,),
-                )
-                rows = cur.fetchall()
+        with runtime_cm.namespace_context(ns_a) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT namespace, value FROM hive_memories WHERE key = %s",
+                (key,),
+            )
+            rows = cur.fetchall()
 
         visible_ns = {r[0] for r in rows}
         assert ns_a in visible_ns, f"ns_a row not visible under ns_a context: {rows}"
@@ -148,13 +147,12 @@ def test_rls_namespace_isolation_select() -> None:
         )
 
         # --- Query under ns_b context (as tapps_runtime, RLS enforced) ----
-        with runtime_cm.namespace_context(ns_b) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT namespace, value FROM hive_memories WHERE key = %s",
-                    (key,),
-                )
-                rows = cur.fetchall()
+        with runtime_cm.namespace_context(ns_b) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT namespace, value FROM hive_memories WHERE key = %s",
+                (key,),
+            )
+            rows = cur.fetchall()
 
         visible_ns = {r[0] for r in rows}
         assert ns_b in visible_ns, f"ns_b row not visible under ns_b context: {rows}"
@@ -228,14 +226,13 @@ def test_rls_admin_bypass_unset_sees_all() -> None:
             _insert_row(conn, ns_b, key, "value-B")
 
         # No SET LOCAL — session var is absent (NULL).
-        with cm.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT namespace FROM hive_memories"
-                    " WHERE namespace IN (%s, %s) AND key = %s",
-                    (ns_a, ns_b, key),
-                )
-                rows = cur.fetchall()
+        with cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT namespace FROM hive_memories"
+                " WHERE namespace IN (%s, %s) AND key = %s",
+                (ns_a, ns_b, key),
+            )
+            rows = cur.fetchall()
 
         visible_ns = {r[0] for r in rows}
         assert ns_a in visible_ns, f"ns_a row not visible with unset session var: {rows}"
@@ -303,12 +300,11 @@ def test_namespace_context_helper_sets_session_var() -> None:
 
     namespace = _unique_ns()
     try:
-        with cm.namespace_context(namespace) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT current_setting('tapps.current_namespace', TRUE)"
-                )
-                result = cur.fetchone()[0]
+        with cm.namespace_context(namespace) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_setting('tapps.current_namespace', TRUE)"
+            )
+            result = cur.fetchone()[0]
 
         assert result == namespace, (
             f"namespace_context did not set session var: expected {namespace!r}, got {result!r}"

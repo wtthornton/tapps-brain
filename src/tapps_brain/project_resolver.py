@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Mapping
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 logger = structlog.get_logger(__name__)
 

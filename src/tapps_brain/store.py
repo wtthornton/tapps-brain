@@ -57,7 +57,6 @@ from tapps_brain.otel_tracer import (
     SPAN_REINFORCE,
     SPAN_REMEMBER,
     SPAN_SEARCH,
-    SPAN_UPDATE,
     record_retrieval_document_events,
     rm_add_recall_latency_ms,
     rm_increment_recall_total,
@@ -391,12 +390,12 @@ class MemoryStore:
         """Register this agent in the Hive registry if not already present."""
         if self._hive_store is None or self._agent_id is None:
             return
-        from tapps_brain.backends import AgentRegistry
-        from tapps_brain.models import AgentRegistration
-
         # _db_path is /dev/null for Postgres hive backends (sentinel value).
         # Only derive a local registry path for file-based backends.
         import pathlib
+
+        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.models import AgentRegistration
 
         _db_path = getattr(self._hive_store, "_db_path", None)
         registry_path = (
@@ -1634,9 +1633,11 @@ class MemoryStore:
 
                 updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
                 # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
-                # using pre-reinforce timestamps for retrievability — same layer flag as record_access.
+                # using pre-reinforce timestamps for retrievability — same flag as record_access.
                 if self._profile is not None:
-                    tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                    tier_name = (
+                        entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                    )
                     layer = self._profile.get_layer(tier_name)
                     if layer is not None and layer.adaptive_stability:
                         try:

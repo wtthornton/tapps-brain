@@ -27,9 +27,9 @@ import tapps_brain.http_adapter as _mod
 from tapps_brain.http_adapter import (
     _OPENAPI_SPEC,
     HttpAdapter,
-    _Settings,
     _probe_db,
     _service_version,
+    _Settings,
     create_app,
 )
 
@@ -242,9 +242,8 @@ class TestReadyEndpointDbHealthy:
         settings = _make_settings(dsn="postgres://mockhost/testdb")
         with patch(
             "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
-        ):
-            with _client(settings) as c:
-                resp = c.get("/ready")
+        ), _client(settings) as c:
+            resp = c.get("/ready")
         assert resp.status_code == 200
         body = resp.json()
         assert isinstance(body, dict)
@@ -257,9 +256,8 @@ class TestReadyEndpointDbHealthy:
         settings = _make_settings(dsn="postgres://mockhost/testdb")
         with patch(
             "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
-        ):
-            with _client(settings) as c:
-                body = c.get("/ready").json()
+        ), _client(settings) as c:
+            body = c.get("/ready").json()
         assert isinstance(body, dict)
         assert body["migration_version"] == 7
 
@@ -942,9 +940,8 @@ class TestSnapshotProjectFilter:
         with patch(
             "tapps_brain.visual_snapshot.build_visual_snapshot",
             side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ):
-            with _client(_make_settings(store=mock_store)) as c:
-                resp = c.get("/snapshot")
+        ), _client(_make_settings(store=mock_store)) as c:
+            resp = c.get("/snapshot")
         assert resp.status_code == 200
         body = resp.json()
         assert isinstance(body, dict)
@@ -956,9 +953,8 @@ class TestSnapshotProjectFilter:
         with patch(
             "tapps_brain.visual_snapshot.build_visual_snapshot",
             side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ):
-            with _client(_make_settings(store=mock_store)) as c:
-                resp = c.get("/snapshot?project=tenant-a")
+        ), _client(_make_settings(store=mock_store)) as c:
+            resp = c.get("/snapshot?project=tenant-a")
         assert resp.status_code == 200
         body = resp.json()
         assert isinstance(body, dict)
@@ -971,9 +967,8 @@ class TestSnapshotProjectFilter:
         with patch(
             "tapps_brain.visual_snapshot.build_visual_snapshot",
             side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ):
-            with _client(_make_settings(store=mock_store)) as c:
-                body = c.get("/snapshot?project=tenant-b").json()
+        ), _client(_make_settings(store=mock_store)) as c:
+            body = c.get("/snapshot?project=tenant-b").json()
         assert isinstance(body, dict)
         ids = {r["id"] for r in body["diagnostics_history"]} | {
             r["id"] for r in body["feedback_events"]
@@ -986,9 +981,8 @@ class TestSnapshotProjectFilter:
         with patch(
             "tapps_brain.visual_snapshot.build_visual_snapshot",
             side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ):
-            with _client(_make_settings(store=mock_store)) as c:
-                resp = c.get("/snapshot?project=ghost")
+        ), _client(_make_settings(store=mock_store)) as c:
+            resp = c.get("/snapshot?project=ghost")
         assert resp.status_code == 200
         body = resp.json()
         assert isinstance(body, dict)

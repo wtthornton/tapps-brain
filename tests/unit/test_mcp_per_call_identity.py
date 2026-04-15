@@ -21,7 +21,6 @@ from tapps_brain.mcp_server import (
     _resolve_per_call_agent_id,
 )
 
-
 # ---------------------------------------------------------------------------
 # _resolve_per_call_agent_id — precedence rules
 # ---------------------------------------------------------------------------
@@ -120,7 +119,7 @@ def _build_app_no_auth():
     app.add_middleware(McpTenantMiddleware)
 
     @app.post("/mcp/probe")
-    async def probe() -> JSONResponse:  # noqa: ANN202 — FastAPI handler
+    async def probe() -> JSONResponse:
         return JSONResponse(
             {
                 "agent_id": REQUEST_AGENT_ID.get(),
