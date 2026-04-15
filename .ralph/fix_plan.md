@@ -18,12 +18,6 @@
 
 
 
-- [ ] **STORY-070.13** — AgentForge BrainBridge port — reference implementation (L, 8 pts)
-  - Port AgentForge's `BrainBridge` (~925 LOC) to use `TappsBrainClient` in `examples/agentforge_bridge/`
-  - Circuit breaker + bounded write queue preserved but thin; target < 250 LOC
-  - Tests mirror `test_brain_bridge.py` against a live dockerized brain
-  - Does NOT become a runtime dep — lives in `examples/` as documentation
-  - Reference: `docs/stories/STORY-070.13-agentforge-bridge-example.md`
 
 - [ ] **STORY-070.14** — Compatibility test suite (S, 3 pts)
   - `tests/compat/test_embedded_3_5_parity.py` pins embedded `AgentBrain` public-method behavior
