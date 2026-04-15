@@ -3,15 +3,21 @@
 Uses FastMCP to expose MemoryStore operations as MCP tools, resources,
 and prompts over stdio transport. Requires the ``mcp`` optional extra.
 
-Key public API: :func:`create_server` returns a configured ``FastMCP``
-instance; call ``mcp.run()`` to start the stdio server.
-
-Entry point: ``tapps-brain-mcp`` (see pyproject.toml).
+Key public API:
+- :func:`create_server` — standard server (no operator tools).
+- :func:`create_operator_server` — operator server (always enables operator tools).
+- :func:`main` — entry point for ``tapps-brain-mcp`` (standard, safe for AGENT.md).
+- :func:`main_operator` — entry point for ``tapps-brain-operator-mcp`` (operator).
 
 EPIC-070 STORY-070.1: tool bodies have been extracted to
 ``tapps_brain.services.*``. Each ``@mcp.tool()`` here is a thin wrapper
 that resolves the per-call store, delegates to the service function, and
 serialises the result to JSON.
+
+EPIC-070 STORY-070.9: operator-tool separation. The **standard** server
+(``tapps-brain-mcp``) never exposes operator tools — even if
+``TAPPS_BRAIN_OPERATOR_TOOLS=1`` is set. The **operator** server
+(``tapps-brain-operator-mcp``) always exposes them.
 """
 
 from __future__ import annotations
@@ -1877,19 +1883,13 @@ def create_server(  # noqa: PLR0915
     return mcp
 
 
-def main() -> None:
-    """Entry point for ``tapps-brain-mcp`` command."""
+def _build_base_parser(prog: str, description: str) -> argparse.ArgumentParser:
+    """Build the common argument parser shared by standard and operator CLIs."""
     try:
         pkg_ver = importlib.metadata.version("tapps-brain")
     except importlib.metadata.PackageNotFoundError:  # pragma: no cover
         pkg_ver = "0.0.0-dev"
-    parser = argparse.ArgumentParser(
-        prog="tapps-brain-mcp",
-        description=(
-            "Run the tapps-brain MCP server (stdio transport). "
-            "Version matches the installed tapps-brain package."
-        ),
-    )
+    parser = argparse.ArgumentParser(prog=prog, description=description)
     parser.add_argument(
         "--version",
         action="version",
@@ -1913,14 +1913,40 @@ def main() -> None:
         default=True,
         help="Enable Hive multi-agent shared brain (default: enabled).",
     )
-    parser.add_argument(
-        "--enable-operator-tools",
-        action="store_true",
-        default=False,
-        help=(
-            "Register advanced/maintenance tools (consolidation, GC, export/import, "
-            "relay, eval harness). Not intended for regular agent sessions. "
-            "Also enabled by TAPPS_BRAIN_OPERATOR_TOOLS=1 env var."
+    return parser
+
+
+def create_operator_server(
+    project_dir: Path | None = None,
+    *,
+    enable_hive: bool = True,
+    agent_id: str = "unknown",
+) -> Any:  # noqa: ANN401
+    """Create a FastMCP server with **operator tools always enabled**.
+
+    Exposes the full set of maintenance tools (GC, consolidation, import,
+    export, migration, relay).  Intended for operator / admin access only —
+    do **not** grant this server in a normal agent's ``AGENT.md``.
+    See ``tapps-brain-operator-mcp`` CLI entry point.
+    """
+    return create_server(
+        project_dir, enable_hive=enable_hive, agent_id=agent_id, enable_operator_tools=True
+    )
+
+
+def main() -> None:
+    """Entry point for ``tapps-brain-mcp`` (standard — safe for AGENT.md).
+
+    STORY-070.9: operator tools are **never** exposed regardless of the
+    ``TAPPS_BRAIN_OPERATOR_TOOLS`` environment variable.  Use
+    ``tapps-brain-operator-mcp`` when operator-level access is required.
+    """
+    parser = _build_base_parser(
+        "tapps-brain-mcp",
+        (
+            "Run the tapps-brain MCP server (stdio transport). "
+            "Standard server: no operator tools (safe for AGENT.md grants). "
+            "Version matches the installed tapps-brain package."
         ),
     )
     args = parser.parse_args()
@@ -1929,18 +1955,50 @@ def main() -> None:
     if effective_agent_id == "unknown":
         effective_agent_id = os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
 
-    enable_operator_tools: bool = (
-        args.enable_operator_tools
-        or os.environ.get("TAPPS_BRAIN_OPERATOR_TOOLS", "") == "1"
-    )
-
     project_dir = Path(args.project_dir) if args.project_dir else None
     try:
+        # STORY-070.9: standard server — operator tools are NEVER enabled.
+        # TAPPS_BRAIN_OPERATOR_TOOLS is intentionally not read here.
         server = create_server(
             project_dir,
             enable_hive=args.enable_hive,
             agent_id=effective_agent_id,
-            enable_operator_tools=enable_operator_tools,
+            enable_operator_tools=False,
+        )
+    except RuntimeError as exc:
+        sys.stderr.write(f"ERROR: {exc}\n")
+        sys.exit(1)
+    server.run(transport="stdio")
+
+
+def main_operator() -> None:
+    """Entry point for ``tapps-brain-operator-mcp`` (operator tools always on).
+
+    STORY-070.9: this server always exposes operator tools (GC, consolidation,
+    import/export, migration, relay).  Do **not** grant this entry point to
+    regular agents — use ``tapps-brain-mcp`` instead.
+    """
+    parser = _build_base_parser(
+        "tapps-brain-operator-mcp",
+        (
+            "Run the tapps-brain operator MCP server (stdio transport). "
+            "Operator server: GC, consolidation, import/export, migration, relay. "
+            "Not for regular agent sessions — use tapps-brain-mcp for AGENT.md grants."
+        ),
+    )
+    args = parser.parse_args()
+
+    effective_agent_id = args.agent_id
+    if effective_agent_id == "unknown":
+        effective_agent_id = os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
+
+    project_dir = Path(args.project_dir) if args.project_dir else None
+    try:
+        # STORY-070.9: operator server — operator tools are ALWAYS enabled.
+        server = create_operator_server(
+            project_dir,
+            enable_hive=args.enable_hive,
+            agent_id=effective_agent_id,
         )
     except RuntimeError as exc:
         sys.stderr.write(f"ERROR: {exc}\n")

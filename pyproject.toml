@@ -46,6 +46,7 @@ Changelog = "https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md"
 [project.scripts]
 tapps-brain = "tapps_brain.cli:app"
 tapps-brain-mcp = "tapps_brain.mcp_server:main"
+tapps-brain-operator-mcp = "tapps_brain.mcp_server.operator:main_operator"
 tapps-brain-http = "tapps_brain.http_adapter:main"
 
 [project.optional-dependencies]

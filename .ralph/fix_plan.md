@@ -14,12 +14,6 @@
 
 
 
-- [ ] **STORY-070.9** — Operator-tool separation (S, 3 pts)
-  - Split into `tapps_brain/mcp_server/standard.py` and `tapps_brain/mcp_server/operator.py`
-  - Standard: all memory tools. Operator: gc_run, consolidation_merge, consolidation_undo, import, export, migration
-  - Two entry points: `tapps-brain-mcp` and `tapps-brain-operator-mcp`
-  - Write `docs/guides/agent-md-wiring.md` with safe AGENT.md grant example
-  - Reference: `docs/stories/STORY-070.9-operator-tools-split.md`
 
 - [ ] **STORY-070.10** — Native async parity (M, 5 pts)
   - `AsyncMemoryStore` covers every sync `MemoryStore` public method (save, recall, reinforce, hive_search, relay_export, relay_import, consolidate, gc_run, delete, search)
