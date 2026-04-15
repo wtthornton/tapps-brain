@@ -11,12 +11,6 @@
 ## EPIC-070: Remote-First Brain as a Shared Service
 
 
-- [ ] **STORY-070.6** — Bulk operations (M, 5 pts)
-  - `POST /v1/remember:batch` (max 100 entries), `GET /v1/recall:batch` (max 50 queries), `POST /v1/reinforce:batch`
-  - MCP tools: `memory_save_many`, `memory_recall_many`, `memory_reinforce_many`
-  - Single Postgres transaction per batch; partial failure returns per-item status array
-  - Benchmark: 100-entry save batch ≤ 3× single-entry latency
-  - Reference: `docs/stories/STORY-070.6-bulk-operations.md`
 
 - [ ] **STORY-070.7** — Per-call identity — agent_id / scope / group (M, 5 pts)
   - Every memory operation accepts `agent_id`, `scope`, `memory_group` as per-call parameters

@@ -757,6 +757,80 @@ def create_server(  # noqa: PLR0915
         """Show the full version chain for a memory key."""
         return json.dumps(memory_service.memory_history(store, _pid(), agent_id, key=key))
 
+    # ------------------------------------------------------------------
+    # Bulk tools (STORY-070.6)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_save_many(entries: list[dict[str, str | float | list[str] | None]]) -> str:
+        """Save multiple memory entries in a single call.
+
+        Each entry must be a dict with at least ``key`` and ``value``.  Optional
+        fields: ``tier``, ``source``, ``tags``, ``scope``, ``confidence``,
+        ``agent_scope``, ``group``.
+
+        Batch size is capped by ``TAPPS_BRAIN_MAX_BATCH_SIZE`` (default 100).
+
+        Returns::
+
+            {
+                "results": [<per-item save result>, ...],
+                "saved_count": int,
+                "error_count": int,
+            }
+        """
+        return json.dumps(
+            memory_service.memory_save_many(
+                store, _pid(), agent_id, entries=list(entries),
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_recall_many(queries: list[str]) -> str:
+        """Run recall against multiple queries in a single call.
+
+        Each query is a plain string message.  Batch size is capped by
+        ``TAPPS_BRAIN_MAX_BATCH_SIZE`` (default 50 reads).
+
+        Returns::
+
+            {
+                "results": [<per-query recall result>, ...],
+                "query_count": int,
+            }
+        """
+        return json.dumps(
+            memory_service.memory_recall_many(
+                store, _pid(), agent_id, queries=list(queries),
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def memory_reinforce_many(entries: list[dict[str, str | float]]) -> str:
+        """Reinforce multiple memory entries in a single call.
+
+        Each entry must be a dict with at least ``key``.  Optional field:
+        ``confidence_boost`` (float, default 0.0).
+
+        Batch size is capped by ``TAPPS_BRAIN_MAX_BATCH_SIZE`` (default 100).
+
+        Returns::
+
+            {
+                "results": [<per-item reinforce result>, ...],
+                "reinforced_count": int,
+                "error_count": int,
+            }
+        """
+        return json.dumps(
+            memory_service.memory_reinforce_many(
+                store, _pid(), agent_id, entries=list(entries),
+            ),
+            default=str,
+        )
+
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_index_session(
         session_id: str,

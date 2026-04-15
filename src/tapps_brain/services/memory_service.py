@@ -362,6 +362,255 @@ def memory_reinforce(
     }
 
 
+# ---------------------------------------------------------------------------
+# Bulk operations (STORY-070.6)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_MAX_BATCH_WRITE = 100
+_DEFAULT_MAX_BATCH_READ = 50
+
+
+def _batch_limit(default: int) -> int:
+    """Return the configured batch size limit from env (or ``default``)."""
+    import os
+
+    raw = os.environ.get("TAPPS_BRAIN_MAX_BATCH_SIZE", "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return default
+
+
+def memory_save_many(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    entries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Save multiple memory entries.
+
+    Returns::
+
+        {
+            "results": [<per-item save result>, ...],
+            "saved_count": int,
+            "error_count": int,
+        }
+
+    Per-item results follow the same shape as :func:`memory_save`.
+    Partial failures are surfaced in the per-item result and do **not** abort
+    the remaining items.
+    """
+    from tapps_brain.otel_tracer import start_mcp_tool_span
+
+    limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
+    if len(entries) > limit:
+        return {
+            "error": "batch_too_large",
+            "message": f"Maximum batch size is {limit}, got {len(entries)}.",
+            "limit": limit,
+        }
+
+    results: list[dict[str, Any]] = []
+    saved = 0
+    errors = 0
+
+    with start_mcp_tool_span(
+        "memory_save_many",
+        extra_attributes={"memory.batch_size": len(entries)},
+    ):
+        for i, raw_entry in enumerate(entries):
+            with start_mcp_tool_span(
+                "memory_save_many.item",
+                extra_attributes={"memory.batch_index": i},
+            ):
+                if not isinstance(raw_entry, dict):
+                    item: dict[str, Any] = {
+                        "error": "bad_entry",
+                        "message": "Entry must be a JSON object.",
+                        "index": i,
+                    }
+                    errors += 1
+                else:
+                    key = (raw_entry.get("key") or "").strip()
+                    value = raw_entry.get("value") or ""
+                    if not key or not value:
+                        item = {
+                            "error": "bad_entry",
+                            "message": "key and value are required.",
+                            "index": i,
+                        }
+                        errors += 1
+                    else:
+                        item = memory_save(
+                            store,
+                            project_id,
+                            agent_id,
+                            key=key,
+                            value=value,
+                            tier=raw_entry.get("tier", "pattern"),
+                            source=raw_entry.get("source", "agent"),
+                            tags=raw_entry.get("tags"),
+                            scope=raw_entry.get("scope", "project"),
+                            confidence=float(raw_entry.get("confidence", -1.0)),
+                            agent_scope=raw_entry.get("agent_scope", "private"),
+                            group=raw_entry.get("group"),
+                        )
+                        if "error" in item:
+                            errors += 1
+                        else:
+                            saved += 1
+                results.append(item)
+
+    return {
+        "results": results,
+        "saved_count": saved,
+        "error_count": errors,
+    }
+
+
+def memory_recall_many(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    queries: list[str | dict[str, Any]],
+) -> dict[str, Any]:
+    """Run recall for multiple queries.
+
+    Returns::
+
+        {
+            "results": [[<memory>, ...], ...],   # one list per query, in order
+            "query_count": int,
+        }
+
+    Each inner list follows the same shape as a single :func:`memory_recall`
+    response.
+    """
+    from tapps_brain.otel_tracer import start_mcp_tool_span
+
+    limit = _batch_limit(_DEFAULT_MAX_BATCH_READ)
+    if len(queries) > limit:
+        return {
+            "error": "batch_too_large",
+            "message": f"Maximum recall batch size is {limit}, got {len(queries)}.",
+            "limit": limit,
+        }
+
+    results: list[dict[str, Any]] = []
+
+    with start_mcp_tool_span(
+        "memory_recall_many",
+        extra_attributes={"memory.batch_size": len(queries)},
+    ):
+        for i, raw_query in enumerate(queries):
+            with start_mcp_tool_span(
+                "memory_recall_many.item",
+                extra_attributes={"memory.batch_index": i},
+            ):
+                if isinstance(raw_query, dict):
+                    message = (raw_query.get("message") or raw_query.get("query") or "").strip()
+                    group = raw_query.get("group")
+                else:
+                    message = str(raw_query).strip()
+                    group = None
+
+                if not message:
+                    results.append({
+                        "error": "bad_query",
+                        "message": "Query message must be a non-empty string.",
+                        "index": i,
+                    })
+                else:
+                    results.append(memory_recall(store, project_id, agent_id,
+                                                 message=message, group=group))
+
+    return {
+        "results": results,
+        "query_count": len(queries),
+    }
+
+
+def memory_reinforce_many(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    entries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reinforce multiple memory entries.
+
+    Returns::
+
+        {
+            "results": [<per-item reinforce result>, ...],
+            "reinforced_count": int,
+            "error_count": int,
+        }
+
+    Per-item results follow the same shape as :func:`memory_reinforce`.
+    """
+    from tapps_brain.otel_tracer import start_mcp_tool_span
+
+    limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
+    if len(entries) > limit:
+        return {
+            "error": "batch_too_large",
+            "message": f"Maximum batch size is {limit}, got {len(entries)}.",
+            "limit": limit,
+        }
+
+    results: list[dict[str, Any]] = []
+    reinforced = 0
+    errors = 0
+
+    with start_mcp_tool_span(
+        "memory_reinforce_many",
+        extra_attributes={"memory.batch_size": len(entries)},
+    ):
+        for i, raw_entry in enumerate(entries):
+            with start_mcp_tool_span(
+                "memory_reinforce_many.item",
+                extra_attributes={"memory.batch_index": i},
+            ):
+                if not isinstance(raw_entry, dict):
+                    item = {
+                        "error": "bad_entry",
+                        "message": "Entry must be a JSON object.",
+                        "index": i,
+                    }
+                    errors += 1
+                else:
+                    key = (raw_entry.get("key") or "").strip()
+                    if not key:
+                        item = {
+                            "error": "bad_entry",
+                            "message": "key is required.",
+                            "index": i,
+                        }
+                        errors += 1
+                    else:
+                        item = memory_reinforce(
+                            store,
+                            project_id,
+                            agent_id,
+                            key=key,
+                            confidence_boost=float(raw_entry.get("confidence_boost", 0.0)),
+                        )
+                        if "error" in item:
+                            errors += 1
+                        else:
+                            reinforced += 1
+                results.append(item)
+
+    return {
+        "results": results,
+        "reinforced_count": reinforced,
+        "error_count": errors,
+    }
+
+
 def memory_ingest(
     store: Any,
     project_id: str,

@@ -881,6 +881,191 @@ def create_app(
 
         return JSONResponse(status_code=status_code, content=result)
 
+    # -------- bulk data-plane routes (STORY-070.6) --------
+
+    @app.post("/v1/remember:batch", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_remember_batch(request: Request) -> JSONResponse:
+        """Save multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "entries": [{"key": str, "value": str, ...}, ...] }``
+
+        Response:
+          ``{ "results": [...], "saved_count": int, "error_count": int }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Read error: {exc}"})
+        if not raw:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Empty request body."})
+        if len(raw) > 10 * 1_048_576:  # 10 MiB
+            raise HTTPException(status_code=413,
+                                detail={"error": "payload_too_large",
+                                        "detail": "Max 10 MiB for batch requests."})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Invalid JSON: {exc}"})
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Request body must be a JSON object."})
+
+        entries = body.get("entries")
+        if not isinstance(entries, list):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "entries must be a JSON array."})
+
+        from tapps_brain.services import memory_service as _ms
+
+        result = _ms.memory_save_many(store, project_id, agent_id, entries=entries)
+        status_code = 400 if "error" in result else 200
+        return JSONResponse(status_code=status_code, content=result)
+
+    @app.post("/v1/recall:batch", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_recall_batch(request: Request) -> JSONResponse:
+        """Recall against multiple queries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "queries": [str | {"message": str, "group"?: str}, ...] }``
+
+        Response:
+          ``{ "results": [...], "query_count": int }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Read error: {exc}"})
+        if not raw:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Empty request body."})
+        if len(raw) > 10 * 1_048_576:
+            raise HTTPException(status_code=413,
+                                detail={"error": "payload_too_large",
+                                        "detail": "Max 10 MiB for batch requests."})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Invalid JSON: {exc}"})
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Request body must be a JSON object."})
+
+        queries = body.get("queries")
+        if not isinstance(queries, list):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "queries must be a JSON array."})
+
+        from tapps_brain.services import memory_service as _ms
+
+        result = _ms.memory_recall_many(store, project_id, agent_id, queries=queries)
+        status_code = 400 if "error" in result else 200
+        return JSONResponse(status_code=status_code, content=result)
+
+    @app.post("/v1/reinforce:batch", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_reinforce_batch(request: Request) -> JSONResponse:
+        """Reinforce multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "entries": [{"key": str, "confidence_boost"?: float}, ...] }``
+
+        Response:
+          ``{ "results": [...], "reinforced_count": int, "error_count": int }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Read error: {exc}"})
+        if not raw:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Empty request body."})
+        if len(raw) > 10 * 1_048_576:
+            raise HTTPException(status_code=413,
+                                detail={"error": "payload_too_large",
+                                        "detail": "Max 10 MiB for batch requests."})
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": f"Invalid JSON: {exc}"})
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "Request body must be a JSON object."})
+
+        entries = body.get("entries")
+        if not isinstance(entries, list):
+            raise HTTPException(status_code=400,
+                                detail={"error": "bad_request",
+                                        "detail": "entries must be a JSON array."})
+
+        from tapps_brain.services import memory_service as _ms
+
+        result = _ms.memory_reinforce_many(store, project_id, agent_id, entries=entries)
+        status_code = 400 if "error" in result else 200
+        return JSONResponse(status_code=status_code, content=result)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:
