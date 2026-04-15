@@ -1,8 +1,14 @@
-"""Embedded AgentBrain v3.5 API parity suite (STORY-070.14).
+"""AgentBrain v3.5 API parity suite (STORY-070.14, updated TAP-363).
 
-These tests **pin** the public-method behavior of the embedded Python library as
+These tests **pin** the public-method behavior of the AgentBrain library as
 it existed in v3.5.x.  They exist to detect behavioral drift introduced by the
 remote-first refactor (EPIC-070) or any future work.
+
+**ADR-007 note**: SQLite was removed in ADR-007 stage 2 (2026-04-11).  All
+tests that exercise ``remember()`` / ``recall()`` / ``forget()`` now require a
+live Postgres backend and are marked ``requires_postgres``.  Tests that only
+check class hierarchy or static invariants remain unmarked and run in every CI
+job.
 
 Contract enforced:
   - Return-type shapes (recall → list[dict] with canonical keys)
@@ -51,8 +57,13 @@ def _brain(tmp_path: Path, agent_id: str = "compat-3-5") -> Any:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestReturnShapes:
-    """v3.5 return shapes must not change without an ADR."""
+    """v3.5 return shapes must not change without an ADR.
+
+    Marked ``requires_postgres``: after ADR-007 stage 2, the only backend is
+    Postgres.  These tests verify the recall return shape against a live DB.
+    """
 
     def test_remember_returns_nonempty_str(self, tmp_path: Path) -> None:
         with _brain(tmp_path) as brain:
@@ -133,8 +144,14 @@ class TestReturnShapes:
 
 
 class TestErrorTypes:
-    """v3.5 error types must remain stable."""
+    """v3.5 error types must remain stable.
 
+    Class-hierarchy assertions (``issubclass``) are static and run in every CI
+    job.  Only ``test_invalid_tier_raises_validation_error`` requires a live
+    Postgres backend and is individually marked.
+    """
+
+    @pytest.mark.requires_postgres
     def test_invalid_tier_raises_validation_error(self, tmp_path: Path) -> None:
         from tapps_brain.agent_brain import BrainValidationError
 
@@ -176,8 +193,12 @@ class TestErrorTypes:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestConfidenceScoring:
-    """Confidence scores must be in range and increase after reinforcement."""
+    """Confidence scores must be in range and increase after reinforcement.
+
+    Marked ``requires_postgres``: exercises remember/recall against the DB.
+    """
 
     def test_default_confidence_in_range(self, tmp_path: Path) -> None:
         with _brain(tmp_path) as brain:
@@ -214,8 +235,13 @@ class TestConfidenceScoring:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestRankOrder:
-    """Recall must return higher-relevance entries before lower-relevance ones."""
+    """Recall must return higher-relevance entries before lower-relevance ones.
+
+    Marked ``requires_postgres``: BM25 rank order requires writing to and
+    reading from the live Postgres tsvector index.
+    """
 
     def test_exact_match_ranks_first(self, tmp_path: Path) -> None:
         """An entry whose value is the query string must rank first."""
@@ -253,8 +279,13 @@ class TestRankOrder:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestAgentBrainProperties:
-    """Core properties must exist and return the correct types."""
+    """Core properties must exist and return the correct types.
+
+    Marked ``requires_postgres``: instantiating AgentBrain requires a Postgres
+    backend after ADR-007.
+    """
 
     def test_agent_id_property(self, tmp_path: Path) -> None:
         with _brain(tmp_path, agent_id="compat-id-check") as brain:
@@ -306,6 +337,10 @@ class TestPostgresParity:
             brain.remember("postgres shape check: ruff formatting")
             results = brain.recall("ruff formatting")
 
+        assert len(results) >= 1, (
+            "Postgres recall() must return at least one entry after remember(). "
+            "Check that the tsvector trigger fired and search_vector is populated."
+        )
         for entry in results:
             missing = _RECALL_REQUIRED_KEYS - entry.keys()
             assert not missing, f"Postgres recall() entry missing keys: {missing!r}"
@@ -315,6 +350,9 @@ class TestPostgresParity:
             brain.remember("postgres confidence check", tier="architectural")
             results = brain.recall("postgres confidence")
 
+        assert len(results) >= 1, (
+            "Postgres recall() must return at least one entry after remember()."
+        )
         for entry in results:
             assert 0.0 <= entry["confidence"] <= 1.0
 
