@@ -16,14 +16,6 @@
 
 
 
-- [ ] **STORY-070.11** — Official TappsBrainClient sync + async (L, 8 pts)
-  - `tapps_brain.client.TappsBrainClient` and `AsyncTappsBrainClient` with method parity vs `AgentBrain`
-  - URL scheme selects transport: `http(s)://` → HTTP adapter; `mcp+stdio://` → subprocess; `mcp+http://` → Streamable-HTTP MCP
-  - One `BrainClientProtocol` implemented by three backends; pooled `httpx.AsyncClient` for HTTP
-  - Per-call identity, error taxonomy exceptions, idempotency key auto-generated on retry
-  - Published in the wheel — no separate package
-  - Write `docs/guides/client.md`
-  - Reference: `docs/stories/STORY-070.11-tapps-brain-client.md`
 
 - [ ] **STORY-070.12** — OTel + Prometheus label enrichment (S, 3 pts)
   - All memory-op spans carry: `tapps.project_id`, `tapps.agent_id`, `tapps.scope`, `tapps.tool`, `tapps.rows_returned`, `tapps.latency_ms`

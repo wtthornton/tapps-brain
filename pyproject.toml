@@ -73,8 +73,12 @@ otel = [
 visual = [
     "playwright>=1.45,<2",
 ]
+# STORY-070.11: TappsBrainClient network transport
+client = [
+    "httpx>=0.27,<1",
+]
 all = [
-    "tapps-brain[cli,mcp,http,reranker]",
+    "tapps-brain[cli,mcp,http,reranker,client]",
 ]
 
 [dependency-groups]
@@ -176,6 +180,7 @@ ignore = [
 "tests/**/*.py" = ["ANN", "PLR", "TCH", "E402", "F841", "E741", "RUF002"]
 "src/tapps_brain/_protocols.py" = ["ANN401"]
 "src/tapps_brain/aio.py" = ["ANN401"]
+"src/tapps_brain/client.py" = ["ANN401"]
 "src/tapps_brain/diagnostics.py" = ["RUF001", "RUF002", "TC003", "PLR2004", "SIM108", "SIM105"]
 "src/tapps_brain/evaluation.py" = ["RUF002", "TC003", "N818", "PLR2004", "E501"]
 "src/tapps_brain/flywheel.py" = ["TC001", "N815", "N814", "ANN401", "SIM108", "SIM102", "PLR2004"]

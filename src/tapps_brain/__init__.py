@@ -116,6 +116,11 @@ from tapps_brain.project_resolver import validate_project_id as validate_project
 from tapps_brain.rate_limiter import RateLimiterConfig as RateLimiterConfig
 from tapps_brain.rate_limiter import SlidingWindowRateLimiter as SlidingWindowRateLimiter
 
+# TappsBrainClient — network client (STORY-070.11)
+from tapps_brain.client import AsyncTappsBrainClient as AsyncTappsBrainClient
+from tapps_brain.client import BrainClientProtocol as BrainClientProtocol
+from tapps_brain.client import TappsBrainClient as TappsBrainClient
+
 # Recall (EPIC-003)
 from tapps_brain.recall import RecallConfig as RecallConfig
 from tapps_brain.recall import RecallOrchestrator as RecallOrchestrator
@@ -152,10 +157,13 @@ __all__ = [
     "AgentRegistryBackend",
     "AsyncMemoryStore",
     "BM25Scorer",
+    "AsyncTappsBrainClient",
+    "BrainClientProtocol",
     "BrainConfigError",
     "BrainError",
     "BrainTransientError",
     "BrainValidationError",
+    "TappsBrainClient",
     "ConsolidatedEntry",
     "ConsolidationConfig",
     "ConsolidationReason",

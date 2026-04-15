@@ -300,3 +300,4 @@
 - [x] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
 - [x] **STORY-070.9** — Operator-tool separation (S, 3 pts)
 - [x] **STORY-070.10** — Native async parity (M, 5 pts)
+- [x] **STORY-070.11** — Official TappsBrainClient sync + async (L, 8 pts)
