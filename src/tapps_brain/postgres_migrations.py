@@ -90,7 +90,7 @@ def _get_schema_status(
 ) -> SchemaStatus:
     """Read current version from *version_table* and compute pending migrations."""
     try:
-        import psycopg  # type: ignore[import-not-found]
+        import psycopg
     except ImportError:
         raise ImportError(
             "psycopg is required for PostgreSQL migrations.\n"
@@ -105,7 +105,8 @@ def _get_schema_status(
             "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",
             (version_table,),
         )
-        exists = cur.fetchone()[0]
+        _row = cur.fetchone()
+        exists = _row[0] if _row else False
 
         if exists:
             cur.execute(f"SELECT version FROM {version_table} ORDER BY version")
@@ -165,7 +166,8 @@ def _apply_migrations(
             "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",
             (version_table,),
         )
-        table_exists = cur.fetchone()[0]
+        _row2 = cur.fetchone()
+        table_exists = _row2[0] if _row2 else False
 
         applied_set: set[int] = set()
         if table_exists:

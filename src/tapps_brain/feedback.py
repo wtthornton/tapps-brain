@@ -386,7 +386,7 @@ class InMemoryFeedbackStore:
     ) -> None:
         # When shared_events is provided (e.g. from InMemoryPrivateBackend),
         # all MemoryStore instances sharing the same backend see the same events.
-        self._events: list[FeedbackEvent] = shared_events if shared_events is not None else []  # type: ignore[assignment]
+        self._events: list[FeedbackEvent] = shared_events if shared_events is not None else []
         self._lock = threading.Lock()
         self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
 

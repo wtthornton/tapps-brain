@@ -285,7 +285,7 @@ class ProjectRegistry:
             ImportError: if ``argon2-cffi`` is not installed.
         """
         try:
-            from argon2 import PasswordHasher  # type: ignore[import-not-found]
+            from argon2 import PasswordHasher
             from argon2.exceptions import VerifyMismatchError  # type: ignore[import-not-found]
         except ImportError as exc:  # pragma: no cover
             raise ImportError(

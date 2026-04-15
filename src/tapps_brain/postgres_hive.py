@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 if TYPE_CHECKING:
-    import psycopg  # type: ignore[import-not-found]
+    import psycopg
 
     from tapps_brain.models import AgentRegistration
     from tapps_brain.postgres_connection import PostgresConnectionManager
