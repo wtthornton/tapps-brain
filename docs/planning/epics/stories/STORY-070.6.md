@@ -39,9 +39,9 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Update Dockerfile.http CMD/ENTRYPOINT to uvicorn (`docker/Dockerfile.http`)
-- [ ] Verify docker-compose.hive.yaml port mappings and env (`docker/docker-compose.hive.yaml`)
-- [ ] Smoke test: docker-compose up then curl /health and initialize /mcp (`scripts/smoke_test_docker.sh`)
+- [x] Update Dockerfile.http CMD/ENTRYPOINT to uvicorn (`docker/Dockerfile.http`)
+- [x] Verify docker-compose.hive.yaml port mappings and env (`docker/docker-compose.hive.yaml`)
+- [x] Smoke test: docker-compose up then curl /health and initialize /mcp (`scripts/smoke_test_docker.sh`)
 
 <!-- docsmcp:end:tasks -->
 

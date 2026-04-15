@@ -38,39 +38,39 @@ Audit mcp_server.py and the generated docs/generated/mcp-tools-manifest.json aga
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Grep mcp_server.py for memory_gc_config / memory_consolidation_config registrations and identify any gaps (`src/tapps_brain/mcp_server.py`)
-- [ ] Cross-reference docs/generated/mcp-tools-manifest.json with the failing test names (`docs/generated/mcp-tools-manifest.json`)
-- [ ] Determine via git blame whether the missing tools predate ADR-007 (`src/tapps_brain/mcp_server.py`)
-- [ ] Register memory_gc_config / memory_gc_config_set / memory_consolidation_config / memory_consolidation_config_set with proper input schemas drawn from CLI maintenance gc-config and consolidation-config (`src/tapps_brain/mcp_server.py`)
-- [ ] Investigate test_memory_import_unknown_tier_normalized and test_memory_import_invalid_source_counts_as_error and resolve their input validation expectations (`src/tapps_brain/mcp_server.py`)
-- [ ] Regenerate docs/generated/mcp-tools-manifest.json (`scripts/generate_mcp_tool_manifest.py`)
-- [ ] Verify all 17 affected tests pass (`tests/unit/test_mcp_server.py`)
+- [x] Grep mcp_server.py for memory_gc_config / memory_consolidation_config registrations and identify any gaps (`src/tapps_brain/mcp_server.py`)
+- [x] Cross-reference docs/generated/mcp-tools-manifest.json with the failing test names (`docs/generated/mcp-tools-manifest.json`)
+- [x] Determine via git blame whether the missing tools predate ADR-007 (`src/tapps_brain/mcp_server.py`)
+- [x] Register memory_gc_config / memory_gc_config_set / memory_consolidation_config / memory_consolidation_config_set with proper input schemas drawn from CLI maintenance gc-config and consolidation-config (`src/tapps_brain/mcp_server.py`)
+- [x] Investigate test_memory_import_unknown_tier_normalized and test_memory_import_invalid_source_counts_as_error and resolve their input validation expectations (`src/tapps_brain/mcp_server.py`)
+- [x] Regenerate docs/generated/mcp-tools-manifest.json (`scripts/generate_mcp_tool_manifest.py`)
+- [x] Verify all 17 affected tests pass (`tests/unit/test_mcp_server.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] mcp_server.py registers memory_gc_config
-- [ ] memory_gc_config_set
-- [ ] memory_consolidation_config
-- [ ] memory_consolidation_config_set with input schemas matching the CLI command equivalents
-- [ ] docs/generated/mcp-tools-manifest.json includes the new tool names
-- [ ] all 15 TestGcAndConsolidationConfigTools tests pass
-- [ ] both TestMcpServerInputValidation022C tests pass
-- [ ] no regression in other test_mcp_server tests
-- [ ] root cause documented in the PR description (pre-existing vs introduced by ADR-007)
+- [x] mcp_server.py registers memory_gc_config
+- [x] memory_gc_config_set
+- [x] memory_consolidation_config
+- [x] memory_consolidation_config_set with input schemas matching the CLI command equivalents
+- [x] docs/generated/mcp-tools-manifest.json includes the new tool names
+- [x] all 15 TestGcAndConsolidationConfigTools tests pass
+- [x] both TestMcpServerInputValidation022C tests pass
+- [x] no regression in other test_mcp_server tests
+- [x] root cause documented in the PR description (pre-existing vs introduced by ADR-007)
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] MCP tool registration audit and fix code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] MCP tool registration audit and fix code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

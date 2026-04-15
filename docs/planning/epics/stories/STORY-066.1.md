@@ -37,35 +37,35 @@ Identify every consolidation write path in auto_consolidation.py (consolidate_an
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Audit auto_consolidation.py for every persistence.save / persistence.delete call that should also emit audit (`src/tapps_brain/auto_consolidation.py`)
-- [ ] Add append_audit('consolidation_merge', key=consolidated_key, extra={source_keys, similarity}) after merge save (`src/tapps_brain/auto_consolidation.py`)
-- [ ] Add append_audit('consolidation_merge_undo', key=consolidated_key, extra={restored_keys}) in undo_merge (`src/tapps_brain/auto_consolidation.py`)
-- [ ] Add append_audit('periodic_consolidation_scan', key='', extra={scanned, merged, skipped}) in run_periodic_scan (`src/tapps_brain/auto_consolidation.py`)
-- [ ] Verify five failing tests now pass (`tests/unit/test_memory_auto_consolidation.py`)
+- [x] Audit auto_consolidation.py for every persistence.save / persistence.delete call that should also emit audit (`src/tapps_brain/auto_consolidation.py`)
+- [x] Add append_audit('consolidation_merge', key=consolidated_key, extra={source_keys, similarity}) after merge save (`src/tapps_brain/auto_consolidation.py`)
+- [x] Add append_audit('consolidation_merge_undo', key=consolidated_key, extra={restored_keys}) in undo_merge (`src/tapps_brain/auto_consolidation.py`)
+- [x] Add append_audit('periodic_consolidation_scan', key='', extra={scanned, merged, skipped}) in run_periodic_scan (`src/tapps_brain/auto_consolidation.py`)
+- [x] Verify five failing tests now pass (`tests/unit/test_memory_auto_consolidation.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] test_consolidation_on_save_writes_audit_trail passes against ephemeral Postgres
-- [ ] test_undo_restores_sources_and_deletes_consolidated passes
-- [ ] test_undo_rejects_wrong_contradiction_reason passes
-- [ ] test_second_undo_fails_after_success passes
-- [ ] test_periodic_scan_writes_audit_when_groups_merged passes
-- [ ] audit_log table contains consolidation_merge / consolidation_merge_undo / periodic_consolidation_scan event_types after a consolidation flow runs
-- [ ] no behaviour change visible to non-audit tests
+- [x] test_consolidation_on_save_writes_audit_trail passes against ephemeral Postgres
+- [x] test_undo_restores_sources_and_deletes_consolidated passes
+- [x] test_undo_rejects_wrong_contradiction_reason passes
+- [x] test_second_undo_fails_after_success passes
+- [x] test_periodic_scan_writes_audit_when_groups_merged passes
+- [x] audit_log table contains consolidation_merge / consolidation_merge_undo / periodic_consolidation_scan event_types after a consolidation flow runs
+- [x] no behaviour change visible to non-audit tests
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Consolidation merge audit emission code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Consolidation merge audit emission code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

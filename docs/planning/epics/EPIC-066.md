@@ -1,7 +1,7 @@
 # Epic 66: Postgres-Only Persistence Plane — Production Readiness
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** In Progress
 **Priority:** P0 - Critical
 **Estimated LOE:** ~3-4 weeks (1 developer)
 **Dependencies:** EPIC-059, ADR-007
@@ -79,9 +79,9 @@ EPIC-059 was scoped as "rip out SQLite". That work shipped on 2026-04-11 with th
 Wire append_audit calls into auto_consolidation.py merge, undo, and periodic-scan paths so the consolidation flow leaves an audit trail in the audit_log table. Resolves the 5 test_memory_auto_consolidation failures.
 
 **Tasks:**
-- [ ] Implement consolidation merge audit emission
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement consolidation merge audit emission
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Consolidation merge audit emission is implemented, tests pass, and documentation is updated.
 
@@ -94,9 +94,9 @@ Wire append_audit calls into auto_consolidation.py merge, undo, and periodic-sca
 Add valid_at / invalid_at / superseded_by predicates to PostgresPrivateBackend.search() and propagate the as_of parameter from MemoryStore.search() down. Resolves test_search_as_of_returns_old_version and aligns Postgres temporal semantics with the v2 SQLite path.
 
 **Tasks:**
-- [ ] Implement bi-temporal as_of filter on postgresprivatebackend.search
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement bi-temporal as_of filter on postgresprivatebackend.search
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Bi-temporal as_of filter on PostgresPrivateBackend.search is implemented, tests pass, and documentation is updated.
 
@@ -109,9 +109,9 @@ Add valid_at / invalid_at / superseded_by predicates to PostgresPrivateBackend.s
 Replace the deleted JSONL archive flow with a Postgres gc_archive table keyed by (project_id, agent_id, archived_at). Update gc.py and store.py archive paths to INSERT into the table, update CLI maintenance gc to query it. Resolves test_gc_live_increments_archive_bytes and the MCP memory_import tier-normalization tests that depended on archive side effects.
 
 **Tasks:**
-- [ ] Implement gc archive postgres table (migration 006)
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement gc archive postgres table (migration 006)
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** GC archive Postgres table (migration 006) is implemented, tests pass, and documentation is updated.
 
@@ -124,9 +124,9 @@ Replace the deleted JSONL archive flow with a Postgres gc_archive table keyed by
 Investigate and resolve KeyError 'tool not found: memory_gc_config_set' across TestGcAndConsolidationConfigTools and TestMcpServerInputValidation022C. Confirm whether the gap is pre-existing or introduced by the ADR-007 rip-out, then register the missing tools in mcp_server.py.
 
 **Tasks:**
-- [ ] Implement mcp tool registration audit and fix
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement mcp tool registration audit and fix
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** MCP tool registration audit and fix is implemented, tests pass, and documentation is updated.
 
@@ -139,9 +139,9 @@ Investigate and resolve KeyError 'tool not found: memory_gc_config_set' across T
 Bump openclaw-skill/SKILL.md to match pyproject.toml. Update scripts/check_openclaw_docs_consistency.py if it pins the version. Resolves test_all_versions_match.
 
 **Tasks:**
-- [ ] Implement version consistency unblock for openclaw-skill
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement version consistency unblock for openclaw-skill
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Version consistency unblock for openclaw-skill is implemented, tests pass, and documentation is updated.
 
@@ -274,9 +274,9 @@ Recreate behaviour coverage for the 8 deleted SQLite-coupled test files (test_me
 After STORY-066.1 through 066.4 land, re-run uv run pytest tests/unit against ephemeral Postgres and resolve any remaining individual failures. Each remaining failure gets either a fix, a proper @pytest.mark.skip with a tracked follow-up issue, or a test deletion if the behaviour was intentionally removed under ADR-007.
 
 **Tasks:**
-- [ ] Implement final test failure sweep — 90 to zero
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement final test failure sweep — 90 to zero
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Final test failure sweep — 90 to zero is implemented, tests pass, and documentation is updated.
 

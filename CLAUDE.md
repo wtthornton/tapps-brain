@@ -15,7 +15,7 @@ uv sync --group dev
 # Optional extras (see pyproject.toml): cli, mcp, reranker, otel, visual, all
 # (the legacy `encryption` extra was removed; use pg_tde at the storage layer)
 
-# Run all tests (~2300+ tests, coverage gate ≥95%; exclude benchmarks in CI-style runs)
+# Run all tests (~2940+ tests, coverage gate ≥95%; exclude benchmarks in CI-style runs)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
 # Run a single test file
@@ -120,7 +120,7 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 - **tsvector + GIN for lexical recall** with A/B/C weighting on `key` / `value` / `tags`. Upgrade path to ParadeDB `pg_search` (BM25 on Tantivy) when ranking quality matters more than ops simplicity.
 - **At-rest encryption is the storage layer's job** — Percona `pg_tde` 2.1.2 (released 2026-03-02) or cloud TDE. Application code does not handle keys.
 - **Backend abstraction** — callers program against protocols, never concrete backends; factory selects by DSN.
-- **Synchronous by design** — no async/await in core code.
+- **Synchronous by design** — no async/await in core code. `aio.AsyncMemoryStore` (EPIC-067) is a thin `asyncio.to_thread` wrapper for callers that need an async surface; it does not change the sync core.
 - **Write-through cache** — all mutations update both in-memory dict and Postgres.
 - **Lazy decay** — exponential decay computed on read, not via background tasks.
 - **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls.

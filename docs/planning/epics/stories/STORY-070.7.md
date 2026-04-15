@@ -39,9 +39,9 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Write remote Streamable HTTP client example (`examples/agentforge-client.py`)
-- [ ] Author remote-mcp-integration guide (`docs/guides/remote-mcp-integration.md`)
-- [ ] End-to-end test: boot container + run example in CI (`tests/integration/test_remote_mcp_e2e.py`)
+- [x] Write remote Streamable HTTP client example (`examples/agentforge-client.py`)
+- [x] Author remote-mcp-integration guide (`docs/guides/remote-mcp-integration.md`)
+- [x] End-to-end test: boot container + run example in CI (`tests/integration/test_remote_mcp_e2e.py`)
 
 <!-- docsmcp:end:tasks -->
 

@@ -1,7 +1,7 @@
 # Epic 70: HTTP/MCP transport parity — Streamable HTTP + service-layer refactor
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** Complete
 **Priority:** P0 - Critical
 **Estimated LOE:** ~4-6 weeks (1-2 developers)
 **Dependencies:** EPIC-069 (multi-tenant project_id + Postgres profile registry)
@@ -38,9 +38,9 @@ Today tapps-brain's HTTP adapter exposes only 8 probe/admin routes while MCP exp
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] Define verifiable criteria for **HTTP/MCP transport parity — Streamable HTTP + service-layer refactor**...
-- [ ] All stories completed and passing tests
-- [ ] Documentation updated
+- [x] Define verifiable criteria for **HTTP/MCP transport parity — Streamable HTTP + service-layer refactor**...
+- [x] All stories completed and passing tests
+- [x] Documentation updated
 
 <!-- docsmcp:end:acceptance-criteria -->
 
@@ -56,9 +56,9 @@ Move all business logic out of @mcp.tool() handlers in src/tapps_brain/mcp_serve
 (6 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement extract pure service layer from mcp tool bodies
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement extract pure service layer from mcp tool bodies
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Extract pure service layer from MCP tool bodies is implemented, tests pass, and documentation is updated.
 
@@ -73,9 +73,9 @@ Pin mcp>=1.25 / FastMCP ≥ 3.2. Configure a single FastMCP instance with statel
 (4 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement adopt fastmcp + streamable http transport
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement adopt fastmcp + streamable http transport
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Adopt FastMCP + Streamable HTTP transport is implemented, tests pass, and documentation is updated.
 
@@ -90,9 +90,9 @@ Rewrite src/tapps_brain/http_adapter.py using FastAPI + Uvicorn. Preserve wire c
 (6 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement replace stdlib http_adapter with fastapi app
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement replace stdlib http_adapter with fastapi app
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Replace stdlib http_adapter with FastAPI app is implemented, tests pass, and documentation is updated.
 
@@ -107,9 +107,9 @@ app.mount('/mcp', mcp.streamable_http_app()) inside the FastAPI lifespan running
 (5 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement mount fastmcp streamable http at /mcp with tenant middleware
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement mount fastmcp streamable http at /mcp with tenant middleware
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Mount FastMCP Streamable HTTP at /mcp with tenant middleware is implemented, tests pass, and documentation is updated.
 
@@ -124,9 +124,9 @@ CI test that enumerates FastMCP tools (mcp.list_tools()) and asserts each is rea
 (4 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement parity test: mcp tool registry vs http route manifest
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement parity test: mcp tool registry vs http route manifest
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Parity test: MCP tool registry vs HTTP route manifest is implemented, tests pass, and documentation is updated.
 
@@ -141,9 +141,9 @@ Update docker/Dockerfile.http to run uvicorn src.tapps_brain.http_adapter:app. d
 (4 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement update docker image + compose for unified http/mcp surface
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement update docker image + compose for unified http/mcp surface
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Update Docker image + compose for unified HTTP/MCP surface is implemented, tests pass, and documentation is updated.
 
@@ -158,9 +158,9 @@ Write a remote-client example in examples/agentforge-client.py using the MCP Pyt
 (5 acceptance criteria)
 
 **Tasks:**
-- [ ] Implement agentforge integration spike + migration guide
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement agentforge integration spike + migration guide
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** AgentForge integration spike + migration guide is implemented, tests pass, and documentation is updated.
 

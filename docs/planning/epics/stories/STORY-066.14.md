@@ -37,37 +37,37 @@ After stories 066.1 through 066.4 land, re-run uv run pytest tests/unit and test
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Re-run full test suite after STORY-066.1-066.4 land (`tests`)
-- [ ] Classify each remaining failure as fix / skip / delete with rationale (`tests`)
-- [ ] Land surgical fixes for the fix bucket (`src/tapps_brain`)
-- [ ] Add @pytest.mark.skip with tracked-issue reason for the skip bucket (`tests`)
-- [ ] Delete tests in the delete bucket with a PR comment explaining the ADR-007 removal (`tests`)
-- [ ] Re-run suite to confirm zero failures (`tests`)
-- [ ] Update CHANGELOG.md with the resolved test count delta (`CHANGELOG.md`)
+- [x] Re-run full test suite after STORY-066.1-066.4 land (`tests`)
+- [x] Classify each remaining failure as fix / skip / delete with rationale (`tests`)
+- [x] Land surgical fixes for the fix bucket (`src/tapps_brain`)
+- [x] Add @pytest.mark.skip with tracked-issue reason for the skip bucket (`tests`)
+- [x] Delete tests in the delete bucket with a PR comment explaining the ADR-007 removal (`tests`)
+- [x] Re-run suite to confirm zero failures (`tests`)
+- [x] Update CHANGELOG.md with the resolved test count delta (`CHANGELOG.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] uv run pytest tests/unit returns zero failures against ephemeral Postgres
-- [ ] uv run pytest tests/integration returns zero failures
-- [ ] every remaining @pytest.mark.skip references a tracked GitHub issue
-- [ ] no unjustified skips
-- [ ] CHANGELOG.md documents the test count delta from EPIC-066
-- [ ] release-ready.sh full gate passes
-- [ ] ready to tag 3.4.0
+- [x] uv run pytest tests/unit returns zero failures against ephemeral Postgres
+- [x] uv run pytest tests/integration returns zero failures
+- [x] every remaining @pytest.mark.skip references a tracked GitHub issue
+- [x] no unjustified skips
+- [x] CHANGELOG.md documents the test count delta from EPIC-066
+- [x] release-ready.sh full gate passes
+- [x] ready to tag 3.4.0
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Final test failure sweep — 90 to zero code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Final test failure sweep — 90 to zero code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

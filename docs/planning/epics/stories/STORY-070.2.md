@@ -39,10 +39,10 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Bump mcp pin in pyproject.toml and verify FastMCP import path (`pyproject.toml`)
-- [ ] Configure single FastMCP(stateless_http=True, json_response=True) in mcp_server.py (`src/tapps_brain/mcp_server.py`)
-- [ ] Audit and remove any sse_path/message_path/SSE transport references (`src/tapps_brain/`)
-- [ ] Add smoke test that imports mcp.streamable_http_app() and lists tools (`tests/transport/test_streamable_http_smoke.py`)
+- [x] Bump mcp pin in pyproject.toml and verify FastMCP import path (`pyproject.toml`)
+- [x] Configure single FastMCP(stateless_http=True, json_response=True) in mcp_server.py (`src/tapps_brain/mcp_server.py`)
+- [x] Audit and remove any sse_path/message_path/SSE transport references (`src/tapps_brain/`)
+- [x] Add smoke test that imports mcp.streamable_http_app() and lists tools (`tests/transport/test_streamable_http_smoke.py`)
 
 <!-- docsmcp:end:tasks -->
 

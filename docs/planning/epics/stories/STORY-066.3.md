@@ -41,37 +41,37 @@ Add migration 006_gc_archive.sql introducing a gc_archive table keyed by (projec
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Write migration 006_gc_archive.sql defining gc_archive table with project_id/agent_id/archived_at/key/payload/byte_count columns and a (project_id, agent_id, archived_at DESC) index (`src/tapps_brain/migrations/private/006_gc_archive.sql`)
-- [ ] Add archive_entry / list_archive / total_archive_bytes methods to PostgresPrivateBackend (`src/tapps_brain/postgres_private.py`)
-- [ ] Update gc.py to call backend.archive_entry instead of writing JSONL (`src/tapps_brain/gc.py`)
-- [ ] Update MemoryStore gc_archive_bytes_total counter to read from total_archive_bytes (`src/tapps_brain/store.py`)
-- [ ] Update CLI maintenance gc to read archive size from the table (`src/tapps_brain/cli.py`)
-- [ ] Verify test_gc_live_increments_archive_bytes passes (`tests/unit/test_memory_store.py`)
+- [x] Write migration 006_gc_archive.sql defining gc_archive table with project_id/agent_id/archived_at/key/payload/byte_count columns and a (project_id, agent_id, archived_at DESC) index (`src/tapps_brain/migrations/private/006_gc_archive.sql`)
+- [x] Add archive_entry / list_archive / total_archive_bytes methods to PostgresPrivateBackend (`src/tapps_brain/postgres_private.py`)
+- [x] Update gc.py to call backend.archive_entry instead of writing JSONL (`src/tapps_brain/gc.py`)
+- [x] Update MemoryStore gc_archive_bytes_total counter to read from total_archive_bytes (`src/tapps_brain/store.py`)
+- [x] Update CLI maintenance gc to read archive size from the table (`src/tapps_brain/cli.py`)
+- [x] Verify test_gc_live_increments_archive_bytes passes (`tests/unit/test_memory_store.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] migration 006_gc_archive.sql applies cleanly to a fresh Postgres
-- [ ] gc_archive table is created with the expected columns and index
-- [ ] PostgresPrivateBackend exposes archive_entry / list_archive / total_archive_bytes methods
-- [ ] gc.py writes to gc_archive instead of archive.jsonl
-- [ ] no archive.jsonl file is created at any point during a GC run
-- [ ] test_gc_live_increments_archive_bytes passes
-- [ ] CLI maintenance gc output reports archive byte size correctly
-- [ ] no regression in test_gc unit tests
+- [x] migration 006_gc_archive.sql applies cleanly to a fresh Postgres
+- [x] gc_archive table is created with the expected columns and index
+- [x] PostgresPrivateBackend exposes archive_entry / list_archive / total_archive_bytes methods
+- [x] gc.py writes to gc_archive instead of archive.jsonl
+- [x] no archive.jsonl file is created at any point during a GC run
+- [x] test_gc_live_increments_archive_bytes passes
+- [x] CLI maintenance gc output reports archive byte size correctly
+- [x] no regression in test_gc unit tests
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] GC archive Postgres table (migration 006) code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] GC archive Postgres table (migration 006) code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

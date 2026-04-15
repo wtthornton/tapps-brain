@@ -40,34 +40,34 @@ Bump openclaw-skill/SKILL.md to whatever the target release version is, audit an
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Bump openclaw-skill/SKILL.md to match pyproject.toml version (`openclaw-skill/SKILL.md`)
-- [ ] Audit openclaw-plugin/package.json for the same version (`openclaw-plugin/package.json`)
-- [ ] Audit server.json and llms.txt for any embedded version strings (`server.json`)
-- [ ] Verify scripts/check_openclaw_docs_consistency.py passes (`scripts/check_openclaw_docs_consistency.py`)
-- [ ] Add SKILL.md version bump to scripts/publish-checklist.md (`scripts/publish-checklist.md`)
-- [ ] Verify test_all_versions_match passes (`tests/unit/test_version_consistency.py`)
+- [x] Bump openclaw-skill/SKILL.md to match pyproject.toml version (`openclaw-skill/SKILL.md`)
+- [x] Audit openclaw-plugin/package.json for the same version (`openclaw-plugin/package.json`)
+- [x] Audit server.json and llms.txt for any embedded version strings (`server.json`)
+- [x] Verify scripts/check_openclaw_docs_consistency.py passes (`scripts/check_openclaw_docs_consistency.py`)
+- [x] Add SKILL.md version bump to scripts/publish-checklist.md (`scripts/publish-checklist.md`)
+- [x] Verify test_all_versions_match passes (`tests/unit/test_version_consistency.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] openclaw-skill/SKILL.md version equals pyproject.toml version
-- [ ] openclaw-plugin/package.json version equals pyproject.toml version
-- [ ] scripts/check_openclaw_docs_consistency.py passes
-- [ ] test_all_versions_match passes
-- [ ] scripts/publish-checklist.md mentions SKILL.md as a version-bumped file
+- [x] openclaw-skill/SKILL.md version equals pyproject.toml version
+- [x] openclaw-plugin/package.json version equals pyproject.toml version
+- [x] scripts/check_openclaw_docs_consistency.py passes
+- [x] test_all_versions_match passes
+- [x] scripts/publish-checklist.md mentions SKILL.md as a version-bumped file
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Version consistency unblock for openclaw-skill code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Version consistency unblock for openclaw-skill code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

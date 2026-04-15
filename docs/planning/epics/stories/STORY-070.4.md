@@ -39,11 +39,11 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Wire lifespan to start mcp.session_manager (`src/tapps_brain/http_adapter.py`)
-- [ ] Implement tenant-header middleware with project/agent context vars (`src/tapps_brain/http_adapter.py`)
-- [ ] Implement Origin allowlist middleware with env-configurable hosts (`src/tapps_brain/http_adapter.py`)
-- [ ] Bearer auth dependency applied to /mcp route (`src/tapps_brain/http_adapter.py`)
-- [ ] Integration test: remote Python MCP client completes save+search over /mcp (`tests/http/test_mcp_mount.py`)
+- [x] Wire lifespan to start mcp.session_manager (`src/tapps_brain/http_adapter.py`)
+- [x] Implement tenant-header middleware with project/agent context vars (`src/tapps_brain/http_adapter.py`)
+- [x] Implement Origin allowlist middleware with env-configurable hosts (`src/tapps_brain/http_adapter.py`)
+- [x] Bearer auth dependency applied to /mcp route (`src/tapps_brain/http_adapter.py`)
+- [x] Integration test: remote Python MCP client completes save+search over /mcp (`tests/http/test_mcp_mount.py`)
 
 <!-- docsmcp:end:tasks -->
 

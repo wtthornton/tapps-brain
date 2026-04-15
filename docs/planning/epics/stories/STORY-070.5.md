@@ -38,9 +38,9 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Write registry enumeration test using FastMCP list_tools API (`tests/parity/test_transport_parity.py`)
-- [ ] Add curated request/response golden cases for high-signal tools (`tests/parity/golden/`)
-- [ ] Wire parity test into CI workflow (`.github/workflows/`)
+- [x] Write registry enumeration test using FastMCP list_tools API (`tests/parity/test_transport_parity.py`)
+- [x] Add curated request/response golden cases for high-signal tools (`tests/parity/golden/`)
+- [x] Wire parity test into CI workflow (`.github/workflows/`)
 
 <!-- docsmcp:end:tasks -->
 

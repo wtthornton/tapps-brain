@@ -40,12 +40,12 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Scaffold FastAPI app factory with lifespan context (`src/tapps_brain/http_adapter.py`)
-- [ ] Port /health, /ready, /metrics, /info, /snapshot, /openapi.json (`src/tapps_brain/http_adapter.py`)
-- [ ] Port /admin/projects CRUD + approve endpoints (`src/tapps_brain/http_adapter.py`)
-- [ ] Wire auth dependencies for bearer + admin token (`src/tapps_brain/http_adapter.py`)
-- [ ] Wire rate limiter and OTel middleware (`src/tapps_brain/http_adapter.py`)
-- [ ] Contract tests: diff FastAPI responses against stdlib baseline (`tests/http/test_wire_parity.py`)
+- [x] Scaffold FastAPI app factory with lifespan context (`src/tapps_brain/http_adapter.py`)
+- [x] Port /health, /ready, /metrics, /info, /snapshot, /openapi.json (`src/tapps_brain/http_adapter.py`)
+- [x] Port /admin/projects CRUD + approve endpoints (`src/tapps_brain/http_adapter.py`)
+- [x] Wire auth dependencies for bearer + admin token (`src/tapps_brain/http_adapter.py`)
+- [x] Wire rate limiter and OTel middleware (`src/tapps_brain/http_adapter.py`)
+- [x] Contract tests: diff FastAPI responses against stdlib baseline (`tests/http/test_wire_parity.py`)
 
 <!-- docsmcp:end:tasks -->
 

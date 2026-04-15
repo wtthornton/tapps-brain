@@ -47,14 +47,14 @@ See [Epic 70](../EPIC-070.md) for project context and shared definitions.
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Capture golden responses from current stdio MCP for all tools into tests/golden/ (`tests/golden/`)
-- [ ] Create services/ package skeleton with one module per domain (`src/tapps_brain/services/__init__.py`)
-- [ ] Extract memory_* tool bodies into memory_service.py (`src/tapps_brain/services/memory_service.py`)
-- [ ] Extract hive_* tool bodies into hive_service.py (`src/tapps_brain/services/hive_service.py`)
-- [ ] Extract flywheel_* and feedback_* into their service modules (`src/tapps_brain/services/flywheel_service.py`)
-- [ ] Extract agent_*, maintenance_*, diagnostics_* into services (`src/tapps_brain/services/agents_service.py`)
-- [ ] Rewrite mcp_server.py tool handlers as thin delegates (`src/tapps_brain/mcp_server.py`)
-- [ ] Add service-layer unit tests (`tests/services/`)
+- [x] Capture golden responses from current stdio MCP for all tools into tests/golden/ (`tests/golden/`)
+- [x] Create services/ package skeleton with one module per domain (`src/tapps_brain/services/__init__.py`)
+- [x] Extract memory_* tool bodies into memory_service.py (`src/tapps_brain/services/memory_service.py`)
+- [x] Extract hive_* tool bodies into hive_service.py (`src/tapps_brain/services/hive_service.py`)
+- [x] Extract flywheel_* and feedback_* into their service modules (`src/tapps_brain/services/flywheel_service.py`)
+- [x] Extract agent_*, maintenance_*, diagnostics_* into services (`src/tapps_brain/services/agents_service.py`)
+- [x] Rewrite mcp_server.py tool handlers as thin delegates (`src/tapps_brain/mcp_server.py`)
+- [x] Add service-layer unit tests (`tests/services/`)
 
 <!-- docsmcp:end:tasks -->
 

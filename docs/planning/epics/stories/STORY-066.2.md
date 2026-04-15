@@ -39,34 +39,34 @@ Extend PostgresPrivateBackend.search() with an as_of parameter (ISO-8601 string 
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Add as_of: str | None parameter to PrivateBackend.search() protocol signature (`src/tapps_brain/_protocols.py`)
-- [ ] Add as_of parameter to PostgresPrivateBackend.search() and append the (valid_at <= as_of) AND (invalid_at > as_of) WHERE clauses (`src/tapps_brain/postgres_private.py`)
-- [ ] Propagate as_of through MemoryStore.search() to self._persistence.search() (`src/tapps_brain/store.py`)
-- [ ] Verify test_search_as_of_returns_old_version passes (`tests/unit/test_memory_store.py`)
-- [ ] Add temporal integration test covering supersede + as_of recall (`tests/integration/test_temporal_integration.py`)
+- [x] Add as_of: str | None parameter to PrivateBackend.search() protocol signature (`src/tapps_brain/_protocols.py`)
+- [x] Add as_of parameter to PostgresPrivateBackend.search() and append the (valid_at <= as_of) AND (invalid_at > as_of) WHERE clauses (`src/tapps_brain/postgres_private.py`)
+- [x] Propagate as_of through MemoryStore.search() to self._persistence.search() (`src/tapps_brain/store.py`)
+- [x] Verify test_search_as_of_returns_old_version passes (`tests/unit/test_memory_store.py`)
+- [x] Add temporal integration test covering supersede + as_of recall (`tests/integration/test_temporal_integration.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] PostgresPrivateBackend.search accepts as_of=str|None and applies bi-temporal predicates
-- [ ] MemoryStore.search forwards as_of to the backend
-- [ ] test_search_as_of_returns_old_version passes against ephemeral Postgres
-- [ ] test_search_excludes_superseded passes
-- [ ] an integration test confirms supersede + as_of returns the old version
-- [ ] parameter is documented in PrivateBackend protocol docstring with reference to migration 001 valid_at/invalid_at columns
+- [x] PostgresPrivateBackend.search accepts as_of=str|None and applies bi-temporal predicates
+- [x] MemoryStore.search forwards as_of to the backend
+- [x] test_search_as_of_returns_old_version passes against ephemeral Postgres
+- [x] test_search_excludes_superseded passes
+- [x] an integration test confirms supersede + as_of returns the old version
+- [x] parameter is documented in PrivateBackend protocol docstring with reference to migration 001 valid_at/invalid_at columns
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Bi-temporal as_of filter on PostgresPrivateBackend.search code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Bi-temporal as_of filter on PostgresPrivateBackend.search code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
