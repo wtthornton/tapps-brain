@@ -36,6 +36,14 @@ REQUEST_PROJECT_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 REQUEST_AGENT_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "tapps_brain_request_agent_id", default=None
 )
+# STORY-070.7: per-call scope / group contextvars (set by HTTP middleware from
+# ``X-Tapps-Scope`` / ``X-Tapps-Group`` headers, or left unset for stdio).
+REQUEST_SCOPE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "tapps_brain_request_scope", default=None
+)
+REQUEST_GROUP: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "tapps_brain_request_group", default=None
+)
 
 import structlog
 
@@ -210,21 +218,48 @@ def _get_store_for_project(
     default_store: Any,
     enable_hive: bool = True,
     agent_id: str = "unknown",
+    call_agent_id: str | None = None,
 ) -> Any:  # noqa: ANN401
-    if not project_id:
+    """Resolve a ``MemoryStore`` for *project_id*, optionally scoped to a per-call agent.
+
+    STORY-070.7 — when *call_agent_id* is supplied and differs from the
+    server-level *agent_id*, the cache key becomes ``"<pid>\\x00<aid>"`` so
+    pooled MCP connections can multiplex many agents without bleeding
+    Hive / propagation identity across tool calls.
+    """
+    effective_agent_id = call_agent_id if call_agent_id else agent_id
+    per_call_differs = bool(call_agent_id and call_agent_id != agent_id)
+
+    if not project_id and not per_call_differs:
         return default_store
+
+    if not project_id:
+        project_id = getattr(default_store, "_tapps_project_id", "") or ""
+
+    # Compound key when the per-call agent differs from the server default;
+    # otherwise keep the historical bare-project_id key for cache compat.
+    cache_key = (
+        f"{project_id}\x00{effective_agent_id}"
+        if per_call_differs
+        else project_id
+    )
+
     default_pid = getattr(default_store, "_tapps_project_id", None)
-    if default_pid and project_id == default_pid:
+    if not per_call_differs and default_pid and project_id == default_pid:
         return default_store
 
     def _factory() -> Any:
         prev = os.environ.get("TAPPS_BRAIN_PROJECT")
-        os.environ["TAPPS_BRAIN_PROJECT"] = project_id
+        if project_id:
+            os.environ["TAPPS_BRAIN_PROJECT"] = project_id
         try:
+            target_dir = (
+                _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
+            )
             return _get_store(
-                _resolve_project_dir_for_id(project_id),
+                target_dir,
                 enable_hive=enable_hive,
-                agent_id=agent_id,
+                agent_id=effective_agent_id,
             )
         finally:
             if prev is None:
@@ -232,7 +267,7 @@ def _get_store_for_project(
             else:
                 os.environ["TAPPS_BRAIN_PROJECT"] = prev
 
-    return _STORE_CACHE.get_or_create(project_id, _factory)
+    return _STORE_CACHE.get_or_create(cache_key, _factory)
 
 
 def _current_request_project_id() -> str | None:
@@ -272,11 +307,82 @@ def _current_request_project_id() -> str | None:
 
 
 def _current_request_agent_id() -> str | None:
-    """Return the ``X-Agent-Id`` header value captured by HTTP middleware."""
+    """Return the effective per-request agent_id.
+
+    Precedence (STORY-070.7):
+      1. :data:`REQUEST_AGENT_ID` contextvar (set by HTTP middleware from
+         ``X-Agent-Id`` / ``X-Tapps-Agent``).
+      2. MCP JSON-RPC ``_meta.agent_id`` on the active request context
+         (mirrors ``_current_request_project_id``).
+      3. ``None`` — caller falls back to the server-level default.
+    """
     agent = REQUEST_AGENT_ID.get()
-    if not agent:
+    if agent:
+        val = str(agent).strip()
+        if val:
+            return val
+    # Also check _meta.agent_id from the MCP JSON-RPC envelope so stdio
+    # clients can multiplex agents without a header layer.
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+    except Exception:  # noqa: BLE001
         return None
-    return str(agent).strip() or None
+    try:
+        rc = request_ctx.get()
+    except LookupError:
+        return None
+    if rc is None:
+        return None
+    meta = getattr(rc, "meta", None)
+    if meta is None:
+        return None
+    aid = getattr(meta, "agent_id", None)
+    if aid is None:
+        extra = getattr(meta, "model_extra", None) or {}
+        aid = extra.get("agent_id")
+    if not aid:
+        return None
+    return str(aid).strip() or None
+
+
+def _current_request_scope() -> str | None:
+    """Return the per-request scope contextvar value (STORY-070.7).
+
+    Set by :class:`McpTenantMiddleware` from the ``X-Tapps-Scope`` header.
+    """
+    s = REQUEST_SCOPE.get()
+    if not s:
+        return None
+    return str(s).strip() or None
+
+
+def _current_request_group() -> str | None:
+    """Return the per-request group contextvar value (STORY-070.7).
+
+    Set by :class:`McpTenantMiddleware` from the ``X-Tapps-Group`` header.
+    """
+    g = REQUEST_GROUP.get()
+    if not g:
+        return None
+    return str(g).strip() or None
+
+
+def _resolve_per_call_agent_id(call_val: str, *, default: str) -> str:
+    """Resolve the effective ``agent_id`` for a single MCP tool call.
+
+    Precedence (STORY-070.7):
+      1. *call_val* — explicit ``agent_id=`` parameter from the tool call.
+      2. :func:`_current_request_agent_id` — contextvar (header) or
+         ``_meta.agent_id`` from the MCP envelope.
+      3. *default* — the server-level agent_id passed to :func:`create_server`.
+    """
+    v = (call_val or "").strip()
+    if v:
+        return v
+    ctx = _current_request_agent_id()
+    if ctx:
+        return ctx
+    return default
 
 
 def _current_request_idempotency_key() -> str | None:
@@ -443,6 +549,42 @@ def create_server(  # noqa: PLR0915
         agent_id=agent_id,
     )
 
+    # STORY-070.7 — capture the server-level agent_id before defining tools
+    # so tool functions can accept an ``agent_id`` parameter that shadows
+    # the closure name without losing access to the default.
+    _server_agent_id = agent_id
+
+    def _resolve_store_for_call(call_agent_id: str = "") -> Any:
+        """Return the ``MemoryStore`` appropriate for a per-call agent override.
+
+        When the effective agent_id equals the server default, the
+        :class:`_StoreProxy` is returned (preserving historical behaviour
+        and project dispatch).  Otherwise a dedicated store keyed by
+        ``(project_id, effective_agent_id)`` is produced via
+        :func:`_get_store_for_project` so per-agent context (Hive
+        propagation, logging, cache isolation) does not bleed across
+        concurrent tool calls sharing one pooled MCP connection.
+        """
+        eff = _resolve_per_call_agent_id(call_agent_id, default=_server_agent_id)
+        if eff == _server_agent_id:
+            return store
+        pid = _current_request_project_id()
+        default_target = store._default_store  # type: ignore[attr-defined]
+        try:
+            return _get_store_for_project(
+                pid,
+                default_store=default_target,
+                enable_hive=enable_hive,
+                agent_id=_server_agent_id,
+                call_agent_id=eff,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from tapps_brain.project_registry import ProjectNotRegisteredError
+
+            if isinstance(exc, ProjectNotRegisteredError):
+                _raise_project_not_registered(exc.project_id)
+            raise
+
     def _hive_for_tools() -> tuple[Any, bool]:
         """Return ``(hive_backend, should_close)`` for Hive MCP tools (ADR-007)."""
         shared = getattr(store, "_hive_store", None)
@@ -519,59 +661,92 @@ def create_server(  # noqa: PLR0915
         tier: str = "procedural",
         share: bool = False,
         share_with: str = "",
+        agent_id: str = "",
     ) -> str:
         """Save a memory to the agent's brain.
 
         Use tier='architectural' for lasting decisions, 'pattern' for conventions,
         'procedural' for how-to knowledge. Set share=True to share with all groups,
-        or share_with='hive' for org-wide.
+        or share_with='hive' for org-wide.  Pass ``agent_id`` to override the
+        server-level default for this call (STORY-070.7).
         """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_remember(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 fact=fact, tier=tier, share=share, share_with=share_with,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_recall(query: str, max_results: int = 5) -> str:
-        """Recall memories matching a query."""
+    def brain_recall(query: str, max_results: int = 5, agent_id: str = "") -> str:
+        """Recall memories matching a query.
+
+        Pass ``agent_id`` to override the server-level default for this call
+        (STORY-070.7).
+        """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_recall(
-                store, _pid(), agent_id, query=query, max_results=max_results,
+                s, _pid(), eff_aid, query=query, max_results=max_results,
             ),
             default=str,
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_forget(key: str) -> str:
+    def brain_forget(key: str, agent_id: str = "") -> str:
         """Archive a memory by key. The memory is not permanently deleted."""
-        return json.dumps(memory_service.brain_forget(store, _pid(), agent_id, key=key))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.brain_forget(s, _pid(), eff_aid, key=key))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_learn_success(task_description: str, task_id: str = "") -> str:
+    def brain_learn_success(
+        task_description: str,
+        task_id: str = "",
+        agent_id: str = "",
+    ) -> str:
         """Record a successful task outcome."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_learn_success(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 task_description=task_description, task_id=task_id,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_learn_failure(description: str, task_id: str = "", error: str = "") -> str:
+    def brain_learn_failure(
+        description: str,
+        task_id: str = "",
+        error: str = "",
+        agent_id: str = "",
+    ) -> str:
         """Record a failed task outcome to avoid repeating mistakes."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_learn_failure(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 description=description, task_id=task_id, error=error,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_status() -> str:
-        """Show agent identity, group memberships, store stats, and Hive connectivity."""
-        return json.dumps(memory_service.brain_status(store, _pid(), agent_id), default=str)
+    def brain_status(agent_id: str = "") -> str:
+        """Show agent identity, group memberships, store stats, and Hive connectivity.
+
+        The response reflects the effective ``agent_id`` after STORY-070.7
+        per-call resolution (call param > contextvar/``_meta`` > server default).
+        """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(
+            memory_service.brain_status(s, _pid(), eff_aid), default=str
+        )
 
     # ------------------------------------------------------------------
     # Tools — model-controlled operations
@@ -589,13 +764,20 @@ def create_server(  # noqa: PLR0915
         agent_scope: str = "private",
         source_agent: str = "",
         group: str | None = None,
+        agent_id: str = "",
     ) -> str:
         """Save or update a memory entry.
 
         When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
         in the JSON-RPC envelope for duplicate-safe writes.
+
+        Pass ``agent_id`` to override the server-level default for this
+        call (STORY-070.7).
         """
         from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
 
         ikey = _current_request_idempotency_key()
         project_id = _pid()
@@ -612,7 +794,7 @@ def create_server(  # noqa: PLR0915
                 istore.close()
 
         result = memory_service.memory_save(
-            store, project_id, agent_id,
+            s, project_id, eff_aid,
             key=key, value=value, tier=tier, source=source, tags=tags,
             scope=scope, confidence=confidence, agent_scope=agent_scope,
             source_agent=source_agent, group=group,
@@ -629,14 +811,18 @@ def create_server(  # noqa: PLR0915
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_get(key: str) -> str:
+    def memory_get(key: str, agent_id: str = "") -> str:
         """Retrieve a single memory entry by key."""
-        return json.dumps(memory_service.memory_get(store, _pid(), agent_id, key=key))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_get(s, _pid(), eff_aid, key=key))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_delete(key: str) -> str:
+    def memory_delete(key: str, agent_id: str = "") -> str:
         """Delete a memory entry by key."""
-        return json.dumps(memory_service.memory_delete(store, _pid(), agent_id, key=key))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_delete(s, _pid(), eff_aid, key=key))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_search(
@@ -648,11 +834,14 @@ def create_server(  # noqa: PLR0915
         since: str = "",
         until: str = "",
         time_field: str = "created_at",
+        agent_id: str = "",
     ) -> str:
         """Search memory entries using full-text search."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_search(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 query=query, tier=tier, scope=scope, as_of=as_of, group=group,
                 since=since, until=until, time_field=time_field,
             )
@@ -664,35 +853,55 @@ def create_server(  # noqa: PLR0915
         scope: str | None = None,
         include_superseded: bool = False,
         group: str | None = None,
+        agent_id: str = "",
     ) -> str:
         """List memory entries with optional filters."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_list(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 tier=tier, scope=scope, include_superseded=include_superseded, group=group,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_list_groups() -> str:
+    def memory_list_groups(agent_id: str = "") -> str:
         """List distinct project-local memory group names (GitHub #49)."""
-        return json.dumps(memory_service.memory_list_groups(store, _pid(), agent_id))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_list_groups(s, _pid(), eff_aid))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_recall(message: str, group: str | None = None) -> str:
+    def memory_recall(
+        message: str,
+        group: str | None = None,
+        agent_id: str = "",
+    ) -> str:
         """Run auto-recall for a message and return ranked memories."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
-            memory_service.memory_recall(store, _pid(), agent_id, message=message, group=group)
+            memory_service.memory_recall(s, _pid(), eff_aid, message=message, group=group)
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_reinforce(key: str, confidence_boost: float = 0.0) -> str:
+    def memory_reinforce(
+        key: str,
+        confidence_boost: float = 0.0,
+        agent_id: str = "",
+    ) -> str:
         """Reinforce a memory entry, boosting its confidence and resetting decay.
 
         When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
         in the JSON-RPC envelope for duplicate-safe writes.
+
+        Pass ``agent_id`` to override the server-level default (STORY-070.7).
         """
         from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
 
         ikey = _current_request_idempotency_key()
         project_id = _pid()
@@ -709,7 +918,7 @@ def create_server(  # noqa: PLR0915
                 istore.close()
 
         result = memory_service.memory_reinforce(
-            store, project_id, agent_id, key=key, confidence_boost=confidence_boost,
+            s, project_id, eff_aid, key=key, confidence_boost=confidence_boost,
         )
 
         if ikey and is_idempotency_enabled() and dsn and project_id:
@@ -727,11 +936,14 @@ def create_server(  # noqa: PLR0915
         context: str,
         source: str = "agent",
         agent_scope: str = "private",
+        agent_id: str = "",
     ) -> str:
         """Extract and store durable facts from conversation context."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_ingest(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 context=context, source=source, agent_scope=agent_scope,
             )
         )
@@ -743,26 +955,34 @@ def create_server(  # noqa: PLR0915
         key: str | None = None,
         tier: str | None = None,
         tags: list[str] | None = None,
+        agent_id: str = "",
     ) -> str:
         """Create a new version of a memory, superseding the old one."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_supersede(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 old_key=old_key, new_value=new_value, key=key, tier=tier, tags=tags,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_history(key: str) -> str:
+    def memory_history(key: str, agent_id: str = "") -> str:
         """Show the full version chain for a memory key."""
-        return json.dumps(memory_service.memory_history(store, _pid(), agent_id, key=key))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_history(s, _pid(), eff_aid, key=key))
 
     # ------------------------------------------------------------------
     # Bulk tools (STORY-070.6)
     # ------------------------------------------------------------------
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_save_many(entries: list[dict[str, str | float | list[str] | None]]) -> str:
+    def memory_save_many(
+        entries: list[dict[str, str | float | list[str] | None]],
+        agent_id: str = "",
+    ) -> str:
         """Save multiple memory entries in a single call.
 
         Each entry must be a dict with at least ``key`` and ``value``.  Optional
@@ -779,15 +999,17 @@ def create_server(  # noqa: PLR0915
                 "error_count": int,
             }
         """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_save_many(
-                store, _pid(), agent_id, entries=list(entries),
+                s, _pid(), eff_aid, entries=list(entries),
             ),
             default=str,
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_recall_many(queries: list[str]) -> str:
+    def memory_recall_many(queries: list[str], agent_id: str = "") -> str:
         """Run recall against multiple queries in a single call.
 
         Each query is a plain string message.  Batch size is capped by
@@ -800,15 +1022,20 @@ def create_server(  # noqa: PLR0915
                 "query_count": int,
             }
         """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_recall_many(
-                store, _pid(), agent_id, queries=list(queries),
+                s, _pid(), eff_aid, queries=list(queries),
             ),
             default=str,
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_reinforce_many(entries: list[dict[str, str | float]]) -> str:
+    def memory_reinforce_many(
+        entries: list[dict[str, str | float]],
+        agent_id: str = "",
+    ) -> str:
         """Reinforce multiple memory entries in a single call.
 
         Each entry must be a dict with at least ``key``.  Optional field:
@@ -824,9 +1051,11 @@ def create_server(  # noqa: PLR0915
                 "error_count": int,
             }
         """
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_reinforce_many(
-                store, _pid(), agent_id, entries=list(entries),
+                s, _pid(), eff_aid, entries=list(entries),
             ),
             default=str,
         )
@@ -835,11 +1064,14 @@ def create_server(  # noqa: PLR0915
     def memory_index_session(
         session_id: str,
         chunks: list[str],
+        agent_id: str = "",
     ) -> str:
         """Index session chunks for future search."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_index_session(
-                store, _pid(), agent_id, session_id=session_id, chunks=chunks,
+                s, _pid(), eff_aid, session_id=session_id, chunks=chunks,
             )
         )
 
@@ -847,11 +1079,14 @@ def create_server(  # noqa: PLR0915
     def memory_search_sessions(
         query: str,
         limit: int = 10,
+        agent_id: str = "",
     ) -> str:
         """Search past session summaries."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_search_sessions(
-                store, _pid(), agent_id, query=query, limit=limit,
+                s, _pid(), eff_aid, query=query, limit=limit,
             )
         )
 
@@ -860,11 +1095,14 @@ def create_server(  # noqa: PLR0915
         response: str,
         source: str = "agent",
         agent_scope: str = "private",
+        agent_id: str = "",
     ) -> str:
         """Extract and persist new facts from an agent response."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_capture(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 response=response, source=source, agent_scope=agent_scope,
             )
         )
@@ -1467,25 +1705,31 @@ def create_server(  # noqa: PLR0915
     # ------------------------------------------------------------------
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_relations(key: str) -> str:
+    def memory_relations(key: str, agent_id: str = "") -> str:
         """Return all relations associated with a memory entry key."""
-        return json.dumps(memory_service.memory_relations(store, _pid(), agent_id, key=key))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_relations(s, _pid(), eff_aid, key=key))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_relations_get_batch(keys_json: str) -> str:
+    def memory_relations_get_batch(keys_json: str, agent_id: str = "") -> str:
         """Return relations for multiple memory keys in one call (STORY-048.2)."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_relations_get_batch(
-                store, _pid(), agent_id, keys_json=keys_json,
+                s, _pid(), eff_aid, keys_json=keys_json,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_find_related(key: str, max_hops: int = 2) -> str:
+    def memory_find_related(key: str, max_hops: int = 2, agent_id: str = "") -> str:
         """Find entries related to a key via BFS traversal of the relation graph."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_find_related(
-                store, _pid(), agent_id, key=key, max_hops=max_hops,
+                s, _pid(), eff_aid, key=key, max_hops=max_hops,
             )
         )
 
@@ -1494,11 +1738,14 @@ def create_server(  # noqa: PLR0915
         subject: str = "",
         predicate: str = "",
         object_entity: str = "",
+        agent_id: str = "",
     ) -> str:
         """Filter relations by subject, predicate, and/or object_entity."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_query_relations(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 subject=subject, predicate=predicate, object_entity=object_entity,
             )
         )
@@ -1514,11 +1761,14 @@ def create_server(  # noqa: PLR0915
         since: str = "",
         until: str = "",
         limit: int = 50,
+        agent_id: str = "",
     ) -> str:
         """Query the audit trail for memory events."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_audit(
-                store, _pid(), agent_id,
+                s, _pid(), eff_aid,
                 key=key, event_type=event_type, since=since, until=until, limit=limit,
             )
         )
@@ -1528,20 +1778,25 @@ def create_server(  # noqa: PLR0915
     # ------------------------------------------------------------------
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def memory_list_tags() -> str:
+    def memory_list_tags(agent_id: str = "") -> str:
         """List all tags used in the memory store with their usage counts."""
-        return json.dumps(memory_service.memory_list_tags(store, _pid(), agent_id))
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
+        return json.dumps(memory_service.memory_list_tags(s, _pid(), eff_aid))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_update_tags(
         key: str,
         add: list[str] | None = None,
         remove: list[str] | None = None,
+        agent_id: str = "",
     ) -> str:
         """Atomically add and/or remove tags on an existing memory entry."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_update_tags(
-                store, _pid(), agent_id, key=key, add=add, remove=remove,
+                s, _pid(), eff_aid, key=key, add=add, remove=remove,
             )
         )
 
@@ -1549,11 +1804,14 @@ def create_server(  # noqa: PLR0915
     def memory_entries_by_tag(
         tag: str,
         tier: str = "",
+        agent_id: str = "",
     ) -> str:
         """Return all memory entries that carry a specific tag."""
+        eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
+        s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_entries_by_tag(
-                store, _pid(), agent_id, tag=tag, tier=tier,
+                s, _pid(), eff_aid, tag=tag, tier=tier,
             )
         )
 

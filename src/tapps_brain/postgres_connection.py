@@ -287,6 +287,45 @@ class PostgresConnectionManager:
             yield conn
 
     @contextmanager
+    def agent_context(self, agent_id: str) -> Iterator[Any]:
+        """Yield a connection with ``app.agent_id`` session variable set.
+
+        STORY-070.7 — threads the per-call ``agent_id`` into Postgres so
+        any row-level security policy (or audit trigger) that filters by
+        agent can see the caller identity for this transaction.
+
+        ``SET LOCAL`` ensures the variable is cleared when the transaction
+        ends (commit or rollback), making it safe for pooled connections:
+        no agent identity can leak across pool borrows.
+
+        Parameters
+        ----------
+        agent_id:
+            The agent identity to bind for this transaction.  Must be a
+            non-empty string.
+
+        Raises
+        ------
+        ValueError
+            If *agent_id* is empty or whitespace-only.
+        """
+        if not agent_id or not agent_id.strip():
+            raise ValueError(
+                "agent_context requires a non-empty agent_id"
+            )
+        self._ensure_pool()
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                from psycopg import sql as pgsql
+
+                cur.execute(
+                    pgsql.SQL("SET LOCAL app.agent_id = {}").format(
+                        pgsql.Literal(agent_id)
+                    )
+                )
+            yield conn
+
+    @contextmanager
     def admin_context(self) -> Iterator[Any]:
         """Yield a connection with ``app.is_admin = 'true'`` set.
 

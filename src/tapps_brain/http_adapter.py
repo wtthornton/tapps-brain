@@ -369,9 +369,20 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
         method = request.method
         path = request.url.path
         project_id = request.headers.get("x-project-id", "")
+        # STORY-070.7: tag spans with per-call agent identity so observability
+        # can filter by tenant × agent without inspecting headers downstream.
+        agent_id_header = (
+            request.headers.get("x-tapps-agent")
+            or request.headers.get("x-agent-id", "")
+        )
         with start_span(
             f"{method} {path}",
-            {"http.method": method, "http.route": path, "tapps.project_id": project_id},
+            {
+                "http.method": method,
+                "http.route": path,
+                "tapps.project_id": project_id,
+                "tapps.agent_id": agent_id_header,
+            },
             kind=SPAN_KIND_SERVER,
             context=trace_ctx,
         ):
@@ -434,6 +445,14 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
                          "detail": "X-Project-Id header is required for /mcp requests."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # STORY-070.7: ``X-Tapps-Agent`` is the canonical per-call identity
+        # header; it takes precedence over the legacy ``X-Agent-Id`` so a
+        # pooled MCP connection can multiplex many agents without reconnect.
+        tapps_agent = (request.headers.get("x-tapps-agent") or "").strip()
+        if tapps_agent:
+            agent_id = tapps_agent
+        scope = (request.headers.get("x-tapps-scope") or "").strip() or None
+        group = (request.headers.get("x-tapps-group") or "").strip() or None
 
         # Bridge into tapps_brain.mcp_server contextvars so the service layer
         # sees the per-request tenant regardless of whether the JSON-RPC
@@ -442,14 +461,20 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
 
         token_pid = _mcp_mod.REQUEST_PROJECT_ID.set(project_id)
         token_agent = _mcp_mod.REQUEST_AGENT_ID.set(agent_id)
+        token_scope = _mcp_mod.REQUEST_SCOPE.set(scope)
+        token_group = _mcp_mod.REQUEST_GROUP.set(group)
         # Also mirror into request.state for handlers / observability.
         request.state.project_id = project_id
         request.state.agent_id = agent_id
+        request.state.scope = scope
+        request.state.group = group
         try:
             return await call_next(request)
         finally:
             _mcp_mod.REQUEST_PROJECT_ID.reset(token_pid)
             _mcp_mod.REQUEST_AGENT_ID.reset(token_agent)
+            _mcp_mod.REQUEST_SCOPE.reset(token_scope)
+            _mcp_mod.REQUEST_GROUP.reset(token_group)
 
 
 # ---------------------------------------------------------------------------

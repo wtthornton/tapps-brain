@@ -12,13 +12,6 @@
 
 
 
-- [ ] **STORY-070.7** — Per-call identity — agent_id / scope / group (M, 5 pts)
-  - Every memory operation accepts `agent_id`, `scope`, `memory_group` as per-call parameters
-  - Precedence: request param > `_meta.agent_id` / `X-Tapps-Agent` header > env default
-  - MCP tools accept `agent_id`, `scope`, `group` as named params
-  - HTTP: `X-Tapps-Agent`, `X-Tapps-Scope`, `X-Tapps-Group` headers
-  - Backward compat: calls without per-call identity use env-level defaults
-  - Reference: `docs/stories/STORY-070.7-per-call-identity.md`
 
 - [ ] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
   - `project_profiles` gains `hashed_token` column (migration 011, argon2id)
