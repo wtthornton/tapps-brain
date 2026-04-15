@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-04-15
+
+### Added
+- operator-tool separation: `tapps-brain-mcp` (standard, safe for AGENT.md) and `tapps-brain-operator-mcp` (full operator tools, explicit grant required) are now distinct CLI entry points (story-070.9)
+- native async parity: explicit `async def` methods on `AsyncMemoryStore` alongside `gc_run` alias; concurrent benchmark test validates throughput (story-070.10)
+- `TappsBrainClient` and `AsyncTappsBrainClient` — typed sync/async HTTP network clients with structured error taxonomy, idempotency keys, and automatic retry (story-070.11)
+- OTel + Prometheus label enrichment: `project_id`, `agent_id`, `tool`, and `status` labels on all brain counters; bounded cardinality (story-070.12)
+- `examples/agentforge_bridge/` — AgentForge BrainBridge reference implementation showing remote-first brain-as-a-shared-service integration pattern (story-070.13)
+- `tests/compat/` — embedded AgentBrain v3.5 API parity test suite gated on `TAPPS_BRAIN_DATABASE_URL` (story-070.14)
+- CI `compat` job: ephemeral Postgres service container runs `tests/compat/` on every push/PR (story-070.14)
+- `--transport {stdio,streamable-http}` flag on both MCP CLI entry points; `TAPPS_BRAIN_MCP_TRANSPORT`, `TAPPS_BRAIN_MCP_HOST`, `TAPPS_BRAIN_MCP_PORT` env overrides; `docker-compose.hive.yaml` adds operator MCP service on port 8090 (story-070.15)
+
+### Fixed
+- 7 pre-existing mypy errors in `postgres_migrations.py` (non-null `fetchone` guard), `postgres_connection.py`, `postgres_hive.py`, `project_registry.py`, and `feedback.py` (stale `type: ignore` suppressions removed now that stubs are present)
+
 ## [3.5.1] - 2026-04-14
 
 ### Fixed
