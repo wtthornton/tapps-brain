@@ -293,16 +293,82 @@ def _extract_bearer(request: Request) -> str | None:
     return header[len(_BEARER_PREFIX):].strip()
 
 
-def require_data_plane_auth(request: Request) -> None:
-    """Dependency: ``TAPPS_BRAIN_AUTH_TOKEN`` check.
+def _per_tenant_auth_enabled() -> bool:
+    """Return ``True`` when ``TAPPS_BRAIN_PER_TENANT_AUTH=1`` is set."""
+    return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
 
-    When the token is unset, requests pass through (not-for-production).
-    When set, requires ``Authorization: Bearer <token>``.
+
+def _verify_per_tenant_token(
+    project_id: str, token: str, dsn: str
+) -> bool | None:
+    """Check *token* against the project's stored argon2id hash.
+
+    Returns:
+        ``True``  — token verified against per-tenant hash.
+        ``False`` — project has a token but *token* doesn't match.
+        ``None``  — project has no per-tenant token; caller falls back to
+                    the global ``TAPPS_BRAIN_AUTH_TOKEN`` check.
+    """
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.project_registry import ProjectRegistry
+
+    cm = PostgresConnectionManager(dsn)
+    try:
+        return ProjectRegistry(cm).verify_token(project_id, token)
+    finally:
+        cm.close()
+
+
+def require_data_plane_auth(request: Request) -> None:
+    """Dependency: data-plane bearer-token check.
+
+    When ``TAPPS_BRAIN_PER_TENANT_AUTH=1``:
+      * Extracts the bearer token and ``X-Project-Id`` header.
+      * Verifies the token against the project's argon2id hash in
+        ``project_profiles.hashed_token``.
+      * If the project has **no** per-tenant token, falls back to the
+        global ``TAPPS_BRAIN_AUTH_TOKEN`` check so deployments without
+        per-tenant tokens continue to work unchanged.
+
+    When the flag is unset (default), behaves exactly as before: checks
+    the global ``TAPPS_BRAIN_AUTH_TOKEN`` only.
+
+    When the global token is also unset, requests pass through
+    (not-for-production).
     """
     cfg = get_settings()
+    tok = _extract_bearer(request)
+
+    # ---- per-tenant path (STORY-070.8) ----
+    if _per_tenant_auth_enabled() and cfg.dsn:
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if project_id:
+            if tok is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"error": "unauthorized",
+                            "detail": "Authorization header required (Bearer token)."},
+                )
+            if tok == "":
+                raise HTTPException(
+                    status_code=401,
+                    detail={"error": "unauthorized",
+                            "detail": "Malformed Authorization header — expected 'Bearer <token>'."},
+                )
+            result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
+            if result is True:
+                return  # authenticated by per-tenant token
+            if result is False:
+                # Project has a token — wrong credential → 403
+                raise HTTPException(
+                    status_code=403,
+                    detail={"error": "forbidden", "detail": "Invalid token."},
+                )
+            # result is None → project has no per-tenant token, fall through
+
+    # ---- global token fallback ----
     if not cfg.auth_token:
         return
-    tok = _extract_bearer(request)
     if tok is None:
         raise HTTPException(
             status_code=401,
@@ -1263,6 +1329,59 @@ def create_app(
         return JSONResponse(
             status_code=200,
             content={"project_id": project_id, "deleted": True},
+        )
+
+    # ---- per-tenant token routes (STORY-070.8) ----
+
+    @app.post("/admin/projects/{project_id}/rotate-token",
+              dependencies=[Depends(require_admin_auth)])
+    async def _admin_project_rotate_token(project_id: str) -> JSONResponse:
+        """Issue/replace the per-tenant bearer token for *project_id*.
+
+        Returns the **plaintext token once** — store it immediately.
+        """
+        registry, cm = _open_registry()
+        try:
+            try:
+                plaintext = registry.rotate_token(project_id)
+            except LookupError:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": "not_found", "project_id": project_id},
+                )
+            except ImportError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail={"error": "feature_unavailable", "detail": str(exc)},
+                )
+        finally:
+            cm.close()
+        return JSONResponse(
+            status_code=201,
+            content={
+                "project_id": project_id,
+                "token": plaintext,
+                "warning": "Store this token — it will not be shown again.",
+            },
+        )
+
+    @app.delete("/admin/projects/{project_id}/token",
+                dependencies=[Depends(require_admin_auth)])
+    async def _admin_project_revoke_token(project_id: str) -> JSONResponse:
+        """Revoke (clear) the per-tenant token for *project_id*."""
+        registry, cm = _open_registry()
+        try:
+            revoked = registry.revoke_token(project_id)
+        finally:
+            cm.close()
+        if not revoked:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "not_found", "project_id": project_id},
+            )
+        return JSONResponse(
+            status_code=200,
+            content={"project_id": project_id, "token_revoked": True},
         )
 
     # Preserve legacy wire contract: when HTTPException.detail is a dict,

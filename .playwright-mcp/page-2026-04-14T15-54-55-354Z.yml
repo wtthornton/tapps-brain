@@ -1,0 +1,176 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - 'banner "NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual." [ref=e3]':
+    - generic [ref=e4]:
+      - generic "NLT Labs wordmark and AN mark" [ref=e5]:
+        - img [ref=e6]
+        - generic [ref=e8]:
+          - generic [ref=e9]:
+            - generic [ref=e10]: NLT
+            - generic [ref=e11]: labs
+          - paragraph [ref=e12]: New Logic Tech Labs
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: Refresh
+          - combobox "Poll interval" [ref=e16] [cursor=pointer]:
+            - option "15 s"
+            - option "30 s" [selected]
+            - option "60 s"
+            - option "Manual"
+        - generic [ref=e19]: LIVE · 8:54:55 AM
+        - button "Dark theme" [ref=e20] [cursor=pointer]
+  - main [ref=e21]:
+    - navigation "Dashboard pages" [ref=e22]:
+      - list [ref=e23]:
+        - listitem [ref=e24]:
+          - link "Overview" [ref=e25] [cursor=pointer]:
+            - /url: "#overview"
+            - img [ref=e26]
+            - generic [ref=e31]: Overview
+        - listitem [ref=e32]:
+          - link "Health 1 issue" [ref=e33] [cursor=pointer]:
+            - /url: "#health"
+            - img [ref=e34]
+            - generic [ref=e36]: Health
+            - generic "1 issue" [ref=e37]: "1"
+        - listitem [ref=e38]:
+          - link "Memory" [ref=e39] [cursor=pointer]:
+            - /url: "#memory"
+            - img [ref=e40]
+            - generic [ref=e43]: Memory
+        - listitem [ref=e44]:
+          - link "Retrieval" [ref=e45] [cursor=pointer]:
+            - /url: "#retrieval"
+            - img [ref=e46]
+            - generic [ref=e49]: Retrieval
+        - listitem [ref=e50]:
+          - link "Agents" [ref=e51] [cursor=pointer]:
+            - /url: "#agents"
+            - img [ref=e52]
+            - generic [ref=e59]: Agents
+        - listitem [ref=e60]:
+          - link "Integrity" [ref=e61] [cursor=pointer]:
+            - /url: "#integrity"
+            - img [ref=e62]
+            - generic [ref=e64]: Integrity
+    - generic [ref=e65]:
+      - paragraph [ref=e66]: tapps-brain
+      - heading "Memory health, at a glance" [level=1] [ref=e67]
+      - paragraph [ref=e68]: Persistent, deterministic memory for AI coding agents — no raw text in the export by default. See recall mode, Hive sync, capacity, and trust signals for this brain — live from the running hub.
+      - group [ref=e69]:
+        - generic "About this dashboard ▾" [ref=e70] [cursor=pointer]
+      - generic [ref=e71]:
+        - button "Copy fingerprint" [ref=e72] [cursor=pointer]
+        - generic [ref=e73]: Loaded · snapshot v2 · DB schema 6 · fingerprint ready
+      - generic "Key metrics" [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e77]: Entries
+            - generic [ref=e78]: "0"
+            - generic [ref=e79]: of 5000 max
+          - generic [ref=e80]:
+            - generic [ref=e81]: DB schema
+            - generic [ref=e82]: "6"
+            - generic [ref=e83]: Postgres schema version
+          - generic [ref=e84]:
+            - generic [ref=e85]: Privacy
+            - generic [ref=e86]: standard
+            - generic [ref=e87]: export tier
+          - generic [ref=e88]:
+            - generic [ref=e89]: Hive hub
+            - generic [ref=e90]: live
+            - generic [ref=e91]: 0 shared entries
+          - generic [ref=e92]:
+            - generic [ref=e93]: Tiers (rows)
+            - generic [ref=e94]: "0"
+            - generic [ref=e95]: sum of tier_distribution
+        - button "Explain top KPI strip" [ref=e96] [cursor=pointer]: "?"
+      - generic [ref=e97]:
+        - generic "Store snapshot summary" [ref=e98]:
+          - region "Brain identity" [ref=e99]:
+            - img [ref=e100]
+            - generic [ref=e102]:
+              - paragraph [ref=e103]: Fingerprint
+              - button "Explain fingerprint" [ref=e104] [cursor=pointer]: "?"
+            - generic [ref=e105]: 9df5a2f54f4242fac5614903745307f4e991f17a3e67e5fc95c3f7f121282ac7
+          - region "Entries" [ref=e106]:
+            - generic [ref=e107]:
+              - paragraph [ref=e108]: Entries
+              - generic [ref=e109]:
+                - button "Explain entry count" [ref=e110] [cursor=pointer]: "?"
+                - button "Explain active memory profile" [ref=e111] [cursor=pointer]: "?"
+            - generic [ref=e112]: "0"
+            - paragraph [ref=e113]: repo-brain
+          - region "Database schema" [ref=e114]:
+            - generic [ref=e115]:
+              - paragraph [ref=e116]: DB schema
+              - generic [ref=e117]:
+                - button "Explain database schema version" [ref=e118] [cursor=pointer]: "?"
+                - button "Explain federation flag" [ref=e119] [cursor=pointer]: "?"
+            - generic [ref=e120]: "6"
+            - paragraph [ref=e121]: "off"
+          - region "Hive" [ref=e122]:
+            - generic [ref=e123]:
+              - paragraph [ref=e124]: Hive
+              - generic [ref=e125]:
+                - button "Explain Hive hub reachability" [ref=e126] [cursor=pointer]: "?"
+                - button "Explain agent scope" [ref=e127] [cursor=pointer]: "?"
+            - generic [ref=e128]: attached
+            - paragraph [ref=e129]: —
+          - region "Snapshot format" [ref=e130]:
+            - generic [ref=e131]:
+              - paragraph [ref=e132]: Snapshot
+              - button "Explain snapshot JSON" [ref=e133] [cursor=pointer]: "?"
+            - paragraph [ref=e134]: Snapshot format v2 · identity payload v2
+        - generic [ref=e135]:
+          - status [ref=e136]: 1 WARN — navigate to Health to review
+          - link "9 passing checks — view health" [ref=e137] [cursor=pointer]:
+            - /url: "#health"
+            - generic [ref=e138]: "9"
+            - generic [ref=e139]: Pass
+          - link "1 warning — view health" [ref=e140] [cursor=pointer]:
+            - /url: "#health"
+            - generic [ref=e141]: "1"
+            - generic [ref=e142]: Warn
+          - link "0 failures — view health" [ref=e143] [cursor=pointer]:
+            - /url: "#health"
+            - generic [ref=e144]: "0"
+            - generic [ref=e145]: Fail
+        - navigation "Dashboard pages" [ref=e146]:
+          - link "Health Scorecard — pass, warn, and fail checks for this brain 1 warn" [ref=e147] [cursor=pointer]:
+            - /url: "#health"
+            - paragraph [ref=e148]: Health
+            - paragraph [ref=e149]: Scorecard — pass, warn, and fail checks for this brain
+            - generic [ref=e150]: 1 warn
+          - link "Memory Tier distribution, groups, tags, and access patterns 0 entries" [ref=e151] [cursor=pointer]:
+            - /url: "#memory"
+            - paragraph [ref=e152]: Memory
+            - paragraph [ref=e153]: Tier distribution, groups, tags, and access patterns
+            - generic [ref=e154]: 0 entries
+          - link "Retrieval Effective mode, query stats, and vector index details hybrid_pgvector_empty" [ref=e155] [cursor=pointer]:
+            - /url: "#retrieval"
+            - paragraph [ref=e156]: Retrieval
+            - paragraph [ref=e157]: Effective mode, query stats, and vector index details
+            - generic [ref=e158]: hybrid_pgvector_empty
+          - link "Agents & Hive Agent topology, namespace registry, and Hive hub status —" [ref=e159] [cursor=pointer]:
+            - /url: "#agents"
+            - paragraph [ref=e160]: Agents & Hive
+            - paragraph [ref=e161]: Agent topology, namespace registry, and Hive hub status
+            - generic [ref=e162]: —
+          - link "Integrity Data checks, privacy tier, velocity, and export workflow Clean" [ref=e163] [cursor=pointer]:
+            - /url: "#integrity"
+            - paragraph [ref=e164]: Integrity
+            - paragraph [ref=e165]: Data checks, privacy tier, velocity, and export workflow
+            - generic [ref=e166]: Clean
+  - dialog [ref=e167]:
+    - generic [ref=e168]:
+      - heading [level=3] [ref=e169]: Help
+      - button [ref=e170] [cursor=pointer]: Close
+  - dialog [ref=e172]:
+    - generic [ref=e173]:
+      - heading [level=3] [ref=e174]: Agent detail
+      - button [ref=e175] [cursor=pointer]: Close
+  - contentinfo [ref=e177]:
+    - paragraph [ref=e178]: “Intelligence is the ability to adapt to change.”
+    - paragraph [ref=e179]: "Stephen Hawking, as cited by NLT Labs. We use this line as a decision test: the work should make teams more adaptive."

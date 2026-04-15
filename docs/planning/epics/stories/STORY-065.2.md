@@ -57,9 +57,7 @@ Replace the current fetch(brain-visual.json) bootstrap sequence with a poll loop
 - [ ] STALE badge appears if last successful fetch was more than 90 seconds ago
 - [ ] ERROR badge appears after 3 consecutive fetch failures with the last error message
 - [ ] Refresh interval selector changes poll cadence immediately without page reload
-- [ ] If /snapshot is unreachable on first load and no file is manually loaded
-- [ ] an empty state is shown — not demo data
-- [ ] brain-visual.json is never loaded automatically — only when operator explicitly uses the Load snapshot file input
+- [ ] If /snapshot is unreachable on first load an empty state is shown (no file-load or demo fallback)
 - [ ] nginx proxy_pass routes /snapshot to HttpAdapter so fetch is same-origin from the browser perspective
 
 <!-- docsmcp:end:acceptance-criteria -->
@@ -82,7 +80,7 @@ Replace the current fetch(brain-visual.json) bootstrap sequence with a poll loop
 2. Stale path: mock /snapshot to return 200 once then go silent → STALE badge after 90s
 3. Error path: /snapshot always 503 → ERROR badge after 3 failures
 4. Interval change: change selector from 30s to 15s → next fetch within 15s
-5. Empty state: /snapshot unreachable + no file loaded → empty state panel visible not demo data
+5. Empty state: /snapshot unreachable → empty state panel visible (no demo/file-load fallback exists)
 6. Proxy: curl http://localhost:8088/snapshot from host → proxied response from HttpAdapter
 
 <!-- docsmcp:end:test-cases -->
@@ -94,8 +92,8 @@ Replace the current fetch(brain-visual.json) bootstrap sequence with a poll loop
 - fetch() error handling: catch network errors
 - non-200 responses
 - and JSON parse failures separately for accurate badge state
-- The demo Load demo button should remain for offline/dev use but must be clearly labelled as loading a static demo file
 - nginx proxy_pass requires resolver directive in nginx.conf for Docker internal DNS; use resolver 127.0.0.11 valid=30s
+- **Superseded 2026-04-13:** the demo snapshot and Load-demo/Load-snapshot-file fallbacks were removed entirely; the dashboard is live-only against `/snapshot`
 
 <!-- docsmcp:end:technical-notes -->
 

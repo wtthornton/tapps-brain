@@ -598,6 +598,116 @@
       reference: "Code: <code>models.py</code> · <code>decay.py</code>",
     },
 
+    memory_groups: {
+      title: "Memory groups",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Named groupings of related entries (e.g. <code>auth-flows</code>, <code>deployment</code>). Each row shows group name + entry count.</p>",
+        },
+        {
+          heading: "Privacy",
+          html:
+            "<p>Group names are included only at privacy tier <code>local</code>. At <code>standard</code> / <code>strict</code> only the aggregate <code>memory_group_count</code> is exposed.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Helps you see where memories cluster without scanning individual entries; high-count groups are good candidates for consolidation review.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>memory_group_counts</code>",
+    },
+
+    tag_cloud: {
+      title: "Tag cloud",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Top tags across the store, sized by frequency. Local privacy tier only; up to 40 tags are shown.</p>",
+        },
+        {
+          heading: "Privacy",
+          html:
+            "<p>Tag names are only exported when <code>privacy_tier=local</code>. At other tiers the tag cloud is empty by design.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>Fast visual check that your tagging vocabulary matches your project; outliers or typos become obvious.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>_tag_stats_local</code>",
+    },
+
+    latency_percentiles: {
+      title: "Latency percentiles",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p><strong>P50</strong> is the median recall latency — half of queries finish faster than this. <strong>P95</strong> and <strong>P99</strong> capture the slow tail: the slowest 5% and 1% of queries respectively. <strong>Mean</strong> is the running arithmetic average and is sensitive to outliers.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>A healthy retrieval stack usually has P50 under 50 ms and P99 under a few hundred ms. A large P99/P50 ratio indicates unstable performance (cold caches, lock contention, or vector index rebuild).</p>",
+        },
+        {
+          heading: "Data source",
+          html:
+            "<p>Percentiles come from <code>retrieval.latency_p50_ms</code> / <code>latency_p95_ms</code> / <code>latency_p99_ms</code>. Mean comes from <code>retrieval_metrics.mean_latency_ms</code> — a running in-process average that resets on process restart. Tiles show <code>—</code> when the snapshot does not include a field.</p>",
+        },
+      ],
+      reference: "Code: <code>otel_tracer.py</code> · <code>visual_snapshot.py</code>",
+    },
+
+    vector_index: {
+      title: "Vector index",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Row count in the pgvector index plus whether the vector leg is enabled in Postgres. The embedding model name is shown when reported by the snapshot.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>A zero row count with <em>pgvector enabled</em> means BM25 is carrying all recall weight until embeddings backfill. The embedding model name matters because mixing models across writes yields inconsistent similarity scores.</p>",
+        },
+        {
+          heading: "Data source",
+          html:
+            "<p><code>vector_index_enabled</code>, <code>vector_index_rows</code> (schema v2+). Legacy exports use <code>sqlite_vec_enabled</code> / <code>sqlite_vec_rows</code>. The JS renderer falls back between both.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.py</code> · <code>postgres_private.py</code>",
+    },
+
+    query_stats: {
+      title: "Query stats",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>Total <code>store.recall()</code>/<code>search()</code> calls since the process started, plus a cache hit ratio when the snapshot includes one.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>A high query volume with a low BM25/vector hit ratio (see pipeline tiles) suggests sparse coverage — re-indexing or a prompt-template fix may help. The total-queries counter resets on every process restart; treat it as <em>since last boot</em>, not cumulative.</p>",
+        },
+        {
+          heading: "Data source",
+          html:
+            "<p><code>retrieval_metrics.total_queries</code>; cache hit ratio (optional) from <code>retrieval.cache_hit_ratio</code>.</p>",
+        },
+      ],
+      reference: "Code: <code>otel_tracer.py</code>",
+    },
+
     access_histogram: {
       title: "Access histogram",
       sections: [
@@ -791,10 +901,10 @@
         {
           heading: "What tapps-brain does",
           html:
-            "<p>Populated in the demo from loaded JSON; exporter is <code>build_visual_snapshot()</code>.</p>",
+            "<p>Populated live from the <code>/snapshot</code> endpoint; exporter is <code>build_visual_snapshot()</code>.</p>",
         },
       ],
-      reference: "Code: <code>visual_snapshot.py</code> · demo <code>index.html</code> KPI block",
+      reference: "Code: <code>visual_snapshot.py</code> · <code>index.html</code> KPI block",
     },
 
     scorecard_counts: {
@@ -809,7 +919,7 @@
         {
           heading: "The math",
           html:
-            "<p>Each scorecard row has exactly one status; the demo counts them after merge of embedded <code>scorecard[]</code> " +
+            "<p>Each scorecard row has exactly one status; the dashboard counts them after merge of embedded <code>scorecard[]</code> " +
             "or browser-derived rules.</p>",
         },
         {
@@ -1109,6 +1219,43 @@
       reference:
         "Code: <code>visual_snapshot.py: HiveHealthSummary.namespace_detail</code> · " +
         "<code>postgres_hive.py: namespace_detail_list()</code> · STORY-065.4",
+    },
+
+    agent_topology: {
+      title: "Agent topology diagram",
+      sections: [
+        {
+          heading: "What it shows",
+          html:
+            "<p>A spatial view of the Hive: the central <strong>octagon</strong> is the Hive hub, the " +
+            "<strong>rounded rectangles</strong> are namespaces, and the <strong>amber circles</strong> inside each namespace " +
+            "are individual agents. Curved edges connect the hub to every active namespace.</p>",
+        },
+        {
+          heading: "Node types",
+          html:
+            "<ul>" +
+            "<li><strong>Hub octagon</strong> — the shared Hive store; colored amber when online, muted when offline.</li>" +
+            "<li><strong>Namespace rectangle</strong> — one per namespace visible in <code>hive_health.namespaces</code>.</li>" +
+            "<li><strong>Agent circle</strong> — one per registered agent (click to open detail drawer).</li>" +
+            "</ul>",
+        },
+        {
+          heading: "Edges",
+          html:
+            "<p>Each edge is a quadratic bezier from the hub to a namespace midpoint. An edge means the namespace " +
+            "is known to the hub; it does not imply a live connection at render time.</p>",
+        },
+        {
+          heading: "Truncation",
+          html:
+            "<p>At most 50 agent nodes are drawn. If more agents are registered, the diagram shows a " +
+            "<code>+ N more</code> indicator and a note below. Open the Agents table for the complete list.</p>",
+        },
+      ],
+      reference:
+        "Rendered entirely in vanilla SVG (no graph library) from <code>snapshot.hive_health</code> and " +
+        "<code>snapshot.agent_registry</code>. STORY-068.6",
     },
 
     agent_registry: {

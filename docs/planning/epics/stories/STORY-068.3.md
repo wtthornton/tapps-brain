@@ -54,8 +54,7 @@ Move the full scorecard section to data-page=health. Add a filter bar above the 
 - [ ] Filter bar All/Fail/Warn/Pass toggles correctly hide/show rows; active button has amber gradient background and aria-checked=true
 - [ ] Row count label updates to reflect filtered count (e.g. '3 of 12 checks')
 - [ ] Sort toggle reorders rows by severity (fail first) and by category (alphabetical grouping)
-- [ ] When live polling detects a status change on a row
-- [ ] a NEW or CHANGED badge appears on that row within one poll cycle; badge is absent when status is unchanged
+- [ ] **[EPIC-065 — non-blocking]** When live polling detects a status change on a row, a NEW or CHANGED badge appears within one poll cycle; badge absent when status unchanged — implement the diff-badge logic (it activates when live polling is active) but do not block story close on this AC; verify manually once EPIC-065 ships
 - [ ] Notes textarea has min-height 8rem; export buttons are visible without scrolling when health page is active on a 768px-tall viewport
 - [ ] All filter bar buttons and sort toggle are keyboard-operable; Tab navigates through filter bar then through scorecard rows then to textarea
 - [ ] diff-badge fade-in is absent when prefers-reduced-motion is enabled
@@ -68,8 +67,9 @@ Move the full scorecard section to data-page=health. Add a filter bar above the 
 - [ ] All tasks completed
 - [ ] Health page — scorecard with filter bar and issue workflow code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on filter bar, sort toggle, and diff-badge changes; no Critical issues open
+- [ ] EPIC-065 diff-badge AC noted as deferred; all other ACs verified via demo JSON at `http://localhost:8090`
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -97,6 +97,7 @@ Move the full scorecard section to data-page=health. Add a filter bar above the 
 - sort
 - then re-append children) — no data re-fetch
 - radiogroup / role=radio pattern requires manual keydown ArrowLeft/ArrowRight handling to move focus between buttons per ARIA APG radiogroup pattern
+- **Dev workflow:** start the tapps-brain HTTP adapter (`tapps-brain mcp start --http` or `docker compose up tapps-brain-mcp`), then `cd examples/brain-visual && python3 -m http.server 8090` — the page polls `/snapshot` live; all ACs (including diff-badge) are testable against the live feed
 
 <!-- docsmcp:end:technical-notes -->
 

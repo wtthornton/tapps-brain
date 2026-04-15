@@ -1,10 +1,10 @@
 # Epic 68: Multi-page brain-visual dashboard — hash-routed navigation
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** In Progress
 **Priority:** P1 - High
 **Estimated LOE:** ~3 weeks (1 developer)
-**Dependencies:** EPIC-064 (brand tokens, motion system, IA foundation), EPIC-065 (live /snapshot endpoint — polling must survive page switches)
+**Dependencies:** EPIC-064 (brand tokens, motion system, IA foundation — **done**), EPIC-065 (live /snapshot endpoint — required only for live-polling ACs in 068.1/068.3; all other stories proceed with demo JSON via `python3 -m http.server 8090` in `examples/brain-visual/`)
 
 <!-- docsmcp:end:metadata -->
 

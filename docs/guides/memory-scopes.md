@@ -5,7 +5,7 @@ Three concepts are easy to confuse. They are **separate** in tapps-brain.
 | Concept | Where it lives | Purpose |
 |--------|----------------|---------|
 | **Project-local `memory_group`** | Column on each row in the project `memory.db` | Partition memories **inside one project** (e.g. `team-a`, `feature-x`). Optional; `NULL` / unset means *ungrouped* (still within the project). Filter with CLI `--group`, MCP `group`, or `memory_list_groups`. |
-| **Hive `namespace`** | Shared `hive.db` | **Cross-agent** shared memory (`universal`, profile-aligned domains). Controlled via **`agent_scope`** on save (`private` / `domain` / `hive`) and Hive tools — **not** the same as `memory_group`. |
+| **Hive `namespace`** | PostgreSQL Hive store (`TAPPS_BRAIN_HIVE_DSN`) | **Cross-agent** shared memory (`universal`, profile-aligned domains). Controlled via **`agent_scope`** on save (`private` / `domain` / `hive`) and Hive tools — **not** the same as `memory_group`. |
 | **Profile tier / layer** | `MemoryProfile` | **Decay and classification** (half-lives, promotion). Describes *how* a memory ages, not a storage partition. |
 
 ## When to use which

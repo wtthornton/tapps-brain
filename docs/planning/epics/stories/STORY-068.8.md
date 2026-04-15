@@ -42,7 +42,7 @@ Run the full MCP quality matrix: docs-mcp docs_validate_epic on EPIC-068.md; doc
 - [ ] Run mcp__docs-mcp docs_check_cross_refs on docs/planning/epics/ and docs/design/nlt-brand/ subtrees; fix any broken links or missing cross-references introduced during EPIC-068 (`docs/planning/epics/`)
 - [ ] Run mcp__docs-mcp docs_check_style on all .md files added or modified during EPIC-068; resolve style issues (`docs/`)
 - [ ] Run mcp__tapps-mcp tapps_checklist with task_type: epic for EPIC-068; document results in EPIC-068.md quality section (`docs/planning/epics/EPIC-068.md`)
-- [ ] Run Lighthouse Accessibility audit on examples/brain-visual/index.html (serve locally); record score in EPIC-068.md; fix any Critical (score impact > 5) issues before merge (`examples/brain-visual/index.html`)
+- [ ] Run Lighthouse Accessibility audit: `cd examples/brain-visual && python3 -m http.server 8090` then `npx lighthouse http://localhost:8090 --only-categories=accessibility --output=json`; record score in EPIC-068.md; fix any Critical (score impact > 5) issues before merge — Docker NOT required (`examples/brain-visual/index.html`)
 - [ ] Manual keyboard audit: Tab through all six pages, verify focus order is nav-first then page-content; verify Enter/Space activates all interactive elements; document pass/fail per page (`examples/brain-visual/index.html`)
 - [ ] Manual reduced-motion audit: enable OS reduce motion setting; navigate through all six pages; verify all transitions are instant (no slide, no fade); document results (`examples/brain-visual/index.html`)
 - [ ] Grep index.html for hardcoded hex values (#d97706, #f59e0b, #b45309) outside the :root block; replace any found instances with the corresponding CSS custom property token (`examples/brain-visual/index.html`)
@@ -73,10 +73,11 @@ Run the full MCP quality matrix: docs-mcp docs_validate_epic on EPIC-068.md; doc
 ## Definition of Done
 
 - [ ] All tasks completed
-- [ ] Quality sweep — docs-mcp, tapps-mcp, Lighthouse, accessibility audit code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
+- [ ] Quality sweep — docs-mcp, tapps-mcp, Lighthouse, accessibility audit reviewed and approved
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run as final gate on all `index.html` changes across 068.1–068.7; no Critical issues open
+- [ ] README.md updated with nav breakdown, reduced-motion test steps, and View Transitions browser support note (carries the deferred task from 068.1)
+- [ ] Lighthouse Accessibility ≥ 90 recorded in EPIC-068.md
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -102,7 +103,7 @@ Run the full MCP quality matrix: docs-mcp docs_validate_epic on EPIC-068.md; doc
 <!-- docsmcp:start:technical-notes -->
 ## Technical Notes
 
-- Lighthouse can be run via npx lighthouse http://localhost:8080 --only-categories=accessibility --output=json — no global install required; alternatively use Chrome DevTools Lighthouse panel
+- Lighthouse: `cd examples/brain-visual && python3 -m http.server 8090` then `npx lighthouse http://localhost:8090 --only-categories=accessibility --output=json` — no global install, no Docker; Chrome DevTools Lighthouse panel is an equally valid alternative
 - tapps_checklist task_type: epic expects the epic to have all story links and acceptance criteria populated — ensure EPIC-068.md story stubs are linked before running
 - docs_check_cross_refs should be run with the docs/planning/epics/ path and docs/design/nlt-brand/ path as minimum scope; expand to docs/ root if any guides were modified
 

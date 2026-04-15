@@ -6,7 +6,7 @@ This document is the **product decision** for **EPIC-042** STORY-042.8: how tapp
 
 | Approach | Verdict |
 | -------- | ------- |
-| **Full FSRS** (interval scheduling, review queues, full parameter set) | **Out of scope** for the embedded SQLite core. No background scheduler; recall is on-demand. |
+| **Full FSRS** (interval scheduling, review queues, full parameter set) | **Out of scope** for the synchronous Python core. No background scheduler; recall is on-demand. |
 | **Tier half-life only** | **Default path.** `DecayConfig` / profile `half_life_days` drive exponential (or power-law) decay. `MemoryEntry.stability == 0` means “use tier half-life as effective half-life.” |
 | **Hybrid** | **Shipped model.** Optional **adaptive stability** adjusts `stability` (days) using deterministic `update_stability()` in `decay.py`. When `stability > 0`, `calculate_decayed_confidence()` uses it as the **effective** half-life (still clamped by source ceilings and tier floors). |
 

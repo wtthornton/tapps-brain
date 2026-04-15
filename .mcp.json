@@ -10,6 +10,23 @@
         "TAPPS_MCP_PROJECT_ROOT": "."
       },
       "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
+    },
+    "tapps-brain": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "docker_default",
+        "-e", "TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@tapps-hive-db:5432/tapps_hive",
+        "-e", "TAPPS_BRAIN_HIVE_DSN=postgres://tapps:tapps@tapps-hive-db:5432/tapps_hive",
+        "-e", "TAPPS_BRAIN_AUTO_MIGRATE=1",
+        "--entrypoint", "tapps-brain-mcp",
+        "docker-tapps-brain-http:latest",
+        "--agent-id", "claude-code-wtthornton",
+        "--project-dir", "/var/lib/tapps-brain"
+      ],
+      "env": {},
+      "instructions": "Persistent, deterministic memory for this agent. Uses the DEPLOYED tapps-brain image + live Postgres hive — not the local src/. Tools: save/search/recall/consolidate/delete/relate memories across sessions. agent_id=claude-code-wtthornton."
     }
   }
 }

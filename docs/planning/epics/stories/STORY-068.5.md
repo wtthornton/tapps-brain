@@ -66,8 +66,9 @@ Move retrieval and vector stats panels to data-page=retrieval. Add explicit P50/
 - [ ] All tasks completed
 - [ ] Retrieval page — mode, latency histogram, vector stats code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on retrieval page markup and JS changes; no Critical issues open
+- [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -91,6 +92,7 @@ Move retrieval and vector stats panels to data-page=retrieval. Add explicit P50/
 - Check visual_snapshot.py RetrievalHealthSlice for exact field names before wiring JS render path — latency fields may be named differently or absent in v2 schema
 - sqlite_vec_rows and sqlite_vec_enabled are already in VisualSnapshot from Phase A work — confirmed available
 - P50/P95/P99 tiles should use the same .tile CSS class as existing KPI tiles for visual consistency
+- **Dev workflow:** start the tapps-brain HTTP adapter (`tapps-brain mcp start --http` or `docker compose up tapps-brain-mcp`), then `cd examples/brain-visual && python3 -m http.server 8090`; the page polls `/snapshot` live — `retrieval_effective_mode` and `retrieval_summary` are present in the live snapshot
 
 <!-- docsmcp:end:technical-notes -->
 

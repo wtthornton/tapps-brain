@@ -1,5 +1,13 @@
 # Configurable Memory Profiles — Design Document
 
+> **ARCHIVED — pre-ADR-007 (SQLite era).** This document was written before 2026-04-11 when
+> tapps-brain still used SQLite/FTS5/WAL. ADR-007 (2026-04-11) removed SQLite entirely; all
+> storage is now PostgreSQL (pgvector + tsvector). References to `hive.db`, `federated.db`,
+> SQLite WAL, FTS5, and `sqlite-vec` in this document reflect the design thinking at the time
+> and are **not accurate descriptions of the current system**. The profile scoring logic and
+> tier configuration described here was implemented and is still accurate; only the storage
+> layer references are stale.
+
 > **Goal:** Make tapps-brain's memory layer system (tiers, half-lives, scoring weights, promotion rules) fully configurable via profile files, ship 5–6 out-of-the-box profiles, and position tapps-brain as a universal brain for any AI agent — not just code repos.
 
 ---

@@ -34,7 +34,7 @@ Any accepted feature must remain aligned with repository constraints in `CLAUDE.
 
 - Core implementation remains deterministic (no LLM calls in core memory logic).
 - Core remains synchronous by design (no async/await architecture drift in core modules).
-- Storage remains SQLite write-through with WAL-aware behavior and migration safety.
+- Storage is PostgreSQL write-through (private store, Hive, Federation) with migration safety (ADR-007).
 - Changes are backward-compatible by default and avoid forced migrations unless explicitly approved.
 - Feature proposals must not modify Ralph control files (`.ralph/`, `.ralphrc`) as part of feature work.
 - Avoid introducing always-on infra dependencies that conflict with local-first/offline expectations.
@@ -173,7 +173,7 @@ Compute:
    Must assess data safety, secret handling, and migration impact.
 
 7. **Architecture invariants gate (project-specific)**  
-   Must explicitly state compliance with deterministic core, synchronous core, and SQLite write-through design.
+   Must explicitly state compliance with deterministic core, synchronous core, and PostgreSQL write-through design.
 
 8. **Operational reliability gate**  
    Must include impact on change-failure risk and a safe rollout strategy (phased or reversible).
@@ -328,6 +328,6 @@ This standard is aligned to:
 - NIST AI RMF + GenAI Profile (NIST AI 600-1) for govern/map/measure/manage risk framing.
 - OWASP LLM Top 10 project guidance for prompt injection, output handling, excessive agency, and data exposure classes.
 - DORA 2025 findings emphasizing AI as an amplifier and the need to protect reliability while increasing velocity.
-- SQLite WAL official guidance, including checkpoint behavior, same-host constraints, WAL file handling, and current WAL bugfix awareness.
+- PostgreSQL official guidance, including MVCC, connection pooling (pgBouncer/psycopg pool), HNSW index tuning (pgvector), and migration safety (ADR-007).
 
-These references are used as guardrails, then specialized to this repository's deterministic, synchronous, SQLite-centered architecture.
+These references are used as guardrails, then specialized to this repository's deterministic, synchronous, PostgreSQL-centered architecture.

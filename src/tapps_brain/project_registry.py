@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
@@ -205,6 +206,110 @@ class ProjectRegistry:
         if deleted:
             logger.warning("project_registry.deleted", project_id=project_id)
         return bool(deleted)
+
+    # ------------------------------------------------------------------
+    # Per-tenant auth tokens (STORY-070.8)
+    # ------------------------------------------------------------------
+
+    def rotate_token(self, project_id: str) -> str:
+        """Issue a new per-tenant bearer token for *project_id*.
+
+        Generates a cryptographically random token, stores its argon2id hash
+        in ``project_profiles.hashed_token``, and returns the **plaintext
+        token**.  The plaintext is **never stored** — callers must deliver it
+        to the tenant immediately.
+
+        Raises:
+            LookupError: if *project_id* has no registered row.
+            ImportError: if ``argon2-cffi`` is not installed
+                (install ``tapps-brain[http]``).
+        """
+        try:
+            from argon2 import PasswordHasher  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                "argon2-cffi is required for per-tenant auth.\n"
+                "Install with: pip install 'tapps-brain[http]'"
+            ) from exc
+
+        plaintext = secrets.token_urlsafe(32)
+        ph = PasswordHasher()
+        hashed = ph.hash(plaintext)
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE project_profiles "
+                "SET hashed_token = %s, token_created_at = now() "
+                "WHERE project_id = %s",
+                (hashed, project_id),
+            )
+            updated = cur.rowcount
+            conn.commit()
+        if not updated:
+            raise LookupError(
+                f"project '{project_id}' is not registered — "
+                "register it first with: tapps-brain project register"
+            )
+        logger.info("project_registry.token_rotated", project_id=project_id)
+        return plaintext
+
+    def revoke_token(self, project_id: str) -> bool:
+        """Clear the per-tenant token for *project_id*.
+
+        Returns ``True`` if a row was updated, ``False`` if the project is
+        unknown.  Idempotent — safe to call even when no token is active.
+        """
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE project_profiles "
+                "SET hashed_token = NULL, token_created_at = NULL "
+                "WHERE project_id = %s",
+                (project_id,),
+            )
+            updated = cur.rowcount
+            conn.commit()
+        if updated:
+            logger.info("project_registry.token_revoked", project_id=project_id)
+        return bool(updated)
+
+    def verify_token(self, project_id: str, token: str) -> bool | None:
+        """Verify a bearer token against the stored argon2id hash.
+
+        Returns:
+            ``True``  — token is valid.
+            ``False`` — project has a token but *token* does not match.
+            ``None``  — project has no per-tenant token (no hash stored).
+
+        Raises:
+            ImportError: if ``argon2-cffi`` is not installed.
+        """
+        try:
+            from argon2 import PasswordHasher  # type: ignore[import-not-found]
+            from argon2.exceptions import VerifyMismatchError  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                "argon2-cffi is required for per-tenant auth.\n"
+                "Install with: pip install 'tapps-brain[http]'"
+            ) from exc
+
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT hashed_token FROM project_profiles WHERE project_id = %s",
+                (project_id,),
+            )
+            row = cur.fetchone()
+
+        if row is None or row[0] is None:
+            return None  # project unknown or no token set
+
+        hashed = row[0]
+        ph = PasswordHasher()
+        try:
+            ph.verify(hashed, token)
+            return True
+        except VerifyMismatchError:
+            return False
+        except Exception:  # VerificationError, InvalidHashError, or other argon2 error
+            return False
 
     # ------------------------------------------------------------------
     # Resolution

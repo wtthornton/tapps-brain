@@ -142,7 +142,7 @@ The product differentiates on **deterministic** retrieval, decay, and safety—n
 
 ### STORY-064.5: Demo snapshot + first-run empty state
 
-**Status:** planned  
+**Status:** superseded (2026-04-13) — the demo snapshot and Load-demo/Load-snapshot-file paths were removed; the dashboard is live-only against `/snapshot`. The first-run state is now the "Live endpoint unreachable" empty state.  
 **Effort:** S  
 **Depends on:** STORY-064.4 (for coherent numbers)  
 **Context refs:** `examples/brain-visual/`, `tests/unit/test_visual_snapshot.py` (fixture shapes)  

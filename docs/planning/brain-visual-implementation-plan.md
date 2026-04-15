@@ -1,5 +1,11 @@
 # Implementation plan: dynamic tapps-brain visual identity
 
+> **Note — storage references:** Completed phases A–B in this plan reference `sqlite-vec` fields
+> (`sqlite_vec_rows`, `sqlite_vec_enabled`). These were implemented against the SQLite-era store.
+> ADR-007 (2026-04-11) removed SQLite entirely; the equivalent fields in v3.4+ reflect PostgreSQL /
+> pgvector state. New phases should reference `retrieval_mode: pgvector` and pgvector diagnostics
+> rather than sqlite-vec fields.
+
 Track progress here for a **modern, per-instance-unique** visual representation of tapps-brain (dashboard, marketing, OpenClaw surfaces, or docs). Scope is intentionally large; phases are ordered so early slices ship value without committing to WebGPU or full 3D.
 
 **Status:** planning (Phase A–E expanded dashboard spec added)  

@@ -83,7 +83,7 @@ name: tapps-brain-memory
 version: "1.1.0"               # match pyproject.toml
 description: >
   Persistent cross-session memory for AI coding assistants.
-  SQLite-backed with BM25 ranking, exponential decay, auto-consolidation,
+  PostgreSQL-backed with BM25 ranking, exponential decay, auto-consolidation,
   and cross-project federation. No LLM calls required.
 triggers:
   - remember
@@ -121,7 +121,7 @@ capabilities:
   - memory decay and consolidation
   - cross-project federation
 permissions:
-  - filesystem (SQLite database in project directory)
+  - network:localhost (PostgreSQL via `TAPPS_BRAIN_DATABASE_URL`)
 inputs:
   - name: project_dir
     description: Project root for memory storage (defaults to cwd)
@@ -214,7 +214,7 @@ openclaw skill publish tapps-brain-memory \
   - Pin dependency versions
   - Clear permission declarations
 - tapps-brain's built-in `safety.py` already detects prompt injection patterns
-- SQLite database stays local — no network calls unless federation is explicitly configured
+- PostgreSQL store is local by default (`localhost`) — no external network calls unless federation or Hive DSNs point to a remote host
 
 ## Version sync
 

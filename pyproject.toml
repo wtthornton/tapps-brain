@@ -60,6 +60,8 @@ http = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
     "starlette>=0.40,<1",
+    # STORY-070.8: argon2id hashing for per-tenant bearer tokens
+    "argon2-cffi>=23.1.0,<25",
 ]
 reranker = [
     "flashrank>=0.2.9,<0.3",

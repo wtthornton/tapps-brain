@@ -65,8 +65,9 @@ Move Pulse, Memory Groups, Tag Cloud, and Access Histograms from the main scroll
 - [ ] All tasks completed
 - [ ] Memory page — pulse, groups, tags, histograms code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on memory page markup and JS changes; no Critical issues open
+- [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -90,6 +91,7 @@ Move Pulse, Memory Groups, Tag Cloud, and Access Histograms from the main scroll
 - CSS subgrid on the memory page requires the memory section to establish a 2-column grid; child panels use grid-column: 1 or grid-column: 2 explicitly
 - oldest_entry_age_days is already in VisualSnapshot.store — check field name against visual_snapshot.py before referencing in JS render path
 - Tag Cloud increase from 20 to 40 is a client-side render change only; the snapshot already exports top-N tags in local privacy mode — verify N is ≥ 40 in visual_snapshot.py before wiring
+- **Dev workflow:** start the tapps-brain HTTP adapter (`tapps-brain mcp start --http` or `docker compose up tapps-brain-mcp`), then `cd examples/brain-visual && python3 -m http.server 8090`; the page polls `/snapshot` live — all memory page ACs are testable against the live feed
 
 <!-- docsmcp:end:technical-notes -->
 

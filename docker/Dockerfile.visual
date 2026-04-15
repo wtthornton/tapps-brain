@@ -1,17 +1,22 @@
 FROM nginx:alpine
 
-# Copy dashboard static files — brain-visual.json is intentionally excluded.
-# The live dashboard fetches /snapshot from tapps-brain-http via the nginx proxy.
-# To load a static export instead, mount it at runtime:
-#   docker run -v ./my-export.json:/usr/share/nginx/html/brain-visual.json ...
+# Copy dashboard static files. The live dashboard fetches /snapshot from
+# tapps-brain-http via the nginx proxy — there is no file-load fallback.
 COPY examples/brain-visual/index.html /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-help.js /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-router.js /usr/share/nginx/html/
-COPY examples/brain-visual/brain-visual.demo.json /usr/share/nginx/html/
 COPY examples/brain-visual/nlt-an-mark-sm.svg /usr/share/nginx/html/
 COPY examples/brain-visual/README.md /usr/share/nginx/html/
 
-# Copy custom nginx config (adds /snapshot proxy + TAPPS_SNAPSHOT_URL injection)
+# Copy custom nginx config (adds /snapshot proxy with Authorization injection)
 COPY docker/nginx-visual.conf /etc/nginx/conf.d/default.conf
+
+# Entrypoint substitutes the HTTP adapter bearer token from the mounted secret
+# into the nginx config at container start, then hands off to nginx's entrypoint.
+COPY docker/visual-entrypoint.sh /usr/local/bin/visual-entrypoint.sh
+RUN chmod +x /usr/local/bin/visual-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/visual-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]
 
 EXPOSE 80

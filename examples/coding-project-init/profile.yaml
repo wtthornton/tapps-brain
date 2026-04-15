@@ -1,0 +1,38 @@
+# Example per-project memory profile. Rename/edit for your domain, then register
+# against the deployed hub once EPIC-069 ships the registration wire format:
+#
+#   tapps-brain project register <your-project-id> --profile ./profile.yaml
+#
+# Until then, this file is loaded by in-process AgentBrain when placed at the
+# project root (profile discovery). See docs/guides/profiles.md.
+
+profile:
+  name: "example-project"
+  version: "1.0"
+  description: "Memory profile for an example consuming project."
+
+  # Layers define the semantic categories of memory. The first layer is the
+  # most durable; the last is the most ephemeral. Recall ranks across layers.
+  layers:
+    - name: "decisions"
+      description: "Architectural and API contract decisions. Long-lived."
+      tier: "architectural"
+    - name: "patterns"
+      description: "Reusable patterns, conventions, and recipes."
+      tier: "pattern"
+    - name: "context"
+      description: "Working context — current task state, recent findings."
+      tier: "context"
+    - name: "scratch"
+      description: "Throwaway notes. Decays fastest."
+      tier: "scratch"
+
+  # Decay curve across layers — exponential is a sensible default.
+  decay:
+    curve: "exponential"
+
+  # Recall ranking weights. Tune these after you have real traffic.
+  ranking:
+    recency_weight: 0.25
+    relevance_weight: 0.50
+    tier_weight: 0.25

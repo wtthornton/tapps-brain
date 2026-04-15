@@ -5,10 +5,10 @@ Both features move memories across boundaries, but the **boundary** and **mechan
 | | **Hive** | **Federation** |
 |---|----------|------------------|
 | **Goal** | Share memory **across agents** on a machine (or coordinated agents) | Share memory **across projects** via an explicit hub |
-| **Store** | `~/.tapps-brain/hive/hive.db` | `~/.tapps-brain/memory/federated.db` (default) |
+| **Store** | PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) | PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) |
 | **Trigger** | Propagation rules + `agent_scope` (`private` / `domain` / `hive`) | **Explicit** publish + subscribe + sync (no automatic cross-project push) |
 | **Good for** | Assistants, skills, and tools that should read/write the same live pool | Monorepos, org templates, or projects that opt in to a shared catalog |
-| **Not for** | Replacing project-local truth — each project still has its own `.tapps-brain/memory/memory.db` | Live multi-agent coordination — use Hive |
+| **Not for** | Replacing project-local truth — each project still has its own private Postgres store (`TAPPS_BRAIN_DATABASE_URL`) | Live multi-agent coordination — use Hive |
 
 **Can I use both?** Yes. A project can keep a local store, publish a **subset** (`scope="shared"`) to federation, **and** propagate selected tiers to Hive for agents.
 

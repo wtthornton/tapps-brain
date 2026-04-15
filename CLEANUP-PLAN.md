@@ -1,5 +1,12 @@
 # tapps-brain Cleanup & Simplification Plan
 
+> **ARCHIVED — pre-ADR-007 (SQLite era).** This document was written on 2026-04-08 when
+> tapps-brain still used SQLite. ADR-007 (2026-04-11) removed SQLite entirely and replaced
+> it with PostgreSQL-only persistence. All SQLite, sqlite-vec, SQLCipher, FTS5, and
+> `persistence.py` references below are historical and no longer apply to the codebase.
+> See [ADR-007](docs/planning/adr/ADR-007-postgres-only-no-sqlite.md) for the rationale
+> and [CHANGELOG.md](CHANGELOG.md) for what was actually shipped.
+
 **Date:** 2026-04-08  
 **Scope:** First production release — no backwards compatibility needed  
 **Principle:** One best way to do each thing. Remove all optionality, legacy paths, and dead code.  

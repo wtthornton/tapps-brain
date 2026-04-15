@@ -1,0 +1,23 @@
+{
+  "_comment": "Rename this file to .mcp.json and replace {{PROJECT_ID}} with a stable slug (e.g. the repo name). This spawns the DEPLOYED tapps-brain image so design-time writes hit the same hive as runtime.",
+  "mcpServers": {
+    "tapps-brain": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "docker_default",
+        "-e", "TAPPS_BRAIN_DATABASE_URL=postgres://tapps:tapps@tapps-hive-db:5432/tapps_hive",
+        "-e", "TAPPS_BRAIN_HIVE_DSN=postgres://tapps:tapps@tapps-hive-db:5432/tapps_hive",
+        "-e", "TAPPS_BRAIN_AUTO_MIGRATE=1",
+        "-e", "TAPPS_BRAIN_PROJECT={{PROJECT_ID}}",
+        "--entrypoint", "tapps-brain-mcp",
+        "docker-tapps-brain-http:latest",
+        "--agent-id", "coding-agent-{{PROJECT_ID}}",
+        "--project-dir", "/var/lib/tapps-brain"
+      ],
+      "env": {},
+      "instructions": "Persistent project memory for {{PROJECT_ID}} via the deployed tapps-brain hub."
+    }
+  }
+}

@@ -16,7 +16,7 @@ and recall; CLI/MCP `group=` parameters; default empty = “ungrouped / global w
 
 ## 2. Hive namespaces (cross-agent, shared store)
 
-**Intent:** Already implemented: shared `hive.db` with **namespaces** (`universal`, profile-
+**Intent:** Already implemented: shared PostgreSQL Hive store (`PostgresHiveBackend`) with **namespaces** (`universal`, profile-
 aligned domains). This is **cross-agent**, not an arbitrary project tag.
 
 **Sketch:** Extend behavior only where product asks for new namespace rules, visibility,

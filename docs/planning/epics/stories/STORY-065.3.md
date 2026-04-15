@@ -31,8 +31,9 @@ Remove the Tags section and Memory Groups section from index.html entirely — t
 - `examples/brain-visual/index.html`
 - `examples/brain-visual/scorecard-derive.js`
 - `examples/brain-visual/brain-visual.json`
-- `examples/brain-visual/brain-visual.demo.json`
 - `examples/brain-visual/brain-visual-help.js`
+
+> Note (2026-04-13): `brain-visual.demo.json` was deleted when the dashboard went live-only.
 
 <!-- docsmcp:end:files -->
 
@@ -104,7 +105,7 @@ Remove the Tags section and Memory Groups section from index.html entirely — t
 - The retrieval mode tile (#retrieval-mode
 - #retrieval-mode-desc
 - #sqlite-vec-line) stays — only the step-flow diagram sub-panel is removed
-- brain-visual.demo.json (used by the Load demo button) should also be updated to an honest demo with realistic but clearly-labelled synthetic data rather than real contributor telemetry
+- **Superseded 2026-04-13:** `brain-visual.demo.json` and the Load-demo button were deleted when the dashboard went live-only
 
 <!-- docsmcp:end:technical-notes -->
 

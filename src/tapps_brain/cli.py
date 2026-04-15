@@ -3677,6 +3677,55 @@ def project_delete(
     typer.echo(f"Deleted project '{project_id}'")
 
 
+@project_app.command("rotate-token")
+def project_rotate_token(
+    project_id: str = typer.Argument(..., help="Project slug to issue a token for."),
+) -> None:
+    """Issue (or replace) the per-tenant bearer token for a project.
+
+    Prints the **plaintext token once** — store it securely; it is never
+    retrievable again.  Requires ``argon2-cffi`` (installed with the
+    ``tapps-brain[http]`` extra).
+
+    Enable per-tenant auth with ``TAPPS_BRAIN_PER_TENANT_AUTH=1``.
+    """
+    registry, cm = _open_project_registry()
+    try:
+        try:
+            plaintext = registry.rotate_token(project_id)
+        except LookupError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
+        except ImportError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
+    finally:
+        cm.close()
+    typer.echo(f"Token for project '{project_id}':")
+    typer.echo(plaintext)
+    typer.echo("(store this token — it will not be shown again)", err=True)
+
+
+@project_app.command("revoke-token")
+def project_revoke_token(
+    project_id: str = typer.Argument(..., help="Project slug to revoke the token for."),
+) -> None:
+    """Revoke (clear) the per-tenant bearer token for a project.
+
+    After revocation the project falls back to the global
+    ``TAPPS_BRAIN_AUTH_TOKEN`` check (or no auth if that is unset).
+    """
+    registry, cm = _open_project_registry()
+    try:
+        revoked = registry.revoke_token(project_id)
+    finally:
+        cm.close()
+    if not revoked:
+        typer.echo(f"no project '{project_id}' registered", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Token revoked for project '{project_id}'")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

@@ -35,14 +35,14 @@ Refactor the current hero bento grid into the Overview page (data-page=overview)
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Rename the existing hero bento section to data-page=overview and ensure it is the default visible page (no hidden attribute) (`examples/brain-visual/index.html`)
-- [ ] Add health-summary strip below hero bento: three .badge elements (pass count, warn count, fail count) with amber gradient on warn/fail; wire click handlers to navigate to #health using location.hash assignment (`examples/brain-visual/index.html`)
-- [ ] Add updateHealthSummaryStrip(snapshot) function that derives pass/warn/fail totals from snapshot scorecard array and updates badge text; call from existing render path (`examples/brain-visual/index.html`)
-- [ ] Add six quick-nav tiles in a CSS subgrid below the summary strip; each tile has page title, description sentence, and one live metric slot (data-qnav-metric attribute) (`examples/brain-visual/index.html`)
-- [ ] Wire quick-nav tile click (and Enter/Space keydown) to location.hash navigation (`examples/brain-visual/index.html`)
-- [ ] Apply CSS subgrid (grid-template-columns: subgrid) to the hero bento container for responsive density; add container query for 2-column at 640px and 1-column at 480px (`examples/brain-visual/index.html`)
-- [ ] Remove Hive Hub detail table, Tag Cloud, and Access Histogram markup from the overview page section — they will live on dedicated pages in later stories (`examples/brain-visual/index.html`)
-- [ ] Add a large WARN / FAIL banner (amber gradient border, role=alert) to the summary strip that appears only when fail count > 0 (`examples/brain-visual/index.html`)
+- [x] Rename the existing hero bento section to data-page=overview and ensure it is the default visible page (no hidden attribute) (`examples/brain-visual/index.html`)
+- [x] Add health-summary strip below hero bento: three .hs-badge anchor elements (pass count, warn count, fail count) linking to #health with amber warn/fail styling via data-nonzero (`examples/brain-visual/index.html`)
+- [x] Add updateHealthSummaryStrip(snapshot) function that derives pass/warn/fail totals from snapshot scorecard array and updates badge text; call from existing render path (`examples/brain-visual/index.html`)
+- [x] Add five quick-nav tiles in a CSS auto-fill grid below the summary strip; each tile has page title, description sentence, and one live metric slot (`examples/brain-visual/index.html`)
+- [x] Quick-nav tiles are native `<a href="#pagename">` elements — keyboard-focusable and Enter-activatable without JS (`examples/brain-visual/index.html`)
+- [x] Apply container queries to the hero bento: 2-column at 640px and 1-column at 480px; removed media-query breakpoints on bento (`examples/brain-visual/index.html`)
+- [x] Hive Hub detail table, Tag Cloud, and Access Histogram are on dedicated pages (placed there by 068.1 scaffolding) — not present in overview data-page div (`examples/brain-visual/index.html`)
+- [x] WARN/FAIL banner (`#hs-banner`) with gradient border appears when fail > 0 or warn > 0; uses role=alert on first 0→N fail transition (`examples/brain-visual/index.html`)
 
 <!-- docsmcp:end:tasks -->
 
@@ -68,11 +68,11 @@ Refactor the current hero bento grid into the Overview page (data-page=overview)
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Overview page — decision strip and health summary code reviewed and approved
+- [x] All tasks completed
+- [x] Overview page — decision strip and health summary code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on health-summary strip and quick-nav changes in `index.html`; no Critical issues open
 
 <!-- docsmcp:end:definition-of-done -->
 

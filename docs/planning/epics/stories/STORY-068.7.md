@@ -67,8 +67,10 @@ Move Integrity checks and Privacy/Export info to data-page=integrity. Add a visu
 - [ ] All tasks completed
 - [ ] Integrity and Export page — checks, privacy tiers, export workflow code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on privacy-tier selector and integrity display; no Critical issues open
+- [ ] EPIC-066 schema field check completed before implementation (see Technical Notes)
+- [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -93,6 +95,8 @@ Move Integrity checks and Privacy/Export info to data-page=integrity. Add a visu
 - Privacy tier selector is a visual UI element only — it does not re-fetch snapshot with a different privacy tier (that would require a CLI re-export); it changes the export button label and could in future trigger a re-fetch from /snapshot?privacy=strict when live polling is active
 - tampered_count amber warning uses the existing warn CSS class from the scorecard system — do not introduce new status color tokens
 - Schema version comparison: current expected version is 2 (as of Phase A); hardcode this as CURRENT_SCHEMA_VERSION constant at top of the script block with a comment to update when schema bumps
+- **EPIC-066 coordination:** Before implementing, check whether EPIC-066 (async wrapper, 46 Postgres failures as of 2026-04-13) has changed the snapshot schema fields used here (`health.integrity_*`, `privacy_tier`, `schema_version`). Run `grep -n "integrity_\|privacy_tier\|schema_version" src/tapps_brain/visual_snapshot.py` and compare against the live `/snapshot` payload before wiring the render path
+- **Dev workflow:** start the tapps-brain HTTP adapter (`tapps-brain mcp start --http` or `docker compose up tapps-brain-mcp`), then `cd examples/brain-visual && python3 -m http.server 8090`; the page polls `/snapshot` live — `health.integrity_tampered`, `privacy_tier`, and `schema_version` are all present in the live feed
 
 <!-- docsmcp:end:technical-notes -->
 

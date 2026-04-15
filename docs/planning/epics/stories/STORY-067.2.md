@@ -77,8 +77,7 @@ Definition of Done per [Epic 67](../EPIC-067.md).
 ## Technical Notes
 
 - The static brain-visual.json was added as a fallback but it creates a worse experience than a 503 because it looks like the dashboard is working while showing zero data. Better to let nginx return 502/503 when the upstream is down so the operator knows to start the service.
-- If brain-visual.demo.json (already in examples/) is a reasonable offline fallback
-- consider serving that under a /demo route instead.
+- **Superseded 2026-04-13:** `brain-visual.demo.json` and all file-load/demo fallbacks were removed; the dashboard is live-only against `/snapshot` and shows an empty state when the upstream is unreachable
 
 <!-- docsmcp:end:technical-notes -->
 

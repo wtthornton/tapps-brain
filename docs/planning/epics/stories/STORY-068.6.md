@@ -76,8 +76,10 @@ Move the Hive Hub panel and Agents table to data-page=agents. Add a client-side 
 - [ ] All tasks completed
 - [ ] Agents and Hive page — SVG topology diagram and registry code reviewed and approved
 - [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
 - [ ] No regressions introduced
+- [ ] ralph-reviewer run on SVG topology generation and agent-detail drawer; explicit XSS check on any innerHTML using snapshot data (agent_id, namespace strings)
+- [ ] SVG font-family set explicitly on all text elements (not relying on CSS inheritance)
+- [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -107,11 +109,10 @@ Move the Hive Hub panel and Agents table to data-page=agents. Add a client-side 
 ## Technical Notes
 
 - SVG layout algorithm: namespaces as fixed-size rounded-rects arranged in a row; agents placed inside their namespace rect evenly spaced; Hive hub centered at top; edges drawn as quadratic bezier paths (SVG path Q command) from hub to each namespace rect midpoint
-- Use SVG foreignObject for text labels that need CSS styling; otherwise use SVG text elements with font-family from --font-body CSS variable (SVG text does not inherit CSS font by default — set explicitly)
-- Agent-detail drawer reuses the .help-drawer CSS pattern (position: fixed
-- right: 0
-- slide-in from right) with a different trigger mechanism — do not duplicate CSS
+- Use SVG foreignObject for text labels that need CSS styling; otherwise use SVG text elements with explicit `font-family` attribute set to the var(--font-body) resolved value — SVG text does not inherit CSS custom properties; this is a known brand-drift vector, set it explicitly
+- Agent-detail drawer reuses the .help-drawer CSS pattern (position: fixed, right: 0, slide-in from right) with a different trigger mechanism — do not duplicate CSS
 - Node count 50 cap is a hard limit — log a console.info if truncated so developers notice during testing
+- **Dev workflow:** start the tapps-brain HTTP adapter (`tapps-brain mcp start --http` or `docker compose up tapps-brain-mcp`), then `cd examples/brain-visual && python3 -m http.server 8090`; the page polls `/snapshot` live — `agent_scope_counts`, `hive_health`, and `agent_registry` come from the live feed
 
 <!-- docsmcp:end:technical-notes -->
 
