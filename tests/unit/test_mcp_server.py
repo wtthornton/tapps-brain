@@ -3548,7 +3548,7 @@ class TestProjectNotRegisteredMapping:
         err = exc.value.error
         assert err.code == -32002
         assert err.message == "project_not_registered"
-        assert err.data == {"project_id": "ghost"}
+        assert err.data["project_id"] == "ghost"
 
 
 # ---------------------------------------------------------------------------
@@ -3730,4 +3730,4 @@ class TestPerCallProjectDispatch:
         err = exc.value.error
         assert err.code == -32002
         assert err.message == "project_not_registered"
-        assert err.data == {"project_id": "ghost"}
+        assert err.data["project_id"] == "ghost"

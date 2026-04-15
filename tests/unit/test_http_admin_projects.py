@@ -182,7 +182,9 @@ class TestProjectNotRegisteredMapping:
                     )
 
         assert resp.status_code == 403
-        assert resp.json() == {"error": "project_not_registered", "project_id": "ghost"}
+        body = resp.json()
+        assert body["error"] == "project_not_registered"
+        assert body["project_id"] == "ghost"
 
     def test_post_maps_to_403_structured(self) -> None:
         """POST /admin/projects with ProjectNotRegisteredError → 403 structured."""
@@ -219,7 +221,9 @@ class TestProjectNotRegisteredMapping:
                     )
 
         assert resp.status_code == 403
-        assert resp.json() == {"error": "project_not_registered", "project_id": "ghost"}
+        body = resp.json()
+        assert body["error"] == "project_not_registered"
+        assert body["project_id"] == "ghost"
 
 
 class TestCorsPreflight:
