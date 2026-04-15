@@ -132,6 +132,86 @@ class AsyncMemoryStore:
         """Async version of :meth:`MemoryStore.snapshot`."""
         return await asyncio.to_thread(self._store.snapshot)
 
+    async def gc(self, *, dry_run: bool = False) -> Any:
+        """Async version of :meth:`MemoryStore.gc` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.gc, dry_run=dry_run)
+
+    async def supersede(self, old_key: str, new_value: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.supersede` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.supersede, old_key, new_value, **kwargs)
+
+    async def get_gc_config(self) -> Any:
+        """Async version of :meth:`MemoryStore.get_gc_config` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.get_gc_config)
+
+    async def set_gc_config(self, config: Any) -> None:
+        """Async version of :meth:`MemoryStore.set_gc_config` (STORY-070.10)."""
+        await asyncio.to_thread(self._store.set_gc_config, config)
+
+    async def get_consolidation_config(self) -> Any:
+        """Async version of :meth:`MemoryStore.get_consolidation_config` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.get_consolidation_config)
+
+    async def set_consolidation_config(self, config: Any) -> None:
+        """Async version of :meth:`MemoryStore.set_consolidation_config` (STORY-070.10)."""
+        await asyncio.to_thread(self._store.set_consolidation_config, config)
+
+    async def get_relations(self, key: str) -> Any:
+        """Async version of :meth:`MemoryStore.get_relations` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.get_relations, key)
+
+    async def get_relations_batch(self, keys: list[str]) -> Any:
+        """Async version of :meth:`MemoryStore.get_relations_batch` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.get_relations_batch, keys)
+
+    async def find_related(self, key: str, *, max_hops: int = 2) -> Any:
+        """Async version of :meth:`MemoryStore.find_related` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.find_related, key, max_hops=max_hops)
+
+    async def query_relations(self, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.query_relations` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.query_relations, **kwargs)
+
+    async def list_tags(self) -> Any:
+        """Async version of :meth:`MemoryStore.list_tags` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.list_tags)
+
+    async def update_tags(self, key: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.update_tags` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.update_tags, key, **kwargs)
+
+    async def entries_by_tag(self, tag: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.entries_by_tag` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.entries_by_tag, tag, **kwargs)
+
+    async def index_session(self, session_id: str, chunks: list[str]) -> Any:
+        """Async version of :meth:`MemoryStore.index_session` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.index_session, session_id, chunks)
+
+    async def search_sessions(self, query: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.search_sessions` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.search_sessions, query, **kwargs)
+
+    async def list_gc_stale_details(self) -> Any:
+        """Async version of :meth:`MemoryStore.list_gc_stale_details` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.list_gc_stale_details)
+
+    async def generate_report(self, *, period_days: int = 7) -> Any:
+        """Async version of :meth:`MemoryStore.generate_report` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.generate_report, period_days=period_days)
+
+    async def latest_quality_report(self) -> Any:
+        """Async version of :meth:`MemoryStore.latest_quality_report` (STORY-070.10)."""
+        return await asyncio.to_thread(self._store.latest_quality_report)
+
+    async def gc_run(self, *, dry_run: bool = False) -> Any:
+        """Async version of :meth:`MemoryStore.gc` (alias for STORY-070.10 parity).
+
+        ``gc_run()`` is an explicit alias matching the method name used by
+        AgentForge callers.  Internally delegates to ``gc(dry_run=dry_run)``.
+        """
+        return await asyncio.to_thread(self._store.gc, dry_run=dry_run)
+
     async def close(self) -> None:
         """Async version of :meth:`MemoryStore.close`."""
         await asyncio.to_thread(self._store.close)

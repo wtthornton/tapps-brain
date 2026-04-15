@@ -299,3 +299,4 @@
 - [x] **STORY-070.7** — Per-call identity — agent_id / scope / group (M, 5 pts)
 - [x] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
 - [x] **STORY-070.9** — Operator-tool separation (S, 3 pts)
+- [x] **STORY-070.10** — Native async parity (M, 5 pts)

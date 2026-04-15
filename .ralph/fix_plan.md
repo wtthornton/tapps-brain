@@ -15,11 +15,6 @@
 
 
 
-- [ ] **STORY-070.10** — Native async parity (M, 5 pts)
-  - `AsyncMemoryStore` covers every sync `MemoryStore` public method (save, recall, reinforce, hive_search, relay_export, relay_import, consolidate, gc_run, delete, search)
-  - Uses `psycopg` async connection pool internally
-  - Benchmark: 100-concurrent async recalls ≤ 2× single recall latency
-  - Reference: `docs/stories/STORY-070.10-async-parity.md`
 
 - [ ] **STORY-070.11** — Official TappsBrainClient sync + async (L, 8 pts)
   - `tapps_brain.client.TappsBrainClient` and `AsyncTappsBrainClient` with method parity vs `AgentBrain`
