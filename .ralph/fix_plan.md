@@ -19,12 +19,6 @@
 
 
 
-- [ ] **STORY-070.14** — Compatibility test suite (S, 3 pts)
-  - `tests/compat/test_embedded_3_5_parity.py` pins embedded `AgentBrain` public-method behavior
-  - Runs against live Postgres in CI
-  - CI job fails PR if any pinned behavior shifts
-  - Document policy in `CONTRIBUTING.md`
-  - Reference: `docs/stories/STORY-070.14-compat-suite.md`
 
 - [ ] **STORY-070.15** — Docker + docs: one binary, both transports (S, 3 pts)
   - `tapps-brain serve` starts HTTP adapter + Streamable-HTTP MCP on distinct ports in one process

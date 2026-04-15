@@ -65,6 +65,29 @@ If your PR touches `src/tapps_brain/http_adapter.py` (or any future `http/` subt
 A CODEOWNERS entry on the HTTP adapter path means `@wtthornton` is auto-requested for
 review on any PR that touches it. See [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
+## Compatibility test suite (STORY-070.14)
+
+`tests/compat/test_embedded_3_5_parity.py` pins the embedded `AgentBrain` public-method
+behavior as it existed in v3.5.x.  These tests exist to detect silent regressions
+introduced by remote-service work (EPIC-070) or any future architectural change.
+
+### Policy: changes to this suite require an ADR
+
+Any pull request that **causes a test in `tests/compat/` to fail** must include an ADR
+note in `docs/planning/adr/`.  Use
+[ADR-008](docs/planning/adr/ADR-008-no-http-without-mcp-library-parity.md) as a
+precedent for the required format.
+
+Specifically, do not update golden assertions or change expected return shapes without:
+
+1. **Writing an ADR** that explains the behavioral change, its motivation, and any
+   migration path for embedded callers.
+2. **Bumping the minor version** if the change breaks the v3.5 embedded surface.
+3. **Tagging the PR** with `compat-break` so maintainers are alerted.
+
+The GitHub Actions `compat` job runs `tests/compat/` against a live Postgres instance on
+every PR.  A failure there blocks merge; it is not a warning.
+
 ## Reporting issues
 
 Include repro steps, expected vs actual behavior, and versions (OS, Python, tapps-brain). Use GitHub issues with templates when available.
