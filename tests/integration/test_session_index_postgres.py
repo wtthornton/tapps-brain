@@ -31,12 +31,13 @@ def _apply_migrations() -> None:
     apply_private_migrations(_PG_DSN)
 
 
-def _make_session_index(project_id: str, agent_id: str) -> Any:
+def _make_session_index(project_id: str, agent_id: str) -> tuple[Any, Any]:
+    """Return ``(SessionIndex, PostgresConnectionManager)`` so callers can close the cm."""
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.session_index import SessionIndex
 
     cm = PostgresConnectionManager(_PG_DSN)
-    return SessionIndex(cm, project_id=project_id, agent_id=agent_id)
+    return SessionIndex(cm, project_id=project_id, agent_id=agent_id), cm
 
 
 def _unique_project() -> str:
@@ -60,8 +61,11 @@ def _migrate() -> None:
 @pytest.fixture
 def session_index(request: Any) -> Any:
     """SessionIndex scoped to unique (project_id, agent_id) per test."""
-    si = _make_session_index(_unique_project(), _unique_agent())
-    yield si
+    si, cm = _make_session_index(_unique_project(), _unique_agent())
+    try:
+        yield si
+    finally:
+        cm.close()
 
 
 # ---------------------------------------------------------------------------
@@ -140,15 +144,18 @@ class TestSearch:
     def test_search_scoped_per_agent(self) -> None:
         """One agent's chunks must not appear in another agent's search."""
         project_id = _unique_project()
-        agent_a = _make_session_index(project_id, "agent-a")
-        agent_b = _make_session_index(project_id, "agent-b")
+        agent_a, cm_a = _make_session_index(project_id, "agent-a")
+        agent_b, cm_b = _make_session_index(project_id, "agent-b")
+        try:
+            agent_a.save_chunks("sess-a", ["canary phrase only in agent-a"])
+            results_b = agent_b.search("canary phrase")
+            assert results_b == []
 
-        agent_a.save_chunks("sess-a", ["canary phrase only in agent-a"])
-        results_b = agent_b.search("canary phrase")
-        assert results_b == []
-
-        results_a = agent_a.search("canary phrase")
-        assert len(results_a) >= 1
+            results_a = agent_a.search("canary phrase")
+            assert len(results_a) >= 1
+        finally:
+            cm_a.close()
+            cm_b.close()
 
 
 # ---------------------------------------------------------------------------
@@ -177,22 +184,25 @@ class TestDeleteExpired:
         from tapps_brain.session_index import SessionIndex
 
         cm = PostgresConnectionManager(_PG_DSN)
-        project_id = _unique_project()
-        agent_id = _unique_agent()
-        si = SessionIndex(cm, project_id=project_id, agent_id=agent_id)
+        try:
+            project_id = _unique_project()
+            agent_id = _unique_agent()
+            si = SessionIndex(cm, project_id=project_id, agent_id=agent_id)
 
-        # Save a chunk normally first
-        si.save_chunks("sess-old", ["old chunk content"])
+            # Save a chunk normally first
+            si.save_chunks("sess-old", ["old chunk content"])
 
-        # Back-date the created_at to 100 days ago via direct SQL
-        with cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "UPDATE session_chunks SET created_at = now() - interval '100 days' "
-                "WHERE project_id = %s AND agent_id = %s AND session_id = %s",
-                (project_id, agent_id, "sess-old"),
-            )
+            # Back-date the created_at to 100 days ago via direct SQL
+            with cm.get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE session_chunks SET created_at = now() - interval '100 days' "
+                    "WHERE project_id = %s AND agent_id = %s AND session_id = %s",
+                    (project_id, agent_id, "sess-old"),
+                )
 
-        deleted = si.delete_expired(30)
-        assert deleted == 1
-        # Must not be searchable anymore
-        assert si.search("old chunk content") == []
+            deleted = si.delete_expired(30)
+            assert deleted == 1
+            # Must not be searchable anymore
+            assert si.search("old chunk content") == []
+        finally:
+            cm.close()

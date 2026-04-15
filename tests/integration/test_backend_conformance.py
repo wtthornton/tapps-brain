@@ -80,7 +80,17 @@ def agent_registry() -> Any:
     if _SKIP_PG:
         pytest.skip("TAPPS_TEST_POSTGRES_DSN not set")
     registry = _make_postgres_agent_registry()
-    yield registry
+    try:
+        yield registry
+    finally:
+        # PostgresAgentRegistry owns its connection manager; close the pool
+        # so we do not leak connections into subsequent tests (TAP-362).
+        cm = getattr(registry, "_cm", None)
+        if cm is not None:
+            try:
+                cm.close()
+            except Exception:
+                pass
 
 
 # ===========================================================================

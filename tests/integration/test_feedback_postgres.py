@@ -57,13 +57,21 @@ def _migrate() -> None:
 
 @pytest.fixture
 def feedback_store(request: Any) -> Any:
-    """FeedbackStore scoped to unique (project_id, agent_id) per test."""
+    """FeedbackStore scoped to unique (project_id, agent_id) per test.
+
+    ``FeedbackStore.close()`` is a no-op (the cm is owned by the caller),
+    so we close the connection manager directly to release the pool —
+    required to avoid pool exhaustion in later tests (TAP-362).
+    """
     from tapps_brain.feedback import FeedbackStore
 
     cm = _make_cm()
     store = FeedbackStore(cm, project_id=_unique_project(), agent_id=_unique_agent())
-    yield store
-    store.close()
+    try:
+        yield store
+    finally:
+        store.close()
+        cm.close()
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +187,7 @@ class TestStrictMode:
                 store.record(ev)
         finally:
             store.close()
+            cm.close()
 
     def test_strict_mode_accepts_builtin_event_type(self) -> None:
         from tapps_brain.feedback import FeedbackConfig, FeedbackEvent, FeedbackStore
@@ -198,6 +207,7 @@ class TestStrictMode:
             assert len(results) == 1
         finally:
             store.close()
+            cm.close()
 
     def test_strict_mode_accepts_custom_registered_type(self) -> None:
         from tapps_brain.feedback import FeedbackConfig, FeedbackEvent, FeedbackStore
@@ -215,3 +225,4 @@ class TestStrictMode:
             store.record(ev)  # must not raise
         finally:
             store.close()
+            cm.close()
