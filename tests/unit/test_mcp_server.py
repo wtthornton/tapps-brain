@@ -163,6 +163,10 @@ class TestCoreTools:
             "brain_learn_success",
             "brain_learn_failure",
             "brain_status",
+            # Batch tools (STORY-070.11)
+            "memory_save_many",
+            "memory_recall_many",
+            "memory_reinforce_many",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"

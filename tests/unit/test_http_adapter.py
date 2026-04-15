@@ -300,12 +300,22 @@ class TestMetricsEndpoint:
         assert "tapps_brain_db_ready 0.0" in body
 
     def test_no_high_cardinality_labels(self) -> None:
-        """Metrics must not include query strings, keys, or agent IDs."""
+        """Metrics must not leak raw memory content, query text, or unbounded keys.
+
+        STORY-070.12: labeled counters (project_id, agent_id, tool, status) are
+        intentionally present with bounded cardinality — those are fine.  The
+        forbidden patterns are raw per-request values that would create unbounded
+        label cardinality (memory keys, query text, session IDs, etc.).
+        """
         with _client(_make_settings()) as c:
             body = c.get("/metrics").text
         assert isinstance(body, str)
-        # No curly-brace label sets should appear (Prometheus label syntax)
-        assert "{" not in body
+        # Forbidden: raw memory content or query text as label values.
+        forbidden_label_names = {"memory_key", "query_text", "session_id", "memory_value"}
+        for forbidden in forbidden_label_names:
+            assert f'{forbidden}="' not in body, (
+                f"High-cardinality label '{forbidden}' must not appear in /metrics"
+            )
 
 
 # ---------------------------------------------------------------------------

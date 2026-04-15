@@ -34,6 +34,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -248,8 +249,6 @@ async def _async_post_tool(
     max_retries: int = 2,
 ) -> Any:
     """Async version of :func:`_post_tool`."""
-    import asyncio
-
     from tapps_brain.errors import RetryPolicy
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)

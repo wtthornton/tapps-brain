@@ -2104,6 +2104,7 @@ all = [
     { name = "argon2-cffi" },
     { name = "fastapi" },
     { name = "flashrank" },
+    { name = "httpx" },
     { name = "mcp" },
     { name = "starlette" },
     { name = "typer" },
@@ -2111,6 +2112,9 @@ all = [
 ]
 cli = [
     { name = "typer" },
+]
+client = [
+    { name = "httpx" },
 ]
 http = [
     { name = "argon2-cffi" },
@@ -2153,6 +2157,7 @@ requires-dist = [
     { name = "argon2-cffi", marker = "extra == 'http'", specifier = ">=23.1.0,<25" },
     { name = "fastapi", marker = "extra == 'http'", specifier = ">=0.115,<1" },
     { name = "flashrank", marker = "extra == 'reranker'", specifier = ">=0.2.9,<0.3" },
+    { name = "httpx", marker = "extra == 'client'", specifier = ">=0.27,<1" },
     { name = "mcp", marker = "extra == 'http'", specifier = ">=1.25.0,<2" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.25.0,<2" },
     { name = "numpy", specifier = ">=2.4.2,<3" },
@@ -2165,11 +2170,11 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=5.2.3,<6" },
     { name = "starlette", marker = "extra == 'http'", specifier = ">=0.40,<1" },
     { name = "structlog", specifier = ">=25.5.0,<26" },
-    { name = "tapps-brain", extras = ["cli", "mcp", "http", "reranker"], marker = "extra == 'all'" },
+    { name = "tapps-brain", extras = ["cli", "mcp", "http", "reranker", "client"], marker = "extra == 'all'" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.15.0,<1" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'http'", specifier = ">=0.32,<1" },
 ]
-provides-extras = ["cli", "mcp", "http", "reranker", "otel", "visual", "all"]
+provides-extras = ["cli", "mcp", "http", "reranker", "otel", "visual", "client", "all"]
 
 [package.metadata.requires-dev]
 dev = [

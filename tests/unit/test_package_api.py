@@ -84,7 +84,10 @@ class TestCoreImportWithoutExtras:
             obj = getattr(tapps_brain, name)
             mod = getattr(obj, "__module__", "")
             # No public API symbol should live in cli or mcp_server modules
-            assert "cli" not in mod, f"{name} unexpectedly from cli module"
+            # Use exact prefix check so "tapps_brain.client" doesn't false-positive.
+            assert mod != "tapps_brain.cli" and not mod.startswith(
+                "tapps_brain.cli."
+            ), f"{name} unexpectedly from cli module"
             assert "mcp_server" not in mod, f"{name} unexpectedly from mcp_server module"
 
     def test_core_store_works_without_extras(self, tmp_path: Path) -> None:

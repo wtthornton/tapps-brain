@@ -486,10 +486,11 @@ class _StoreProxy:
         else:
             setattr(self._resolve(), name, value)
 
-    @property  # type: ignore[override]
-    def __class__(self) -> type:  # type: ignore[override]
+    @property  # type: ignore[misc]
+    def __class__(self) -> type:
         try:
-            return self._resolve().__class__
+            resolved_class: type = self._resolve().__class__
+            return resolved_class
         except Exception:  # noqa: BLE001
             return _StoreProxy
 
@@ -575,7 +576,7 @@ def create_server(  # noqa: PLR0915
         if eff == _server_agent_id:
             return store
         pid = _current_request_project_id()
-        default_target = store._default_store  # type: ignore[attr-defined]
+        default_target = store._default_store
         try:
             return _get_store_for_project(
                 pid,
@@ -1913,6 +1914,35 @@ def _build_base_parser(prog: str, description: str) -> argparse.ArgumentParser:
         default=True,
         help="Enable Hive multi-agent shared brain (default: enabled).",
     )
+    # STORY-070.15: one binary, both transports
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "streamable-http"],
+        default=os.environ.get("TAPPS_BRAIN_MCP_TRANSPORT", "stdio"),
+        help=(
+            "MCP transport to use: 'stdio' (default, for AGENT.md/IDE use) or "
+            "'streamable-http' (for Docker/network use). "
+            "Override via TAPPS_BRAIN_MCP_TRANSPORT env var."
+        ),
+    )
+    parser.add_argument(
+        "--mcp-host",
+        type=str,
+        default=os.environ.get("TAPPS_BRAIN_MCP_HOST", "127.0.0.1"),
+        help=(
+            "Host to bind when --transport=streamable-http (default: 127.0.0.1). "
+            "Override via TAPPS_BRAIN_MCP_HOST env var."
+        ),
+    )
+    parser.add_argument(
+        "--mcp-port",
+        type=int,
+        default=int(os.environ.get("TAPPS_BRAIN_MCP_PORT", "8091")),
+        help=(
+            "Port to bind when --transport=streamable-http (default: 8091). "
+            "Override via TAPPS_BRAIN_MCP_PORT env var."
+        ),
+    )
     return parser
 
 
@@ -1940,11 +1970,13 @@ def main() -> None:
     STORY-070.9: operator tools are **never** exposed regardless of the
     ``TAPPS_BRAIN_OPERATOR_TOOLS`` environment variable.  Use
     ``tapps-brain-operator-mcp`` when operator-level access is required.
+
+    STORY-070.15: supports ``--transport streamable-http`` for Docker/network use.
     """
     parser = _build_base_parser(
         "tapps-brain-mcp",
         (
-            "Run the tapps-brain MCP server (stdio transport). "
+            "Run the tapps-brain MCP server (stdio or streamable-http transport). "
             "Standard server: no operator tools (safe for AGENT.md grants). "
             "Version matches the installed tapps-brain package."
         ),
@@ -1968,7 +2000,11 @@ def main() -> None:
     except RuntimeError as exc:
         sys.stderr.write(f"ERROR: {exc}\n")
         sys.exit(1)
-    server.run(transport="stdio")
+    # STORY-070.15: configure host/port for streamable-http transport
+    if args.transport == "streamable-http":
+        server.settings.host = args.mcp_host
+        server.settings.port = args.mcp_port
+    server.run(transport=args.transport)
 
 
 def main_operator() -> None:
@@ -1977,11 +2013,14 @@ def main_operator() -> None:
     STORY-070.9: this server always exposes operator tools (GC, consolidation,
     import/export, migration, relay).  Do **not** grant this entry point to
     regular agents — use ``tapps-brain-mcp`` instead.
+
+    STORY-070.15: supports ``--transport streamable-http`` for Docker/network use.
+    The default port for operator streamable-http is 8090 (set TAPPS_BRAIN_MCP_PORT).
     """
     parser = _build_base_parser(
         "tapps-brain-operator-mcp",
         (
-            "Run the tapps-brain operator MCP server (stdio transport). "
+            "Run the tapps-brain operator MCP server (stdio or streamable-http transport). "
             "Operator server: GC, consolidation, import/export, migration, relay. "
             "Not for regular agent sessions — use tapps-brain-mcp for AGENT.md grants."
         ),
@@ -2003,7 +2042,11 @@ def main_operator() -> None:
     except RuntimeError as exc:
         sys.stderr.write(f"ERROR: {exc}\n")
         sys.exit(1)
-    server.run(transport="stdio")
+    # STORY-070.15: configure host/port for streamable-http transport
+    if args.transport == "streamable-http":
+        server.settings.host = args.mcp_host
+        server.settings.port = args.mcp_port
+    server.run(transport=args.transport)
 
 
 if __name__ == "__main__":

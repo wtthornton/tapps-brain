@@ -130,6 +130,12 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 
+# TappsBrainClient dispatches over HTTP responses which are inherently Any-typed.
+# warn_return_any would require casts at every return site — not worth the noise.
+[[tool.mypy.overrides]]
+module = ["tapps_brain.client"]
+warn_return_any = false
+
 [[tool.mypy.overrides]]
 module = [
     "numpy",
