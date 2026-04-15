@@ -3453,14 +3453,14 @@ def visual_capture_cmd(  # pragma: no cover
 
 
 @app.command("serve")
-def cmd_serve(
+def cmd_serve(  # noqa: PLR0912, PLR0915
     host: Annotated[
         str,
         typer.Option("--host", envvar="TAPPS_BRAIN_HTTP_HOST", help="Bind address."),
     ] = "0.0.0.0",
     port: Annotated[
         int,
-        typer.Option("--port", envvar="TAPPS_BRAIN_HTTP_PORT", help="TCP port."),
+        typer.Option("--port", envvar="TAPPS_BRAIN_HTTP_PORT", help="HTTP data-plane TCP port."),
     ] = 8080,
     dsn: Annotated[
         str | None,
@@ -3470,13 +3470,39 @@ def cmd_serve(
             help="Postgres DSN for /ready probe (falls back to TAPPS_BRAIN_DATABASE_URL).",
         ),
     ] = None,
+    mcp_host: Annotated[
+        str,
+        typer.Option(
+            "--mcp-host",
+            envvar="TAPPS_BRAIN_MCP_HOST",
+            help="Bind address for the Streamable-HTTP MCP transport.",
+        ),
+    ] = "0.0.0.0",
+    mcp_port: Annotated[
+        int,
+        typer.Option(
+            "--mcp-port",
+            envvar="TAPPS_BRAIN_MCP_HTTP_PORT",
+            help=(
+                "TCP port for the operator Streamable-HTTP MCP transport. "
+                "Set to 0 (default) to disable the MCP transport and run "
+                "HTTP-only (legacy behaviour). "
+                "STORY-070.15: set to 8090 in Docker for the unified binary."
+            ),
+        ),
+    ] = 0,
 ) -> None:
     """Start the HTTP adapter (liveness, readiness, metrics, /snapshot).
+
+    STORY-070.15: when --mcp-port > 0 (or TAPPS_BRAIN_MCP_HTTP_PORT is set),
+    the operator Streamable-HTTP MCP server is also started in the same process
+    on the given port, making a single container sufficient for both transports.
 
     Reads TAPPS_BRAIN_HTTP_AUTH_TOKEN and TAPPS_BRAIN_HIVE_DSN from the
     environment automatically; the --dsn flag overrides the env var.
 
-    Blocks until interrupted (SIGINT / SIGTERM).
+    Blocks until interrupted (SIGINT / SIGTERM).  Graceful shutdown stops
+    both transports before exiting.
     """
     import os
     import signal
@@ -3497,9 +3523,40 @@ def cmd_serve(
             hive_agent_id="http-adapter",
         )
 
+    # ---- HTTP data-plane ------------------------------------------------
     adapter = HttpAdapter(host=host, port=port, dsn=dsn, store=store)
     adapter.start()
     typer.echo(f"tapps-brain HTTP adapter listening on {host}:{port}")
+
+    # ---- Streamable-HTTP MCP transport (STORY-070.15) -------------------
+    mcp_thread: threading.Thread | None = None
+    mcp_server_obj: object = None
+    if mcp_port > 0:
+        try:
+            from tapps_brain.mcp_server import create_operator_server
+
+            mcp_server_obj = create_operator_server(
+                None,  # project_dir resolved from env inside create_operator_server
+                enable_hive=True,
+                agent_id=os.environ.get("TAPPS_BRAIN_AGENT_ID", "serve-operator"),
+            )
+            mcp_server_obj.settings.host = mcp_host  # type: ignore[attr-defined]
+            mcp_server_obj.settings.port = mcp_port  # type: ignore[attr-defined]
+
+            def _run_mcp() -> None:
+                mcp_server_obj.run(transport="streamable-http")  # type: ignore[attr-defined]
+
+            mcp_thread = threading.Thread(target=_run_mcp, daemon=True, name="tapps-brain-mcp")
+            mcp_thread.start()
+            typer.echo(
+                f"tapps-brain operator MCP (streamable-http) listening on {mcp_host}:{mcp_port}"
+            )
+        except ImportError:
+            typer.echo(
+                "WARNING: mcp extra not installed — operator MCP transport disabled. "
+                "Install with: pip install 'tapps-brain[mcp]'",
+                err=True,
+            )
 
     stop_event = threading.Event()
 
@@ -3510,7 +3567,15 @@ def cmd_serve(
     signal.signal(signal.SIGTERM, _handle_signal)
 
     stop_event.wait()
+
+    # ---- Graceful shutdown ----------------------------------------------
+    typer.echo("tapps-brain: shutting down…")
     adapter.stop()
+    # MCP daemon thread exits automatically when the process terminates;
+    # FastMCP does not expose a public stop() API, so we just join briefly.
+    if mcp_thread is not None and mcp_thread.is_alive():
+        mcp_thread.join(timeout=5.0)
+    typer.echo("tapps-brain: stopped.")
 
 
 # ---------------------------------------------------------------------------

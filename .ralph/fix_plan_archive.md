@@ -302,3 +302,4 @@
 - [x] **STORY-070.10** — Native async parity (M, 5 pts)
 - [x] **STORY-070.11** — Official TappsBrainClient sync + async (L, 8 pts)
 - [x] **STORY-070.12** — OTel + Prometheus label enrichment (S, 3 pts)
+- [x] **STORY-070.15** — Docker + docs: one binary, both transports (S, 3 pts)

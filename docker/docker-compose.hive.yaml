@@ -19,7 +19,12 @@ services:
       - tapps_hive_password
     restart: unless-stopped
 
-  tapps-brain-http:
+  # STORY-070.15: unified service — one container, both transports.
+  # Port 8080: HTTP data-plane + /mcp + /admin/* (FastAPI/Uvicorn).
+  # Port 8090: operator Streamable-HTTP MCP transport (FastMCP).
+  # Both are controlled by `tapps-brain serve`; set TAPPS_BRAIN_MCP_HTTP_PORT=0
+  # to disable the MCP transport and run HTTP-only.
+  tapps-brain:
     build:
       context: ..
       dockerfile: docker/Dockerfile.http
@@ -29,6 +34,10 @@ services:
       TAPPS_BRAIN_AUTO_MIGRATE: "1"
       TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_PORT: "8080"
+      # STORY-070.15: enable operator MCP transport on port 8090.
+      # Set to 0 (or remove) to run HTTP-only.
+      TAPPS_BRAIN_MCP_HTTP_PORT: "${TAPPS_OPERATOR_MCP_PORT:-8090}"
+      TAPPS_BRAIN_MCP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE: /run/secrets/tapps_http_auth_token
       # EPIC-070 STORY-070.6: data plane + /mcp + /admin/* all served by the
       # same FastAPI app on 8080 (previous 8088 admin port collapsed).
@@ -37,20 +46,26 @@ services:
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
       TAPPS_BRAIN_STRICT: "1"
     ports:
-      # Single port: /mcp, data plane, and /admin/* share one Uvicorn worker
-      # (FastMCP session_manager is per-process, so scaling workers is unsafe).
+      # HTTP data-plane: /mcp, data-plane, and /admin/* share one Uvicorn worker.
       - "${TAPPS_HTTP_PORT:-8080}:8080"
+      # Operator MCP transport (streamable-http).
+      - "${TAPPS_OPERATOR_MCP_PORT:-8090}:8090"
     secrets:
       - tapps_http_auth_token
     depends_on:
       tapps-hive-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
+      # Aggregate: healthy only when BOTH transports respond.
+      test:
+        - "CMD-SHELL"
+        - >-
+          python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+          && python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/mcp/')"
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 20s
     restart: unless-stopped
 
   tapps-visual:
@@ -62,7 +77,7 @@ services:
     secrets:
       - tapps_http_auth_token
     depends_on:
-      tapps-brain-http:
+      tapps-brain:
         condition: service_healthy
     restart: unless-stopped
 

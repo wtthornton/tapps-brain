@@ -20,10 +20,3 @@
 
 
 
-- [ ] **STORY-070.15** — Docker + docs: one binary, both transports (S, 3 pts)
-  - `tapps-brain serve` starts HTTP adapter + Streamable-HTTP MCP on distinct ports in one process
-  - Config: `TAPPS_BRAIN_HTTP_PORT` and `TAPPS_BRAIN_MCP_HTTP_PORT`
-  - `docker/docker-compose.hive.yaml` updated — single `tapps-brain` service
-  - Write `docs/guides/deployment.md` with shared-service pattern, AgentForge client snippet, AGENT.md example
-  - Write `docs/guides/migration-3.5-to-3.6.md`
-  - Reference: `docs/stories/STORY-070.15-docker-unified.md`
