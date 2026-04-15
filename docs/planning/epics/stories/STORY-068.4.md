@@ -36,12 +36,12 @@ Move Pulse, Memory Groups, Tag Cloud, and Access Histograms from the main scroll
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Move Pulse section, Memory Groups section, Tag Cloud section, and Access Histogram section markup into data-page=memory section element (`examples/brain-visual/index.html`)
-- [ ] Apply 2-column CSS subgrid to memory page: left column (Pulse + Histogram), right column (Memory Groups + Tag Cloud); collapse to 1-column at 640px via container query (`examples/brain-visual/index.html`)
-- [ ] Increase .bar-chart min-height from current value to at least 200px; increase Tag Cloud max display from 20 to 40 tags in renderTagCloud() (`examples/brain-visual/index.html`)
-- [ ] Add oldest_entry_age_days and newest entry timestamp callout tiles below the Pulse bar, populated from snapshot.store.oldest_entry_age_days and snapshot.store.newest_entry_age_days (if available) (`examples/brain-visual/index.html`)
-- [ ] Add a total memory size estimate KPI tile (entry_count × average_entry_size_estimate) with a tooltip explaining it is approximate (`examples/brain-visual/index.html`)
-- [ ] Add help pill for Memory Groups section if not already present; add help article entry for memory-groups concept in brain-visual-help.js (`examples/brain-visual/brain-visual-help.js`)
+- [x] Move Pulse section, Memory Groups section, Tag Cloud section, and Access Histogram section markup into data-page=memory section element (`examples/brain-visual/index.html`)
+- [x] Apply 2-column CSS subgrid to memory page: left column (Pulse + Histogram), right column (Memory Groups + Tag Cloud); collapse to 1-column at 640px via container query (`examples/brain-visual/index.html`)
+- [x] Increase .bar-chart min-height from current value to at least 200px; increase Tag Cloud max display from 20 to 40 tags in renderTagCloud() (`examples/brain-visual/index.html`)
+- [x] Add oldest_entry_age_days and newest entry timestamp callout tiles below the Pulse bar, populated from snapshot.store.oldest_entry_age_days and snapshot.store.newest_entry_age_days (if available) (`examples/brain-visual/index.html`)
+- [x] Add a total memory size estimate KPI tile (entry_count × average_entry_size_estimate) with a tooltip explaining it is approximate (`examples/brain-visual/index.html`)
+- [x] Add help pill for Memory Groups section if not already present; add help article entry for memory-groups concept in brain-visual-help.js (`examples/brain-visual/brain-visual-help.js`)
 
 <!-- docsmcp:end:tasks -->
 

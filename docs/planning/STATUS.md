@@ -122,6 +122,20 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-056 | Declarative Group Membership & Expert Publishing | done | 2026-04-09 — v3.1.0 |
 | EPIC-057 | Unified Agent API — AgentBrain facade | done | 2026-04-09 — v3.1.0 |
 | EPIC-058 | Docker & Deployment Support — Postgres Hive infrastructure | done | 2026-04-09 — v3.1.0 |
+| EPIC-059 | PostgreSQL-only persistence plane — SQLite rip-out | done | 2026-04-11 — ADR-007 extended; stage 2 complete |
+| EPIC-060 | Engineering documentation — architecture + exceptions | in progress | 060.2 (breaking changes) + 060.8 (diagram) remaining |
+| EPIC-061 | Operator runbook | in progress | 061 final story (docs/operations/ alert thresholds) remaining |
+| EPIC-062 | Environment contract and README | in progress | confirm .env.example keys + README link audit |
+| EPIC-063 | (internal) | done | — |
+| EPIC-064 | NLT brand tokens + motion system + IA foundation | done | 2026-04-15 |
+| EPIC-065 | Live dashboard — /snapshot endpoint + panels | in progress | 065.3–065.7 remaining |
+| EPIC-066 | Postgres-only persistence — production readiness | in progress | 66.1–66.6 done; 66.7–66.13 remaining |
+| EPIC-067 | AsyncMemoryStore (aio.py) | done | 2026-04-14 |
+| EPIC-068 | Multi-page brain-visual dashboard (hash router, 6 pages, NLT brand) | in progress | 68.1–68.7 done; 68.8 quality sweep remaining |
+| EPIC-069 | Multi-tenant project_id on the wire + Postgres profile registry | done | 2026-04-14 — ADR-010 |
+| EPIC-070 | Streamable HTTP + FastAPI adapter + service layer | done | 2026-04-14 — v3.5.x; commit f182700 |
+| EPIC-071 | TappsBrainClient SDK hardening + async lifecycle + client guide | planned | depends on EPIC-070 |
+| EPIC-072 | Async-native Postgres core (psycopg3 AsyncConnectionPool) | planned | after EPIC-071 |
 
 ## Current focus
 

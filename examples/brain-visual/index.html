@@ -2108,6 +2108,130 @@
       line-height: 1.45;
     }
 
+    /* ── Privacy tier selector (STORY-068.7) ───────────────────────────────── */
+    .pt-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .pt-tile {
+      flex: 1;
+      min-width: 140px;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+      text-align: left;
+      cursor: pointer;
+      font-family: var(--font-body);
+      transition: border-color var(--dur-base) var(--ease-standard),
+                  box-shadow var(--dur-base) var(--ease-standard);
+    }
+
+    .pt-tile:hover,
+    .pt-tile:focus-visible {
+      border-color: var(--nlt-accent-primary);
+    }
+
+    .pt-tile:focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    .pt-tile[aria-checked="true"] {
+      background:
+        linear-gradient(var(--surface), var(--surface)) padding-box,
+        var(--nlt-gradient) border-box;
+      border: 2px solid transparent;
+    }
+
+    html[data-theme="dark"] .pt-tile[aria-checked="true"] {
+      background:
+        linear-gradient(var(--bg-alt), var(--bg-alt)) padding-box,
+        var(--nlt-gradient) border-box;
+    }
+
+    .pt-tile-name {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--nlt-accent-primary);
+      margin: 0 0 0.2rem;
+    }
+
+    .pt-tile-desc {
+      margin: 0;
+      font-size: 0.75rem;
+      color: var(--fg-dim);
+      line-height: 1.4;
+    }
+
+    /* ── Export format chooser (STORY-068.7) ───────────────────────────────── */
+    .fmt-chooser {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin: 1rem 0;
+    }
+
+    .fmt-btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--fg);
+      cursor: pointer;
+      transition: border-color var(--dur-base) var(--ease-standard),
+                  background var(--dur-base) var(--ease-standard);
+    }
+
+    .fmt-btn:hover,
+    .fmt-btn:focus-visible {
+      border-color: var(--nlt-accent-primary);
+    }
+
+    .fmt-btn:focus-visible {
+      outline: 2px solid var(--nlt-focus-ring);
+      outline-offset: var(--nlt-focus-ring-offset);
+    }
+
+    .fmt-btn[aria-checked="true"] {
+      background: rgba(217, 119, 6, 0.12);
+      border-color: var(--nlt-accent-primary);
+      color: var(--nlt-accent-dim);
+    }
+
+    /* ── Integrity KPI grid (STORY-068.7) ──────────────────────────────────── */
+    .integrity-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .integrity-kpi-grid .kpi[data-warn] .kpi-val {
+      color: var(--nlt-accent-primary);
+    }
+
+    .schema-version-warn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      background: rgba(217, 119, 6, 0.12);
+      border: 1px solid rgba(217, 119, 6, 0.3);
+      font-size: 0.8125rem;
+      color: var(--nlt-accent-dim);
+      margin-top: 0.75rem;
+    }
+
     /* ── Live polling status badge ─────────────────────────────────────────── */
     .live-badge {
       display: inline-flex;
@@ -3054,7 +3178,37 @@
           </button>
         </div>
         <p class="prose-small">Relations, tamper detection, rate-limit anomalies, and GC candidates — the safety layer for this store.</p>
-        <div id="integrity-body" class="prose-small">—</div>
+        <!-- KPI tiles: verified / tampered / no-hash counts (STORY-068.7) -->
+        <div class="integrity-kpi-grid" id="integrity-kpi-grid">
+          <div class="kpi" id="integrity-kpi-verified">
+            <p class="kpi-lbl">Verified</p>
+            <p class="kpi-val" id="integ-verified">—</p>
+            <p class="kpi-sub">hashes match</p>
+          </div>
+          <div class="kpi" id="integrity-kpi-tampered">
+            <p class="kpi-lbl">Tampered</p>
+            <p class="kpi-val" id="integ-tampered">—</p>
+            <p class="kpi-sub">hash mismatch</p>
+          </div>
+          <div class="kpi" id="integrity-kpi-nohash">
+            <p class="kpi-lbl">No hash</p>
+            <p class="kpi-val" id="integ-nohash">—</p>
+            <p class="kpi-sub">not yet verified</p>
+          </div>
+          <div class="kpi" id="integrity-kpi-relations">
+            <p class="kpi-lbl">Relations</p>
+            <p class="kpi-val" id="integ-relations">—</p>
+            <p class="kpi-sub">edges in graph</p>
+          </div>
+        </div>
+        <!-- Schema version display with migration warning (STORY-068.7) -->
+        <div id="integrity-schema-row" style="margin-bottom: 0.75rem">
+          <span class="sub" id="integrity-schema-ver">Schema version: —</span>
+          <span class="schema-version-warn" id="integrity-schema-warn" hidden>
+            ⚠ Snapshot schema is older than current — re-export for full fidelity.
+          </span>
+        </div>
+        <div id="integrity-body" class="prose-small" style="margin-top:0.5rem">—</div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="velocity">
@@ -3176,7 +3330,7 @@
 
       <section class="dash-section reveal-on-scroll" id="privacy">
         <div class="dash-h2-row">
-          <h2>Privacy</h2>
+          <h2>Privacy &amp; Export</h2>
           <span class="help-pill-group" aria-label="Privacy help topics">
             <button
               type="button"
@@ -3199,8 +3353,65 @@
         <p class="prose-small">
           Memory content is never exported. Aggregates only: counts, histograms, and schema versions.
         </p>
+
+        <!-- Visual privacy tier selector (STORY-068.7) -->
+        <p class="sub" style="margin-bottom: 0.4rem; font-weight: 600">Export privacy tier</p>
+        <div
+          class="pt-selector"
+          id="pt-selector"
+          role="radiogroup"
+          aria-label="Select export privacy tier"
+        >
+          <button type="button" class="pt-tile" role="radio" data-tier="strict" aria-checked="false">
+            <p class="pt-tile-name">Strict</p>
+            <p class="pt-tile-desc">Counts only — no tag names, no group names, no tampered key list.</p>
+          </button>
+          <button type="button" class="pt-tile" role="radio" data-tier="standard" aria-checked="true">
+            <p class="pt-tile-name">Standard</p>
+            <p class="pt-tile-desc">Aggregates + schema versions. No raw memory text or PII patterns.</p>
+          </button>
+          <button type="button" class="pt-tile" role="radio" data-tier="local" aria-checked="false">
+            <p class="pt-tile-name">Local</p>
+            <p class="pt-tile-desc">Adds tag names, memory group names, and tampered key list.</p>
+          </button>
+        </div>
         <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
-        <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite">—</span>
+        <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite" hidden>—</span>
+
+        <!-- Export format chooser (STORY-068.7) -->
+        <p class="sub" style="margin-bottom: 0.4rem; margin-top: 1rem; font-weight: 600">Export format</p>
+        <div
+          class="fmt-chooser"
+          id="fmt-chooser"
+          role="radiogroup"
+          aria-label="Select export format"
+        >
+          <button type="button" class="fmt-btn" role="radio" data-fmt="json" aria-checked="true">JSON snapshot</button>
+          <button type="button" class="fmt-btn" role="radio" data-fmt="markdown" aria-checked="false">Markdown summary</button>
+        </div>
+        <button type="button" class="btn-load" id="copy-snapshot-export" style="margin-top: 0.75rem">
+          Copy export to clipboard
+        </button>
+        <p class="sub" id="copy-snapshot-status" style="margin-top: 0.5rem"></p>
+
+        <!-- Three-bullet privacy footer (STORY-068.7) -->
+        <ul class="privacy-bullets" aria-label="What this export contains">
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">🚫</span>
+            <p class="privacy-bullet-title">Always excluded</p>
+            <p class="privacy-bullet-desc">Raw memory text, PII patterns, and any fields marked <code>private</code> in your profile.</p>
+          </li>
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">📊</span>
+            <p class="privacy-bullet-title">Aggregated only</p>
+            <p class="privacy-bullet-desc">Entry counts, tier distribution, retrieval mode, schema versions, and health scores.</p>
+          </li>
+          <li class="privacy-bullet">
+            <span class="privacy-bullet-icon" aria-hidden="true">🔍</span>
+            <p class="privacy-bullet-title">Local verbose adds</p>
+            <p class="privacy-bullet-desc">Tag names, memory group names, and the tampered key list. Use only for local debug sessions.</p>
+          </li>
+        </ul>
       </section>
       </div>
     </div>
@@ -3453,6 +3664,10 @@
     let lastFingerprint = "";
     let lastSnapshotData = null;
     let lastScorecardChecks = [];
+
+    /* STORY-068.7 — Privacy tier selector and export format state */
+    let selectedPrivacyTier = "standard";
+    let selectedExportFormat = "json";
 
     function escapeHtml(s) {
       return String(s)
@@ -4679,14 +4894,43 @@
         if (am) am.textContent = isV2 ? "No access_stats in file." : "Schema v1 export — re-export for histograms.";
       }
 
-      /* Integrity */
+      /* Integrity — KPI tiles (STORY-068.7) */
+      const tamperedCount = health.integrity_tampered != null ? Number(health.integrity_tampered) : null;
+      const verifiedEl = el("integ-verified");
+      const tamperedEl = el("integ-tampered");
+      const nohashEl = el("integ-nohash");
+      const relationsEl = el("integ-relations");
+      if (verifiedEl) verifiedEl.textContent = health.integrity_verified != null ? health.integrity_verified : "—";
+      if (tamperedEl) tamperedEl.textContent = health.integrity_tampered != null ? health.integrity_tampered : "—";
+      if (nohashEl) nohashEl.textContent = health.integrity_no_hash != null ? health.integrity_no_hash : "—";
+      if (relationsEl) relationsEl.textContent = health.relation_count != null ? health.relation_count : "—";
+      /* Amber warning when tampered > 0 */
+      const tamperedKpi = el("integrity-kpi-tampered");
+      if (tamperedKpi) {
+        if (tamperedCount != null && tamperedCount > 0) {
+          tamperedKpi.setAttribute("data-warn", "");
+        } else {
+          tamperedKpi.removeAttribute("data-warn");
+        }
+      }
+      /* Schema version warning (STORY-068.7) */
+      const schemaVerEl = el("integrity-schema-ver");
+      const schemaWarnEl = el("integrity-schema-warn");
+      const CURRENT_SCHEMA_VERSION = 2;
+      if (schemaVerEl) {
+        const dbSchemaVer = health.schema_version != null ? health.schema_version : "?";
+        schemaVerEl.textContent = "DB schema version: " + dbSchemaVer + " · Snapshot schema: " + snapVer;
+      }
+      if (schemaWarnEl) {
+        if (snapVer < CURRENT_SCHEMA_VERSION) {
+          schemaWarnEl.removeAttribute("hidden");
+        } else {
+          schemaWarnEl.setAttribute("hidden", "");
+        }
+      }
       const ib = el("integrity-body");
       if (ib) {
         const parts = [
-          "Relations: " + (health.relation_count != null ? health.relation_count : "—"),
-          "Integrity verified: " + (health.integrity_verified != null ? health.integrity_verified : "—"),
-          "Tampered: " + (health.integrity_tampered != null ? health.integrity_tampered : "—"),
-          "No hash: " + (health.integrity_no_hash != null ? health.integrity_no_hash : "—"),
           "Rate-limit anomalies (min/session): " +
             (health.rate_limit_minute_anomalies != null ? health.rate_limit_minute_anomalies : "—") +
             " / " +
@@ -4704,12 +4948,17 @@
       renderScorecard(data);
       renderDiagnosticsInsight(data);
 
-      /* Privacy tier badge */
+      /* Privacy tier badge + sync selector to snapshot tier (STORY-068.7) */
       const ptBadge = el("privacy-tier-badge");
+      const snapshotTier = isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard";
       if (ptBadge) {
-        const tier = isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard";
-        ptBadge.textContent = "Privacy tier: " + tier;
-        ptBadge.setAttribute("data-tier", tier);
+        ptBadge.textContent = "Privacy tier: " + snapshotTier;
+        ptBadge.setAttribute("data-tier", snapshotTier);
+      }
+      /* Reflect snapshot tier in the selector — user can override for re-export guidance */
+      if (selectedPrivacyTier === "standard") {
+        selectedPrivacyTier = snapshotTier;
+        applyPrivacyTierSelector(snapshotTier);
       }
 
       setStatus(
@@ -4766,6 +5015,112 @@
         } catch {
           const s = el("copy-issue-status");
           if (s) s.textContent = "Copy failed.";
+        }
+      });
+    }
+
+    /* STORY-068.7 — Privacy tier selector click handler */
+    function applyPrivacyTierSelector(tier) {
+      document.querySelectorAll("#pt-selector .pt-tile").forEach(function (btn) {
+        const isActive = btn.getAttribute("data-tier") === tier;
+        btn.setAttribute("aria-checked", isActive ? "true" : "false");
+        btn.setAttribute("tabindex", isActive ? "0" : "-1");
+      });
+    }
+
+    (function initPrivacyTierSelector() {
+      const selector = el("pt-selector");
+      if (!selector) return;
+      applyPrivacyTierSelector(selectedPrivacyTier);
+      selector.addEventListener("click", function (e) {
+        const btn = e.target.closest(".pt-tile");
+        if (!btn) return;
+        selectedPrivacyTier = btn.getAttribute("data-tier") || "standard";
+        applyPrivacyTierSelector(selectedPrivacyTier);
+        const ptText = el("privacy-text");
+        if (ptText) {
+          ptText.textContent =
+            selectedPrivacyTier === "local"
+              ? "Local tier: tag names, group names, and tampered key list are included."
+              : selectedPrivacyTier === "strict"
+              ? "Strict tier: counts only — no tag names, no group names, no tampered key list."
+              : "Standard tier: aggregates and schema versions — no raw memory text or PII.";
+        }
+      });
+      selector.addEventListener("keydown", function (e) {
+        const btns = Array.from(selector.querySelectorAll(".pt-tile"));
+        const idx = btns.findIndex(function (b) { return b === document.activeElement; });
+        if (idx === -1) return;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          e.preventDefault();
+          btns[(idx + 1) % btns.length].focus();
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          e.preventDefault();
+          btns[(idx - 1 + btns.length) % btns.length].focus();
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          btns[idx].click();
+        }
+      });
+    })();
+
+    /* STORY-068.7 — Export format chooser click handler */
+    function applyExportFormatChooser(fmt) {
+      document.querySelectorAll("#fmt-chooser .fmt-btn").forEach(function (btn) {
+        const isActive = btn.getAttribute("data-fmt") === fmt;
+        btn.setAttribute("aria-checked", isActive ? "true" : "false");
+        btn.setAttribute("tabindex", isActive ? "0" : "-1");
+      });
+    }
+
+    (function initExportFormatChooser() {
+      const chooser = el("fmt-chooser");
+      if (!chooser) return;
+      applyExportFormatChooser(selectedExportFormat);
+      chooser.addEventListener("click", function (e) {
+        const btn = e.target.closest(".fmt-btn");
+        if (!btn) return;
+        selectedExportFormat = btn.getAttribute("data-fmt") || "json";
+        applyExportFormatChooser(selectedExportFormat);
+      });
+      chooser.addEventListener("keydown", function (e) {
+        const btns = Array.from(chooser.querySelectorAll(".fmt-btn"));
+        const idx = btns.findIndex(function (b) { return b === document.activeElement; });
+        if (idx === -1) return;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          e.preventDefault();
+          btns[(idx + 1) % btns.length].focus();
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          e.preventDefault();
+          btns[(idx - 1 + btns.length) % btns.length].focus();
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          btns[idx].click();
+        }
+      });
+    })();
+
+    /* STORY-068.7 — Copy export to clipboard */
+    const copySnapshotBtn = el("copy-snapshot-export");
+    if (copySnapshotBtn) {
+      copySnapshotBtn.addEventListener("click", async () => {
+        if (!lastSnapshotData) {
+          const s = el("copy-snapshot-status");
+          if (s) s.textContent = "No snapshot loaded — load a file or connect to live endpoint first.";
+          return;
+        }
+        const s = el("copy-snapshot-status");
+        try {
+          let content;
+          if (selectedExportFormat === "markdown") {
+            content = buildPlainSummary(lastSnapshotData, lastScorecardChecks, "");
+          } else {
+            content = JSON.stringify(lastSnapshotData, null, 2);
+          }
+          await navigator.clipboard.writeText(content);
+          if (s) s.textContent = (selectedExportFormat === "markdown" ? "Markdown" : "JSON") + " export copied to clipboard.";
+        } catch {
+          if (s) s.textContent = "Copy failed — check clipboard permissions.";
         }
       });
     }

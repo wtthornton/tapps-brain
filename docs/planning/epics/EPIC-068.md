@@ -1,7 +1,7 @@
 # Epic 68: Multi-page brain-visual dashboard — hash-routed navigation
 
 <!-- docsmcp:start:metadata -->
-**Status:** In Progress
+**Status:** In Progress — stories 68.1–68.7 implemented; 68.8 quality sweep remaining
 **Priority:** P1 - High
 **Estimated LOE:** ~3 weeks (1 developer)
 **Dependencies:** EPIC-064 (brand tokens, motion system, IA foundation — **done**), EPIC-065 (live /snapshot endpoint — required only for live-polling ACs in 068.1/068.3; all other stories proceed with demo JSON via `python3 -m http.server 8090` in `examples/brain-visual/`)
@@ -58,121 +58,95 @@ The current dashboard buries actionable content: a developer debugging retrieval
 
 ### 68.1 -- Hash router and persistent side-nav shell
 
-**Points:** 5
+**Points:** 5 | **Status: done**
 
 50-line vanilla JS hash router + CSS side-nav with amber active indicator, nav-badge counts, responsive collapse, and View Transitions API gate
 
 **Tasks:**
-- [ ] Implement hash router and persistent side-nav shell
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Hash router and persistent side-nav shell is implemented, tests pass, and documentation is updated.
+- [x] Implement hash router and persistent side-nav shell (`examples/brain-visual/brain-visual-router.js`, `examples/brain-visual/index.html`)
+- [ ] Document nav collapse breakpoints and View Transitions fallback in README — deferred to 68.8
 
 ---
 
 ### 68.2 -- Overview page — decision strip and health summary
 
-**Points:** 3
+**Points:** 3 | **Status: done**
 
 Refactor current hero bento into Overview page; add aggregated health-summary strip with clickable badges linking to #health
 
 **Tasks:**
-- [ ] Implement overview page — decision strip and health summary
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Overview page — decision strip and health summary is implemented, tests pass, and documentation is updated.
+- [x] Implement overview page — decision strip and health summary
 
 ---
 
 ### 68.3 -- Health page — scorecard with filter bar and issue workflow
 
-**Points:** 5
+**Points:** 5 | **Status: done**
 
 Dedicated #health page: scorecard with All/Fail/Warn/Pass filter bar, severity sort toggle, history-diff marker (live polling), amplified notes + GitHub export workflow
 
 **Tasks:**
-- [ ] Implement health page — scorecard with filter bar and issue workflow
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Health page — scorecard with filter bar and issue workflow is implemented, tests pass, and documentation is updated.
+- [x] Implement health page — scorecard with filter bar and issue workflow
 
 ---
 
 ### 68.4 -- Memory page — pulse, groups, tags, histograms
 
-**Points:** 3
+**Points:** 3 | **Status: done**
 
 Consolidate Pulse + Memory Groups + Tag Cloud + Access Histograms onto #memory page with 2-column subgrid layout and expanded chart heights
 
 **Tasks:**
-- [ ] Implement memory page — pulse, groups, tags, histograms
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Memory page — pulse, groups, tags, histograms is implemented, tests pass, and documentation is updated.
+- [x] Implement memory page — pulse, groups, tags, histograms
 
 ---
 
 ### 68.5 -- Retrieval page — mode, latency histogram, vector stats
 
-**Points:** 3
+**Points:** 3 | **Status: done**
 
 Dedicated #retrieval page: config panel (BM25/hybrid/vector), query stats, P50/P95/P99 latency callouts, vector index details
 
 **Tasks:**
-- [ ] Implement retrieval page — mode, latency histogram, vector stats
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Retrieval page — mode, latency histogram, vector stats is implemented, tests pass, and documentation is updated.
+- [x] Implement retrieval page — mode, latency histogram, vector stats
 
 ---
 
 ### 68.6 -- Agents and Hive page — topology SVG and registry
 
-**Points:** 5
+**Points:** 5 | **Status: done**
 
 Dedicated #agents page: SVG topology diagram (agent→namespace→hive), agent detail slide-in drawer, online/offline prominence, namespace table
 
 **Tasks:**
-- [ ] Implement agents and hive page — topology svg and registry
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Agents and Hive page — topology SVG and registry is implemented, tests pass, and documentation is updated.
+- [x] Implement agents and hive page — topology SVG and registry
 
 ---
 
 ### 68.7 -- Integrity and Export page — integrity checks, privacy tiers, export
 
-**Points:** 3
+**Points:** 3 | **Status: done**
 
-Dedicated #integrity page: integrity check results with timestamps, visual privacy-tier selector, export format chooser, snapshot schema version + migration notes
+Dedicated #integrity page: integrity KPI tiles (verified/tampered/no-hash), schema version warning, visual privacy-tier selector (Strict/Standard/Local), export format chooser (JSON/Markdown), three-bullet privacy footer
 
 **Tasks:**
-- [ ] Implement integrity and export page — integrity checks, privacy tiers, export
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Integrity and Export page — integrity checks, privacy tiers, export is implemented, tests pass, and documentation is updated.
+- [x] Implement integrity and export page — integrity checks, privacy tiers, export
 
 ---
 
 ### 68.8 -- Quality sweep
 
-**Points:** 2
+**Points:** 2 | **Status: pending**
 
-docs-mcp validate_epic + check_cross_refs + check_style; tapps-mcp tapps_checklist; Lighthouse Accessibility ≥ 90; reduced-motion manual audit; keyboard nav audit
+docs-mcp validate_epic + check_cross_refs + check_style; tapps-mcp tapps_checklist; Lighthouse Accessibility ≥ 90; reduced-motion manual audit; keyboard nav audit; README update (nav collapse + View Transitions fallback)
 
 **Tasks:**
-- [ ] Implement quality sweep
-- [ ] Write unit tests
-- [ ] Update documentation
-
-**Definition of Done:** Quality sweep is implemented, tests pass, and documentation is updated.
+- [ ] Run docs-mcp validate_epic and check_cross_refs on EPIC-068.md
+- [ ] Run Lighthouse Accessibility audit; record score; fix Critical issues
+- [ ] Manual keyboard nav audit: Tab through all six pages
+- [ ] Manual prefers-reduced-motion audit: all transitions instant when motion disabled
+- [ ] Scan index.html for hardcoded amber hex outside :root
+- [ ] Update examples/brain-visual/README.md with nav breakdown, reduced-motion test steps, View Transitions browser support note
 
 ---
 

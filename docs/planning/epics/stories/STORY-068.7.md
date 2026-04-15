@@ -36,13 +36,13 @@ Move Integrity checks and Privacy/Export info to data-page=integrity. Add a visu
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Move Integrity section and Privacy/Export section markup to data-page=integrity section element (`examples/brain-visual/index.html`)
-- [ ] Add visual privacy-tier selector: three .tile button elements (Strict / Standard / Local) with descriptions; active tier gets amber gradient border; wire click to update selectedPrivacyTier variable and re-render export button label (`examples/brain-visual/index.html`)
-- [ ] Add export format chooser: two toggle buttons (JSON snapshot / Markdown summary); store selected format in module-level variable (`examples/brain-visual/index.html`)
-- [ ] Add integrity results display: verified_count, tampered_count, no_hash_count tiles with timestamps; tampered_count tile uses amber warn styling when > 0 (`examples/brain-visual/index.html`)
-- [ ] Add snapshot schema version display with migration note: if snapshot.schema_version < current expected version, show a warning pill explaining the snapshot is from an older schema (`examples/brain-visual/index.html`)
-- [ ] Add amplified three-bullet privacy footer section per implementation plan: bullet 1 (what is always excluded: raw memory text, PII patterns), bullet 2 (what is aggregated: entry counts, tier distribution, retrieval mode), bullet 3 (what local verbose adds: tag names, memory group names, tampered key list) (`examples/brain-visual/index.html`)
-- [ ] Add help pills for privacy tiers and integrity checks; add/update help articles in brain-visual-help.js for any new concepts (`examples/brain-visual/brain-visual-help.js`)
+- [x] Move Integrity section and Privacy/Export section markup to data-page=integrity section element (`examples/brain-visual/index.html`)
+- [x] Add visual privacy-tier selector: three .tile button elements (Strict / Standard / Local) with descriptions; active tier gets amber gradient border; wire click to update selectedPrivacyTier variable and re-render export button label (`examples/brain-visual/index.html`)
+- [x] Add export format chooser: two toggle buttons (JSON snapshot / Markdown summary); store selected format in module-level variable (`examples/brain-visual/index.html`)
+- [x] Add integrity results display: verified_count, tampered_count, no_hash_count tiles with timestamps; tampered_count tile uses amber warn styling when > 0 (`examples/brain-visual/index.html`)
+- [x] Add snapshot schema version display with migration note: if snapshot.schema_version < current expected version, show a warning pill explaining the snapshot is from an older schema (`examples/brain-visual/index.html`)
+- [x] Add amplified three-bullet privacy footer section per implementation plan: bullet 1 (what is always excluded: raw memory text, PII patterns), bullet 2 (what is aggregated: entry counts, tier distribution, retrieval mode), bullet 3 (what local verbose adds: tag names, memory group names, tampered key list) (`examples/brain-visual/index.html`)
+- [x] Add help pills for privacy tiers and integrity checks; add/update help articles in brain-visual-help.js for any new concepts (`examples/brain-visual/brain-visual-help.js`)
 
 <!-- docsmcp:end:tasks -->
 

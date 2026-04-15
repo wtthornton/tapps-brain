@@ -36,15 +36,15 @@ Move the Hive Hub panel and Agents table to data-page=agents. Add a client-side 
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Move Hive Hub panel and Agents table markup to data-page=agents section element (`examples/brain-visual/index.html`)
-- [ ] Add renderAgentTopology(snapshot) function: generates SVG element with agent circles, namespace rounded-rects, Hive hub octagon, and path edges from snapshot.hive_health data; cap at 50 nodes (`examples/brain-visual/index.html`)
-- [ ] Add node truncation indicator: if agent count > 50, add '+ N more' text node to SVG and a note below the diagram (`examples/brain-visual/index.html`)
-- [ ] Add SVG node click handler: clicking an agent circle opens the agent-detail drawer with agent data; clicking outside closes it (same pattern as existing help drawer) (`examples/brain-visual/index.html`)
-- [ ] Add agent-detail drawer: fixed right panel (same .help-drawer CSS class or new .agent-drawer), shows agent_id, namespace, scope, registered_at, last_write_at fields; closeable via Escape key or X button (`examples/brain-visual/index.html`)
-- [ ] Add row click handler to Agents table that also opens the agent-detail drawer with that agent's data (`examples/brain-visual/index.html`)
-- [ ] Move Hive online/offline badge to the agents page section header (h2 level), styled prominently with amber gradient for Online and --fg-dim for Offline/Unknown (`examples/brain-visual/index.html`)
-- [ ] Add SVG accessibility: role=img aria-label on the SVG element; aria-label on each node group; title element inside SVG for screen reader fallback (`examples/brain-visual/index.html`)
-- [ ] Add help article for agent topology diagram in brain-visual-help.js explaining node types and edge meanings (`examples/brain-visual/brain-visual-help.js`)
+- [x] Move Hive Hub panel and Agents table markup to data-page=agents section element (`examples/brain-visual/index.html`)
+- [x] Add renderAgentTopology(snapshot) function: generates SVG element with agent circles, namespace rounded-rects, Hive hub octagon, and path edges from snapshot.hive_health data; cap at 50 nodes (`examples/brain-visual/index.html`)
+- [x] Add node truncation indicator: if agent count > 50, add '+ N more' text node to SVG and a note below the diagram (`examples/brain-visual/index.html`)
+- [x] Add SVG node click handler: clicking an agent circle opens the agent-detail drawer with agent data; clicking outside closes it (same pattern as existing help drawer) (`examples/brain-visual/index.html`)
+- [x] Add agent-detail drawer: fixed right panel (same .help-drawer CSS class or new .agent-drawer), shows agent_id, namespace, scope, registered_at, last_write_at fields; closeable via Escape key or X button (`examples/brain-visual/index.html`)
+- [x] Add row click handler to Agents table that also opens the agent-detail drawer with that agent's data (`examples/brain-visual/index.html`)
+- [x] Move Hive online/offline badge to the agents page section header (h2 level), styled prominently with amber gradient for Online and --fg-dim for Offline/Unknown (`examples/brain-visual/index.html`)
+- [x] Add SVG accessibility: role=img aria-label on the SVG element; aria-label on each node group; title element inside SVG for screen reader fallback (`examples/brain-visual/index.html`)
+- [x] Add help article for agent topology diagram in brain-visual-help.js explaining node types and edge meanings (`examples/brain-visual/brain-visual-help.js`)
 
 <!-- docsmcp:end:tasks -->
 

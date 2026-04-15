@@ -36,14 +36,14 @@ Move the full scorecard section to data-page=health. Add a filter bar above the 
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Move scorecard section markup into data-page=health section element; set hidden attribute (`examples/brain-visual/index.html`)
-- [ ] Add filter bar: four <button role=radio> inside <div role=radiogroup aria-label=Filter> for All / Fail / Warn / Pass; store active filter in module-level variable; wire click to refilterScorecard() (`examples/brain-visual/index.html`)
-- [ ] Add refilterScorecard(filter) function: toggles hidden on scorecard rows based on their data-status attribute; updates row count label (`examples/brain-visual/index.html`)
-- [ ] Add sort toggle button (Severity / Category): sorts .scorecard-row elements by data-severity or data-category attribute in-place using DOM insertBefore (`examples/brain-visual/index.html`)
-- [ ] Add previousScorecard cache variable; in the render path, compare current scorecard items against previousScorecard and add/remove .diff-badge (NEW/CHANGED) on changed rows; only active when live polling is on (`examples/brain-visual/index.html`)
-- [ ] Add .diff-badge CSS class: small amber pill, top-right corner of scorecard row, fade-in via prefers-reduced-motion gate (`examples/brain-visual/index.html`)
-- [ ] Increase textarea min-height from current value to 8rem; add a visible character count; move export buttons (GitHub Markdown / plain text) into a sticky bottom bar within the health page section (`examples/brain-visual/index.html`)
-- [ ] Update help articles in brain-visual-help.js if any new scorecard concepts are introduced (filter bar, diff markers) (`examples/brain-visual/brain-visual-help.js`)
+- [x] Move scorecard section markup into data-page=health section element; set hidden attribute (`examples/brain-visual/index.html`)
+- [x] Add filter bar: four <button role=radio> inside <div role=radiogroup aria-label=Filter> for All / Fail / Warn / Pass; store active filter in module-level variable; wire click to refilterScorecard() (`examples/brain-visual/index.html`)
+- [x] Add refilterScorecard(filter) function: toggles hidden on scorecard rows based on their data-status attribute; updates row count label (`examples/brain-visual/index.html`)
+- [x] Add sort toggle button (Severity / Category): sorts .scorecard-row elements by data-severity or data-category attribute in-place using DOM insertBefore (`examples/brain-visual/index.html`)
+- [x] Add previousScorecard cache variable; in the render path, compare current scorecard items against previousScorecard and add/remove .diff-badge (NEW/CHANGED) on changed rows; only active when live polling is on (`examples/brain-visual/index.html`)
+- [x] Add .diff-badge CSS class: small amber pill, top-right corner of scorecard row, fade-in via prefers-reduced-motion gate (`examples/brain-visual/index.html`)
+- [x] Increase textarea min-height from current value to 8rem; add a visible character count; move export buttons (GitHub Markdown / plain text) into a sticky bottom bar within the health page section (`examples/brain-visual/index.html`)
+- [x] Update help articles in brain-visual-help.js if any new scorecard concepts are introduced (filter bar, diff markers) (`examples/brain-visual/brain-visual-help.js`)
 
 <!-- docsmcp:end:tasks -->
 

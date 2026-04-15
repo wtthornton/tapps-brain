@@ -36,13 +36,13 @@ Move retrieval and vector stats panels to data-page=retrieval. Add explicit P50/
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Move existing retrieval and vector stats section markup into data-page=retrieval section element (`examples/brain-visual/index.html`)
-- [ ] Add P50/P95/P99 latency callout KPI tiles above the histogram, populated from snapshot.retrieval.latency_p50_ms, latency_p95_ms, latency_p99_ms (check field names against visual_snapshot.py) (`examples/brain-visual/index.html`)
-- [ ] Add config panel: mode indicator using snapshot.retrieval.retrieval_effective_mode field; display BM25 / Hybrid / Vector with sqlite-vec labels; add a ? help pill (`examples/brain-visual/index.html`)
-- [ ] Add vector stats tile: sqlite_vec_rows, sqlite_vec_enabled, embedding model name if available from snapshot (`examples/brain-visual/index.html`)
-- [ ] Add query stats tile: total_query_count and cache_hit_ratio if available in snapshot retrieval slice (`examples/brain-visual/index.html`)
-- [ ] Increase latency histogram .bar-chart min-height to 300px (`examples/brain-visual/index.html`)
-- [ ] Audit all retrieval microcopy for RAG hype — replace any generic 'RAG enabled' with specific mode strings per implementation plan microcopy principles; update help articles in brain-visual-help.js (`examples/brain-visual/brain-visual-help.js`)
+- [x] Move existing retrieval and vector stats section markup into data-page=retrieval section element (`examples/brain-visual/index.html`)
+- [x] Add P50/P95/P99 latency callout KPI tiles above the histogram, populated from snapshot.retrieval.latency_p50_ms, latency_p95_ms, latency_p99_ms (check field names against visual_snapshot.py) (`examples/brain-visual/index.html`)
+- [x] Add config panel: mode indicator using snapshot.retrieval.retrieval_effective_mode field; display BM25 / Hybrid / Vector with sqlite-vec labels; add a ? help pill (`examples/brain-visual/index.html`)
+- [x] Add vector stats tile: sqlite_vec_rows, sqlite_vec_enabled, embedding model name if available from snapshot (`examples/brain-visual/index.html`)
+- [x] Add query stats tile: total_query_count and cache_hit_ratio if available in snapshot retrieval slice (`examples/brain-visual/index.html`)
+- [x] Increase latency histogram .bar-chart min-height to 300px (`examples/brain-visual/index.html`)
+- [x] Audit all retrieval microcopy for RAG hype — replace any generic 'RAG enabled' with specific mode strings per implementation plan microcopy principles; update help articles in brain-visual-help.js (`examples/brain-visual/brain-visual-help.js`)
 
 <!-- docsmcp:end:tasks -->
 
