@@ -12,13 +12,25 @@ and are readable via :func:`get_retrieval_meter_snapshot`.  These are plain
 Python ints/floats — not OTel exportable — so they remain available with
 OTel API-only installs (no SDK required).  All values reset on restart.
 
+STORY-070.12 adds per-request label enrichment:
+
+- :func:`start_span` auto-injects ``tapps.project_id``, ``tapps.agent_id``,
+  ``tapps.scope``, and ``tapps.tool`` from MCP request contextvars onto every
+  memory-op span — no caller changes required.
+- :func:`start_mcp_tool_span` additionally records success/error counts in
+  the :func:`get_tool_call_counts_snapshot` registry for Prometheus export.
+- :data:`ATTR_ROWS_RETURNED` / :data:`ATTR_LATENCY_MS` constants let callers
+  set post-operation attributes without hardcoding strings.
+
 Key public API: :func:`get_tracer`, :func:`start_mcp_tool_span`,
 :func:`extract_trace_context_from_mcp_params`,
-:func:`record_retrieval_document_events`, :func:`record_diagnostics_event`.
+:func:`record_retrieval_document_events`, :func:`record_diagnostics_event`,
+:func:`get_tool_call_counts_snapshot`.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 from contextlib import contextmanager
@@ -81,10 +93,153 @@ GEN_AI_OPERATION_EXECUTE_TOOL: str = "execute_tool"
 GEN_AI_SYSTEM: str = "tapps-brain"
 
 # ---------------------------------------------------------------------------
+# STORY-070.12: per-request span attribute names (bounded cardinality)
+# ---------------------------------------------------------------------------
+
+#: Span attribute: project identifier (tenant).  Low-cardinality — bounded by
+#: registered projects.  Never set to raw user input.
+ATTR_PROJECT_ID: str = "tapps.project_id"
+
+#: Span attribute: agent identifier within the project.  Cardinality is capped
+#: to 100 distinct values per project in the Prometheus export layer; overflow
+#: is mapped to ``"other"``.
+ATTR_AGENT_ID: str = "tapps.agent_id"
+
+#: Span attribute: memory scope (``"project"`` | ``"branch"`` | ``"session"``).
+ATTR_SCOPE: str = "tapps.scope"
+
+#: Span attribute: memory operation name derived from span name
+#: (``"remember"`` | ``"recall"`` | ``"search"`` | ``"hive_propagate"`` | …).
+ATTR_TOOL: str = "tapps.tool"
+
+#: Span attribute: number of memory entries returned by the operation.
+ATTR_ROWS_RETURNED: str = "tapps.rows_returned"
+
+#: Span attribute: wall-clock latency of the memory operation in milliseconds.
+ATTR_LATENCY_MS: str = "tapps.latency_ms"
+
+# ---------------------------------------------------------------------------
 # Instrumentation identity
 # ---------------------------------------------------------------------------
 
 _INSTRUMENTATION_NAME: str = "tapps_brain"
+
+# ---------------------------------------------------------------------------
+# STORY-070.12: span-name → tapps.tool mapping
+# ---------------------------------------------------------------------------
+
+#: Maps canonical span names to safe ``tapps.tool`` label values.
+_SPAN_NAME_TO_TOOL: dict[str, str] = {
+    # Values defined at module scope so they reference the constants correctly
+    # even though the dict is built before the constants are referenced below.
+    "tapps_brain.remember": "remember",
+    "tapps_brain.recall": "recall",
+    "tapps_brain.search": "search",
+    "tapps_brain.hive.propagate": "hive_propagate",
+    "tapps_brain.hive.search": "hive_search",
+    "tapps_brain.delete": "delete",
+    "tapps_brain.reinforce": "reinforce",
+    "tapps_brain.update": "update",
+}
+
+# ---------------------------------------------------------------------------
+# STORY-070.12: per-tool call counter (for Prometheus export)
+# ---------------------------------------------------------------------------
+
+_TOOL_CALL_COUNTS: dict[tuple[str, str, str, str], int] = {}
+_TOOL_CALL_LOCK: threading.Lock = threading.Lock()
+_MAX_TOOL_AGENT_IDS: int = 100  # mirror of http_adapter._MAX_AGENT_ID_CARDINALITY
+
+
+def _record_tool_call_metric(
+    project_id: str,
+    agent_id: str,
+    tool: str,
+    status: str,
+) -> None:
+    """Increment the per-(project_id, agent_id, tool, status) tool call counter.
+
+    Agent-id cardinality is capped at :data:`_MAX_TOOL_AGENT_IDS` distinct values
+    per project; excess values are collapsed to ``"other"``.  This keeps Prometheus
+    cardinality bounded without losing aggregate signal.
+
+    Args:
+        project_id: Tenant project identifier.
+        agent_id:   Agent identifier (bounded cardinality enforced internally).
+        tool:       MCP tool name (``"brain_remember"``, ``"brain_recall"``, …).
+        status:     ``"success"`` or ``"error"``.
+    """
+    with _TOOL_CALL_LOCK:
+        distinct_agents = {k[1] for k in _TOOL_CALL_COUNTS if k[0] == project_id}
+        if agent_id not in distinct_agents and len(distinct_agents) >= _MAX_TOOL_AGENT_IDS:
+            agent_id = "other"
+        key = (project_id, agent_id, tool, status)
+        _TOOL_CALL_COUNTS[key] = _TOOL_CALL_COUNTS.get(key, 0) + 1
+
+
+def get_tool_call_counts_snapshot() -> dict[tuple[str, str, str, str], int]:
+    """Return a thread-safe snapshot of per-(project_id, agent_id, tool, status) counts.
+
+    Keys are ``(project_id, agent_id, tool, status)`` 4-tuples.  Values are
+    cumulative integer counts since process start.  Intended for Prometheus
+    export from :mod:`tapps_brain.http_adapter`.
+
+    Returns:
+        Shallow copy of the internal counter dict; never raises.
+    """
+    with _TOOL_CALL_LOCK:
+        return dict(_TOOL_CALL_COUNTS)
+
+
+# ---------------------------------------------------------------------------
+# STORY-070.12: context-attrs helper (reads mcp_server contextvars)
+# ---------------------------------------------------------------------------
+
+
+def _get_context_attrs(span_name: str | None = None) -> dict[str, str | int | float | bool]:
+    """Build a safe attribute dict from the active MCP request contextvars.
+
+    Reads ``REQUEST_PROJECT_ID``, ``REQUEST_AGENT_ID``, and ``REQUEST_SCOPE``
+    from :mod:`tapps_brain.mcp_server` (imported lazily to avoid circular deps).
+    When *span_name* is provided, also derives ``tapps.tool`` via
+    :data:`_SPAN_NAME_TO_TOOL`.
+
+    Returns an empty dict when no contextvars are set (e.g., unit tests that
+    do not configure an MCP server context).  Never raises.
+
+    Args:
+        span_name: Canonical span name (e.g. ``"tapps_brain.recall"``).  When
+            supplied, ``tapps.tool`` is added if the name is in the mapping.
+
+    Returns:
+        Dict of safe span attribute key/value pairs (never contains PII).
+    """
+    attrs: dict[str, str | int | float | bool] = {}
+    try:
+        from tapps_brain.mcp_server import (  # lazy — avoid circular import
+            REQUEST_AGENT_ID,
+            REQUEST_PROJECT_ID,
+            REQUEST_SCOPE,
+        )
+
+        pid = REQUEST_PROJECT_ID.get()
+        aid = REQUEST_AGENT_ID.get()
+        scope = REQUEST_SCOPE.get()
+        if pid:
+            attrs[ATTR_PROJECT_ID] = str(pid)
+        if aid:
+            attrs[ATTR_AGENT_ID] = str(aid)
+        if scope:
+            attrs[ATTR_SCOPE] = str(scope)
+    except Exception:  # mcp_server unavailable in some test contexts
+        pass
+
+    if span_name is not None:
+        tool = _SPAN_NAME_TO_TOOL.get(span_name)
+        if tool:
+            attrs[ATTR_TOOL] = tool
+
+    return attrs
 
 
 def _service_name() -> str:
@@ -162,6 +317,15 @@ def start_span(
     if context is not None:
         _span_kwargs["context"] = context
 
+    # STORY-070.12: merge context attrs (project_id, agent_id, scope, tool)
+    # from mcp_server contextvars.  Caller-supplied attrs take precedence.
+    ctx_attrs = _get_context_attrs(span_name=name)
+    if ctx_attrs:
+        merged: dict[str, str | int | float | bool] = {**ctx_attrs}
+        if attributes:
+            merged.update(attributes)
+        attributes = merged
+
     with tracer.start_as_current_span(name, **_span_kwargs) as span:
         if attributes:
             for k, v in attributes.items():
@@ -183,6 +347,8 @@ def start_mcp_tool_span(
     *,
     extra_attributes: dict[str, str | int | float | bool] | None = None,
     record_exception: bool = True,
+    project_id: str | None = None,
+    agent_id: str | None = None,
 ) -> Iterator[Any]:
     """Context manager for GenAI semconv v1.35.0 MCP tool call spans.
 
@@ -198,6 +364,15 @@ def start_mcp_tool_span(
         mcp.method.name       = <method>          (default "tools/call")
         gen_ai.operation.name = "execute_tool"
 
+    STORY-070.12 attributes (when available, bounded cardinality):
+
+    .. code-block:: text
+
+        tapps.project_id = <project_id>   (from contextvar or explicit param)
+        tapps.agent_id   = <agent_id>     (from contextvar or explicit param;
+                                           capped to first 100 distinct values
+                                           at the Prometheus layer)
+
     .. warning::
         **Never** pass raw memory content, entry keys, query strings, or user
         PII as attribute values — including in *extra_attributes*.  See the
@@ -210,6 +385,10 @@ def start_mcp_tool_span(
             semconv set above).  Must not contain PII or raw content.
         record_exception: When ``True``, caught exceptions are recorded on the
             span before being re-raised.
+        project_id: Optional project_id override.  When ``None``, resolved from
+            the ``tapps_brain_request_project_id`` contextvar (STORY-070.12).
+        agent_id: Optional agent_id override.  When ``None``, resolved from the
+            ``tapps_brain_request_agent_id`` contextvar (STORY-070.12).
 
     Yields:
         The OTel :class:`opentelemetry.trace.Span` instance, or ``None`` when
@@ -221,16 +400,51 @@ def start_mcp_tool_span(
         "mcp.method.name": method,
         "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
     }
+    # STORY-070.12: inject project_id / agent_id from contextvars when not
+    # supplied explicitly so both HTTP and MCP paths emit consistent labels.
+    _pid = project_id
+    _aid = agent_id
+    if _pid is None or _aid is None:
+        try:
+            from tapps_brain.mcp_server import REQUEST_AGENT_ID, REQUEST_PROJECT_ID
+
+            if _pid is None:
+                _pid = REQUEST_PROJECT_ID.get()
+            if _aid is None:
+                _aid = REQUEST_AGENT_ID.get()
+        except Exception:  # noqa: BLE001
+            pass
+    if _pid:
+        attributes[ATTR_PROJECT_ID] = str(_pid)
+    if _aid:
+        attributes[ATTR_AGENT_ID] = str(_aid)
     if extra_attributes:
         attributes.update(extra_attributes)
     span_name = f"{method} {tool_name}"
-    with start_span(
-        span_name,
-        attributes=attributes,
-        kind=SPAN_KIND_SERVER,
-        record_exception=record_exception,
-    ) as span:
-        yield span
+    # STORY-070.12: record Prometheus tool call metric with success/error status.
+    _pid_label = str(_pid) if _pid else ""
+    _aid_label = str(_aid) if _aid else ""
+    _success = True
+    try:
+        with start_span(
+            span_name,
+            attributes=attributes,
+            kind=SPAN_KIND_SERVER,
+            record_exception=record_exception,
+        ) as span:
+            try:
+                yield span
+            except Exception:
+                _success = False
+                raise
+    finally:
+        with contextlib.suppress(Exception):
+            _record_tool_call_metric(
+                _pid_label,
+                _aid_label,
+                tool_name,
+                "success" if _success else "error",
+            )
 
 
 def extract_trace_context(carrier: dict[str, str]) -> Any:  # noqa: ANN401

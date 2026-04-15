@@ -47,6 +47,8 @@ from tapps_brain.metrics import (
     compact_save_phase_summary,
 )
 from tapps_brain.otel_tracer import (
+    ATTR_LATENCY_MS,
+    ATTR_ROWS_RETURNED,
     GEN_AI_OPERATION_EXECUTE_TOOL,
     SPAN_DELETE,
     SPAN_HIVE_PROPAGATE,
@@ -1510,9 +1512,13 @@ class MemoryStore:
                         )
 
             self._metrics.increment("store.search.results", len(results))
+            _search_elapsed_ms = (time.monotonic() - _search_t0) * 1000.0
             if _search_span is not None:
                 _search_span.set_attribute("search.result_count", len(results))
-            rm_add_recall_latency_ms((time.monotonic() - _search_t0) * 1000.0)
+                # STORY-070.12: standardised per-operation attributes
+                _search_span.set_attribute(ATTR_ROWS_RETURNED, len(results))
+                _search_span.set_attribute(ATTR_LATENCY_MS, _search_elapsed_ms)
+            rm_add_recall_latency_ms(_search_elapsed_ms)
             return results
 
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
@@ -2146,6 +2152,7 @@ class MemoryStore:
                     hive_agent_id=self._hive_agent_id,
                 )
 
+        _recall_t0 = time.monotonic()
         with (
             start_span(SPAN_RECALL) as _recall_span,
             MetricsTimer(self._metrics, "store.recall_ms"),
@@ -2158,6 +2165,12 @@ class MemoryStore:
                 # STORY-032.3: add one structured event per retrieved document
                 record_retrieval_document_events(
                     _recall_span, getattr(result, "memories", [])
+                )
+                # STORY-070.12: standardised per-operation attributes
+                _recall_memories = getattr(result, "memories", [])
+                _recall_span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))
+                _recall_span.set_attribute(
+                    ATTR_LATENCY_MS, (time.monotonic() - _recall_t0) * 1000.0
                 )
 
         # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking

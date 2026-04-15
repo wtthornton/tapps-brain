@@ -75,6 +75,24 @@ _SNAPSHOT_TTL_SECONDS: float = 15.0
 _PROCESS_START_TIME: float = time.time()
 _BEARER_PREFIX = "bearer "
 
+# STORY-070.12: bounded per-(project_id, agent_id) request counters for
+# Prometheus export.  agent_id cardinality is capped at 100 distinct values
+# per project; overflow is bucketed as "other".
+_MAX_AGENT_ID_CARDINALITY = 100
+_LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}
+_LABELED_REQUEST_COUNTS_LOCK = threading.Lock()
+
+
+def _record_labeled_request(project_id: str, agent_id: str) -> None:
+    """Increment the per-(project_id, agent_id) request counter (STORY-070.12)."""
+    # Clamp agent_id to bounded cardinality per project.
+    with _LABELED_REQUEST_COUNTS_LOCK:
+        distinct_agents = {k[1] for k in _LABELED_REQUEST_COUNTS if k[0] == project_id}
+        if agent_id not in distinct_agents and len(distinct_agents) >= _MAX_AGENT_ID_CARDINALITY:
+            agent_id = "other"
+        key = (project_id, agent_id)
+        _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
+
 # ---------------------------------------------------------------------------
 # OpenAPI spec — preserved verbatim from the legacy handler so /openapi.json
 # continues to return the same document that existing clients parse.
@@ -208,6 +226,48 @@ def _collect_metrics(dsn: str | None) -> str:
     if migration_version is not None:
         gauge("tapps_brain_db_migration_version", float(migration_version),
               "Highest applied Hive schema migration version.")
+
+    # STORY-070.12: per-(project_id, agent_id) request counters.
+    with _LABELED_REQUEST_COUNTS_LOCK:
+        snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
+    if snapshot_counts:
+        lines.append(
+            "# HELP tapps_brain_mcp_requests_total "
+            "Total MCP requests, labelled by project_id and agent_id."
+        )
+        lines.append("# TYPE tapps_brain_mcp_requests_total counter")
+        for (pid, aid), count in sorted(snapshot_counts.items()):
+            safe_pid = pid.replace('"', '\\"')
+            safe_aid = aid.replace('"', '\\"')
+            lines.append(
+                f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
+                f'agent_id="{safe_aid}"}} {count}'
+            )
+
+    # STORY-070.12: per-(project_id, agent_id, tool, status) tool call counters.
+    try:
+        from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
+
+        tool_counts = get_tool_call_counts_snapshot()
+        if tool_counts:
+            lines.append(
+                "# HELP tapps_brain_tool_calls_total "
+                "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
+            )
+            lines.append("# TYPE tapps_brain_tool_calls_total counter")
+            for (pid, aid, tool, status), count in sorted(tool_counts.items()):
+                safe_pid = pid.replace('"', '\\"')
+                safe_aid = aid.replace('"', '\\"')
+                safe_tool = tool.replace('"', '\\"')
+                safe_status = status.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
+                    f'agent_id="{safe_aid}",tool="{safe_tool}",'
+                    f'status="{safe_status}"}} {count}'
+                )
+    except Exception:  # pragma: no cover — otel_tracer import error must not crash /metrics
+        pass
+
     lines.append("")
     return "\n".join(lines)
 
@@ -534,6 +594,8 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         request.state.agent_id = agent_id
         request.state.scope = scope
         request.state.group = group
+        # STORY-070.12: track per-(project_id, agent_id) request counts.
+        _record_labeled_request(project_id, agent_id)
         try:
             return await call_next(request)
         finally:

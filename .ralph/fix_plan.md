@@ -17,12 +17,6 @@
 
 
 
-- [ ] **STORY-070.12** — OTel + Prometheus label enrichment (S, 3 pts)
-  - All memory-op spans carry: `tapps.project_id`, `tapps.agent_id`, `tapps.scope`, `tapps.tool`, `tapps.rows_returned`, `tapps.latency_ms`
-  - Prometheus counters and histograms gain `project_id`, `agent_id`, `tool`, `status` labels
-  - Label cardinality capped: `agent_id` top-100 per scrape, overflow → `"other"`
-  - Add Grafana dashboard JSON at `examples/observability/grafana-per-tenant.json`
-  - Reference: `docs/stories/STORY-070.12-otel-prom-labels.md`
 
 - [ ] **STORY-070.13** — AgentForge BrainBridge port — reference implementation (L, 8 pts)
   - Port AgentForge's `BrainBridge` (~925 LOC) to use `TappsBrainClient` in `examples/agentforge_bridge/`

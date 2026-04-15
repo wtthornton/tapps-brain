@@ -38,6 +38,10 @@ unbounded cardinality which can degrade your metrics backend.
     gen_ai.token.type    — "input" | "output" | "total"
     mcp.method.name      — "tools/call" | "resources/read" | etc.
     gen_ai.tool.name     — registered MCP tool name (bounded, not user content)
+    project_id           — tenant project ID (bounded by registered projects)
+    agent_id             — agent ID capped at 100 per project (overflow → "other")
+    tool                 — MCP tool name enum (~30 values; NOT raw user input)
+    status               — "success" | "error"
 
 **Forbidden** (unbounded / PII risk):
 
@@ -47,7 +51,6 @@ unbounded cardinality which can degrade your metrics backend.
     memory.value     — raw memory content
     query.text       — raw search / recall query
     session_id       — user PII
-    agent_id         — potentially user-controlled
 
 This policy is enforced by code review and the :class:`MemoryBodyRedactionFilter`
 log handler (STORY-061.7).  See the telemetry policy doc for the rationale
@@ -305,6 +308,16 @@ ALLOWED_METRIC_DIMENSIONS: frozenset[str] = frozenset(
         "gen_ai.token.type",
         "gen_ai.tool.name",
         "mcp.method.name",
+        # STORY-070.12: per-tenant labels (bounded cardinality enforced by code)
+        # project_id: bounded by registered projects (low cardinality).
+        # agent_id: capped at 100 distinct values per project in export layer;
+        #           overflow → "other".  See http_adapter._MAX_AGENT_ID_CARDINALITY.
+        # tool: bounded enum (MCP tool registry, ~30 values).
+        # status: bounded enum ("success" | "error").
+        "project_id",
+        "agent_id",
+        "tool",
+        "status",
     }
 )
 """Bounded set of safe metric attribute (dimension) names.
@@ -315,6 +328,9 @@ that contain raw user content (memory text, query strings, entry keys) are
 
 The GenAI semconv v1.35.0 attributes (``gen_ai.*``, ``mcp.method.name``) are
 low-cardinality enums and therefore safe to use as metric dimensions.
+
+STORY-070.12 adds ``project_id``, ``agent_id`` (cardinality-capped), ``tool``,
+and ``status`` to enable per-tenant Prometheus dashboards.
 """
 
 FORBIDDEN_METRIC_DIMENSIONS: frozenset[str] = frozenset(
@@ -323,7 +339,9 @@ FORBIDDEN_METRIC_DIMENSIONS: frozenset[str] = frozenset(
         "memory.value",
         "query.text",
         "session_id",
-        "agent_id",
+        # NOTE: bare ``agent_id`` is now ALLOWED with cardinality capping
+        # (STORY-070.12).  The raw MCP header value must never be used —
+        # always go through _record_tool_call_metric() which enforces the cap.
     }
 )
 """Permanently forbidden metric attribute names (unbounded cardinality / PII)."""

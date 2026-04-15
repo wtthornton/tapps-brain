@@ -247,7 +247,14 @@ class TestStartSpan:
         status_code = mock_span.set_status.call_args[0][0]
         assert status_code == StatusCode.ERROR
 
-    def test_no_attributes_when_none_passed(self) -> None:
+    def test_no_user_attributes_when_none_passed(self) -> None:
+        """STORY-070.12: even with no explicit attrs, context-injected labels may appear.
+
+        The old assertion (set_attribute never called) is no longer valid because
+        start_span() now auto-injects tapps.tool (and project_id/agent_id/scope
+        when in an MCP request context).  This test verifies that user-supplied
+        forbidden content is not set — not that the span is entirely unlabelled.
+        """
         from tapps_brain.otel_tracer import SPAN_SEARCH, start_span
 
         mock_tracer, mock_span = _make_mock_tracer()
@@ -257,7 +264,10 @@ class TestStartSpan:
         ):
             pass
 
-        mock_span.set_attribute.assert_not_called()
+        # Only safe labels may appear — never raw memory content, query text, or PII.
+        forbidden = {"memory.key", "memory.value", "query.text", "session_id"}
+        set_keys = {call.args[0] for call in mock_span.set_attribute.call_args_list}
+        assert not (set_keys & forbidden), f"Forbidden attributes set: {set_keys & forbidden}"
 
     def test_no_exception_recording_when_disabled(self) -> None:
         from tapps_brain.otel_tracer import SPAN_REMEMBER, start_span
