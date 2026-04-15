@@ -39,11 +39,7 @@ _SKIP_PG = not _PG_DSN
 
 # Non-superuser role — RLS is only enforced against this identity.  Same
 # transform as tests/integration/test_rls_spike.py.
-_RUNTIME_DSN = (
-    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1)
-    if _PG_DSN
-    else ""
-)
+_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -148,9 +144,7 @@ def test_private_memories_cross_tenant_read_blocked() -> None:
                 rows = cur.fetchall()
 
         projects_seen = {r[0] for r in rows}
-        assert alpha not in projects_seen, (
-            f"alpha row leaked into beta context: {rows}"
-        )
+        assert alpha not in projects_seen, f"alpha row leaked into beta context: {rows}"
         assert beta in projects_seen, f"beta could not see its own row: {rows}"
     finally:
         _cleanup_memories(owner_cm, [alpha, beta])
@@ -223,8 +217,7 @@ def test_private_memories_cross_tenant_write_blocked() -> None:
         with owner_cm.get_connection() as conn:  # type: ignore[attr-defined]
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT COUNT(*) FROM private_memories "
-                    "WHERE project_id = %s AND key = %s",
+                    "SELECT COUNT(*) FROM private_memories WHERE project_id = %s AND key = %s",
                     (beta, key),
                 )
                 count = cur.fetchone()[0]
@@ -255,12 +248,8 @@ def test_memory_store_isolation_via_public_api() -> None:
     key = _unique_key()
 
     try:
-        alpha_backend = PostgresPrivateBackend(
-            runtime_cm, project_id=alpha, agent_id="agent-1"
-        )
-        beta_backend = PostgresPrivateBackend(
-            runtime_cm, project_id=beta, agent_id="agent-1"
-        )
+        alpha_backend = PostgresPrivateBackend(runtime_cm, project_id=alpha, agent_id="agent-1")
+        beta_backend = PostgresPrivateBackend(runtime_cm, project_id=beta, agent_id="agent-1")
 
         alpha_backend.save(MemoryEntry(key=key, value="alpha-only"))
 
@@ -304,12 +293,8 @@ def test_project_profiles_admin_bypass_lists_all() -> None:
 
         rows = registry.list_all()
         project_ids = {r.project_id for r in rows}
-        assert alpha in project_ids, (
-            f"admin list_all missed alpha: {project_ids}"
-        )
-        assert beta in project_ids, (
-            f"admin list_all missed beta: {project_ids}"
-        )
+        assert alpha in project_ids, f"admin list_all missed alpha: {project_ids}"
+        assert beta in project_ids, f"admin list_all missed beta: {project_ids}"
     finally:
         _cleanup_profiles(owner_cm, [alpha, beta])
         owner_cm.close()  # type: ignore[attr-defined]
@@ -344,9 +329,7 @@ def test_project_profiles_tenant_isolation_without_admin() -> None:
                 )
                 rows = {r[0] for r in cur.fetchall()}
         assert alpha in rows
-        assert beta not in rows, (
-            f"beta's profile leaked into alpha's project_context: {rows}"
-        )
+        assert beta not in rows, f"beta's profile leaked into alpha's project_context: {rows}"
     finally:
         _cleanup_profiles(owner_cm, [alpha, beta])
         owner_cm.close()  # type: ignore[attr-defined]

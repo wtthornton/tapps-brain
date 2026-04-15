@@ -258,9 +258,7 @@ class TestAsyncConcurrentLoad:
 
             # Fire 100 concurrent recalls
             t_start = time.perf_counter()
-            results = await asyncio.gather(
-                *[store.recall("concurrent recall") for _ in range(100)]
-            )
+            results = await asyncio.gather(*[store.recall("concurrent recall") for _ in range(100)])
             concurrent_ms = (time.perf_counter() - t_start) * 1_000
 
         # All 100 coroutines must complete without raising

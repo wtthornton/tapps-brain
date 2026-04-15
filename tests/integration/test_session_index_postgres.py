@@ -98,9 +98,7 @@ class TestSaveChunks:
 
     def test_save_chunks_truncates_at_max_chars(self, session_index: Any) -> None:
         long_chunk = "elephant " * 70  # ~630 chars of real words
-        count = session_index.save_chunks(
-            "sess-truncate", [long_chunk], max_chars_per_chunk=50
-        )
+        count = session_index.save_chunks("sess-truncate", [long_chunk], max_chars_per_chunk=50)
         assert count == 1
         # Verify the stored content is truncated and still searchable
         results = session_index.search("elephant")

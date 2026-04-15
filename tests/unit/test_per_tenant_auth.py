@@ -55,8 +55,10 @@ def _make_settings(
 
 @contextmanager
 def _client(settings: _Settings):
-    with patch.object(_http_mod, "_settings", settings), \
-         patch.object(_http_mod, "get_settings", return_value=settings):
+    with (
+        patch.object(_http_mod, "_settings", settings),
+        patch.object(_http_mod, "get_settings", return_value=settings),
+    ):
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
         app = create_app(mcp_server=_mcp_dummy)
@@ -223,14 +225,11 @@ class TestAdminTokenRouteAuthGating:
 class TestRequireDataPlaneAuthPerTenant:
     """Test require_data_plane_auth respects TAPPS_BRAIN_PER_TENANT_AUTH."""
 
-    def test_no_flag_uses_global_token_pass(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_flag_uses_global_token_pass(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TAPPS_BRAIN_PER_TENANT_AUTH", raising=False)
         settings = _make_settings(auth_token="global-tok")
         with _client(settings) as client:
-            resp = client.get("/health",
-                              headers={"Authorization": "Bearer global-tok"})
+            resp = client.get("/health", headers={"Authorization": "Bearer global-tok"})
         assert resp.status_code == 200
 
     def test_per_tenant_flag_set_passes_with_valid_token(
@@ -240,8 +239,10 @@ class TestRequireDataPlaneAuthPerTenant:
         monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
 
         settings = _make_settings(dsn="postgresql://fake", auth_token=None)
-        with _client(settings) as client, \
-             patch.object(_http_mod, "_verify_per_tenant_token", return_value=True):
+        with (
+            _client(settings) as client,
+            patch.object(_http_mod, "_verify_per_tenant_token", return_value=True),
+        ):
             resp = client.get(
                 "/v1/recall",
                 headers={
@@ -253,14 +254,14 @@ class TestRequireDataPlaneAuthPerTenant:
         # 200 or 422/400 (no store) — auth should not 401/403
         assert resp.status_code not in (401, 403)
 
-    def test_per_tenant_flag_set_rejects_wrong_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_per_tenant_flag_set_rejects_wrong_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.importorskip("argon2")
         monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
         settings = _make_settings(dsn="postgresql://fake", auth_token=None)
-        with _client(settings) as client, \
-             patch.object(_http_mod, "_verify_per_tenant_token", return_value=False):
+        with (
+            _client(settings) as client,
+            patch.object(_http_mod, "_verify_per_tenant_token", return_value=False),
+        ):
             resp = client.get(
                 "/v1/recall",
                 headers={
@@ -278,8 +279,10 @@ class TestRequireDataPlaneAuthPerTenant:
         pytest.importorskip("argon2")
         monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
         settings = _make_settings(dsn="postgresql://fake", auth_token="global-tok")
-        with _client(settings) as client, \
-             patch.object(_http_mod, "_verify_per_tenant_token", return_value=None):
+        with (
+            _client(settings) as client,
+            patch.object(_http_mod, "_verify_per_tenant_token", return_value=None),
+        ):
             # Correct global token → should pass
             resp_ok = client.get(
                 "/v1/recall",

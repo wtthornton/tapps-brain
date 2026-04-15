@@ -146,8 +146,7 @@ class _StoreCache:
         if maxsize is None:
             try:
                 maxsize = int(
-                    os.environ.get("TAPPS_BRAIN_STORE_CACHE_SIZE", "")
-                    or _DEFAULT_STORE_CACHE_SIZE
+                    os.environ.get("TAPPS_BRAIN_STORE_CACHE_SIZE", "") or _DEFAULT_STORE_CACHE_SIZE
                 )
             except ValueError:
                 maxsize = _DEFAULT_STORE_CACHE_SIZE
@@ -245,11 +244,7 @@ def _get_store_for_project(
 
     # Compound key when the per-call agent differs from the server default;
     # otherwise keep the historical bare-project_id key for cache compat.
-    cache_key = (
-        f"{project_id}\x00{effective_agent_id}"
-        if per_call_differs
-        else project_id
-    )
+    cache_key = f"{project_id}\x00{effective_agent_id}" if per_call_differs else project_id
 
     default_pid = getattr(default_store, "_tapps_project_id", None)
     if not per_call_differs and default_pid and project_id == default_pid:
@@ -260,9 +255,7 @@ def _get_store_for_project(
         if project_id:
             os.environ["TAPPS_BRAIN_PROJECT"] = project_id
         try:
-            target_dir = (
-                _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
-            )
+            target_dir = _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
             return _get_store(
                 target_dir,
                 enable_hive=enable_hive,
@@ -527,9 +520,7 @@ def create_server(  # noqa: PLR0915
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     try:
-        default_store = _get_store(
-            resolved_dir, enable_hive=enable_hive, agent_id=agent_id
-        )
+        default_store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
     except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
 
@@ -544,9 +535,7 @@ def create_server(  # noqa: PLR0915
                 ErrorData(
                     code=jsonrpc_code(err_code),
                     message=err_code.value,
-                    data=mcp_error_data(
-                        err_code, err_code.value, project_id=exc.project_id
-                    ),
+                    data=mcp_error_data(err_code, err_code.value, project_id=exc.project_id),
                 )
             ) from exc
         raise
@@ -633,30 +622,30 @@ def create_server(  # noqa: PLR0915
     # The original ``instructions=`` block kept below is unused now that
     # mcp_kwargs carries it; left as a no-op assignment for diff hygiene.
     _unused = (
-            "tapps-brain is a persistent cross-session memory system. "
-            "Use memory tools to save, retrieve, search, and manage "
-            "knowledge across coding sessions.\n\n"
-            "## Hive (multi-agent memory sharing)\n\n"
-            "When Hive is enabled, memories can be shared across agents "
-            "using the `agent_scope` parameter on `memory_save`:\n\n"
-            "- **private** (default): Only visible to the saving agent. "
-            "Use for scratch notes, intermediate reasoning, and "
-            "agent-specific context.\n"
-            "- **domain**: Visible to all agents sharing the same memory "
-            "profile (e.g., all 'repo-brain' agents). Use for conventions, "
-            "patterns, and role-specific knowledge.\n"
-            "- **hive**: Visible to ALL agents in the Hive regardless of "
-            "profile. Use for cross-cutting facts: tech stack decisions, "
-            "project architecture, API contracts, and team agreements.\n"
-            "- **group:<name>**: Hive namespace *name* for members of that group "
-            "(distinct from project-local `group` on saves). Requires Hive group "
-            "membership.\n\n"
-            "Recall automatically merges local and Hive results. Use "
-            "`hive_status` to see registered agents and namespaces, "
-            "`hive_search` to query the shared store directly, "
-            "`hive_propagate` to manually share an existing local memory, "
-            "and `hive_write_revision` / `hive_wait_write` to poll for new "
-            "Hive memory writes (lightweight pub-sub)."
+        "tapps-brain is a persistent cross-session memory system. "
+        "Use memory tools to save, retrieve, search, and manage "
+        "knowledge across coding sessions.\n\n"
+        "## Hive (multi-agent memory sharing)\n\n"
+        "When Hive is enabled, memories can be shared across agents "
+        "using the `agent_scope` parameter on `memory_save`:\n\n"
+        "- **private** (default): Only visible to the saving agent. "
+        "Use for scratch notes, intermediate reasoning, and "
+        "agent-specific context.\n"
+        "- **domain**: Visible to all agents sharing the same memory "
+        "profile (e.g., all 'repo-brain' agents). Use for conventions, "
+        "patterns, and role-specific knowledge.\n"
+        "- **hive**: Visible to ALL agents in the Hive regardless of "
+        "profile. Use for cross-cutting facts: tech stack decisions, "
+        "project architecture, API contracts, and team agreements.\n"
+        "- **group:<name>**: Hive namespace *name* for members of that group "
+        "(distinct from project-local `group` on saves). Requires Hive group "
+        "membership.\n\n"
+        "Recall automatically merges local and Hive results. Use "
+        "`hive_status` to see registered agents and namespaces, "
+        "`hive_search` to query the shared store directly, "
+        "`hive_propagate` to manually share an existing local memory, "
+        "and `hive_write_revision` / `hive_wait_write` to poll for new "
+        "Hive memory writes (lightweight pub-sub)."
     )
 
     # ------------------------------------------------------------------
@@ -682,8 +671,13 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_remember(
-                s, _pid(), eff_aid,
-                fact=fact, tier=tier, share=share, share_with=share_with,
+                s,
+                _pid(),
+                eff_aid,
+                fact=fact,
+                tier=tier,
+                share=share,
+                share_with=share_with,
             )
         )
 
@@ -698,7 +692,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_recall(
-                s, _pid(), eff_aid, query=query, max_results=max_results,
+                s,
+                _pid(),
+                eff_aid,
+                query=query,
+                max_results=max_results,
             ),
             default=str,
         )
@@ -721,8 +719,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_learn_success(
-                s, _pid(), eff_aid,
-                task_description=task_description, task_id=task_id,
+                s,
+                _pid(),
+                eff_aid,
+                task_description=task_description,
+                task_id=task_id,
             )
         )
 
@@ -738,8 +739,12 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.brain_learn_failure(
-                s, _pid(), eff_aid,
-                description=description, task_id=task_id, error=error,
+                s,
+                _pid(),
+                eff_aid,
+                description=description,
+                task_id=task_id,
+                error=error,
             )
         )
 
@@ -752,9 +757,7 @@ def create_server(  # noqa: PLR0915
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
-        return json.dumps(
-            memory_service.brain_status(s, _pid(), eff_aid), default=str
-        )
+        return json.dumps(memory_service.brain_status(s, _pid(), eff_aid), default=str)
 
     # ------------------------------------------------------------------
     # Tools — model-controlled operations
@@ -802,10 +805,19 @@ def create_server(  # noqa: PLR0915
                 istore.close()
 
         result = memory_service.memory_save(
-            s, project_id, eff_aid,
-            key=key, value=value, tier=tier, source=source, tags=tags,
-            scope=scope, confidence=confidence, agent_scope=agent_scope,
-            source_agent=source_agent, group=group,
+            s,
+            project_id,
+            eff_aid,
+            key=key,
+            value=value,
+            tier=tier,
+            source=source,
+            tags=tags,
+            scope=scope,
+            confidence=confidence,
+            agent_scope=agent_scope,
+            source_agent=source_agent,
+            group=group,
         )
 
         if ikey and is_idempotency_enabled() and dsn and project_id:
@@ -849,9 +861,17 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_search(
-                s, _pid(), eff_aid,
-                query=query, tier=tier, scope=scope, as_of=as_of, group=group,
-                since=since, until=until, time_field=time_field,
+                s,
+                _pid(),
+                eff_aid,
+                query=query,
+                tier=tier,
+                scope=scope,
+                as_of=as_of,
+                group=group,
+                since=since,
+                until=until,
+                time_field=time_field,
             )
         )
 
@@ -868,8 +888,13 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_list(
-                s, _pid(), eff_aid,
-                tier=tier, scope=scope, include_superseded=include_superseded, group=group,
+                s,
+                _pid(),
+                eff_aid,
+                tier=tier,
+                scope=scope,
+                include_superseded=include_superseded,
+                group=group,
             )
         )
 
@@ -926,7 +951,11 @@ def create_server(  # noqa: PLR0915
                 istore.close()
 
         result = memory_service.memory_reinforce(
-            s, project_id, eff_aid, key=key, confidence_boost=confidence_boost,
+            s,
+            project_id,
+            eff_aid,
+            key=key,
+            confidence_boost=confidence_boost,
         )
 
         if ikey and is_idempotency_enabled() and dsn and project_id:
@@ -951,8 +980,12 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_ingest(
-                s, _pid(), eff_aid,
-                context=context, source=source, agent_scope=agent_scope,
+                s,
+                _pid(),
+                eff_aid,
+                context=context,
+                source=source,
+                agent_scope=agent_scope,
             )
         )
 
@@ -970,8 +1003,14 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_supersede(
-                s, _pid(), eff_aid,
-                old_key=old_key, new_value=new_value, key=key, tier=tier, tags=tags,
+                s,
+                _pid(),
+                eff_aid,
+                old_key=old_key,
+                new_value=new_value,
+                key=key,
+                tier=tier,
+                tags=tags,
             )
         )
 
@@ -1011,7 +1050,10 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_save_many(
-                s, _pid(), eff_aid, entries=list(entries),
+                s,
+                _pid(),
+                eff_aid,
+                entries=list(entries),
             ),
             default=str,
         )
@@ -1034,7 +1076,10 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_recall_many(
-                s, _pid(), eff_aid, queries=list(queries),
+                s,
+                _pid(),
+                eff_aid,
+                queries=list(queries),
             ),
             default=str,
         )
@@ -1063,7 +1108,10 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_reinforce_many(
-                s, _pid(), eff_aid, entries=list(entries),
+                s,
+                _pid(),
+                eff_aid,
+                entries=list(entries),
             ),
             default=str,
         )
@@ -1079,7 +1127,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_index_session(
-                s, _pid(), eff_aid, session_id=session_id, chunks=chunks,
+                s,
+                _pid(),
+                eff_aid,
+                session_id=session_id,
+                chunks=chunks,
             )
         )
 
@@ -1094,7 +1146,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_search_sessions(
-                s, _pid(), eff_aid, query=query, limit=limit,
+                s,
+                _pid(),
+                eff_aid,
+                query=query,
+                limit=limit,
             )
         )
 
@@ -1110,8 +1166,12 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_capture(
-                s, _pid(), eff_aid,
-                response=response, source=source, agent_scope=agent_scope,
+                s,
+                _pid(),
+                eff_aid,
+                response=response,
+                source=source,
+                agent_scope=agent_scope,
             )
         )
 
@@ -1129,9 +1189,13 @@ def create_server(  # noqa: PLR0915
         """Rate a recalled memory entry (creates ``recall_rated`` event)."""
         return json.dumps(
             feedback_service.feedback_rate(
-                store, _pid(), agent_id,
-                entry_key=entry_key, rating=rating,
-                session_id=session_id, details_json=details_json,
+                store,
+                _pid(),
+                agent_id,
+                entry_key=entry_key,
+                rating=rating,
+                session_id=session_id,
+                details_json=details_json,
             )
         )
 
@@ -1144,8 +1208,12 @@ def create_server(  # noqa: PLR0915
         """Report a knowledge gap (``gap_reported`` event)."""
         return json.dumps(
             feedback_service.feedback_gap(
-                store, _pid(), agent_id,
-                query=query, session_id=session_id, details_json=details_json,
+                store,
+                _pid(),
+                agent_id,
+                query=query,
+                session_id=session_id,
+                details_json=details_json,
             )
         )
 
@@ -1159,9 +1227,13 @@ def create_server(  # noqa: PLR0915
         """Flag a quality issue with a memory entry (``issue_flagged``)."""
         return json.dumps(
             feedback_service.feedback_issue(
-                store, _pid(), agent_id,
-                entry_key=entry_key, issue=issue,
-                session_id=session_id, details_json=details_json,
+                store,
+                _pid(),
+                agent_id,
+                entry_key=entry_key,
+                issue=issue,
+                session_id=session_id,
+                details_json=details_json,
             )
         )
 
@@ -1176,9 +1248,14 @@ def create_server(  # noqa: PLR0915
         """Record a generic feedback event (built-in or custom type)."""
         return json.dumps(
             feedback_service.feedback_record(
-                store, _pid(), agent_id,
-                event_type=event_type, entry_key=entry_key, session_id=session_id,
-                utility_score=utility_score, details_json=details_json,
+                store,
+                _pid(),
+                agent_id,
+                event_type=event_type,
+                entry_key=entry_key,
+                session_id=session_id,
+                utility_score=utility_score,
+                details_json=details_json,
             )
         )
 
@@ -1194,9 +1271,15 @@ def create_server(  # noqa: PLR0915
         """Query recorded feedback events with optional filters."""
         return json.dumps(
             feedback_service.feedback_query(
-                store, _pid(), agent_id,
-                event_type=event_type, entry_key=entry_key, session_id=session_id,
-                since=since, until=until, limit=limit,
+                store,
+                _pid(),
+                agent_id,
+                event_type=event_type,
+                entry_key=entry_key,
+                session_id=session_id,
+                since=since,
+                until=until,
+                limit=limit,
             )
         )
 
@@ -1207,7 +1290,10 @@ def create_server(  # noqa: PLR0915
         """Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."""
         return json.dumps(
             diagnostics_service.diagnostics_report(
-                store, _pid(), agent_id, record_history=record_history,
+                store,
+                _pid(),
+                agent_id,
+                record_history=record_history,
             )
         )
 
@@ -1218,23 +1304,28 @@ def create_server(  # noqa: PLR0915
         """Return recent persisted diagnostics snapshots."""
         return json.dumps(
             diagnostics_service.diagnostics_history(
-                store, _pid(), agent_id, limit=limit,
+                store,
+                _pid(),
+                agent_id,
+                limit=limit,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def flywheel_process(since: str = "") -> str:
         """Run feedback → confidence pipeline (EPIC-031)."""
-        return json.dumps(
-            flywheel_service.flywheel_process(store, _pid(), agent_id, since=since)
-        )
+        return json.dumps(flywheel_service.flywheel_process(store, _pid(), agent_id, since=since))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def flywheel_gaps(limit: int = 10, semantic: bool = False) -> str:
         """Return top knowledge gaps as JSON."""
         return json.dumps(
             flywheel_service.flywheel_gaps(
-                store, _pid(), agent_id, limit=limit, semantic=semantic,
+                store,
+                _pid(),
+                agent_id,
+                limit=limit,
+                semantic=semantic,
             )
         )
 
@@ -1243,7 +1334,10 @@ def create_server(  # noqa: PLR0915
         """Generate quality report (markdown + structured summary)."""
         return json.dumps(
             flywheel_service.flywheel_report(
-                store, _pid(), agent_id, period_days=period_days,
+                store,
+                _pid(),
+                agent_id,
+                period_days=period_days,
             )
         )
 
@@ -1252,7 +1346,11 @@ def create_server(  # noqa: PLR0915
         """Run BEIR-format directory or YAML suite evaluation."""
         return json.dumps(
             flywheel_service.flywheel_evaluate(
-                store, _pid(), agent_id, suite_path=suite_path, k=k,
+                store,
+                _pid(),
+                agent_id,
+                suite_path=suite_path,
+                k=k,
             )
         )
 
@@ -1261,7 +1359,10 @@ def create_server(  # noqa: PLR0915
         """Aggregate / apply Hive cross-project feedback penalties."""
         return json.dumps(
             flywheel_service.flywheel_hive_feedback(
-                store, _pid(), agent_id, threshold=threshold,
+                store,
+                _pid(),
+                agent_id,
+                threshold=threshold,
             )
         )
 
@@ -1457,9 +1558,13 @@ def create_server(  # noqa: PLR0915
         """Trigger memory consolidation to merge similar entries."""
         return json.dumps(
             maintenance_service.maintenance_consolidate(
-                store, _pid(), agent_id,
-                project_root=resolved_dir, threshold=threshold,
-                min_group_size=min_group_size, force=force,
+                store,
+                _pid(),
+                agent_id,
+                project_root=resolved_dir,
+                threshold=threshold,
+                min_group_size=min_group_size,
+                force=force,
             )
         )
 
@@ -1480,7 +1585,10 @@ def create_server(  # noqa: PLR0915
         """Return a structured health report for tapps-brain (issue #15)."""
         return json.dumps(
             diagnostics_service.tapps_brain_health(
-                store, _pid(), agent_id, check_hive=check_hive,
+                store,
+                _pid(),
+                agent_id,
+                check_hive=check_hive,
             )
         )
 
@@ -1498,7 +1606,9 @@ def create_server(  # noqa: PLR0915
         """Update garbage collection configuration thresholds."""
         return json.dumps(
             memory_service.memory_gc_config_set(
-                store, _pid(), agent_id,
+                store,
+                _pid(),
+                agent_id,
                 floor_retention_days=floor_retention_days,
                 session_expiry_days=session_expiry_days,
                 contradicted_threshold=contradicted_threshold,
@@ -1519,8 +1629,12 @@ def create_server(  # noqa: PLR0915
         """Update auto-consolidation configuration."""
         return json.dumps(
             memory_service.memory_consolidation_config_set(
-                store, _pid(), agent_id,
-                enabled=enabled, threshold=threshold, min_entries=min_entries,
+                store,
+                _pid(),
+                agent_id,
+                enabled=enabled,
+                threshold=threshold,
+                min_entries=min_entries,
             )
         )
 
@@ -1537,9 +1651,13 @@ def create_server(  # noqa: PLR0915
         """Export memory entries as JSON."""
         return json.dumps(
             memory_service.memory_export(
-                store, _pid(), agent_id,
+                store,
+                _pid(),
+                agent_id,
                 project_root=str(resolved_dir),
-                tier=tier, scope=scope, min_confidence=min_confidence,
+                tier=tier,
+                scope=scope,
+                min_confidence=min_confidence,
             )
         )
 
@@ -1551,8 +1669,11 @@ def create_server(  # noqa: PLR0915
         """Import memory entries from a JSON string."""
         return json.dumps(
             memory_service.memory_import(
-                store, _pid(), agent_id,
-                memories_json=memories_json, overwrite=overwrite,
+                store,
+                _pid(),
+                agent_id,
+                memories_json=memories_json,
+                overwrite=overwrite,
             )
         )
 
@@ -1561,8 +1682,11 @@ def create_server(  # noqa: PLR0915
         """Build a memory relay JSON payload for cross-node handoff (GitHub #19)."""
         return json.dumps(
             relay_service.tapps_brain_relay_export(
-                store, _pid(), agent_id,
-                source_agent=source_agent, items_json=items_json,
+                store,
+                _pid(),
+                agent_id,
+                source_agent=source_agent,
+                items_json=items_json,
             )
         )
 
@@ -1578,9 +1702,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_profile_onboarding() -> str:
         """Return Markdown onboarding guidance for the active memory profile (GitHub #45)."""
-        return json.dumps(
-            profile_service.memory_profile_onboarding(store, _pid(), agent_id)
-        )
+        return json.dumps(profile_service.memory_profile_onboarding(store, _pid(), agent_id))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def profile_switch(name: str) -> str:
@@ -1596,7 +1718,10 @@ def create_server(  # noqa: PLR0915
         """Return Hive status: namespaces, entry counts, and registered agents."""
         return json.dumps(
             hive_service.hive_status(
-                store, _pid(), agent_id, hive_resolver=_hive_for_tools,
+                store,
+                _pid(),
+                agent_id,
+                hive_resolver=_hive_for_tools,
             )
         )
 
@@ -1605,8 +1730,12 @@ def create_server(  # noqa: PLR0915
         """Search the shared Hive for memories from other agents."""
         return json.dumps(
             hive_service.hive_search(
-                store, _pid(), agent_id,
-                hive_resolver=_hive_for_tools, query=query, namespace=namespace,
+                store,
+                _pid(),
+                agent_id,
+                hive_resolver=_hive_for_tools,
+                query=query,
+                namespace=namespace,
             )
         )
 
@@ -1620,9 +1749,14 @@ def create_server(  # noqa: PLR0915
         """Manually propagate a local memory to the Hive shared store."""
         return json.dumps(
             hive_service.hive_propagate(
-                store, _pid(), agent_id,
+                store,
+                _pid(),
+                agent_id,
                 hive_resolver=_hive_for_tools,
-                key=key, agent_scope=agent_scope, force=force, dry_run=dry_run,
+                key=key,
+                agent_scope=agent_scope,
+                force=force,
+                dry_run=dry_run,
             )
         )
 
@@ -1639,10 +1773,17 @@ def create_server(  # noqa: PLR0915
         """Batch-promote local project memories to the Hive (GitHub #18)."""
         return json.dumps(
             hive_service.hive_push(
-                store, _pid(), agent_id,
+                store,
+                _pid(),
+                agent_id,
                 hive_resolver=_hive_for_tools,
-                agent_scope=agent_scope, push_all=push_all, tags=tags, tier=tier,
-                keys=keys, dry_run=dry_run, force=force,
+                agent_scope=agent_scope,
+                push_all=push_all,
+                tags=tags,
+                tier=tier,
+                keys=keys,
+                dry_run=dry_run,
+                force=force,
             )
         )
 
@@ -1651,7 +1792,10 @@ def create_server(  # noqa: PLR0915
         """Return the Hive write notification revision (GitHub #12)."""
         return json.dumps(
             hive_service.hive_write_revision(
-                store, _pid(), agent_id, hive_resolver=_hive_for_tools,
+                store,
+                _pid(),
+                agent_id,
+                hive_resolver=_hive_for_tools,
             )
         )
 
@@ -1660,9 +1804,12 @@ def create_server(  # noqa: PLR0915
         """Wait until the Hive write revision exceeds *since_revision* or timeout."""
         return json.dumps(
             hive_service.hive_wait_write(
-                store, _pid(), agent_id,
+                store,
+                _pid(),
+                agent_id,
                 hive_resolver=_hive_for_tools,
-                since_revision=since_revision, timeout_seconds=timeout_seconds,
+                since_revision=since_revision,
+                timeout_seconds=timeout_seconds,
             )
         )
 
@@ -1675,8 +1822,12 @@ def create_server(  # noqa: PLR0915
         """Register an agent in the Hive."""
         return json.dumps(
             agents_service.agent_register(
-                store, _pid(), agent_id,
-                new_agent_id=agent_id, profile=profile, skills=skills,
+                store,
+                _pid(),
+                agent_id,
+                new_agent_id=agent_id,
+                profile=profile,
+                skills=skills,
             )
         )
 
@@ -1689,8 +1840,12 @@ def create_server(  # noqa: PLR0915
         """Create an agent: register in the Hive with a validated profile."""
         return json.dumps(
             agents_service.agent_create(
-                store, _pid(), agent_id,
-                new_agent_id=agent_id, profile=profile, skills=skills,
+                store,
+                _pid(),
+                agent_id,
+                new_agent_id=agent_id,
+                profile=profile,
+                skills=skills,
             )
         )
 
@@ -1704,7 +1859,10 @@ def create_server(  # noqa: PLR0915
         """Delete a registered agent from the Hive."""
         return json.dumps(
             agents_service.agent_delete(
-                store, _pid(), agent_id, target_agent_id=agent_id,
+                store,
+                _pid(),
+                agent_id,
+                target_agent_id=agent_id,
             )
         )
 
@@ -1726,7 +1884,10 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_relations_get_batch(
-                s, _pid(), eff_aid, keys_json=keys_json,
+                s,
+                _pid(),
+                eff_aid,
+                keys_json=keys_json,
             )
         )
 
@@ -1737,7 +1898,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_find_related(
-                s, _pid(), eff_aid, key=key, max_hops=max_hops,
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                max_hops=max_hops,
             )
         )
 
@@ -1753,8 +1918,12 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_query_relations(
-                s, _pid(), eff_aid,
-                subject=subject, predicate=predicate, object_entity=object_entity,
+                s,
+                _pid(),
+                eff_aid,
+                subject=subject,
+                predicate=predicate,
+                object_entity=object_entity,
             )
         )
 
@@ -1776,8 +1945,14 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_audit(
-                s, _pid(), eff_aid,
-                key=key, event_type=event_type, since=since, until=until, limit=limit,
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                event_type=event_type,
+                since=since,
+                until=until,
+                limit=limit,
             )
         )
 
@@ -1804,7 +1979,12 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_update_tags(
-                s, _pid(), eff_aid, key=key, add=add, remove=remove,
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                add=add,
+                remove=remove,
             )
         )
 
@@ -1819,7 +1999,11 @@ def create_server(  # noqa: PLR0915
         s = _resolve_store_for_call(agent_id)
         return json.dumps(
             memory_service.memory_entries_by_tag(
-                s, _pid(), eff_aid, tag=tag, tier=tier,
+                s,
+                _pid(),
+                eff_aid,
+                tag=tag,
+                tier=tier,
             )
         )
 
@@ -1836,9 +2020,13 @@ def create_server(  # noqa: PLR0915
         """Record an end-of-session episodic memory entry."""
         return json.dumps(
             maintenance_service.tapps_brain_session_end(
-                store, _pid(), agent_id,
-                project_root=resolved_dir, summary=summary,
-                tags=tags, daily_note=daily_note,
+                store,
+                _pid(),
+                agent_id,
+                project_root=resolved_dir,
+                summary=summary,
+                tags=tags,
+                daily_note=daily_note,
             ),
             default=str,
         )

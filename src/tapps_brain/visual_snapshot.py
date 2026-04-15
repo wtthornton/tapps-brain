@@ -800,9 +800,7 @@ def _build_scorecard(
             title="Retrieval stack",
             status=rstat,
             detail=rdetail,
-            ticket_hint=(
-                "pgvector HNSW + tsvector hybrid; see docs/guides/postgres-dsn.md."
-            ),
+            ticket_hint=("pgvector HNSW + tsvector hybrid; see docs/guides/postgres-dsn.md."),
         )
     )
 

@@ -88,10 +88,7 @@ class TestRecordQuery:
     def test_record_multiple_events_all_returned(self, feedback_store: Any) -> None:
         from tapps_brain.feedback import FeedbackEvent
 
-        events = [
-            FeedbackEvent(event_type="recall_rated", entry_key=f"k-{i}")
-            for i in range(3)
-        ]
+        events = [FeedbackEvent(event_type="recall_rated", entry_key=f"k-{i}") for i in range(3)]
         for ev in events:
             feedback_store.record(ev)
 
@@ -125,12 +122,8 @@ class TestRecordQuery:
     def test_query_filters_by_session_id(self, feedback_store: Any) -> None:
         from tapps_brain.feedback import FeedbackEvent
 
-        feedback_store.record(
-            FeedbackEvent(event_type="recall_rated", session_id="session-abc")
-        )
-        feedback_store.record(
-            FeedbackEvent(event_type="recall_rated", session_id="session-xyz")
-        )
+        feedback_store.record(FeedbackEvent(event_type="recall_rated", session_id="session-abc"))
+        feedback_store.record(FeedbackEvent(event_type="recall_rated", session_id="session-xyz"))
 
         results = feedback_store.query(session_id="session-abc")
         assert len(results) == 1
@@ -210,9 +203,7 @@ class TestStrictMode:
         from tapps_brain.feedback import FeedbackConfig, FeedbackEvent, FeedbackStore
 
         cm = _make_cm()
-        config = FeedbackConfig(
-            strict_event_types=True, custom_event_types=["custom_signal"]
-        )
+        config = FeedbackConfig(strict_event_types=True, custom_event_types=["custom_signal"])
         store = FeedbackStore(
             cm,
             project_id=_unique_project(),

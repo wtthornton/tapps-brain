@@ -63,6 +63,7 @@ def store_dir(tmp_path: Path) -> Path:
 # AC1 / AC8: Standard server never exposes operator tools
 # ---------------------------------------------------------------------------
 
+
 class TestStandardServer:
     """Standard server never exposes operator tools."""
 
@@ -122,6 +123,7 @@ class TestStandardServer:
 # AC2-AC7 / AC1: Operator server exposes required tools
 # ---------------------------------------------------------------------------
 
+
 class TestOperatorServer:
     """Operator server always exposes all operator tools."""
 
@@ -179,6 +181,7 @@ class TestOperatorServer:
 # AC9: Both share service layer (same non-operator tool set)
 # ---------------------------------------------------------------------------
 
+
 class TestSharedServiceLayer:
     """Standard and operator servers share the same service layer."""
 
@@ -208,6 +211,7 @@ class TestSharedServiceLayer:
 # ---------------------------------------------------------------------------
 # AC10 / AC11: Separate CLI entry points
 # ---------------------------------------------------------------------------
+
 
 class TestCliEntryPoints:
     """tapps-brain-mcp and tapps-brain-operator-mcp entry points exist."""
@@ -255,6 +259,7 @@ class TestCliEntryPoints:
 # AC9: Both share the error taxonomy (same error module used)
 # ---------------------------------------------------------------------------
 
+
 class TestSharedErrorTaxonomy:
     """Both servers use the same service layer and error handling."""
 
@@ -277,6 +282,7 @@ class TestSharedErrorTaxonomy:
 # ---------------------------------------------------------------------------
 # Thin module re-exports
 # ---------------------------------------------------------------------------
+
 
 class TestThinModules:
     """tapps_brain.mcp_server.standard and .operator export the right symbols."""

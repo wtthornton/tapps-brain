@@ -516,14 +516,17 @@ def memory_recall_many(
                     group = None
 
                 if not message:
-                    results.append({
-                        "error": "bad_query",
-                        "message": "Query message must be a non-empty string.",
-                        "index": i,
-                    })
+                    results.append(
+                        {
+                            "error": "bad_query",
+                            "message": "Query message must be a non-empty string.",
+                            "index": i,
+                        }
+                    )
                 else:
-                    results.append(memory_recall(store, project_id, agent_id,
-                                                 message=message, group=group))
+                    results.append(
+                        memory_recall(store, project_id, agent_id, message=message, group=group)
+                    )
 
     return {
         "results": results,
@@ -861,9 +864,7 @@ def memory_gc_config_set(
             else current.floor_retention_days
         ),
         session_expiry_days=(
-            session_expiry_days
-            if session_expiry_days is not None
-            else current.session_expiry_days
+            session_expiry_days if session_expiry_days is not None else current.session_expiry_days
         ),
         contradicted_threshold=(
             contradicted_threshold

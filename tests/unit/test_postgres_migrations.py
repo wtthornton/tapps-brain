@@ -202,9 +202,7 @@ class TestMaybeAutoMigratePrivate:
         """When TAPPS_BRAIN_AUTO_MIGRATE is unset, no DB calls are made."""
         monkeypatch.delenv("TAPPS_BRAIN_AUTO_MIGRATE", raising=False)
 
-        with patch(
-            "tapps_brain.postgres_migrations.get_private_schema_status"
-        ) as mock_status:
+        with patch("tapps_brain.postgres_migrations.get_private_schema_status") as mock_status:
             from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
             maybe_auto_migrate_private(self._DSN)
@@ -215,9 +213,7 @@ class TestMaybeAutoMigratePrivate:
         """When TAPPS_BRAIN_AUTO_MIGRATE=0, no DB calls are made."""
         monkeypatch.setenv("TAPPS_BRAIN_AUTO_MIGRATE", "0")
 
-        with patch(
-            "tapps_brain.postgres_migrations.get_private_schema_status"
-        ) as mock_status:
+        with patch("tapps_brain.postgres_migrations.get_private_schema_status") as mock_status:
             from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
             maybe_auto_migrate_private(self._DSN)
@@ -346,12 +342,8 @@ class TestMaybeAutoMigratePrivate:
                 "tapps_brain.postgres_migrations.discover_private_migrations",
                 return_value=[],
             ),
-            patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status"
-            ) as mock_status,
-            patch(
-                "tapps_brain.postgres_migrations.apply_private_migrations"
-            ) as mock_apply,
+            patch("tapps_brain.postgres_migrations.get_private_schema_status") as mock_status,
+            patch("tapps_brain.postgres_migrations.apply_private_migrations") as mock_apply,
         ):
             from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 

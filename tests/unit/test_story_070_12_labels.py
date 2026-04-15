@@ -503,9 +503,10 @@ class TestAC15GrafanaDashboard:
     def test_dashboard_has_per_tenant_title(self) -> None:
         content = self._dashboard_path().read_text(encoding="utf-8")
         data = json.loads(content)
-        assert "tenant" in data.get("title", "").lower() or "project" in data.get(
-            "description", ""
-        ).lower()
+        assert (
+            "tenant" in data.get("title", "").lower()
+            or "project" in data.get("description", "").lower()
+        )
 
 
 # ---------------------------------------------------------------------------

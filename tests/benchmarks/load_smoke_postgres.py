@@ -65,9 +65,7 @@ class _LatencyBucket:
     name: str
     _samples: list[float] = field(default_factory=list, init=False, repr=False)
     _errors: int = field(default=0, init=False, repr=False)
-    _lock: threading.Lock = field(
-        default_factory=threading.Lock, init=False, repr=False
-    )
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def record(self, seconds: float) -> None:
         with self._lock:
@@ -105,9 +103,7 @@ class _LatencyBucket:
             "p90_ms": _fmt(self.percentile(90)),
             "p95_ms": _fmt(self.percentile(95)),
             "p99_ms": _fmt(self.percentile(99)),
-            "max_ms": _fmt(
-                max(self._samples) * 1000.0 if self._samples else None
-            ),
+            "max_ms": _fmt(max(self._samples) * 1000.0 if self._samples else None),
             "ops_per_sec": (
                 f"{self.count / max(statistics.mean(self._samples), 1e-9) / self.count:.0f}"
                 if self._samples
@@ -143,9 +139,7 @@ def _run_agent(
 
         apply_private_migrations(dsn)
         cm = PostgresConnectionManager(dsn)
-        backend = PostgresPrivateBackend(
-            cm, project_id=project_id, agent_id=agent_id
-        )
+        backend = PostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)
         store = MemoryStore(
             f"/tmp/tapps_bench_{agent_id}",
             agent_id=agent_id,
@@ -261,10 +255,7 @@ def _print_results(
             f"{s['p99_ms']:>8} {s['max_ms']:>8}"
         )
     print("─" * width)
-    print(
-        "NOTE: Results are informational only. "
-        "No hard SLO budget is enforced in v3.0."
-    )
+    print("NOTE: Results are informational only. No hard SLO budget is enforced in v3.0.")
     print()
 
 
@@ -320,10 +311,7 @@ def test_load_smoke_50_agents(capsys: pytest.CaptureFixture[str]) -> None:  # ty
     barrier = threading.Barrier(n_agents)
     threads: list[threading.Thread] = []
 
-    print(
-        f"\nStarting {n_agents} agent threads "
-        f"(duration={duration_s}s, project={project_id}) …"
-    )
+    print(f"\nStarting {n_agents} agent threads (duration={duration_s}s, project={project_id}) …")
     t_total = time.perf_counter()
 
     for idx in range(n_agents):

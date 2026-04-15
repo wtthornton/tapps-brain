@@ -56,8 +56,10 @@ def _make_settings(*, store: Any = None, dsn: str | None = None) -> _Settings:
 def _client_with_store(settings: _Settings) -> TestClient:
     mcp_dummy = MagicMock()
     mcp_dummy.session_manager = None
-    with patch.object(_adapter_mod, "_settings", settings), \
-         patch.object(_adapter_mod, "get_settings", return_value=settings):
+    with (
+        patch.object(_adapter_mod, "_settings", settings),
+        patch.object(_adapter_mod, "get_settings", return_value=settings),
+    ):
         app = create_app(store=settings.store, mcp_server=mcp_dummy)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -76,8 +78,10 @@ class TestMemorySaveMany:
 
         store = _make_store()
         mock_entry = MagicMock(
-            key="k1", tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8, memory_group=None,
+            key="k1",
+            tier=MagicMock(__str__=lambda s: "pattern"),
+            confidence=0.8,
+            memory_group=None,
         )
         store.save.return_value = mock_entry
 
@@ -122,8 +126,10 @@ class TestMemorySaveMany:
 
         store = _make_store()
         good_entry = MagicMock(
-            key="k1", tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8, memory_group=None,
+            key="k1",
+            tier=MagicMock(__str__=lambda s: "pattern"),
+            confidence=0.8,
+            memory_group=None,
         )
         store.save.return_value = good_entry
 
@@ -166,9 +172,14 @@ class TestMemoryRecallMany:
 
         store = _make_store()
         mock_result = MagicMock(
-            memory_section="mem", memory_count=1, token_count=5,
-            recall_time_ms=10, truncated=False, memories=["m"],
-            recall_diagnostics=None, quality_warning=None,
+            memory_section="mem",
+            memory_count=1,
+            token_count=5,
+            recall_time_ms=10,
+            truncated=False,
+            memories=["m"],
+            recall_diagnostics=None,
+            quality_warning=None,
         )
         store.recall.return_value = mock_result
 
@@ -202,14 +213,21 @@ class TestMemoryRecallMany:
 
         store = _make_store()
         mock_result = MagicMock(
-            memory_section="", memory_count=0, token_count=0,
-            recall_time_ms=1, truncated=False, memories=[],
-            recall_diagnostics=None, quality_warning=None,
+            memory_section="",
+            memory_count=0,
+            token_count=0,
+            recall_time_ms=1,
+            truncated=False,
+            memories=[],
+            recall_diagnostics=None,
+            quality_warning=None,
         )
         store.recall.return_value = mock_result
 
         result = memory_recall_many(
-            store, "proj", "agent",
+            store,
+            "proj",
+            "agent",
             queries=[{"message": "my query", "group": "g1"}],
         )
         assert result["query_count"] == 1
@@ -224,16 +242,19 @@ class TestMemoryRecallMany:
         def fake_recall(msg: str, **kw: Any) -> Any:
             call_order.append(msg)
             r = MagicMock(
-                memory_section=f"mem-{msg}", memory_count=1, token_count=1,
-                recall_time_ms=1, truncated=False, memories=[msg],
-                recall_diagnostics=None, quality_warning=None,
+                memory_section=f"mem-{msg}",
+                memory_count=1,
+                token_count=1,
+                recall_time_ms=1,
+                truncated=False,
+                memories=[msg],
+                recall_diagnostics=None,
+                quality_warning=None,
             )
             return r
 
         store.recall.side_effect = fake_recall
-        result = memory_recall_many(
-            store, "proj", "agent", queries=["q3", "q1", "q2"]
-        )
+        result = memory_recall_many(store, "proj", "agent", queries=["q3", "q1", "q2"])
         assert call_order == ["q3", "q1", "q2"]
         assert result["results"][0]["memory_section"] == "mem-q3"
 
@@ -290,8 +311,10 @@ class TestV1RememberBatch:
     def _setup(self) -> tuple[TestClient, MagicMock]:
         store = _make_store()
         store.save.return_value = MagicMock(
-            key="k1", tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8, memory_group=None,
+            key="k1",
+            tier=MagicMock(__str__=lambda s: "pattern"),
+            confidence=0.8,
+            memory_group=None,
         )
         settings = _make_settings(store=store)
         return _client_with_store(settings), store
@@ -360,9 +383,14 @@ class TestV1RecallBatch:
     def _setup(self) -> tuple[TestClient, MagicMock]:
         store = _make_store()
         store.recall.return_value = MagicMock(
-            memory_section="mem", memory_count=1, token_count=5,
-            recall_time_ms=10, truncated=False, memories=["m"],
-            recall_diagnostics=None, quality_warning=None,
+            memory_section="mem",
+            memory_count=1,
+            token_count=5,
+            recall_time_ms=10,
+            truncated=False,
+            memories=["m"],
+            recall_diagnostics=None,
+            quality_warning=None,
         )
         settings = _make_settings(store=store)
         return _client_with_store(settings), store

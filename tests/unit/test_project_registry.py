@@ -89,7 +89,7 @@ class TestRegister:
         assert "INSERT INTO project_profiles" in sql
         assert "ON CONFLICT (project_id) DO UPDATE" in sql
         assert params[0] == "alpaca"
-        assert params[2] is True   # approved
+        assert params[2] is True  # approved
         assert params[3] == "admin"
         conn.commit.assert_called_once()
 
@@ -143,5 +143,5 @@ class TestResolve:
         insert_params = cur.execute.call_args_list[1][0][1]
         assert "INSERT INTO project_profiles" in insert_sql
         assert insert_params[0] == "new-project"
-        assert insert_params[2] is False        # approved
-        assert insert_params[3] == "auto"        # source
+        assert insert_params[2] is False  # approved
+        assert insert_params[3] == "auto"  # source

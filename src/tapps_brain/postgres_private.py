@@ -383,9 +383,7 @@ class PostgresPrivateBackend:
     # Vector similarity search
     # ------------------------------------------------------------------
 
-    def knn_search(
-        self, query_embedding: list[float], k: int
-    ) -> list[tuple[str, float]]:
+    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
         Uses the ``idx_priv_embedding_hnsw`` index (migration 002).  Returns

@@ -2935,9 +2935,7 @@ def diagnostics_health_cmd(
             f"Store {s_icon}: {s.entries}/{s.max_entries} entries  "
             f"schema={s.schema_version}  size={sz_kb}KB"
         )
-        typer.echo(
-            f"  pgvector HNSW: on  ({s.vector_index_rows} vectors indexed)"
-        )
+        typer.echo(f"  pgvector HNSW: on  ({s.vector_index_rows} vectors indexed)")
         if getattr(s, "retrieval_effective_mode", "unknown") != "unknown":
             typer.echo(f"  Retrieval: {s.retrieval_effective_mode}")
             if s.retrieval_summary:
@@ -3593,8 +3591,7 @@ def _open_project_registry() -> tuple[object, object]:
     dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
     if not dsn:
         typer.echo(
-            "error: TAPPS_BRAIN_DATABASE_URL must be set "
-            "(postgres:// or postgresql:// DSN).",
+            "error: TAPPS_BRAIN_DATABASE_URL must be set (postgres:// or postgresql:// DSN).",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -3643,9 +3640,7 @@ def project_register(
 
 @project_app.command("list")
 def project_list(
-    approved_only: bool = typer.Option(
-        False, "--approved-only", help="Only show approved rows."
-    ),
+    approved_only: bool = typer.Option(False, "--approved-only", help="Only show approved rows."),
     pending_only: bool = typer.Option(
         False, "--pending-only", help="Only show pending (unapproved) rows."
     ),
@@ -3723,8 +3718,7 @@ def project_delete(
     """
     if not yes:
         typer.confirm(
-            f"Delete profile for project '{project_id}'? "
-            "(memory rows are NOT deleted)",
+            f"Delete profile for project '{project_id}'? (memory rows are NOT deleted)",
             abort=True,
         )
     registry, cm = _open_project_registry()

@@ -194,9 +194,7 @@ class TestCoreTools:
             "flywheel_hive_feedback",
         }
         present = operator_tools & tool_names
-        assert not present, (
-            f"Operator tools should be absent by default but found: {present}"
-        )
+        assert not present, f"Operator tools should be absent by default but found: {present}"
         assert not mcp_server._tapps_operator_tools_enabled
 
     def test_operator_tools_present_when_enabled(self, store_dir):
@@ -3534,9 +3532,7 @@ class TestGetStoreHiveWiring:
 class TestProjectNotRegisteredMapping:
     """STORY-069.4: ProjectNotRegisteredError → JSON-RPC -32002 with structured data."""
 
-    def test_create_server_maps_to_mcp_error_minus_32002(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_create_server_maps_to_mcp_error_minus_32002(self, tmp_path, monkeypatch) -> None:
         from mcp.shared.exceptions import McpError
 
         from tapps_brain import mcp_server as ms

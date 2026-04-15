@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from tapps_brain.backends import create_hive_backend
+from tapps_brain.models import MemoryTier
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -255,6 +256,11 @@ class AgentBrain:
         share_with: str | list[str] | None = None,
     ) -> str:
         """Save a memory.  Returns the generated key."""
+        try:
+            MemoryTier(tier)
+        except ValueError as exc:
+            valid = [t.value for t in MemoryTier]
+            raise BrainValidationError(f"Invalid tier {tier!r}: must be one of {valid}") from exc
         key = _content_key(fact)
 
         # Determine agent_scope

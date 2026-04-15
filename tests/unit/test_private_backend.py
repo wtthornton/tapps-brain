@@ -445,7 +445,9 @@ class TestMemoryStoreWiring:
         MemoryStore(tmp_path, private_backend=backend)
 
         db_files = list(tmp_path.rglob("memory.db"))
-        assert db_files == [], "No memory.db files should be created — v3 is Postgres-only (ADR-007)"
+        assert db_files == [], (
+            "No memory.db files should be created — v3 is Postgres-only (ADR-007)"
+        )
 
     def test_no_private_backend_and_no_dsn_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

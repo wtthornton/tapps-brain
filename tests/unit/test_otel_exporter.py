@@ -792,9 +792,7 @@ class TestOTelConfig:
         cfg = OTelConfig.from_env()
         assert cfg.service_name == "agent-cortex"
 
-    def test_from_env_empty_service_name_falls_back_to_default(
-        self, monkeypatch: Any
-    ) -> None:
+    def test_from_env_empty_service_name_falls_back_to_default(self, monkeypatch: Any) -> None:
         from tapps_brain.otel_exporter import OTelConfig
 
         # Empty string in env → fall back to "tapps-brain"
@@ -934,7 +932,10 @@ class TestGenAIMetricsRecorderInit:
 
         GenAIMetricsRecorder(meter=mock_meter)
 
-        names = {call.kwargs.get("name") or call.args[0] for call in mock_meter.create_histogram.call_args_list}
+        names = {
+            call.kwargs.get("name") or call.args[0]
+            for call in mock_meter.create_histogram.call_args_list
+        }
         assert GEN_AI_OPERATION_DURATION_METRIC in names
         assert MCP_SERVER_OPERATION_DURATION_METRIC in names
         assert GEN_AI_TOKEN_USAGE_METRIC in names
@@ -1095,7 +1096,10 @@ class TestGenAIMetricsRecorderRecordMCP:
         for call in mock_hist.record.call_args_list:
             attrs = call.args[1] if len(call.args) > 1 else call.kwargs.get("attributes", {})
             if isinstance(attrs, dict):
-                if attrs.get("mcp.method.name") == "tools/call" and attrs.get("gen_ai.tool.name") == "brain_recall":
+                if (
+                    attrs.get("mcp.method.name") == "tools/call"
+                    and attrs.get("gen_ai.tool.name") == "brain_recall"
+                ):
                     found = True
                     break
         assert found, "Expected mcp.method.name and gen_ai.tool.name in record() attrs"

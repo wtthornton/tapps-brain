@@ -73,9 +73,7 @@ class TestServeHttpOnly:
 
         mock_adapter.start.assert_called_once()
 
-    def test_mcp_not_started_when_mcp_port_zero(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_mcp_not_started_when_mcp_port_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_adapter = MagicMock()
         mock_mcp = MagicMock()
 
@@ -118,9 +116,9 @@ class TestServeDualTransport:
         ):
             _run_cmd_serve(port=18082, mcp_port=8091, stop_after_s=0.1)
 
-        assert any(
-            t.name == "tapps-brain-mcp" for t in started_threads
-        ), "Expected a thread named 'tapps-brain-mcp' to be created"
+        assert any(t.name == "tapps-brain-mcp" for t in started_threads), (
+            "Expected a thread named 'tapps-brain-mcp' to be created"
+        )
 
     def test_mcp_server_host_and_port_configured(self) -> None:
         mock_adapter = MagicMock()
@@ -346,15 +344,11 @@ class TestDeploymentDoc:
 
     def test_deployment_doc_has_agent_md_example(self) -> None:
         content = self._doc_path.read_text()
-        assert "AGENT.md" in content, (
-            "deployment.md must contain an AGENT.md wiring example"
-        )
+        assert "AGENT.md" in content, "deployment.md must contain an AGENT.md wiring example"
 
     def test_deployment_doc_has_port_table(self) -> None:
         content = self._doc_path.read_text()
-        assert "8080" in content and "8090" in content, (
-            "deployment.md must document both ports"
-        )
+        assert "8080" in content and "8090" in content, "deployment.md must document both ports"
 
 
 # ---------------------------------------------------------------------------

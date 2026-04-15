@@ -116,8 +116,7 @@ async def test_streamable_http_curated_tools_respond() -> None:
         headers["Authorization"] = f"Bearer {auth_token}"
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport,
-                                 base_url="http://parity.local") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://parity.local") as client:
         for tool_name in CURATED_TOOLS:
             payload = {
                 "jsonrpc": "2.0",
@@ -131,8 +130,7 @@ async def test_streamable_http_curated_tools_respond() -> None:
             # indicate a transport-layer problem, which this test guards
             # against.
             assert resp.status_code < 400, (
-                f"{tool_name}: transport error {resp.status_code} "
-                f"body={resp.text[:500]}"
+                f"{tool_name}: transport error {resp.status_code} body={resp.text[:500]}"
             )
 
             ctype = resp.headers.get("content-type", "")
@@ -142,9 +140,11 @@ async def test_streamable_http_curated_tools_respond() -> None:
                 # Parse the first JSON-RPC frame out of the SSE stream.
                 text = resp.text
                 data_line = next(
-                    (ln[len("data:"):].strip()
-                     for ln in text.splitlines()
-                     if ln.startswith("data:")),
+                    (
+                        ln[len("data:") :].strip()
+                        for ln in text.splitlines()
+                        if ln.startswith("data:")
+                    ),
                     "",
                 )
                 assert data_line, f"{tool_name}: empty SSE body"

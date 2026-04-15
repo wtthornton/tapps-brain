@@ -78,9 +78,7 @@ class TestPerTenantTokenIsolation:
 
             # token_a must NOT verify for project b
             result = registry_b.verify_token("test-tenant-b", token_a)
-            assert result is False, (
-                "token_a verified against project_b — cross-tenant auth leak!"
-            )
+            assert result is False, "token_a verified against project_b — cross-tenant auth leak!"
         finally:
             with contextlib.suppress(Exception):
                 registry_a.revoke_token("test-tenant-a")
@@ -91,9 +89,7 @@ class TestPerTenantTokenIsolation:
             cm_a.close()
             cm_b.close()
 
-    def test_token_a_cannot_auth_project_b_via_http(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_token_a_cannot_auth_project_b_via_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """HTTP data-plane auth with per-tenant flag: token-A → project-B → 403."""
         pytest.importorskip("argon2")
         monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
@@ -162,9 +158,7 @@ class TestPerTenantTokenIsolation:
 
             # After revoke: no hash → None, not False
             result = registry.verify_token("revoke-test-proj", token)
-            assert result is None, (
-                f"Expected None after revocation, got {result!r}"
-            )
+            assert result is None, f"Expected None after revocation, got {result!r}"
         finally:
             with contextlib.suppress(Exception):
                 registry.delete("revoke-test-proj")

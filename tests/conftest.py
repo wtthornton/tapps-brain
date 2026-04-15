@@ -31,9 +31,7 @@ def pytest_collection_modifyitems(config, items):
 
     skip_cli = pytest.mark.skip(reason="requires [cli] extra (typer)")
     skip_mcp = pytest.mark.skip(reason="requires [mcp] extra (mcp)")
-    skip_pg = pytest.mark.skip(
-        reason="requires live Postgres (set TAPPS_BRAIN_DATABASE_URL)"
-    )
+    skip_pg = pytest.mark.skip(reason="requires live Postgres (set TAPPS_BRAIN_DATABASE_URL)")
     _has_postgres = bool(os.environ.get("TAPPS_BRAIN_DATABASE_URL"))
     for item in items:
         if "requires_cli" in item.keywords and not _HAS_TYPER:
@@ -172,8 +170,7 @@ class InMemoryPrivateBackend:
             results = [
                 e
                 for e in self._entries.values()
-                if q_words & _tokens(e.value)
-                or q_words & _tokens(e.key.replace("-", " "))
+                if q_words & _tokens(e.value) or q_words & _tokens(e.key.replace("-", " "))
             ]
 
         # Apply temporal filters using the entry's created_at field.

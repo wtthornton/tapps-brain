@@ -230,9 +230,7 @@ class TestAsOfSearch:
         assert old is not None
         before_supersede = old.created_at  # timestamp before supersede
 
-        store.supersede(
-            "db-version", "We use PostgreSQL 17 database engine", key="db-version-v2"
-        )
+        store.supersede("db-version", "We use PostgreSQL 17 database engine", key="db-version-v2")
 
         # as_of=before_supersede → old version must appear
         results = store.search("PostgreSQL database engine", as_of=before_supersede)
@@ -242,9 +240,7 @@ class TestAsOfSearch:
     def test_ac2_default_search_excludes_superseded(self, store: MemoryStore) -> None:
         """Default search (no as_of) excludes superseded entries."""
         store.save(key="api-old", value="Our API uses REST protocol interface")
-        store.supersede(
-            "api-old", "Our API uses GraphQL protocol interface", key="api-new"
-        )
+        store.supersede("api-old", "Our API uses GraphQL protocol interface", key="api-new")
 
         results = store.search("API protocol interface")
         keys = [r.key for r in results]

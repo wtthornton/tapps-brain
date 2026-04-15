@@ -707,9 +707,7 @@ class TestExtractTraceContextFromMcpParams:
         with patch(
             "tapps_brain.otel_tracer.extract_trace_context", return_value=mock_ctx
         ) as mock_extract:
-            extract_trace_context_from_mcp_params(
-                {"_meta": {"traceparent": tp, "tracestate": ts}}
-            )
+            extract_trace_context_from_mcp_params({"_meta": {"traceparent": tp, "tracestate": ts}})
 
         mock_extract.assert_called_once_with({"traceparent": tp, "tracestate": ts})
 
@@ -721,9 +719,7 @@ class TestExtractTraceContextFromMcpParams:
         with patch(
             "tapps_brain.otel_tracer.extract_trace_context", return_value=mock_ctx
         ) as mock_extract:
-            extract_trace_context_from_mcp_params(
-                {"_meta": {"traceparent": tp, "tracestate": ""}}
-            )
+            extract_trace_context_from_mcp_params({"_meta": {"traceparent": tp, "tracestate": ""}})
 
         # tracestate must NOT be in carrier when empty
         call_carrier = mock_extract.call_args[0][0]
@@ -803,7 +799,9 @@ class TestRecordRetrievalDocumentEvents:
 
         mock_span = MagicMock()
         raw_key = "secret-entry-key-abc123"
-        record_retrieval_document_events(mock_span, [{"key": raw_key, "score": 0.5, "tier": "context"}])
+        record_retrieval_document_events(
+            mock_span, [{"key": raw_key, "score": 0.5, "tier": "context"}]
+        )
 
         event_attrs = mock_span.add_event.call_args[0][1]
         doc_id = event_attrs.get(ATTR_RETRIEVAL_DOC_ID, "")
@@ -832,7 +830,9 @@ class TestRecordRetrievalDocumentEvents:
         )
 
         mock_span = MagicMock()
-        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.85, "tier": "pattern"}])
+        record_retrieval_document_events(
+            mock_span, [{"key": "k", "score": 0.85, "tier": "pattern"}]
+        )
         attrs = mock_span.add_event.call_args[0][1]
         assert isinstance(attrs.get(ATTR_RETRIEVAL_DOC_SCORE), float)
         assert abs(attrs[ATTR_RETRIEVAL_DOC_SCORE] - 0.85) < 1e-9
@@ -844,7 +844,9 @@ class TestRecordRetrievalDocumentEvents:
         )
 
         mock_span = MagicMock()
-        record_retrieval_document_events(mock_span, [{"key": "k", "score": 0.5, "tier": "architectural"}])
+        record_retrieval_document_events(
+            mock_span, [{"key": "k", "score": 0.5, "tier": "architectural"}]
+        )
         attrs = mock_span.add_event.call_args[0][1]
         assert attrs.get(ATTR_RETRIEVAL_DOC_TIER) == "architectural"
 
@@ -888,7 +890,9 @@ class TestRecordRetrievalDocumentEvents:
         class _FakeSpan:
             pass
 
-        record_retrieval_document_events(_FakeSpan(), [{"key": "k", "score": 0.5, "tier": "context"}])
+        record_retrieval_document_events(
+            _FakeSpan(), [{"key": "k", "score": 0.5, "tier": "context"}]
+        )
 
     def test_event_constants_have_correct_values(self) -> None:
         from tapps_brain.otel_tracer import (
@@ -1139,9 +1143,12 @@ class TestNonRetrievalSpanStoreIntegration:
 class TestRecordFeedbackEvent:
     """record_feedback_event() emits tapps_brain.feedback OTel span events."""
 
-    def _make_feedback_event(self, event_type: str = "recall_rated", utility_score: float | None = 0.8) -> Any:
+    def _make_feedback_event(
+        self, event_type: str = "recall_rated", utility_score: float | None = 0.8
+    ) -> Any:
         """Return a simple namespace object mimicking FeedbackEvent."""
         from types import SimpleNamespace
+
         return SimpleNamespace(event_type=event_type, utility_score=utility_score)
 
     def test_adds_event_to_span(self) -> None:
@@ -1162,7 +1169,11 @@ class TestRecordFeedbackEvent:
         event = self._make_feedback_event("gap_reported", None)
         record_feedback_event(mock_span, event)
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_FEEDBACK_EVENT_TYPE) == "gap_reported"
 
     def test_event_attrs_contain_utility_score_when_set(self) -> None:
@@ -1172,7 +1183,11 @@ class TestRecordFeedbackEvent:
         event = self._make_feedback_event("recall_rated", 0.75)
         record_feedback_event(mock_span, event)
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_FEEDBACK_UTILITY_SCORE) == 0.75
 
     def test_utility_score_omitted_when_none(self) -> None:
@@ -1182,7 +1197,11 @@ class TestRecordFeedbackEvent:
         event = self._make_feedback_event("gap_reported", None)
         record_feedback_event(mock_span, event)
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert ATTR_FEEDBACK_UTILITY_SCORE not in attrs
 
     def test_no_pii_in_event_attrs(self) -> None:
@@ -1201,7 +1220,11 @@ class TestRecordFeedbackEvent:
         )
         record_feedback_event(mock_span, event)
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert "entry_key" not in attrs
         assert "session_id" not in attrs
         assert "details" not in attrs
@@ -1261,7 +1284,11 @@ class TestRecordFeedbackEvent:
         record_feedback_event(mock_span, event)
 
         mock_span.add_event.assert_called_once()
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_FEEDBACK_EVENT_TYPE) == "recall_rated"
 
 
@@ -1281,6 +1308,7 @@ class TestRecordDiagnosticsEvent:
         anomalies: list[Any] | None = None,
     ) -> Any:
         from types import SimpleNamespace
+
         return SimpleNamespace(
             composite_score=composite_score,
             circuit_state=circuit_state,
@@ -1295,7 +1323,11 @@ class TestRecordDiagnosticsEvent:
         record_diagnostics_event(mock_span, self._make_report())
 
         mock_span.add_event.assert_called_once()
-        call_name = mock_span.add_event.call_args.args[0] if mock_span.add_event.call_args.args else mock_span.add_event.call_args.kwargs.get("name")
+        call_name = (
+            mock_span.add_event.call_args.args[0]
+            if mock_span.add_event.call_args.args
+            else mock_span.add_event.call_args.kwargs.get("name")
+        )
         assert call_name == EVENT_DIAGNOSTICS_REPORT
 
     def test_event_attrs_composite_score(self) -> None:
@@ -1307,7 +1339,11 @@ class TestRecordDiagnosticsEvent:
         mock_span = MagicMock()
         record_diagnostics_event(mock_span, self._make_report(composite_score=0.72))
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_DIAGNOSTICS_COMPOSITE_SCORE) == 0.72
 
     def test_event_attrs_circuit_state(self) -> None:
@@ -1316,7 +1352,11 @@ class TestRecordDiagnosticsEvent:
         mock_span = MagicMock()
         record_diagnostics_event(mock_span, self._make_report(circuit_state="degraded"))
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_DIAGNOSTICS_CIRCUIT_STATE) == "degraded"
 
     def test_event_attrs_gap_count(self) -> None:
@@ -1325,7 +1365,11 @@ class TestRecordDiagnosticsEvent:
         mock_span = MagicMock()
         record_diagnostics_event(mock_span, self._make_report(gap_count=5))
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_DIAGNOSTICS_GAP_COUNT) == 5
 
     def test_event_attrs_anomaly_count(self) -> None:
@@ -1335,7 +1379,11 @@ class TestRecordDiagnosticsEvent:
         anomalies = [{"type": "spike"}, {"type": "drift"}]
         record_diagnostics_event(mock_span, self._make_report(anomalies=anomalies))
 
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert attrs.get(ATTR_DIAGNOSTICS_ANOMALY_COUNT) == 2
 
     def test_noop_when_span_is_none(self) -> None:
@@ -1397,5 +1445,9 @@ class TestRecordDiagnosticsEvent:
         record_diagnostics_event(mock_span, report)
 
         mock_span.add_event.assert_called_once()
-        attrs = mock_span.add_event.call_args.args[1] if mock_span.add_event.call_args.args[1:] else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        attrs = (
+            mock_span.add_event.call_args.args[1]
+            if mock_span.add_event.call_args.args[1:]
+            else mock_span.add_event.call_args.kwargs.get("attributes", {})
+        )
         assert ATTR_DIAGNOSTICS_COMPOSITE_SCORE in attrs

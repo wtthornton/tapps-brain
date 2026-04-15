@@ -99,10 +99,7 @@ class ProjectRegistry:
 
     def list_all(self, *, approved: bool | None = None) -> list[ProjectRecord]:
         """Return every row, optionally filtered by approval status."""
-        sql = (
-            "SELECT project_id, profile, approved, source, notes "
-            "FROM project_profiles"
-        )
+        sql = "SELECT project_id, profile, approved, source, notes FROM project_profiles"
         params: tuple[Any, ...] = ()
         if approved is not None:
             sql += " WHERE approved = %s"
@@ -183,8 +180,7 @@ class ProjectRegistry:
         a row was updated, ``False`` if the ID was unknown."""
         with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
-                "UPDATE project_profiles SET approved = TRUE "
-                "WHERE project_id = %s",
+                "UPDATE project_profiles SET approved = TRUE WHERE project_id = %s",
                 (project_id,),
             )
             updated = cur.rowcount

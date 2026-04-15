@@ -597,7 +597,9 @@ def test_scorecard_retrieval_other_mode() -> None:
 
 def test_namespace_detail_defaults() -> None:
     """NamespaceDetail has sensible defaults and accepts all fields."""
-    nd = NamespaceDetail(namespace="repo-brain", entry_count=42, last_write_at="2026-01-01T00:00:00Z")
+    nd = NamespaceDetail(
+        namespace="repo-brain", entry_count=42, last_write_at="2026-01-01T00:00:00Z"
+    )
     assert nd.namespace == "repo-brain"
     assert nd.entry_count == 42
     assert nd.last_write_at == "2026-01-01T00:00:00Z"
@@ -619,7 +621,9 @@ def test_hive_health_summary_namespace_detail_populated() -> None:
         NamespaceDetail(namespace="alpha", entry_count=10, last_write_at="2026-01-01T00:00:00Z"),
         NamespaceDetail(namespace="beta", entry_count=5, last_write_at=None),
     ]
-    hh = HiveHealthSummary(connected=True, status="ok", entries=15, agents=2, namespace_detail=details)
+    hh = HiveHealthSummary(
+        connected=True, status="ok", entries=15, agents=2, namespace_detail=details
+    )
     assert len(hh.namespace_detail) == 2
     assert hh.namespace_detail[0].namespace == "alpha"
     assert hh.namespace_detail[1].entry_count == 5
@@ -627,8 +631,12 @@ def test_hive_health_summary_namespace_detail_populated() -> None:
 
 def test_hive_health_summary_serialises_namespace_detail() -> None:
     """HiveHealthSummary with namespace_detail round-trips through model_dump/model_validate."""
-    details = [NamespaceDetail(namespace="ns1", entry_count=7, last_write_at="2026-04-01T10:00:00Z")]
-    hh = HiveHealthSummary(connected=True, status="ok", entries=7, agents=1, namespace_detail=details)
+    details = [
+        NamespaceDetail(namespace="ns1", entry_count=7, last_write_at="2026-04-01T10:00:00Z")
+    ]
+    hh = HiveHealthSummary(
+        connected=True, status="ok", entries=7, agents=1, namespace_detail=details
+    )
     dumped = hh.model_dump()
     restored = HiveHealthSummary.model_validate(dumped)
     assert restored.namespace_detail[0].namespace == "ns1"
@@ -641,7 +649,11 @@ def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
     try:
         mock_hive = MagicMock()
         mock_hive.namespace_detail_list.return_value = [
-            {"namespace": "personal", "entry_count": 20, "last_write_at": "2026-04-01T12:00:00+00:00"},
+            {
+                "namespace": "personal",
+                "entry_count": 20,
+                "last_write_at": "2026-04-01T12:00:00+00:00",
+            },
             {"namespace": "repo-brain", "entry_count": 55, "last_write_at": None},
         ]
         mock_registry = MagicMock()
@@ -754,8 +766,18 @@ def _make_mock_backend_with_rows(rows: list[tuple[str, str, str, str | None]]) -
 def test_collect_agent_registry_full_registry() -> None:
     """Full registry: 3 agents returned with correct mapping."""
     rows = [
-        ("agent-alpha-12345678", "repo-brain", "2026-01-01T00:00:00+00:00", "2026-04-10T10:00:00+00:00"),
-        ("agent-beta-87654321", "universal", "2026-02-01T00:00:00+00:00", "2026-04-09T08:00:00+00:00"),
+        (
+            "agent-alpha-12345678",
+            "repo-brain",
+            "2026-01-01T00:00:00+00:00",
+            "2026-04-10T10:00:00+00:00",
+        ),
+        (
+            "agent-beta-87654321",
+            "universal",
+            "2026-02-01T00:00:00+00:00",
+            "2026-04-09T08:00:00+00:00",
+        ),
         ("agent-gamma-aabbcc", "custom-ns", "2026-03-01T00:00:00+00:00", None),
     ]
     backend = _make_mock_backend_with_rows(rows)
@@ -856,7 +878,12 @@ def test_visual_snapshot_has_agent_registry_field(tmp_path: Path) -> None:
 def test_visual_snapshot_agent_registry_populated_from_hive(tmp_path: Path) -> None:
     """build_visual_snapshot populates agent_registry when hive backend is available."""
     rows = [
-        ("agent-abc-12345678", "repo-brain", "2026-01-01T00:00:00+00:00", "2026-04-10T10:00:00+00:00"),
+        (
+            "agent-abc-12345678",
+            "repo-brain",
+            "2026-01-01T00:00:00+00:00",
+            "2026-04-10T10:00:00+00:00",
+        ),
         ("agent-def-abcdefgh", "universal", "2026-02-01T00:00:00+00:00", None),
     ]
     mock_hive = _make_mock_backend_with_rows(rows)

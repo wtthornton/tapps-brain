@@ -62,8 +62,10 @@ def _make_settings(
 @contextmanager
 def _client(settings: _Settings):
     """Context manager that yields a TestClient driving create_app() with isolated settings."""
-    with patch.object(_mod, "_settings", settings), \
-         patch.object(_mod, "get_settings", return_value=settings):
+    with (
+        patch.object(_mod, "_settings", settings),
+        patch.object(_mod, "get_settings", return_value=settings),
+    ):
         # Pass a dummy mcp_server so lifespan skips the real MCP build.
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
@@ -225,6 +227,7 @@ class TestReadyEndpointDbDown:
         with _client(settings) as c:
             body = c.get("/ready").json()
         import json
+
         body_str = json.dumps(body)
         assert "invalid_host_that_does_not_exist" not in body_str
 
@@ -240,9 +243,12 @@ class TestReadyEndpointDbHealthy:
         mock_status.current_version = 5
         mock_status.pending_migrations = []
         settings = _make_settings(dsn="postgres://mockhost/testdb")
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
-        ), _client(settings) as c:
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            _client(settings) as c,
+        ):
             resp = c.get("/ready")
         assert resp.status_code == 200
         body = resp.json()
@@ -254,9 +260,12 @@ class TestReadyEndpointDbHealthy:
         mock_status.current_version = 7
         mock_status.pending_migrations = []
         settings = _make_settings(dsn="postgres://mockhost/testdb")
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
-        ), _client(settings) as c:
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            _client(settings) as c,
+        ):
             body = c.get("/ready").json()
         assert isinstance(body, dict)
         assert body["migration_version"] == 7
@@ -937,10 +946,13 @@ class TestSnapshotProjectFilter:
 
     def test_unfiltered_returns_all_rows(self) -> None:
         mock_store = MagicMock()
-        with patch(
-            "tapps_brain.visual_snapshot.build_visual_snapshot",
-            side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ), _client(_make_settings(store=mock_store)) as c:
+        with (
+            patch(
+                "tapps_brain.visual_snapshot.build_visual_snapshot",
+                side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
+            ),
+            _client(_make_settings(store=mock_store)) as c,
+        ):
             resp = c.get("/snapshot")
         assert resp.status_code == 200
         body = resp.json()
@@ -950,10 +962,13 @@ class TestSnapshotProjectFilter:
 
     def test_project_filter_scopes_rows(self) -> None:
         mock_store = MagicMock()
-        with patch(
-            "tapps_brain.visual_snapshot.build_visual_snapshot",
-            side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ), _client(_make_settings(store=mock_store)) as c:
+        with (
+            patch(
+                "tapps_brain.visual_snapshot.build_visual_snapshot",
+                side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
+            ),
+            _client(_make_settings(store=mock_store)) as c,
+        ):
             resp = c.get("/snapshot?project=tenant-a")
         assert resp.status_code == 200
         body = resp.json()
@@ -964,10 +979,13 @@ class TestSnapshotProjectFilter:
     def test_project_filter_excludes_legacy_none_rows(self) -> None:
         """Rows with project_id=None must NOT leak into a filtered response."""
         mock_store = MagicMock()
-        with patch(
-            "tapps_brain.visual_snapshot.build_visual_snapshot",
-            side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ), _client(_make_settings(store=mock_store)) as c:
+        with (
+            patch(
+                "tapps_brain.visual_snapshot.build_visual_snapshot",
+                side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
+            ),
+            _client(_make_settings(store=mock_store)) as c,
+        ):
             body = c.get("/snapshot?project=tenant-b").json()
         assert isinstance(body, dict)
         ids = {r["id"] for r in body["diagnostics_history"]} | {
@@ -978,10 +996,13 @@ class TestSnapshotProjectFilter:
 
     def test_unknown_project_returns_empty_arrays_not_404(self) -> None:
         mock_store = MagicMock()
-        with patch(
-            "tapps_brain.visual_snapshot.build_visual_snapshot",
-            side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
-        ), _client(_make_settings(store=mock_store)) as c:
+        with (
+            patch(
+                "tapps_brain.visual_snapshot.build_visual_snapshot",
+                side_effect=lambda *a, **k: _make_mock_snapshot_with_tenants(),
+            ),
+            _client(_make_settings(store=mock_store)) as c,
+        ):
             resp = c.get("/snapshot?project=ghost")
         assert resp.status_code == 200
         body = resp.json()

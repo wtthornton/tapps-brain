@@ -834,9 +834,7 @@ def get_retrieval_meter_snapshot() -> dict[str, int | float]:
     """
     try:
         with _rm_lock:
-            mean_lat = (
-                _rm_latency_sum_ms / _rm_latency_count if _rm_latency_count > 0 else 0.0
-            )
+            mean_lat = _rm_latency_sum_ms / _rm_latency_count if _rm_latency_count > 0 else 0.0
             return {
                 "total_queries": _rm_recall_total,
                 "bm25_hits": _rm_bm25_candidates,

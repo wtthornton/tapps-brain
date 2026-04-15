@@ -363,7 +363,9 @@ class TestHasOtelFalseNoOp:
 
         from tapps_brain.otel_tracer import record_diagnostics_event
 
-        report = SimpleNamespace(composite_score=0.8, circuit_state="closed", gap_count=0, anomalies=[])
+        report = SimpleNamespace(
+            composite_score=0.8, circuit_state="closed", gap_count=0, anomalies=[]
+        )
         record_diagnostics_event(None, report)  # must not raise
 
     def test_start_span_noop_when_otel_disabled(self) -> None:

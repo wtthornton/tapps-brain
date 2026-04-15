@@ -95,6 +95,7 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
         key = (project_id, agent_id)
         _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
 
+
 # ---------------------------------------------------------------------------
 # OpenAPI spec — preserved verbatim from the legacy handler so /openapi.json
 # continues to return the same document that existing clients parse.
@@ -113,26 +114,66 @@ _OPENAPI_SPEC: dict[str, Any] = {
         ),
     },
     "paths": {
-        "/health": {"get": {"summary": "Liveness probe", "operationId": "getLiveness",
-                            "security": [], "responses": {"200": {"description": "Process is alive."}}}},
-        "/ready": {"get": {"summary": "Readiness probe", "operationId": "getReadiness",
-                           "security": [], "responses": {"200": {"description": "Ready."},
-                                                          "503": {"description": "Degraded."}}}},
-        "/metrics": {"get": {"summary": "Prometheus metrics", "operationId": "getMetrics",
-                             "security": [], "responses": {"200": {"description": "text/plain"}}}},
-        "/info": {"get": {"summary": "Extended runtime info", "operationId": "getInfo",
-                          "security": [{"bearerAuth": []}],
-                          "responses": {"200": {"description": "Runtime info."},
-                                        "401": {"description": "Missing/malformed Authorization."},
-                                        "403": {"description": "Invalid token."}}}},
-        "/snapshot": {"get": {"summary": "Live system snapshot", "operationId": "getSnapshot",
-                              "security": [{"bearerAuth": []}],
-                              "responses": {"200": {"description": "VisualSnapshot JSON."},
-                                            "401": {"description": "Missing/malformed Authorization."},
-                                            "403": {"description": "Invalid token."},
-                                            "503": {"description": "No store configured."}}}},
-        "/openapi.json": {"get": {"summary": "OpenAPI spec", "operationId": "getOpenApiSpec",
-                                  "security": [], "responses": {"200": {"description": "OpenAPI."}}}},
+        "/health": {
+            "get": {
+                "summary": "Liveness probe",
+                "operationId": "getLiveness",
+                "security": [],
+                "responses": {"200": {"description": "Process is alive."}},
+            }
+        },
+        "/ready": {
+            "get": {
+                "summary": "Readiness probe",
+                "operationId": "getReadiness",
+                "security": [],
+                "responses": {
+                    "200": {"description": "Ready."},
+                    "503": {"description": "Degraded."},
+                },
+            }
+        },
+        "/metrics": {
+            "get": {
+                "summary": "Prometheus metrics",
+                "operationId": "getMetrics",
+                "security": [],
+                "responses": {"200": {"description": "text/plain"}},
+            }
+        },
+        "/info": {
+            "get": {
+                "summary": "Extended runtime info",
+                "operationId": "getInfo",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {"description": "Runtime info."},
+                    "401": {"description": "Missing/malformed Authorization."},
+                    "403": {"description": "Invalid token."},
+                },
+            }
+        },
+        "/snapshot": {
+            "get": {
+                "summary": "Live system snapshot",
+                "operationId": "getSnapshot",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {"description": "VisualSnapshot JSON."},
+                    "401": {"description": "Missing/malformed Authorization."},
+                    "403": {"description": "Invalid token."},
+                    "503": {"description": "No store configured."},
+                },
+            }
+        },
+        "/openapi.json": {
+            "get": {
+                "summary": "OpenAPI spec",
+                "operationId": "getOpenApiSpec",
+                "security": [],
+                "responses": {"200": {"description": "OpenAPI."}},
+            }
+        },
     },
     "components": {
         "securitySchemes": {
@@ -154,6 +195,7 @@ _OPENAPI_SPEC: dict[str, Any] = {
 # Shared helpers (lifted verbatim from the legacy handler, behavior-identical)
 # ---------------------------------------------------------------------------
 
+
 def _service_version() -> str:
     try:
         from importlib.metadata import version
@@ -169,8 +211,7 @@ def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dic
     for key in ("diagnostics_history", "feedback_events"):
         rows = filtered.get(key) or []
         filtered[key] = [
-            row for row in rows
-            if isinstance(row, dict) and row.get("project_id") == project_id
+            row for row in rows if isinstance(row, dict) and row.get("project_id") == project_id
         ]
     return filtered
 
@@ -215,19 +256,34 @@ def _collect_metrics(dsn: str | None) -> str:
         lines.append(f"# TYPE {name} gauge")
         lines.append(f"{name} {value}")
 
-    gauge("tapps_brain_process_start_time_seconds", _PROCESS_START_TIME,
-          "Unix timestamp when tapps-brain HTTP adapter was started.")
-    gauge("tapps_brain_process_uptime_seconds", time.time() - _PROCESS_START_TIME,
-          "Seconds since tapps-brain HTTP adapter started.")
-    gauge("tapps_brain_python_info", 1.0,
-          f"Python version info (version={sys.version_info.major}.{sys.version_info.minor}).")
+    gauge(
+        "tapps_brain_process_start_time_seconds",
+        _PROCESS_START_TIME,
+        "Unix timestamp when tapps-brain HTTP adapter was started.",
+    )
+    gauge(
+        "tapps_brain_process_uptime_seconds",
+        time.time() - _PROCESS_START_TIME,
+        "Seconds since tapps-brain HTTP adapter started.",
+    )
+    gauge(
+        "tapps_brain_python_info",
+        1.0,
+        f"Python version info (version={sys.version_info.major}.{sys.version_info.minor}).",
+    )
 
     is_ready, migration_version, _ = _probe_db(dsn)
-    gauge("tapps_brain_db_ready", 1.0 if is_ready else 0.0,
-          "1 if the configured Postgres database responded to a probe, 0 otherwise.")
+    gauge(
+        "tapps_brain_db_ready",
+        1.0 if is_ready else 0.0,
+        "1 if the configured Postgres database responded to a probe, 0 otherwise.",
+    )
     if migration_version is not None:
-        gauge("tapps_brain_db_migration_version", float(migration_version),
-              "Highest applied Hive schema migration version.")
+        gauge(
+            "tapps_brain_db_migration_version",
+            float(migration_version),
+            "Highest applied Hive schema migration version.",
+        )
 
     # STORY-070.12: per-(project_id, agent_id) request counters.
     with _LABELED_REQUEST_COUNTS_LOCK:
@@ -297,8 +353,11 @@ class _Settings:
 
     @staticmethod
     def _resolve_dsn() -> str | None:
-        dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-               or os.environ.get("TAPPS_BRAIN_HIVE_DSN") or "").strip()
+        dsn = (
+            os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+            or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            or ""
+        ).strip()
         return dsn or None
 
     @staticmethod
@@ -318,9 +377,9 @@ class _Settings:
     def _resolve_auth_token(cls) -> str | None:
         # STORY-070.3: accept either new (TAPPS_BRAIN_AUTH_TOKEN) or legacy
         # (TAPPS_BRAIN_HTTP_AUTH_TOKEN) name for the data-plane token.
-        return (cls._read_secret("TAPPS_BRAIN_AUTH_TOKEN", "TAPPS_BRAIN_AUTH_TOKEN_FILE")
-                or cls._read_secret("TAPPS_BRAIN_HTTP_AUTH_TOKEN",
-                                    "TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE"))
+        return cls._read_secret(
+            "TAPPS_BRAIN_AUTH_TOKEN", "TAPPS_BRAIN_AUTH_TOKEN_FILE"
+        ) or cls._read_secret("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
 
     @classmethod
     def _resolve_admin_token(cls) -> str | None:
@@ -352,7 +411,7 @@ def _extract_bearer(request: Request) -> str | None:
         return None
     if not header.lower().startswith(_BEARER_PREFIX):
         return ""
-    return header[len(_BEARER_PREFIX):].strip()
+    return header[len(_BEARER_PREFIX) :].strip()
 
 
 def _per_tenant_auth_enabled() -> bool:
@@ -360,9 +419,7 @@ def _per_tenant_auth_enabled() -> bool:
     return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
 
 
-def _verify_per_tenant_token(
-    project_id: str, token: str, dsn: str
-) -> bool | None:
+def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:
     """Check *token* against the project's stored argon2id hash.
 
     Returns:
@@ -408,14 +465,18 @@ def require_data_plane_auth(request: Request) -> None:
             if tok is None:
                 raise HTTPException(
                     status_code=401,
-                    detail={"error": "unauthorized",
-                            "detail": "Authorization header required (Bearer token)."},
+                    detail={
+                        "error": "unauthorized",
+                        "detail": "Authorization header required (Bearer token).",
+                    },
                 )
             if tok == "":
                 raise HTTPException(
                     status_code=401,
-                    detail={"error": "unauthorized",
-                            "detail": "Malformed Authorization header — expected 'Bearer <token>'."},
+                    detail={
+                        "error": "unauthorized",
+                        "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
+                    },
                 )
             result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
             if result is True:
@@ -434,14 +495,18 @@ def require_data_plane_auth(request: Request) -> None:
     if tok is None:
         raise HTTPException(
             status_code=401,
-            detail={"error": "unauthorized",
-                    "detail": "Authorization header required (Bearer token)."},
+            detail={
+                "error": "unauthorized",
+                "detail": "Authorization header required (Bearer token).",
+            },
         )
     if tok == "":
         raise HTTPException(
             status_code=401,
-            detail={"error": "unauthorized",
-                    "detail": "Malformed Authorization header — expected 'Bearer <token>'."},
+            detail={
+                "error": "unauthorized",
+                "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
+            },
         )
     if tok != cfg.auth_token:
         raise HTTPException(
@@ -460,15 +525,16 @@ def require_admin_auth(request: Request) -> None:
     if not cfg.admin_token:
         raise HTTPException(
             status_code=503,
-            detail={"error": "admin_disabled",
-                    "detail": "Admin routes require TAPPS_BRAIN_ADMIN_TOKEN to be set."},
+            detail={
+                "error": "admin_disabled",
+                "detail": "Admin routes require TAPPS_BRAIN_ADMIN_TOKEN to be set.",
+            },
         )
     tok = _extract_bearer(request)
     if tok is None or tok == "":
         raise HTTPException(
             status_code=401,
-            detail={"error": "unauthorized",
-                    "detail": "Bearer token required for admin routes."},
+            detail={"error": "unauthorized", "detail": "Bearer token required for admin routes."},
         )
     if tok != cfg.admin_token:
         raise HTTPException(
@@ -499,9 +565,8 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
         project_id = request.headers.get("x-project-id", "")
         # STORY-070.7: tag spans with per-call agent identity so observability
         # can filter by tenant × agent without inspecting headers downstream.
-        agent_id_header = (
-            request.headers.get("x-tapps-agent")
-            or request.headers.get("x-agent-id", "")
+        agent_id_header = request.headers.get("x-tapps-agent") or request.headers.get(
+            "x-agent-id", ""
         )
         with start_span(
             f"{method} {path}",
@@ -528,8 +593,7 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
                 if origin and origin not in cfg.allowed_origins:
                     return JSONResponse(
                         status_code=403,
-                        content={"error": "forbidden",
-                                 "detail": f"Origin '{origin}' not allowed."},
+                        content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
                     )
         return await call_next(request)
 
@@ -555,8 +619,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
             if tok is None or tok == "":
                 return JSONResponse(
                     status_code=401,
-                    content={"error": "unauthorized",
-                             "detail": "Bearer token required for /mcp."},
+                    content={"error": "unauthorized", "detail": "Bearer token required for /mcp."},
                 )
             if tok != cfg.auth_token:
                 return JSONResponse(
@@ -569,8 +632,10 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         if not project_id:
             return JSONResponse(
                 status_code=400,
-                content={"error": "bad_request",
-                         "detail": "X-Project-Id header is required for /mcp requests."},
+                content={
+                    "error": "bad_request",
+                    "detail": "X-Project-Id header is required for /mcp requests.",
+                },
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
         # STORY-070.7: ``X-Tapps-Agent`` is the canonical per-call identity
@@ -654,9 +719,11 @@ def create_app(
     if not cfg.allowed_origins:
         logger.warning(
             "http_adapter.allowed_origins_empty",
-            detail=("TAPPS_BRAIN_ALLOWED_ORIGINS is empty — all Origin headers "
-                    "are accepted.  Set this to a comma-separated list for "
-                    "production deployments (DNS-rebinding protection)."),
+            detail=(
+                "TAPPS_BRAIN_ALLOWED_ORIGINS is empty — all Origin headers "
+                "are accepted.  Set this to a comma-separated list for "
+                "production deployments (DNS-rebinding protection)."
+            ),
         )
 
     # Defer MCP server build so stdio-only environments can import this
@@ -682,8 +749,7 @@ def create_app(
                     session_cm = sm.run()
                     await session_cm.__aenter__()
                 except Exception as exc:
-                    logger.error("http_adapter.session_manager_start_failed",
-                                 error=str(exc))
+                    logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
 
             # Mount the MCP Streamable HTTP ASGI sub-app once the session
@@ -713,13 +779,12 @@ def create_app(
                 try:
                     await session_cm.__aexit__(None, None, None)
                 except Exception:
-                    logger.debug("http_adapter.session_manager_stop_failed",
-                                 exc_info=True)
+                    logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
 
     app = FastAPI(
         title="tapps-brain runtime API",
         version=cfg.version,
-        docs_url=None,       # we serve our hand-crafted /openapi.json instead
+        docs_url=None,  # we serve our hand-crafted /openapi.json instead
         redoc_url=None,
         openapi_url=None,
         lifespan=_lifespan,
@@ -770,8 +835,7 @@ def create_app(
         body = {
             "service": _SERVICE_NAME,
             "version": cfg.version,
-            "python": f"{sys.version_info.major}.{sys.version_info.minor}."
-                      f"{sys.version_info.micro}",
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
             "platform": platform.system(),
             "uptime_seconds": round(time.time() - _PROCESS_START_TIME, 3),
             "auth_enabled": cfg.auth_token is not None,
@@ -797,8 +861,10 @@ def create_app(
 
         with cfg.snapshot_lock:
             now = time.time()
-            cache_hit = (cfg.snapshot_cache is not None
-                         and (now - cfg.snapshot_cache_at) < _SNAPSHOT_TTL_SECONDS)
+            cache_hit = (
+                cfg.snapshot_cache is not None
+                and (now - cfg.snapshot_cache_at) < _SNAPSHOT_TTL_SECONDS
+            )
             if cache_hit:
                 snapshot = cfg.snapshot_cache
             else:
@@ -824,8 +890,10 @@ def create_app(
         if cfg.store is None:
             raise HTTPException(
                 status_code=503,
-                detail={"error": "store_unavailable",
-                        "detail": "No MemoryStore is configured for this adapter instance."},
+                detail={
+                    "error": "store_unavailable",
+                    "detail": "No MemoryStore is configured for this adapter instance.",
+                },
             )
         return cfg.store
 
@@ -891,8 +959,7 @@ def create_app(
         if not project_id:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request",
-                        "detail": "X-Project-Id header is required."},
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
@@ -904,39 +971,43 @@ def create_app(
         try:
             raw = await request.body()
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Read error: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+            )
         if not raw:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Empty request body."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
         if len(raw) > 65_536:
-            raise HTTPException(status_code=413,
-                                detail={"error": "payload_too_large",
-                                        "detail": "Max 65536 bytes."})
+            raise HTTPException(
+                status_code=413, detail={"error": "payload_too_large", "detail": "Max 65536 bytes."}
+            )
         try:
             body = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Invalid JSON: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+            )
         if not isinstance(body, dict):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Request body must be a JSON object."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
 
         mem_key = (body.get("key") or "").strip()
         mem_value = body.get("value") or ""
         if not mem_key or not mem_value:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "key and value are required."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "key and value are required."},
+            )
 
         from tapps_brain.services import memory_service as _ms
 
         result = _ms.memory_save(
-            store, project_id, agent_id,
+            store,
+            project_id,
+            agent_id,
             key=mem_key,
             value=mem_value,
             tier=body.get("tier", "pattern"),
@@ -978,8 +1049,7 @@ def create_app(
         if not project_id:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request",
-                        "detail": "X-Project-Id header is required."},
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
@@ -991,38 +1061,41 @@ def create_app(
         try:
             raw = await request.body()
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Read error: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+            )
         if not raw:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Empty request body."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
         if len(raw) > 65_536:
-            raise HTTPException(status_code=413,
-                                detail={"error": "payload_too_large",
-                                        "detail": "Max 65536 bytes."})
+            raise HTTPException(
+                status_code=413, detail={"error": "payload_too_large", "detail": "Max 65536 bytes."}
+            )
         try:
             body = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Invalid JSON: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+            )
         if not isinstance(body, dict):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Request body must be a JSON object."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
 
         mem_key = (body.get("key") or "").strip()
         if not mem_key:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "key is required."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "key is required."}
+            )
 
         from tapps_brain.services import memory_service as _ms
 
         result = _ms.memory_reinforce(
-            store, project_id, agent_id,
+            store,
+            project_id,
+            agent_id,
             key=mem_key,
             confidence_boost=float(body.get("confidence_boost", 0.0)),
         )
@@ -1065,33 +1138,36 @@ def create_app(
         try:
             raw = await request.body()
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Read error: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+            )
         if not raw:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Empty request body."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
         if len(raw) > 10 * 1_048_576:  # 10 MiB
-            raise HTTPException(status_code=413,
-                                detail={"error": "payload_too_large",
-                                        "detail": "Max 10 MiB for batch requests."})
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+            )
         try:
             body = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Invalid JSON: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+            )
         if not isinstance(body, dict):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Request body must be a JSON object."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
 
         entries = body.get("entries")
         if not isinstance(entries, list):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "entries must be a JSON array."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entries must be a JSON array."},
+            )
 
         from tapps_brain.services import memory_service as _ms
 
@@ -1126,33 +1202,36 @@ def create_app(
         try:
             raw = await request.body()
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Read error: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+            )
         if not raw:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Empty request body."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
         if len(raw) > 10 * 1_048_576:
-            raise HTTPException(status_code=413,
-                                detail={"error": "payload_too_large",
-                                        "detail": "Max 10 MiB for batch requests."})
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+            )
         try:
             body = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Invalid JSON: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+            )
         if not isinstance(body, dict):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Request body must be a JSON object."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
 
         queries = body.get("queries")
         if not isinstance(queries, list):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "queries must be a JSON array."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "queries must be a JSON array."},
+            )
 
         from tapps_brain.services import memory_service as _ms
 
@@ -1187,33 +1266,36 @@ def create_app(
         try:
             raw = await request.body()
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Read error: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+            )
         if not raw:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Empty request body."})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
         if len(raw) > 10 * 1_048_576:
-            raise HTTPException(status_code=413,
-                                detail={"error": "payload_too_large",
-                                        "detail": "Max 10 MiB for batch requests."})
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+            )
         try:
             body = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": f"Invalid JSON: {exc}"})
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+            )
         if not isinstance(body, dict):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "Request body must be a JSON object."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
 
         entries = body.get("entries")
         if not isinstance(entries, list):
-            raise HTTPException(status_code=400,
-                                detail={"error": "bad_request",
-                                        "detail": "entries must be a JSON array."})
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entries must be a JSON array."},
+            )
 
         from tapps_brain.services import memory_service as _ms
 
@@ -1227,8 +1309,10 @@ def create_app(
         if not cfg.dsn:
             raise HTTPException(
                 status_code=503,
-                detail={"error": "db_unavailable",
-                        "detail": "TAPPS_BRAIN_DATABASE_URL is not configured."},
+                detail={
+                    "error": "db_unavailable",
+                    "detail": "TAPPS_BRAIN_DATABASE_URL is not configured.",
+                },
             )
         from tapps_brain.postgres_connection import PostgresConnectionManager
         from tapps_brain.project_registry import ProjectRegistry
@@ -1245,15 +1329,18 @@ def create_app(
             cm.close()
         return JSONResponse(
             status_code=200,
-            content={"projects": [
-                {
-                    "project_id": r.project_id,
-                    "profile_name": r.profile.name,
-                    "approved": r.approved,
-                    "source": r.source,
-                    "notes": r.notes,
-                } for r in rows
-            ]},
+            content={
+                "projects": [
+                    {
+                        "project_id": r.project_id,
+                        "profile_name": r.profile.name,
+                        "approved": r.approved,
+                        "source": r.source,
+                        "notes": r.notes,
+                    }
+                    for r in rows
+                ]
+            },
         )
 
     @app.post("/admin/projects", dependencies=[Depends(require_admin_auth)])
@@ -1285,8 +1372,7 @@ def create_app(
         if not isinstance(body, dict):
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request",
-                        "detail": "Request body must be a JSON object."},
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
             )
 
         project_id = (body.get("project_id") or "").strip()
@@ -1298,8 +1384,10 @@ def create_app(
         if not project_id or not isinstance(profile_json, dict):
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request",
-                        "detail": "project_id and profile (JSON object) are required."},
+                detail={
+                    "error": "bad_request",
+                    "detail": "project_id and profile (JSON object) are required.",
+                },
             )
         try:
             from tapps_brain.profile import MemoryProfile
@@ -1317,8 +1405,11 @@ def create_app(
         try:
             try:
                 record = registry.register(
-                    project_id, profile,
-                    source=source, approved=approved, notes=notes,
+                    project_id,
+                    profile,
+                    source=source,
+                    approved=approved,
+                    notes=notes,
                 )
             except ValueError as exc:
                 raise HTTPException(
@@ -1360,8 +1451,7 @@ def create_app(
             },
         )
 
-    @app.post("/admin/projects/{project_id}/approve",
-              dependencies=[Depends(require_admin_auth)])
+    @app.post("/admin/projects/{project_id}/approve", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_approve(project_id: str) -> JSONResponse:
         registry, cm = _open_registry()
         try:
@@ -1397,8 +1487,9 @@ def create_app(
 
     # ---- per-tenant token routes (STORY-070.8) ----
 
-    @app.post("/admin/projects/{project_id}/rotate-token",
-              dependencies=[Depends(require_admin_auth)])
+    @app.post(
+        "/admin/projects/{project_id}/rotate-token", dependencies=[Depends(require_admin_auth)]
+    )
     async def _admin_project_rotate_token(project_id: str) -> JSONResponse:
         """Issue/replace the per-tenant bearer token for *project_id*.
 
@@ -1429,8 +1520,7 @@ def create_app(
             },
         )
 
-    @app.delete("/admin/projects/{project_id}/token",
-                dependencies=[Depends(require_admin_auth)])
+    @app.delete("/admin/projects/{project_id}/token", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_revoke_token(project_id: str) -> JSONResponse:
         """Revoke (clear) the per-tenant token for *project_id*."""
         registry, cm = _open_registry()
@@ -1451,8 +1541,7 @@ def create_app(
     # Preserve legacy wire contract: when HTTPException.detail is a dict,
     # return it unwrapped (not nested under ``{"detail": ...}``).
     @app.exception_handler(HTTPException)
-    async def _http_exc_handler(_request: Request,
-                                exc: HTTPException) -> JSONResponse:
+    async def _http_exc_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         body = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
         return JSONResponse(status_code=exc.status_code, content=body)
 
@@ -1460,21 +1549,20 @@ def create_app(
     # routes that touch the registry report the same envelope as the
     # legacy handler.  Shape preserved for backward compat.
     @app.exception_handler(_ProjectNotRegisteredError)
-    async def _pne_handler(_request: Request,
-                           exc: _ProjectNotRegisteredError) -> JSONResponse:
+    async def _pne_handler(_request: Request, exc: _ProjectNotRegisteredError) -> JSONResponse:
         return JSONResponse(
             status_code=403,
-            content={"error": "project_not_registered",
-                     "message": str(exc),
-                     "project_id": exc.project_id},
+            content={
+                "error": "project_not_registered",
+                "message": str(exc),
+                "project_id": exc.project_id,
+            },
         )
 
     # STORY-070.4: map taxonomy exceptions to structured responses.
     # BrainDegradedError and BrainRateLimitedError set Retry-After header.
     @app.exception_handler(_BrainDegradedError)
-    async def _brain_degraded_handler(
-        _request: Request, exc: _BrainDegradedError
-    ) -> JSONResponse:
+    async def _brain_degraded_handler(_request: Request, exc: _BrainDegradedError) -> JSONResponse:
         retry_after: int = exc.details.get("retry_after", 30)
         return JSONResponse(
             status_code=503,
@@ -1494,9 +1582,7 @@ def create_app(
         )
 
     @app.exception_handler(_TaxonomyError)
-    async def _taxonomy_handler(
-        _request: Request, exc: _TaxonomyError
-    ) -> JSONResponse:
+    async def _taxonomy_handler(_request: Request, exc: _TaxonomyError) -> JSONResponse:
         """Catch-all for all remaining TaxonomyError subclasses."""
         return JSONResponse(
             status_code=exc.http_status,
@@ -1566,17 +1652,16 @@ class HttpAdapter:
         def _run() -> None:
             self._server.run()
 
-        self._thread = threading.Thread(
-            target=_run, daemon=True, name="tapps-brain-http"
-        )
+        self._thread = threading.Thread(target=_run, daemon=True, name="tapps-brain-http")
         self._thread.start()
         # Wait briefly for uvicorn to finish startup so callers that probe
         # ``address`` / issue immediate requests don't race the bind().
         deadline = time.time() + 5.0
         while time.time() < deadline and not getattr(self._server, "started", False):
             time.sleep(0.05)
-        logger.info("http_adapter.started", host=self._host, port=self._port,
-                    platform=platform.system())
+        logger.info(
+            "http_adapter.started", host=self._host, port=self._port, platform=platform.system()
+        )
 
     def stop(self) -> None:
         if self._server is None:
@@ -1618,10 +1703,10 @@ def main() -> None:
         description="Run the tapps-brain HTTP+MCP adapter (FastAPI + uvicorn).",
     )
     parser.add_argument("--host", default=os.environ.get("TAPPS_BRAIN_HTTP_HOST", "0.0.0.0"))
-    parser.add_argument("--port", type=int,
-                        default=int(os.environ.get("TAPPS_BRAIN_HTTP_PORT", "8080")))
-    parser.add_argument("--log-level", default=os.environ.get("TAPPS_BRAIN_LOG_LEVEL",
-                                                              "info"))
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("TAPPS_BRAIN_HTTP_PORT", "8080"))
+    )
+    parser.add_argument("--log-level", default=os.environ.get("TAPPS_BRAIN_LOG_LEVEL", "info"))
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level.upper())

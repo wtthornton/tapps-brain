@@ -494,9 +494,7 @@ class DiagnosticsHistoryStore:
         results: list[dict[str, Any]] = []
         for r in rows:
             recorded = r[1]
-            recorded_str = (
-                recorded.isoformat() if hasattr(recorded, "isoformat") else str(recorded)
-            )
+            recorded_str = recorded.isoformat() if hasattr(recorded, "isoformat") else str(recorded)
             dim_raw = r[3]
             if isinstance(dim_raw, dict):
                 dim_json_str = json.dumps(dim_raw)

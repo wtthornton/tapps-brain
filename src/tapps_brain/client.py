@@ -74,8 +74,7 @@ def _detect_scheme(url: str) -> str:
     if url.lower().startswith(("http://", "https://")):
         return "http"
     raise ValueError(
-        f"Unsupported URL scheme in {url!r}. "
-        "Use http://, https://, mcp+stdio://, or mcp+http://"
+        f"Unsupported URL scheme in {url!r}. Use http://, https://, mcp+stdio://, or mcp+http://"
     )
 
 
@@ -217,11 +216,7 @@ def _post_tool(
                 RetryPolicy.RETRY_WITH_BACKOFF,
                 RetryPolicy.RETRY_SAFE_ONCE,
             )
-            if (
-                isinstance(exc, TaxonomyError)
-                and exc.retry in _retryable
-                and attempt < max_retries
-            ):
+            if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
                 retry_after = float(body.get("retry_after") or 2**attempt)
                 time.sleep(retry_after)
                 last_exc = exc
@@ -277,11 +272,7 @@ async def _async_post_tool(
                 RetryPolicy.RETRY_WITH_BACKOFF,
                 RetryPolicy.RETRY_SAFE_ONCE,
             )
-            if (
-                isinstance(exc, TaxonomyError)
-                and exc.retry in _retryable
-                and attempt < max_retries
-            ):
+            if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
                 retry_after = float(body.get("retry_after") or 2**attempt)
                 await asyncio.sleep(retry_after)
                 last_exc = exc
@@ -561,9 +552,7 @@ class TappsBrainClient:
         result = self._tool("brain_forget", key=key, agent_id=agent_id)
         return bool(result.get("forgotten")) if isinstance(result, dict) else False
 
-    def learn_success(
-        self, task_description: str, *, task_id: str = "", agent_id: str = ""
-    ) -> str:
+    def learn_success(self, task_description: str, *, task_id: str = "", agent_id: str = "") -> str:
         """Record a successful task outcome."""
         result = self._tool(
             "brain_learn_success",
@@ -607,15 +596,11 @@ class TappsBrainClient:
         """Reinforce a memory entry."""
         return self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
 
-    def memory_save_many(
-        self, entries: list[dict[str, Any]], agent_id: str = ""
-    ) -> dict[str, Any]:
+    def memory_save_many(self, entries: list[dict[str, Any]], agent_id: str = "") -> dict[str, Any]:
         """Bulk save memory entries."""
         return self._tool("memory_save_many", entries=entries, agent_id=agent_id)
 
-    def memory_recall_many(
-        self, queries: list[str], agent_id: str = ""
-    ) -> dict[str, Any]:
+    def memory_recall_many(self, queries: list[str], agent_id: str = "") -> dict[str, Any]:
         """Bulk recall across multiple queries."""
         return self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
 
@@ -682,8 +667,7 @@ class AsyncTappsBrainClient:
                 import httpx
             except ImportError as exc:
                 raise ImportError(
-                    "AsyncTappsBrainClient requires httpx. "
-                    "Install it with: pip install httpx"
+                    "AsyncTappsBrainClient requires httpx. Install it with: pip install httpx"
                 ) from exc
             self._http_client = httpx.AsyncClient(timeout=self._timeout)
 
@@ -853,13 +837,9 @@ class AsyncTappsBrainClient:
         """Run auto-recall for a message."""
         return await self._tool("memory_recall", message=message, **kwargs)
 
-    async def memory_reinforce(
-        self, key: str, *, confidence_boost: float = 0.0
-    ) -> dict[str, Any]:
+    async def memory_reinforce(self, key: str, *, confidence_boost: float = 0.0) -> dict[str, Any]:
         """Reinforce a memory entry."""
-        return await self._tool(
-            "memory_reinforce", key=key, confidence_boost=confidence_boost
-        )
+        return await self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
 
     async def memory_save_many(
         self, entries: list[dict[str, Any]], agent_id: str = ""
@@ -867,9 +847,7 @@ class AsyncTappsBrainClient:
         """Bulk save memory entries."""
         return await self._tool("memory_save_many", entries=entries, agent_id=agent_id)
 
-    async def memory_recall_many(
-        self, queries: list[str], agent_id: str = ""
-    ) -> dict[str, Any]:
+    async def memory_recall_many(self, queries: list[str], agent_id: str = "") -> dict[str, Any]:
         """Bulk recall across multiple queries."""
         return await self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
 

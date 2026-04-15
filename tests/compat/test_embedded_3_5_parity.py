@@ -89,9 +89,7 @@ class TestReturnShapes:
             assert isinstance(conf, float), (
                 f"recall() confidence must be float, got {type(conf).__name__!r}"
             )
-            assert 0.0 <= conf <= 1.0, (
-                f"recall() confidence {conf} is outside [0.0, 1.0]"
-            )
+            assert 0.0 <= conf <= 1.0, f"recall() confidence {conf} is outside [0.0, 1.0]"
 
     def test_recall_tier_is_str(self, tmp_path: Path) -> None:
         with _brain(tmp_path) as brain:
@@ -99,9 +97,7 @@ class TestReturnShapes:
             results = brain.recall("procedural memory compat")
 
         for entry in results:
-            assert isinstance(entry["tier"], str), (
-                "recall() tier must be str"
-            )
+            assert isinstance(entry["tier"], str), "recall() tier must be str"
 
     def test_recall_tags_is_list(self, tmp_path: Path) -> None:
         with _brain(tmp_path) as brain:
@@ -239,8 +235,7 @@ class TestRankOrder:
         assert len(results) >= 1
         top = results[0]
         assert "ruff" in top["value"].lower(), (
-            "The most ruff-relevant entry must rank first.  "
-            "If BM25 ranking changed, write an ADR."
+            "The most ruff-relevant entry must rank first.  If BM25 ranking changed, write an ADR."
         )
 
     def test_max_results_cap(self, tmp_path: Path) -> None:
@@ -250,9 +245,7 @@ class TestRankOrder:
                 brain.remember(f"compat rank test fact number {i}", tier="context")
             results = brain.recall("compat rank test fact", max_results=3)
 
-        assert len(results) <= 3, (
-            "recall(max_results=3) must not return more than 3 entries"
-        )
+        assert len(results) <= 3, "recall(max_results=3) must not return more than 3 entries"
 
 
 # ---------------------------------------------------------------------------
@@ -315,9 +308,7 @@ class TestPostgresParity:
 
         for entry in results:
             missing = _RECALL_REQUIRED_KEYS - entry.keys()
-            assert not missing, (
-                f"Postgres recall() entry missing keys: {missing!r}"
-            )
+            assert not missing, f"Postgres recall() entry missing keys: {missing!r}"
 
     def test_confidence_range_on_postgres(self, tmp_path: Path) -> None:
         with _brain(tmp_path, agent_id="pg-conf") as brain:

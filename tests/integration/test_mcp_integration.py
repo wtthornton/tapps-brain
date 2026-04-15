@@ -132,9 +132,7 @@ class TestToolsDiscovery:
                 # Session end
                 "tapps_brain_session_end",
             }
-            assert expected.issubset(tool_names), (
-                f"Missing tools: {expected - tool_names}"
-            )
+            assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
     async def test_operator_tools_present(self, mcp_server_operator):
         """Operator tools appear when enable_operator_tools=True (EPIC-062.4)."""
@@ -512,7 +510,6 @@ class TestExportImportTools:
             result = await session.call_tool("memory_import", {"memories_json": "not json"})
             body = json.loads(result.content[0].text)
             assert body["error"] == "invalid_json"
-
 
 
 # ------------------------------------------------------------------

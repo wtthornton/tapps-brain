@@ -464,9 +464,7 @@ def resolve_hive_backend_from_env(
     import os
 
     dsn = (
-        os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-        or os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-        or ""
+        os.environ.get("TAPPS_BRAIN_HIVE_DSN") or os.environ.get("TAPPS_BRAIN_DATABASE_URL") or ""
     ).strip()
     if not dsn:
         return None

@@ -215,9 +215,7 @@ class OTelConfig:
         if tapps_capture_raw.strip():
             capture_content = _parse_bool_env(tapps_capture_raw, default=False)
         else:
-            semconv_raw = os.environ.get(
-                "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
-            )
+            semconv_raw = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "")
             capture_content = _parse_bool_env(semconv_raw, default=False)
 
         return cls(enabled=enabled, service_name=service_name, capture_content=capture_content)

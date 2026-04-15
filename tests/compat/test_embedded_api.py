@@ -315,7 +315,10 @@ class TestMcpOperatorSplit:
 
         tool_names = {t.name for t in server._tool_manager.list_tools()}
         operator_tools = {
-            "maintenance_gc", "maintenance_consolidate", "memory_export", "memory_import",
+            "maintenance_gc",
+            "maintenance_consolidate",
+            "memory_export",
+            "memory_import",
         }
         for op_tool in operator_tools:
             assert op_tool not in tool_names, (

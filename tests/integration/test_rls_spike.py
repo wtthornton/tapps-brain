@@ -39,11 +39,7 @@ _SKIP_PG = not _PG_DSN
 
 # Runtime DSN: same host/db as _PG_DSN but uses tapps_runtime (non-superuser,
 # RLS is enforced).  Derived by replacing the user:password segment.
-_RUNTIME_DSN = (
-    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1)
-    if _PG_DSN
-    else ""
-)
+_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -189,10 +185,11 @@ def test_rls_admin_bypass_empty_string_sees_all() -> None:
         # Query with admin bypass (session var = '').
         with cm.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
                 cur.execute(
-                    "SELECT namespace FROM hive_memories"
-                    " WHERE namespace IN (%s, %s) AND key = %s",
+                    pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal(""))
+                )
+                cur.execute(
+                    "SELECT namespace FROM hive_memories WHERE namespace IN (%s, %s) AND key = %s",
                     (ns_a, ns_b, key),
                 )
                 rows = cur.fetchall()
@@ -228,8 +225,7 @@ def test_rls_admin_bypass_unset_sees_all() -> None:
         # No SET LOCAL — session var is absent (NULL).
         with cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT namespace FROM hive_memories"
-                " WHERE namespace IN (%s, %s) AND key = %s",
+                "SELECT namespace FROM hive_memories WHERE namespace IN (%s, %s) AND key = %s",
                 (ns_a, ns_b, key),
             )
             rows = cur.fetchall()
@@ -269,18 +265,18 @@ def test_rls_namespace_context_write_isolation() -> None:
             with runtime_cm.namespace_context(ns_a) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO hive_memories (namespace, key, value)"
-                        " VALUES (%s, %s, %s)",
+                        "INSERT INTO hive_memories (namespace, key, value) VALUES (%s, %s, %s)",
                         (ns_b, key, "cross-namespace-write"),
                     )
 
         # Verify the row was not written (check under admin bypass).
         with cm.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal("")))
                 cur.execute(
-                    "SELECT COUNT(*) FROM hive_memories"
-                    " WHERE namespace = %s AND key = %s",
+                    pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(pgsql.Literal(""))
+                )
+                cur.execute(
+                    "SELECT COUNT(*) FROM hive_memories WHERE namespace = %s AND key = %s",
                     (ns_b, key),
                 )
                 count = cur.fetchone()[0]
@@ -301,9 +297,7 @@ def test_namespace_context_helper_sets_session_var() -> None:
     namespace = _unique_ns()
     try:
         with cm.namespace_context(namespace) as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT current_setting('tapps.current_namespace', TRUE)"
-            )
+            cur.execute("SELECT current_setting('tapps.current_namespace', TRUE)")
             result = cur.fetchone()[0]
 
         assert result == namespace, (

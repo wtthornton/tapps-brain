@@ -303,15 +303,11 @@ def test_close_idempotent() -> None:
 
 def test_mcp_http_tool_uses_mcp_endpoint() -> None:
     with patch("tapps_brain.client.TappsBrainClient._init_http"):
-        client = TappsBrainClient(
-            "mcp+http://brain:8080", project_id="p1", agent_id="a1"
-        )
+        client = TappsBrainClient("mcp+http://brain:8080", project_id="p1", agent_id="a1")
     mock_http = MagicMock()
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
-    resp.json.return_value = {
-        "result": {"content": [{"text": '{"key": "k1"}'}]}
-    }
+    resp.json.return_value = {"result": {"content": [{"text": '{"key": "k1"}'}]}}
     mock_http.post.return_value = resp
     client._http_client = mock_http
 
@@ -324,9 +320,7 @@ def test_mcp_http_tool_uses_mcp_endpoint() -> None:
 
 def test_mcp_http_tool_embeds_idempotency_key_in_meta() -> None:
     with patch("tapps_brain.client.TappsBrainClient._init_http"):
-        client = TappsBrainClient(
-            "mcp+http://brain:8080", project_id="p1", agent_id="a1"
-        )
+        client = TappsBrainClient("mcp+http://brain:8080", project_id="p1", agent_id="a1")
     mock_http = MagicMock()
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
@@ -348,9 +342,7 @@ def test_mcp_http_tool_embeds_idempotency_key_in_meta() -> None:
 
 
 def _make_async_client(**kwargs: Any) -> AsyncTappsBrainClient:
-    client = AsyncTappsBrainClient(
-        "http://brain:8080", project_id="p1", agent_id="a1", **kwargs
-    )
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", **kwargs)
     mock_http = AsyncMock()
     client._http_client = mock_http
     return client

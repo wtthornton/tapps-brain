@@ -45,8 +45,10 @@ def _make_settings(
 @contextmanager
 def _client(settings: _Settings):
     """Yield a TestClient driving create_app() with isolated settings."""
-    with patch.object(_mod, "_settings", settings), \
-         patch.object(_mod, "get_settings", return_value=settings):
+    with (
+        patch.object(_mod, "_settings", settings),
+        patch.object(_mod, "get_settings", return_value=settings),
+    ):
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
         app = create_app(mcp_server=_mcp_dummy)
@@ -114,6 +116,7 @@ class TestAdminRouting:
 
         profile = get_builtin_profile("repo-brain").model_dump(mode="json")
         import json
+
         body = json.dumps({"project_id": "NOT_VALID", "profile": profile})
         with _client(_make_settings(admin_token="s3cret", dsn=None)) as c:
             resp = c.post(
@@ -163,16 +166,21 @@ class TestProjectNotRegisteredMapping:
         mock_cm = MagicMock()
 
         settings = _make_settings(admin_token="s3cret", dsn="postgres://mock/db")
-        with patch.object(_mod, "_settings", settings), \
-             patch.object(_mod, "get_settings", return_value=settings):
+        with (
+            patch.object(_mod, "_settings", settings),
+            patch.object(_mod, "get_settings", return_value=settings),
+        ):
             _mcp_dummy = MagicMock()
             _mcp_dummy.session_manager = None
             app = create_app(mcp_server=_mcp_dummy)
 
-            with patch("tapps_brain.postgres_connection.PostgresConnectionManager",
-                       return_value=mock_cm), \
-                 patch("tapps_brain.project_registry.ProjectRegistry",
-                       return_value=mock_registry):
+            with (
+                patch(
+                    "tapps_brain.postgres_connection.PostgresConnectionManager",
+                    return_value=mock_cm,
+                ),
+                patch("tapps_brain.project_registry.ProjectRegistry", return_value=mock_registry),
+            ):
                 with TestClient(app, raise_server_exceptions=False) as c:
                     resp = c.get(
                         "/admin/projects/ghost",
@@ -191,6 +199,7 @@ class TestProjectNotRegisteredMapping:
 
         profile = get_builtin_profile("repo-brain").model_dump(mode="json")
         import json
+
         body = json.dumps({"project_id": "ghost", "profile": profile})
 
         mock_registry = MagicMock()
@@ -198,16 +207,21 @@ class TestProjectNotRegisteredMapping:
         mock_cm = MagicMock()
 
         settings = _make_settings(admin_token="s3cret", dsn="postgres://mock/db")
-        with patch.object(_mod, "_settings", settings), \
-             patch.object(_mod, "get_settings", return_value=settings):
+        with (
+            patch.object(_mod, "_settings", settings),
+            patch.object(_mod, "get_settings", return_value=settings),
+        ):
             _mcp_dummy = MagicMock()
             _mcp_dummy.session_manager = None
             app = create_app(mcp_server=_mcp_dummy)
 
-            with patch("tapps_brain.postgres_connection.PostgresConnectionManager",
-                       return_value=mock_cm), \
-                 patch("tapps_brain.project_registry.ProjectRegistry",
-                       return_value=mock_registry):
+            with (
+                patch(
+                    "tapps_brain.postgres_connection.PostgresConnectionManager",
+                    return_value=mock_cm,
+                ),
+                patch("tapps_brain.project_registry.ProjectRegistry", return_value=mock_registry),
+            ):
                 with TestClient(app, raise_server_exceptions=False) as c:
                     resp = c.post(
                         "/admin/projects",

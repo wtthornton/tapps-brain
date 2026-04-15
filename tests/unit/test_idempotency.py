@@ -73,8 +73,10 @@ def _client_with_store(settings: _Settings) -> TestClient:
     """Build TestClient with isolated settings and a dummy MCP server."""
     mcp_dummy = MagicMock()
     mcp_dummy.session_manager = None
-    with patch.object(_adapter_mod, "_settings", settings), \
-         patch.object(_adapter_mod, "get_settings", return_value=settings):
+    with (
+        patch.object(_adapter_mod, "_settings", settings),
+        patch.object(_adapter_mod, "get_settings", return_value=settings),
+    ):
         app = create_app(store=settings.store, mcp_server=mcp_dummy)
         # TestClient is used as a context manager in individual tests.
         return TestClient(app, raise_server_exceptions=False)
@@ -127,10 +129,12 @@ def _make_conn(cursor: MagicMock) -> MagicMock:
 
 def _make_cm(conn: MagicMock) -> MagicMock:
     cm = MagicMock()
-    cm.get_connection = MagicMock(return_value=MagicMock(
-        __enter__=MagicMock(return_value=conn),
-        __exit__=MagicMock(return_value=False),
-    ))
+    cm.get_connection = MagicMock(
+        return_value=MagicMock(
+            __enter__=MagicMock(return_value=conn),
+            __exit__=MagicMock(return_value=False),
+        )
+    )
     cm.close = MagicMock()
     return cm
 
@@ -307,11 +311,18 @@ class TestV1RememberRoute:
     ) -> tuple[TestClient, MagicMock]:
         store = _make_store()
         if save_return is None:
-            save_return = {"status": "saved", "key": "test-key",
-                           "tier": "pattern", "confidence": 0.8, "memory_group": None}
+            save_return = {
+                "status": "saved",
+                "key": "test-key",
+                "tier": "pattern",
+                "confidence": 0.8,
+                "memory_group": None,
+            }
         store.save.return_value = MagicMock(
-            key="test-key", tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8, memory_group=None,
+            key="test-key",
+            tier=MagicMock(__str__=lambda s: "pattern"),
+            confidence=0.8,
+            memory_group=None,
         )
         settings = _make_settings(dsn=dsn, store=store)
         client = _client_with_store(settings)
@@ -320,25 +331,31 @@ class TestV1RememberRoute:
     def test_missing_project_id_returns_400(self) -> None:
         client, _ = self._setup()
         with client:
-            resp = client.post("/v1/remember",
-                               json={"key": "k", "value": "v"})
+            resp = client.post("/v1/remember", json={"key": "k", "value": "v"})
         assert resp.status_code == 400
         assert resp.json()["error"] == "bad_request"
 
     def test_missing_key_or_value_returns_400(self) -> None:
         client, _ = self._setup()
         with client:
-            resp = client.post("/v1/remember",
-                               headers={"x-project-id": "proj"},
-                               json={"key": "k"})
+            resp = client.post("/v1/remember", headers={"x-project-id": "proj"}, json={"key": "k"})
         assert resp.status_code == 400
 
     def test_successful_save_returns_200(self) -> None:
         client, _ = self._setup()
-        with patch("tapps_brain.services.memory_service.memory_save",
-                   return_value={"status": "saved", "key": "k",
-                                 "tier": "pattern", "confidence": 0.8,
-                                 "memory_group": None}), client:
+        with (
+            patch(
+                "tapps_brain.services.memory_service.memory_save",
+                return_value={
+                    "status": "saved",
+                    "key": "k",
+                    "tier": "pattern",
+                    "confidence": 0.8,
+                    "memory_group": None,
+                },
+            ),
+            client,
+        ):
             resp = client.post(
                 "/v1/remember",
                 headers={"x-project-id": "proj", "x-agent-id": "agent-1"},
@@ -360,10 +377,16 @@ class TestV1RememberRoute:
 
     def test_idempotency_key_accepted_when_disabled(self) -> None:
         """X-Idempotency-Key is accepted (and ignored) when feature is OFF."""
-        with patch("tapps_brain.services.memory_service.memory_save",
-                   return_value={"status": "saved", "key": "k",
-                                 "tier": "pattern", "confidence": 0.8,
-                                 "memory_group": None}):
+        with patch(
+            "tapps_brain.services.memory_service.memory_save",
+            return_value={
+                "status": "saved",
+                "key": "k",
+                "tier": "pattern",
+                "confidence": 0.8,
+                "memory_group": None,
+            },
+        ):
             client, _ = self._setup()
             with client:
                 resp = client.post(
@@ -378,13 +401,16 @@ class TestV1RememberRoute:
         # No Idempotency-Replayed header when feature is off
         assert "idempotency-replayed" not in resp.headers
 
-    def test_idempotency_replay_when_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotency_replay_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-2: Duplicate key within 24h returns original response."""
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
-        cached_body = {"status": "saved", "key": "k",
-                       "tier": "pattern", "confidence": 0.8, "memory_group": None}
+        cached_body = {
+            "status": "saved",
+            "key": "k",
+            "tier": "pattern",
+            "confidence": 0.8,
+            "memory_group": None,
+        }
         ikey = "550e8400-e29b-41d4-a716-446655440000"
         client, _ = self._setup(dsn="postgresql://fake/db")
         with patch("tapps_brain.idempotency.IdempotencyStore") as mock_cls:
@@ -402,13 +428,16 @@ class TestV1RememberRoute:
         assert resp.json() == cached_body
         assert resp.headers.get("idempotency-replayed") == "true"
 
-    def test_idempotency_store_called_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotency_store_called_on_miss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-1: On first call, response is stored in idempotency_keys."""
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
-        saved_result = {"status": "saved", "key": "k",
-                        "tier": "pattern", "confidence": 0.8, "memory_group": None}
+        saved_result = {
+            "status": "saved",
+            "key": "k",
+            "tier": "pattern",
+            "confidence": 0.8,
+            "memory_group": None,
+        }
         ikey = "test-uuid-1234"
         client, _ = self._setup(dsn="postgresql://fake/db")
         miss_inst = MagicMock()
@@ -418,8 +447,7 @@ class TestV1RememberRoute:
         save_inst.save = MagicMock()
         save_inst.close = MagicMock()
         with (
-            patch("tapps_brain.services.memory_service.memory_save",
-                  return_value=saved_result),
+            patch("tapps_brain.services.memory_service.memory_save", return_value=saved_result),
             patch("tapps_brain.idempotency.IdempotencyStore") as mock_cls,
             client,
         ):
@@ -476,16 +504,16 @@ class TestV1ReinforceRoute:
     def test_missing_key_returns_400(self) -> None:
         client, _ = self._setup()
         with client:
-            resp = client.post("/v1/reinforce",
-                               headers={"x-project-id": "proj"},
-                               json={})
+            resp = client.post("/v1/reinforce", headers={"x-project-id": "proj"}, json={})
         assert resp.status_code == 400
 
     def test_successful_reinforce(self) -> None:
         client, _ = self._setup()
         result = {"status": "reinforced", "key": "k", "confidence": 0.9, "access_count": 3}
-        with patch("tapps_brain.services.memory_service.memory_reinforce",
-                   return_value=result), client:
+        with (
+            patch("tapps_brain.services.memory_service.memory_reinforce", return_value=result),
+            client,
+        ):
             resp = client.post(
                 "/v1/reinforce",
                 headers={"x-project-id": "proj"},
@@ -505,9 +533,7 @@ class TestV1ReinforceRoute:
             )
         assert resp.status_code == 503
 
-    def test_idempotency_replay_when_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotency_replay_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-2: Duplicate key within 24h returns original response."""
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
         cached_body = {"status": "reinforced", "key": "k", "confidence": 0.9, "access_count": 5}
@@ -606,9 +632,7 @@ class TestMigrationFile:
 class TestMaintenanceGcWithIdempotencySweep:
     """AC-7: TTL sweep runs as part of existing GC."""
 
-    def test_gc_sweeps_idempotency_keys_when_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gc_sweeps_idempotency_keys_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
         monkeypatch.setenv("TAPPS_BRAIN_DATABASE_URL", "postgresql://fake/db")
 
@@ -621,14 +645,13 @@ class TestMaintenanceGcWithIdempotencySweep:
 
         with patch("tapps_brain.idempotency.sweep_expired_keys", return_value=3) as mock_sweep:
             from tapps_brain.services.maintenance_service import maintenance_gc
+
             result = maintenance_gc(mock_store, "proj", "agent", dry_run=False)
 
         mock_sweep.assert_called_once()
         assert result.get("idempotency_keys_swept") == 3
 
-    def test_gc_does_not_sweep_when_disabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gc_does_not_sweep_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TAPPS_BRAIN_IDEMPOTENCY", raising=False)
 
         gc_result = MagicMock()
@@ -640,14 +663,13 @@ class TestMaintenanceGcWithIdempotencySweep:
 
         with patch("tapps_brain.idempotency.sweep_expired_keys") as mock_sweep:
             from tapps_brain.services.maintenance_service import maintenance_gc
+
             result = maintenance_gc(mock_store, "proj", "agent", dry_run=False)
 
         mock_sweep.assert_not_called()
         assert "idempotency_keys_swept" not in result
 
-    def test_gc_dry_run_does_not_sweep(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gc_dry_run_does_not_sweep(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
 
         gc_result = MagicMock()
@@ -659,6 +681,7 @@ class TestMaintenanceGcWithIdempotencySweep:
 
         with patch("tapps_brain.idempotency.sweep_expired_keys") as mock_sweep:
             from tapps_brain.services.maintenance_service import maintenance_gc
+
             result = maintenance_gc(mock_store, "proj", "agent", dry_run=True)
 
         mock_sweep.assert_not_called()

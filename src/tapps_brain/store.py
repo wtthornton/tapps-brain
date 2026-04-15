@@ -259,9 +259,7 @@ class MemoryStore:
                 _project_id = validate_project_id(_env_project)
             else:
                 _project_id = derive_project_id(project_root)
-            private_backend = resolve_private_backend_from_env(
-                _project_id, _resolved_agent_id
-            )
+            private_backend = resolve_private_backend_from_env(_project_id, _resolved_agent_id)
             if private_backend is None:
                 msg = (
                     "MemoryStore requires a Postgres private_backend (ADR-007). "
@@ -1339,9 +1337,7 @@ class MemoryStore:
 
     def delete(self, key: str) -> bool:
         """Delete a memory entry by key. Returns True if deleted."""
-        with start_span(
-            SPAN_DELETE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}
-        ):
+        with start_span(SPAN_DELETE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}):
             with self._serialized():
                 if key not in self._entries:
                     return False
@@ -1579,9 +1575,7 @@ class MemoryStore:
         """Return the current private-memory schema version."""
         return self._persistence.get_schema_version()
 
-    def knn_search(
-        self, query_embedding: list[float], k: int
-    ) -> list[tuple[str, float]]:
+    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
         """Approximate-nearest-neighbour search via pgvector HNSW."""
         return self._persistence.knn_search(query_embedding, k)
 
@@ -1623,9 +1617,7 @@ class MemoryStore:
         self._metrics.increment("store.reinforce")
         decay_cfg = self._get_decay_config()
 
-        with start_span(
-            SPAN_REINFORCE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}
-        ):
+        with start_span(SPAN_REINFORCE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}):
             with self._serialized():
                 entry = self._entries.get(key)
                 if entry is None:
@@ -2164,9 +2156,7 @@ class MemoryStore:
                     "recall.hive_count", getattr(result, "hive_memory_count", 0)
                 )
                 # STORY-032.3: add one structured event per retrieved document
-                record_retrieval_document_events(
-                    _recall_span, getattr(result, "memories", [])
-                )
+                record_retrieval_document_events(_recall_span, getattr(result, "memories", []))
                 # STORY-070.12: standardised per-operation attributes
                 _recall_memories = getattr(result, "memories", [])
                 _recall_span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))

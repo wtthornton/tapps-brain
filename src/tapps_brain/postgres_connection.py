@@ -95,8 +95,7 @@ class PostgresConnectionManager:
         # Validate pool size constraints.
         if self._max_size < 1:
             raise ValueError(
-                f"Pool max_size must be >= 1 (TAPPS_BRAIN_PG_POOL_MAX). "
-                f"Got {self._max_size}."
+                f"Pool max_size must be >= 1 (TAPPS_BRAIN_PG_POOL_MAX). Got {self._max_size}."
             )
         if self._min_size > self._max_size:
             raise ValueError(
@@ -280,9 +279,7 @@ class PostgresConnectionManager:
                 from psycopg import sql as pgsql
 
                 cur.execute(
-                    pgsql.SQL("SET LOCAL app.project_id = {}").format(
-                        pgsql.Literal(project_id)
-                    )
+                    pgsql.SQL("SET LOCAL app.project_id = {}").format(pgsql.Literal(project_id))
                 )
             yield conn
 
@@ -310,18 +307,14 @@ class PostgresConnectionManager:
             If *agent_id* is empty or whitespace-only.
         """
         if not agent_id or not agent_id.strip():
-            raise ValueError(
-                "agent_context requires a non-empty agent_id"
-            )
+            raise ValueError("agent_context requires a non-empty agent_id")
         self._ensure_pool()
         with self._pool.connection() as conn:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
                 cur.execute(
-                    pgsql.SQL("SET LOCAL app.agent_id = {}").format(
-                        pgsql.Literal(agent_id)
-                    )
+                    pgsql.SQL("SET LOCAL app.agent_id = {}").format(pgsql.Literal(agent_id))
                 )
             yield conn
 
