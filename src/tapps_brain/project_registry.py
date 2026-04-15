@@ -24,12 +24,14 @@ import json
 import os
 import secrets
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from tapps_brain.postgres_connection import PostgresConnectionManager
 from tapps_brain.profile import MemoryProfile, get_builtin_profile
+
+if TYPE_CHECKING:
+    from tapps_brain.postgres_connection import PostgresConnectionManager
 
 logger = structlog.get_logger(__name__)
 

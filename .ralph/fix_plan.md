@@ -13,13 +13,6 @@
 
 
 
-- [ ] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
-  - `project_profiles` gains `hashed_token` column (migration 011, argon2id)
-  - Auth middleware: bearer → hash → project_id; falls back to global token if `TAPPS_BRAIN_PER_TENANT_AUTH` not set
-  - CLI: `tapps-brain project rotate-token <slug>` and `revoke-token <slug>`
-  - Feature flag: `TAPPS_BRAIN_PER_TENANT_AUTH=1`
-  - Integration test: token A cannot recall project B entries
-  - Reference: `docs/stories/STORY-070.8-per-tenant-auth.md`
 
 - [ ] **STORY-070.9** — Operator-tool separation (S, 3 pts)
   - Split into `tapps_brain/mcp_server/standard.py` and `tapps_brain/mcp_server/operator.py`

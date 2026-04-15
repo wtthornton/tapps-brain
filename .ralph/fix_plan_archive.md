@@ -297,3 +297,4 @@
 - [x] **STORY-070.4** — Error taxonomy + retry-ability semantics (S, 3 pts)
 - [x] **STORY-070.5** — Idempotency keys for writes (S, 3 pts)
 - [x] **STORY-070.7** — Per-call identity — agent_id / scope / group (M, 5 pts)
+- [x] **STORY-070.8** — Per-tenant auth tokens (M, 5 pts)
