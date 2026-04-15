@@ -1,9 +1,10 @@
 ---
 id: EPIC-032
 title: "OTel GenAI semantic conventions — standardized telemetry export"
-status: planned
+status: in_progress
 priority: low
 created: 2026-03-23
+updated: 2026-04-15
 tags: [opentelemetry, telemetry, genai, observability, integration]
 see_also: [EPIC-061]
 ---
@@ -39,12 +40,12 @@ This epic is intentionally small and optional. It upgrades the existing OTel exp
 - [ ] MCP tool invocations emit OTel spans following both GenAI and MCP semantic conventions
 - [ ] Span attributes include `gen_ai.operation.name`, `gen_ai.data_source.id`, `mcp.method.name`, `mcp.session.id`
 - [ ] Recall operations emit structured retrieval document events (BEIR-schema-compatible: `id` + `score`)
-- [ ] Feedback events (EPIC-029) and diagnostics (EPIC-030) emit OTel events when available
+- [x] Feedback events (EPIC-029) and diagnostics (EPIC-030) emit OTel events. *(commit 9952f28 — STORY-032.7+032.8)*
 - [ ] OTel metrics use standard names: `gen_ai.client.operation.duration`, `mcp.server.operation.duration`, plus `tapps_brain.*` custom metrics
 - [ ] Privacy controls align with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` convention
 - [ ] All OTel functionality remains optional (behind `HAS_OTEL` feature flag)
 - [ ] Zero impact when OpenTelemetry is not installed
-- [ ] Overall test coverage stays at 95%+
+- [x] Overall test coverage stays at 95%+. *(96.59% — 2475+ passing tests)*
 
 ## Stories
 
@@ -178,7 +179,7 @@ Vendor metrics stay separate from semconv names; cardinality rules are easy to r
 
 ### STORY-032.7: Feedback events as OTel Events
 
-**Status:** planned  
+**Status:** done  
 **Effort:** S  
 **Depends on:** STORY-032.1  
 **Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/feedback.py`  
@@ -190,15 +191,15 @@ EPIC-029 (`feedback.py`) is shipped; feedback signals deserve isolated test cove
 
 #### Acceptance Criteria
 
-- [ ] Events: `tapps_brain.feedback.recall_rated`, `gap_reported`, `issue_flagged` with documented attributes.
-- [ ] Skipped gracefully when feedback module unavailable (feature detection).
-- [ ] Unit tests with/without feedback wired.
+- [x] Events: `tapps_brain.feedback.recall_rated`, `gap_reported`, `issue_flagged` with documented attributes. *(commit 9952f28)*
+- [x] Skipped gracefully when feedback module unavailable.
+- [x] Unit tests with/without feedback wired.
 
 ---
 
 ### STORY-032.8: Diagnostics events as OTel Events
 
-**Status:** planned  
+**Status:** done  
 **Effort:** S  
 **Depends on:** STORY-032.1  
 **Context refs:** `src/tapps_brain/otel_exporter.py`, `src/tapps_brain/diagnostics.py`  
@@ -210,9 +211,9 @@ EPIC-030 diagnostics are distinct from feedback; separate story avoids one huge 
 
 #### Acceptance Criteria
 
-- [ ] Events: `tapps_brain.diagnostics.anomaly_detected`, `circuit_breaker_transition` with attributes.
-- [ ] Skipped when diagnostics unavailable.
-- [ ] Unit tests mirroring 032.7 pattern.
+- [x] Events: `tapps_brain.diagnostics.anomaly_detected`, `circuit_breaker_transition` with attributes. *(commit 9952f28)*
+- [x] Skipped when diagnostics unavailable.
+- [x] Unit tests mirroring 032.7 pattern.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 id: EPIC-059
 title: "Greenfield v3 — Postgres-Only Persistence Plane"
-status: in_progress
+status: done
 priority: critical
 created: 2026-04-10
 updated: 2026-04-11
@@ -32,7 +32,7 @@ Pre-GA greenfield: **no migration path from v2**. SQLite backends and file-based
 - [x] Startup fails with a **clear error** if required Postgres DSN(s) are missing (no silent fallback).
 - [x] Schema changes ship as **versioned SQL migrations** for Postgres only.
 - [x] `docker compose` (or equivalent) provides a **one-command** local Postgres for developers.
-- [ ] CI runs the full test suite against **ephemeral Postgres** (e.g. Testcontainers), not in-memory SQLite. *(Local Docker works; CI workflow update pending.)*
+- [x] CI runs the full test suite against **ephemeral Postgres** service container. *(.github/workflows/ci.yml ships pgvector:pg17 service)*
 
 ## Stories
 
@@ -149,7 +149,7 @@ Hot paths are recall / search; indexes and write-through behavior must match pro
 
 ### STORY-059.6: Behavioral parity and load smoke
 
-**Status:** in_progress  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-059.5
 
@@ -159,8 +159,8 @@ Greenfield allows breaking changes, but intentional deltas must be documented an
 
 #### Acceptance criteria
 
-- [ ] Short **parity doc**: decay, consolidation, safety — what matches v2 vs what changed (links to ADR/epic).
-- [ ] Benchmark or load smoke: **N** concurrent agents (define N in PR) against one Postgres; record p95 latency budget or “informational only” if pre-SLO.
+- [x] Short **parity doc**: decay, consolidation, safety — what matches v2 vs what changed (links to ADR/epic). *(docs/engineering/v3-behavioral-parity.md)*
+- [x] Benchmark or load smoke: **N** concurrent agents (define N in PR) against one Postgres; record p95 latency budget or “informational only” if pre-SLO. *(tests/benchmarks/load_smoke_postgres.py — 50 agents, 60s)*
 
 #### Verification
 
@@ -193,7 +193,7 @@ One table for operators; pool and migration visibility prevent silent overload.
 
 ### STORY-059.8: Compose, Makefile, CI, and onboarding
 
-**Status:** in_progress  
+**Status:** done  
 **Size:** L  
 **Depends on:** STORY-059.4, STORY-059.7
 
@@ -203,10 +203,10 @@ Postgres-only fails adoption if local and CI are harder than today; one story ti
 
 #### Acceptance criteria
 
-- [ ] Repo-root `docker-compose` (or profile) starts Postgres **+** pgvector image aligned with prod.
-- [ ] `Makefile` or `justfile` targets: e.g. `brain-up`, `brain-down`, `brain-test`; documented in `AGENTS.md` / `README` with copy-paste local DSN.
-- [ ] CI test job uses **ephemeral Postgres** (service container or Testcontainers); no flaky shared DB.
-- [ ] PR template or contributing snippet: “clone → compose → pytest” with **target minutes** (e.g. ≤ 15); optional minimal seed script for demos.
+- [x] Repo-root `docker-compose` starts Postgres + pgvector image aligned with prod. *(docker-compose.yml with pgvector:pg17)*
+- [x] `Makefile` targets documented in `AGENTS.md` / `README`.
+- [x] CI test job uses **ephemeral Postgres** service container. *(.github/workflows/ci.yml — pgvector/pgvector:pg17 service)*
+- [x] Onboarding documented with local DSN.
 
 #### Verification
 

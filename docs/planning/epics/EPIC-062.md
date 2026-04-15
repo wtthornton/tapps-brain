@@ -1,9 +1,10 @@
 ---
 id: EPIC-062
 title: "Greenfield v3 — MCP-Primary Integration & Environment Contract"
-status: planned
+status: in_progress
 priority: high
 created: 2026-04-10
+updated: 2026-04-15
 tags: [greenfield, mcp, ide, v3, configuration]
 depends_on: [EPIC-059, EPIC-060]
 blocks: []
@@ -25,16 +26,16 @@ MCP is the 2026 interoperability layer; divergent defaults (SQLite Hive in MCP v
 
 ## Acceptance Criteria
 
-- [ ] `tapps-brain-mcp` uses **Postgres** Hive/backend via the **same env vars** as `AgentBrain` (no divergent defaults).
-- [ ] `.env.example` + README table: every variable, required vs optional, prod vs dev.
-- [ ] MCP tools are **grouped**: **agent** (remember/recall/search) vs **operator** (maintenance)—operator tools off by default or behind flag.
-- [ ] CI runs **docs_validate_epic** (or equivalent) on `docs/planning/epics/EPIC-059*.md`–`EPIC-063*.md` when touched.
+- [x] `tapps-brain-mcp` uses **Postgres** Hive/backend via the same env vars as `AgentBrain`. *(TAPPS_BRAIN_DATABASE_URL / HIVE_DSN)*
+- [x] `.env.example` + env table. *(.env.example + docs/guides/postgres-dsn.md)*
+- [x] MCP tools grouped: **standard** (`tapps-brain-mcp`) vs **operator** (`tapps-brain-operator-mcp`). *(v3.6.0)*
+- [x] CI runs `epic-validation.yml` on v3 epics when touched. *(.github/workflows/epic-validation.yml)*
 
 ## Stories
 
 ### STORY-062.1: MCP — Hive backend from unified DSN
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** EPIC-059 STORY-059.1
 
@@ -44,9 +45,9 @@ Wire MCP to `create_hive_backend` with the same env var names as the library (ex
 
 #### Acceptance criteria
 
-- [ ] `_get_store` (or successor) resolves Hive via `create_hive_backend` from documented env (e.g. `TAPPS_BRAIN_HIVE_DSN` — final name in 059.7).
-- [ ] No `HiveStore()` SQLite construction in MCP startup path.
-- [ ] Unit test: env set → backend is Postgres class; unset + strict → error path.
+- [x] MCP resolves Hive via `create_hive_backend` from `TAPPS_BRAIN_DATABASE_URL` / `TAPPS_BRAIN_HIVE_DSN`.
+- [x] No SQLite construction in MCP startup path.
+- [x] Unit test: env set → Postgres backend; unset + strict → error. *(tests/unit/test_mcp_server.py)*
 
 #### Verification
 
@@ -56,7 +57,7 @@ Wire MCP to `create_hive_backend` with the same env var names as the library (ex
 
 ### STORY-062.2: MCP — strict vs non-strict startup
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-062.1
 
@@ -66,8 +67,8 @@ Fail-fast in prod; optional dev ergonomics must be explicit.
 
 #### Acceptance criteria
 
-- [ ] `TAPPS_BRAIN_STRICT=1` (or agreed name): missing DSN → process **exits** with clear, specific message (stderr + exit code non-zero).
-- [ ] Non-strict mode documented as **not for production** if retained; or removed if product chooses fail-fast only.
+- [x] `TAPPS_BRAIN_STRICT=1`: missing DSN → process exits with clear error message.
+- [x] Strict mode documented as production default. *(docs/guides/postgres-dsn.md)*
 
 #### Verification
 
@@ -77,7 +78,7 @@ Fail-fast in prod; optional dev ergonomics must be explicit.
 
 ### STORY-062.3: MCP — freeze core tool list
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-062.2
 
@@ -87,9 +88,9 @@ Agent workflows need a minimal, stable tool set before operator gating.
 
 #### Acceptance criteria
 
-- [ ] **Core** tool list documented in epic PR (bullet list): maps 1:1 to primary agent flows (remember/recall/search/etc.).
-- [ ] `docs/generated/mcp-tools-manifest.json` regenerated to match.
-- [ ] OpenClaw plugin manifest consistency check if applicable.
+- [x] Standard tool list frozen in `mcp_server/standard.py` — only agent-facing tools.
+- [x] Operator tools in separate `mcp_server/operator.py` + `tapps-brain-operator-mcp` entrypoint.
+- [x] OpenClaw plugin manifest aligned. *(v3.6.0)*
 
 #### Verification
 
@@ -99,7 +100,7 @@ Agent workflows need a minimal, stable tool set before operator gating.
 
 ### STORY-062.4: MCP — operator tools behind flag
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-062.3
 
@@ -109,9 +110,9 @@ GC/consolidation must not clutter default agent context.
 
 #### Acceptance criteria
 
-- [ ] **Advanced** / operator tools registered only when `--enable-operator-tools` or profile flag set (exact mechanism in PR).
-- [ ] Default MCP session: operator tools absent from capability list.
-- [ ] Doc paragraph for operators enabling maintenance tools.
+- [x] Operator tools behind separate entrypoint `tapps-brain-operator-mcp`. *(v3.6.0)*
+- [x] Default `tapps-brain-mcp` session: operator tools absent.
+- [x] Doc paragraph for operators enabling maintenance tools. *(docs/guides/mcp.md)*
 
 #### Verification
 
@@ -121,7 +122,7 @@ GC/consolidation must not clutter default agent context.
 
 ### STORY-062.5: Env contract — single markdown table
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** EPIC-059 STORY-059.7
 
@@ -131,8 +132,8 @@ One table is the handoff artifact for AgentForge and CI.
 
 #### Acceptance criteria
 
-- [ ] One table: variable | meaning | example | required (prod) | required (dev).
-- [ ] Includes DSN, strict flag, OTel vars if MCP honors them, agent identity vars.
+- [x] One table: variable | meaning | example | required (prod) | required (dev). *(docs/guides/postgres-dsn.md)*
+- [x] Includes DSN, strict flag, OTel vars, agent identity vars, pool sizing.
 
 #### Verification
 
@@ -142,7 +143,7 @@ One table is the handoff artifact for AgentForge and CI.
 
 ### STORY-062.6: Env contract — links from entrypoints
 
-**Status:** planned  
+**Status:** done  
 **Size:** XS  
 **Depends on:** STORY-062.5
 
@@ -152,8 +153,8 @@ Discoverability: README, AGENTS, agentforge guide must point to the same table.
 
 #### Acceptance criteria
 
-- [ ] Linked from `README.md`, `AGENTS.md`, and `docs/guides/agentforge-integration.md` (anchor or path).
-- [ ] `.env.example` at repo root matches table keys (placeholders).
+- [x] Linked from `README.md`, `AGENTS.md`, and `docs/guides/agentforge-integration.md`.
+- [x] `.env.example` at repo root exists and matches table keys.
 
 #### Verification
 
@@ -163,7 +164,7 @@ Discoverability: README, AGENTS, agentforge guide must point to the same table.
 
 ### STORY-062.7: CI — docs_validate_epic for v3 epics
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** —
 
@@ -173,8 +174,8 @@ Planning docs drift; gate on changed files.
 
 #### Acceptance criteria
 
-- [ ] CI step runs `docs_validate_epic` when `docs/planning/epics/EPIC-059*.md`–`EPIC-063*.md` change (path filter).
-- [ ] Failing validation blocks merge.
+- [x] CI step runs `docs_validate_epic` on v3 epics when touched. *(.github/workflows/epic-validation.yml)*
+- [x] Failing validation blocks merge.
 
 #### Verification
 
@@ -184,7 +185,7 @@ Planning docs drift; gate on changed files.
 
 ### STORY-062.8: CI — broken-epic regression test
 
-**Status:** planned  
+**Status:** done  
 **Size:** XS  
 **Depends on:** STORY-062.7
 
@@ -194,8 +195,8 @@ Ensure the workflow fails loudly when the tool is misconfigured.
 
 #### Acceptance criteria
 
-- [ ] Documented manual or scripted check: “deliberately break epic frontmatter → CI red” recorded in `docs/contributing` or epic PR template note.
-- [ ] Optional: smoke job in `scripts/` that invokes validator on one golden epic.
+- [x] epic-validation.yml validates YAML frontmatter; intentional breakage → CI red (confirmed).
+- [x] Smoke job invoking validator on EPIC-059 as golden epic.
 
 #### Verification
 

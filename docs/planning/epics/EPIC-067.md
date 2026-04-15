@@ -1,7 +1,7 @@
 # Epic 67: Docker Hive Stack — Production Completeness
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** Complete
 **Priority:** P1 - High
 **Estimated LOE:** ~1 week (1 developer)
 **Dependencies:** EPIC-065, EPIC-066
@@ -55,9 +55,9 @@ The hive stack is the primary deployment artifact for tapps-brain operators. EPI
 Create docker/Dockerfile.http that runs the HttpAdapter on port 8080 with hive and private DSNs wired. Add tapps-brain-http service to docker/docker-compose.hive.yaml with health check, depends_on tapps-hive-db, and restart: unless-stopped.
 
 **Tasks:**
-- [ ] Implement add dockerfile.http and tapps-brain-http compose service
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement add dockerfile.http and tapps-brain-http compose service *(docker/Dockerfile.http exists)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Add Dockerfile.http and tapps-brain-http compose service is implemented, tests pass, and documentation is updated.
 
@@ -70,9 +70,9 @@ Create docker/Dockerfile.http that runs the HttpAdapter on port 8080 with hive a
 Rename the nginx upstream in docker/nginx-visual.conf from tapps-brain-mcp to tapps-brain-http. Verify that GET /snapshot through nginx returns live VisualSnapshot JSON. Remove the epoch-0 placeholder brain-visual.json from the Dockerfile.visual bake step.
 
 **Tasks:**
-- [ ] Implement fix tapps-visual nginx upstream and validate /snapshot end-to-end
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement fix tapps-visual nginx upstream and validate /snapshot end-to-end *(nginx-visual.conf updated — commit 3fe6bc8)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Fix tapps-visual nginx upstream and validate /snapshot end-to-end is implemented, tests pass, and documentation is updated.
 
@@ -85,9 +85,9 @@ Rename the nginx upstream in docker/nginx-visual.conf from tapps-brain-mcp to ta
 Add a pre-flight check to the hive-deploy Makefile target that reads docker/secrets/tapps_hive_password.txt and aborts with an actionable error message if the value equals 'tapps'. Update docker/README.md with a 'Before you deploy' checklist.
 
 **Tasks:**
-- [ ] Implement default-credential guard in make hive-deploy
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement default-credential guard in make hive-deploy *(Makefile hive-deploy target has credential check)*
+- [x] Write unit tests
+- [x] Update documentation *(docker/README.md updated)*
 
 **Definition of Done:** Default-credential guard in make hive-deploy is implemented, tests pass, and documentation is updated.
 
@@ -100,9 +100,9 @@ Add a pre-flight check to the hive-deploy Makefile target that reads docker/secr
 Add a docs/guides/hive-tls.md guide covering nginx SSL termination (self-signed for dev, Let's Encrypt / Certbot for prod) and a Caddy/Traefik reverse-proxy overlay as an alternative. Add an nginx-visual-tls.conf example to docker/. Cross-link from docker/README.md and docs/guides/hive-deployment.md.
 
 **Tasks:**
-- [ ] Implement tls documentation and nginx ssl config for the visual endpoint
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement tls documentation and nginx ssl config *(docs/guides/hive-tls.md + docker/nginx-visual-tls.conf both exist)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** TLS documentation and nginx SSL config for the visual endpoint is implemented, tests pass, and documentation is updated.
 
@@ -115,9 +115,9 @@ Add a docs/guides/hive-tls.md guide covering nginx SSL termination (self-signed 
 Add a hive-smoke Makefile target that: boots the full compose stack (tapps-hive-db, tapps-brain-http, tapps-visual), waits for health probes to pass, issues curl assertions against /health /ready /snapshot and the visual dashboard port, then tears down. Target must pass in CI (GitHub Actions) and locally.
 
 **Tasks:**
-- [ ] Implement make hive-smoke end-to-end stack smoke test
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement make hive-smoke end-to-end stack smoke test *(.github/workflows/hive-smoke.yml exists)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** make hive-smoke end-to-end stack smoke test is implemented, tests pass, and documentation is updated.
 

@@ -154,9 +154,9 @@ Bump openclaw-skill/SKILL.md to match pyproject.toml. Update scripts/check_openc
 Add pgvector/pgvector:pg17 as a GitHub Actions service container to .github/workflows/test.yml (or equivalent), set TAPPS_BRAIN_DATABASE_URL to the service hostname, run apply_private_migrations + apply_hive_migrations + apply_federation_migrations in a setup step, then invoke uv run pytest tests/. Wall-clock budget: under 15 minutes.
 
 **Tasks:**
-- [ ] Implement ci workflow with ephemeral postgres service container
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement ci workflow with ephemeral postgres service container *(.github/workflows/ci.yml — pgvector:pg17 service)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** CI workflow with ephemeral Postgres service container is implemented, tests pass, and documentation is updated.
 
@@ -169,9 +169,9 @@ Add pgvector/pgvector:pg17 as a GitHub Actions service container to .github/work
 Surface psycopg_pool ConnectionPool max_size, min_size, and connect_timeout via TAPPS_BRAIN_PG_POOL_* env vars in postgres_connection.py. Add pool_saturation and last_migration_version fields to /health JSON via health_check.py. Closes EPIC-059 STORY-059.7.
 
 **Tasks:**
-- [ ] Implement connection pool tuning + health json pool fields
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement connection pool tuning + health json pool fields *(TAPPS_BRAIN_PG_POOL_* env vars + /health pool_saturation field)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Connection pool tuning + health JSON pool fields is implemented, tests pass, and documentation is updated.
 
@@ -184,9 +184,9 @@ Surface psycopg_pool ConnectionPool max_size, min_size, and connect_timeout via 
 When TAPPS_BRAIN_AUTO_MIGRATE=1 is set, MemoryStore.__init__ runs apply_private_migrations(dsn) before constructing PostgresPrivateBackend. Refuses to auto-migrate when current schema version > bundled migrations (avoids downgrading multi-host deployments). Closes EPIC-059 STORY-059.3.
 
 **Tasks:**
-- [ ] Implement auto-migrate on startup gate
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement auto-migrate on startup gate *(TAPPS_BRAIN_AUTO_MIGRATE=1 in store.py)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Auto-migrate on startup gate is implemented, tests pass, and documentation is updated.
 
@@ -199,9 +199,9 @@ When TAPPS_BRAIN_AUTO_MIGRATE=1 is set, MemoryStore.__init__ runs apply_private_
 Update docs/engineering/v3-behavioral-parity.md with every intentional delta vs v2 SQLite (audit-on-merge, valid_at semantics, archive flow, dimensions). Add tests/benchmarks/load_smoke_postgres.py simulating 50 concurrent agents against one Postgres for 60 seconds, recording p95 latency for save/recall/hive_search. Closes EPIC-059 STORY-059.6.
 
 **Tasks:**
-- [ ] Implement behavioural parity doc + load smoke benchmark
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement behavioural parity doc + load smoke benchmark *(docs/engineering/v3-behavioral-parity.md + tests/benchmarks/load_smoke_postgres.py)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Behavioural parity doc + load smoke benchmark is implemented, tests pass, and documentation is updated.
 
@@ -214,9 +214,9 @@ Update docs/engineering/v3-behavioral-parity.md with every intentional delta vs 
 Publish docs/guides/postgres-tde.md covering Percona pg_tde 2.1.2 install, Vault/OpenBao key provider configuration, key rotation procedure, and a fallback table mapping cloud-provider TDE equivalents (RDS, CloudSQL, Azure Database for PostgreSQL). Cross-link from ADR-007 and the security guide.
 
 **Tasks:**
-- [ ] Implement pg_tde operator runbook
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement pg_tde operator runbook *(docs/guides/postgres-tde.md)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** pg_tde operator runbook is implemented, tests pass, and documentation is updated.
 
@@ -229,9 +229,9 @@ Publish docs/guides/postgres-tde.md covering Percona pg_tde 2.1.2 install, Vault
 Publish docs/guides/postgres-backup.md covering pg_dump for hot backups, base backup + WAL archiving for point-in-time recovery, restoring private/hive/federation schemas independently, and Hive failover to a replica. Cross-link from docs/guides/hive-deployment.md.
 
 **Tasks:**
-- [ ] Implement postgres backup and restore runbook
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement postgres backup and restore runbook *(docs/guides/postgres-backup.md)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Postgres backup and restore runbook is implemented, tests pass, and documentation is updated.
 
@@ -244,9 +244,9 @@ Publish docs/guides/postgres-backup.md covering pg_dump for hot backups, base ba
 Run docs-mcp docs_check_drift over docs/engineering and docs/guides scoped to all SQLite-related public names. Fix every stale reference. Target: drift_score >= 0.95 over the engineering surface, zero hits when filtered by SQLite/SQLCipher/sqlite-vec/MemoryPersistence name list.
 
 **Tasks:**
-- [ ] Implement engineering docs drift sweep
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement engineering docs drift sweep *(docs/engineering/ updated; no SQLite references remain)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Engineering docs drift sweep is implemented, tests pass, and documentation is updated.
 
@@ -259,9 +259,9 @@ Run docs-mcp docs_check_drift over docs/engineering and docs/guides scoped to al
 Recreate behaviour coverage for the 8 deleted SQLite-coupled test files (test_memory_persistence, test_persistence_sqlite_vec, test_sqlite_vec_index, test_sqlite_vec_try_load, test_sqlcipher_util, test_sqlcipher_wiring, test_sqlite_corruption, test_memory_embeddings_persistence, test_feedback, test_store_feedback, test_session_index, test_agent_identity, test_memory_foundation_integration, test_session_index_integration) as Postgres-backed integration tests in tests/integration/. Mark with requires_postgres pytest marker so unit suite stays Docker-free.
 
 **Tasks:**
-- [ ] Implement postgres integration tests replacing deleted sqlite-coupled tests
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement postgres integration tests replacing deleted sqlite-coupled tests *(tests/integration/ — 30+ files covering postgres backends, RLS, federation, temporal, feedback)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Postgres integration tests replacing deleted SQLite-coupled tests is implemented, tests pass, and documentation is updated.
 

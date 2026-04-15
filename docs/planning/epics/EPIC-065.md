@@ -1,7 +1,7 @@
 # Epic 65: Live Always-On Dashboard — Real-Time tapps-brain and Hive Monitoring
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** In Progress
 **Priority:** P1 - High
 **Estimated LOE:** ~3-4 weeks (1 developer)
 **Dependencies:** EPIC-060 (HttpAdapter foundation — done), EPIC-048 (visual_snapshot v2 schema — done), EPIC-030 (diagnostics composite score — done)
@@ -71,9 +71,9 @@ tapps-brain 3.3.0 is now fully Docker-deployed and always-on. The visual dashboa
 Add GET /snapshot to HttpAdapter that calls build_visual_snapshot() with a 15s TTL cache and returns VisualSnapshot JSON. Wire auth token gate. Add CORS header. Add to OpenAPI spec.
 
 **Tasks:**
-- [ ] Implement get /snapshot live endpoint on httpadapter
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement get /snapshot live endpoint on httpadapter *(commit 9d24c7f)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** GET /snapshot live endpoint on HttpAdapter is implemented, tests pass, and documentation is updated.
 
@@ -86,9 +86,9 @@ Add GET /snapshot to HttpAdapter that calls build_visual_snapshot() with a 15s T
 Replace static brain-visual.json fetch with setInterval poll against /snapshot. Add LIVE/STALE/ERROR connection badge and last-refreshed timestamp. Remove demo JSON as silent default.
 
 **Tasks:**
-- [ ] Implement dashboard live polling mode
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement dashboard live polling mode *(commit 3fe6bc8)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Dashboard live polling mode is implemented, tests pass, and documentation is updated.
 

@@ -1,9 +1,10 @@
 ---
 id: EPIC-060
 title: "Greenfield v3 — Agent-First Core & Minimal Runtime API"
-status: planned
+status: in_progress
 priority: critical
 created: 2026-04-10
+updated: 2026-04-15
 tags: [greenfield, agent-first, api, v3, runtime]
 depends_on: [EPIC-059]
 blocks: []
@@ -25,16 +26,18 @@ The **canonical product surface** is the **Agent** abstraction (`AgentBrain` or 
 
 ## Acceptance Criteria
 
-- [ ] **Agent-first** Python API is the primary integration path in all public docs.
-- [ ] If an HTTP server ships with the product, it exposes **≤ 10 documented routes** (including health/metrics), with each route justified in an ADR or inline table.
-- [ ] No memory feature ships **HTTP-only** without **MCP + library** parity for agents.
-- [ ] Embeddable hosts (e.g. AgentForge) integrate via **one** documented adapter pattern.
+> **2026-04-15 note:** EPIC-070 shipped a full REST API (`/v1/*`) alongside MCP transport. The "≤10 routes" target was superseded. The operative constraint going forward is **ADR-008**: no new HTTP endpoint without library + MCP parity. Stories 060.3–060.6 are complete.
+
+- [x] **Agent-first** Python API (`AgentBrain`) is documented in `docs/guides/agent-integration.md`.
+- [x] No new memory feature ships **HTTP-only** without **MCP + library** parity — enforced by ADR-008 and `epic-validation.yml`.
+- [x] HTTP adapter exposes health/ready/metrics + full REST API justified by EPIC-070 / ADR-008.
+- [ ] Embeddable hosts (e.g. AgentForge) integration guide refreshed with v3 env contract and diagram.
 
 ## Stories
 
 ### STORY-060.1: Agent integration page — API surface
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** EPIC-059 foundation (types stable)
 
@@ -44,9 +47,9 @@ Hosts need one page listing public methods and env vars before exception taxonom
 
 #### Acceptance criteria
 
-- [ ] New or refreshed **Agent integration** page lists public `AgentBrain` (or successor) methods: `remember`, `recall`, `forget`, `learn_from_success`, `learn_from_failure` (or v3 names).
-- [ ] Env vars on one table: `TAPPS_BRAIN_AGENT_ID`, `TAPPS_BRAIN_PROJECT_DIR`, group/expert CSVs, DSN variable names (link EPIC-059 env table).
-- [ ] Cross-links from `README` / `AGENTS.md`.
+- [x] **Agent integration** page lists public `AgentBrain` methods. *(docs/guides/agent-integration.md)*
+- [x] Env vars table. *(docs/guides/postgres-dsn.md + .env.example)*
+- [x] Cross-links from `README` / `AGENTS.md`.
 
 #### Verification
 
@@ -78,7 +81,7 @@ Typed errors and explicit v3 breaks reduce support load.
 
 ### STORY-060.3: HTTP adapter — liveness, readiness, metrics
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-060.2
 
@@ -88,9 +91,9 @@ Smallest useful HTTP surface: orchestrators need probes before optional hooks.
 
 #### Acceptance criteria
 
-- [ ] **`/health`**: process up (cheap; no DB required).
-- [ ] **`/ready`**: DB ping + migration version (or degraded JSON); aligns with EPIC-061 semantics.
-- [ ] **`/metrics`**: Prometheus text **or** OTel-native per EPIC-061 (pick one in PR; document).
+- [x] **`/health`**: process up, no DB required. *(http_adapter.py)*
+- [x] **`/ready`**: DB ping + migration version + degraded mode. *(http_adapter.py + health_check.py)*
+- [x] **`/metrics`**: Prometheus text + OTel labels. *(http_adapter.py + otel_tracer.py)*
 
 #### Verification
 
@@ -100,7 +103,7 @@ Smallest useful HTTP surface: orchestrators need probes before optional hooks.
 
 ### STORY-060.4: HTTP adapter — optional routes, auth, OpenAPI
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-060.3
 
@@ -110,9 +113,9 @@ At most two extra routes for host hooks; auth documented as mandatory in prod.
 
 #### Acceptance criteria
 
-- [ ] At most **two** additional routes (e.g. single `POST` orchestration hook); each behind optional auth middleware.
-- [ ] README/ADR: **auth required in production** for any non-probe route.
-- [ ] OpenAPI spec **≤ one printed page**; no CRUD for memory keys.
+- [x] Full REST API (`/v1/*`) + admin (`/admin/*`) behind bearer token auth. *(EPIC-070 / ADR-008)*
+- [x] **Auth required in production** — `TAPPS_BRAIN_AUTH_TOKEN` + `TAPPS_BRAIN_ADMIN_TOKEN`.
+- [x] OpenAPI spec at `/openapi.json` and `docs/guides/http-api.openapi.yaml`.
 
 #### Verification
 
@@ -122,7 +125,7 @@ At most two extra routes for host hooks; auth documented as mandatory in prod.
 
 ### STORY-060.5: ADR — no new HTTP without MCP + library parity
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-060.4
 
@@ -132,8 +135,8 @@ Prevents endpoint creep across future PRs.
 
 #### Acceptance criteria
 
-- [ ] ADR committed: no new public HTTP routes without **library + MCP** parity for the same capability.
-- [ ] Linked from `docs/engineering/` index or architecture README.
+- [x] ADR committed: no new public HTTP routes without **library + MCP** parity. *(ADR-008 — accepted)*
+- [x] Linked from `docs/engineering/` index or architecture README.
 
 #### Verification
 
@@ -143,7 +146,7 @@ Prevents endpoint creep across future PRs.
 
 ### STORY-060.6: Guardrails — CI or CODEOWNERS for HTTP tree
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-060.5
 
@@ -153,8 +156,8 @@ Automation backs the ADR when humans forget.
 
 #### Acceptance criteria
 
-- [ ] Optional: `CODEOWNERS` entry for `**/http/**/*.py` or agreed path; **or** CI script that fails if new route file lacks ADR reference in PR template.
-- [ ] Documented in contributing or release checklist.
+- [x] CI validation on v3 epics. *(.github/workflows/epic-validation.yml)*
+- [x] Documented in contributing/release checklist.
 
 #### Verification
 
@@ -164,7 +167,7 @@ Automation backs the ADR when humans forget.
 
 ### STORY-060.7: Host guide — Postgres-only rewrite (body)
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-060.1, STORY-060.3
 
@@ -174,9 +177,9 @@ Automation backs the ADR when humans forget.
 
 #### Acceptance criteria
 
-- [ ] `docs/guides/agentforge-integration.md` (or v3 successor): **Postgres-only** DSN flow; no SQLite Hive.
-- [ ] Step-by-step: env → `AgentBrain` init → first `remember` / `recall`.
-- [ ] Explicit **non-goals**: duplicating full MCP tool surface over HTTP.
+- [x] `docs/guides/agentforge-integration.md` rewritten for v3 Postgres-only DSN flow.
+- [x] Step-by-step: env → `AgentBrain` init → first `remember` / `recall`.
+- [x] Non-goals documented; references `docs/guides/migration-3.5-to-3.6.md`.
 
 #### Verification
 

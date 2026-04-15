@@ -62,7 +62,7 @@ Use these as **constraints and citations**, not as a license to add heavy JS fra
 
 ### STORY-064.1: NLT Labs — style sheet & logo pack audit (source of truth)
 
-**Status:** planned  
+**Status:** done  
 **Effort:** M  
 **Depends on:** none  
 **Context refs:** `examples/brain-visual/index.html`, `examples/brain-visual/nlt-an-mark-sm.svg`, `src/tapps_brain/visual_snapshot.py` (`VisualThemeTokens`), internal or sibling **`BRAND-STYLE-GUIDE.md`** (locate off-repo if needed)  
@@ -82,7 +82,7 @@ Without anchoring to the **approved** palette, typography, spacing, logo clearan
 
 ### STORY-064.2: Narrative & information architecture refresh
 
-**Status:** planned  
+**Status:** done  
 **Effort:** M  
 **Depends on:** STORY-064.1  
 **Context refs:** `docs/planning/brain-visual-implementation-plan.md` (“Marketing & UX narrative”, story beats), `examples/brain-visual/index.html`  
@@ -102,7 +102,7 @@ Operators need a **decision-first** story before dense charts (see implementatio
 
 ### STORY-064.3: Motion system (tokens, reduced motion, performance)
 
-**Status:** planned  
+**Status:** done  
 **Effort:** L  
 **Depends on:** STORY-064.1, STORY-064.2  
 **Context refs:** `examples/brain-visual/index.html` (existing `prefers-reduced-motion` partial coverage)  
@@ -122,7 +122,7 @@ Motion should **explain state** (snapshot load, section entry) and meet **WCAG 2
 
 ### STORY-064.4: “Deep insight” panels — retrieval, diagnostics, privacy
 
-**Status:** planned  
+**Status:** done  
 **Effort:** L  
 **Depends on:** STORY-064.2  
 **Context refs:** `src/tapps_brain/visual_snapshot.py`, `docs/guides/visual-snapshot.md`, `examples/brain-visual/brain-visual-help.js`  
@@ -161,7 +161,7 @@ An empty dashboard **does not sell**; a tasteful fixture proves the narrative.
 
 ### STORY-064.6: README / docs index — CTA to the visual
 
-**Status:** planned  
+**Status:** done  
 **Effort:** S  
 **Depends on:** STORY-064.5  
 **Context refs:** `README.md`, `docs/DOCUMENTATION_INDEX.md`, `docs/guides/visual-snapshot.md`  
@@ -180,7 +180,7 @@ Discovery is part of the product; GitHub visitors should see the visual story li
 
 ### STORY-064.CLEAN: Quality sweep
 
-**Status:** planned  
+**Status:** done  
 **Effort:** S  
 **Depends on:** STORY-064.3–064.6  
 **Context refs:** `docs/planning/epics/EPIC-064.md`, [`.cursor/mcp.json`](../../../.cursor/mcp.json), [`AGENTS.md`](../../../AGENTS.md)  

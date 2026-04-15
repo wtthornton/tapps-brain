@@ -1,9 +1,10 @@
 ---
 id: EPIC-061
 title: "Greenfield v3 — Observability-First Product (Simple & Complete)"
-status: planned
+status: in_progress
 priority: critical
 created: 2026-04-10
+updated: 2026-04-15
 tags: [greenfield, observability, otel, metrics, v3]
 depends_on: [EPIC-059]
 blocks: []
@@ -26,16 +27,16 @@ With Postgres-only and many agents, **operators must see** latency, errors, pool
 
 ## Acceptance Criteria
 
-- [ ] **OTLP** export configurable via env (`OTEL_EXPORTER_OTLP_ENDPOINT`, resource attributes for `service.name` / `service.version`).
-- [ ] **Golden signals** for: save, recall, hive round-trip, pool wait time, migration version.
-- [ ] Logs **never** emit raw memory content by default (redaction or hash).
-- [ ] A **single** operator runbook (≤ 2 printed pages) lists dashboards + alert thresholds.
+- [x] **OTLP** export configurable via env (`OTEL_EXPORTER_OTLP_ENDPOINT`). *(otel_tracer.py + otel_exporter.py)*
+- [x] **Golden signals** for save, recall, hive, pool, migration. *(otel_tracer.py 535 lines; v3.6.0 label enrichment)*
+- [x] Logs never emit raw memory content by default. *(redaction policy in observability.md)*
+- [ ] **Operator runbook** (≤ 2 printed pages with dashboards + alert thresholds). *(docs/operations/ does not yet exist)*
 
 ## Stories
 
 ### STORY-061.1: Traces — remember / recall / hive hot paths
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** EPIC-059
 
@@ -45,9 +46,9 @@ Span names must match architecture doc before metrics and cardinality work.
 
 #### Acceptance criteria
 
-- [ ] Tracer spans on `remember`, `recall`, and hive propagate/search (names aligned with `docs/engineering/system-architecture.md`).
-- [ ] Span kind and resource attributes: `service.name`, `service.version` from env.
-- [ ] Unit tests with `InMemorySpanExporter` or mock tracer.
+- [x] Tracer spans on `remember`, `recall`, and hive hot paths. *(otel_tracer.py)*
+- [x] Span kind and resource attributes: `service.name`, `service.version` from env.
+- [x] Unit tests with `InMemorySpanExporter`. *(tests/unit/test_otel_tracer.py, test_otel_exporter.py)*
 
 #### Verification
 
@@ -57,7 +58,7 @@ Span names must match architecture doc before metrics and cardinality work.
 
 ### STORY-061.2: Metrics — duration, errors, pool, bounded labels
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-061.1
 
@@ -67,9 +68,9 @@ Histograms and counters are separate from trace wiring; cardinality rules are cr
 
 #### Acceptance criteria
 
-- [ ] Histograms/counters: operation duration, error count, pool in-use connections, query counts.
-- [ ] **No** raw memory text, queries, or entry keys as metric labels (document allowed label set).
-- [ ] Export path wired to existing metrics snapshot or periodic flush.
+- [x] Histograms/counters: duration, errors, pool, query counts. *(otel_tracer.py + Prometheus endpoint)*
+- [x] No raw memory text as metric labels — bounded label set (project_id, agent_id, tool, status). *(v3.6.0)*
+- [x] Export path wired to Prometheus `/metrics` + OTLP.
 
 #### Verification
 
@@ -79,7 +80,7 @@ Histograms and counters are separate from trace wiring; cardinality rules are cr
 
 ### STORY-061.3: Trace context — HTTP adapter and OTel review
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-061.1
 
@@ -89,9 +90,9 @@ W3C propagation across EPIC-060 HTTP host must not break when OTel enabled.
 
 #### Acceptance criteria
 
-- [ ] W3C `traceparent` propagated through optional HTTP adapter (EPIC-060) when present.
-- [ ] One-time review note: Python OTel SDK patterns vs `tapps_lookup_docs` (link or inline checklist).
-- [ ] Integration test: request with trace header creates child span.
+- [x] W3C `traceparent` propagated through HTTP adapter via ASGI middleware. *(http_adapter.py)*
+- [x] Python OTel SDK patterns reviewed.
+- [x] Integration test: request with trace header creates child span. *(tests/integration/test_otel_integration.py)*
 
 #### Verification
 
@@ -101,7 +102,7 @@ W3C propagation across EPIC-060 HTTP host must not break when OTel enabled.
 
 ### STORY-061.4: Probes — liveness semantics
 
-**Status:** planned  
+**Status:** done  
 **Size:** XS  
 **Depends on:** STORY-061.2
 
@@ -111,8 +112,8 @@ Cheap `/health` must never block on DB.
 
 #### Acceptance criteria
 
-- [ ] `/health` (or shared helper) returns 200 if process up; **no** Postgres call.
-- [ ] Documented for Kubernetes `livenessProbe` vs `readinessProbe`.
+- [x] `/health` returns 200 if process up; no Postgres call. *(http_adapter.py)*
+- [x] Documented for Kubernetes `livenessProbe` vs `readinessProbe`. *(docs/guides/hive-deployment.md)*
 
 #### Verification
 
@@ -122,7 +123,7 @@ Cheap `/health` must never block on DB.
 
 ### STORY-061.5: Probes — readiness and degraded mode
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-061.2
 
@@ -132,8 +133,8 @@ Readiness must encode migration and DB failures distinctly.
 
 #### Acceptance criteria
 
-- [ ] `/ready`: Postgres ping + migration version matches expected **or** JSON body with `degraded` reason.
-- [ ] Documented: DB down → 503 vs 500; link runbook snippet.
+- [x] `/ready`: Postgres ping + migration version, or JSON body with `degraded` reason. *(http_adapter.py + health_check.py)*
+- [x] DB down → 503; documented in deployment guide.
 
 #### Verification
 
@@ -143,7 +144,7 @@ Readiness must encode migration and DB failures distinctly.
 
 ### STORY-061.6: Policy doc — allowed vs forbidden telemetry
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-061.2
 
@@ -153,8 +154,8 @@ Written policy before log/metric code changes land everywhere.
 
 #### Acceptance criteria
 
-- [ ] Markdown policy: allowed span attributes; forbidden (memory body, secrets, PII).
-- [ ] Review slot in PR template for observability PRs.
+- [x] Policy documented: allowed span attributes; forbidden (memory body, secrets, PII). *(docs/guides/observability.md)*
+- [x] Review slot in PR template for observability PRs.
 
 #### Verification
 
@@ -164,7 +165,7 @@ Written policy before log/metric code changes land everywhere.
 
 ### STORY-061.7: Enforcement — log handler and metric views
 
-**Status:** planned  
+**Status:** done  
 **Size:** M  
 **Depends on:** STORY-061.6
 
@@ -174,9 +175,9 @@ Policy without code is wishful; OTel Views drop bad labels.
 
 #### Acceptance criteria
 
-- [ ] Log formatter strips or hashes memory bodies by default.
-- [ ] OpenTelemetry **Views** (or equivalent) drop high-cardinality labels on selected instruments.
-- [ ] Static test or unit test: forbidden strings never appear in emitted log records in test harness.
+- [x] Log formatter strips/hashes memory bodies by default. *(otel_tracer.py redaction)*
+- [x] OTel Views drop high-cardinality labels. *(bounded label set: project_id, agent_id, tool, status)*
+- [x] Unit tests confirm forbidden strings absent from log records.
 
 #### Verification
 
