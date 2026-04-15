@@ -40,40 +40,40 @@ Add TAPPS_BRAIN_PG_POOL_MAX, TAPPS_BRAIN_PG_POOL_MIN, TAPPS_BRAIN_PG_POOL_CONNEC
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Read TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS env vars in PostgresConnectionManager.__init__ (`src/tapps_brain/postgres_connection.py`)
-- [ ] Add get_pool_stats() method exposing busy / idle / max_size from psycopg_pool.ConnectionPool.get_stats() (`src/tapps_brain/postgres_connection.py`)
-- [ ] Add pool_saturation, pool_idle, last_migration_version fields to StoreHealth pydantic model (`src/tapps_brain/health_check.py`)
-- [ ] Populate pool fields in run_health_check via cm.get_pool_stats() (`src/tapps_brain/health_check.py`)
-- [ ] Populate last_migration_version via get_private_schema_status(dsn) (`src/tapps_brain/postgres_migrations.py`)
-- [ ] Add malformed-DSN parse error with descriptive message (`src/tapps_brain/postgres_connection.py`)
-- [ ] Unit tests for env-var parsing, get_pool_stats, malformed-DSN error (`tests/unit/test_postgres_connection.py`)
-- [ ] Update docs/guides/postgres-dsn.md with the env vars and defaults (`docs/guides/postgres-dsn.md`)
+- [x] Read TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS env vars in PostgresConnectionManager.__init__ (`src/tapps_brain/postgres_connection.py`)
+- [x] Add get_pool_stats() method exposing busy / idle / max_size from psycopg_pool.ConnectionPool.get_stats() (`src/tapps_brain/postgres_connection.py`)
+- [x] Add pool_saturation, pool_idle, last_migration_version fields to StoreHealth pydantic model (`src/tapps_brain/health_check.py`)
+- [x] Populate pool fields in run_health_check via cm.get_pool_stats() (`src/tapps_brain/health_check.py`)
+- [x] Populate last_migration_version via get_private_schema_status(dsn) (`src/tapps_brain/postgres_migrations.py`)
+- [x] Add malformed-DSN parse error with descriptive message (`src/tapps_brain/postgres_connection.py`)
+- [x] Unit tests for env-var parsing, get_pool_stats, malformed-DSN error (`tests/unit/test_postgres_connection.py`)
+- [x] Update docs/guides/postgres-dsn.md with the env vars and defaults (`docs/guides/postgres-dsn.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] PostgresConnectionManager honours TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS env vars with documented defaults (10/2/10s)
-- [ ] get_pool_stats returns busy/idle/max_size from the live pool
-- [ ] /health JSON includes pool_saturation
-- [ ] pool_idle
-- [ ] and last_migration_version under store
-- [ ] malformed DSN raises ValueError with a clear message at PostgresConnectionManager construction time
-- [ ] docs/guides/postgres-dsn.md documents every env var and the defaults table
-- [ ] unit tests cover all four code paths
-- [ ] EPIC-059 STORY-059.7 acceptance criteria all checked off
+- [x] PostgresConnectionManager honours TAPPS_BRAIN_PG_POOL_MAX/MIN/CONNECT_TIMEOUT_SECONDS env vars with documented defaults (10/2/10s)
+- [x] get_pool_stats returns busy/idle/max_size from the live pool
+- [x] /health JSON includes pool_saturation
+- [x] pool_idle
+- [x] and last_migration_version under store
+- [x] malformed DSN raises ValueError with a clear message at PostgresConnectionManager construction time
+- [x] docs/guides/postgres-dsn.md documents every env var and the defaults table
+- [x] unit tests cover all four code paths
+- [x] EPIC-059 STORY-059.7 acceptance criteria all checked off
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Connection pool tuning and health JSON pool fields code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Connection pool tuning and health JSON pool fields code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -113,8 +113,8 @@ Add TAPPS_BRAIN_PG_POOL_MAX, TAPPS_BRAIN_PG_POOL_MIN, TAPPS_BRAIN_PG_POOL_CONNEC
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

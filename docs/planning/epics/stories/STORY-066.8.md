@@ -40,37 +40,37 @@ Add a TAPPS_BRAIN_AUTO_MIGRATE env var (default 0). When set to 1, MemoryStore._
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Read TAPPS_BRAIN_AUTO_MIGRATE env var in MemoryStore.__init__ (`src/tapps_brain/store.py`)
-- [ ] Call apply_private_migrations(dsn) when the gate is set (`src/tapps_brain/store.py`)
-- [ ] Add MigrationDowngradeError exception type to postgres_migrations.py (`src/tapps_brain/postgres_migrations.py`)
-- [ ] Detect current DB version > max bundled version and raise MigrationDowngradeError (`src/tapps_brain/postgres_migrations.py`)
-- [ ] Wire AgentBrain to honour TAPPS_BRAIN_AUTO_MIGRATE (`src/tapps_brain/agent_brain.py`)
-- [ ] Unit tests for the gate, the downgrade refusal, and the no-op when DB is up to date (`tests/unit/test_postgres_migrations.py`)
-- [ ] Document TAPPS_BRAIN_AUTO_MIGRATE in CLAUDE.md env var table (`CLAUDE.md`)
-- [ ] Document the same in AGENTS.md (`AGENTS.md`)
+- [x] Read TAPPS_BRAIN_AUTO_MIGRATE env var in MemoryStore.__init__ (`src/tapps_brain/store.py`)
+- [x] Call apply_private_migrations(dsn) when the gate is set (`src/tapps_brain/store.py`)
+- [x] Add MigrationDowngradeError exception type to postgres_migrations.py (`src/tapps_brain/postgres_migrations.py`)
+- [x] Detect current DB version > max bundled version and raise MigrationDowngradeError (`src/tapps_brain/postgres_migrations.py`)
+- [x] Wire AgentBrain to honour TAPPS_BRAIN_AUTO_MIGRATE (`src/tapps_brain/agent_brain.py`)
+- [x] Unit tests for the gate, the downgrade refusal, and the no-op when DB is up to date (`tests/unit/test_postgres_migrations.py`)
+- [x] Document TAPPS_BRAIN_AUTO_MIGRATE in CLAUDE.md env var table (`CLAUDE.md`)
+- [x] Document the same in AGENTS.md (`AGENTS.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] MemoryStore honours TAPPS_BRAIN_AUTO_MIGRATE=1 by running pending migrations before opening the backend
-- [ ] default behaviour (env var unset or 0) is unchanged
-- [ ] MigrationDowngradeError raised when DB version exceeds max bundled version
-- [ ] every applied migration logged at INFO with version and filename
-- [ ] env var documented in CLAUDE.md env var table and AGENTS.md
-- [ ] unit tests cover gate-on / gate-off / downgrade-refused / clean-DB / partial-migration paths
+- [x] MemoryStore honours TAPPS_BRAIN_AUTO_MIGRATE=1 by running pending migrations before opening the backend
+- [x] default behaviour (env var unset or 0) is unchanged
+- [x] MigrationDowngradeError raised when DB version exceeds max bundled version
+- [x] every applied migration logged at INFO with version and filename
+- [x] env var documented in CLAUDE.md env var table and AGENTS.md
+- [x] unit tests cover gate-on / gate-off / downgrade-refused / clean-DB / partial-migration paths
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Auto-migrate on startup gate code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Auto-migrate on startup gate code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -104,8 +104,8 @@ Add a TAPPS_BRAIN_AUTO_MIGRATE env var (default 0). When set to 1, MemoryStore._
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

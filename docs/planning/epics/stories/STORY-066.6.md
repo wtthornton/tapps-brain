@@ -39,40 +39,40 @@ Update .github/workflows/test.yml (or create one if missing) to declare a pgvect
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Inventory current .github/workflows/* and identify the test job (`.github/workflows/test.yml`)
-- [ ] Add pgvector/pgvector:pg17 service container with health check and credentials matching docker-compose.yml (`.github/workflows/test.yml`)
-- [ ] Set TAPPS_BRAIN_DATABASE_URL env var on the test job (`.github/workflows/test.yml`)
-- [ ] Add a setup step that runs apply_private_migrations + apply_hive_migrations + apply_federation_migrations (`.github/workflows/test.yml`)
-- [ ] Write scripts/apply_all_migrations.py that the workflow setup step invokes (`scripts/apply_all_migrations.py`)
-- [ ] Update AGENTS.md with the local equivalent (make brain-up + apply migrations + pytest) (`AGENTS.md`)
-- [ ] Add a make brain-test target chaining brain-up, apply migrations, and pytest (`Makefile`)
-- [ ] Verify CI workflow runs full unit + integration suite under 15 minutes (`.github/workflows/test.yml`)
+- [x] Inventory current .github/workflows/* and identify the test job (`.github/workflows/test.yml`)
+- [x] Add pgvector/pgvector:pg17 service container with health check and credentials matching docker-compose.yml (`.github/workflows/test.yml`)
+- [x] Set TAPPS_BRAIN_DATABASE_URL env var on the test job (`.github/workflows/test.yml`)
+- [x] Add a setup step that runs apply_private_migrations + apply_hive_migrations + apply_federation_migrations (`.github/workflows/test.yml`)
+- [x] Write scripts/apply_all_migrations.py that the workflow setup step invokes (`scripts/apply_all_migrations.py`)
+- [x] Update AGENTS.md with the local equivalent (make brain-up + apply migrations + pytest) (`AGENTS.md`)
+- [x] Add a make brain-test target chaining brain-up, apply migrations, and pytest (`Makefile`)
+- [x] Verify CI workflow runs full unit + integration suite under 15 minutes (`.github/workflows/test.yml`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] .github/workflows/test.yml declares pgvector/pgvector:pg17 service container
-- [ ] TAPPS_BRAIN_DATABASE_URL env var set on the test job
-- [ ] migrations applied before pytest
-- [ ] full unit suite passes in CI
-- [ ] full integration suite passes in CI
-- [ ] wall-clock for the test job under 15 minutes
-- [ ] AGENTS.md documents the equivalent local commands
-- [ ] make brain-test target works end-to-end on a clean clone
-- [ ] EPIC-059 STORY-059.8 acceptance criteria all checked off
+- [x] .github/workflows/test.yml declares pgvector/pgvector:pg17 service container
+- [x] TAPPS_BRAIN_DATABASE_URL env var set on the test job
+- [x] migrations applied before pytest
+- [x] full unit suite passes in CI
+- [x] full integration suite passes in CI
+- [x] wall-clock for the test job under 15 minutes
+- [x] AGENTS.md documents the equivalent local commands
+- [x] make brain-test target works end-to-end on a clean clone
+- [x] EPIC-059 STORY-059.8 acceptance criteria all checked off
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] CI workflow with ephemeral Postgres service container code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] CI workflow with ephemeral Postgres service container code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -113,8 +113,8 @@ Update .github/workflows/test.yml (or create one if missing) to declare a pgvect
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

@@ -39,37 +39,37 @@ Update docs/engineering/v3-behavioral-parity.md to enumerate every intentional d
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Audit existing v3-behavioral-parity.md against actual stage 2 changes (`docs/engineering/v3-behavioral-parity.md`)
-- [ ] Enumerate audit timing delta, valid_at semantics, archive flow, dimensions, FTS ranking (`docs/engineering/v3-behavioral-parity.md`)
-- [ ] Write tests/benchmarks/load_smoke_postgres.py with 50 concurrent agents using threading (`tests/benchmarks/load_smoke_postgres.py`)
-- [ ] Record p95 latency for save, recall, hive_search across the workload (`tests/benchmarks/load_smoke_postgres.py`)
-- [ ] Mark with @pytest.mark.requires_postgres and @pytest.mark.benchmark (`tests/benchmarks/load_smoke_postgres.py`)
-- [ ] Document the latency budget (or informational status) in the parity doc (`docs/engineering/v3-behavioral-parity.md`)
-- [ ] Add a make benchmark-postgres target (`AGENTS.md`)
+- [x] Audit existing v3-behavioral-parity.md against actual stage 2 changes (`docs/engineering/v3-behavioral-parity.md`)
+- [x] Enumerate audit timing delta, valid_at semantics, archive flow, dimensions, FTS ranking (`docs/engineering/v3-behavioral-parity.md`)
+- [x] Write tests/benchmarks/load_smoke_postgres.py with 50 concurrent agents using threading (`tests/benchmarks/load_smoke_postgres.py`)
+- [x] Record p95 latency for save, recall, hive_search across the workload (`tests/benchmarks/load_smoke_postgres.py`)
+- [x] Mark with @pytest.mark.requires_postgres and @pytest.mark.benchmark (`tests/benchmarks/load_smoke_postgres.py`)
+- [x] Document the latency budget (or informational status) in the parity doc (`docs/engineering/v3-behavioral-parity.md`)
+- [x] Add a make benchmark-postgres target (`AGENTS.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] docs/engineering/v3-behavioral-parity.md enumerates every intentional v3 vs v2 delta with code references
-- [ ] tests/benchmarks/load_smoke_postgres.py runs 50 concurrent agents for 60 seconds against one Postgres
-- [ ] p95 latency recorded for save / recall / hive_search and stored as benchmark output
-- [ ] benchmark marked requires_postgres so it does not run in the unit suite
-- [ ] documented latency budget or explicit "informational only" status
-- [ ] AGENTS.md documents how to run the benchmark
-- [ ] EPIC-059 STORY-059.6 acceptance criteria all checked off
+- [x] docs/engineering/v3-behavioral-parity.md enumerates every intentional v3 vs v2 delta with code references
+- [x] tests/benchmarks/load_smoke_postgres.py runs 50 concurrent agents for 60 seconds against one Postgres
+- [x] p95 latency recorded for save / recall / hive_search and stored as benchmark output
+- [x] benchmark marked requires_postgres so it does not run in the unit suite
+- [x] documented latency budget or explicit "informational only" status
+- [x] AGENTS.md documents how to run the benchmark
+- [x] EPIC-059 STORY-059.6 acceptance criteria all checked off
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Behavioural parity doc and load smoke benchmark code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Behavioural parity doc and load smoke benchmark code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -103,11 +103,11 @@ Update docs/engineering/v3-behavioral-parity.md to enumerate every intentional d
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
-- [ ] **S**mall -- Completable within one sprint/iteration
+- [x] **S**mall -- Completable within one sprint/iteration
 - [x] **T**estable -- Has clear criteria to verify completion
 
 <!-- docsmcp:end:invest -->

@@ -45,40 +45,40 @@ Run docs-mcp docs_check_drift over docs/engineering and docs/guides scoped to al
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Run docs_check_drift over docs/engineering with SQLite name list (`docs/engineering`)
-- [ ] Run docs_check_drift over docs/guides with SQLite name list (`docs/guides`)
-- [ ] Update docs/engineering/system-architecture.md to remove per-agent memory.db references (`docs/engineering/system-architecture.md`)
-- [ ] Update docs/engineering/data-stores-and-schema.md to describe migrations 001-006 instead of v1-v17 SQLite schemas (`docs/engineering/data-stores-and-schema.md`)
-- [ ] Update docs/engineering/v3-behavioral-parity.md FeedbackStore row to reflect Postgres feedback_events table (`docs/engineering/v3-behavioral-parity.md`)
-- [ ] Update docs/engineering/threat-model.md to reflect pg_tde instead of SQLCipher (`docs/engineering/threat-model.md`)
-- [ ] Archive or delete docs/planning/sqlite-to-postgres-meeting-notes.md if it has served its purpose (`docs/planning/sqlite-to-postgres-meeting-notes.md`)
-- [ ] Re-run docs_check_drift and confirm zero SQLite name hits (`docs/engineering`)
+- [x] Run docs_check_drift over docs/engineering with SQLite name list (`docs/engineering`)
+- [x] Run docs_check_drift over docs/guides with SQLite name list (`docs/guides`)
+- [x] Update docs/engineering/system-architecture.md to remove per-agent memory.db references (`docs/engineering/system-architecture.md`)
+- [x] Update docs/engineering/data-stores-and-schema.md to describe migrations 001-006 instead of v1-v17 SQLite schemas (`docs/engineering/data-stores-and-schema.md`)
+- [x] Update docs/engineering/v3-behavioral-parity.md FeedbackStore row to reflect Postgres feedback_events table (`docs/engineering/v3-behavioral-parity.md`)
+- [x] Update docs/engineering/threat-model.md to reflect pg_tde instead of SQLCipher (`docs/engineering/threat-model.md`)
+- [x] Archive or delete docs/planning/sqlite-to-postgres-meeting-notes.md if it has served its purpose (`docs/planning/sqlite-to-postgres-meeting-notes.md`)
+- [x] Re-run docs_check_drift and confirm zero SQLite name hits (`docs/engineering`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] docs_check_drift over docs/engineering with the SQLite name list returns zero items
-- [ ] docs_check_drift over docs/guides with the SQLite name list returns zero items
-- [ ] docs/engineering/system-architecture.md describes the (project_id
-- [ ] agent_id) tenant key model
-- [ ] docs/engineering/data-stores-and-schema.md describes private/hive/federation Postgres schemas with migration version refs
-- [ ] docs/engineering/v3-behavioral-parity.md FeedbackStore row updated to reflect Postgres backend
-- [ ] docs/engineering/threat-model.md updated to reference pg_tde
-- [ ] docs/planning/sqlite-to-postgres-meeting-notes.md archived to docs/planning/archive/ or deleted
-- [ ] docs-mcp docs_check_links passes on every changed file
+- [x] docs_check_drift over docs/engineering with the SQLite name list returns zero items
+- [x] docs_check_drift over docs/guides with the SQLite name list returns zero items
+- [x] docs/engineering/system-architecture.md describes the (project_id
+- [x] agent_id) tenant key model
+- [x] docs/engineering/data-stores-and-schema.md describes private/hive/federation Postgres schemas with migration version refs
+- [x] docs/engineering/v3-behavioral-parity.md FeedbackStore row updated to reflect Postgres backend
+- [x] docs/engineering/threat-model.md updated to reference pg_tde
+- [x] docs/planning/sqlite-to-postgres-meeting-notes.md archived to docs/planning/archive/ or deleted
+- [x] docs-mcp docs_check_links passes on every changed file
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Engineering docs drift sweep code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Engineering docs drift sweep code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -115,8 +115,8 @@ Run docs-mcp docs_check_drift over docs/engineering and docs/guides scoped to al
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

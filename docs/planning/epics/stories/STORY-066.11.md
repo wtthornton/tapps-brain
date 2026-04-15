@@ -38,37 +38,37 @@ Publish docs/guides/postgres-backup.md covering pg_dump for hot backups, base ba
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Outline backup strategies (logical pg_dump, physical base backup + WAL, pgBackRest) (`docs/guides/postgres-backup.md`)
-- [ ] Document pg_dump --schema-only and --data-only patterns for selective restore (`docs/guides/postgres-backup.md`)
-- [ ] Document base backup + WAL archiving for point-in-time recovery (`docs/guides/postgres-backup.md`)
-- [ ] Document Hive failover to a streaming replica with a sample primary_conninfo (`docs/guides/postgres-backup.md`)
-- [ ] Add example crontab entries and pgBackRest stanza config (`docs/guides/postgres-backup.md`)
-- [ ] Cross-link from hive-deployment.md and db-roles-runbook.md (`docs/guides/hive-deployment.md`)
-- [ ] Add a separate ops-facing runbook page (`docs/operations/postgres-backup-runbook.md`)
+- [x] Outline backup strategies (logical pg_dump, physical base backup + WAL, pgBackRest) (`docs/guides/postgres-backup.md`)
+- [x] Document pg_dump --schema-only and --data-only patterns for selective restore (`docs/guides/postgres-backup.md`)
+- [x] Document base backup + WAL archiving for point-in-time recovery (`docs/guides/postgres-backup.md`)
+- [x] Document Hive failover to a streaming replica with a sample primary_conninfo (`docs/guides/postgres-backup.md`)
+- [x] Add example crontab entries and pgBackRest stanza config (`docs/guides/postgres-backup.md`)
+- [x] Cross-link from hive-deployment.md and db-roles-runbook.md (`docs/guides/hive-deployment.md`)
+- [x] Add a separate ops-facing runbook page (`docs/operations/postgres-backup-runbook.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] docs/guides/postgres-backup.md exists and covers logical / physical / PITR strategies
-- [ ] schema-independent restore documented for private / hive / federation
-- [ ] Hive replica failover documented with sample config
-- [ ] crontab and pgBackRest examples included
-- [ ] docs/operations/postgres-backup-runbook.md exists for ops on-call
-- [ ] cross-links from hive-deployment.md and db-roles-runbook.md
-- [ ] docs-mcp docs_check_links passes on both new files
+- [x] docs/guides/postgres-backup.md exists and covers logical / physical / PITR strategies
+- [x] schema-independent restore documented for private / hive / federation
+- [x] Hive replica failover documented with sample config
+- [x] crontab and pgBackRest examples included
+- [x] docs/operations/postgres-backup-runbook.md exists for ops on-call
+- [x] cross-links from hive-deployment.md and db-roles-runbook.md
+- [x] docs-mcp docs_check_links passes on both new files
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Postgres backup and restore runbook code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Postgres backup and restore runbook code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -104,7 +104,7 @@ Publish docs/guides/postgres-backup.md covering pg_dump for hot backups, base ba
 ## INVEST Checklist
 
 - [x] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

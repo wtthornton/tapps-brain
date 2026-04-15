@@ -40,40 +40,40 @@ For each deleted test file with a v3 equivalent, write a new tests/integration/ 
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Add a requires_postgres pytest marker registration (`tests/conftest.py`)
-- [ ] Write tests/integration/test_postgres_private_backend.py covering CRUD round-trip (`tests/integration/test_postgres_private_backend.py`)
-- [ ] Write tests/integration/test_feedback_postgres.py covering FeedbackStore record + query (`tests/integration/test_feedback_postgres.py`)
-- [ ] Write tests/integration/test_session_index_postgres.py covering SessionIndex save_chunks + search (`tests/integration/test_session_index_postgres.py`)
-- [ ] Write tests/integration/test_agent_identity_postgres.py covering (project_id, agent_id) isolation (`tests/integration/test_agent_identity_postgres.py`)
-- [ ] Write tests/integration/test_pgvector_embeddings.py covering embedding storage and knn_search (`tests/integration/test_pgvector_embeddings.py`)
-- [ ] Verify all new tests pass against ephemeral Postgres (`tests/integration`)
-- [ ] Document requires_postgres marker in AGENTS.md (`AGENTS.md`)
+- [x] Add a requires_postgres pytest marker registration (`tests/conftest.py`)
+- [x] Write tests/integration/test_postgres_private_backend.py covering CRUD round-trip (`tests/integration/test_postgres_private_backend.py`)
+- [x] Write tests/integration/test_feedback_postgres.py covering FeedbackStore record + query (`tests/integration/test_feedback_postgres.py`)
+- [x] Write tests/integration/test_session_index_postgres.py covering SessionIndex save_chunks + search (`tests/integration/test_session_index_postgres.py`)
+- [x] Write tests/integration/test_agent_identity_postgres.py covering (project_id, agent_id) isolation (`tests/integration/test_agent_identity_postgres.py`)
+- [x] Write tests/integration/test_pgvector_embeddings.py covering embedding storage and knn_search (`tests/integration/test_pgvector_embeddings.py`)
+- [x] Verify all new tests pass against ephemeral Postgres (`tests/integration`)
+- [x] Document requires_postgres marker in AGENTS.md (`AGENTS.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] tests/integration/test_postgres_private_backend.py covers save / load_all / delete / search round-trips
-- [ ] tests/integration/test_feedback_postgres.py covers FeedbackStore record / query / strict-mode rejection
-- [ ] tests/integration/test_session_index_postgres.py covers save_chunks / search / delete_expired
-- [ ] tests/integration/test_agent_identity_postgres.py covers (project_id
-- [ ] agent_id) row isolation across multiple agents
-- [ ] tests/integration/test_pgvector_embeddings.py covers embedding write + knn_search recall
-- [ ] all new tests marked requires_postgres
-- [ ] all new tests pass in CI under STORY-066.6 ephemeral Postgres workflow
-- [ ] no flakiness over 5 consecutive runs
+- [x] tests/integration/test_postgres_private_backend.py covers save / load_all / delete / search round-trips
+- [x] tests/integration/test_feedback_postgres.py covers FeedbackStore record / query / strict-mode rejection
+- [x] tests/integration/test_session_index_postgres.py covers save_chunks / search / delete_expired
+- [x] tests/integration/test_agent_identity_postgres.py covers (project_id
+- [x] agent_id) row isolation across multiple agents
+- [x] tests/integration/test_pgvector_embeddings.py covers embedding write + knn_search recall
+- [x] all new tests marked requires_postgres
+- [x] all new tests pass in CI under STORY-066.6 ephemeral Postgres workflow
+- [x] no flakiness over 5 consecutive runs
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Postgres integration tests replacing deleted SQLite-coupled tests code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Postgres integration tests replacing deleted SQLite-coupled tests code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -110,11 +110,11 @@ For each deleted test file with a v3 equivalent, write a new tests/integration/ 
 <!-- docsmcp:start:invest -->
 ## INVEST Checklist
 
-- [ ] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **I**ndependent -- Can be developed and delivered independently
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
-- [ ] **S**mall -- Completable within one sprint/iteration
+- [x] **S**mall -- Completable within one sprint/iteration
 - [x] **T**estable -- Has clear criteria to verify completion
 
 <!-- docsmcp:end:invest -->

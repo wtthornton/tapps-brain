@@ -67,13 +67,31 @@ jobs:
     env:
       TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_dev
       TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_dev
+      # Hive tests also use the same single-node Postgres in CI
+      TAPPS_BRAIN_HIVE_DSN: postgresql://tapps:tapps@localhost:5432/tapps_dev
+      # Keep sentence-transformers/HuggingFace models offline after first cache hit
+      HF_DATASETS_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
           enable-cache: true
+      - name: Cache HuggingFace models (BAAI/bge-small-en-v1.5)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-bge-small-en-v1.5-${{ runner.os }}
+          restore-keys: hf-models-bge-small-en-v1.5-
       - run: uv sync --group dev --python ${{ matrix.python-version }}
+      - name: Pre-download sentence-transformers model (populates cache on miss)
+        env:
+          HF_DATASETS_OFFLINE: "0"
+          TRANSFORMERS_OFFLINE: "0"
+          HF_HUB_OFFLINE: "0"
+        run: uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
       - name: Apply schema migrations
         run: uv run python scripts/apply_all_migrations.py
       - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95

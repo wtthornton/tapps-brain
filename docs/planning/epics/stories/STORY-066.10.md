@@ -38,39 +38,39 @@ Publish docs/guides/postgres-tde.md covering pg_tde 2.1.2 install on Percona Dis
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Outline the runbook: install, key provider, encrypt schemas, rotation, troubleshooting, cloud fallback (`docs/guides/postgres-tde.md`)
-- [ ] Document Percona Distribution for PostgreSQL 17 install steps (`docs/guides/postgres-tde.md`)
-- [ ] Document Vault and OpenBao key provider setup with example config (`docs/guides/postgres-tde.md`)
-- [ ] Document key rotation procedure with downtime expectations (`docs/guides/postgres-tde.md`)
-- [ ] Add cloud-provider TDE fallback table (RDS, CloudSQL, Azure) (`docs/guides/postgres-tde.md`)
-- [ ] Cross-link from ADR-007 and threat-model.md (`docs/planning/adr/ADR-007-postgres-only-no-sqlite.md`)
-- [ ] Cross-link from hive-deployment.md (`docs/guides/hive-deployment.md`)
+- [x] Outline the runbook: install, key provider, encrypt schemas, rotation, troubleshooting, cloud fallback (`docs/guides/postgres-tde.md`)
+- [x] Document Percona Distribution for PostgreSQL 17 install steps (`docs/guides/postgres-tde.md`)
+- [x] Document Vault and OpenBao key provider setup with example config (`docs/guides/postgres-tde.md`)
+- [x] Document key rotation procedure with downtime expectations (`docs/guides/postgres-tde.md`)
+- [x] Add cloud-provider TDE fallback table (RDS, CloudSQL, Azure) (`docs/guides/postgres-tde.md`)
+- [x] Cross-link from ADR-007 and threat-model.md (`docs/planning/adr/ADR-007-postgres-only-no-sqlite.md`)
+- [x] Cross-link from hive-deployment.md (`docs/guides/hive-deployment.md`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] docs/guides/postgres-tde.md exists and covers install / key provider / rotation / troubleshooting / cloud fallback
-- [ ] ADR-007 cross-links to the runbook
-- [ ] docs/engineering/threat-model.md cross-links to the runbook
-- [ ] docs/guides/hive-deployment.md cross-links to the runbook
-- [ ] runbook validated against Percona pg_tde 2.1.2 release notes (released 2026-03-02)
-- [ ] cloud fallback table covers AWS RDS
-- [ ] Google CloudSQL
-- [ ] and Azure Database for PostgreSQL
-- [ ] docs-mcp docs_check_links passes on the new file
+- [x] docs/guides/postgres-tde.md exists and covers install / key provider / rotation / troubleshooting / cloud fallback
+- [x] ADR-007 cross-links to the runbook
+- [x] docs/engineering/threat-model.md cross-links to the runbook
+- [x] docs/guides/hive-deployment.md cross-links to the runbook
+- [x] runbook validated against Percona pg_tde 2.1.2 release notes (released 2026-03-02)
+- [x] cloud fallback table covers AWS RDS
+- [x] Google CloudSQL
+- [x] and Azure Database for PostgreSQL
+- [x] docs-mcp docs_check_links passes on the new file
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] pg_tde operator runbook code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] pg_tde operator runbook code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 
@@ -107,7 +107,7 @@ Publish docs/guides/postgres-tde.md covering pg_tde 2.1.2 install on Percona Dis
 ## INVEST Checklist
 
 - [x] **I**ndependent -- Can be developed and delivered independently
-- [ ] **N**egotiable -- Details can be refined during implementation
+- [x] **N**egotiable -- Details can be refined during implementation
 - [x] **V**aluable -- Delivers value to a user or the system
 - [x] **E**stimable -- Team can estimate the effort
 - [x] **S**mall -- Completable within one sprint/iteration

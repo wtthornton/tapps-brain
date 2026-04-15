@@ -4,7 +4,7 @@ Persistent cross-session memory for your OpenClaw agents. MCP tool and resource
 **counts** are recorded in [`docs/generated/mcp-tools-manifest.json`](../generated/mcp-tools-manifest.json)
 (regenerate: `python scripts/generate_mcp_tool_manifest.py`). Surface includes memory,
 feedback, diagnostics, flywheel, Hive, federation, graph, and OpenClaw migration; zero
-LLM dependency in core; SQLite-backed; works offline.
+LLM dependency in core; PostgreSQL-backed (ADR-007); requires `TAPPS_BRAIN_DATABASE_URL`.
 
 **Canonical install/upgrade runbook (PyPI + Git-only):**
 [openclaw-runbook.md](./openclaw-runbook.md)
@@ -146,7 +146,7 @@ tapps-brain search "PostgreSQL" --project-dir /path/to/your/project
 ## Mode 2: Memory Slot Plugin
 
 When enabled, this mode replaces OpenClaw's built-in `memory-core` — so `memory_search`
-and `memory_get` route through tapps-brain's SQLite store instead of the default plugin.
+and `memory_get` route through tapps-brain's Postgres store instead of the default plugin.
 
 > **Status:** Shipped. This mode can replace `memory-core` when `slots.memory` is set
 > to `tapps-brain-memory`.
@@ -730,9 +730,8 @@ for named groups and richer scope model is tracked as **#49**.
    # Show recent MCP server output
    tapps-brain-mcp --project-dir /path/to/project 2>&1 | head -50
    ```
-3. Verify disk space — SQLite writes fail silently on full disk.
-4. On WSL with Windows drives, check mount options for `/mnt/c/` — WAL mode requires
-   `metadata=full` or equivalent for reliable writes.
+3. Verify disk space and Postgres connectivity — check `TAPPS_BRAIN_DATABASE_URL` is reachable.
+4. On WSL with Windows drives, verify Docker Desktop is running and the Postgres container is healthy (`docker ps`).
 5. Restart the OpenClaw gateway. The plugin's `dispose` hook stops the process cleanly.
 
 ### `mcp package required` error
