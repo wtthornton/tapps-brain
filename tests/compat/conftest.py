@@ -22,3 +22,6 @@ def _force_embedded_backend(
     """
     if "requires_postgres" not in request.keywords:
         monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+        # resolve_private_backend_from_env falls back to HIVE_DSN when DATABASE_URL
+        # is unset — clear it too so embedded tests always get the SQLite backend.
+        monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)

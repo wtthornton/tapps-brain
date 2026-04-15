@@ -13,3 +13,7 @@ CREATE TABLE IF NOT EXISTS flywheel_meta (
     updated_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (project_id, agent_id, key)
 );
+
+INSERT INTO private_schema_version (version, description)
+VALUES (7, 'flywheel_meta key-value table for feedback pipeline cursor (STORY-066.14)')
+ON CONFLICT (version) DO NOTHING;

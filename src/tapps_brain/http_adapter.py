@@ -579,7 +579,7 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
             kind=SPAN_KIND_SERVER,
             context=trace_ctx,
         ):
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
 
 class OriginAllowlistMiddleware(BaseHTTPMiddleware):
@@ -595,7 +595,7 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
                         status_code=403,
                         content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
                     )
-        return await call_next(request)
+        return await call_next(request)  # type: ignore[no-any-return]
 
 
 class McpTenantMiddleware(BaseHTTPMiddleware):
@@ -609,7 +609,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if not request.url.path.startswith("/mcp"):
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         cfg = get_settings()
 
@@ -664,7 +664,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         # STORY-070.12: track per-(project_id, agent_id) request counts.
         _record_labeled_request(project_id, agent_id)
         try:
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
         finally:
             _mcp_mod.REQUEST_PROJECT_ID.reset(token_pid)
             _mcp_mod.REQUEST_AGENT_ID.reset(token_agent)
@@ -730,6 +730,19 @@ def create_app(
     # module without paying for it.
     mcp_holder: dict[str, Any] = {"mcp": mcp_server}
 
+    def _get_mcp_asgi_sub(mcp: Any) -> Any:
+        """Return the Streamable HTTP ASGI sub-app from a FastMCP instance."""
+        for attr in ("streamable_http_app", "streamable_http"):
+            fn = getattr(mcp, attr, None)
+            if callable(fn):
+                try:
+                    sub = fn()
+                except TypeError:
+                    sub = fn
+                if sub is not None:
+                    return sub
+        return None
+
     @asynccontextmanager
     async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         mcp = mcp_holder["mcp"]
@@ -752,26 +765,20 @@ def create_app(
                     logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
 
-            # Mount the MCP Streamable HTTP ASGI sub-app once the session
-            # manager is running so incoming /mcp requests are handled by a
-            # live dispatcher (STORY-070.4).
-            asgi_sub = None
-            for attr in ("streamable_http_app", "streamable_http"):
-                fn = getattr(mcp, attr, None)
-                if callable(fn):
-                    try:
-                        asgi_sub = fn()
-                    except TypeError:
-                        asgi_sub = fn
-                    if asgi_sub is not None:
-                        break
-            if asgi_sub is not None:
-                _app.mount("/mcp", asgi_sub)
-            else:
-                logger.warning(
-                    "http_adapter.mcp_mount_skipped",
-                    detail="FastMCP did not expose a Streamable HTTP ASGI app.",
-                )
+            # Mount the MCP Streamable HTTP ASGI sub-app if not already mounted
+            # eagerly (STORY-070.4).  When mcp_server was provided at create_app
+            # call time the sub-app is mounted below, before lifespan runs, so
+            # that httpx.ASGITransport (no-lifespan) test clients see the route.
+            if "asgi_sub" not in mcp_holder:
+                asgi_sub = _get_mcp_asgi_sub(mcp)
+                if asgi_sub is not None:
+                    _app.mount("/mcp", asgi_sub)
+                    mcp_holder["asgi_sub"] = asgi_sub
+                else:
+                    logger.warning(
+                        "http_adapter.mcp_mount_skipped",
+                        detail="FastMCP did not expose a Streamable HTTP ASGI app.",
+                    )
         try:
             yield
         finally:
@@ -789,6 +796,16 @@ def create_app(
         openapi_url=None,
         lifespan=_lifespan,
     )
+
+    # When a pre-built MCP server is provided, mount its ASGI sub-app eagerly
+    # so the /mcp route exists even without a lifespan run (e.g. httpx
+    # ASGITransport in tests).  Lifespan still starts the session_manager for
+    # full streaming support in production.
+    if mcp_server is not None:
+        asgi_sub = _get_mcp_asgi_sub(mcp_server)
+        if asgi_sub is not None:
+            app.mount("/mcp", asgi_sub)
+            mcp_holder["asgi_sub"] = asgi_sub
 
     # Register middlewares.  Order matters — starlette runs them
     # outside-in for the request path, inside-out for the response.
@@ -966,7 +983,7 @@ def create_app(
         # Idempotency check.
         ikey, replay = _idempotency_check(request, project_id)
         if replay is not None:
-            return replay  # type: ignore[return-value]
+            return replay  # type: ignore[no-any-return]
 
         try:
             raw = await request.body()
@@ -1056,7 +1073,7 @@ def create_app(
         # Idempotency check.
         ikey, replay = _idempotency_check(request, project_id)
         if replay is not None:
-            return replay  # type: ignore[return-value]
+            return replay  # type: ignore[no-any-return]
 
         try:
             raw = await request.body()

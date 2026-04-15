@@ -10,7 +10,7 @@ def diagnostics_report(
     store: Any, project_id: str, agent_id: str, *, record_history: bool = True
 ) -> dict[str, Any]:
     rep = store.diagnostics(record_history=record_history)
-    return rep.model_dump(mode="json")
+    return rep.model_dump(mode="json")  # type: ignore[no-any-return]
 
 
 def diagnostics_history(

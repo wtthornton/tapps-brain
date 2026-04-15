@@ -220,7 +220,7 @@ def memory_get(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[
     entry = store.get(key)
     if entry is None:
         return {"error": "not_found", "key": key}
-    return entry.model_dump(mode="json")
+    return entry.model_dump(mode="json")  # type: ignore[no-any-return]
 
 
 def memory_delete(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
@@ -306,7 +306,7 @@ def memory_list(
 
 
 def memory_list_groups(store: Any, project_id: str, agent_id: str) -> list[str]:
-    return store.list_memory_groups()
+    return store.list_memory_groups()  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +842,7 @@ def memory_import(
 
 
 def memory_gc_config(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
-    return store.get_gc_config().to_dict()
+    return store.get_gc_config().to_dict()  # type: ignore[no-any-return]
 
 
 def memory_gc_config_set(
@@ -877,7 +877,7 @@ def memory_gc_config_set(
 
 
 def memory_consolidation_config(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
-    return store.get_consolidation_config().to_dict()
+    return store.get_consolidation_config().to_dict()  # type: ignore[no-any-return]
 
 
 def memory_consolidation_config_set(

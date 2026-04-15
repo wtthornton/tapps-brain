@@ -255,7 +255,7 @@ def hive_write_revision(
         finally:
             if should_close:
                 hive.close()
-        return state
+        return state  # type: ignore[no-any-return]
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_write_revision")
         return {"error": "hive_error", "message": str(exc)}
@@ -285,7 +285,7 @@ def hive_wait_write(
         finally:
             if should_close:
                 hive.close()
-        return result
+        return result  # type: ignore[no-any-return]
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_wait_write")
         return {"error": "hive_error", "message": str(exc)}

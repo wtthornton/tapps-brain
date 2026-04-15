@@ -50,7 +50,7 @@ def maintenance_gc(
             swept = sweep_expired_keys()
             payload["idempotency_keys_swept"] = swept
 
-    return payload
+    return payload  # type: ignore[no-any-return]
 
 
 def maintenance_stale(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:

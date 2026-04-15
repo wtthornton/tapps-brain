@@ -3577,7 +3577,7 @@ def cmd_serve(
 # ---------------------------------------------------------------------------
 
 
-def _open_project_registry() -> tuple[object, object]:
+def _open_project_registry() -> tuple[Any, Any]:
     """Build a :class:`ProjectRegistry` against the env DSN.
 
     Returns ``(registry, connection_manager)`` so the caller can close
