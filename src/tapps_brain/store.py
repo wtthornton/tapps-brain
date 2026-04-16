@@ -151,6 +151,14 @@ def _validate_write_rules(
 # treated as reformulations of each other.
 _REFORMULATION_WINDOW = 60
 
+# TAP-549: hard cap on the number of distinct session_ids tracked across
+# the session-keyed helper dicts.  Past the cap, LRU eviction drops the
+# least-recently-touched sessions so a misbehaving client that rotates
+# session_id on every call cannot slow-burn OOM the adapter.  The cap is
+# far above realistic concurrent-session counts (deployment model runs
+# ~20 agents per box) but cheap enough that sweeps stay ~O(ms).
+_SESSION_STATE_HARD_CAP = 10_000
+
 
 class MemoryStoreLockTimeout(RuntimeError):  # noqa: N818 — Timeout reads better for operators
     """Raised when the store lock is not acquired within the configured timeout (EPIC-050.2)."""
@@ -2399,6 +2407,8 @@ class MemoryStore:
             # Read total archive bytes from the Postgres gc_archive table so the
             # value survives process restarts (STORY-066.3).
             gc_archive_bytes_total=self._persistence.total_archive_bytes(),
+            # TAP-549: session-state cardinality for /metrics alerting.
+            active_session_count=self.active_session_count(),
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -2471,6 +2481,13 @@ class MemoryStore:
         )
         if session_chunks_deleted:
             self._metrics.increment("store.gc.session_chunks_deleted", session_chunks_deleted)
+
+        # TAP-549: sweep the in-memory session-state helper dicts so
+        # ``session_id`` rotation by long-lived clients cannot slow-burn
+        # OOM the adapter.  Runs unconditionally on live GC (dry_run was
+        # returned earlier) because it only drops process-local state —
+        # there's nothing to preview.
+        self._sweep_stale_sessions()
 
         return GCResult(
             archived_count=len(candidate_keys),
@@ -3514,6 +3531,118 @@ class MemoryStore:
         return targets
 
     # ---- End implicit feedback helpers ----
+
+    # ---- Session-state sweeper (TAP-549) ----
+
+    def _session_state_session_ids(self) -> set[str]:
+        """Union of session_ids present in any session-keyed helper dict.
+
+        Caller must hold the store serialization lock.
+        """
+        return (
+            self._session_recall_log.keys()
+            | self._session_reinforced.keys()
+            | self._session_query_log.keys()
+            | self._session_recalled_values.keys()
+            | self._hive_feedback_key_index.keys()
+        )
+
+    def _session_last_touch_map(self) -> dict[str, float]:
+        """Compute per-session last-activity monotonic time by walking the logs.
+
+        Sessions that appear only in the timestamp-less dicts
+        (``_session_reinforced``, ``_hive_feedback_key_index``) have no
+        recoverable activity time, so they're stamped with ``now`` — they
+        can only be evicted by the LRU hard-cap, never aged out by the
+        stale-session sweep.  That's deliberate: the timestamp-less dicts
+        are only written immediately after a matching entry in the
+        timestamped dicts, so a session seen only in them is about to
+        grow a timestamped entry anyway.
+
+        Caller must hold the store serialization lock.
+        """
+        last_touch: dict[str, float] = {}
+
+        def _bump(sid: str, t: float) -> None:
+            prev = last_touch.get(sid)
+            if prev is None or t > prev:
+                last_touch[sid] = t
+
+        for sid, recall_items in self._session_recall_log.items():
+            for _k, t in recall_items:
+                _bump(sid, t)
+        for sid, query_items in self._session_query_log.items():
+            for _q, _ks, t in query_items:
+                _bump(sid, t)
+        for sid, value_items in self._session_recalled_values.items():
+            for _k, _v, t in value_items:
+                _bump(sid, t)
+
+        now_mono = time.monotonic()
+        for sid in self._session_state_session_ids():
+            if sid not in last_touch:
+                last_touch[sid] = now_mono
+        return last_touch
+
+    def _drop_session_state(self, session_id: str) -> None:
+        """Remove ``session_id`` from every session-keyed helper dict.
+
+        Caller must hold the store serialization lock.
+        """
+        self._session_recall_log.pop(session_id, None)
+        self._session_reinforced.pop(session_id, None)
+        self._session_query_log.pop(session_id, None)
+        self._session_recalled_values.pop(session_id, None)
+        self._hive_feedback_key_index.pop(session_id, None)
+
+    def _sweep_stale_sessions(self) -> dict[str, int]:
+        """Drop session_ids with no recent activity; LRU-evict above the cap.
+
+        Acceptance target for TAP-549 — called from :meth:`gc` so existing
+        GC cadence handles both memory-entry retention and session-state
+        bounds in one pass.
+
+        Returns a dict with per-reason counts:
+
+        * ``stale_removed`` — sessions idle > ``implicit_feedback_window * 2``.
+        * ``lru_evicted``   — sessions evicted above the LRU hard cap.
+        """
+        window = self._get_implicit_feedback_window()
+        cutoff = time.monotonic() - 2 * window
+        with self._serialized():
+            last_touch = self._session_last_touch_map()
+
+            stale_ids = [sid for sid, t in last_touch.items() if t < cutoff]
+            for sid in stale_ids:
+                self._drop_session_state(sid)
+                last_touch.pop(sid, None)
+
+            evicted = 0
+            overflow = len(last_touch) - _SESSION_STATE_HARD_CAP
+            if overflow > 0:
+                # Sort oldest-first; evict just enough to reach the cap.
+                victims = sorted(last_touch.items(), key=lambda kv: kv[1])[:overflow]
+                for sid, _t in victims:
+                    self._drop_session_state(sid)
+                    evicted += 1
+
+        if stale_ids:
+            self._metrics.increment("store.session_state_stale_removed", len(stale_ids))
+        if evicted:
+            self._metrics.increment("store.session_state_evicted", evicted)
+        return {"stale_removed": len(stale_ids), "lru_evicted": evicted}
+
+    def active_session_count(self) -> int:
+        """Return the number of distinct session_ids tracked in the helper dicts.
+
+        Exposed in ``StoreHealthReport`` and the ``/metrics`` gauge
+        ``tapps_brain_store_active_sessions`` so operators can alert on
+        unbounded growth (TAP-549).
+        """
+        with self._serialized():
+            return len(self._session_state_session_ids())
+
+    # ---- End session-state sweeper ----
 
     def _count_entries_in_memory_group(self, memory_group: str | None) -> int:
         """Count live rows whose ``memory_group`` matches (``None`` = ungrouped)."""

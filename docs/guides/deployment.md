@@ -258,8 +258,10 @@ readinessProbe:
 
 - The HTTP data-plane (`8080`) is protected by `TAPPS_BRAIN_AUTH_TOKEN`.
 - The operator MCP transport (`8090`) is protected by `TAPPS_BRAIN_ADMIN_TOKEN`.
-- **Do not expose port `8090` to the internet** — it grants GC, consolidation,
-  and migration capabilities.
+- **Port `8090` is bound to `127.0.0.1` by default** in `docker-compose.hive.yaml`
+  (TAP-551).  It is not reachable from the internet without setting
+  `TAPPS_OPERATOR_MCP_BIND=0.0.0.0` — pair that with a firewall rule or VPN.
+  See [Hive Deployment — Operator MCP Port](hive-deployment.md#operator-mcp-port-8090--loopback-only-by-default-tap-551).
 - Use TLS termination (nginx, Caddy, cloud load balancer) in front of both
   ports for any external-facing deployment.  See `hive-tls.md`.
 

@@ -186,6 +186,35 @@ this file to version control.
 - In Kubernetes, use a `ClusterIP` service (no `NodePort` / `LoadBalancer`)
   for the database and restrict access with `NetworkPolicy`.
 
+### Operator MCP Port (8090) — loopback-only by default (TAP-551)
+
+`docker-compose.hive.yaml` binds the operator MCP port to `127.0.0.1` by
+default. This prevents accidental internet exposure on hosts without a
+permissive-deny firewall.
+
+**Migration note (v3.7.x → v3.8+):** If you previously relied on the old
+`0.0.0.0` default to reach port 8090 from a remote host or reverse proxy,
+set `TAPPS_OPERATOR_MCP_BIND=0.0.0.0` in your `.env` file (or the equivalent
+in your orchestrator).  Deployments that only reach 8090 from the same host
+(e.g. via `localhost:8090` in an admin runbook) are unaffected.
+
+To expose via a local reverse proxy only:
+
+```yaml
+# In your override compose file:
+services:
+  tapps-brain:
+    environment:
+      TAPPS_OPERATOR_MCP_BIND: "127.0.0.1"  # default — keep as-is
+```
+
+Or to allow a dedicated ops network:
+
+```yaml
+    environment:
+      TAPPS_OPERATOR_MCP_BIND: "0.0.0.0"   # pair with firewall / VPN rule
+```
+
 ## Monitoring and Troubleshooting
 
 ### Health Check

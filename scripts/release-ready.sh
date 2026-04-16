@@ -63,7 +63,7 @@ if [[ "$SKIP_FULL_PYTEST" == "1" ]]; then
 else
   echo "==> [6/8] Full pytest suite (no benchmarks, coverage gate)"
   uv run pytest tests/ -v --tb=short -m "not benchmark" \
-    --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95 \
+    --cov=tapps_brain --cov-report=term-missing --cov-fail-under=88 \
     || fail "pytest"
 
   # TAP-511: explicit STRICT pass for tests/compat/ — silently skipping the

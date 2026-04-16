@@ -26,6 +26,7 @@ The ASGI entry point is :data:`app`; run it with
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -33,7 +34,7 @@ import platform
 import sys
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -129,9 +130,20 @@ def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dic
     return filtered
 
 
+# TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
+# and Prometheus scrape (every 15 s) don't each open a new standalone Postgres
+# connection.  Key = DSN string; value = (expires_at, result_tuple).
+_PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}
+_PROBE_CACHE_TTL: float = 2.0
+
+
 def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
     if not dsn:
         return False, None, "no DSN configured (set TAPPS_BRAIN_DATABASE_URL)"
+    now = time.monotonic()
+    cached = _PROBE_CACHE.get(dsn)
+    if cached is not None and now < cached[0]:
+        return cached[1]
     try:
         from tapps_brain.postgres_migrations import get_hive_schema_status
 
@@ -139,8 +151,13 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
         version = status_.current_version if status_.current_version else None
         pending = len(status_.pending_migrations)
         if pending > 0:
-            return True, version, f"ready (migration_version={version}, pending={pending})"
-        return True, version, f"ready (migration_version={version})"
+            result: tuple[bool, int | None, str] = (
+                True,
+                version,
+                f"ready (migration_version={version}, pending={pending})",
+            )
+        else:
+            result = (True, version, f"ready (migration_version={version})")
     except Exception as exc:
         err_str = str(exc)
         try:
@@ -157,7 +174,9 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 err_str = err_str.replace(parsed.password, "[pass]")
         except Exception:
             err_str = "database unreachable"
-        return False, None, f"db_error: {err_str}"
+        result = (False, None, f"db_error: {err_str}")
+    _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    return result
 
 
 def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
@@ -175,7 +194,21 @@ def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
     return None
 
 
-def _collect_metrics(dsn: str | None, store: Any = None) -> str:
+def _collect_metrics(
+    dsn: str | None,
+    store: Any = None,
+    *,
+    redact_tenant_labels: bool = False,
+) -> str:
+    """Render Prometheus exposition text.
+
+    ``redact_tenant_labels`` (TAP-547): when ``True`` the per-tenant labels
+    ``project_id`` and ``agent_id`` are dropped from
+    ``tapps_brain_mcp_requests_total`` and ``tapps_brain_tool_calls_total``
+    and the counters are aggregated across those dimensions.  This is the
+    shape served to anonymous (or unauthenticated) scrapers so reachable-
+    but-unprivileged callers cannot enumerate tenant/agent activity.
+    """
     lines: list[str] = []
 
     def gauge(name: str, value: float, help_text: str = "") -> None:
@@ -214,6 +247,8 @@ def _collect_metrics(dsn: str | None, store: Any = None) -> str:
         )
 
     # STORY-070.12: per-(project_id, agent_id) request counters.
+    # TAP-547: drop labels entirely when redacting — we still emit the
+    # counter so scrapers have a total-volume signal, just not per-tenant.
     with _LABELED_REQUEST_COUNTS_LOCK:
         snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
     if snapshot_counts:
@@ -222,15 +257,22 @@ def _collect_metrics(dsn: str | None, store: Any = None) -> str:
             "Total MCP requests, labelled by project_id and agent_id."
         )
         lines.append("# TYPE tapps_brain_mcp_requests_total counter")
-        for (pid, aid), count in sorted(snapshot_counts.items()):
-            safe_pid = pid.replace('"', '\\"')
-            safe_aid = aid.replace('"', '\\"')
-            lines.append(
-                f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
-                f'agent_id="{safe_aid}"}} {count}'
-            )
+        if redact_tenant_labels:
+            total = sum(snapshot_counts.values())
+            lines.append(f"tapps_brain_mcp_requests_total {total}")
+        else:
+            for (pid, aid), count in sorted(snapshot_counts.items()):
+                safe_pid = pid.replace('"', '\\"')
+                safe_aid = aid.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
+                    f'agent_id="{safe_aid}"}} {count}'
+                )
 
     # STORY-070.12: per-(project_id, agent_id, tool, status) tool call counters.
+    # TAP-547: when redacting, aggregate over (project_id, agent_id) but
+    # keep (tool, status) — those are not tenant-identifying and remain
+    # useful for ops / alerting on anonymous scrapes.
     try:
         from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
 
@@ -241,18 +283,47 @@ def _collect_metrics(dsn: str | None, store: Any = None) -> str:
                 "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
             )
             lines.append("# TYPE tapps_brain_tool_calls_total counter")
-            for (pid, aid, tool, status), count in sorted(tool_counts.items()):
-                safe_pid = pid.replace('"', '\\"')
-                safe_aid = aid.replace('"', '\\"')
-                safe_tool = tool.replace('"', '\\"')
-                safe_status = status.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
-                    f'agent_id="{safe_aid}",tool="{safe_tool}",'
-                    f'status="{safe_status}"}} {count}'
-                )
+            if redact_tenant_labels:
+                aggregated: dict[tuple[str, str], int] = {}
+                for (_pid, _aid, tool, status), count in tool_counts.items():
+                    key = (tool, status)
+                    aggregated[key] = aggregated.get(key, 0) + count
+                for (tool, status), count in sorted(aggregated.items()):
+                    safe_tool = tool.replace('"', '\\"')
+                    safe_status = status.replace('"', '\\"')
+                    lines.append(
+                        f'tapps_brain_tool_calls_total{{tool="{safe_tool}",'
+                        f'status="{safe_status}"}} {count}'
+                    )
+            else:
+                for (pid, aid, tool, status), count in sorted(tool_counts.items()):
+                    safe_pid = pid.replace('"', '\\"')
+                    safe_aid = aid.replace('"', '\\"')
+                    safe_tool = tool.replace('"', '\\"')
+                    safe_status = status.replace('"', '\\"')
+                    lines.append(
+                        f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
+                        f'agent_id="{safe_aid}",tool="{safe_tool}",'
+                        f'status="{safe_status}"}} {count}'
+                    )
     except Exception:  # pragma: no cover — otel_tracer import error must not crash /metrics
         pass
+
+    # TAP-549: in-memory session-state cardinality gauge.  Alertable
+    # signal for the "client rotates session_id every call" failure mode
+    # — the gauge should stay well below _SESSION_STATE_HARD_CAP (10_000)
+    # on a healthy adapter; sustained growth means the sweep / eviction
+    # isn't keeping up.  Always emit (even when None/0) so dashboards
+    # have a stable series.
+    if store is not None and hasattr(store, "active_session_count"):
+        with suppress(Exception):
+            # Best-effort gauge — a broken store must never crash /metrics.
+            gauge(
+                "tapps_brain_store_active_sessions",
+                float(store.active_session_count()),
+                "Distinct session_ids tracked in MemoryStore in-memory "
+                "implicit-feedback helper dicts.",
+            )
 
     # STORY-066.7: live pool stats from the hive connection manager.
     _pool_stats = _get_hive_pool_stats(store)
@@ -289,6 +360,13 @@ class _Settings:
         self.dsn = self._resolve_dsn()
         self.auth_token = self._resolve_auth_token()
         self.admin_token = self._resolve_admin_token()
+        # TAP-547: optional bearer token gating /metrics.  When set, the
+        # endpoint serves the full per-(project_id, agent_id) counter
+        # surface only to callers presenting the correct token; anonymous
+        # callers receive a redacted (tenant-label-stripped) body.  When
+        # unset, we still serve the redacted body so anonymous scrapes
+        # can't enumerate tenants.
+        self.metrics_token = self._resolve_metrics_token()
         self.allowed_origins = self._resolve_allowed_origins()
         self.version = _service_version()
         # Optional store injected by the CLI entry point / tests.
@@ -297,6 +375,15 @@ class _Settings:
         self.snapshot_lock = threading.Lock()
         self.snapshot_cache: Any = None
         self.snapshot_cache_at: float = 0.0
+        # TAP-548: process-wide ``IdempotencyStore`` singleton, built in
+        # the FastAPI lifespan startup hook when
+        # ``TAPPS_BRAIN_IDEMPOTENCY=1`` and a DSN is configured, and
+        # closed on shutdown.  Re-using one store reuses one
+        # ``PostgresConnectionManager`` pool instead of opening a fresh
+        # psycopg connection per write — the previous per-request
+        # construction bypassed the hardened pool and raced
+        # ``max_connections`` under load.
+        self.idempotency_store: Any = None
 
     @staticmethod
     def _resolve_dsn() -> str | None:
@@ -331,6 +418,10 @@ class _Settings:
     @classmethod
     def _resolve_admin_token(cls) -> str | None:
         return cls._read_secret("TAPPS_BRAIN_ADMIN_TOKEN", "TAPPS_BRAIN_ADMIN_TOKEN_FILE")
+
+    @classmethod
+    def _resolve_metrics_token(cls) -> str | None:
+        return cls._read_secret("TAPPS_BRAIN_METRICS_TOKEN", "TAPPS_BRAIN_METRICS_TOKEN_FILE")
 
     @staticmethod
     def _resolve_allowed_origins() -> list[str]:
@@ -455,11 +546,53 @@ def require_data_plane_auth(request: Request) -> None:
                 "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
             },
         )
-    if tok != cfg.auth_token:
+    # TAP-544: constant-time comparison to avoid byte-by-byte timing recovery.
+    if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
         raise HTTPException(
             status_code=403,
             detail={"error": "forbidden", "detail": "Invalid token."},
         )
+
+
+def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:
+    """TAP-547: gate for the Prometheus ``/metrics`` endpoint.
+
+    Return value semantics:
+
+    * ``True``  — caller presented a valid ``TAPPS_BRAIN_METRICS_TOKEN``
+      bearer; serve the full per-(project_id, agent_id) label surface.
+    * ``False`` — no metrics token is configured on the server.  The
+      endpoint still responds 200 but with tenant labels stripped (see
+      ``_collect_metrics(redact_tenant_labels=True)``) so reachable-but-
+      unprivileged callers cannot enumerate tenants.
+
+    Raises ``HTTPException`` with:
+
+    * 401 when a token IS configured and the bearer header is missing or
+      malformed.
+    * 403 when a token IS configured and the bearer does not match.
+    """
+    token = getattr(cfg, "metrics_token", None)
+    if not token:
+        return False
+    tok = _extract_bearer(request)
+    if tok is None or tok == "":
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "unauthorized",
+                "detail": "Bearer token required for /metrics.",
+            },
+        )
+    # TAP-544-style constant-time comparison: the metrics token grants
+    # cross-tenant label visibility, so we avoid byte-by-byte timing
+    # recovery here too.
+    if not hmac.compare_digest(tok.encode("utf-8"), token.encode("utf-8")):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "detail": "Invalid metrics token."},
+        )
+    return True
 
 
 def require_admin_auth(request: Request) -> None:
@@ -483,7 +616,9 @@ def require_admin_auth(request: Request) -> None:
             status_code=401,
             detail={"error": "unauthorized", "detail": "Bearer token required for admin routes."},
         )
-    if tok != cfg.admin_token:
+    # TAP-544: constant-time comparison protects TAPPS_BRAIN_ADMIN_TOKEN from
+    # statistical timing recovery — admin routes grant cross-tenant power.
+    if not hmac.compare_digest(tok.encode("utf-8"), cfg.admin_token.encode("utf-8")):
         raise HTTPException(
             status_code=403,
             detail={"error": "forbidden", "detail": "Invalid admin token."},
@@ -568,7 +703,8 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                     content={"error": "unauthorized", "detail": "Bearer token required for /mcp."},
                 )
-            if tok != cfg.auth_token:
+            # TAP-544: constant-time comparison for the /mcp bearer-token check.
+            if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
                 return JSONResponse(
                     status_code=403,
                     content={"error": "forbidden", "detail": "Invalid token."},
@@ -625,7 +761,36 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
 
 
 def _build_mcp_server() -> Any:
-    """Import and build a default FastMCP instance for the ASGI mount."""
+    """Import and build a default FastMCP instance for the ASGI mount.
+
+    TAP-546: the unified HTTP adapter (``:8080``) is authenticated by the
+    data-plane token only (``require_data_plane_auth`` /
+    ``McpTenantMiddleware``).  Enabling operator tools here would let any
+    data-plane caller invoke ``maintenance_gc``, ``memory_export`` etc.,
+    collapsing the admin/data-plane trust boundary.  Operator tools are
+    only served from the separate operator MCP transport on ``:8090``,
+    which enforces ``TAPPS_BRAIN_ADMIN_TOKEN``.
+
+    If ``TAPPS_BRAIN_OPERATOR_TOOLS=1`` is set in the HTTP adapter
+    environment we log a warning and force the flag off — this is a
+    documented, deliberate "fail closed" on the unified mount rather
+    than an oversight.
+    """
+    # Emit the TAP-546 warning BEFORE importing ``tapps_brain.mcp_server``
+    # below — that module reconfigures structlog globally to a CRITICAL
+    # filter on import, which would silence this warning if emitted after.
+    if os.environ.get("TAPPS_BRAIN_OPERATOR_TOOLS", "") == "1":
+        logger.warning(
+            "http_adapter.operator_tools_ignored",
+            detail=(
+                "TAPPS_BRAIN_OPERATOR_TOOLS=1 is set but will be ignored on "
+                "the unified HTTP adapter (:8080): that mount is protected "
+                "by the data-plane token only.  Operator tools are served "
+                "from the operator MCP transport on :8090 "
+                "(TAPPS_BRAIN_ADMIN_TOKEN). See TAP-546."
+            ),
+        )
+
     from tapps_brain.mcp_server import create_server
 
     project_dir = Path(os.environ.get("TAPPS_BRAIN_SERVE_ROOT", "/var/lib/tapps-brain"))
@@ -635,12 +800,11 @@ def _build_mcp_server() -> Any:
         # Fall back to cwd in non-container environments / tests.
         project_dir = Path.cwd()
     agent_id = os.environ.get("TAPPS_BRAIN_AGENT_ID", "http-adapter") or "http-adapter"
-    enable_operator = os.environ.get("TAPPS_BRAIN_OPERATOR_TOOLS", "") == "1"
     return create_server(
         project_dir,
         enable_hive=True,
         agent_id=agent_id,
-        enable_operator_tools=enable_operator,
+        enable_operator_tools=False,
     )
 
 
@@ -673,6 +837,26 @@ def create_app(
             ),
         )
 
+    # TAP-547: warn if /metrics has no bearer gate.  The endpoint still
+    # serves tenant-label-redacted counters without a token, but operators
+    # should set ``TAPPS_BRAIN_METRICS_TOKEN`` so Prometheus scrapers can
+    # fetch the full per-tenant surface.  ``getattr`` so test fixtures
+    # that hand-roll ``_Settings.__new__(_Settings)`` without the new
+    # attribute keep working; missing attr → treat as unset.
+    if not getattr(cfg, "metrics_token", None):
+        logger.warning(
+            "http_adapter.metrics_unauthenticated",
+            detail=(
+                "TAPPS_BRAIN_METRICS_TOKEN is unset — /metrics serves a "
+                "tenant-label-redacted body to any caller that can reach "
+                ":8080.  Set TAPPS_BRAIN_METRICS_TOKEN (or "
+                "TAPPS_BRAIN_METRICS_TOKEN_FILE) so Prometheus scrapers "
+                "can present 'Authorization: Bearer <token>' and receive "
+                "the full per-(project_id, agent_id) counter surface. "
+                "See TAP-547."
+            ),
+        )
+
     # Defer MCP server build so stdio-only environments can import this
     # module without paying for it.
     mcp_holder: dict[str, Any] = {"mcp": mcp_server}
@@ -701,6 +885,33 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # TAP-548: build the process-wide ``IdempotencyStore`` once at
+        # adapter startup when idempotency is enabled and we have a DSN.
+        # Previously each write route instantiated (and immediately tore
+        # down) a fresh ``IdempotencyStore`` — each ctor spins a new
+        # ``PostgresConnectionManager`` pool, so under ~20 concurrent
+        # agents the unified adapter was bursting dozens of raw psycopg
+        # connections against ``max_connections`` instead of reusing the
+        # one hardened pool TAP-514 landed.
+        # ``getattr`` so test helpers that hand-roll
+        # ``_Settings.__new__(_Settings)`` without the new attribute keep
+        # working; missing attr → treat as "no singleton yet".
+        if getattr(cfg, "idempotency_store", None) is None and cfg.dsn:
+            from tapps_brain.idempotency import (
+                IdempotencyStore,
+                is_idempotency_enabled,
+            )
+
+            if is_idempotency_enabled():
+                try:
+                    cfg.idempotency_store = IdempotencyStore(cfg.dsn)
+                except Exception as exc:
+                    logger.warning(
+                        "http_adapter.idempotency_store_init_failed",
+                        error=str(exc),
+                    )
+                    cfg.idempotency_store = None
+
         mcp = mcp_holder["mcp"]
         if mcp is None:
             try:
@@ -746,6 +957,19 @@ def create_app(
                     await session_cm.__aexit__(None, None, None)
                 except Exception:
                     logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
+            # TAP-548: release the pooled Postgres connections the
+            # ``IdempotencyStore`` singleton is holding.  Set back to
+            # ``None`` so a subsequent lifespan run (e.g. a second
+            # ``TestClient`` context on the same app) rebuilds it.
+            if getattr(cfg, "idempotency_store", None) is not None:
+                try:
+                    cfg.idempotency_store.close()
+                except Exception:
+                    logger.debug(
+                        "http_adapter.idempotency_store_close_failed",
+                        exc_info=True,
+                    )
+                cfg.idempotency_store = None
 
     app = FastAPI(
         title="tapps-brain HTTP API",
@@ -820,9 +1044,18 @@ def create_app(
         return JSONResponse(status_code=200 if is_ready else 503, content=body)
 
     @app.get("/metrics")
-    async def _metrics() -> PlainTextResponse:
+    async def _metrics(request: Request) -> PlainTextResponse:
+        # TAP-547: serve full (project_id, agent_id)-labelled counters only
+        # to holders of TAPPS_BRAIN_METRICS_TOKEN; anonymous scrapes get a
+        # redacted, aggregate-only body.  Raises 401/403 if the token is
+        # configured but the bearer is missing/wrong.
+        authenticated = _metrics_request_authenticated(request, cfg)
         return PlainTextResponse(
-            content=_collect_metrics(cfg.dsn, store=cfg.store),
+            content=_collect_metrics(
+                cfg.dsn,
+                store=cfg.store,
+                redact_tenant_labels=not authenticated,
+            ),
             status_code=200,
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
@@ -899,19 +1132,26 @@ def create_app(
 
         Returns (ikey, None) when the key is present but not yet cached.
         Returns (None, None) when idempotency is disabled or no key header.
+
+        TAP-548: reads the process-wide ``IdempotencyStore`` singleton
+        from ``cfg.idempotency_store`` (built once in the lifespan
+        startup hook) instead of constructing — and immediately tearing
+        down — a fresh store per request.  When the singleton is absent
+        (lifespan not yet run, or the ctor failed at startup) we fall
+        through as if idempotency were disabled so the real write still
+        executes.
         """
-        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+        from tapps_brain.idempotency import is_idempotency_enabled
 
         if not is_idempotency_enabled():
             return None, None
         ikey = (request.headers.get("x-idempotency-key") or "").strip() or None
-        if not ikey or not cfg.dsn:
+        if not ikey:
             return ikey, None
-        istore = IdempotencyStore(cfg.dsn)
-        try:
-            cached = istore.check(project_id, ikey)
-        finally:
-            istore.close()
+        istore = getattr(cfg, "idempotency_store", None)
+        if istore is None:
+            return ikey, None
+        cached = istore.check(project_id, ikey)
         if cached is None:
             return ikey, None
         _status, _body = cached
@@ -922,16 +1162,20 @@ def create_app(
         )
 
     def _idempotency_save(project_id: str, ikey: str, status: int, body: dict[str, Any]) -> None:
-        """Persist idempotency key → response when enabled and a DSN is available."""
-        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+        """Persist idempotency key → response when enabled.
 
-        if not is_idempotency_enabled() or not cfg.dsn:
+        TAP-548: writes through the process-wide
+        ``cfg.idempotency_store`` singleton; silent no-op when absent so
+        boot-time failures don't bubble up into write-path 500s.
+        """
+        from tapps_brain.idempotency import is_idempotency_enabled
+
+        if not is_idempotency_enabled():
             return
-        istore = IdempotencyStore(cfg.dsn)
-        try:
-            istore.save(project_id, ikey, status, body)
-        finally:
-            istore.close()
+        istore = getattr(cfg, "idempotency_store", None)
+        if istore is None:
+            return
+        istore.save(project_id, ikey, status, body)
 
     @app.post("/v1/remember", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_remember(request: Request) -> JSONResponse:
@@ -967,9 +1211,11 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -981,9 +1227,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1057,9 +1305,11 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -1071,9 +1321,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1134,9 +1386,11 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -1149,9 +1403,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1198,9 +1454,11 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -1213,9 +1471,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1262,9 +1522,11 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Read error: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -1277,9 +1539,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"}
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1344,10 +1608,11 @@ def create_app(
     async def _admin_projects_register(request: Request) -> JSONResponse:
         try:
             raw = await request.body()
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": f"Read error: {exc}"},
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
             )
         if not raw:
             raise HTTPException(
@@ -1361,10 +1626,11 @@ def create_app(
             )
         try:
             body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": f"Invalid JSON: {exc}"},
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
             )
         if not isinstance(body, dict):
             raise HTTPException(
@@ -1392,10 +1658,11 @@ def create_app(
 
             validate_project_id(project_id)
             profile = MemoryProfile.model_validate(profile_json)
-        except Exception as exc:
+        except Exception:
+            logger.exception("http_adapter.profile_validation_failed")
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": str(exc)},
+                detail={"error": "bad_request", "detail": "Invalid profile or project_id."},
             )
 
         registry, cm = _open_registry()
@@ -1408,10 +1675,11 @@ def create_app(
                     approved=approved,
                     notes=notes,
                 )
-            except ValueError as exc:
+            except ValueError:
+                logger.exception("http_adapter.project_register_failed")
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": str(exc)},
+                    detail={"error": "bad_request", "detail": "Project registration failed."},
                 )
         finally:
             cm.close()
@@ -1501,10 +1769,14 @@ def create_app(
                     status_code=404,
                     content={"error": "not_found", "project_id": project_id},
                 )
-            except ImportError as exc:
+            except ImportError:
+                logger.exception("http_adapter.rotate_token_missing_library")
                 raise HTTPException(
                     status_code=503,
-                    detail={"error": "feature_unavailable", "detail": str(exc)},
+                    detail={
+                        "error": "feature_unavailable",
+                        "detail": "Token hashing library is not available; contact operator.",
+                    },
                 )
         finally:
             cm.close()

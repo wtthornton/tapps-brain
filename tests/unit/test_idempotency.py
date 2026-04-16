@@ -51,12 +51,16 @@ def _make_settings(
     s.dsn = dsn
     s.auth_token = auth_token
     s.admin_token = None
+    s.metrics_token = None
     s.allowed_origins = []
     s.version = _service_version()
     s.store = store
     s.snapshot_lock = threading.Lock()
     s.snapshot_cache = None
     s.snapshot_cache_at = 0.0
+    # TAP-548: lifespan startup builds the singleton when
+    # TAPPS_BRAIN_IDEMPOTENCY=1 and a DSN is set; otherwise it stays None.
+    s.idempotency_store = None
     return s
 
 
@@ -429,7 +433,13 @@ class TestV1RememberRoute:
         assert resp.headers.get("idempotency-replayed") == "true"
 
     def test_idempotency_store_called_on_miss(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """AC-1: On first call, response is stored in idempotency_keys."""
+        """AC-1: On first call, response is stored in idempotency_keys.
+
+        TAP-548: ``IdempotencyStore`` is now a process-wide singleton
+        built once in the lifespan startup hook, so ``check`` and
+        ``save`` both land on the same instance (previously each route
+        call built a fresh store).
+        """
         monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
         saved_result = {
             "status": "saved",
@@ -440,26 +450,28 @@ class TestV1RememberRoute:
         }
         ikey = "test-uuid-1234"
         client, _ = self._setup(dsn="postgresql://fake/db")
-        miss_inst = MagicMock()
-        miss_inst.check.return_value = None
-        miss_inst.close = MagicMock()
-        save_inst = MagicMock()
-        save_inst.save = MagicMock()
-        save_inst.close = MagicMock()
+        inst = MagicMock()
+        inst.check.return_value = None  # cache miss → real write runs
+        inst.save = MagicMock()
+        inst.close = MagicMock()
         with (
             patch("tapps_brain.services.memory_service.memory_save", return_value=saved_result),
-            patch("tapps_brain.idempotency.IdempotencyStore") as mock_cls,
+            patch(
+                "tapps_brain.idempotency.IdempotencyStore",
+                return_value=inst,
+            ) as mock_cls,
             client,
         ):
-            mock_cls.side_effect = [miss_inst, save_inst]
             resp = client.post(
                 "/v1/remember",
                 headers={"x-project-id": "proj", "x-idempotency-key": ikey},
                 json={"key": "k", "value": "v"},
             )
         assert resp.status_code == 200
-        # save() was called on the save_inst
-        save_inst.save.assert_called_once_with("proj", ikey, 200, saved_result)
+        # Singleton: constructed once for the whole lifespan.
+        assert mock_cls.call_count == 1
+        # ``save`` was routed through the same instance as ``check``.
+        inst.save.assert_called_once_with("proj", ikey, 200, saved_result)
 
     def test_empty_body_returns_400(self) -> None:
         client, _ = self._setup()
@@ -553,6 +565,142 @@ class TestV1ReinforceRoute:
         assert resp.status_code == 200
         assert resp.json() == cached_body
         assert resp.headers.get("idempotency-replayed") == "true"
+
+
+# ---------------------------------------------------------------------------
+# TAP-548: singleton IdempotencyStore lifecycle — build once, close on shutdown
+# ---------------------------------------------------------------------------
+
+
+class TestIdempotencySingletonLifecycle:
+    """TAP-548 — the ``IdempotencyStore`` must be built once per adapter
+    process and closed on shutdown.  Pre-fix every write route built a
+    fresh store (and its backing ``PostgresConnectionManager`` pool) per
+    request, which raced the hardened pool for ``max_connections``
+    slots under load and was invisible to pool metrics.
+    """
+
+    def _setup_store(self) -> MagicMock:
+        return _make_store()
+
+    def test_store_constructed_once_across_many_writes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """100 sequential /v1/remember calls must hit the singleton, so the
+        ``IdempotencyStore`` ctor fires exactly once.  (Concurrency is
+        not needed to prove the invariant: if per-request construction
+        came back, a purely sequential loop would fire the ctor 100
+        times.)
+        """
+        monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
+        saved_result = {
+            "status": "saved",
+            "key": "k",
+            "tier": "pattern",
+            "confidence": 0.8,
+            "memory_group": None,
+        }
+        inst = MagicMock()
+        inst.check.return_value = None
+        inst.save = MagicMock()
+        inst.close = MagicMock()
+        settings = _make_settings(dsn="postgresql://fake/db", store=self._setup_store())
+        client = _client_with_store(settings)
+        with (
+            patch(
+                "tapps_brain.services.memory_service.memory_save",
+                return_value=saved_result,
+            ),
+            patch(
+                "tapps_brain.idempotency.IdempotencyStore",
+                return_value=inst,
+            ) as mock_cls,
+            client,
+        ):
+            for i in range(100):
+                resp = client.post(
+                    "/v1/remember",
+                    headers={
+                        "x-project-id": "proj",
+                        "x-idempotency-key": f"uuid-{i:03d}",
+                    },
+                    json={"key": "k", "value": "v"},
+                )
+                assert resp.status_code == 200
+        assert mock_cls.call_count == 1, (
+            f"expected singleton; got {mock_cls.call_count} IdempotencyStore "
+            f"constructions across 100 requests"
+        )
+
+    def test_singleton_closed_on_shutdown(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Exiting the ``TestClient`` context runs FastAPI shutdown; the
+        singleton's ``close()`` must be invoked so the Postgres pool
+        releases cleanly.
+        """
+        monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
+        inst = MagicMock()
+        inst.check.return_value = None
+        inst.close = MagicMock()
+        settings = _make_settings(dsn="postgresql://fake/db", store=self._setup_store())
+        client = _client_with_store(settings)
+        with patch(
+            "tapps_brain.idempotency.IdempotencyStore",
+            return_value=inst,
+        ):
+            with client:
+                pass  # enter + exit = full startup+shutdown cycle
+        inst.close.assert_called_once()
+        assert settings.idempotency_store is None, (
+            "shutdown must null out the singleton so a second lifespan "
+            "(e.g. another TestClient on the same app) rebuilds it"
+        )
+
+    def test_no_singleton_when_feature_flag_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When ``TAPPS_BRAIN_IDEMPOTENCY`` is unset, the lifespan must
+        NOT construct an ``IdempotencyStore`` — even with a DSN — so
+        disabled deployments pay no pool cost.
+        """
+        monkeypatch.delenv("TAPPS_BRAIN_IDEMPOTENCY", raising=False)
+        settings = _make_settings(dsn="postgresql://fake/db", store=self._setup_store())
+        client = _client_with_store(settings)
+        with patch("tapps_brain.idempotency.IdempotencyStore") as mock_cls:
+            with client:
+                pass
+        assert mock_cls.call_count == 0
+        assert settings.idempotency_store is None
+
+    def test_no_singleton_when_dsn_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When the adapter has no DSN, the singleton is not built (there
+        is nothing to talk to) and write routes fall through as if
+        idempotency were disabled.
+        """
+        monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
+        settings = _make_settings(dsn=None, store=self._setup_store())
+        client = _client_with_store(settings)
+        with patch("tapps_brain.idempotency.IdempotencyStore") as mock_cls:
+            with client:
+                pass
+        assert mock_cls.call_count == 0
+        assert settings.idempotency_store is None
+
+    def test_store_init_failure_is_logged_and_swallowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If the ``IdempotencyStore`` ctor raises at startup (e.g. DSN is
+        garbage), the adapter must still come up — the write routes
+        fall through to the real write path without a cache.
+        """
+        monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
+        settings = _make_settings(dsn="postgresql://fake/db", store=self._setup_store())
+        client = _client_with_store(settings)
+        with patch(
+            "tapps_brain.idempotency.IdempotencyStore",
+            side_effect=RuntimeError("db unreachable at boot"),
+        ):
+            # Entering the client starts the lifespan; it must not raise.
+            with client:
+                pass
+        assert settings.idempotency_store is None
 
 
 # ---------------------------------------------------------------------------

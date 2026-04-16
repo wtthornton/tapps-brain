@@ -29,7 +29,6 @@ EPIC-070 STORY-070.9: operator-tool separation. The **standard** server
 from __future__ import annotations
 
 import argparse
-import contextlib
 import contextvars
 import importlib.metadata
 import json
@@ -97,6 +96,43 @@ def _lazy_import_mcp() -> Any:
 def _resolve_project_dir(project_dir: str | None) -> Path:
     """Resolve project directory, defaulting to cwd."""
     return Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
+
+
+def _build_transport_security() -> Any:
+    """Build TransportSecuritySettings from TAPPS_BRAIN_MCP_ALLOWED_HOSTS.
+
+    When the env var is set (comma-separated host[:port] entries), DNS-rebinding
+    protection is enabled with the explicit allow-list so Docker bridge / K8s
+    service-DNS hostnames are accepted.  When unset, ``None`` is returned and
+    FastMCP applies its own default (localhost-only guard when host=127.0.0.1).
+
+    Example::
+
+        TAPPS_BRAIN_MCP_ALLOWED_HOSTS=tapps-brain-http:8080,localhost:8080
+    """
+    raw = (os.environ.get("TAPPS_BRAIN_MCP_ALLOWED_HOSTS") or "").strip()
+    if not raw:
+        return None
+    try:
+        from mcp.server.transport_security import TransportSecuritySettings
+    except ImportError:
+        logger.warning(
+            "mcp_server.transport_security_unavailable",
+            detail="TransportSecuritySettings not found in installed mcp package; "
+            "TAPPS_BRAIN_MCP_ALLOWED_HOSTS will be ignored.",
+        )
+        return None
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    origins = [f"http://{h}" for h in hosts]
+    logger.info(
+        "mcp_server.transport_security_configured",
+        allowed_hosts=hosts,
+    )
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def _get_store(
@@ -606,12 +642,31 @@ def create_server(  # noqa: PLR0915
     def _pid() -> str:
         return _current_request_project_id() or ""
 
+    def _require_operator_enabled() -> None:
+        """Fail-closed guard invoked at the top of every operator tool.
+
+        The primary defense against data-plane callers invoking operator
+        tools is registry removal (see the ``_OPERATOR_TOOL_NAMES`` block
+        below).  This runtime check is belt-and-suspenders for TAP-545:
+        if a future regression (FastMCP API drift, mis-wired flag, etc.)
+        leaves an operator tool callable on a non-operator server, the
+        tool refuses to execute instead of running with data-plane auth.
+        """
+        if not getattr(mcp, "_tapps_operator_tools_enabled", False):
+            raise RuntimeError(
+                "operator tool invoked on non-operator server "
+                "(operator-tool gate failed open — refusing to execute)"
+            )
+
     # STORY-070.2: Modern MCP 2025-03-26 Streamable HTTP transport.
     # - stateless_http=True  → no Mcp-Session-Id bookkeeping between calls;
     #   each POST to /mcp is self-contained.  Required for horizontal scaling.
     # - json_response=True   → return plain application/json bodies instead
     #   of SSE streams so ordinary HTTP clients (curl, requests, httpx) work.
     mcp_kwargs: dict[str, Any] = {"instructions": _MCP_INSTRUCTIONS}
+    transport_security = _build_transport_security()
+    if transport_security is not None:
+        mcp_kwargs["transport_security"] = transport_security
     try:
         mcp = fastmcp_cls(
             "tapps-brain",
@@ -623,6 +678,7 @@ def create_server(  # noqa: PLR0915
         # Older FastMCP builds (< 1.25 / < 3.2) that lack these kwargs.
         # Stdio path still works; Streamable HTTP mount will degrade to
         # whatever the installed mcp package supports.
+        mcp_kwargs.pop("transport_security", None)
         mcp = fastmcp_cls("tapps-brain", **mcp_kwargs)
 
     # Health endpoint for Docker/compose health checks.  GET /health returns
@@ -1359,6 +1415,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def flywheel_evaluate(suite_path: str, k: int = 5) -> str:
         """Run BEIR-format directory or YAML suite evaluation."""
+        _require_operator_enabled()
         return json.dumps(
             flywheel_service.flywheel_evaluate(
                 store,
@@ -1372,6 +1429,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def flywheel_hive_feedback(threshold: int = 3) -> str:
         """Aggregate / apply Hive cross-project feedback penalties."""
+        _require_operator_enabled()
         return json.dumps(
             flywheel_service.flywheel_hive_feedback(
                 store,
@@ -1571,6 +1629,7 @@ def create_server(  # noqa: PLR0915
         force: bool = True,
     ) -> str:
         """Trigger memory consolidation to merge similar entries."""
+        _require_operator_enabled()
         return json.dumps(
             maintenance_service.maintenance_consolidate(
                 store,
@@ -1586,6 +1645,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def maintenance_gc(dry_run: bool = False) -> str:
         """Run garbage collection to archive stale memories."""
+        _require_operator_enabled()
         return json.dumps(
             maintenance_service.maintenance_gc(store, _pid(), agent_id, dry_run=dry_run)
         )
@@ -1593,11 +1653,13 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def maintenance_stale() -> str:
         """List GC stale memory candidates with reasons (read-only; GitHub #21)."""
+        _require_operator_enabled()
         return json.dumps(maintenance_service.maintenance_stale(store, _pid(), agent_id))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def tapps_brain_health(check_hive: bool = True) -> str:
         """Return a structured health report for tapps-brain (issue #15)."""
+        _require_operator_enabled()
         return json.dumps(
             diagnostics_service.tapps_brain_health(
                 store,
@@ -1610,6 +1672,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_gc_config() -> str:
         """Return the current garbage collection configuration."""
+        _require_operator_enabled()
         return json.dumps(memory_service.memory_gc_config(store, _pid(), agent_id))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1619,6 +1682,7 @@ def create_server(  # noqa: PLR0915
         contradicted_threshold: float | None = None,
     ) -> str:
         """Update garbage collection configuration thresholds."""
+        _require_operator_enabled()
         return json.dumps(
             memory_service.memory_gc_config_set(
                 store,
@@ -1633,6 +1697,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_consolidation_config() -> str:
         """Return the current auto-consolidation configuration."""
+        _require_operator_enabled()
         return json.dumps(memory_service.memory_consolidation_config(store, _pid(), agent_id))
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -1642,6 +1707,7 @@ def create_server(  # noqa: PLR0915
         min_entries: int | None = None,
     ) -> str:
         """Update auto-consolidation configuration."""
+        _require_operator_enabled()
         return json.dumps(
             memory_service.memory_consolidation_config_set(
                 store,
@@ -1664,6 +1730,7 @@ def create_server(  # noqa: PLR0915
         min_confidence: float | None = None,
     ) -> str:
         """Export memory entries as JSON."""
+        _require_operator_enabled()
         return json.dumps(
             memory_service.memory_export(
                 store,
@@ -1682,6 +1749,7 @@ def create_server(  # noqa: PLR0915
         overwrite: bool = False,
     ) -> str:
         """Import memory entries from a JSON string."""
+        _require_operator_enabled()
         return json.dumps(
             memory_service.memory_import(
                 store,
@@ -1695,6 +1763,7 @@ def create_server(  # noqa: PLR0915
     @mcp.tool()  # type: ignore[untyped-decorator]
     def tapps_brain_relay_export(source_agent: str, items_json: str) -> str:
         """Build a memory relay JSON payload for cross-node handoff (GitHub #19)."""
+        _require_operator_enabled()
         return json.dumps(
             relay_service.tapps_brain_relay_export(
                 store,
@@ -2069,9 +2138,23 @@ def create_server(  # noqa: PLR0915
     )
 
     if not enable_operator_tools:
+        # Fail closed: if ``remove_tool`` raises (e.g. FastMCP API drift
+        # renamed or removed ``_tool_manager.remove_tool``), propagate so
+        # the server refuses to start.  Previously this path swallowed
+        # every exception and silently left operator tools callable by
+        # data-plane holders of the standard token (TAP-545).
         for _op_tool in _OPERATOR_TOOL_NAMES:
-            with contextlib.suppress(Exception):
-                mcp._tool_manager.remove_tool(_op_tool)
+            mcp._tool_manager.remove_tool(_op_tool)
+        # Belt-and-suspenders: verify the registry no longer lists any
+        # operator tool names, guarding against any future removal-logic
+        # regression that completes without raising but leaves tools
+        # behind.
+        _remaining_ops = {t.name for t in mcp._tool_manager.list_tools()} & _OPERATOR_TOOL_NAMES
+        if _remaining_ops:
+            raise RuntimeError(
+                "operator-tool gate failed: non-operator server still "
+                f"exposes {sorted(_remaining_ops)} after removal pass"
+            )
 
     # ------------------------------------------------------------------
     # Attach store and Hive metadata to server for testing / tool access

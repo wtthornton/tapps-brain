@@ -50,8 +50,11 @@ services:
     ports:
       # HTTP data-plane: /mcp, data-plane, and /admin/* share one Uvicorn worker.
       - "${TAPPS_HTTP_PORT:-8080}:8080"
-      # Operator MCP transport (streamable-http).
-      - "${TAPPS_OPERATOR_MCP_PORT:-8090}:8090"
+      # TAP-551: Operator MCP transport bound to loopback by default — not
+      # reachable from the internet without an explicit override.
+      # To expose externally (e.g. behind a reverse proxy), set:
+      #   TAPPS_OPERATOR_MCP_BIND=0.0.0.0
+      - "${TAPPS_OPERATOR_MCP_BIND:-127.0.0.1}:${TAPPS_OPERATOR_MCP_PORT:-8090}:8090"
     secrets:
       - tapps_http_auth_token
     depends_on:

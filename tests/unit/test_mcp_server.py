@@ -72,6 +72,61 @@ class TestServerCreation:
         assert isinstance(mcp_server._tapps_store, MemoryStore)
 
 
+class TestTransportSecurity:
+    """TAP-507: TAPPS_BRAIN_MCP_ALLOWED_HOSTS wires TransportSecuritySettings."""
+
+    def test_no_env_var_returns_none(self, monkeypatch):
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.delenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", raising=False)
+        assert _build_transport_security() is None
+
+    def test_empty_env_var_returns_none(self, monkeypatch):
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.setenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", "   ")
+        assert _build_transport_security() is None
+
+    def test_single_host_builds_settings(self, monkeypatch):
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.setenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", "tapps-brain-http:8080")
+        ts = _build_transport_security()
+        assert isinstance(ts, TransportSecuritySettings)
+        assert ts.enable_dns_rebinding_protection is True
+        assert "tapps-brain-http:8080" in ts.allowed_hosts
+
+    def test_multiple_hosts_parsed(self, monkeypatch):
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.setenv(
+            "TAPPS_BRAIN_MCP_ALLOWED_HOSTS",
+            "tapps-brain-http:8080, localhost:8080, 127.0.0.1:8080",
+        )
+        ts = _build_transport_security()
+        assert ts is not None
+        assert len(ts.allowed_hosts) == 3
+        assert "tapps-brain-http:8080" in ts.allowed_hosts
+        assert "localhost:8080" in ts.allowed_hosts
+
+    def test_settings_plumbed_into_server(self, monkeypatch, store_dir):
+        """Server created with TAPPS_BRAIN_MCP_ALLOWED_HOSTS has transport security set."""
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        monkeypatch.setenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", "brain-host:8080")
+        from tapps_brain.mcp_server import create_server
+
+        server = create_server(store_dir, enable_hive=False)
+        try:
+            ts = server.settings.transport_security
+            assert isinstance(ts, TransportSecuritySettings)
+            assert "brain-host:8080" in ts.allowed_hosts
+        finally:
+            server._tapps_store.close()
+
+
 class TestCoreTools:
     """Test core memory CRUD tools are registered."""
 

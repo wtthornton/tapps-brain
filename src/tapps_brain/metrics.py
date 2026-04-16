@@ -155,6 +155,18 @@ class StoreHealthReport(BaseModel):
         default=0,
         description="Total UTF-8 bytes appended to archive JSONL across live GC runs.",
     )
+    # TAP-549: distinct session_ids currently tracked in the in-memory
+    # implicit-feedback helper dicts.  Unbounded growth (e.g. a client
+    # rotating ``session_id`` on every call) previously slow-burned the
+    # adapter toward OOM; exposed here so operators can alert on growth.
+    active_session_count: int = Field(
+        default=0,
+        description=(
+            "Distinct session_ids tracked in MemoryStore session-state "
+            "helper dicts.  Bounded by MemoryStore's LRU cap and the "
+            "GC-driven stale-session sweep (TAP-549)."
+        ),
+    )
     # Hive Postgres health (EPIC-058 STORY-058.3)
     hive_connected: bool = False
     hive_schema_version: int = 0

@@ -42,6 +42,7 @@ def _make_settings(
     dsn: str | None = None,
     auth_token: str | None = None,
     admin_token: str | None = None,
+    metrics_token: str | None = None,
     store: Any = None,
 ) -> _Settings:
     """Return a fresh _Settings with explicit values (bypasses env reads)."""
@@ -49,6 +50,7 @@ def _make_settings(
     s.dsn = dsn
     s.auth_token = auth_token
     s.admin_token = admin_token
+    s.metrics_token = metrics_token
     s.allowed_origins = []
     s.version = _service_version()
     s.store = store
@@ -71,6 +73,21 @@ def _client(settings: _Settings):
         app = create_app(mcp_server=_mcp_dummy)
         with TestClient(app, raise_server_exceptions=False) as client:
             yield client
+
+
+# ---------------------------------------------------------------------------
+# TAP-552: clear _PROBE_CACHE between tests so TTL doesn't bleed across them
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_probe_db_cache() -> Any:
+    """Clear the _probe_db TTL cache before and after every test in this module."""
+    import tapps_brain.http_adapter as _had
+
+    _had._PROBE_CACHE.clear()
+    yield
+    _had._PROBE_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +142,64 @@ class TestProbeDb:
         assert is_ready
         assert version == 2
         assert "pending=1" in msg
+
+    def test_ttl_cache_deduplicates_calls(self) -> None:
+        """TAP-552: 100 calls within 1 s must trigger exactly one underlying connect."""
+        import tapps_brain.http_adapter as _had
+
+        dsn = "postgres://localhost/ttl-test-db"
+        _had._PROBE_CACHE.pop(dsn, None)  # ensure clean slate
+
+        call_count = 0
+
+        def _fake_probe(d: str) -> Any:
+            nonlocal call_count
+            call_count += 1
+            s = MagicMock()
+            s.current_version = 1
+            s.pending_migrations = []
+            return s
+
+        with patch(
+            "tapps_brain.postgres_migrations.get_hive_schema_status",
+            side_effect=_fake_probe,
+        ):
+            for _ in range(100):
+                _probe_db(dsn)
+
+        assert call_count == 1, f"expected 1 underlying connect, got {call_count}"
+
+        # Clean up cache so other tests aren't affected.
+        _had._PROBE_CACHE.pop(dsn, None)
+
+    def test_ttl_cache_refreshes_after_expiry(self) -> None:
+        """TAP-552: result is re-fetched once the TTL window expires."""
+        import tapps_brain.http_adapter as _had
+
+        dsn = "postgres://localhost/ttl-expiry-db"
+        _had._PROBE_CACHE.pop(dsn, None)
+        call_count = 0
+
+        def _fake_probe(d: str) -> Any:
+            nonlocal call_count
+            call_count += 1
+            s = MagicMock()
+            s.current_version = 1
+            s.pending_migrations = []
+            return s
+
+        with patch(
+            "tapps_brain.postgres_migrations.get_hive_schema_status",
+            side_effect=_fake_probe,
+        ):
+            _probe_db(dsn)  # first call — populates cache
+            # Force expiry by back-dating the entry.
+            expires_at, result = _had._PROBE_CACHE[dsn]
+            _had._PROBE_CACHE[dsn] = (expires_at - _had._PROBE_CACHE_TTL - 1.0, result)
+            _probe_db(dsn)  # second call — cache expired, should re-fetch
+
+        assert call_count == 2, f"expected 2 calls after expiry, got {call_count}"
+        _had._PROBE_CACHE.pop(dsn, None)
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +397,195 @@ class TestMetricsEndpoint:
             assert f'{forbidden}="' not in body, (
                 f"High-cardinality label '{forbidden}' must not appear in /metrics"
             )
+
+
+# ---------------------------------------------------------------------------
+# TAP-547: /metrics gate — TAPPS_BRAIN_METRICS_TOKEN enforcement + tenant
+# label redaction for anonymous scrapers.
+# ---------------------------------------------------------------------------
+
+
+_METRICS_TOKEN = "metrics-token-tap547"
+
+
+@contextmanager
+def _seeded_request_counts(pairs: list[tuple[str, str, int]]):
+    """Seed ``_LABELED_REQUEST_COUNTS`` with ``(project_id, agent_id, count)``.
+
+    Restores the prior state on exit so test ordering is stable.
+    """
+    with _mod._LABELED_REQUEST_COUNTS_LOCK:
+        prior = dict(_mod._LABELED_REQUEST_COUNTS)
+        _mod._LABELED_REQUEST_COUNTS.clear()
+        for pid, aid, count in pairs:
+            _mod._LABELED_REQUEST_COUNTS[(pid, aid)] = count
+    try:
+        yield
+    finally:
+        with _mod._LABELED_REQUEST_COUNTS_LOCK:
+            _mod._LABELED_REQUEST_COUNTS.clear()
+            _mod._LABELED_REQUEST_COUNTS.update(prior)
+
+
+@contextmanager
+def _seeded_tool_counts(quads: list[tuple[str, str, str, str, int]]):
+    """Seed ``otel_tracer._TOOL_CALL_COUNTS`` with ``(pid, aid, tool, status, count)``."""
+    from tapps_brain import otel_tracer
+
+    with otel_tracer._TOOL_CALL_LOCK:
+        prior = dict(otel_tracer._TOOL_CALL_COUNTS)
+        otel_tracer._TOOL_CALL_COUNTS.clear()
+        for pid, aid, tool, status, count in quads:
+            otel_tracer._TOOL_CALL_COUNTS[(pid, aid, tool, status)] = count
+    try:
+        yield
+    finally:
+        with otel_tracer._TOOL_CALL_LOCK:
+            otel_tracer._TOOL_CALL_COUNTS.clear()
+            otel_tracer._TOOL_CALL_COUNTS.update(prior)
+
+
+class TestMetricsTokenGate:
+    """TAP-547 — ``/metrics`` must not leak per-tenant labels to anonymous
+    scrapers.  Behaviour by configuration:
+
+    * ``TAPPS_BRAIN_METRICS_TOKEN`` unset → 200 with tenant labels stripped.
+    * Token set + missing/invalid bearer → 401 / 403.
+    * Token set + correct bearer → 200 with full per-tenant labels.
+    """
+
+    def test_unauth_no_token_set_strips_tenant_labels(self) -> None:
+        with (
+            _seeded_request_counts([("tenant-a", "agent-1", 3), ("tenant-b", "agent-2", 5)]),
+            _seeded_tool_counts(
+                [
+                    ("tenant-a", "agent-1", "memory_save", "success", 4),
+                    ("tenant-b", "agent-2", "memory_save", "success", 6),
+                ]
+            ),
+            _client(_make_settings(metrics_token=None)) as c,
+        ):
+            resp = c.get("/metrics")
+        assert resp.status_code == 200
+        body = resp.text
+        # Aggregate MCP request counter present, labels stripped.
+        assert "tapps_brain_mcp_requests_total 8" in body
+        assert 'project_id="tenant-a"' not in body
+        assert 'project_id="tenant-b"' not in body
+        assert 'agent_id="agent-1"' not in body
+        # Tool counter present with tool+status labels, no tenant labels.
+        assert 'tapps_brain_tool_calls_total{tool="memory_save",status="success"} 10' in body
+        assert 'project_id="tenant-a",agent_id="agent-1"' not in body
+
+    def test_unauth_token_set_returns_401(self) -> None:
+        with _client(_make_settings(metrics_token=_METRICS_TOKEN)) as c:
+            resp = c.get("/metrics")
+        assert resp.status_code == 401
+        body = resp.json()
+        # FastAPI serialises HTTPException.detail dicts flat at the top
+        # level, so the error key lives at body["error"] (not nested).
+        assert body["error"] == "unauthorized"
+
+    def test_wrong_token_returns_403(self) -> None:
+        with _client(_make_settings(metrics_token=_METRICS_TOKEN)) as c:
+            resp = c.get("/metrics", headers={"Authorization": "Bearer wrong-token"})
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body["error"] == "forbidden"
+
+    def test_malformed_authorization_returns_401(self) -> None:
+        """Non-Bearer schemes (``Basic …``) are rejected as malformed."""
+        with _client(_make_settings(metrics_token=_METRICS_TOKEN)) as c:
+            resp = c.get("/metrics", headers={"Authorization": "Basic dXNlcjpwYXNz"})
+        assert resp.status_code == 401
+
+    def test_correct_token_returns_full_tenant_labels(self) -> None:
+        with (
+            _seeded_request_counts([("tenant-a", "agent-1", 3), ("tenant-b", "agent-2", 5)]),
+            _seeded_tool_counts([("tenant-a", "agent-1", "memory_save", "success", 4)]),
+            _client(_make_settings(metrics_token=_METRICS_TOKEN)) as c,
+        ):
+            resp = c.get(
+                "/metrics",
+                headers={"Authorization": f"Bearer {_METRICS_TOKEN}"},
+            )
+        assert resp.status_code == 200
+        body = resp.text
+        assert 'tapps_brain_mcp_requests_total{project_id="tenant-a",agent_id="agent-1"} 3' in body
+        assert 'tapps_brain_mcp_requests_total{project_id="tenant-b",agent_id="agent-2"} 5' in body
+        assert (
+            'tapps_brain_tool_calls_total{project_id="tenant-a",agent_id="agent-1",'
+            'tool="memory_save",status="success"} 4'
+        ) in body
+
+    def test_constant_time_comparison_used_for_metrics_token(self) -> None:
+        """TAP-544-style hardening: ``hmac.compare_digest`` must guard the
+        metrics token check so near-miss bearers can't be recovered by
+        timing analysis.
+        """
+        from tapps_brain.http_adapter import _metrics_request_authenticated
+
+        cfg = _make_settings(metrics_token=_METRICS_TOKEN)
+        request = MagicMock()
+        request.headers = {"authorization": f"Bearer {_METRICS_TOKEN}"}
+        with patch(
+            "tapps_brain.http_adapter.hmac.compare_digest",
+            wraps=__import__("hmac").compare_digest,
+        ) as spy:
+            assert _metrics_request_authenticated(request, cfg) is True
+        assert spy.called, "expected hmac.compare_digest to gate the metrics token"
+        (args, _kwargs) = spy.call_args
+        assert args[0] == _METRICS_TOKEN.encode("utf-8")
+        assert args[1] == _METRICS_TOKEN.encode("utf-8")
+
+    def test_startup_warns_when_metrics_token_unset(self) -> None:
+        """``create_app`` must log a structured warning when no metrics
+        token is configured, since the endpoint then falls back to the
+        redacted anonymous body.
+        """
+        import structlog
+        from structlog.testing import capture_logs
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            settings = _make_settings(metrics_token=None)
+            _mcp_dummy = MagicMock()
+            _mcp_dummy.session_manager = None
+            with (
+                patch.object(_mod, "_settings", settings),
+                patch.object(_mod, "get_settings", return_value=settings),
+                capture_logs() as events,
+            ):
+                create_app(mcp_server=_mcp_dummy)
+            names = {e.get("event") for e in events}
+            assert "http_adapter.metrics_unauthenticated" in names, (
+                f"expected metrics_unauthenticated warning; got {names}"
+            )
+        finally:
+            structlog.configure(**saved)
+
+    def test_startup_silent_when_metrics_token_set(self) -> None:
+        """Inverse of above: no redaction warning when a token IS configured."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            settings = _make_settings(metrics_token=_METRICS_TOKEN)
+            _mcp_dummy = MagicMock()
+            _mcp_dummy.session_manager = None
+            with (
+                patch.object(_mod, "_settings", settings),
+                patch.object(_mod, "get_settings", return_value=settings),
+                capture_logs() as events,
+            ):
+                create_app(mcp_server=_mcp_dummy)
+            names = {e.get("event") for e in events}
+            assert "http_adapter.metrics_unauthenticated" not in names
+        finally:
+            structlog.configure(**saved)
 
 
 # ---------------------------------------------------------------------------
@@ -1025,3 +1289,272 @@ class TestSnapshotProjectFilter:
         assert isinstance(body, dict)
         assert body["diagnostics_history"] == []
         assert body["feedback_events"] == []
+
+
+# ---------------------------------------------------------------------------
+# TAP-546: Operator tools are never served from the unified HTTP adapter
+# ---------------------------------------------------------------------------
+
+# Canonical operator tool name mirror — must stay in sync with
+# ``_OPERATOR_TOOL_NAMES`` inside ``src/tapps_brain/mcp_server/__init__.py``.
+# ``test_standard_server_excludes_every_operator_tool`` in
+# ``test_operator_tool_gate_hardening.py`` guards the production set as a
+# whole; this mirror only has to cover the names we explicitly check below.
+_OPERATOR_TOOL_NAMES_FOR_HTTP = frozenset(
+    {
+        "maintenance_consolidate",
+        "maintenance_gc",
+        "maintenance_stale",
+        "tapps_brain_health",
+        "memory_gc_config",
+        "memory_gc_config_set",
+        "memory_consolidation_config",
+        "memory_consolidation_config_set",
+        "memory_export",
+        "memory_import",
+        "tapps_brain_relay_export",
+        "flywheel_evaluate",
+        "flywheel_hive_feedback",
+    }
+)
+
+
+def _close_http_adapter_server(server: Any) -> None:
+    """Close the store(s) attached to a FastMCP server by ``_build_mcp_server``."""
+    store = getattr(server, "_tapps_store", None)
+    if store is None:
+        return
+    hive = getattr(store, "_hive_store", None)
+    if hive is not None:
+        try:
+            hive.close()
+        except Exception:  # pragma: no cover — defensive in teardown
+            pass
+    try:
+        store.close()
+    except Exception:  # pragma: no cover — defensive in teardown
+        pass
+
+
+@pytest.mark.requires_mcp
+class TestHttpAdapterOperatorToolsGate:
+    """TAP-546 — the unified ``:8080`` HTTP adapter is data-plane-authenticated
+    only.  ``_build_mcp_server`` must never register operator tools on that
+    mount, regardless of ``TAPPS_BRAIN_OPERATOR_TOOLS``.  Operator tools
+    are reachable only via the separate ``:8090`` operator MCP, which
+    enforces ``TAPPS_BRAIN_ADMIN_TOKEN``.
+    """
+
+    def test_operator_tools_absent_when_env_unset(self, tmp_path: Any) -> None:
+        """Baseline: default env → no operator tools on the unified mount."""
+        from tapps_brain.http_adapter import _build_mcp_server
+
+        with patch.dict(
+            "os.environ",
+            {"TAPPS_BRAIN_SERVE_ROOT": str(tmp_path)},
+            clear=False,
+        ):
+            # Ensure the env var is NOT set (clear=False keeps the rest of env).
+            import os as _os
+
+            _os.environ.pop("TAPPS_BRAIN_OPERATOR_TOOLS", None)
+            server = _build_mcp_server()
+        try:
+            names = {t.name for t in server._tool_manager.list_tools()}
+            assert not (names & _OPERATOR_TOOL_NAMES_FOR_HTTP)
+            assert server._tapps_operator_tools_enabled is False
+        finally:
+            _close_http_adapter_server(server)
+
+    def test_operator_tools_ignored_when_env_set_to_1(self, tmp_path: Any) -> None:
+        """Regression: even with ``TAPPS_BRAIN_OPERATOR_TOOLS=1`` the unified
+        HTTP adapter must refuse to register operator tools, and must log a
+        structured warning explaining the refusal.
+
+        ``tapps_brain.mcp_server`` reconfigures structlog to a CRITICAL
+        filter on import, which silences ``logger.warning`` calls made
+        after that import.  In production ``_build_mcp_server`` fires
+        the warning BEFORE importing mcp_server so the message escapes;
+        in this test we also reset structlog up-front because a prior
+        test in this class may already have imported mcp_server and
+        left structlog at CRITICAL.
+        """
+        import structlog
+        from structlog.testing import capture_logs
+
+        from tapps_brain.http_adapter import _build_mcp_server
+
+        saved_config = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with (
+                patch.dict(
+                    "os.environ",
+                    {
+                        "TAPPS_BRAIN_SERVE_ROOT": str(tmp_path),
+                        "TAPPS_BRAIN_OPERATOR_TOOLS": "1",
+                    },
+                    clear=False,
+                ),
+                capture_logs() as events,
+            ):
+                server = _build_mcp_server()
+            try:
+                names = {t.name for t in server._tool_manager.list_tools()}
+                leaked = names & _OPERATOR_TOOL_NAMES_FOR_HTTP
+                assert not leaked, (
+                    f"unified :8080 mount registered operator tools despite "
+                    f"TAP-546 refusal: {sorted(leaked)}"
+                )
+                assert server._tapps_operator_tools_enabled is False
+
+                warning_events = [
+                    e for e in events if e.get("event") == "http_adapter.operator_tools_ignored"
+                ]
+                assert warning_events, (
+                    f"expected operator_tools_ignored warning, got events: {events}"
+                )
+                assert warning_events[0]["log_level"] == "warning"
+            finally:
+                _close_http_adapter_server(server)
+        finally:
+            structlog.configure(**saved_config)
+
+    def test_operator_tools_ignored_when_env_set_to_truthy_noise(self, tmp_path: Any) -> None:
+        """Values other than the literal string ``"1"`` must also fail closed
+        — the env var is a strict equality check.  Even ``"true"`` / ``"yes"``
+        leave operator tools off, matching ``_build_mcp_server``'s contract.
+        """
+        from tapps_brain.http_adapter import _build_mcp_server
+
+        for noise in ("true", "yes", "0", ""):
+            with patch.dict(
+                "os.environ",
+                {
+                    "TAPPS_BRAIN_SERVE_ROOT": str(tmp_path),
+                    "TAPPS_BRAIN_OPERATOR_TOOLS": noise,
+                },
+                clear=False,
+            ):
+                server = _build_mcp_server()
+            try:
+                names = {t.name for t in server._tool_manager.list_tools()}
+                assert not (names & _OPERATOR_TOOL_NAMES_FOR_HTTP), (
+                    f"TAPPS_BRAIN_OPERATOR_TOOLS={noise!r} registered "
+                    f"operator tools on the unified mount"
+                )
+                assert server._tapps_operator_tools_enabled is False
+            finally:
+                _close_http_adapter_server(server)
+
+
+# ---------------------------------------------------------------------------
+# TAP-550: HTTP error envelopes must not leak exception class names or text
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN_PATTERNS = (
+    "JSONDecodeError",
+    "UnicodeDecodeError",
+    "ValueError",
+    "ValidationError",
+    "OperationalError",
+    "ImportError",
+    "Expecting value",  # json parser offset leak
+    "line 1 column",  # json parser offset leak
+    "codec can't decode",  # UnicodeDecodeError text
+)
+
+
+class TestErrorEnvelopesDoNotLeakExceptions:
+    """TAP-550: 4xx/5xx response bodies must not expose exception class names
+    or internal parser/schema details to clients."""
+
+    def _assert_no_leak(self, body: str) -> None:
+        for pattern in _FORBIDDEN_PATTERNS:
+            assert pattern not in body, f"Error envelope leaks {pattern!r}: {body!r}"
+
+    def test_invalid_json_body_on_remember(self) -> None:
+        """Sending bad JSON to /v1/remember returns a generic error, not parser details."""
+        from unittest.mock import MagicMock
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember",
+                content=b"not-json!!!",
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-Project-Id": "proj-x",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert resp.status_code == 400
+        self._assert_no_leak(resp.text)
+        body = resp.json()
+        assert body.get("error") == "bad_request"
+
+    def test_invalid_json_body_on_remember_batch(self) -> None:
+        from unittest.mock import MagicMock
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember:batch",
+                content=b"{bad json",
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-Project-Id": "proj-x",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert resp.status_code == 400
+        self._assert_no_leak(resp.text)
+
+    def test_invalid_json_body_on_recall_batch(self) -> None:
+        from unittest.mock import MagicMock
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall:batch",
+                content=b"\xff\xfe",  # invalid UTF-8
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-Project-Id": "proj-x",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert resp.status_code == 400
+        self._assert_no_leak(resp.text)
+
+    def test_admin_register_invalid_profile_no_validation_error_leak(self) -> None:
+        """POST /admin/projects with a bad profile must not leak Pydantic ValidationError."""
+        settings = _make_settings(admin_token="admin-tok")
+        with _client(settings) as client:
+            resp = client.post(
+                "/admin/projects",
+                json={
+                    "project_id": "proj-test",
+                    "profile": {"bad_field": "not-a-profile"},
+                },
+                headers={"Authorization": "Bearer admin-tok"},
+            )
+        assert resp.status_code == 400
+        self._assert_no_leak(resp.text)
+        body = resp.json()
+        assert body.get("error") == "bad_request"
+
+    def test_admin_register_invalid_json_body_no_leak(self) -> None:
+        """Invalid JSON body on admin register must not leak parser details."""
+        settings = _make_settings(admin_token="admin-tok")
+        with _client(settings) as client:
+            resp = client.post(
+                "/admin/projects",
+                content=b"not json",
+                headers={
+                    "Authorization": "Bearer admin-tok",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert resp.status_code == 400
+        self._assert_no_leak(resp.text)
