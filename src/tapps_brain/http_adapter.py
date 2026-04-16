@@ -255,7 +255,8 @@ def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
         hive = getattr(store, "_hive_store", None)
         cm = getattr(hive, "_cm", None)
         if cm is not None and hasattr(cm, "get_pool_stats"):
-            return cm.get_pool_stats()
+            stats: dict[str, Any] = cm.get_pool_stats()
+            return stats
     except Exception:
         pass
     return None

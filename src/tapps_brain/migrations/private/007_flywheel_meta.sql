@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS flywheel_meta (
     PRIMARY KEY (project_id, agent_id, key)
 );
 
+-- private_schema_version has no UNIQUE/PK on `version` (see 001_initial.sql),
+-- so an `ON CONFLICT (version)` clause errors with "no unique or exclusion
+-- constraint matching the ON CONFLICT specification".  The migration runner
+-- already skips re-applied versions (postgres_migrations._apply_migrations)
+-- so a plain INSERT is sufficient and matches the pattern in 008-012.
 INSERT INTO private_schema_version (version, description)
-VALUES (7, 'flywheel_meta key-value table for feedback pipeline cursor (STORY-066.14)')
-ON CONFLICT (version) DO NOTHING;
+VALUES (7, 'flywheel_meta key-value table for feedback pipeline cursor (STORY-066.14)');
