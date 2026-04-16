@@ -360,6 +360,24 @@ def build_openapi_spec(app: FastAPI) -> dict[str, Any]:
     # Document the ASGI-mounted /mcp route — invisible to FastAPI's introspection.
     paths.setdefault("/mcp", _mcp_path_definition())
 
+    # Routes that hand-build JSONResponse with non-200 statuses don't get
+    # those statuses into the auto-generated spec.  Inject the contractual
+    # 503s explicitly so consumers can rely on them.
+    for route_path, method in (("/snapshot", "get"), ("/ready", "get")):
+        op = paths.get(route_path, {}).get(method)
+        if isinstance(op, dict):
+            op.setdefault("responses", {}).setdefault(
+                "503",
+                {
+                    "description": (
+                        "Degraded — store unavailable (snapshot) or DB unreachable (ready)."
+                    ),
+                    "content": {
+                        "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
+                    },
+                },
+            )
+
     # Wire the Info schema into /info if FastAPI generated a generic 200.
     info_path = paths.get("/info")
     if isinstance(info_path, dict):

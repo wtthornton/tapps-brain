@@ -735,6 +735,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Degraded \u2014 store unavailable (snapshot) or DB unreachable (ready)."
           }
         },
         "summary": " Ready"
@@ -782,6 +792,16 @@
               }
             },
             "description": "Invalid token."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Degraded \u2014 store unavailable (snapshot) or DB unreachable (ready)."
           }
         },
         "security": [
