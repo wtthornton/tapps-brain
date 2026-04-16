@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - `PropagationEngine.propagate()` now always returns a `dict[str, Any]` describing the routing decision; previously it returned `None` for refusals. Direct callers (notably `MemoryStore._propagate_to_hive`) that ignore the return value are unaffected. Callers that branched on `result is None` should branch on `not result["propagated"]`.
+### Changed (BREAKING — wire path)
+- public MCP endpoint collapsed from `/mcp/mcp` back to a single `/mcp` (TAP-509). v3.7.2 worked around a FastMCP submount quirk by pointing `TappsBrainClient` at `/mcp/mcp`; the real fix is to pin FastMCP's inner `settings.streamable_http_path = "/"` before building the streamable-HTTP sub-app, so when the adapter mounts it at `/mcp` the public path is just `/mcp`. Client and brain must move together — a v3.7.2 client will 404 against a v3.7.3+ brain and vice versa. Hand-rolled HTTP callers must POST to `/mcp`.
+- new test `tests/unit/test_mcp_route_path.py` locks the public path so any future FastMCP upgrade or mount-hierarchy change that re-introduces `/mcp/mcp` will fail CI.
 
 ## [3.7.2] - 2026-04-16
 
