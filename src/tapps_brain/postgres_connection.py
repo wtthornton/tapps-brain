@@ -158,6 +158,91 @@ class PostgresConnectionManager:
             max_lifetime=self._max_lifetime,
         )
 
+        # TAP-512: fail fast if the connected role can bypass RLS.  RLS is
+        # only meaningful when the runtime role is non-owner with
+        # BYPASSRLS=false; deploying as the table owner (tapps_migrator) or
+        # a superuser silently disables tenant isolation.  Operators that
+        # genuinely need a privileged role (CI, dev, one-off maintenance)
+        # set TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 to acknowledge the risk.
+        try:
+            self._assert_non_privileged_role()
+        except Exception:
+            self._pool.close()
+            self._pool = None
+            raise
+
+    def _assert_non_privileged_role(self) -> None:
+        """Verify the connected role cannot bypass RLS on tenanted tables.
+
+        Raises ``RuntimeError`` when the role is a superuser, has
+        ``BYPASSRLS = true``, or owns ``private_memories`` /
+        ``project_profiles`` — unless ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1``
+        is set, in which case the violation is logged at WARNING but
+        startup proceeds.
+        """
+        allow_override = os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1"
+        assert self._pool is not None  # guard for mypy; caller just created it
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_user, rolsuper, rolbypassrls "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+            row = cur.fetchone()
+            if row is None:
+                # No matching pg_roles row — extremely unlikely but treat as
+                # privileged out of caution.
+                current_user, is_super, bypass_rls = "(unknown)", True, True
+            else:
+                current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
+
+            cur.execute(
+                "SELECT relname FROM pg_class "
+                "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
+                "WHERE relname IN ('private_memories', 'project_profiles') "
+                "  AND pg_get_userbyid(relowner) = current_user"
+            )
+            owned = sorted(r[0] for r in cur.fetchall())
+
+        violations: list[str] = []
+        if is_super:
+            violations.append("rolsuper=true (superuser bypasses RLS)")
+        if bypass_rls:
+            violations.append("rolbypassrls=true (BYPASSRLS bypasses RLS)")
+        if owned:
+            violations.append(
+                f"role owns tenanted tables {owned} (table owners bypass RLS unless FORCE is set)"
+            )
+
+        if not violations:
+            logger.info(
+                "postgres.role_check_ok",
+                current_user=current_user,
+                tables_force_rls=["private_memories", "project_profiles"],
+            )
+            return
+
+        if allow_override:
+            logger.warning(
+                "postgres.privileged_role_override",
+                current_user=current_user,
+                violations=violations,
+                detail=(
+                    "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 is set; tenant "
+                    "isolation is NOT enforced for this connection.  "
+                    "Acceptable in CI/dev only."
+                ),
+            )
+            return
+
+        raise RuntimeError(
+            "tapps-brain refuses to start as a privileged Postgres role "
+            f"({current_user}): {'; '.join(violations)}.  Connect as a "
+            "non-owner role with BYPASSRLS=false (see "
+            "migrations/roles/001_db_roles.sql for the recommended "
+            "tapps_runtime role).  To override for CI/dev, set "
+            "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1."
+        )
+
     @contextmanager
     def get_connection(self) -> Iterator[Any]:
         """Yield a connection from the pool (context-managed).
