@@ -69,8 +69,42 @@ from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
 
-# Maximum number of memories per project.
-_MAX_ENTRIES = 5000
+# Maximum number of memories per project.  TAP-513 — operators can override
+# this via the TAPPS_BRAIN_MAX_ENTRIES env var without code changes;
+# YAML profile (``limits.max_entries``) still wins when set.  Precedence:
+# YAML > env > default.
+_MAX_ENTRIES_DEFAULT = 5000
+
+
+def _max_entries_from_env() -> int:
+    """Return the env-var override for ``_MAX_ENTRIES``, or the default.
+
+    Invalid (non-int / <= 0) values fall back to the default with a
+    warning log so a typo can't silently disable the cap.
+    """
+    raw = os.environ.get("TAPPS_BRAIN_MAX_ENTRIES", "").strip()
+    if not raw:
+        return _MAX_ENTRIES_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "store.max_entries_env_invalid",
+            raw=raw,
+            detail="TAPPS_BRAIN_MAX_ENTRIES must be a positive integer; using default.",
+            default=_MAX_ENTRIES_DEFAULT,
+        )
+        return _MAX_ENTRIES_DEFAULT
+    if value <= 0:
+        logger.warning(
+            "store.max_entries_env_invalid",
+            raw=raw,
+            detail="TAPPS_BRAIN_MAX_ENTRIES must be > 0; using default.",
+            default=_MAX_ENTRIES_DEFAULT,
+        )
+        return _MAX_ENTRIES_DEFAULT
+    return value
+
 
 # Built-in Hive propagation primitives (``group:<name>`` is also valid; see ``agent_scope``).
 VALID_AGENT_SCOPES: tuple[str, ...] = ("private", "domain", "hive")
@@ -582,13 +616,19 @@ class MemoryStore:
 
     @property
     def _max_entries(self) -> int:
-        """Return the max-entries limit from the active profile, or the module default."""
+        """Return the max-entries limit.
+
+        Precedence (TAP-513): YAML profile (``limits.max_entries``) >
+        ``TAPPS_BRAIN_MAX_ENTRIES`` env var > module default ``5000``.
+        Env var resolution is per-call so deployed brains can be retuned
+        without restart (env reads are cheap).
+        """
         if self._profile is not None:
             try:
                 return int(self._profile.limits.max_entries)
             except Exception:
                 pass
-        return _MAX_ENTRIES
+        return _max_entries_from_env()
 
     @property
     def _max_entries_per_group(self) -> int | None:
