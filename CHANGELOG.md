@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- versioned OpenAPI contract published at `/openapi.json` and snapshotted under `docs/contracts/openapi.json` + `docs/contracts/openapi-<brain-version>.json` (TAP-508). The spec is generated from FastAPI's auto-discovered routes and enriched by `tapps_brain.openapi_contract.build_openapi_spec` with the dual auth schemes (`bearerAuth`, `adminBearerAuth`), the standard tenant headers (`X-Project-Id`, `X-Agent-Id`, `X-Tapps-Agent`, `X-Idempotency-Key`), the `Error` envelope schema, and the ASGI-mounted `/mcp` route. CI job `openapi-contract` regenerates the snapshot and `git diff --exit-code`s it so any wire-affecting change forces an explicit spec update.
+- `/info` now returns `schema_version` (bundled private-schema migration max) and `build` (from `TAPPS_BRAIN_BUILD`) alongside the existing `version` field. Brain `version` is read from `importlib.metadata.version("tapps-brain")`.
+
+### Changed
+- the hand-crafted `_OPENAPI_SPEC` dict in `http_adapter.py` is gone; `app.openapi` is overridden to call `build_openapi_spec(app)` so the published spec stays in sync with the route table by construction.
+
 ## [3.7.2] - 2026-04-16
 
 ### Fixed

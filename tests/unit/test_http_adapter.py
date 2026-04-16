@@ -25,7 +25,6 @@ from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _mod
 from tapps_brain.http_adapter import (
-    _OPENAPI_SPEC,
     HttpAdapter,
     _probe_db,
     _service_version,
@@ -585,11 +584,18 @@ class TestOpenApiEndpoint:
             body = c.get("/openapi.json").json()
         assert isinstance(body, dict)
         paths = body.get("paths", {})
-        for route in ("/health", "/ready", "/metrics", "/info", "/openapi.json"):
+        # TAP-508: /openapi.json itself is no longer self-documented
+        # (FastAPI's auto-gen excludes the spec endpoint by convention).
+        for route in ("/health", "/ready", "/metrics", "/info"):
             assert route in paths, f"OpenAPI spec missing route: {route}"
 
     def test_no_memory_crud_routes(self) -> None:
-        """OpenAPI spec must not include memory CRUD paths."""
+        """OpenAPI spec must not include legacy memory/memories CRUD paths.
+
+        TAP-508 introduced the /v1/* data-plane routes; the older
+        /memory* / /memories* / /entries* / /agent* prefixes are
+        explicitly forbidden so consumer SDKs don't drift back.
+        """
         with _client(_make_settings()) as c:
             body = c.get("/openapi.json").json()
         assert isinstance(body, dict)
@@ -598,15 +604,25 @@ class TestOpenApiEndpoint:
         for path in paths:
             for prefix in forbidden_prefixes:
                 assert not path.startswith(prefix), (
-                    f"OpenAPI spec must not include memory CRUD route: {path}"
+                    f"OpenAPI spec must not include legacy CRUD route: {path}"
                 )
 
-    def test_spec_within_page_limit(self) -> None:
-        """Sanity: OpenAPI spec must remain ≤ 1 page — keep route count ≤ 10."""
-        paths = _OPENAPI_SPEC.get("paths", {})
-        assert len(paths) <= 10, (
-            f"OpenAPI spec has {len(paths)} routes — EPIC-060 limits to ≤ 10 documented routes"
-        )
+    def test_spec_includes_data_plane_and_admin_routes(self) -> None:
+        """TAP-508 swapped the hand-crafted dict for an auto-generated spec
+        that documents every public route (data plane + admin + /mcp)."""
+        with _client(_make_settings()) as c:
+            resp = c.get("/openapi.json")
+        body = resp.json()
+        paths = set(body.get("paths", {}).keys())
+        for required in (
+            "/health",
+            "/info",
+            "/snapshot",
+            "/v1/remember",
+            "/admin/projects",
+            "/mcp",
+        ):
+            assert required in paths, f"OpenAPI spec missing required route: {required}"
 
     def test_public_even_with_auth_configured(self) -> None:
         """OpenAPI spec must be accessible without auth."""

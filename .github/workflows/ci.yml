@@ -42,6 +42,27 @@ jobs:
       - run: uv run ruff format --check src/ tests/
       - run: uv run mypy --strict src/tapps_brain/
 
+  openapi-contract:
+    # TAP-508: regenerate the OpenAPI snapshot from the running adapter and
+    # fail if it has drifted from the checked-in copy under docs/contracts/.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          enable-cache: true
+      - run: uv sync --extra http
+      - run: uv run python scripts/snapshot_openapi.py
+      - name: Fail on OpenAPI drift
+        run: |
+          if ! git diff --exit-code -- docs/contracts/openapi.json; then
+            echo "::error::OpenAPI spec has drifted from docs/contracts/openapi.json."
+            echo "::error::Run 'uv run python scripts/snapshot_openapi.py' locally and commit the result."
+            exit 1
+          fi
+
   test:
     strategy:
       matrix:
