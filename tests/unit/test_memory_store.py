@@ -1040,6 +1040,55 @@ class TestRelationsWiring:
         """get_relations for unknown key returns empty list."""
         assert store.get_relations("nope") == []
 
+    def test_save_relations_persists_and_refreshes_cache(self, store: MemoryStore) -> None:
+        """TAP-510: save_relations() takes RelationEntry list and refreshes
+        the in-memory cache so get_relations() reflects the write."""
+        from tapps_brain.relations import RelationEntry
+
+        store.save(key="x", value="hello")
+        rel_a = RelationEntry(
+            subject="MemoryStore",
+            predicate="manages",
+            object_entity="persistence",
+            source_entry_keys=["x"],
+            confidence=0.9,
+        )
+        rel_b = RelationEntry(
+            subject="MemoryStore",
+            predicate="owns",
+            object_entity="lock",
+            source_entry_keys=["x"],
+            confidence=0.8,
+        )
+
+        store.save_relations("x", [rel_a, rel_b])
+
+        relations = store.get_relations("x")
+        predicates = sorted(r["predicate"] for r in relations)
+        assert "manages" in predicates
+        assert "owns" in predicates
+
+    def test_load_relations_returns_persisted_set_and_refreshes_cache(
+        self, store: MemoryStore
+    ) -> None:
+        """TAP-510: load_relations() reads through persistence and refreshes
+        the cache so subsequent get_relations() returns the same data."""
+        from tapps_brain.relations import RelationEntry
+
+        store.save(key="z", value="hello")
+        rel = RelationEntry(
+            subject="S",
+            predicate="p",
+            object_entity="O",
+            source_entry_keys=["z"],
+            confidence=0.5,
+        )
+        store.save_relations("z", [rel])
+
+        loaded = store.load_relations("z")
+        assert any(r["predicate"] == "p" for r in loaded)
+        assert store.get_relations("z") == loaded
+
     def test_ingest_context_extracts_relations(self, store: MemoryStore) -> None:
         """ingest_context() delegates to save(), which extracts relations."""
         context = "Decision: AuthService handles token validation for the API"

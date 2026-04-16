@@ -484,14 +484,10 @@ def _persist_consolidated_entry(
     )
 
     # Merge relations from all source entries onto the consolidated entry.
-    # TODO: MemoryStore should expose a public save_relations() method so this
-    #       function does not need to reach into private _persistence/_lock/_relations.
     relation_lists = [store.get_relations(k) for k in source_keys]
     merged_relations = merge_entry_relations(relation_lists, consolidated.key)
     if merged_relations:
-        store._persistence.save_relations(consolidated.key, merged_relations)
-        with store._lock:
-            store._relations[consolidated.key] = store._persistence.load_relations(consolidated.key)
+        store.save_relations(consolidated.key, merged_relations)
 
     now = _utc_now_iso()
     for key in source_keys:
