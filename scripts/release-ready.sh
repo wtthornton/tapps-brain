@@ -65,6 +65,14 @@ else
   uv run pytest tests/ -v --tb=short -m "not benchmark" \
     --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95 \
     || fail "pytest"
+
+  # TAP-511: explicit STRICT pass for tests/compat/ — silently skipping the
+  # parity suite when TAPPS_BRAIN_DATABASE_URL is unset is what TAP-511
+  # closed.  Run it again with STRICT=1 so a missing DSN at release time
+  # fails the gate instead of being absorbed by the broader suite's
+  # requires_postgres skip behavior.
+  TAPPS_BRAIN_TESTS_STRICT=1 uv run pytest tests/compat/ -v --tb=short \
+    || fail "compat suite under STRICT (TAP-511) — set TAPPS_BRAIN_DATABASE_URL"
 fi
 
 if [[ "$SKIP_LINT" == "1" ]]; then
