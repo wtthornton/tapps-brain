@@ -26,13 +26,32 @@ _HAS_SENTENCE_TRANSFORMERS = importlib.util.find_spec("sentence_transformers") i
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip tests marked requires_cli / requires_mcp / requires_postgres when deps are missing."""
+    """Auto-skip tests marked requires_cli / requires_mcp / requires_postgres when deps are missing.
+
+    TAP-511: when ``TAPPS_BRAIN_TESTS_STRICT=1`` is set, a missing
+    Postgres DSN is treated as a build error rather than a silent skip
+    on any ``requires_postgres`` test.  CI sets STRICT for the compat
+    job so an accidentally unset env var fails the build instead of
+    quietly dropping the parity coverage.
+    """
     import os
 
     skip_cli = pytest.mark.skip(reason="requires [cli] extra (typer)")
     skip_mcp = pytest.mark.skip(reason="requires [mcp] extra (mcp)")
     skip_pg = pytest.mark.skip(reason="requires live Postgres (set TAPPS_BRAIN_DATABASE_URL)")
     _has_postgres = bool(os.environ.get("TAPPS_BRAIN_DATABASE_URL"))
+    _strict = os.environ.get("TAPPS_BRAIN_TESTS_STRICT", "") == "1"
+
+    pg_required = [item for item in items if "requires_postgres" in item.keywords]
+    if _strict and not _has_postgres and pg_required:
+        names = sorted({item.nodeid for item in pg_required})
+        pytest.exit(
+            "TAPPS_BRAIN_TESTS_STRICT=1 but TAPPS_BRAIN_DATABASE_URL is unset; "
+            f"{len(names)} requires_postgres tests would be silently skipped — "
+            "set the DSN or unset STRICT.  First few: " + ", ".join(names[:3]),
+            returncode=4,
+        )
+
     for item in items:
         if "requires_cli" in item.keywords and not _HAS_TYPER:
             item.add_marker(skip_cli)

@@ -181,6 +181,9 @@ jobs:
     env:
       TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_compat
       TAPPS_BRAIN_HIVE_DSN: postgresql://tapps:tapps@localhost:5432/tapps_compat
+      # TAP-511: fail the build if requires_postgres tests would silently skip
+      # because TAPPS_BRAIN_DATABASE_URL is unset.
+      TAPPS_BRAIN_TESTS_STRICT: "1"
       HF_DATASETS_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
       HF_HUB_OFFLINE: "1"
@@ -207,6 +210,14 @@ jobs:
         run: uv run python scripts/apply_all_migrations.py
       - name: Run embedded-API compatibility suite
         run: uv run pytest tests/compat/ -v --tb=short
+      - name: Assert no compat tests were skipped
+        run: |
+          uv run pytest tests/compat/ --collect-only -q -m requires_postgres > /tmp/collected.txt
+          uv run pytest tests/compat/ --tb=no -q -m requires_postgres 2>&1 | tee /tmp/result.txt
+          if grep -E "[0-9]+ skipped" /tmp/result.txt; then
+            echo "::error::compat suite reported skipped tests under STRICT — DSN may be unreachable"
+            exit 1
+          fi
 
   build:
     runs-on: ubuntu-latest

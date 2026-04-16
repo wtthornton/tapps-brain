@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - internal `_MAX_ENTRIES` constant renamed to `_MAX_ENTRIES_DEFAULT` to make the precedence chain explicit. Callers/tests that patched `tapps_brain.store._MAX_ENTRIES` should patch `_MAX_ENTRIES_DEFAULT` instead.
+### Changed
+- `tests/conftest.py` honors `TAPPS_BRAIN_TESTS_STRICT=1` (TAP-511): when the env var is set and `TAPPS_BRAIN_DATABASE_URL` is unset, collection fails fast instead of silently skipping every `requires_postgres` test. CI's `compat` job now sets STRICT and adds a post-pytest assertion that no requires_postgres tests were skipped. `scripts/release-ready.sh` runs `tests/compat/` a second time under STRICT so a missing DSN at release time fails the gate.
 
 ## [3.7.2] - 2026-04-16
 
