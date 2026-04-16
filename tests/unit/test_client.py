@@ -310,7 +310,9 @@ def test_http_scheme_routes_through_mcp_endpoint() -> None:
     client.remember("verify http scheme")
 
     url_called: str = client._http_client.post.call_args.args[0]
-    assert url_called.endswith("/mcp"), f"Expected POST to end with '/mcp', got {url_called!r}"
+    assert url_called.endswith("/mcp/mcp"), (
+        f"Expected POST to end with '/mcp/mcp' (FastMCP sub-app's own /mcp route), got {url_called!r}"
+    )
     payload_bytes: bytes = client._http_client.post.call_args.kwargs["content"]
     payload = json.loads(payload_bytes)
     assert payload["method"] == "tools/call"

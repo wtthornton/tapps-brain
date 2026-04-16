@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.7.2] - 2026-04-16
+
+### Fixed
+- `TappsBrainClient` / `AsyncTappsBrainClient` posted to `/mcp` on the brain, but FastMCP's streamable-HTTP sub-app serves its own route at `/mcp` inside itself — so once mounted at `/mcp` by `http_adapter.py`, the actual public endpoint is `/mcp/mcp`. Every client call therefore 404'd. Fixed end-to-end by pointing the client at `/mcp/mcp`. Caught by the first real post-3.7.1 MCP handshake on a probe container.
+
 ## [3.7.1] - 2026-04-16
 
 ### Fixed
