@@ -25,6 +25,7 @@ services:
   # Both are controlled by `tapps-brain serve`; set TAPPS_BRAIN_MCP_HTTP_PORT=0
   # to disable the MCP transport and run HTTP-only.
   tapps-brain:
+    image: docker-tapps-brain-http:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile.http
@@ -35,7 +36,8 @@ services:
       TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_PORT: "8080"
       # STORY-070.15: enable operator MCP transport on port 8090.
-      # Set to 0 (or remove) to run HTTP-only.
+      # Requires TAPPS_BRAIN_ADMIN_TOKEN — operator MCP refuses to start without it.
+      # Set to 0 (or remove) to run HTTP-only (no operator MCP).
       TAPPS_BRAIN_MCP_HTTP_PORT: "${TAPPS_OPERATOR_MCP_PORT:-8090}"
       TAPPS_BRAIN_MCP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE: /run/secrets/tapps_http_auth_token
@@ -61,7 +63,7 @@ services:
         - "CMD-SHELL"
         - >-
           python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
-          && python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/mcp/')"
+          && python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"
       interval: 10s
       timeout: 5s
       retries: 5

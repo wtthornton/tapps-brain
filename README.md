@@ -11,8 +11,8 @@ AI agents forget everything between sessions. **tapps-brain** gives them persist
 ### Zero LLM dependency
 Every operation — search, decay, consolidation, extraction, scoring — is deterministic and reproducible. No API keys, no latency, no cost.
 
-### Three equal interfaces
-Python library, Typer-based CLI (sub-apps for store, memory, feedback, diagnostics, flywheel, Hive, …), and MCP server (tools/resources per [`docs/generated/mcp-tools-manifest.json`](docs/generated/mcp-tools-manifest.json)) — same engine, same behavior, pick what fits your workflow.
+### Two deployment interfaces
+**Deployed container** (`docker-tapps-brain-http`) — one container per host, all agents connect via MCP Streamable HTTP (`mcp+http://`) or REST (`http://`). **Python library** — embed `MemoryStore` / `AgentBrain` directly in-process. Same engine, same behavior. MCP tools manifest: [`docs/generated/mcp-tools-manifest.json`](docs/generated/mcp-tools-manifest.json).
 
 </td>
 <td width="50%">

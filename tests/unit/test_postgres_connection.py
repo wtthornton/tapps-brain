@@ -13,7 +13,17 @@ import pytest
 class TestPostgresConnectionManager:
     """Tests for connection pool setup and lifecycle."""
 
-    def test_init_stores_dsn_and_defaults(self) -> None:
+    def test_init_stores_dsn_and_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Integration conftest sets TAPPS_BRAIN_PG_POOL_MIN/MAX globally;
+        # clear them so this unit test sees library defaults.
+        for _v in (
+            "TAPPS_BRAIN_PG_POOL_MIN",
+            "TAPPS_BRAIN_PG_POOL_MAX",
+            "TAPPS_BRAIN_HIVE_POOL_MIN",
+            "TAPPS_BRAIN_HIVE_POOL_MAX",
+        ):
+            monkeypatch.delenv(_v, raising=False)
+
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
         cm = PostgresConnectionManager("postgres://localhost/test")
@@ -40,6 +50,10 @@ class TestPostgresConnectionManager:
     def test_init_reads_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
+        # Clear canonical PG_POOL vars so legacy HIVE_POOL fallbacks take effect.
+        monkeypatch.delenv("TAPPS_BRAIN_PG_POOL_MIN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_PG_POOL_MAX", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS", raising=False)
         monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MIN", "5")
         monkeypatch.setenv("TAPPS_BRAIN_HIVE_POOL_MAX", "25")
         monkeypatch.setenv("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "15")
@@ -134,7 +148,15 @@ class TestPostgresConnectionManager:
 
     # -- get_pool_stats --------------------------------------------------------
 
-    def test_get_pool_stats_before_pool_open(self) -> None:
+    def test_get_pool_stats_before_pool_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for _v in (
+            "TAPPS_BRAIN_PG_POOL_MIN",
+            "TAPPS_BRAIN_PG_POOL_MAX",
+            "TAPPS_BRAIN_HIVE_POOL_MIN",
+            "TAPPS_BRAIN_HIVE_POOL_MAX",
+        ):
+            monkeypatch.delenv(_v, raising=False)
+
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
         cm = PostgresConnectionManager("postgres://localhost/test")

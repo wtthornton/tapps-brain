@@ -16,7 +16,6 @@ Verifies all 7 acceptance criteria without requiring a live Postgres instance:
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 import pytest
@@ -80,8 +79,7 @@ class TestAc1ParityDocContent:
         """At least four code references (src/ or migrations/) appear in the doc."""
         doc = self._doc()
         code_refs = [
-            line for line in doc.splitlines()
-            if "src/tapps_brain" in line or "migrations/" in line
+            line for line in doc.splitlines() if "src/tapps_brain" in line or "migrations/" in line
         ]
         assert len(code_refs) >= 4, (
             f"Expected ≥4 code references in {_PARITY_DOC.name}; found {len(code_refs)}"
@@ -193,7 +191,7 @@ class TestAc4BenchmarkMarks:
 
     def test_ac4_benchmark_mark(self) -> None:
         src = self._src()
-        assert "pytest.mark.benchmark" in src or 'mark.benchmark' in src
+        assert "pytest.mark.benchmark" in src or "mark.benchmark" in src
 
     def test_ac4_pytestmark_module_level(self) -> None:
         """Module-level pytestmark includes both marks."""
@@ -230,8 +228,7 @@ class TestAc5InformationalOnlyStatus:
         # on the p95 value itself (only that it is non-None / measurable).
         lines = src.splitlines()
         hard_budget_assertions = [
-            line for line in lines
-            if "p95" in line and "<" in line and "assert" in line
+            line for line in lines if "p95" in line and "<" in line and "assert" in line
         ]
         assert not hard_budget_assertions, (
             "Unexpected hard p95 budget assertion found (expected informational only): "

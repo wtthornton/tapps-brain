@@ -92,9 +92,7 @@ class TestAc2Adr007CrossLink:
 
     def test_ac2_adr007_links_tde(self) -> None:
         content = _ADR_007.read_text()
-        assert "postgres-tde" in content, (
-            "ADR-007 does not cross-link to postgres-tde.md"
-        )
+        assert "postgres-tde" in content, "ADR-007 does not cross-link to postgres-tde.md"
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +108,7 @@ class TestAc3ThreatModelCrossLink:
 
     def test_ac3_threat_model_links_tde(self) -> None:
         content = _THREAT_MODEL.read_text()
-        assert "postgres-tde" in content, (
-            "threat-model.md does not cross-link to postgres-tde.md"
-        )
+        assert "postgres-tde" in content, "threat-model.md does not cross-link to postgres-tde.md"
 
 
 # ---------------------------------------------------------------------------
@@ -205,9 +201,7 @@ class TestAc8AzurePostgres:
 
     def test_ac8_azure_in_runbook(self) -> None:
         doc = _TDE_DOC.read_text()
-        assert "Azure" in doc, (
-            "Azure Database for PostgreSQL not covered in cloud fallback section"
-        )
+        assert "Azure" in doc, "Azure Database for PostgreSQL not covered in cloud fallback section"
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +216,7 @@ class TestAc9InternalLinksResolve:
         """Return (raw_link, resolved_path) for every relative link in the doc."""
         doc = _TDE_DOC.read_text()
         # Match [text](target) where target does not start with http/https/#
-        pattern = re.compile(r'\[.*?\]\(([^)]+)\)')
+        pattern = re.compile(r"\[.*?\]\(([^)]+)\)")
         results: list[tuple[str, Path]] = []
         guide_dir = _TDE_DOC.parent
         for match in pattern.finditer(doc):
@@ -238,9 +232,7 @@ class TestAc9InternalLinksResolve:
         for raw, resolved in self._collect_relative_links():
             if not resolved.exists():
                 broken.append(f"{raw!r} → {resolved}")
-        assert not broken, (
-            f"Broken internal links in postgres-tde.md:\n" + "\n".join(broken)
-        )
+        assert not broken, "Broken internal links in postgres-tde.md:\n" + "\n".join(broken)
 
     def test_ac9_at_least_one_internal_link(self) -> None:
         """Sanity: doc has at least one relative link (ADR-007 or similar)."""

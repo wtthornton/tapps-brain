@@ -38,7 +38,6 @@ from tapps_brain.errors import (
         ("http://localhost:8080", "http"),
         ("https://brain.internal", "http"),
         ("HTTP://BRAIN.EXAMPLE.COM", "http"),
-        ("mcp+stdio://localhost", "mcp+stdio"),
         ("mcp+http://brain.internal:8080", "mcp+http"),
     ],
 )

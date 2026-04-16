@@ -1,5 +1,8 @@
 FROM python:3.13-slim
 
+ARG TAPPS_BRAIN_VERSION=unknown
+LABEL tapps_brain_version="${TAPPS_BRAIN_VERSION}"
+
 # Install the [http] extra (FastAPI + uvicorn + starlette + mcp) and [mcp]
 # so FastMCP's Streamable HTTP transport is available.  Matches the install
 # pattern used by the other Dockerfiles in this directory (single pip invoke
@@ -23,7 +26,7 @@ EXPOSE 8090
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=15s \
     CMD curl -fsS http://127.0.0.1:8080/health \
      && { [ -z "${TAPPS_BRAIN_MCP_HTTP_PORT}" ] \
-          || curl -fsS "http://127.0.0.1:${TAPPS_BRAIN_MCP_HTTP_PORT}/mcp/"; } \
+          || curl -fsS "http://127.0.0.1:${TAPPS_BRAIN_MCP_HTTP_PORT}/health"; } \
      || exit 1
 
 # STORY-070.15: unified entrypoint — starts both HTTP and MCP transports when

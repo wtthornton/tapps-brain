@@ -163,8 +163,11 @@ class TestAc4Ac5AgentIdentityPostgres:
         """An assertion verifies that one agent cannot see another's rows."""
         src = _src(_AGENT_IDENTITY)
         # Must assert non-overlap (not in, isdisjoint, ==, empty)
-        assert "not in" in src or "isdisjoint" in src or "not overlap" in src.lower() or (
-            "agent" in src and "assert" in src
+        assert (
+            "not in" in src
+            or "isdisjoint" in src
+            or "not overlap" in src.lower()
+            or ("agent" in src and "assert" in src)
         )
 
     def test_ac4_has_test_functions(self) -> None:
@@ -226,9 +229,7 @@ class TestAc8InIntegrationDirectory:
 
     @pytest.mark.parametrize("path", _ALL_NEW, ids=lambda p: p.name)
     def test_ac8_in_integration_dir(self, path: Path) -> None:
-        assert "integration" in str(path), (
-            f"{path.name} is not in tests/integration/"
-        )
+        assert "integration" in str(path), f"{path.name} is not in tests/integration/"
         assert path.exists()
 
 
@@ -249,6 +250,4 @@ class TestAc9NoDuplicateTestNames:
             if name in seen:
                 duplicates.append(name)
             seen.add(name)
-        assert not duplicates, (
-            f"Duplicate test names in {path.name}: {duplicates}"
-        )
+        assert not duplicates, f"Duplicate test names in {path.name}: {duplicates}"

@@ -1,7 +1,13 @@
 """MCP server exposing tapps-brain via Model Context Protocol.
 
-Uses FastMCP to expose MemoryStore operations as MCP tools, resources,
-and prompts over stdio transport. Requires the ``mcp`` optional extra.
+Uses FastMCP to expose MemoryStore operations as MCP tools and resources
+over the MCP Streamable HTTP transport (2025-03-26 spec). Requires the
+``mcp`` optional extra.
+
+This module is not a standalone entry point — it is mounted inside the
+HTTP adapter at ``/mcp`` (port 8080) and as the operator MCP server on a
+separate port (default 8090, bearer-token protected). All agents connect
+via the deployed ``docker-tapps-brain-http`` container.
 
 Key public API:
 - :func:`create_server` — standard server (no operator tools).
@@ -618,6 +624,15 @@ def create_server(  # noqa: PLR0915
         # Stdio path still works; Streamable HTTP mount will degrade to
         # whatever the installed mcp package supports.
         mcp = fastmcp_cls("tapps-brain", **mcp_kwargs)
+
+    # Health endpoint for Docker/compose health checks.  GET /health returns
+    # 200 OK.  Probing /mcp directly requires Accept: text/event-stream per
+    # the MCP 2025-03-26 spec and will return 406 from any plain HTTP client.
+    @mcp.custom_route("/health", methods=["GET"])  # type: ignore[untyped-decorator]
+    async def _mcp_health(request: Any) -> Any:
+        from starlette.responses import PlainTextResponse
+
+        return PlainTextResponse("ok")
 
     # The original ``instructions=`` block kept below is unused now that
     # mcp_kwargs carries it; left as a no-op assignment for diff hygiene.

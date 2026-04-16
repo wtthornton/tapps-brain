@@ -16,8 +16,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -32,7 +30,7 @@ _DB_ROLES = _REPO_ROOT / "docs" / "operations" / "db-roles-runbook.md"
 def _relative_links(path: Path) -> list[tuple[str, Path]]:
     """Return (raw_link, resolved_path) for relative markdown links in *path*."""
     content = path.read_text()
-    pattern = re.compile(r'\[.*?\]\(([^)]+)\)')
+    pattern = re.compile(r"\[.*?\]\(([^)]+)\)")
     results: list[tuple[str, Path]] = []
     for match in pattern.finditer(content):
         target = match.group(1).split("#")[0].strip()
@@ -104,8 +102,10 @@ class TestAc2SchemaIndependentRestore:
     def test_ac2_independent_restore_section(self) -> None:
         """Dedicated section on per-schema restore exists."""
         doc = self._doc()
-        assert "Schema-independent" in doc or "schema-independent" in doc.lower() or (
-            "independent" in doc.lower() and "restore" in doc.lower()
+        assert (
+            "Schema-independent" in doc
+            or "schema-independent" in doc.lower()
+            or ("independent" in doc.lower() and "restore" in doc.lower())
         )
 
 
@@ -221,15 +221,11 @@ class TestAc7InternalLinksResolve:
 
     def test_ac7_backup_doc_links_resolve(self) -> None:
         broken = self._check_file(_BACKUP_DOC)
-        assert not broken, (
-            f"Broken links in {_BACKUP_DOC.name}:\n" + "\n".join(broken)
-        )
+        assert not broken, f"Broken links in {_BACKUP_DOC.name}:\n" + "\n".join(broken)
 
     def test_ac7_ops_runbook_links_resolve(self) -> None:
         broken = self._check_file(_OPS_RUNBOOK)
-        assert not broken, (
-            f"Broken links in {_OPS_RUNBOOK.name}:\n" + "\n".join(broken)
-        )
+        assert not broken, f"Broken links in {_OPS_RUNBOOK.name}:\n" + "\n".join(broken)
 
     def test_ac7_backup_doc_has_links(self) -> None:
         """Sanity: backup doc has at least one internal cross-link."""

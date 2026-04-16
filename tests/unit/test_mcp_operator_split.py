@@ -240,8 +240,14 @@ class TestCliEntryPoints:
 
         assert callable(main)
 
-    def test_pyproject_has_operator_entry_point(self) -> None:
-        """pyproject.toml declares tapps-brain-operator-mcp entry point."""
+    def test_pyproject_no_stdio_mcp_entry_points(self) -> None:
+        """pyproject.toml must not declare stdio MCP entry points (v3.7.0+).
+
+        The unified ``tapps-brain serve`` command hosts both HTTP and MCP
+        transports in one process. Separate ``tapps-brain-mcp`` /
+        ``tapps-brain-operator-mcp`` scripts were removed — a single
+        ``docker-tapps-brain-http`` container serves all agents on a host.
+        """
         import tomllib
         from pathlib import Path
 
@@ -249,10 +255,14 @@ class TestCliEntryPoints:
         with pyproject.open("rb") as fh:
             data = tomllib.load(fh)
         scripts = data.get("project", {}).get("scripts", {})
-        assert "tapps-brain-operator-mcp" in scripts, (
-            "tapps-brain-operator-mcp not found in [project.scripts]"
+        assert "tapps-brain-mcp" not in scripts, (
+            "tapps-brain-mcp entry point removed in v3.7.0 — use 'tapps-brain serve'"
         )
-        assert "tapps-brain-mcp" in scripts
+        assert "tapps-brain-operator-mcp" not in scripts, (
+            "tapps-brain-operator-mcp entry point removed in v3.7.0"
+        )
+        assert "tapps-brain-http" in scripts
+        assert "tapps-brain" in scripts
 
 
 # ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@ _STALE_SYMBOLS = [
 def _relative_links(path: Path) -> list[tuple[str, Path]]:
     """Return (raw_link, resolved_path) for relative markdown links in *path*."""
     content = path.read_text()
-    pattern = re.compile(r'\[.*?\]\(([^)]+)\)')
+    pattern = re.compile(r"\[.*?\]\(([^)]+)\)")
     results: list[tuple[str, Path]] = []
     for match in pattern.finditer(content):
         target = match.group(1).split("#")[0].strip()
@@ -70,9 +70,7 @@ def _relative_links(path: Path) -> list[tuple[str, Path]]:
 
 def _check_links(path: Path) -> list[str]:
     return [
-        f"{raw!r} → {resolved}"
-        for raw, resolved in _relative_links(path)
-        if not resolved.exists()
+        f"{raw!r} → {resolved}" for raw, resolved in _relative_links(path) if not resolved.exists()
     ]
 
 
@@ -90,9 +88,7 @@ class TestAc1EngineeringDriftSweep:
     def test_ac1_no_stale_symbols_in_engineering(self) -> None:
         content = self._engineering_content()
         hits = [sym for sym in _STALE_SYMBOLS if sym in content]
-        assert not hits, (
-            f"Stale SQLite symbols still in docs/engineering/: {hits}"
-        )
+        assert not hits, f"Stale SQLite symbols still in docs/engineering/: {hits}"
 
     def test_ac1_sqlite_not_current_storage_in_system_arch(self) -> None:
         """system-architecture.md presents Postgres (not SQLite) as current storage."""
@@ -101,15 +97,15 @@ class TestAc1EngineeringDriftSweep:
         assert "PostgreSQL" in content or "Postgres" in content
         # SQLite should not appear as a current option (only in ADR reference titles)
         sqlite_current = [
-            line for line in content.splitlines()
+            line
+            for line in content.splitlines()
             if "sqlite" in line.lower()
             and "removed" not in line.lower()
             and "adr-007" not in line.lower()
             and "no-sqlite" not in line.lower()
         ]
         assert not sqlite_current, (
-            f"system-architecture.md still presents SQLite as current:\n"
-            + "\n".join(sqlite_current)
+            "system-architecture.md still presents SQLite as current:\n" + "\n".join(sqlite_current)
         )
 
 
@@ -124,9 +120,7 @@ class TestAc2GuidesDriftSweep:
     def test_ac2_no_stale_symbols_in_guides(self) -> None:
         content = "\n".join(p.read_text() for p in _GUIDES.glob("*.md"))
         hits = [sym for sym in _STALE_SYMBOLS if sym in content]
-        assert not hits, (
-            f"Stale SQLite symbols still in docs/guides/: {hits}"
-        )
+        assert not hits, f"Stale SQLite symbols still in docs/guides/: {hits}"
 
     def test_ac2_sqlitehivebackend_only_in_delta_tables(self) -> None:
         """SqliteHiveBackend appears only in v2→v3 migration context, not as current API."""
@@ -145,9 +139,7 @@ class TestAc2GuidesDriftSweep:
                 ):
                     continue
                 hits.append(f"{path.name}: {line.strip()}")
-        assert not hits, (
-            "SqliteHiveBackend appears as current API in guides:\n" + "\n".join(hits)
-        )
+        assert not hits, "SqliteHiveBackend appears as current API in guides:\n" + "\n".join(hits)
 
 
 # ---------------------------------------------------------------------------
@@ -171,8 +163,11 @@ class TestAc3Ac4SystemArchTenantKey:
     def test_ac3_ac4_composite_key_described(self) -> None:
         """The (project_id, agent_id) composite key sentence is present."""
         doc = self._doc()
-        assert ("project_id" in doc and "agent_id" in doc and
-                ("composite key" in doc.lower() or "keyed by" in doc.lower()))
+        assert (
+            "project_id" in doc
+            and "agent_id" in doc
+            and ("composite key" in doc.lower() or "keyed by" in doc.lower())
+        )
 
     def test_ac3_postgres_only_storage(self) -> None:
         """Storage section describes PostgreSQL as the only current backend."""
@@ -276,9 +271,12 @@ class TestAc7ThreatModelPgtde:
         content = _THREAT_MODEL.read_text()
         lines = content.splitlines()
         sqlcipher_current = [
-            ln for ln in lines
-            if "SQLCipher" in ln and "replaced" not in ln.lower()
-            and "removed" not in ln.lower() and "deprecated" not in ln.lower()
+            ln
+            for ln in lines
+            if "SQLCipher" in ln
+            and "replaced" not in ln.lower()
+            and "removed" not in ln.lower()
+            and "deprecated" not in ln.lower()
             and "pg_tde" not in ln
         ]
         # It's acceptable if SQLCipher only appears in historical context
@@ -286,8 +284,7 @@ class TestAc7ThreatModelPgtde:
         # SQLCipher is the ONLY at-rest encryption mentioned and pg_tde is absent.
         if sqlcipher_current:
             assert "pg_tde" in content, (
-                "threat-model.md still references SQLCipher as current "
-                "but does not mention pg_tde"
+                "threat-model.md still references SQLCipher as current but does not mention pg_tde"
             )
 
 
@@ -337,6 +334,4 @@ class TestAc9InternalLinksResolve:
         if not path.exists():
             pytest.skip(f"{path.name} not found")
         broken = _check_links(path)
-        assert not broken, (
-            f"Broken links in {path.name}:\n" + "\n".join(broken)
-        )
+        assert not broken, f"Broken links in {path.name}:\n" + "\n".join(broken)

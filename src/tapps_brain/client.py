@@ -1,11 +1,13 @@
 """Official TappsBrainClient — sync and async (STORY-070.11).
 
 Provides a unified, typed client that mirrors the :class:`AgentBrain` method
-signatures and dispatches to one of three transports:
+signatures and dispatches to one of two transports:
 
-* ``http://`` / ``https://`` — HTTP adapter (STORY-070.3 endpoints).
-* ``mcp+stdio://`` — spawns ``tapps-brain-mcp`` as a subprocess.
-* ``mcp+http://`` — streamable-HTTP MCP transport (STORY-070.1).
+* ``http://`` / ``https://`` — HTTP adapter REST endpoints (STORY-070.3).
+* ``mcp+http://`` — MCP Streamable HTTP transport via ``/mcp`` (STORY-070.1).
+
+Both transports target the deployed ``docker-tapps-brain-http`` container.
+A single container serves all agents on a box; there is no per-agent subprocess.
 
 Usage::
 
@@ -37,7 +39,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess
 import time
 import uuid
 from typing import Any, Protocol, runtime_checkable
@@ -62,19 +63,18 @@ class BrainClientProtocol(Protocol):
 # ---------------------------------------------------------------------------
 
 _SCHEME_HTTP = ("http://", "https://")
-_SCHEME_MCP_STDIO = "mcp+stdio://"
 _SCHEME_MCP_HTTP = "mcp+http://"
 
 
 def _detect_scheme(url: str) -> str:
-    if url.startswith(_SCHEME_MCP_STDIO):
-        return "mcp+stdio"
     if url.startswith(_SCHEME_MCP_HTTP):
         return "mcp+http"
     if url.lower().startswith(("http://", "https://")):
         return "http"
     raise ValueError(
-        f"Unsupported URL scheme in {url!r}. Use http://, https://, mcp+stdio://, or mcp+http://"
+        f"Unsupported URL scheme in {url!r}. Use http://, https://, or mcp+http://. "
+        "The mcp+stdio:// transport has been removed — connect to the deployed "
+        "docker-tapps-brain-http container instead."
     )
 
 
@@ -294,15 +294,15 @@ async def _async_post_tool(
 class TappsBrainClient:
     """Synchronous tapps-brain client.
 
-    Supports three transports selected by *url* scheme:
+    Supports two transports selected by *url* scheme:
 
-    * ``http://`` / ``https://`` — :mod:`httpx` HTTP calls to the HTTP adapter.
-    * ``mcp+stdio://`` — spawns ``tapps-brain-mcp`` as a subprocess and
-      communicates over its stdin/stdout.  The path component of the URL is
-      ignored; the binary is resolved from ``PATH``.
-    * ``mcp+http://`` — streamable-HTTP MCP transport; sends MCP JSON-RPC
-      requests over HTTP.  Use the ``http://`` host:port of the brain HTTP
-      adapter.
+    * ``http://`` / ``https://`` — :mod:`httpx` HTTP calls to the HTTP adapter
+      REST endpoints.
+    * ``mcp+http://`` — MCP Streamable HTTP transport; sends MCP JSON-RPC
+      requests to the ``/mcp`` endpoint of the brain HTTP adapter.
+
+    Both transports target the deployed ``docker-tapps-brain-http`` container.
+    One container serves all agents on a host; no subprocess spawning occurs.
 
     All write operations (``remember``, ``learn_success``, ``memory_save``,
     etc.) automatically generate an idempotency key.  If the call is retried
@@ -324,7 +324,7 @@ class TappsBrainClient:
     ----------
     url:
         Transport URL, e.g. ``"http://brain.internal:8080"`` or
-        ``"mcp+stdio://localhost"`` or ``"mcp+http://brain.internal:8080"``.
+        ``"mcp+http://brain.internal:8080"``.
     project_id:
         tapps-brain project identifier.  Falls back to
         ``TAPPS_BRAIN_PROJECT`` env var.
@@ -357,39 +357,19 @@ class TappsBrainClient:
         self._timeout = timeout
         self._max_retries = max_retries
         self._http_client: Any = None
-        self._mcp_proc: subprocess.Popen[bytes] | None = None
         self._closed = False
 
-        if self._scheme == "http":
+        if self._scheme in ("http", "mcp+http"):
             self._init_http()
-        elif self._scheme == "mcp+stdio":
-            self._init_mcp_stdio()
-        # mcp+http uses httpx too but through the /mcp endpoint
 
     def _init_http(self) -> None:
         try:
             import httpx
         except ImportError as exc:
             raise ImportError(
-                "TappsBrainClient with http:// transport requires httpx. "
-                "Install it with: pip install httpx"
+                "TappsBrainClient requires httpx. Install it with: pip install httpx"
             ) from exc
         self._http_client = httpx.Client(timeout=self._timeout)
-
-    def _init_mcp_stdio(self) -> None:
-        """Spawn tapps-brain-mcp subprocess."""
-        env = os.environ.copy()
-        env["TAPPS_BRAIN_PROJECT"] = self._project_id
-        env["TAPPS_BRAIN_AGENT_ID"] = self._agent_id
-        self._mcp_proc = subprocess.Popen(
-            ["tapps-brain-mcp", "--agent-id", self._agent_id],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
-        # Give the process a moment to start
-        time.sleep(0.1)
 
     def _tool(self, name: str, **kwargs: Any) -> Any:
         """Call a tool via the active transport.
@@ -403,10 +383,8 @@ class TappsBrainClient:
 
         if self._scheme == "http":
             return self._http_tool(name, kwargs, idempotency_key=ikey)
-        elif self._scheme == "mcp+http":
-            return self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
         else:
-            return self._mcp_stdio_tool(name, kwargs, idempotency_key=ikey)
+            return self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
 
     def _http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
@@ -458,38 +436,6 @@ class TappsBrainClient:
                     return raw
         return data
 
-    def _mcp_stdio_tool(
-        self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
-    ) -> Any:
-        """Write a JSON-RPC request to the subprocess stdin and read the response."""
-        if self._mcp_proc is None or self._mcp_proc.stdin is None:
-            raise RuntimeError("MCP stdio process is not running")
-        meta: dict[str, Any] = {"project_id": self._project_id, "agent_id": self._agent_id}
-        if idempotency_key:
-            meta["idempotency_key"] = idempotency_key
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments, "_meta": meta},
-            "id": 1,
-        }
-        line = json.dumps(payload) + "\n"
-        self._mcp_proc.stdin.write(line.encode())
-        self._mcp_proc.stdin.flush()
-        if self._mcp_proc.stdout is None:
-            raise RuntimeError("MCP stdio process stdout is not available")
-        raw = self._mcp_proc.stdout.readline()
-        data = json.loads(raw)
-        if "result" in data:
-            content = data["result"].get("content", [])
-            if content and isinstance(content, list):
-                text = content[0].get("text", "{}")
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError:
-                    return text
-        return data
-
     # --- Context manager ---
 
     def __enter__(self) -> TappsBrainClient:
@@ -499,18 +445,12 @@ class TappsBrainClient:
         self.close()
 
     def close(self) -> None:
-        """Close the underlying transport."""
+        """Close the underlying HTTP client."""
         if self._closed:
             return
         self._closed = True
         if self._http_client is not None:
             self._http_client.close()
-        if self._mcp_proc is not None:
-            try:
-                self._mcp_proc.terminate()
-                self._mcp_proc.wait(timeout=5)
-            except Exception:
-                self._mcp_proc.kill()
 
     # --- AgentBrain-compatible API ---
 
@@ -628,8 +568,10 @@ class AsyncTappsBrainClient:
     """Asynchronous tapps-brain client.
 
     Identical transport support and API as :class:`TappsBrainClient` but all
-    methods are ``async``.  Uses a pooled :class:`httpx.AsyncClient` for the
-    HTTP and MCP-over-HTTP transports.
+    methods are ``async``.  Uses a pooled :class:`httpx.AsyncClient` for both
+    the HTTP REST and MCP Streamable HTTP transports.
+
+    Both transports target the deployed ``docker-tapps-brain-http`` container.
 
     Write operations auto-generate an idempotency key that is reused on retry,
     preventing duplicate writes on transient failures.
@@ -684,11 +626,8 @@ class AsyncTappsBrainClient:
 
         if self._scheme == "http":
             return await self._http_tool(name, kwargs, idempotency_key=ikey)
-        elif self._scheme == "mcp+http":
-            return await self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
         else:
-            # mcp+stdio — async bridge via HTTP for now
-            return await self._http_tool(name, kwargs, idempotency_key=ikey)
+            return await self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
 
     async def _http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None

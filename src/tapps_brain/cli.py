@@ -3447,7 +3447,7 @@ def visual_capture_cmd(  # pragma: no cover
 
 
 @app.command("serve")
-def cmd_serve(
+def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
     host: Annotated[
         str,
         typer.Option("--host", envvar="TAPPS_BRAIN_HTTP_HOST", help="Bind address."),
@@ -3523,9 +3523,22 @@ def cmd_serve(
     typer.echo(f"tapps-brain HTTP adapter listening on {host}:{port}")
 
     # ---- Streamable-HTTP MCP transport (STORY-070.15) -------------------
+    # Bearer token auth: reuses TAPPS_BRAIN_ADMIN_TOKEN (the operator-plane
+    # credential already established in EPIC-069).  When unset the transport
+    # refuses to start — unauthenticated operator access is not permitted on
+    # a multi-agent host.
+    _operator_token: str | None = os.environ.get("TAPPS_BRAIN_ADMIN_TOKEN")
+
     mcp_thread: threading.Thread | None = None
     mcp_server_obj: object = None
     if mcp_port > 0:
+        if not _operator_token:
+            typer.echo(
+                "ERROR: TAPPS_BRAIN_ADMIN_TOKEN must be set to enable the operator MCP "
+                "transport on port {mcp_port}. Set the token or disable MCP with --mcp-port 0.",
+                err=True,
+            )
+            raise typer.Exit(1)
         try:
             from tapps_brain.mcp_server import create_operator_server
 
@@ -3534,16 +3547,74 @@ def cmd_serve(
                 enable_hive=True,
                 agent_id=os.environ.get("TAPPS_BRAIN_AGENT_ID", "serve-operator"),
             )
-            mcp_server_obj.settings.host = mcp_host  # type: ignore[attr-defined]
-            mcp_server_obj.settings.port = mcp_port  # type: ignore[attr-defined]
+
+            # Capture locals for the thread closure.
+            _mcp_host = mcp_host
+            _mcp_port = mcp_port
+            _tok = _operator_token
 
             def _run_mcp() -> None:
-                mcp_server_obj.run(transport="streamable-http")  # type: ignore[attr-defined]
+                import contextlib as _contextlib
+
+                import uvicorn as _uvicorn
+
+                # Obtain the FastMCP Streamable HTTP ASGI app.
+                _asgi: object = None
+                for _attr in ("streamable_http_app", "streamable_http"):
+                    _fn = getattr(mcp_server_obj, _attr, None)
+                    if callable(_fn):
+                        with _contextlib.suppress(TypeError):
+                            _asgi = _fn()
+                        if _asgi is not None:
+                            break
+
+                if _asgi is None:
+                    # FastMCP version too old to expose the ASGI app directly;
+                    # fall back to its own runner (no auth middleware possible).
+                    mcp_server_obj.run(transport="streamable-http")  # type: ignore[attr-defined]
+                    return
+
+                # Wrap with a minimal bearer-token ASGI middleware.
+                _bearer_prefix = "bearer "
+                _inner = _asgi
+
+                async def _authed_app(scope: object, receive: object, send: object) -> None:
+                    _scope = scope
+                    if isinstance(_scope, dict) and _scope.get("type") == "http":
+                        _hdrs: dict[bytes, bytes] = {
+                            k.lower(): v for k, v in _scope.get("headers", [])
+                        }
+                        _auth = _hdrs.get(b"authorization", b"").decode()
+                        if not _auth.lower().startswith(_bearer_prefix) or _auth[7:] != _tok:
+                            await send(  # type: ignore[operator]
+                                {
+                                    "type": "http.response.start",
+                                    "status": 401,
+                                    "headers": [(b"content-type", b"application/json")],
+                                }
+                            )
+                            await send(  # type: ignore[operator]
+                                {
+                                    "type": "http.response.body",
+                                    "body": b'{"error":"unauthorized",'
+                                    b'"detail":"Bearer token required for operator MCP."}',
+                                }
+                            )
+                            return
+                    await _inner(scope, receive, send)  # type: ignore[operator]
+
+                _uvicorn.run(
+                    _authed_app,
+                    host=_mcp_host,
+                    port=_mcp_port,
+                    log_level="warning",
+                )
 
             mcp_thread = threading.Thread(target=_run_mcp, daemon=True, name="tapps-brain-mcp")
             mcp_thread.start()
             typer.echo(
-                f"tapps-brain operator MCP (streamable-http) listening on {mcp_host}:{mcp_port}"
+                f"tapps-brain operator MCP (streamable-http, auth=on) "
+                f"listening on {mcp_host}:{mcp_port}"
             )
         except ImportError:
             typer.echo(

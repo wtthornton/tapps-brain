@@ -15,12 +15,16 @@ PYTEST        := uv run pytest
 RUFF          := uv run ruff
 MYPY          := uv run mypy
 
+BRAIN_VERSION ?= $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+BRAIN_IMAGE   ?= docker-tapps-brain-http
+
 # DSN used by brain-test and brain-psql
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql \
-        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-hive-secrets
+        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-hive-secrets \
+        publish-brain-image
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -127,3 +131,13 @@ hive-logs:  ## Tail logs from running hive services
 
 hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints, tears down)
 	@bash scripts/hive_smoke.sh
+
+publish-brain-image:  ## Build wheel + docker-tapps-brain-http:latest (called by AgentForge brain-build)
+	rm -f dist/*.whl dist/*.tar.gz
+	uv build
+	docker build \
+	  --build-arg TAPPS_BRAIN_VERSION=$(BRAIN_VERSION) \
+	  -f docker/Dockerfile.http \
+	  -t $(BRAIN_IMAGE):latest \
+	  -t $(BRAIN_IMAGE):$(BRAIN_VERSION) \
+	  .

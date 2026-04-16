@@ -67,7 +67,12 @@ class TestServeHttpOnly:
 
         with (
             patch("tapps_brain.http_adapter.HttpAdapter", mock_adapter_cls),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(port=18080, mcp_port=0, stop_after_s=0.1)
 
@@ -80,7 +85,12 @@ class TestServeHttpOnly:
         with (
             patch("tapps_brain.http_adapter.HttpAdapter", return_value=mock_adapter),
             patch("tapps_brain.mcp_server.create_operator_server", mock_mcp),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(port=18081, mcp_port=0, stop_after_s=0.1)
 
@@ -112,7 +122,12 @@ class TestServeDualTransport:
                 return_value=mock_mcp_server,
             ),
             patch.object(threading.Thread, "__init__", _patched_thread_init),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(port=18082, mcp_port=8091, stop_after_s=0.1)
 
@@ -121,11 +136,18 @@ class TestServeDualTransport:
         )
 
     def test_mcp_server_host_and_port_configured(self) -> None:
+        """v3.7.0: host/port are passed to uvicorn.run for the wrapped ASGI app.
+
+        The older implementation mutated ``mcp_server_obj.settings``; v3.7.0
+        obtains the FastMCP ASGI app and serves it via uvicorn with a
+        bearer-token middleware, so the configuration signal is the
+        ``uvicorn.run`` kwargs.
+        """
         mock_adapter = MagicMock()
         mock_mcp_server = MagicMock()
-        mock_settings = MagicMock()
-        mock_mcp_server.settings = mock_settings
+        mock_mcp_server.settings = MagicMock()
         mock_mcp_server.run = MagicMock()
+        mock_uvicorn_run = MagicMock()
 
         with (
             patch("tapps_brain.http_adapter.HttpAdapter", return_value=mock_adapter),
@@ -133,18 +155,26 @@ class TestServeDualTransport:
                 "tapps_brain.mcp_server.create_operator_server",
                 return_value=mock_mcp_server,
             ),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch("uvicorn.run", mock_uvicorn_run),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(
                 port=18083,
                 host="127.0.0.1",
                 mcp_port=9091,
                 mcp_host="127.0.0.2",
-                stop_after_s=0.1,
+                stop_after_s=0.2,
             )
 
-        assert mock_settings.port == 9091
-        assert mock_settings.host == "127.0.0.2"
+        assert mock_uvicorn_run.called, "uvicorn.run must be invoked for MCP transport"
+        _, kwargs = mock_uvicorn_run.call_args
+        assert kwargs.get("host") == "127.0.0.2"
+        assert kwargs.get("port") == 9091
 
     def test_env_var_mcp_http_port_controls_mcp_start(
         self, monkeypatch: pytest.MonkeyPatch
@@ -211,7 +241,12 @@ class TestGracefulShutdown:
 
         with (
             patch("tapps_brain.http_adapter.HttpAdapter", return_value=mock_adapter),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(port=18084, mcp_port=0, stop_after_s=0.1)
 
@@ -239,7 +274,12 @@ class TestGracefulShutdown:
                 return_value=mock_mcp_server,
             ),
             patch.object(threading.Thread, "join", _patched_join),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
         ):
             _run_cmd_serve(port=18085, mcp_port=8092, stop_after_s=0.15)
 
@@ -431,7 +471,12 @@ class TestMcpImportError:
                 "tapps_brain.mcp_server.create_operator_server",
                 side_effect=ImportError("mcp not installed"),
             ),
-            patch("os.environ.get", side_effect=lambda k, d=None: None),
+            patch(
+                "os.environ.get",
+                side_effect=lambda k, d=None: (
+                    "test-admin-token" if k == "TAPPS_BRAIN_ADMIN_TOKEN" else d
+                ),
+            ),
             contextlib.suppress(SystemExit),
         ):
             _run_cmd_serve(port=18086, mcp_port=9092, stop_after_s=0.1)

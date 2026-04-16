@@ -268,12 +268,15 @@ class TestClientImport:
         assert AsyncTappsBrainClient is not None
 
     def test_client_url_scheme_detection(self) -> None:
+        import pytest as _pytest
+
         from tapps_brain.client import _detect_scheme
 
         assert _detect_scheme("http://localhost:8080") == "http"
         assert _detect_scheme("https://brain.prod") == "http"
-        assert _detect_scheme("mcp+stdio://localhost") == "mcp+stdio"
         assert _detect_scheme("mcp+http://localhost:8080") == "mcp+http"
+        with _pytest.raises(ValueError, match="Unsupported URL scheme"):
+            _detect_scheme("mcp+stdio://localhost")
 
     def test_invalid_scheme_raises(self) -> None:
         from tapps_brain.client import _detect_scheme
