@@ -614,7 +614,14 @@ class TestOpenApiEndpoint:
             resp = c.get("/openapi.json")
         body = resp.json()
         paths = set(body.get("paths", {}).keys())
-        for required in ("/health", "/info", "/snapshot", "/v1/remember", "/admin/projects", "/mcp"):
+        for required in (
+            "/health",
+            "/info",
+            "/snapshot",
+            "/v1/remember",
+            "/admin/projects",
+            "/mcp",
+        ):
             assert required in paths, f"OpenAPI spec missing required route: {required}"
 
     def test_public_even_with_auth_configured(self) -> None:
