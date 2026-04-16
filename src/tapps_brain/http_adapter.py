@@ -97,98 +97,11 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# OpenAPI spec — preserved verbatim from the legacy handler so /openapi.json
-# continues to return the same document that existing clients parse.
+# OpenAPI spec — generated from FastAPI's route table and enriched with
+# the dual auth schemes, tenant headers, error envelope, and the ASGI-mounted
+# /mcp route by :mod:`tapps_brain.openapi_contract` (TAP-508).  The checked-in
+# snapshot lives under ``docs/contracts/`` and is gated by CI.
 # ---------------------------------------------------------------------------
-
-_OPENAPI_SPEC: dict[str, Any] = {
-    "openapi": "3.1.0",
-    "info": {
-        "title": "tapps-brain runtime API",
-        "version": "3.0.0",
-        "description": (
-            "Minimal HTTP adapter exposing liveness, readiness, metrics, and "
-            "extended runtime info for tapps-brain. "
-            "Memory operations are **not** available over HTTP — use the "
-            "AgentBrain Python API or the MCP server instead."
-        ),
-    },
-    "paths": {
-        "/health": {
-            "get": {
-                "summary": "Liveness probe",
-                "operationId": "getLiveness",
-                "security": [],
-                "responses": {"200": {"description": "Process is alive."}},
-            }
-        },
-        "/ready": {
-            "get": {
-                "summary": "Readiness probe",
-                "operationId": "getReadiness",
-                "security": [],
-                "responses": {
-                    "200": {"description": "Ready."},
-                    "503": {"description": "Degraded."},
-                },
-            }
-        },
-        "/metrics": {
-            "get": {
-                "summary": "Prometheus metrics",
-                "operationId": "getMetrics",
-                "security": [],
-                "responses": {"200": {"description": "text/plain"}},
-            }
-        },
-        "/info": {
-            "get": {
-                "summary": "Extended runtime info",
-                "operationId": "getInfo",
-                "security": [{"bearerAuth": []}],
-                "responses": {
-                    "200": {"description": "Runtime info."},
-                    "401": {"description": "Missing/malformed Authorization."},
-                    "403": {"description": "Invalid token."},
-                },
-            }
-        },
-        "/snapshot": {
-            "get": {
-                "summary": "Live system snapshot",
-                "operationId": "getSnapshot",
-                "security": [{"bearerAuth": []}],
-                "responses": {
-                    "200": {"description": "VisualSnapshot JSON."},
-                    "401": {"description": "Missing/malformed Authorization."},
-                    "403": {"description": "Invalid token."},
-                    "503": {"description": "No store configured."},
-                },
-            }
-        },
-        "/openapi.json": {
-            "get": {
-                "summary": "OpenAPI spec",
-                "operationId": "getOpenApiSpec",
-                "security": [],
-                "responses": {"200": {"description": "OpenAPI."}},
-            }
-        },
-    },
-    "components": {
-        "securitySchemes": {
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "description": (
-                    "Set TAPPS_BRAIN_HTTP_AUTH_TOKEN (or TAPPS_BRAIN_AUTH_TOKEN) "
-                    "to enable. When not configured, protected routes are open "
-                    "(not-for-production)."
-                ),
-            }
-        }
-    },
-}
 
 
 # ---------------------------------------------------------------------------
@@ -826,13 +739,25 @@ def create_app(
                     logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
 
     app = FastAPI(
-        title="tapps-brain runtime API",
+        title="tapps-brain HTTP API",
         version=cfg.version,
-        docs_url=None,  # we serve our hand-crafted /openapi.json instead
+        docs_url=None,
         redoc_url=None,
-        openapi_url=None,
+        openapi_url="/openapi.json",
         lifespan=_lifespan,
     )
+
+    # TAP-508: enrich the auto-generated spec with the dual auth schemes,
+    # tenant headers, error envelope, and the ASGI-mounted /mcp route.
+    # Cached on first call by FastAPI via app.openapi_schema.
+    from tapps_brain.openapi_contract import build_openapi_spec as _build_openapi
+
+    def _custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            app.openapi_schema = _build_openapi(app)
+        return app.openapi_schema
+
+    app.openapi = _custom_openapi  # type: ignore[method-assign]
 
     # When a pre-built MCP server is provided, mount its ASGI sub-app eagerly
     # so the /mcp route exists even without a lifespan run (e.g. httpx
@@ -895,9 +820,13 @@ def create_app(
 
     @app.get("/info", dependencies=[Depends(require_data_plane_auth)])
     async def _info() -> JSONResponse:
+        from tapps_brain.openapi_contract import _bundled_schema_version
+
         body = {
             "service": _SERVICE_NAME,
             "version": cfg.version,
+            "schema_version": _bundled_schema_version(),
+            "build": os.environ.get("TAPPS_BRAIN_BUILD", "unknown"),
             "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
             "platform": platform.system(),
             "uptime_seconds": round(time.time() - _PROCESS_START_TIME, 3),
@@ -905,10 +834,6 @@ def create_app(
             "dsn_configured": cfg.dsn is not None,
         }
         return JSONResponse(status_code=200, content=body)
-
-    @app.get("/openapi.json", include_in_schema=False)
-    async def _openapi() -> JSONResponse:
-        return JSONResponse(status_code=200, content=_OPENAPI_SPEC)
 
     @app.get("/snapshot", dependencies=[Depends(require_data_plane_auth)])
     async def _snapshot(request: Request) -> Response:
