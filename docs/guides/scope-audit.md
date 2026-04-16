@@ -16,7 +16,7 @@ is propagated to the shared Postgres Hive. The local private store and the Hive 
 
 | `agent_scope` | Postgres Hive namespace | Who can read | Who can write | Enforcement point |
 |---|---|---|---|---|
-| `private` | *(no Hive write)* | Owning agent only | Owning agent only | `PropagationEngine.propagate()` returns `None` early |
+| `private` | *(no Hive write)* | Owning agent only | Owning agent only | `PropagationEngine.propagate()` returns a `refused_client_scope` outcome early |
 | `domain` | Agent's **profile name** (e.g. `thestudio`) | Agents sharing the same profile | Any agent with that profile | `PropagationEngine` maps scope → profile name |
 | `hive` | `universal` | **All** Hive agents | Any authenticated Hive agent | `PropagationEngine` maps scope → `"universal"` |
 | `group:<name>` | `<name>` (group namespace) | Members of group `<name>` | Members of group `<name>` | `PropagationEngine` checks `agent_is_group_member(name, agent_id)`; denied → warning log, no write |
