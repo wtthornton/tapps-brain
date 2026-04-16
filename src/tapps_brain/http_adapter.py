@@ -789,7 +789,12 @@ def create_app(
 
         session_cm = None
         if mcp is not None:
-            sm = getattr(mcp, "session_manager", None)
+            try:
+                sm = getattr(mcp, "session_manager", None)
+            except RuntimeError:
+                # FastMCP raises RuntimeError if session_manager is accessed
+                # before streamable_http_app() is called (lazy init guard).
+                sm = None
             if sm is not None and hasattr(sm, "run"):
                 try:
                     session_cm = sm.run()
