@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tapps-brain Architecture - Architecture Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+
+/* HomeIQ Design System — Architecture Report */
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1e1e2a;
+  --card-bg: rgba(18, 18, 26, 0.95);
+  --card-bg-alt: rgba(30, 30, 42, 0.95);
+  --card-border: rgba(63, 63, 90, 0.5);
+  --accent-primary: #14b8a6;
+  --accent-secondary: #d4a847;
+  --accent-glow: rgba(20, 184, 166, 0.12);
+  --text-primary: #fafafa;
+  --text-secondary: #d4d4d8;
+  --text-tertiary: #a1a1aa;
+  --text-muted: #71717a;
+  --focus-ring: rgba(20, 184, 166, 0.5);
+  --shadow-card: 0 4px 6px -1px rgba(0,0,0,0.3), 0 0 0 1px rgba(63,63,90,0.3);
+  --shadow-hover: 0 4px 12px -2px rgba(0,0,0,0.25);
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --motion-fast: 150ms;
+  --motion-normal: 250ms;
+  --ease-enter: cubic-bezier(0.4, 0, 0.2, 1);
+  --font-display: 'Outfit', 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.45;
+  font-size: 0.875rem;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.15); }
+  50% { box-shadow: 0 0 20px 4px rgba(20, 184, 166, 0.08); }
+}
+
+/* Hero */
+.hero {
+  background: linear-gradient(135deg, #0a0a0f 0%, #12121a 30%, #1e1e2a 70%, #0d3d38 100%);
+  padding: 80px 40px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(circle at 30% 50%, rgba(20,184,166,0.1) 0%, transparent 50%),
+              radial-gradient(circle at 70% 80%, rgba(212,168,71,0.06) 0%, transparent 50%);
+  animation: pulseGlow 8s ease-in-out infinite;
+}
+.hero-content { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; }
+.hero-title {
+  font-family: var(--font-display);
+  font-size: 2.25rem; font-weight: 700;
+  letter-spacing: -0.025em; margin-bottom: 12px;
+  color: var(--text-primary);
+}
+.hero-subtitle {
+  font-size: 1rem; color: var(--text-secondary);
+  margin-bottom: 16px; line-height: 1.6;
+}
+.hero-arch {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  margin-top: 8px;
+}
+.arch-badge-hero {
+  display: inline-block;
+  padding: 5px 18px; border-radius: 8px;
+  font-weight: 800; font-size: 0.8rem; letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.hero-arch svg { border-radius: 10px; }
+.hero-meta {
+  font-size: 0.75rem; color: var(--accent-primary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* Sections */
+.section {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 40px;
+  animation: fadeIn 0.4s var(--ease-enter) both;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  position: relative;
+  padding-bottom: 12px;
+}
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 48px; height: 3px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: 2px;
+}
+.section > p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  max-width: 900px;
+}
+
+/* Purpose block */
+.purpose-block {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  margin-bottom: 32px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+}
+.purpose-block h3 {
+  font-family: var(--font-display);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+.purpose-text {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  text-align: center;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--motion-fast) var(--ease-enter),
+              box-shadow var(--motion-fast) var(--ease-enter);
+  animation: fadeInScale 0.4s var(--ease-enter) both;
+}
+.stat-card:nth-child(1) { animation-delay: 0.05s; }
+.stat-card:nth-child(2) { animation-delay: 0.1s; }
+.stat-card:nth-child(3) { animation-delay: 0.15s; }
+.stat-card:nth-child(4) { animation-delay: 0.2s; }
+.stat-card:nth-child(5) { animation-delay: 0.25s; }
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+}
+.stat-number {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+.stat-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* Meta badges */
+.meta-details {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.meta-badge {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+/* Diagram container */
+.diagram-container {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin: 24px 0;
+  overflow-x: auto;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+}
+.diagram-container svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Component cards */
+.component-card {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--motion-fast) var(--ease-enter),
+              box-shadow var(--motion-fast) var(--ease-enter);
+  animation: fadeIn 0.4s var(--ease-enter) both;
+}
+.component-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+}
+.component-header {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.component-name {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+.component-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  font-family: var(--font-mono);
+}
+.component-body {
+  padding: 20px;
+}
+.component-description {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+.submodule-list {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+.submodule-list h4 {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.submodule-list ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.submodule-list li {
+  background: var(--bg-primary);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+.submodule-list li code {
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+}
+
+/* API surface */
+.api-module {
+  margin-bottom: 20px;
+}
+.api-module-path {
+  font-size: 0.8125rem;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--card-border);
+  margin-bottom: 10px;
+}
+.api-class {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  margin-bottom: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.api-class-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.api-class-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+.api-bases {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.api-doc {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  margin-bottom: 6px;
+}
+.api-methods {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.api-methods code {
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+}
+
+/* Tech stack */
+.dep-group {
+  margin-bottom: 20px;
+}
+.dep-group h4 {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.dep-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dep-tag {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: border-color var(--motion-fast) var(--ease-enter),
+              transform var(--motion-fast) var(--ease-enter);
+}
+.dep-tag:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+.dep-tag.dep-dev {
+  border-style: dashed;
+  color: var(--text-tertiary);
+}
+
+/* Skip link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  padding: 8px 16px;
+  z-index: 100;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  transition: top 0.2s var(--ease-enter);
+}
+.skip-link:focus {
+  top: 8px;
+}
+
+/* TOC */
+.toc-section {
+  padding: 24px 40px;
+}
+.toc {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+}
+.toc-title {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+.toc-list {
+  list-style: none;
+}
+.toc-list li {
+  margin-bottom: 6px;
+}
+.toc-list a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.8125rem;
+}
+.toc-list a:hover {
+  color: var(--accent-primary);
+}
+
+/* Back to top */
+.back-to-top {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.back-to-top:hover {
+  text-decoration: underline;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--card-border);
+  margin-top: 32px;
+}
+.footer strong {
+  color: var(--accent-primary);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* High contrast */
+@media (prefers-contrast: high) {
+  .component-card, .stat-card, .api-class { border: 2px solid currentColor; }
+}
+
+/* Print */
+@media print {
+  body { background: white; color: black; }
+  .hero { background: #f0f0f0; color: black; }
+  .hero-title, .hero-subtitle, .hero-meta { color: black; }
+  .stat-number { color: black; -webkit-text-fill-color: black; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .hero { padding: 48px 20px; }
+  .hero-title { font-size: 1.5rem; }
+  .section { padding: 32px 20px; }
+  .component-header { flex-direction: column; gap: 6px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Light theme (TappMCP style guide) */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-primary: #f8f9fc;
+    --bg-secondary: #f0f1f5;
+    --card-bg: rgba(255, 255, 255, 0.92);
+    --card-bg-alt: rgba(245, 245, 250, 0.95);
+    --card-border: rgba(0, 0, 0, 0.08);
+    --accent-primary: #0d9488;
+    --accent-secondary: #b8941f;
+    --text-primary: #1a1a2e;
+    --text-secondary: #4a4a5e;
+    --text-muted: #9ca3af;
+  }
+  body { color: var(--text-primary); }
+  .hero { background: linear-gradient(135deg, #f8f9fc 0%, #f0f1f5 30%, #e5e7ed 70%, #ccfbf1 100%); }
+  .stat-number { color: var(--accent-primary); }
+}
+
+</style>
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<section class="hero">
+  <div class="hero-content">
+    <h1 class="hero-title">tapps-brain Architecture</h1>
+    <p class="hero-subtitle">Persistent cross-session memory system for AI coding assistants</p>
+    <p class="hero-meta">Architecture Report</p>
+  </div>
+</section>
+
+<section class="section document-purpose" id="main-content">
+  <h2 class="section-title">Document Purpose</h2>
+  <div class="purpose-block">
+    <h3>Audience &amp; Use</h3>
+    <p class="purpose-text">This report is for <strong>developers and architects</strong>. It explains how components fit together, why they are structured this way, and what constraints apply. Use it to understand the system before making changes, justify architectural decisions, and plan refactors.</p>
+  </div>
+</section>
+<section class="section toc-section">
+  <nav class="toc" aria-label="Table of contents">
+    <h3 class="toc-title">Contents</h3>
+    <ul class="toc-list">
+      <li><a href="#executive-summary">Executive Summary</a></li>
+      <li><a href="#architecture-diagram">High-Level Architecture</a></li>
+      <li><a href="#data-flow">Data Flow Pipeline</a></li>
+      <li><a href="#component-details">Component Deep-Dive</a></li>
+      <li><a href="#dependency-flow">Dependency Flow</a></li>
+      <li><a href="#api-surface">Public API Surface</a></li>
+      <li><a href="#tech-stack">Technology Stack</a></li>
+      <li><a href="#health-insights">Architecture Health</a></li>
+    </ul>
+  </nav>
+</section>
+<section class="section" id="executive-summary" role="region" aria-labelledby="exec-summary-heading">
+<h2 class="section-title" id="exec-summary-heading">Executive Summary</h2>
+<p><strong>Why this matters:</strong> Quick overview for stakeholders; key metrics support risk assessment and technical debt visibility.</p>
+
+<div class="purpose-block">
+  <h3>Purpose &amp; Intent</h3>
+  <p class="purpose-text">Persistent cross-session memory system for AI coding assistants</p>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-number">4</div>
+    <div class="stat-label">Packages</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">16</div>
+    <div class="stat-label">Modules</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">54</div>
+    <div class="stat-label">Public Classes</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">519</div>
+    <div class="stat-label">Public APIs (fns + methods)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">112</div>
+    <div class="stat-label">External Imports</div>
+  </div>
+</div>
+<div class="meta-details">
+<span class="meta-badge">v3.7.0</span>
+<span class="meta-badge">Python &gt;=3.12</span>
+<span class="meta-badge">MIT</span>
+</div>
+</section>
+<section class="section" id="architecture-diagram">
+<h2 class="section-title">High-Level Architecture</h2>
+<p>The diagram below illustrates the major packages and components that comprise the system. Each box represents a distinct package or subsystem with its own responsibilities and boundaries.</p>
+<figure role="figure" aria-labelledby="arch-figcaption">
+<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 290" class="arch-svg" role="img" aria-labelledby="arch-svg-title">
+  <title id="arch-svg-title">High-level architecture: tapps-brain Architecture</title>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="2" dy="4" stdDeviation="6" flood-opacity="0.15"/>
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="grad0" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4a847"/>
+      <stop offset="100%" stop-color="#e8c060"/>
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <rect width="1120" height="290" rx="16" fill="#0a0a0f" />
+  <text x="560.0" y="45" text-anchor="middle" fill="#fafafa" font-size="22" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">tapps-brain Architecture — Architecture Overview</text>
+  <rect x="60" y="130" width="220" height="100" rx="12" fill="url(#grad0)" filter="url(#shadow)" />
+  <text x="170.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
+  <text x="170.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">2 modules</text>
+  <rect x="320" y="130" width="220" height="100" rx="12" fill="url(#grad1)" filter="url(#shadow)" />
+  <text x="430.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
+  <text x="430.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">4 modules</text>
+  <rect x="580" y="130" width="220" height="100" rx="12" fill="url(#grad2)" filter="url(#shadow)" />
+  <text x="690.0" y="170" text-anchor="middle" fill="#fafafa" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
+  <text x="690.0" y="195" text-anchor="middle" fill="#fafafa" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">1 modules</text>
+  <rect x="840" y="130" width="220" height="100" rx="12" fill="url(#grad3)" filter="url(#shadow)" />
+  <text x="950.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
+  <text x="950.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">9 modules</text>
+</svg></div>
+<figcaption id="arch-figcaption">High-level architecture overview</figcaption>
+</figure>
+</section>
+<section class="section" id="data-flow" role="region" aria-labelledby="data-flow-heading">
+<h2 class="section-title" id="data-flow-heading">Data Flow Pipeline</h2>
+<p><strong>Why this matters:</strong> Understanding runtime flow helps trace how input moves through layers toward output. Each stage represents a processing boundary.</p>
+<figure role="figure" aria-labelledby="data-flow-figcaption">
+<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 278" class="flow-svg">
+  <defs>
+    <marker id="flowArrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#14b8a6"/>
+    </marker>
+  </defs>
+  <rect width="480" height="278" rx="8" fill="#0a0a0f"/>
+  <text x="240.0" y="35" text-anchor="middle" fill="#fafafa" font-size="18" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Data Flow Pipeline</text>
+  <text x="120.0" y="82" text-anchor="middle" fill="#14b8a6" font-size="13" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Core Logic</text>
+  <rect x="40" y="90" width="160" height="124" rx="6" fill="rgba(18,18,26,0.85)" stroke="#14b8a6" stroke-width="1" opacity="0.8"/>
+  <text x="120.0" y="116" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
+  <text x="120.0" y="152" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
+  <text x="120.0" y="188" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
+  <line x1="205" y1="144.0" x2="275" y2="144.0" stroke="#14b8a6" stroke-width="2" marker-end="url(#flowArrow)" opacity="0.7"/>
+  <text x="360.0" y="82" text-anchor="middle" fill="#d4a847" font-size="13" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Output / API</text>
+  <rect x="280" y="90" width="160" height="52" rx="6" fill="rgba(18,18,26,0.85)" stroke="#d4a847" stroke-width="1" opacity="0.8"/>
+  <text x="360.0" y="116" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
+</svg></div>
+<figcaption id="data-flow-figcaption">Data flow pipeline</figcaption>
+</figure>
+</section>
+<section class="section" id="component-details">
+<h2 class="section-title">Component Deep-Dive</h2>
+<p>Each component in the architecture serves a specific purpose, contributing to the overall system through well-defined responsibilities. Understanding these individual building blocks is essential for navigating the codebase, extending functionality, and maintaining the project over time.</p>
+
+<div class="component-card">
+  <div class="component-header" style="background: linear-gradient(
+    135deg, #14b8a6, #2dd4bf);">
+    <h3 class="component-name">mcp_server</h3>
+    <div class="component-stats">
+      <span>2 modules</span>
+      <span>18 functions</span>
+      <span>2 classes</span>
+    </div>
+  </div>
+  <div class="component-body">
+    <p class="component-description">The mcp_server package mcp server exposing tapps-brain via model context protocol. It is composed of 2 modules that work together to deliver its capabilities. The package exposes 18 functions and 2 classes, offering both procedural and object-oriented interfaces to its consumers. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <div class="submodule-list">
+      <h4>Key Modules</h4>
+      <ul>
+        <li><code>operator</code></li>
+        <li><code>standard</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="component-card">
+  <div class="component-header" style="background: linear-gradient(
+    135deg, #d4a847, #e8c060);">
+    <h3 class="component-name">migrations</h3>
+    <div class="component-stats">
+      <span>4 modules</span>
+      <span>0 functions</span>
+      <span>0 classes</span>
+    </div>
+  </div>
+  <div class="component-body">
+    <p class="component-description">The migrations package provides a cohesive set of functionality that serves as a building block within the larger system. It is composed of 4 modules that work together to deliver its capabilities. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <div class="submodule-list">
+      <h4>Key Modules</h4>
+      <ul>
+        <li><code>federation</code></li>
+        <li><code>hive</code></li>
+        <li><code>private</code></li>
+        <li><code>roles</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="component-card">
+  <div class="component-header" style="background: linear-gradient(
+    135deg, #0d9488, #14b8a6);">
+    <h3 class="component-name">profiles</h3>
+    <div class="component-stats">
+      <span>1 modules</span>
+      <span>0 functions</span>
+      <span>0 classes</span>
+    </div>
+  </div>
+  <div class="component-body">
+    <p class="component-description">The profiles package provides a cohesive set of functionality that serves as a building block within the larger system. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+  </div>
+</div>
+
+<div class="component-card">
+  <div class="component-header" style="background: linear-gradient(
+    135deg, #38bdf8, #60a5fa);">
+    <h3 class="component-name">services</h3>
+    <div class="component-stats">
+      <span>9 modules</span>
+      <span>69 functions</span>
+      <span>0 classes</span>
+    </div>
+  </div>
+  <div class="component-body">
+    <p class="component-description">The services package pure, transport-agnostic service functions for tapps-brain (epic-070 story-070.1). It is composed of 9 modules that work together to deliver its capabilities. With 69 functions, it provides a functional interface designed for straightforward integration. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <div class="submodule-list">
+      <h4>Key Modules</h4>
+      <ul>
+        <li><code>agents_service</code></li>
+        <li><code>diagnostics_service</code></li>
+        <li><code>feedback_service</code></li>
+        <li><code>flywheel_service</code></li>
+        <li><code>hive_service</code></li>
+        <li><code>maintenance_service</code></li>
+        <li><code>memory_service</code></li>
+        <li><code>profile_service</code></li>
+        <li><code>relay_service</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+<section class="section" id="dependency-flow" role="region" aria-labelledby="dep-flow-heading">
+<h2 class="section-title" id="dep-flow-heading">Dependency Flow</h2>
+<p><strong>Why this matters:</strong> The dependency flow reveals coupling between packages. Arrows show import relationships; understanding them helps plan refactors and avoid circular dependencies.</p>
+<figure role="figure" aria-labelledby="dep-flow-figcaption">
+<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700" class="dep-svg">
+  <defs>
+    <filter id="dshadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="1" dy="3" stdDeviation="4" flood-opacity="0.2"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a1a1aa"/>
+    </marker>
+    <linearGradient id="dgrad0" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="dgrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4a847"/>
+      <stop offset="100%" stop-color="#e8c060"/>
+    </linearGradient>
+    <linearGradient id="dgrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="dgrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="700" rx="16" fill="#0a0a0f"/>
+  <text x="400" y="35" text-anchor="middle" fill="#fafafa" font-size="18" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Dependency Flow</text>
+  <path d="M 400 100 Q 325 275 150 350" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
+  <circle cx="400" cy="100" r="50" fill="url(#dgrad0)" filter="url(#dshadow)"/>
+  <text x="400" y="105" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
+  <circle cx="650" cy="350" r="50" fill="url(#dgrad1)" filter="url(#dshadow)"/>
+  <text x="650" y="355" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
+  <circle cx="400" cy="600" r="50" fill="url(#dgrad2)" filter="url(#dshadow)"/>
+  <text x="400" y="605" text-anchor="middle" fill="#fafafa" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
+  <circle cx="150" cy="350" r="50" fill="url(#dgrad3)" filter="url(#dshadow)"/>
+  <text x="150" y="355" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
+</svg></div>
+<figcaption id="dep-flow-figcaption">Package import relationships</figcaption>
+</figure>
+</section>
+<section class="section" id="api-surface">
+<h2 class="section-title">Public API Surface</h2>
+<p>The public API surface defines the contract between this project and its consumers. Classes listed below represent publicly accessible interfaces that external code may depend upon. This is a curated selection of the 54 public classes discovered.</p>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/agent_brain.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BrainError</code> <span class="api-bases">extends Exception</span>
+    </div>
+    <p class="api-doc">Base class for all tapps-brain exceptions raised through the public API.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BrainConfigError</code> <span class="api-bases">extends BrainError</span>
+    </div>
+    <p class="api-doc">Raised when the agent cannot be started due to a configuration problem.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BrainTransientError</code> <span class="api-bases">extends BrainError</span>
+    </div>
+    <p class="api-doc">Raised when an operation fails due to a transient infrastructure problem.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BrainValidationError</code> <span class="api-bases">extends BrainError, ValueError</span>
+    </div>
+    <p class="api-doc">Raised when a caller-supplied value fails validation.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AgentBrain</code>
+    </div>
+    <p class="api-doc">Simple, agent-facing API that wraps MemoryStore + HiveBackend.</p>
+    <div class="api-methods">Methods: <code>agent_id</code>, <code>store</code>, <code>hive</code>, <code>groups</code>, <code>expert_domains</code>, <code>close</code>, <code>remember</code>, <code>recall</code> <em>+2 more</em></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/aio.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AsyncMemoryStore</code>
+    </div>
+    <p class="api-doc">Async facade over :class:`MemoryStore`.</p>
+    <div class="api-methods">Methods: <code>open</code>, <code>sync_store</code>, <code>project_root</code>, <code>profile</code>, <code>save</code>, <code>get</code>, <code>delete</code>, <code>search</code> <em>+2 more</em></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/audit.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AuditEntry</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">A single entry from the audit trail.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AuditReader</code>
+    </div>
+    <p class="api-doc">Query interface for the audit trail.</p>
+    <div class="api-methods">Methods: <code>query</code>, <code>count</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/auto_consolidation.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">ConsolidationUndoResult</code>
+    </div>
+    <p class="api-doc">Outcome of ``undo_consolidation_merge`` (EPIC-044 STORY-044.4).</p>
+    <div class="api-methods">Methods: <code>to_dict</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">ConsolidationResult</code>
+    </div>
+    <p class="api-doc">Result of a consolidation operation.</p>
+    <div class="api-methods">Methods: <code>to_dict</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">PeriodicScanResult</code>
+    </div>
+    <p class="api-doc">Result of a periodic consolidation scan.</p>
+    <div class="api-methods">Methods: <code>to_dict</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/backends.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AgentRegistry</code>
+    </div>
+    <p class="api-doc">YAML-backed registry of agents participating in the Hive.</p>
+    <div class="api-methods">Methods: <code>register</code>, <code>unregister</code>, <code>get</code>, <code>list_agents</code>, <code>agents_for_domain</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">FileAgentRegistryBackend</code>
+    </div>
+    <p class="api-doc">File-backed :class:`AgentRegistryBackend` (``agents.yaml``).</p>
+    <div class="api-methods">Methods: <code>register</code>, <code>unregister</code>, <code>get</code>, <code>list_agents</code>, <code>agents_for_domain</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">PropagationEngine</code>
+    </div>
+    <p class="api-doc">Routes memory entries to the Hive based on ``agent_scope``.</p>
+    <div class="api-methods">Methods: <code>propagate</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/bloom.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BloomFilter</code>
+    </div>
+    <p class="api-doc">Bloom filter with size/hash count derived from expected load and target FP rate.</p>
+    <div class="api-methods">Methods: <code>bit_size</code>, <code>hash_count</code>, <code>add</code>, <code>might_contain</code>, <code>count</code>, <code>approximate_false_positive_rate</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/bm25.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BM25Scorer</code>
+    </div>
+    <p class="api-doc">Okapi BM25 ranking function over a pre-built document index.</p>
+    <div class="api-methods">Methods: <code>build_index</code>, <code>score</code>, <code>score_batch</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/client.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">BrainClientProtocol</code> <span class="api-bases">extends Protocol</span>
+    </div>
+    <p class="api-doc">Minimal protocol that both sync and async clients satisfy.</p>
+    <div class="api-methods">Methods: <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>close</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">TappsBrainClient</code>
+    </div>
+    <p class="api-doc">Synchronous tapps-brain client.</p>
+    <div class="api-methods">Methods: <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code>, <code>memory_get</code> <em>+2 more</em></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AsyncTappsBrainClient</code>
+    </div>
+    <p class="api-doc">Asynchronous tapps-brain client.</p>
+    <div class="api-methods">Methods: <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code>, <code>memory_get</code> <em>+2 more</em></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/contradictions.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">SaveConflictHit</code> <span class="api-bases">extends NamedTuple</span>
+    </div>
+    <p class="api-doc">One existing entry flagged as conflicting with an incoming save.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">Contradiction</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">A detected contradiction between a memory and project state.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">ContradictionDetector</code>
+    </div>
+    <p class="api-doc">Detects memories that contradict observable project state.</p>
+    <div class="api-methods">Methods: <code>detect_contradictions</code></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/decay.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">DecayConfig</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">Configuration for memory confidence decay.</p>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/diagnostics.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">DimensionScore</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">Normalized score for a single health dimension.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">DiagnosticsReport</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">Full diagnostics snapshot for a memory store.</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">DiagnosticsConfig</code> <span class="api-bases">extends BaseModel</span>
+    </div>
+    <p class="api-doc">Host configuration for diagnostics (profile YAML).</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">CircuitState</code> <span class="api-bases">extends StrEnum</span>
+    </div>
+    <p class="api-doc">Circuit breaker states (STORY-030.4).</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">DiagnosticsHistoryStore</code>
+    </div>
+    <p class="api-doc">Append-only diagnostics history scoped to ``(project_id, agent_id)``.</p>
+    <div class="api-methods">Methods: <code>close</code>, <code>record</code>, <code>history</code>, <code>prune_older_than</code>, <code>rolling_average</code></div>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">InMemoryDiagnosticsHistoryStore</code>
+    </div>
+    <p class="api-doc">Thread-safe in-memory diagnostics history — used when no Postgres ``cm``</p>
+    <div class="api-methods">Methods: <code>close</code>, <code>record</code>, <code>history</code>, <code>prune_older_than</code>, <code>rolling_average</code></div>
+  </div>
+  <p class="api-doc"><em>+2 more classes</em></p>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/doc_validation.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">ClaimType</code> <span class="api-bases">extends StrEnum</span>
+    </div>
+    <p class="api-doc">Type of library claim extracted from a memory value.</p>
+  </div>
+  <p class="api-doc"><em>+6 more classes</em></p>
+</div>
+<p style="color:var(--text-muted);font-size:0.75rem;">Showing 30 of 54 public classes. 24 additional classes omitted for brevity.</p>
+</section>
+<section class="section" id="tech-stack" role="region" aria-labelledby="tech-stack-heading">
+<h2 class="section-title" id="tech-stack-heading">Technology Stack</h2>
+<p><strong>Why this matters:</strong> Understanding dependencies helps set up your environment, assess supply-chain risk, and plan upgrades.</p>
+<p>The technology stack represents the foundation upon which this project is built. Each dependency has been selected to address specific technical requirements, from core framework capabilities to development tooling. Understanding these dependencies helps developers set up their environment and appreciate the design choices made.</p>
+<div class="dep-group">
+  <h4>Runtime Dependencies</h4>
+  <div class="dep-tags">
+    <span class="dep-tag">numpy</span>
+    <span class="dep-tag">opentelemetry-api</span>
+    <span class="dep-tag">psycopg</span>
+    <span class="dep-tag">pydantic</span>
+    <span class="dep-tag">pyyaml</span>
+    <span class="dep-tag">sentence-transformers</span>
+    <span class="dep-tag">structlog</span>
+  </div>
+</div>
+<div class="dep-group">
+  <h4>Development Dependencies</h4>
+  <div class="dep-tags">
+    <span class="dep-tag dep-dev">argon2-cffi</span>
+    <span class="dep-tag dep-dev">fastapi</span>
+    <span class="dep-tag dep-dev">flashrank</span>
+    <span class="dep-tag dep-dev">httpx</span>
+    <span class="dep-tag dep-dev">mcp</span>
+    <span class="dep-tag dep-dev">opentelemetry-sdk</span>
+    <span class="dep-tag dep-dev">playwright</span>
+    <span class="dep-tag dep-dev">starlette</span>
+    <span class="dep-tag dep-dev">tapps-brain</span>
+    <span class="dep-tag dep-dev">typer</span>
+    <span class="dep-tag dep-dev">uvicorn</span>
+  </div>
+</div>
+</section>
+<section class="section" id="health-insights">
+<h2 class="section-title">Architecture Health</h2>
+<p>Key indicators for technical leadership assessing system maturity, maintainability risk, and architectural fitness.</p>
+<div class="stats-grid">
+
+<div class="stat-card">
+  <div class="stat-number" style="color:var(--accent-secondary)">Medium</div>
+  <div class="stat-label">Modularity</div>
+</div>
+
+<div class="stat-card">
+  <div class="stat-number">4.0</div>
+  <div class="stat-label">Avg Modules/Package</div>
+</div>
+
+<div class="stat-card">
+  <div class="stat-number" style="color:var(--accent-primary)">Low</div>
+  <div class="stat-label">External Coupling</div>
+</div>
+
+<div class="stat-card">
+  <div class="stat-number">337.5%</div>
+  <div class="stat-label">Class Coverage</div>
+</div>
+</div>
+<div class="purpose-block">
+<h3>Highest Functionality Concentration</h3><p class="purpose-text">Packages with the most functions represent the core business logic. These are the most critical to test thoroughly and document carefully:</p>
+<div class="dep-tags" style="margin-top:12px">
+<span class="dep-tag">services (69 fn)</span>
+<span class="dep-tag">mcp_server (18 fn)</span>
+</div></div>
+<div class="purpose-block">
+<h3>Recommendations</h3>
+<p class="purpose-text">Architecture appears well-structured. Continue monitoring package boundaries as the codebase evolves.</p>
+</div>
+</section>
+
+<footer class="footer">
+  <p><a href="#" class="back-to-top">Back to top</a></p>
+  <p>Generated by <strong>DocsMCP</strong> &mdash; Architecture Report</p>
+  <p style="margin-top:6px">
+    4 packages &middot; 16 modules &middot;
+    54 public classes &middot; 2026-04-16 01:19 UTC
+  </p>
+</footer>
+</body>
+</html>

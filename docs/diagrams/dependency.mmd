@@ -1,0 +1,137 @@
+%% tapps-brain internal dependency graph (generated from source; solid=direct, dashed=lazy/optional)
+graph TD
+    subgraph src["src"]
+        src_tapps_brain___init___py["__init__.py"]:::infra
+        src_tapps_brain__feature_flags_py["_feature_flags.py"]:::infra
+        src_tapps_brain__protocols_py["_protocols.py"]:::infra
+        src_tapps_brain_agent_brain_py["agent_brain.py"]:::infra
+        src_tapps_brain_agent_scope_py["agent_scope.py"]:::infra
+        src_tapps_brain_aio_py["aio.py"]:::infra
+        src_tapps_brain_audit_py["audit.py"]:::infra
+        src_tapps_brain_auto_consolidation_py["auto_consolidation.py"]:::infra
+        src_tapps_brain_backends_py["backends.py"]:::infra
+        src_tapps_brain_bloom_py["bloom.py"]:::infra
+        src_tapps_brain_bm25_py["bm25.py"]:::infra
+        src_tapps_brain_cli_py["cli.py"]:::presentation
+        src_tapps_brain_client_py["client.py"]:::presentation
+        src_tapps_brain_consolidation_py["consolidation.py"]:::infra
+        src_tapps_brain_contradictions_py["contradictions.py"]:::infra
+        src_tapps_brain_decay_py["decay.py"]:::infra
+        src_tapps_brain_diagnostics_py["diagnostics.py"]:::infra
+        src_tapps_brain_doc_validation_py["doc_validation.py"]:::infra
+        src_tapps_brain_embeddings_py["embeddings.py"]:::infra
+        src_tapps_brain_errors_py["errors.py"]:::infra
+        src_tapps_brain_evaluation_py["evaluation.py"]:::infra
+        src_tapps_brain_extraction_py["extraction.py"]:::infra
+        src_tapps_brain_feedback_py["feedback.py"]:::data
+        src_tapps_brain_flywheel_py["flywheel.py"]:::infra
+        src_tapps_brain_fusion_py["fusion.py"]:::infra
+        src_tapps_brain_gc_py["gc.py"]:::infra
+        src_tapps_brain_health_check_py["health_check.py"]:::infra
+        src_tapps_brain_http_adapter_py["http_adapter.py"]:::infra
+        src_tapps_brain_idempotency_py["idempotency.py"]:::infra
+        src_tapps_brain_injection_py["injection.py"]:::infra
+        src_tapps_brain_integrity_py["integrity.py"]:::infra
+        src_tapps_brain_io_py["io.py"]:::infra
+        src_tapps_brain_lexical_py["lexical.py"]:::infra
+        src_tapps_brain_markdown_import_py["markdown_import.py"]:::infra
+        src_tapps_brain_markdown_sync_py["markdown_sync.py"]:::infra
+        src_tapps_brain_mcp_server___init___py["mcp_server/__init__.py"]:::infra
+        src_tapps_brain_mcp_server_operator_py["mcp_server/operator.py"]:::infra
+        src_tapps_brain_mcp_server_standard_py["mcp_server/standard.py"]:::infra
+        src_tapps_brain_memory_group_py["memory_group.py"]:::data
+        src_tapps_brain_memory_relay_py["memory_relay.py"]:::data
+        src_tapps_brain_metrics_py["metrics.py"]:::infra
+        src_tapps_brain_models_py["models.py"]:::data
+        src_tapps_brain_onboarding_py["onboarding.py"]:::infra
+        src_tapps_brain_otel_exporter_py["otel_exporter.py"]:::infra
+        src_tapps_brain_otel_tracer_py["otel_tracer.py"]:::infra
+    end
+    src_tapps_brain___init___py --> src_tapps_brain__protocols_py
+    src_tapps_brain___init___py --> src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py --> src_tapps_brain_aio_py
+    src_tapps_brain___init___py --> src_tapps_brain_backends_py
+    src_tapps_brain___init___py --> src_tapps_brain_bm25_py
+    src_tapps_brain___init___py --> src_tapps_brain_client_py
+    src_tapps_brain___init___py --> src_tapps_brain_consolidation_py
+    src_tapps_brain___init___py --> src_tapps_brain_decay_py
+    src_tapps_brain___init___py --> src_tapps_brain_gc_py
+    src_tapps_brain___init___py --> src_tapps_brain_injection_py
+    src_tapps_brain___init___py --> src_tapps_brain_integrity_py
+    src_tapps_brain___init___py --> src_tapps_brain_io_py
+    src_tapps_brain___init___py --> src_tapps_brain_markdown_import_py
+    src_tapps_brain___init___py --> src_tapps_brain_markdown_sync_py
+    src_tapps_brain___init___py --> src_tapps_brain_metrics_py
+    src_tapps_brain___init___py --> src_tapps_brain_models_py
+    src_tapps_brain__protocols_py -.-> src_tapps_brain_models_py
+    src_tapps_brain_agent_brain_py --> src_tapps_brain_backends_py
+    src_tapps_brain_agent_brain_py --> src_tapps_brain_models_py
+    src_tapps_brain_agent_brain_py -.-> src_tapps_brain__protocols_py
+    src_tapps_brain_agent_scope_py --> src_tapps_brain_memory_group_py
+    src_tapps_brain_auto_consolidation_py --> src_tapps_brain_consolidation_py
+    src_tapps_brain_auto_consolidation_py --> src_tapps_brain_models_py
+    src_tapps_brain_backends_py --> src_tapps_brain_agent_scope_py
+    src_tapps_brain_backends_py --> src_tapps_brain_models_py
+    src_tapps_brain_backends_py -.-> src_tapps_brain__protocols_py
+    src_tapps_brain_bm25_py --> src_tapps_brain_lexical_py
+    src_tapps_brain_cli_py --> src_tapps_brain___init___py
+    src_tapps_brain_cli_py --> src_tapps_brain_agent_scope_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_backends_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_decay_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_evaluation_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_flywheel_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_gc_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_health_check_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_http_adapter_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_io_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_memory_relay_py
+    src_tapps_brain_cli_py -.-> src_tapps_brain_mcp_server___init___py
+    src_tapps_brain_client_py -.-> src_tapps_brain_errors_py
+    src_tapps_brain_consolidation_py --> src_tapps_brain_models_py
+    src_tapps_brain_contradictions_py --> src_tapps_brain_models_py
+    src_tapps_brain_contradictions_py -.-> src_tapps_brain__protocols_py
+    src_tapps_brain_decay_py --> src_tapps_brain_models_py
+    src_tapps_brain_diagnostics_py --> src_tapps_brain__protocols_py
+    src_tapps_brain_diagnostics_py -.-> src_tapps_brain_decay_py
+    src_tapps_brain_diagnostics_py -.-> src_tapps_brain_flywheel_py
+    src_tapps_brain_diagnostics_py -.-> src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_doc_validation_py --> src_tapps_brain_bm25_py
+    src_tapps_brain_doc_validation_py -.-> src_tapps_brain__protocols_py
+    src_tapps_brain_evaluation_py -.-> src_tapps_brain_models_py
+    src_tapps_brain_evaluation_py -.-> src_tapps_brain_contradictions_py
+    src_tapps_brain_evaluation_py -.-> src_tapps_brain__feature_flags_py
+    src_tapps_brain_flywheel_py --> src_tapps_brain__protocols_py
+    src_tapps_brain_flywheel_py --> src_tapps_brain_feedback_py
+    src_tapps_brain_flywheel_py --> src_tapps_brain_models_py
+    src_tapps_brain_gc_py --> src_tapps_brain_decay_py
+    src_tapps_brain_gc_py -.-> src_tapps_brain_models_py
+    src_tapps_brain_health_check_py -.-> src_tapps_brain_backends_py
+    src_tapps_brain_http_adapter_py --> src_tapps_brain_errors_py
+    src_tapps_brain_http_adapter_py --> src_tapps_brain_otel_tracer_py
+    src_tapps_brain_http_adapter_py -.-> src_tapps_brain_mcp_server___init___py
+    src_tapps_brain_http_adapter_py -.-> src_tapps_brain_idempotency_py
+    src_tapps_brain_injection_py -.-> src_tapps_brain_decay_py
+    src_tapps_brain_injection_py -.-> src_tapps_brain_lexical_py
+    src_tapps_brain_io_py --> src_tapps_brain___init___py
+    src_tapps_brain_io_py --> src_tapps_brain_models_py
+    src_tapps_brain_io_py -.-> src_tapps_brain__protocols_py
+    src_tapps_brain_markdown_import_py --> src_tapps_brain_models_py
+    src_tapps_brain_markdown_sync_py --> src_tapps_brain_models_py
+    src_tapps_brain_mcp_server___init___py -.-> src_tapps_brain_backends_py
+    src_tapps_brain_mcp_server___init___py -.-> src_tapps_brain_errors_py
+    src_tapps_brain_mcp_server___init___py -.-> src_tapps_brain_idempotency_py
+    src_tapps_brain_mcp_server___init___py -.-> src_tapps_brain_models_py
+    src_tapps_brain_mcp_server_operator_py --> src_tapps_brain_mcp_server___init___py
+    src_tapps_brain_mcp_server_standard_py --> src_tapps_brain_mcp_server___init___py
+    src_tapps_brain_memory_relay_py --> src_tapps_brain_agent_scope_py
+    src_tapps_brain_memory_relay_py --> src_tapps_brain_memory_group_py
+    src_tapps_brain_memory_relay_py --> src_tapps_brain_models_py
+    src_tapps_brain_models_py -.-> src_tapps_brain_agent_scope_py
+    src_tapps_brain_models_py -.-> src_tapps_brain_memory_group_py
+    src_tapps_brain_otel_exporter_py -.-> src_tapps_brain_metrics_py
+    src_tapps_brain_otel_tracer_py -.-> src_tapps_brain_mcp_server___init___py
+    classDef presentation fill:#F5A9D0,stroke:#333,color:#000
+    classDef business fill:#14B8A6,stroke:#333,color:#fff
+    classDef data fill:#9333EA,stroke:#333,color:#fff
+    classDef infra fill:#6B7280,stroke:#333,color:#fff

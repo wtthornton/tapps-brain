@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "tapps-brain": {
+      "type": "stdio",
+      "command": "tapps-brain-mcp",
+      "args": ["--project-dir", "${workspaceFolder}"]
+    }
+  }
+}

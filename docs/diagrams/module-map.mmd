@@ -1,0 +1,97 @@
+graph TD
+    subgraph tapps_brain["tapps-brain"]
+        src_tapps_brain_agent_brain_py["agent_brain (2F, 5C)"]:::infra
+        src_tapps_brain_agent_scope_py["agent_scope (3F)"]:::infra
+        src_tapps_brain_aio_py["aio (1C)"]:::infra
+        src_tapps_brain_audit_py["audit (2C)"]:::infra
+        src_tapps_brain_auto_consolidation_py["auto_consolidation (11F, 3C)"]:::infra
+        src_tapps_brain_backends_py["backends (9F, 3C)"]:::infra
+        src_tapps_brain_bloom_py["bloom (2F, 1C)"]:::infra
+        src_tapps_brain_bm25_py["bm25 (3F, 1C)"]:::infra
+        src_tapps_brain_cli_py["cli (98F)"]:::presentation
+        src_tapps_brain_client_py["client (6F, 3C)"]:::presentation
+        src_tapps_brain_consolidation_py["consolidation (11F)"]:::infra
+        src_tapps_brain_contradictions_py["contradictions (2F, 3C)"]:::infra
+        src_tapps_brain_decay_py["decay (10F, 1C)"]:::infra
+        src_tapps_brain_diagnostics_py["diagnostics (16F, 9C)"]:::infra
+        src_tapps_brain_doc_validation_py["doc_validation (3F, 12C)"]:::infra
+        src_tapps_brain_embeddings_py["embeddings (5F, 1C)"]:::infra
+        src_tapps_brain_errors_py["errors (5F, 10C)"]:::infra
+        src_tapps_brain_evaluation_py["evaluation (14F, 19C)"]:::infra
+        src_tapps_brain_extraction_py["extraction (3F)"]:::infra
+        src_tapps_brain_feedback_py["feedback (1F, 4C)"]:::data
+        src_tapps_brain_flywheel_py["flywheel (17F, 16C)"]:::infra
+        src_tapps_brain_fusion_py["fusion (3F)"]:::infra
+        src_tapps_brain_gc_py["gc (3F, 4C)"]:::infra
+        src_tapps_brain_health_check_py["health_check (4F, 4C)"]:::infra
+        src_tapps_brain_http_adapter_py["http_adapter (15F, 5C)"]:::infra
+        src_tapps_brain_idempotency_py["idempotency (2F, 1C)"]:::infra
+        src_tapps_brain_injection_py["injection (10F, 1C)"]:::infra
+        src_tapps_brain_integrity_py["integrity (5F)"]:::infra
+        src_tapps_brain_io_py["io (5F)"]:::infra
+        src_tapps_brain_lexical_py["lexical (5F, 1C)"]:::infra
+        src_tapps_brain_markdown_import_py["markdown_import (7F)"]:::infra
+        src_tapps_brain_markdown_sync_py["markdown_sync (10F)"]:::infra
+        subgraph src_tapps_brain_mcp_server["mcp_server/"]
+            src_tapps_brain_mcp_server_operator_py["operator"]:::presentation
+            src_tapps_brain_mcp_server_standard_py["standard"]:::presentation
+        end
+        src_tapps_brain_memory_group_py["memory_group (1F, 1C)"]:::data
+        src_tapps_brain_memory_relay_py["memory_relay (7F, 1C)"]:::data
+        src_tapps_brain_metrics_py["metrics (1F, 6C)"]:::infra
+        subgraph src_tapps_brain_migrations["migrations/"]
+            subgraph src_tapps_brain_migrations_federation["federation/"]
+            end
+            subgraph src_tapps_brain_migrations_hive["hive/"]
+            end
+            subgraph src_tapps_brain_migrations_private["private/"]
+            end
+            subgraph src_tapps_brain_migrations_roles["roles/"]
+            end
+        end
+        src_tapps_brain_models_py["models (2F, 10C)"]:::data
+        src_tapps_brain_onboarding_py["onboarding (1F)"]:::infra
+        src_tapps_brain_otel_exporter_py["otel_exporter (7F, 4C)"]:::infra
+        src_tapps_brain_otel_tracer_py["otel_tracer (20F)"]:::infra
+        src_tapps_brain_postgres_connection_py["postgres_connection (1C)"]:::infra
+        src_tapps_brain_postgres_federation_py["postgres_federation (1C)"]:::infra
+        src_tapps_brain_postgres_hive_py["postgres_hive (2C)"]:::infra
+        src_tapps_brain_postgres_migrations_py["postgres_migrations (13F, 2C)"]:::infra
+        src_tapps_brain_postgres_private_py["postgres_private (1C)"]:::infra
+        src_tapps_brain_profile_py["profile (8F, 14C)"]:::infra
+        subgraph src_tapps_brain_profiles["profiles/"]
+        end
+        src_tapps_brain_project_registry_py["project_registry (1F, 3C)"]:::infra
+        src_tapps_brain_project_resolver_py["project_resolver (3F, 1C)"]:::infra
+        src_tapps_brain_promotion_py["promotion (1C)"]:::infra
+        src_tapps_brain_rate_limiter_py["rate_limiter (4C)"]:::infra
+        src_tapps_brain_recall_py["recall (2C)"]:::infra
+        src_tapps_brain_recall_diagnostics_py["recall_diagnostics"]:::infra
+        src_tapps_brain_reinforcement_py["reinforcement (1F)"]:::infra
+        src_tapps_brain_relations_py["relations (6F, 1C)"]:::infra
+        src_tapps_brain_reranker_py["reranker (4F, 3C)"]:::infra
+        src_tapps_brain_retrieval_py["retrieval (2F, 2C)"]:::infra
+        src_tapps_brain_safety_py["safety (4F, 1C)"]:::infra
+        src_tapps_brain_seeding_py["seeding (8F)"]:::infra
+        subgraph src_tapps_brain_services["services/"]
+            src_tapps_brain_services_agents_service_py["agents_service (4F)"]:::business
+            src_tapps_brain_services_diagnostics_service_py["diagnostics_service (3F)"]:::business
+            src_tapps_brain_services_feedback_service_py["feedback_service (5F)"]:::business
+            src_tapps_brain_services_flywheel_service_py["flywheel_service (5F)"]:::business
+            src_tapps_brain_services_hive_service_py["hive_service (6F)"]:::business
+            src_tapps_brain_services_maintenance_service_py["maintenance_service (4F)"]:::business
+            src_tapps_brain_services_memory_service_py["memory_service (38F)"]:::business
+            src_tapps_brain_services_profile_service_py["profile_service (3F)"]:::business
+            src_tapps_brain_services_relay_service_py["relay_service (1F)"]:::business
+        end
+        src_tapps_brain_session_index_py["session_index (3F, 1C)"]:::infra
+        src_tapps_brain_session_summary_py["session_summary (3F)"]:::infra
+        src_tapps_brain_similarity_py["similarity (11F, 1C)"]:::infra
+        src_tapps_brain_store_py["store (5F, 3C)"]:::data
+        src_tapps_brain_tier_normalize_py["tier_normalize (1F)"]:::infra
+        src_tapps_brain_visual_snapshot_py["visual_snapshot (18F, 12C)"]:::infra
+    end
+    classDef presentation fill:#F5A9D0,stroke:#333,color:#000
+    classDef business fill:#14B8A6,stroke:#333,color:#fff
+    classDef data fill:#9333EA,stroke:#333,color:#fff
+    classDef infra fill:#6B7280,stroke:#333,color:#fff
