@@ -186,10 +186,11 @@ class TestMemoryStoreEviction:
         if store._profile is not None:
             store._profile.limits.max_entries = limit
         else:
-            # No profile resolved — patch the module-level fallback
+            # No profile resolved — patch the module-level fallback (TAP-513
+            # renamed the constant to _MAX_ENTRIES_DEFAULT).
             import tapps_brain.store as _sm
 
-            _sm._MAX_ENTRIES = limit
+            _sm._MAX_ENTRIES_DEFAULT = limit
         return store
 
     def test_evicts_lowest_confidence_at_max(self, tmp_path: Path) -> None:
@@ -260,6 +261,77 @@ class TestMemoryStoreEviction:
             # The new entry and later entries survive
             assert store.get("overflow") is not None
             assert store.get("entry-0001") is not None
+        finally:
+            store.close()
+
+
+class TestMaxEntriesEnvOverride:
+    """TAP-513: TAPPS_BRAIN_MAX_ENTRIES env var with YAML > env > default."""
+
+    def test_env_var_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.store import _max_entries_from_env
+
+        monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "1234")
+        assert _max_entries_from_env() == 1234
+
+    def test_env_var_unset_returns_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.store import _MAX_ENTRIES_DEFAULT, _max_entries_from_env
+
+        monkeypatch.delenv("TAPPS_BRAIN_MAX_ENTRIES", raising=False)
+        assert _max_entries_from_env() == _MAX_ENTRIES_DEFAULT
+
+    def test_env_var_invalid_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.store import _MAX_ENTRIES_DEFAULT, _max_entries_from_env
+
+        monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "not-a-number")
+        assert _max_entries_from_env() == _MAX_ENTRIES_DEFAULT
+
+    def test_env_var_zero_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.store import _MAX_ENTRIES_DEFAULT, _max_entries_from_env
+
+        monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "0")
+        assert _max_entries_from_env() == _MAX_ENTRIES_DEFAULT
+
+    def test_env_var_negative_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.store import _MAX_ENTRIES_DEFAULT, _max_entries_from_env
+
+        monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "-50")
+        assert _max_entries_from_env() == _MAX_ENTRIES_DEFAULT
+
+    def test_yaml_profile_takes_precedence_over_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """YAML > env > default — even with env set, profile wins."""
+        from tapps_brain.profile import LayerDefinition, LimitsConfig, MemoryProfile
+
+        monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "999")
+        prof = MemoryProfile(
+            name="yaml-wins",
+            layers=[LayerDefinition(name="pattern", half_life_days=60, confidence_floor=0.1)],
+            limits=LimitsConfig(max_entries=42),
+        )
+        store = MemoryStore(tmp_path, profile=prof)
+        try:
+            assert store._max_entries == 42
+        finally:
+            store.close()
+
+    def test_env_used_when_no_profile_and_default_when_no_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No profile + env set → env wins; no profile + no env → default."""
+        from tapps_brain.store import _MAX_ENTRIES_DEFAULT
+
+        store = MemoryStore(tmp_path)
+        try:
+            if store._profile is not None:
+                pytest.skip("profile auto-resolved; this test exercises the no-profile path")
+
+            monkeypatch.setenv("TAPPS_BRAIN_MAX_ENTRIES", "777")
+            assert store._max_entries == 777
+
+            monkeypatch.delenv("TAPPS_BRAIN_MAX_ENTRIES", raising=False)
+            assert store._max_entries == _MAX_ENTRIES_DEFAULT
         finally:
             store.close()
 

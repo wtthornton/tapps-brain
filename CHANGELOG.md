@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - the hand-crafted `_OPENAPI_SPEC` dict in `http_adapter.py` is gone; `app.openapi` is overridden to call `build_openapi_spec(app)` so the published spec stays in sync with the route table by construction.
+- `TAPPS_BRAIN_MAX_ENTRIES` env var for the per-project memory cap (TAP-513). Precedence: YAML profile (`limits.max_entries`) > env > default `5000`. Operators of deployed brains can now retune the cap without code changes; invalid values (non-int / `<= 0`) fall back to the default with a `store.max_entries_env_invalid` warning.
+
+### Changed
+- internal `_MAX_ENTRIES` constant renamed to `_MAX_ENTRIES_DEFAULT` to make the precedence chain explicit. Callers/tests that patched `tapps_brain.store._MAX_ENTRIES` should patch `_MAX_ENTRIES_DEFAULT` instead.
 
 ## [3.7.2] - 2026-04-16
 
