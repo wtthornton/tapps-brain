@@ -26,11 +26,11 @@ If your compose starts the unified binary with `TAPPS_BRAIN_MCP_HTTP_PORT > 0` a
 
 **Fix.** Set `TAPPS_BRAIN_ADMIN_TOKEN` in `.env` (use `openssl rand -hex 32` to generate). If you don't need the operator transport, set `TAPPS_BRAIN_MCP_HTTP_PORT=0` to disable it.
 
-## 3. Client routes via `/mcp/mcp` internally (v3.7.2)
+## 3. Client + brain MCP path collapsed back to `/mcp` (v3.7.3)
 
-`TappsBrainClient` and `AsyncTappsBrainClient` now POST to `/mcp/mcp` on the deployed container (not `/mcp`). FastMCP's streamable-HTTP sub-app declares its own `/mcp` route internally; mounted at `/mcp` by the HTTP adapter, the real public endpoint is `/mcp/mcp`. This is a client-side change; it's transparent if you use the wheel's `TappsBrainClient`. Only callers that hand-roll HTTP requests to `/mcp` need to update.
+v3.7.2 worked around a 404 by pointing `TappsBrainClient` at `/mcp/mcp` — the path that emerged from FastMCP's inner `streamable_http_path = /mcp` mounted at `/mcp` by the HTTP adapter. v3.7.3 (TAP-509) collapses the public path back to a single `/mcp` by pinning FastMCP's inner path to `/`. Both client and brain must move together: a v3.7.2 client will 404 against a v3.7.3+ brain, and vice versa.
 
-**Fix.** Update vendored wheel to `tapps_brain-3.7.2-py3-none-any.whl` (GitHub Release v3.7.2). Tighten your constraint to `tapps-brain[client]>=3.7.2,<3.8`.
+**Fix.** Upgrade the brain image and the vendored wheel together to `>= 3.7.3`. Hand-rolled HTTP callers must POST to `/mcp` (not `/mcp/mcp`).
 
 ## Wheel ↔ image version lock
 

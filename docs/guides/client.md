@@ -53,10 +53,12 @@ asyncio.run(main())
 
 ## Transport selection
 
-The URL scheme picks the transport. **v3.7.2+:** both schemes route to
-the same Streamable-HTTP MCP endpoint at `/mcp/mcp` on the deployed
-brain container. The `mcp+stdio://` subprocess transport was removed in
-v3.7.0 — see [Migration 3.6 → 3.7](migration-3.6-to-3.7.md).
+The URL scheme picks the transport. **v3.7.3+:** both schemes route to
+the same Streamable-HTTP MCP endpoint at `/mcp` on the deployed brain
+container (TAP-509 collapsed the v3.7.2 `/mcp/mcp` workaround by
+pinning FastMCP's inner `streamable_http_path` to `/`). The
+`mcp+stdio://` subprocess transport was removed in v3.7.0 — see
+[Migration 3.6 → 3.7](migration-3.6-to-3.7.md).
 
 | URL prefix | Transport |
 |------------|-----------|
@@ -64,7 +66,7 @@ v3.7.0 — see [Migration 3.6 → 3.7](migration-3.6-to-3.7.md).
 | `mcp+http://` | Streamable-HTTP MCP (STORY-070.1) |
 
 ```python
-# Either form works — both hit /mcp/mcp on the deployed container
+# Either form works — both hit /mcp on the deployed container
 TappsBrainClient("http://brain.internal:8080", ...)
 TappsBrainClient("mcp+http://brain.internal:8080", ...)
 ```

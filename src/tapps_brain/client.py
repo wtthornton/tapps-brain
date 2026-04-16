@@ -233,7 +233,7 @@ def _post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = client.post(f"{base}/mcp/mcp", headers=headers, content=body_bytes)
+        resp = client.post(f"{base}/mcp", headers=headers, content=body_bytes)
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
@@ -287,7 +287,7 @@ async def _async_post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = await client.post(f"{base}/mcp/mcp", headers=headers, content=body_bytes)
+        resp = await client.post(f"{base}/mcp", headers=headers, content=body_bytes)
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 

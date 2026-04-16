@@ -678,7 +678,16 @@ def create_app(
     mcp_holder: dict[str, Any] = {"mcp": mcp_server}
 
     def _get_mcp_asgi_sub(mcp: Any) -> Any:
-        """Return the Streamable HTTP ASGI sub-app from a FastMCP instance."""
+        """Return the Streamable HTTP ASGI sub-app from a FastMCP instance.
+
+        TAP-509: pin FastMCP's internal route to ``/`` so when the sub-app
+        is mounted at ``/mcp`` by FastAPI, the public endpoint is a single
+        ``/mcp`` (not ``/mcp/mcp``).  ``streamable_http_path`` defaults to
+        ``/mcp``; we override to ``/`` before building the sub-app.
+        """
+        settings = getattr(mcp, "settings", None)
+        if settings is not None and hasattr(settings, "streamable_http_path"):
+            settings.streamable_http_path = "/"
         for attr in ("streamable_http_app", "streamable_http"):
             fn = getattr(mcp, attr, None)
             if callable(fn):
