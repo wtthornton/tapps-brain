@@ -53,24 +53,27 @@ asyncio.run(main())
 
 ## Transport selection
 
-The URL scheme picks the transport automatically:
+The URL scheme picks the transport. **v3.7.2+:** both schemes route to
+the same Streamable-HTTP MCP endpoint at `/mcp/mcp` on the deployed
+brain container. The `mcp+stdio://` subprocess transport was removed in
+v3.7.0 — see [Migration 3.6 → 3.7](migration-3.6-to-3.7.md).
 
 | URL prefix | Transport |
 |------------|-----------|
-| `http://` / `https://` | Direct HTTP to the HTTP adapter (STORY-070.3) |
-| `mcp+stdio://` | Spawns `tapps-brain-mcp` subprocess |
+| `http://` / `https://` | Streamable-HTTP MCP (alias for `mcp+http://`) |
 | `mcp+http://` | Streamable-HTTP MCP (STORY-070.1) |
 
 ```python
-# HTTP adapter (most common for deployed brains)
+# Either form works — both hit /mcp/mcp on the deployed container
 TappsBrainClient("http://brain.internal:8080", ...)
-
-# MCP subprocess (local / offline)
-TappsBrainClient("mcp+stdio://localhost", ...)
-
-# Streamable-HTTP MCP
 TappsBrainClient("mcp+http://brain.internal:8080", ...)
 ```
+
+> **Required headers (v3.5+)**: every request carries `X-Project-Id`
+> (must match a project in the brain's registry — otherwise 403
+> `project_not_registered`) and `Authorization: Bearer
+> $TAPPS_BRAIN_AUTH_TOKEN`. Both are set by `TappsBrainClient` from its
+> constructor args / env vars — no manual header wiring needed.
 
 ---
 

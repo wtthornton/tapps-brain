@@ -7,8 +7,17 @@ agent wired via `AGENT.md`.
 
 > **STORY-070.15** — Unified binary model (v3.6+).  A single `tapps-brain`
 > container replaces the previous `tapps-brain-http` + `tapps-brain-operator-mcp`
-> two-container layout.  See [Migration 3.5 → 3.6](migration-3.5-to-3.6.md) if
-> you are upgrading from an older stack.
+> two-container layout.  See [Migration 3.5 → 3.6](migration-3.5-to-3.6.md) and
+> [Migration 3.6 → 3.7](migration-3.6-to-3.7.md) if you are upgrading.
+
+> **v3.7.0+** — `TAPPS_BRAIN_ADMIN_TOKEN` is **required** when the operator MCP
+> transport is enabled (`TAPPS_BRAIN_MCP_HTTP_PORT > 0`, the default).
+> Container refuses to start without it. See [Migration 3.6 → 3.7](migration-3.6-to-3.7.md).
+
+> **ADR-010 / EPIC-069** — The brain's project registry is fail-closed.
+> Every `/mcp` request must carry an `X-Project-Id` header naming a project
+> registered via `POST /admin/projects`. One-time setup per deployment —
+> see [Migration 3.6 → 3.7](migration-3.6-to-3.7.md) for the exact command.
 
 ---
 
