@@ -2702,6 +2702,37 @@ class MemoryStore:
         """Return the total number of stored relation triples."""
         return self._persistence.count_relations()
 
+    def save_relations(self, key: str, relations: list[RelationEntry]) -> None:
+        """Persist *relations* for *key* and refresh the in-memory cache.
+
+        Public wrapper for ``_persistence.save_relations`` (TAP-510) so
+        callers (auto-consolidation, future graph rebuilders) don't have
+        to reach into ``_persistence`` / ``_lock`` / ``_relations``
+        directly.
+
+        Accepts a list of :class:`~tapps_brain.relations.RelationEntry`
+        — the same type produced by extraction and merging.  The
+        in-memory cache is rebuilt from the persistence layer under
+        ``_lock`` so concurrent readers see the old or new set, never a
+        partial write.
+        """
+        self._persistence.save_relations(key, relations)
+        with self._lock:
+            self._relations[key] = self._persistence.load_relations(key)
+
+    def load_relations(self, key: str) -> list[dict[str, Any]]:
+        """Reload relations for *key* from persistence and refresh the cache.
+
+        Public wrapper for ``_persistence.load_relations`` (TAP-510).
+        Use after an external writer has mutated the underlying store and
+        the in-memory cache may be stale.  Returns the freshly loaded
+        list of relation dicts (same shape as :meth:`get_relations`).
+        """
+        loaded = self._persistence.load_relations(key)
+        with self._lock:
+            self._relations[key] = list(loaded)
+        return list(loaded)
+
     def get_relations(self, key: str) -> list[dict[str, Any]]:
         """Return all relations associated with a memory entry key.
 
