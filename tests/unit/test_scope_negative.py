@@ -76,11 +76,16 @@ class TestGroupMembershipRejection:
     """Wrong group → propagate() returns None; no hive write occurs."""
 
     def test_group_scope_denied_when_not_member(self) -> None:
-        """Agent not a group member → propagate returns None."""
+        """Agent not a group member → refused_group_not_member outcome."""
         hive = _make_hive_mock(member=False)
         result = _propagate(agent_scope="group:restricted", hive_store=hive)
 
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_group_not_member"
+        assert result["rule_applied"] == "group_not_member"
+        assert result["group_name"] == "restricted"
+        assert result["would_require"] == {"join_group": "restricted"}
 
     def test_group_scope_denied_no_hive_save_called(self) -> None:
         """When rejected, hive.save must NOT be called."""
@@ -90,11 +95,13 @@ class TestGroupMembershipRejection:
         hive.save.assert_not_called()
 
     def test_group_scope_allowed_when_member(self) -> None:
-        """Agent IS a group member → write proceeds and returns dict."""
+        """Agent IS a group member → write proceeds and returns propagated=True."""
         hive = _make_hive_mock(member=True)
         result = _propagate(agent_scope="group:allowed", hive_store=hive)
 
-        assert result is not None
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
+        assert result["decision"] == "propagated"
         hive.save.assert_called_once()
 
     def test_group_membership_checked_with_correct_args(self) -> None:
@@ -108,14 +115,16 @@ class TestGroupMembershipRejection:
 
         hive.agent_is_group_member.assert_called_once_with("my-team", "agent-xyz")
 
-    def test_group_denied_returns_none_not_raises(self) -> None:
-        """Rejection is silent (returns None, not an exception)."""
+    def test_group_denied_returns_outcome_not_raises(self) -> None:
+        """Rejection is silent (returns a refused outcome, not an exception)."""
         hive = _make_hive_mock(member=False)
         try:
             result = _propagate(agent_scope="group:secret", hive_store=hive)
         except Exception as exc:
-            raise AssertionError(f"Expected None, got exception: {exc}") from exc
-        assert result is None
+            raise AssertionError(f"Expected outcome dict, got exception: {exc}") from exc
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_group_not_member"
 
     def test_different_group_names_each_checked(self) -> None:
         """Each group scope string triggers its own membership check."""
@@ -139,11 +148,16 @@ class TestGroupMembershipRejection:
 class TestPrivateScopeDrops:
     """Private scope must never reach the Hive backend."""
 
-    def test_private_scope_returns_none(self) -> None:
+    def test_private_scope_returns_refused_client_scope(self) -> None:
         hive = _make_hive_mock()
         result = _propagate(agent_scope="private", hive_store=hive)
 
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_client_scope"
+        assert result["rule_applied"] == "client_scope_private"
+        assert result["requested_scope"] == "private"
+        assert result["effective_scope"] == "private"
 
     def test_private_scope_no_hive_save(self) -> None:
         hive = _make_hive_mock()
@@ -176,7 +190,13 @@ class TestProfileTierOverrides:
             hive_store=hive,
         )
 
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_private_tier"
+        assert result["rule_applied"] == "private_tiers"
+        assert result["requested_scope"] == "hive"
+        assert result["effective_scope"] == "private"
+        assert result["would_require"] == {"force": True}
         hive.save.assert_not_called()
 
     def test_private_tier_overrides_group_scope(self) -> None:
@@ -189,7 +209,9 @@ class TestProfileTierOverrides:
             hive_store=hive,
         )
 
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_private_tier"
         hive.save.assert_not_called()
 
     def test_non_private_tier_not_overridden(self) -> None:
@@ -202,8 +224,8 @@ class TestProfileTierOverrides:
             hive_store=hive,
         )
 
-        # "pattern" not in private_tiers → should propagate
-        assert result is not None
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
 
     def test_bypass_profile_hive_rules_ignores_private_tiers(self) -> None:
         """bypass=True: private_tiers must NOT force the scope."""
@@ -216,8 +238,8 @@ class TestProfileTierOverrides:
             hive_store=hive,
         )
 
-        # With bypass, the tier override is skipped → should propagate
-        assert result is not None
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
         hive.save.assert_called_once()
 
 
@@ -392,8 +414,9 @@ class TestDryRun:
         )
 
         hive.save.assert_not_called()
-        assert result is not None
-        assert result.get("dry_run") is True  # type: ignore[union-attr]
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
+        assert result["dry_run"] is True
 
     def test_dry_run_group_scope_no_write(self) -> None:
         """dry_run with group scope: membership is still checked, but save is skipped."""
@@ -415,5 +438,83 @@ class TestDryRun:
         )
 
         hive.save.assert_not_called()
-        assert result is not None
-        assert result.get("dry_run") is True  # type: ignore[union-attr]
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
+        assert result["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# Structured outcome contract — clients read outcome, do not mirror rules
+# ---------------------------------------------------------------------------
+
+
+class TestPropagationOutcomeContract:
+    """Every outcome carries the fields consumers need to react without
+    duplicating the brain's profile-rule logic."""
+
+    def test_hive_propagation_outcome_shape(self) -> None:
+        hive = _make_hive_mock()
+        result = _propagate(agent_scope="hive", tier="pattern", hive_store=hive)
+
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
+        assert result["decision"] == "propagated"
+        assert result["rule_applied"] is None
+        assert result["requested_scope"] == "hive"
+        assert result["effective_scope"] == "hive"
+        assert result["tier"] == "pattern"
+        assert result["namespace"] == "universal"
+        assert result["would_require"] is None
+
+    def test_auto_propagate_tiers_upgrades_private_to_domain(self) -> None:
+        """Private scope + tier in auto_propagate_tiers → upgraded to domain,
+        rule_applied records the upgrade so the client can explain it."""
+        hive = _make_hive_mock()
+        result = _propagate(
+            agent_scope="private",
+            tier="architectural",
+            auto_propagate_tiers=["architectural"],
+            hive_store=hive,
+        )
+
+        assert isinstance(result, dict)
+        assert result["propagated"] is True
+        assert result["decision"] == "propagated"
+        assert result["rule_applied"] == "auto_propagate_tiers"
+        assert result["requested_scope"] == "private"
+        assert result["effective_scope"] == "domain"
+
+    def test_refused_private_tier_hints_force(self) -> None:
+        """A refused_private_tier outcome tells the client exactly how to override."""
+        hive = _make_hive_mock()
+        result = _propagate(
+            agent_scope="hive",
+            tier="context",
+            private_tiers=["context"],
+            hive_store=hive,
+        )
+
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_private_tier"
+        assert result["would_require"] == {"force": True}
+        assert result["reason"]  # human-readable string present
+
+    def test_refused_group_not_member_hints_join_group(self) -> None:
+        hive = _make_hive_mock(member=False)
+        result = _propagate(agent_scope="group:ops", hive_store=hive)
+
+        assert isinstance(result, dict)
+        assert result["propagated"] is False
+        assert result["decision"] == "refused_group_not_member"
+        assert result["group_name"] == "ops"
+        assert result["would_require"] == {"join_group": "ops"}
+
+    def test_refused_client_scope_no_would_require(self) -> None:
+        """Client-requested private has no override hint — they just asked for it."""
+        hive = _make_hive_mock()
+        result = _propagate(agent_scope="private", hive_store=hive)
+
+        assert isinstance(result, dict)
+        assert result["decision"] == "refused_client_scope"
+        assert result["would_require"] is None

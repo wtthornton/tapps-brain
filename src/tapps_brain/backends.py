@@ -156,6 +156,33 @@ class PropagationEngine:
     Auto-propagation: if the entry's tier is in the profile's
     ``hive.auto_propagate_tiers``, scope is upgraded to ``domain``.
     If the tier is in ``hive.private_tiers``, scope is forced to ``private``.
+
+    Outcome contract
+    ----------------
+    ``propagate()`` always returns a dict describing the routing decision.
+    The ``decision`` field is the canonical taxonomy code; callers that need
+    to react to the outcome should branch on it rather than mirroring the
+    profile rules client-side.
+
+    decision code              propagated  effective_scope
+    -------------------------  ----------  ----------------
+    propagated                 True        hive | domain | <group>
+    refused_private_tier       False       private
+    refused_client_scope       False       private
+    refused_group_not_member   False       private
+
+    Additional fields on every outcome:
+
+    - ``requested_scope``: what the caller asked for
+    - ``effective_scope``: what the engine applied after profile rules
+    - ``rule_applied``: ``auto_propagate_tiers`` | ``private_tiers`` |
+      ``client_scope_private`` | ``group_not_member`` | ``None``
+    - ``tier``, ``key``: passthrough for correlation
+    - ``would_require``: hint for how a refusal could be overridden,
+      e.g. ``{"force": True}`` or ``{"join_group": "<name>"}``
+
+    On success the dict also includes ``namespace`` and the saved Hive entry
+    fields (or ``dry_run=True`` when no write occurred).
     """
 
     @staticmethod
@@ -176,33 +203,54 @@ class PropagationEngine:
         bypass_profile_hive_rules: bool = False,
         dry_run: bool = False,
         memory_group: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """Propagate a memory entry to the Hive if appropriate.
 
-        Returns the saved Hive entry dict, or None if the entry stayed private.
-        When *dry_run* is True, does not write; returns a minimal dict
-        with ``namespace`` and ``key`` if propagation would occur.
+        Always returns a structured outcome dict — see the class docstring
+        for the contract. The top-level ``propagated`` flag and ``decision``
+        taxonomy code let callers branch without mirroring profile rules.
 
         *bypass_profile_hive_rules*: when True, ignore *private_tiers* and
         *auto_propagate_tiers* so explicit *agent_scope* from the caller wins
         (used for CLI/MCP batch push — GitHub #18).
         """
+        requested_scope = agent_scope
         effective_scope = agent_scope
+        rule_applied: str | None = None
 
         if not bypass_profile_hive_rules:
-            # Private tiers override everything
             if private_tiers and tier in private_tiers:
                 effective_scope = "private"
-            # Auto-propagation for configured tiers
+                rule_applied = "private_tiers"
             elif (
                 auto_propagate_tiers
                 and tier in auto_propagate_tiers
                 and effective_scope == "private"
             ):
                 effective_scope = "domain"
+                rule_applied = "auto_propagate_tiers"
 
         if effective_scope == "private":
-            return None
+            if rule_applied == "private_tiers":
+                decision = "refused_private_tier"
+                would_require: dict[str, Any] | None = {"force": True}
+                reason = "tier is in profile.hive.private_tiers"
+            else:
+                decision = "refused_client_scope"
+                rule_applied = "client_scope_private"
+                would_require = None
+                reason = "caller requested agent_scope=private"
+            return {
+                "propagated": False,
+                "decision": decision,
+                "reason": reason,
+                "rule_applied": rule_applied,
+                "requested_scope": requested_scope,
+                "effective_scope": "private",
+                "tier": tier,
+                "key": key,
+                "would_require": would_require,
+            }
 
         group_ns = hive_group_name_from_scope(effective_scope)
         if group_ns is not None:
@@ -214,7 +262,18 @@ class PropagationEngine:
                     key=key,
                     reason="not_a_member",
                 )
-                return None
+                return {
+                    "propagated": False,
+                    "decision": "refused_group_not_member",
+                    "reason": f"agent '{agent_id}' is not a member of group '{group_ns}'",
+                    "rule_applied": "group_not_member",
+                    "requested_scope": requested_scope,
+                    "effective_scope": "private",
+                    "tier": tier,
+                    "key": key,
+                    "group_name": group_ns,
+                    "would_require": {"join_group": group_ns},
+                }
             namespace = group_ns
         elif effective_scope == "hive":
             namespace = "universal"
@@ -230,6 +289,19 @@ class PropagationEngine:
             )
             namespace = agent_profile
 
+        base_outcome: dict[str, Any] = {
+            "propagated": True,
+            "decision": "propagated",
+            "reason": None,
+            "rule_applied": rule_applied,
+            "requested_scope": requested_scope,
+            "effective_scope": effective_scope,
+            "tier": tier,
+            "key": key,
+            "namespace": namespace,
+            "would_require": None,
+        }
+
         if dry_run:
             logger.debug(
                 "hive.propagate_dry_run",
@@ -237,9 +309,9 @@ class PropagationEngine:
                 namespace=namespace,
                 agent_id=agent_id,
             )
-            return {"namespace": namespace, "key": key, "dry_run": True}
+            return {**base_outcome, "dry_run": True}
 
-        result = hive_store.save(
+        saved = hive_store.save(
             key=key,
             value=value,
             namespace=namespace,
@@ -257,9 +329,13 @@ class PropagationEngine:
             scope=effective_scope,
             namespace=namespace,
             agent_id=agent_id,
+            rule_applied=rule_applied,
         )
 
-        return result
+        outcome: dict[str, Any] = dict(saved) if saved else {}
+        outcome.update(base_outcome)
+        outcome["dry_run"] = False
+        return outcome
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +426,7 @@ def push_memory_entries_to_hive(
         src = entry.source
         source_val = src.value if isinstance(src, MemorySource) else str(src)
         try:
-            result = PropagationEngine.propagate(
+            outcome = PropagationEngine.propagate(
                 key=entry.key,
                 value=entry.value,
                 agent_scope=agent_scope,
@@ -376,11 +452,29 @@ def push_memory_entries_to_hive(
             )
             failed.append({"key": entry.key, "error": str(exc)})
             continue
-        if result is None:
-            skipped.append({"key": entry.key, "reason": "not_propagated_private_rules"})
+        if outcome["propagated"]:
+            pushed.append(
+                {
+                    "key": entry.key,
+                    "namespace": str(outcome.get("namespace", "")),
+                    "tier": tier_val,
+                    "requested_scope": outcome["requested_scope"],
+                    "effective_scope": outcome["effective_scope"],
+                    "rule_applied": outcome["rule_applied"],
+                }
+            )
         else:
-            ns = str(result.get("namespace", ""))
-            pushed.append({"key": entry.key, "namespace": ns})
+            skipped.append(
+                {
+                    "key": entry.key,
+                    "reason": outcome["decision"],
+                    "tier": tier_val,
+                    "rule_applied": outcome["rule_applied"],
+                    "requested_scope": outcome["requested_scope"],
+                    "effective_scope": outcome["effective_scope"],
+                    "would_require": outcome.get("would_require"),
+                }
+            )
 
     return {
         "dry_run": dry_run,

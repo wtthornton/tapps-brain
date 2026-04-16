@@ -111,8 +111,20 @@ def hive_propagate(
                 "valid_values": agent_scope_valid_values_for_errors(),
             }
 
+        tier_val = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+
         if agent_scope == "private":
-            return {"propagated": False, "reason": "scope is private"}
+            return {
+                "propagated": False,
+                "decision": "refused_client_scope",
+                "reason": "caller requested agent_scope=private",
+                "rule_applied": "client_scope_private",
+                "requested_scope": "private",
+                "effective_scope": "private",
+                "tier": tier_val,
+                "key": entry.key,
+                "would_require": None,
+            }
 
         hive, should_close = hive_resolver()
         hive_agent_id = getattr(store, "_hive_agent_id", "mcp-user")
@@ -126,9 +138,8 @@ def hive_propagate(
                 auto_propagate = hc.auto_propagate_tiers
                 private_tiers = hc.private_tiers
 
-        tier_val = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
         try:
-            result = PropagationEngine.propagate(
+            outcome = PropagationEngine.propagate(
                 key=entry.key,
                 value=entry.value,
                 agent_scope=agent_scope,
@@ -147,9 +158,7 @@ def hive_propagate(
         finally:
             if should_close:
                 hive.close()
-        if result is None:
-            return {"propagated": False, "reason": "scope is private"}
-        return {"propagated": True, **result}
+        return outcome
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_propagate")
         return {"error": "hive_error", "message": str(exc)}
