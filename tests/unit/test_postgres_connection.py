@@ -407,3 +407,49 @@ class TestNonPrivilegedRoleAssertion:
                 cm._ensure_pool()
         bad_pool.close.assert_called_once()
         assert cm._pool is None
+
+
+# ---------------------------------------------------------------------------
+# TAP-514 — pool reset callback wipes tapps session variables on release.
+# ---------------------------------------------------------------------------
+
+
+class TestSessionVarResetCallback:
+    """The reset callback runs on connection return and clears every tapps
+    session variable so identity cannot leak across pool borrows."""
+
+    def test_reset_runs_all_resets_in_one_execute(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cur = MagicMock()
+        cur.__enter__ = MagicMock(return_value=cur)
+        cur.__exit__ = MagicMock(return_value=False)
+        conn = MagicMock()
+        conn.cursor = MagicMock(return_value=cur)
+
+        PostgresConnectionManager._reset_session_vars(conn)
+
+        cur.execute.assert_called_once()
+        sql_text = cur.execute.call_args[0][0]
+        for var in ("app.project_id", "app.agent_id", "app.is_admin", "tapps.current_namespace"):
+            assert f"RESET {var}" in sql_text
+
+    def test_reset_callback_wired_into_pool(self) -> None:
+        """ConnectionPool is constructed with reset=cm._reset_session_vars."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        captured: dict = {}
+
+        def fake_pool_ctor(dsn: str, **kwargs: object) -> MagicMock:
+            captured.update(kwargs)
+            captured["dsn"] = dsn
+            # Return a pool whose role-check passes (TAP-512 added the
+            # assertion in _ensure_pool — give it a clean tapps_runtime
+            # row so we can isolate the reset-callback wiring assertion).
+            return _mock_pool_with_role()
+
+        with patch("psycopg_pool.ConnectionPool", side_effect=fake_pool_ctor):
+            cm._ensure_pool()
+
+        assert captured["reset"] is cm._reset_session_vars

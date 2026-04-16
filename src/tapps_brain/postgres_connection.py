@@ -127,6 +127,28 @@ class PostgresConnectionManager:
 
     # -- Pool lifecycle --------------------------------------------------------
 
+    @staticmethod
+    def _reset_session_vars(conn: Any) -> None:  # noqa: ANN401 — psycopg Connection
+        """TAP-514: clear tenant/agent session variables on connection release.
+
+        ``project_context`` / ``agent_context`` / ``admin_context`` /
+        ``namespace_context`` use SESSION-level ``SET`` (not ``SET LOCAL``)
+        so the bound identity survives multiple transactions inside one
+        pool borrow.  This callback runs when the connection is returned
+        to the pool and wipes those variables so the next borrower starts
+        clean.
+
+        Raised exceptions cause psycopg_pool to close the connection
+        rather than recycle it — fail-safe.
+        """
+        with conn.cursor() as cur:
+            cur.execute(
+                "RESET app.project_id; "
+                "RESET app.agent_id; "
+                "RESET app.is_admin; "
+                "RESET tapps.current_namespace"
+            )
+
     def _ensure_pool(self) -> None:
         """Create the connection pool on first use (lazy initialisation)."""
         if self._pool is not None:
@@ -144,6 +166,7 @@ class PostgresConnectionManager:
             "max_size": self._max_size,
             "timeout": self._connect_timeout,
             "max_waiting": self._max_waiting,
+            "reset": self._reset_session_vars,
         }
         if self._idle_timeout > 0:
             kwargs["max_idle"] = self._idle_timeout
@@ -312,34 +335,23 @@ class PostgresConnectionManager:
     def namespace_context(self, namespace: str) -> Iterator[Any]:
         """Yield a connection with ``tapps.current_namespace`` session variable set.
 
-        This is the documented pattern for enforcing namespace-based Row Level
-        Security (RLS) on ``hive_memories`` (EPIC-063 STORY-063.3).  Within the
-        yielded transaction the ``hive_namespace_isolation`` policy will restrict
-        visible rows to those whose ``namespace`` column matches *namespace*.
+        Documented pattern for enforcing namespace-based Row Level
+        Security (RLS) on ``hive_memories`` (EPIC-063 STORY-063.3).  All
+        transactions executed against the yielded connection see the
+        ``hive_namespace_isolation`` policy applied with the bound
+        namespace.
 
-        ``SET LOCAL`` is used so the variable is automatically cleared when the
-        transaction ends (commit or rollback) — safe for pooled connections.
-
-        Usage::
-
-            with manager.namespace_context("project-alpha") as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT * FROM hive_memories WHERE key = %s",
-                        (key,),
-                    )
-
-        When RLS is enabled (migration ``hive/002_rls_spike.sql`` applied),
-        this call restricts all reads and writes within the transaction to rows
-        with ``namespace = <namespace>``.  Without the migration or when
-        connecting as a superuser/table-owner, the ``SET LOCAL`` is harmless.
+        TAP-514 — uses session-level ``SET`` (not ``SET LOCAL``) so the
+        binding survives multiple transactions inside one borrow; the
+        pool's ``reset`` callback wipes it on connection return so no
+        identity leaks across borrows.
 
         Parameters
         ----------
         namespace:
-            The namespace value to bind for this transaction.  Must not be
-            empty; pass ``""`` only to explicitly invoke the admin-bypass policy
-            (all rows visible, no isolation).
+            The namespace value to bind for this borrow.  Must not be
+            empty; pass ``""`` only to explicitly invoke the admin-bypass
+            policy (all rows visible, no isolation).
         """
         self._ensure_pool()
         with self._pool.connection() as conn:
@@ -347,9 +359,7 @@ class PostgresConnectionManager:
                 from psycopg import sql as pgsql
 
                 cur.execute(
-                    pgsql.SQL("SET LOCAL tapps.current_namespace = {}").format(
-                        pgsql.Literal(namespace)
-                    )
+                    pgsql.SQL("SET tapps.current_namespace = {}").format(pgsql.Literal(namespace))
                 )
             yield conn
 
@@ -359,19 +369,24 @@ class PostgresConnectionManager:
 
         EPIC-069 STORY-069.8 — enforces tenant Row Level Security on
         ``private_memories`` and ``project_profiles`` (migration
-        ``private/009_project_rls.sql``).  Within the yielded transaction
-        RLS restricts visible rows to those whose ``project_id`` column
-        matches *project_id*; rows for any other tenant are invisible
-        (and cross-tenant INSERTs fail the WITH CHECK clause).
+        ``private/009_project_rls.sql``).  All transactions executed
+        against the yielded connection see RLS restricted to rows whose
+        ``project_id`` column matches *project_id*; cross-tenant INSERTs
+        fail the WITH CHECK clause.
 
-        ``SET LOCAL`` is used so the variable is automatically cleared when
-        the transaction ends (commit or rollback) — safe for pooled
-        connections; no identity can leak across pool borrows.
+        TAP-514 — uses session-level ``SET`` (not ``SET LOCAL``) so the
+        binding survives multiple transactions inside one borrow.  Earlier
+        ``SET LOCAL`` semantics let a caller commit mid-block and silently
+        lose the RLS context for the next transaction on the same
+        connection — fail-closed policies then hid every row, looking like
+        an empty tenant.  The pool's ``reset`` callback wipes
+        ``app.project_id`` on connection return so no identity leaks
+        across borrows.
 
         Parameters
         ----------
         project_id:
-            The tenant identity to bind for this transaction.  Must be a
+            The tenant identity to bind for this borrow.  Must be a
             non-empty string.  An empty string would collapse into the
             fail-closed policy and hide every row; callers that want to
             list all projects must use :meth:`admin_context` instead.
@@ -391,9 +406,7 @@ class PostgresConnectionManager:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
-                cur.execute(
-                    pgsql.SQL("SET LOCAL app.project_id = {}").format(pgsql.Literal(project_id))
-                )
+                cur.execute(pgsql.SQL("SET app.project_id = {}").format(pgsql.Literal(project_id)))
             yield conn
 
     @contextmanager
@@ -402,16 +415,17 @@ class PostgresConnectionManager:
 
         STORY-070.7 — threads the per-call ``agent_id`` into Postgres so
         any row-level security policy (or audit trigger) that filters by
-        agent can see the caller identity for this transaction.
+        agent can see the caller identity.
 
-        ``SET LOCAL`` ensures the variable is cleared when the transaction
-        ends (commit or rollback), making it safe for pooled connections:
-        no agent identity can leak across pool borrows.
+        TAP-514 — uses session-level ``SET`` so the binding survives
+        multiple transactions inside one borrow; the pool's ``reset``
+        callback wipes it on connection return so no agent identity leaks
+        across borrows.
 
         Parameters
         ----------
         agent_id:
-            The agent identity to bind for this transaction.  Must be a
+            The agent identity to bind for this borrow.  Must be a
             non-empty string.
 
         Raises
@@ -426,9 +440,7 @@ class PostgresConnectionManager:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
-                cur.execute(
-                    pgsql.SQL("SET LOCAL app.agent_id = {}").format(pgsql.Literal(agent_id))
-                )
+                cur.execute(pgsql.SQL("SET app.agent_id = {}").format(pgsql.Literal(agent_id)))
             yield conn
 
     @contextmanager
@@ -436,20 +448,24 @@ class PostgresConnectionManager:
         """Yield a connection with ``app.is_admin = 'true'`` set.
 
         EPIC-069 STORY-069.8 — unlocks the admin-bypass policy on
-        ``project_profiles`` so the registry (list_all / register / approve
-        / delete) can see and mutate every row regardless of tenant.
+        ``project_profiles`` so the registry (list_all / register /
+        approve / delete) can see and mutate every row regardless of
+        tenant.
 
-        ``SET LOCAL`` ensures the elevated flag dies with the transaction
-        and cannot leak across pool borrows.  This context does NOT unlock
-        ``private_memories`` — that table is fail-closed and has no admin
-        policy; genuine admin maintenance against ``private_memories``
-        must connect as the table owner (``tapps_migrator``) which bypasses
-        RLS by default.
+        TAP-514 — uses session-level ``SET`` so the flag survives
+        multiple transactions inside one borrow; the pool's ``reset``
+        callback wipes ``app.is_admin`` on connection return so the
+        elevation cannot leak across borrows.  This context does NOT
+        unlock ``private_memories`` — that table is fail-closed and has
+        no admin policy; genuine admin maintenance against
+        ``private_memories`` must connect as a role with BYPASSRLS or
+        temporarily DISABLE the table's RLS (TAP-512 added FORCE so
+        owner-bypass no longer works).
         """
         self._ensure_pool()
         with self._pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SET LOCAL app.is_admin = 'true'")
+                cur.execute("SET app.is_admin = 'true'")
             yield conn
 
     @property
