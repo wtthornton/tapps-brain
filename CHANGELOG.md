@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - `auto_consolidation.extract_relations` now uses `store.save_relations()` instead of reaching into `store._persistence` / `store._lock` / `store._relations` directly. Removed the design-debt TODO.
+### Security
+- `private/012_rls_force.sql` adds `FORCE ROW LEVEL SECURITY` to `private_memories` and `project_profiles` so table-owner connections (e.g. `tapps_migrator`) and superusers can no longer silently bypass tenant isolation (TAP-512). The fail-closed policy on `private_memories` and the admin/tenant policies on `project_profiles` now apply unconditionally; admin paths continue to work via the existing `app.is_admin='true'` bypass policy on `project_profiles` (set by `admin_context()`).
+- `PostgresConnectionManager` now refuses to start when the connected role can bypass RLS (`rolsuper=true`, `rolbypassrls=true`, or owns the tenanted tables). Operators that genuinely need a privileged role (CI, dev, one-off maintenance) set `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1` to acknowledge the risk; production deployments must NOT set it. CI sets the override because the GitHub Postgres service runs as superuser.
 
 ## [3.7.2] - 2026-04-16
 

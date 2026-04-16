@@ -303,3 +303,107 @@ class TestPostgresConnectionManager:
 
         with pytest.raises(ValueError, match="min_size"):
             PostgresConnectionManager("postgres://localhost/test", min_size=10, max_size=5)
+
+
+# ---------------------------------------------------------------------------
+# TAP-512 — non-owner role startup assertion.
+# ---------------------------------------------------------------------------
+
+
+def _mock_pool_with_role(
+    *,
+    rolsuper: bool = False,
+    rolbypassrls: bool = False,
+    owned_tables: list[str] | None = None,
+    current_user: str = "tapps_runtime",
+) -> MagicMock:
+    """Build a mock pool whose connection.cursor() returns canned role rows."""
+    cur = MagicMock()
+    cur.fetchone.return_value = (current_user, rolsuper, rolbypassrls)
+    cur.fetchall.return_value = [(t,) for t in (owned_tables or [])]
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+
+    conn = MagicMock()
+    conn.cursor = MagicMock(return_value=cur)
+
+    pool_ctx = MagicMock()
+    pool_ctx.__enter__ = MagicMock(return_value=conn)
+    pool_ctx.__exit__ = MagicMock(return_value=False)
+
+    pool = MagicMock()
+    pool.connection = MagicMock(return_value=pool_ctx)
+    return pool
+
+
+class TestNonPrivilegedRoleAssertion:
+    """TAP-512: refuse to start when the connected role can bypass RLS."""
+
+    def test_non_privileged_role_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = _mock_pool_with_role()
+
+        # Should not raise.
+        cm._assert_non_privileged_role()
+
+    def test_superuser_role_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = _mock_pool_with_role(rolsuper=True, current_user="postgres")
+
+        with pytest.raises(RuntimeError, match="rolsuper=true"):
+            cm._assert_non_privileged_role()
+
+    def test_bypassrls_role_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = _mock_pool_with_role(rolbypassrls=True)
+
+        with pytest.raises(RuntimeError, match="rolbypassrls=true"):
+            cm._assert_non_privileged_role()
+
+    def test_table_owner_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = _mock_pool_with_role(
+            owned_tables=["private_memories", "project_profiles"],
+            current_user="tapps_migrator",
+        )
+
+        with pytest.raises(RuntimeError, match="owns tenanted tables"):
+            cm._assert_non_privileged_role()
+
+    def test_override_env_downgrades_violation_to_warning(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.setenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "1")
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = _mock_pool_with_role(rolsuper=True, current_user="postgres")
+
+        # Should not raise even though role is privileged.
+        cm._assert_non_privileged_role()
+
+    def test_failed_assertion_closes_pool(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pool created in _ensure_pool is closed when assertion raises."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        bad_pool = _mock_pool_with_role(rolsuper=True, current_user="postgres")
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        with patch("psycopg_pool.ConnectionPool", return_value=bad_pool):
+            with pytest.raises(RuntimeError, match="rolsuper"):
+                cm._ensure_pool()
+        bad_pool.close.assert_called_once()
+        assert cm._pool is None

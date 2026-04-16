@@ -49,11 +49,11 @@
 -- admin CLIs that connect as the owner intentionally bypass these policies
 -- — that is the only path allowed to escape isolation.
 --
--- We do NOT set FORCE ROW LEVEL SECURITY on either table: the admin /
--- migration role needs unfettered access to apply schema changes and to
--- seed data during onboarding.  If ops starts running the app as the
--- table owner, add FORCE ROW LEVEL SECURITY here and switch admin paths
--- to a dedicated role that also has BYPASSRLS.
+-- HISTORY: this migration originally did NOT set FORCE.  TAP-512 closed
+-- that gap (silent isolation loss when ops misconfigures the runtime
+-- role) by adding FORCE in 012_rls_force.sql, plus a startup assertion
+-- in PostgresConnectionManager that refuses to start as a privileged
+-- role.  This block is left in place for historical context.
 --
 -- Idempotency
 -- -----------
