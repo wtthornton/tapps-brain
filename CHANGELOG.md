@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-04-16
+
+### Fixed
+- MCP streamable-HTTP transport at `/mcp`: every request crashed with `RuntimeError: Task group is not initialized. Make sure to use run().` because `_lifespan` accessed `FastMCP.session_manager` **before** calling `streamable_http_app()`, which is what constructs the session manager. The lazy-init guard swallowed the RuntimeError, left `session_cm = None`, so the task group was never started. Reordered the lifespan so `streamable_http_app()` runs first, then `session_manager.run()` — `/mcp` tool calls now work end-to-end.
+- `TappsBrainClient` / `AsyncTappsBrainClient` `http://` and `https://` URL schemes: the client posted to `/v1/tools/{tool_name}`, a REST route specced in STORY-070.11 but never shipped server-side, so every call 404'd. Unified both schemes onto the streamable-HTTP MCP transport at `/mcp`: `_post_tool` now sends an MCP `tools/call` JSON-RPC envelope, preserving the existing retry + error-taxonomy behavior. `mcp+http://` behavior unchanged.
+
 ## [3.7.0] - 2026-04-15
 
 ### Added

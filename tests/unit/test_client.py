@@ -300,6 +300,23 @@ def test_close_idempotent() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_http_scheme_routes_through_mcp_endpoint() -> None:
+    """Regression: http:// scheme must POST to /mcp (the /v1/tools/{name}
+    REST route was specced in STORY-070.11 but never shipped server-side;
+    v3.7.1 unifies both schemes onto the MCP transport)."""
+    client = _make_sync_client()  # constructed with http://brain:8080
+    client._http_client.post.return_value = _mock_success({"key": "abc-123"})
+
+    client.remember("verify http scheme")
+
+    url_called: str = client._http_client.post.call_args.args[0]
+    assert url_called.endswith("/mcp"), f"Expected POST to end with '/mcp', got {url_called!r}"
+    payload_bytes: bytes = client._http_client.post.call_args.kwargs["content"]
+    payload = json.loads(payload_bytes)
+    assert payload["method"] == "tools/call"
+    assert payload["params"]["name"] == "brain_remember"
+
+
 def test_mcp_http_tool_uses_mcp_endpoint() -> None:
     with patch("tapps_brain.client.TappsBrainClient._init_http"):
         client = TappsBrainClient("mcp+http://brain:8080", project_id="p1", agent_id="a1")

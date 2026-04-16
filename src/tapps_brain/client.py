@@ -165,6 +165,43 @@ def _build_headers(
     return headers
 
 
+def _mcp_envelope(
+    tool_name: str,
+    arguments: dict[str, Any],
+    project_id: str,
+    agent_id: str,
+    idempotency_key: str | None,
+) -> bytes:
+    """Build an MCP ``tools/call`` JSON-RPC request body."""
+    meta: dict[str, Any] = {"project_id": project_id, "agent_id": agent_id}
+    if idempotency_key:
+        meta["idempotency_key"] = idempotency_key
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": tool_name, "arguments": arguments, "_meta": meta},
+        "id": 1,
+    }
+    return json.dumps(payload).encode()
+
+
+def _unwrap_mcp_result(data: Any) -> Any:
+    """Pull the tool return value out of an MCP ``tools/call`` response.
+
+    Accepts either an unwrapped dict (legacy REST shape) or a JSON-RPC
+    envelope; returns the tool's Python-side value in both cases.
+    """
+    if isinstance(data, dict) and "result" in data:
+        content = data["result"].get("content", [])
+        if content and isinstance(content, list):
+            raw = content[0].get("text", "{}")
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                return raw
+    return data
+
+
 def _post_tool(
     client: Any,
     base: str,
@@ -177,29 +214,28 @@ def _post_tool(
     idempotency_key: str | None = None,
     max_retries: int = 2,
 ) -> Any:
-    """POST to /v1/tools/{tool_name} with error parsing and transparent retry.
+    """POST an MCP ``tools/call`` to the brain's ``/mcp`` endpoint.
 
-    On a retryable response (429 / 503), the same *idempotency_key* is reused
-    so duplicate writes are prevented.  The ``Retry-After`` response header is
-    honoured when present.
+    Handles transparent retry on 429/503 (re-using the same idempotency key
+    so writes don't duplicate) and maps structured error bodies to the
+    :mod:`tapps_brain.errors` taxonomy.  Raises ``httpx.HTTPStatusError``
+    as a fallback for unrecognised status codes.
 
-    Raises the appropriate :class:`~tapps_brain.errors.TaxonomyError` subclass
-    for known error codes; falls back to ``httpx.HTTPStatusError`` for
-    unrecognised status codes.
+    The brain exposes tools exclusively over the streamable-HTTP MCP
+    transport; the previously specced ``/v1/tools/{name}`` REST route
+    was never shipped server-side.  Both ``http://`` and ``mcp+http://``
+    client URLs therefore land on ``/mcp``.
     """
     from tapps_brain.errors import RetryPolicy
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
+    body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = client.post(
-            f"{base}/v1/tools/{tool_name}",
-            headers=headers,
-            content=json.dumps(arguments).encode(),
-        )
+        resp = client.post(f"{base}/mcp", headers=headers, content=body_bytes)
         if resp.is_success:
-            return resp.json()
+            return _unwrap_mcp_result(resp.json())
 
         # Parse structured error body
         try:
@@ -247,16 +283,13 @@ async def _async_post_tool(
     from tapps_brain.errors import RetryPolicy
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
+    body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = await client.post(
-            f"{base}/v1/tools/{tool_name}",
-            headers=headers,
-            content=json.dumps(arguments).encode(),
-        )
+        resp = await client.post(f"{base}/mcp", headers=headers, content=body_bytes)
         if resp.is_success:
-            return resp.json()
+            return _unwrap_mcp_result(resp.json())
 
         try:
             body: dict[str, Any] = resp.json()
@@ -381,18 +414,20 @@ class TappsBrainClient:
         if name in _WRITE_TOOLS:
             ikey = str(uuid.uuid4())
 
-        if self._scheme == "http":
-            return self._http_tool(name, kwargs, idempotency_key=ikey)
-        else:
-            return self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
+        # Both http:// and mcp+http:// route through MCP streamable-HTTP.
+        # The deployed brain exposes tools over MCP at /mcp, not at
+        # /v1/tools/{name} — the latter was specced but never shipped
+        # server-side.  Keeping the http:// scheme as a convenience alias.
+        return self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
 
-    def _http_tool(
+    def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
-        """POST to HTTP adapter /v1/tools/{name}."""
+        """Send a ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         return _post_tool(
             self._http_client,
-            _http_base(self._url),
+            base,
             name,
             arguments,
             self._project_id,
@@ -401,40 +436,6 @@ class TappsBrainClient:
             idempotency_key=idempotency_key,
             max_retries=self._max_retries,
         )
-
-    def _mcp_http_tool(
-        self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
-    ) -> Any:
-        """Send a tools/call request to the MCP streamable-HTTP endpoint."""
-        base = _http_base(self._url.replace("mcp+http://", "http://", 1))
-        headers = _build_headers(
-            self._project_id, self._agent_id, self._auth_token, idempotency_key=idempotency_key
-        )
-        meta: dict[str, Any] = {"project_id": self._project_id, "agent_id": self._agent_id}
-        if idempotency_key:
-            meta["idempotency_key"] = idempotency_key
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments, "_meta": meta},
-            "id": 1,
-        }
-        resp = self._http_client.post(
-            f"{base}/mcp",
-            headers=headers,
-            content=json.dumps(payload).encode(),
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if "result" in data:
-            content = data["result"].get("content", [])
-            if content and isinstance(content, list):
-                raw = content[0].get("text", "{}")
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    return raw
-        return data
 
     # --- Context manager ---
 
@@ -624,17 +625,17 @@ class AsyncTappsBrainClient:
         if name in _WRITE_TOOLS:
             ikey = str(uuid.uuid4())
 
-        if self._scheme == "http":
-            return await self._http_tool(name, kwargs, idempotency_key=ikey)
-        else:
-            return await self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
+        # See sync _call_tool: both schemes route through MCP.
+        return await self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
 
-    async def _http_tool(
+    async def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
+        """Async ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         return await _async_post_tool(
             self._http_client,
-            _http_base(self._url),
+            base,
             name,
             arguments,
             self._project_id,
@@ -643,39 +644,6 @@ class AsyncTappsBrainClient:
             idempotency_key=idempotency_key,
             max_retries=self._max_retries,
         )
-
-    async def _mcp_http_tool(
-        self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
-    ) -> Any:
-        base = _http_base(self._url.replace("mcp+http://", "http://", 1))
-        headers = _build_headers(
-            self._project_id, self._agent_id, self._auth_token, idempotency_key=idempotency_key
-        )
-        meta: dict[str, Any] = {"project_id": self._project_id, "agent_id": self._agent_id}
-        if idempotency_key:
-            meta["idempotency_key"] = idempotency_key
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments, "_meta": meta},
-            "id": 1,
-        }
-        resp = await self._http_client.post(
-            f"{base}/mcp",
-            headers=headers,
-            content=json.dumps(payload).encode(),
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if "result" in data:
-            content = data["result"].get("content", [])
-            if content and isinstance(content, list):
-                raw = content[0].get("text", "{}")
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    return raw
-        return data
 
     # --- Context manager ---
 

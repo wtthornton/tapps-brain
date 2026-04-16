@@ -789,24 +789,13 @@ def create_app(
 
         session_cm = None
         if mcp is not None:
-            try:
-                sm = getattr(mcp, "session_manager", None)
-            except RuntimeError:
-                # FastMCP raises RuntimeError if session_manager is accessed
-                # before streamable_http_app() is called (lazy init guard).
-                sm = None
-            if sm is not None and hasattr(sm, "run"):
-                try:
-                    session_cm = sm.run()
-                    await session_cm.__aenter__()
-                except Exception as exc:
-                    logger.error("http_adapter.session_manager_start_failed", error=str(exc))
-                    session_cm = None
-
-            # Mount the MCP Streamable HTTP ASGI sub-app if not already mounted
-            # eagerly (STORY-070.4).  When mcp_server was provided at create_app
-            # call time the sub-app is mounted below, before lifespan runs, so
-            # that httpx.ASGITransport (no-lifespan) test clients see the route.
+            # ORDER MATTERS: streamable_http_app() must be called BEFORE
+            # accessing session_manager.  FastMCP raises RuntimeError on
+            # early session_manager access (lazy init guard) — calling
+            # streamable_http_app() first creates the session_manager so
+            # sm.run() can start its task_group.  Without this ordering,
+            # every /mcp request crashes with
+            # "Task group is not initialized. Make sure to use run()."
             if "asgi_sub" not in mcp_holder:
                 asgi_sub = _get_mcp_asgi_sub(mcp)
                 if asgi_sub is not None:
@@ -817,6 +806,15 @@ def create_app(
                         "http_adapter.mcp_mount_skipped",
                         detail="FastMCP did not expose a Streamable HTTP ASGI app.",
                     )
+
+            sm = getattr(mcp, "session_manager", None)
+            if sm is not None and hasattr(sm, "run"):
+                try:
+                    session_cm = sm.run()
+                    await session_cm.__aenter__()
+                except Exception as exc:
+                    logger.error("http_adapter.session_manager_start_failed", error=str(exc))
+                    session_cm = None
         try:
             yield
         finally:
