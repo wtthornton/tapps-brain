@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-04-15
+
+### Added
+- connection pool tuning: `max_waiting` (cap queue depth, env `TAPPS_BRAIN_PG_POOL_MAX_WAITING`, default 20) and `max_lifetime` (recycle old connections, env `TAPPS_BRAIN_PG_POOL_MAX_LIFETIME_SECONDS`, default 3600) params on `PostgresConnectionManager` (story-066.7)
+- `pool_min`, `pool_max`, `pool_idle` fields on `StoreHealth` and `HiveHealth` for richer `/ready` and `/health` diagnostics (story-066.7)
+- live hive pool stats (`pool_size`, `pool_idle`, `pool_waiting`) emitted to `/metrics` Prometheus output (story-066.7)
+- `docs/ops/postgres-tde.md` — pg_tde operator runbook covering transparent data encryption setup, key rotation, and emergency key recovery (story-066.10)
+- `docs/ops/postgres-backup.md` — Postgres backup and restore runbook with pg_basebackup, WAL archiving, PITR, and verification procedures (story-066.11)
+- brain-visual multi-page dashboard: hash-routed navigation with six pages (Overview, Health, Memory, Retrieval, Agents & Hive, Integrity & Export), persistent side-nav, deep-linkable URLs, nav-badge fail counts, and View Transitions API state changes — zero new npm dependencies (EPIC-068)
+- brain-visual Integrity & Privacy / Export page: memory export (JSON/CSV), GC controls, contradiction report, privacy audit log, and agent detail drawer (story-068.7)
+- 154 new unit tests covering behavioral parity, pg_tde runbook structure, backup runbook structure, docs drift sweep, and Postgres integration test scaffolding (stories 066.9–066.13)
+
+### Changed
+- `_collect_metrics` in `http_adapter.py` accepts optional `store` argument to surface live hive pool counters alongside existing DB and OTel metrics (story-066.7)
+
+### Fixed
+- brain-visual dashboard: hardcoded hex colour values replaced with CSS custom properties from NLT token source; keyboard navigation audit pass; reduced-motion pass; zero broken doc links (story-068.8)
+- pool connection leaks in integration test fixtures (TAP-362)
+- `recall`/`remember` tests correctly marked `requires_postgres` after ADR-007 (TAP-363)
+
 ## [3.6.0] - 2026-04-15
 
 ### Added
