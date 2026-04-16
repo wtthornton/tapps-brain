@@ -41,6 +41,15 @@ class PostgresConnectionManager:
         Seconds before an idle connection is closed and evicted from the pool.
         Falls back to ``TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT`` env var, then ``300`` (5 min).
         Pass ``0`` to disable idle eviction.
+    max_waiting:
+        Maximum number of requests that may queue waiting for a free connection.
+        Falls back to ``TAPPS_BRAIN_PG_POOL_MAX_WAITING`` env var, then ``20``.
+        Prevents unbounded backpressure under sustained overload.
+    max_lifetime:
+        Maximum lifetime of a connection in seconds; psycopg_pool will close
+        and replace connections that exceed this age.  Falls back to
+        ``TAPPS_BRAIN_PG_POOL_MAX_LIFETIME_SECONDS`` env var, then ``3600`` (1 hour).
+        Pass ``0`` to disable recycling.
     """
 
     def __init__(
@@ -51,6 +60,8 @@ class PostgresConnectionManager:
         max_size: int | None = None,
         connect_timeout: float | None = None,
         idle_timeout: float | None = None,
+        max_waiting: int | None = None,
+        max_lifetime: float | None = None,
     ) -> None:
         # Validate DSN scheme at construction time (ADR-007 — Postgres-only).
         if not dsn or not dsn.startswith(("postgres://", "postgresql://")):
@@ -92,6 +103,16 @@ class PostgresConnectionManager:
         )
         _idle_env = float(os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300"))
         self._idle_timeout = idle_timeout if idle_timeout is not None else _idle_env
+        self._max_waiting = (
+            max_waiting
+            if max_waiting is not None
+            else int(os.environ.get("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "20"))
+        )
+        self._max_lifetime = (
+            max_lifetime
+            if max_lifetime is not None
+            else float(os.environ.get("TAPPS_BRAIN_PG_POOL_MAX_LIFETIME_SECONDS", "3600"))
+        )
         # Validate pool size constraints.
         if self._max_size < 1:
             raise ValueError(
@@ -122,14 +143,19 @@ class PostgresConnectionManager:
             "min_size": self._min_size,
             "max_size": self._max_size,
             "timeout": self._connect_timeout,
+            "max_waiting": self._max_waiting,
         }
         if self._idle_timeout > 0:
             kwargs["max_idle"] = self._idle_timeout
+        if self._max_lifetime > 0:
+            kwargs["max_lifetime"] = self._max_lifetime
         self._pool = ConnectionPool(self._dsn, **kwargs)
         logger.info(
             "postgres.pool_created",
             min_size=self._min_size,
             max_size=self._max_size,
+            max_waiting=self._max_waiting,
+            max_lifetime=self._max_lifetime,
         )
 
     @contextmanager
@@ -176,6 +202,8 @@ class PostgresConnectionManager:
             "pool_available": 0,
             "pool_saturation": 0.0,
             "idle_timeout": self._idle_timeout,
+            "max_waiting": self._max_waiting,
+            "max_lifetime": self._max_lifetime,
         }
         if self._pool is None:
             return base

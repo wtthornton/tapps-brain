@@ -61,6 +61,14 @@ class StoreHealth(BaseModel):
         default=None,
         description="Profile seed recipe label when ``MemoryProfile.seeding.seed_version`` is set.",
     )
+    pool_min: int | None = Field(
+        default=None,
+        description="Configured pool min_size; None when no pool.",
+    )
+    pool_max: int | None = Field(
+        default=None,
+        description="Configured pool max_size; None when no pool.",
+    )
     pool_saturation: float | None = Field(
         default=None,
         description=(
@@ -101,10 +109,25 @@ class HiveHealth(BaseModel):
     namespaces: list[str] = Field(default_factory=list)
     entries: int = 0
     agents: int = 0
+    pool_min: int | None = Field(
+        default=None,
+        description="Configured pool min_size; None when no pool.",
+    )
+    pool_max: int | None = Field(
+        default=None,
+        description="Configured pool max_size; None when no pool.",
+    )
     pool_saturation: float | None = Field(
         default=None,
         description=(
             "Fraction of pool max_size currently in use (0.0-1.0). "
+            "None when the pool has not been opened or stats are unavailable."
+        ),
+    )
+    pool_idle: int | None = Field(
+        default=None,
+        description=(
+            "Number of idle connections available in the Hive pool. "
             "None when the pool has not been opened or stats are unavailable."
         ),
     )
@@ -254,6 +277,8 @@ def run_health_check(  # noqa: PLR0915
             if _priv_cm is not None and hasattr(_priv_cm, "get_pool_stats"):
                 try:
                     _ps = _priv_cm.get_pool_stats()
+                    store_health.pool_min = int(_ps.get("pool_min", 0))
+                    store_health.pool_max = int(_ps.get("pool_max", 0))
                     store_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                     store_health.pool_idle = int(_ps.get("pool_available", 0))
                 except Exception:
@@ -344,7 +369,10 @@ def run_health_check(  # noqa: PLR0915
                     if _cm is not None and hasattr(_cm, "get_pool_stats"):
                         try:
                             _ps = _cm.get_pool_stats()
+                            hive_health.pool_min = int(_ps.get("pool_min", 0))
+                            hive_health.pool_max = int(_ps.get("pool_max", 0))
                             hive_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
+                            hive_health.pool_idle = int(_ps.get("pool_available", 0))
                         except Exception:
                             pass
 

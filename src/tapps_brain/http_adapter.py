@@ -247,7 +247,21 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
         return False, None, f"db_error: {err_str}"
 
 
-def _collect_metrics(dsn: str | None) -> str:
+def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
+    """Return pool stats dict from a store's hive connection manager, or None."""
+    if store is None:
+        return None
+    try:
+        hive = getattr(store, "_hive_store", None)
+        cm = getattr(hive, "_cm", None)
+        if cm is not None and hasattr(cm, "get_pool_stats"):
+            return cm.get_pool_stats()
+    except Exception:
+        pass
+    return None
+
+
+def _collect_metrics(dsn: str | None, store: Any = None) -> str:
     lines: list[str] = []
 
     def gauge(name: str, value: float, help_text: str = "") -> None:
@@ -325,6 +339,25 @@ def _collect_metrics(dsn: str | None) -> str:
                 )
     except Exception:  # pragma: no cover — otel_tracer import error must not crash /metrics
         pass
+
+    # STORY-066.7: live pool stats from the hive connection manager.
+    _pool_stats = _get_hive_pool_stats(store)
+    if _pool_stats:
+        gauge(
+            "tapps_brain_pool_size",
+            float(_pool_stats.get("pool_size", 0)),
+            "Current number of open connections in the Hive pool.",
+        )
+        gauge(
+            "tapps_brain_pool_available",
+            float(_pool_stats.get("pool_available", 0)),
+            "Number of idle connections available in the Hive pool.",
+        )
+        gauge(
+            "tapps_brain_pool_saturation",
+            float(_pool_stats.get("pool_saturation", 0.0)),
+            "Fraction of Hive pool max_size currently in use (0.0-1.0).",
+        )
 
     lines.append("")
     return "\n".join(lines)
@@ -832,17 +865,26 @@ def create_app(
     @app.get("/ready")
     async def _ready() -> JSONResponse:
         is_ready, migration_version, message = _probe_db(cfg.dsn)
-        body = {
+        body: dict[str, Any] = {
             "status": "ready" if is_ready else "degraded",
             "migration_version": migration_version,
             "detail": message,
         }
+        _pool_stats = _get_hive_pool_stats(cfg.store)
+        if _pool_stats:
+            body["pool"] = {
+                "min": _pool_stats.get("pool_min"),
+                "max": _pool_stats.get("pool_max"),
+                "size": _pool_stats.get("pool_size"),
+                "available": _pool_stats.get("pool_available"),
+                "saturation": _pool_stats.get("pool_saturation"),
+            }
         return JSONResponse(status_code=200 if is_ready else 503, content=body)
 
     @app.get("/metrics")
     async def _metrics() -> PlainTextResponse:
         return PlainTextResponse(
-            content=_collect_metrics(cfg.dsn),
+            content=_collect_metrics(cfg.dsn, store=cfg.store),
             status_code=200,
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
