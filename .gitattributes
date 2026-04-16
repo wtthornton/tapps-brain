@@ -1,2 +1,7 @@
 # Enforce LF line endings for all text files
 * text=auto eol=lf
+
+# CHANGELOG entries are append-only and PRs frequently land in parallel.
+# Use git's built-in union driver so concurrent additions to the same
+# section combine instead of conflicting.
+CHANGELOG.md merge=union
