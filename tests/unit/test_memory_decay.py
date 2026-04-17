@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -12,8 +13,10 @@ from tapps_brain.decay import (
     _days_since,
     calculate_decayed_confidence,
     decay_config_from_profile,
+    exponential_decay,
     get_effective_confidence,
     is_stale,
+    power_law_decay,
     update_stability,
 )
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
@@ -61,6 +64,167 @@ class TestDecayConfig:
         assert cfg.agent_confidence_ceiling == 0.85
         assert cfg.inferred_confidence_ceiling == 0.70
         assert cfg.confidence_floor == 0.1
+
+    def test_default_decay_k_is_fsrs_canonical(self) -> None:
+        """STORY-SC02 (TAP-558): default decay_k = 81/19 (FSRS-canonical)."""
+        cfg = DecayConfig()
+        assert cfg.decay_k == pytest.approx(81.0 / 19.0)
+
+    def test_decay_exponent_upper_bound_is_10(self) -> None:
+        """STORY-SC02 (TAP-558): decay_exponent accepts values up to 10.0
+        (needed for the half-life-anchor β ≈ 3.29 and future fits)."""
+        DecayConfig(decay_exponent=10.0)  # upper bound accepted
+        with pytest.raises(ValidationError):
+            DecayConfig(decay_exponent=10.1)
+
+    def test_decay_exponent_lower_bound(self) -> None:
+        DecayConfig(decay_exponent=0.1)
+        with pytest.raises(ValidationError):
+            DecayConfig(decay_exponent=0.09)
+
+    def test_decay_k_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            DecayConfig(decay_k=0.0)
+        with pytest.raises(ValidationError):
+            DecayConfig(decay_k=-1.0)
+
+
+class TestPowerLawDecayFunction:
+    """STORY-SC02 (TAP-558): standalone tests for ``power_law_decay``."""
+
+    _K = 81.0 / 19.0
+
+    def test_r_at_zero_is_one(self) -> None:
+        assert power_law_decay(0.0, half_life=30.0, decay_exponent=3.29) == 1.0
+
+    def test_negative_days_clamped_to_one(self) -> None:
+        assert power_law_decay(-5.0, half_life=30.0, decay_exponent=3.29) == 1.0
+
+    def test_monotonic_decreasing(self) -> None:
+        """R(t) must strictly decrease in t for any positive β, H, k."""
+        hl = 30.0
+        beta = 3.29
+        prev = 1.0
+        for t in (1, 5, 10, 30, 60, 90, 180, 365):
+            r = power_law_decay(float(t), hl, beta)
+            assert 0.0 < r < prev, f"R({t}) = {r} should be < prev {prev}"
+            prev = r
+
+    def test_half_life_anchor_beta_gives_one_half_at_half_life(self) -> None:
+        """With β = ln 2 / ln(1 + 1/k), R(t=H) == 0.5 exactly. This is the
+        calibration used by the `repo-brain` profile migration (STORY-SC02)
+        to preserve median retention across the exponential → power-law swap.
+        """
+        import math as _math
+
+        k = self._K
+        beta = _math.log(2.0) / _math.log(1.0 + 1.0 / k)
+        for hl in (14.0, 30.0, 60.0, 180.0, 365.0):
+            r = power_law_decay(hl, hl, beta, k=k)
+            assert abs(r - 0.5) < 1e-12, f"R(H={hl}) = {r}, expected 0.5"
+
+    def test_fatter_tail_than_exponential(self) -> None:
+        """Power-law tail (with anchored β) must be fatter than exponential
+        past the half-life — this is the whole point of the migration."""
+        import math as _math
+
+        hl = 60.0
+        k = self._K
+        beta = _math.log(2.0) / _math.log(1.0 + 1.0 / k)
+
+        # Beyond H, power_law > exponential (fatter tail)
+        for t in (120.0, 240.0, 480.0):
+            pl = power_law_decay(t, hl, beta, k=k)
+            ex = math.pow(0.5, t / hl)
+            assert pl > ex, f"t={t}: power_law {pl} should exceed exponential {ex}"
+
+    def test_k_param_changes_curve_shape(self) -> None:
+        """Smaller k → steeper near-term decay for the same β."""
+        beta = 3.29
+        hl = 30.0
+        r_small_k = power_law_decay(5.0, hl, beta, k=1.0)
+        r_large_k = power_law_decay(5.0, hl, beta, k=10.0)
+        assert r_small_k < r_large_k
+
+
+class TestExponentialDecayFunction:
+    """STORY-SC02 (TAP-558): standalone tests for ``exponential_decay``."""
+
+    def test_r_at_zero_is_one(self) -> None:
+        assert exponential_decay(0.0, half_life=30.0) == 1.0
+
+    def test_negative_days_clamped_to_one(self) -> None:
+        assert exponential_decay(-5.0, half_life=30.0) == 1.0
+
+    def test_r_at_half_life_is_one_half(self) -> None:
+        for hl in (14.0, 30.0, 60.0, 180.0, 365.0):
+            assert exponential_decay(hl, hl) == pytest.approx(0.5, abs=1e-12)
+
+    def test_monotonic_decreasing(self) -> None:
+        prev = 1.0
+        for t in (1, 5, 10, 30, 60, 90, 180):
+            r = exponential_decay(float(t), 30.0)
+            assert 0.0 < r < prev
+            prev = r
+
+
+class TestPerLayerDecayKOverride:
+    """STORY-SC02 (TAP-558): per-category ``decay_k`` configuration."""
+
+    def test_layer_decay_k_takes_precedence_over_global(self) -> None:
+        """When ``layer_decay_k`` has an entry for a tier, it overrides
+        the global ``decay_k`` for that tier only."""
+        now = datetime.now(tz=UTC)
+        updated = (now - timedelta(days=30)).isoformat()
+
+        # Global k=4.263 (FSRS), override architectural to k=1.0 (steeper)
+        config = DecayConfig(
+            decay_model="power_law",
+            decay_exponent=3.29,
+            layer_decay_models={"architectural": "power_law", "pattern": "power_law"},
+            layer_decay_exponents={"architectural": 3.29, "pattern": 3.29},
+            layer_decay_k={"architectural": 1.0},  # steeper curve for architectural only
+        )
+
+        arch = _make_entry(tier=MemoryTier.architectural, confidence=0.8, updated_at=updated)
+        pat = _make_entry(tier=MemoryTier.pattern, confidence=0.8, updated_at=updated)
+
+        arch_decayed = calculate_decayed_confidence(arch, config, now=now)
+        pat_decayed = calculate_decayed_confidence(pat, config, now=now)
+
+        # Same half-life & β, smaller k → steeper → lower confidence. Architectural
+        # (180d HL) normally decays slower than pattern (60d HL), so if our k override
+        # pushes architectural below pattern, the override is definitely taking effect.
+        assert arch_decayed < pat_decayed, (
+            f"arch (k=1.0) {arch_decayed} should decay faster than pat (k=4.263) {pat_decayed}"
+        )
+
+    def test_per_layer_decay_k_absent_falls_back_to_global(self) -> None:
+        """Without a layer entry, the global ``decay_k`` applies."""
+        now = datetime.now(tz=UTC)
+        updated = (now - timedelta(days=30)).isoformat()
+
+        config_explicit = DecayConfig(
+            decay_model="power_law",
+            decay_exponent=3.29,
+            decay_k=2.0,
+            layer_decay_models={"pattern": "power_law"},
+            layer_decay_exponents={"pattern": 3.29},
+            layer_decay_k={"pattern": 2.0},
+        )
+        config_fallback = DecayConfig(
+            decay_model="power_law",
+            decay_exponent=3.29,
+            decay_k=2.0,
+            layer_decay_models={"pattern": "power_law"},
+            layer_decay_exponents={"pattern": 3.29},
+            # no layer_decay_k entry for pattern
+        )
+
+        entry = _make_entry(tier=MemoryTier.pattern, confidence=0.8, updated_at=updated)
+        r1 = calculate_decayed_confidence(entry, config_explicit, now=now)
+        r2 = calculate_decayed_confidence(entry, config_fallback, now=now)
+        assert r1 == pytest.approx(r2, abs=1e-12)
 
 
 class TestCalculateDecayedConfidence:

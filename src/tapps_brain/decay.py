@@ -28,6 +28,18 @@ _DEFAULT_STALE_THRESHOLD = 0.3
 # Seconds per day for time calculations.
 _SECONDS_PER_DAY = 86400.0
 
+# FSRS-canonical scaling constant for the power-law forgetting curve.
+# FSRS expresses retrievability as R = (1 + F·t/S)^C with F = 19/81; here
+# we use the equivalent form C0 * (1 + t / (k*H))^(-beta) where k = 1/F = 81/19.
+# Source: https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm
+_FSRS_DEFAULT_K = 81.0 / 19.0  # ≈ 4.2632
+
+# Calibration anchor for power-law that preserves R(t=H) = 0.5 (the half-life
+# semantic). Solving (1 + 1/k)^(-β) = 0.5 → β = ln 2 / ln(1 + 1/k).
+# With k = 81/19 this gives β ≈ 3.292. Use this when migrating an existing
+# exponential-tier profile to power-law without shifting median retention.
+_FSRS_HALF_LIFE_ANCHOR_BETA = math.log(2.0) / math.log(1.0 + 1.0 / _FSRS_DEFAULT_K)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -72,12 +84,22 @@ class DecayConfig(BaseModel):
     # Profile-based source ceilings (EPIC-010)
     profile_source_ceilings: dict[str, float] = Field(default_factory=dict)
 
-    # Decay model configuration (EPIC-010)
+    # Decay model configuration (EPIC-010, STORY-SC02)
     decay_model: str = Field(default="exponential")
-    decay_exponent: float = Field(default=1.0, ge=0.1, le=5.0)
-    # Per-layer decay model overrides (EPIC-010)
+    decay_exponent: float = Field(default=1.0, ge=0.1, le=10.0)
+    decay_k: float = Field(
+        default=_FSRS_DEFAULT_K,
+        gt=0.0,
+        description=(
+            "Power-law scaling constant. Default = 81/19 ≈ 4.263 (FSRS canonical, "
+            "from https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm). "
+            "Only used when decay_model == 'power_law'."
+        ),
+    )
+    # Per-layer decay model overrides (EPIC-010 + STORY-SC02)
     layer_decay_models: dict[str, str] = Field(default_factory=dict)
     layer_decay_exponents: dict[str, float] = Field(default_factory=dict)
+    layer_decay_k: dict[str, float] = Field(default_factory=dict)
 
     # Per-layer importance tags (EPIC-010)
     layer_importance_tags: dict[str, dict[str, float]] = Field(default_factory=dict)
@@ -120,6 +142,50 @@ _SOURCE_CEILING_ATTR: dict[MemorySource, str] = {
 # ---------------------------------------------------------------------------
 # Core decay functions
 # ---------------------------------------------------------------------------
+
+
+def power_law_decay(
+    days: float,
+    half_life: float,
+    decay_exponent: float,
+    k: float = _FSRS_DEFAULT_K,
+) -> float:
+    """Return the power-law decay multiplier ``(1 + days / (k·half_life))^(-decay_exponent)``.
+
+    The Ebbinghaus / Wixted power-law shape; matches the FSRS family of
+    spaced-repetition curves with ``k = 81/19`` (FSRS-4 canonical).
+
+    Args:
+        days: Elapsed time since the reference timestamp, in days. Negative
+            values are clamped to ``0.0``.
+        half_life: Layer half-life in days. When ``decay_exponent`` is the
+            half-life-anchor value (``ln 2 / ln(1 + 1/k)``), the curve passes
+            through ``R(half_life) = 0.5`` — preserving the exponential-mode
+            half-life semantic. With ``decay_exponent < that value`` the tail
+            is fatter; with ``> that value``, the tail is thinner.
+        decay_exponent: ``β`` in the formula above. ``0.5`` matches the FSRS
+            ``C = -0.5`` canonical default (treats ``half_life`` as FSRS
+            "stability", i.e. the 90 % retrievability point).
+        k: FSRS scaling constant. Default ``81/19 ≈ 4.263``.
+
+    Returns:
+        Decay multiplier in ``(0, 1]``. ``1.0`` at ``days == 0``.
+    """
+    if days <= 0.0:
+        return 1.0
+    return math.pow(1.0 + days / (k * half_life), -decay_exponent)
+
+
+def exponential_decay(days: float, half_life: float) -> float:
+    """Return the exponential decay multiplier ``0.5^(days / half_life)``.
+
+    The simpler-but-empirically-poorer-fit decay model. Retained as the
+    default for backward compatibility on any profile that hasn't opted into
+    ``decay_model: power_law``.
+    """
+    if days <= 0.0:
+        return 1.0
+    return math.pow(0.5, days / half_life)
 
 
 def _get_half_life(tier: MemoryTier | str, config: DecayConfig) -> int:
@@ -325,13 +391,11 @@ def calculate_decayed_confidence(
     decay_model = config.layer_decay_models.get(tier_str, config.decay_model)
 
     if decay_model == "power_law":
-        # Power-law decay: C0 x (1 + t / (k x H))^(-beta)
         beta = config.layer_decay_exponents.get(tier_str, config.decay_exponent)
-        k = 9.0  # Scaling constant (from FSRS)
-        decay_factor = math.pow(1.0 + days / (k * effective_hl), -beta)
+        k = config.layer_decay_k.get(tier_str, config.decay_k)
+        decay_factor = power_law_decay(days, effective_hl, beta, k)
     else:
-        # Exponential decay: confidence * 0.5^(days / half_life)
-        decay_factor = math.pow(0.5, days / effective_hl)
+        decay_factor = exponential_decay(days, effective_hl)
 
     decayed = entry.confidence * decay_factor
 
@@ -388,6 +452,7 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
     layer_floors: dict[str, float] = {}
     layer_models: dict[str, str] = {}
     layer_exponents: dict[str, float] = {}
+    layer_decay_k: dict[str, float] = {}
     layer_importance_tags: dict[str, dict[str, float]] = {}
 
     for layer in profile.layers:
@@ -397,6 +462,8 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
             layer_models[layer.name] = layer.decay_model
         if layer.decay_exponent != 1.0:
             layer_exponents[layer.name] = layer.decay_exponent
+        if layer.decay_k is not None:
+            layer_decay_k[layer.name] = layer.decay_k
         if layer.importance_tags:
             layer_importance_tags[layer.name] = dict(layer.importance_tags)
 
@@ -417,5 +484,6 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         profile_source_ceilings=ceilings,
         layer_decay_models=layer_models,
         layer_decay_exponents=layer_exponents,
+        layer_decay_k=layer_decay_k,
         layer_importance_tags=layer_importance_tags,
     )

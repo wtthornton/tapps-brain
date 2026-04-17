@@ -40,7 +40,16 @@ class LayerDefinition(BaseModel):
     description: str = ""
     half_life_days: int = Field(ge=1)
     decay_model: Literal["exponential", "power_law"] = "exponential"
-    decay_exponent: float = Field(default=1.0, ge=0.1, le=5.0)
+    decay_exponent: float = Field(default=1.0, ge=0.1, le=10.0)
+    decay_k: float | None = Field(
+        default=None,
+        gt=0.0,
+        description=(
+            "Power-law scaling constant override for this layer. None inherits "
+            "the global default (FSRS-canonical 81/19 ≈ 4.263). Only meaningful "
+            "when decay_model == 'power_law'."
+        ),
+    )
     confidence_floor: float = Field(default=0.1, ge=0.0, le=1.0)
     importance_tags: dict[str, float] = Field(default_factory=dict)
     promotion_to: str | None = None

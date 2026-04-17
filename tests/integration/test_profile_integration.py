@@ -245,8 +245,8 @@ class TestPowerLawDecay:
         actual = calculate_decayed_confidence(entry, config, now=now)
 
         # Manual calculation: C0 * (1 + t / (k * H))^(-beta)
-        # k=9.0 (from decay.py), H=365, beta=0.5
-        k = 9.0
+        # k = 81/19 (FSRS-canonical default, STORY-SC02), H=365, beta=0.5
+        k = 81.0 / 19.0
         half_life = 365
         beta = 0.5
         expected = 0.9 * math.pow(1.0 + days / (k * half_life), -beta)
@@ -303,32 +303,52 @@ class TestRepoBrainBackwardCompat:
         finally:
             store.close()
 
-    def test_repo_brain_same_behavior_as_no_profile_store(self):
-        """Entries saved with repo-brain profile should decay the same as default."""
+    def test_repo_brain_preserves_median_retention_at_half_life(self):
+        """STORY-SC02 (TAP-558): repo-brain migrated from exponential to power_law
+        with the half-life-anchor exponent β = ln(2)/ln(1+1/k). For each tier,
+        ``calculate_decayed_confidence`` at ``days = half_life_days`` must equal
+        ``confidence × 0.5`` within 1 % tolerance — preserving the median
+        retention behavior of the prior exponential configuration even though
+        near-term and tail behavior intentionally diverge.
+        """
         profile = _repo_brain_profile()
         profile_config = decay_config_from_profile(profile)
-        default_config = DecayConfig()
 
         now = datetime.now(tz=UTC)
-        thirty_days_ago = (now - timedelta(days=30)).isoformat()
+        c0 = 0.9
 
-        for tier_name in ["architectural", "pattern", "procedural", "context"]:
+        tier_half_lives = {
+            "architectural": 180,
+            "pattern": 60,
+            "procedural": 30,
+            "context": 14,
+        }
+
+        for tier_name, half_life in tier_half_lives.items():
+            ref = (now - timedelta(days=half_life)).isoformat()
             entry = MemoryEntry(
-                key=f"compat-{tier_name}",
-                value=f"Backward compat test for {tier_name}",
+                key=f"anchor-{tier_name}",
+                value=f"Half-life anchor for {tier_name}",
                 tier=tier_name,
-                confidence=0.9,
+                confidence=c0,
                 source="human",
-                created_at=thirty_days_ago,
-                updated_at=thirty_days_ago,
+                created_at=ref,
+                updated_at=ref,
+            )
+            decayed = calculate_decayed_confidence(entry, profile_config, now=now)
+            target = c0 * 0.5
+            tolerance = 0.01 * c0  # 1 %
+            assert abs(decayed - target) < tolerance, (
+                f"Tier '{tier_name}': R(t=H) should be ≈ {target:.4f}, got {decayed:.6f}"
             )
 
-            profile_decayed = calculate_decayed_confidence(entry, profile_config, now=now)
-            default_decayed = calculate_decayed_confidence(entry, default_config, now=now)
-
-            assert abs(profile_decayed - default_decayed) < 1e-6, (
-                f"Tier '{tier_name}' decay mismatch: "
-                f"profile={profile_decayed:.8f} vs default={default_decayed:.8f}"
+    def test_repo_brain_uses_power_law_for_all_tiers(self):
+        """STORY-SC02 (TAP-558): assert the migration actually happened."""
+        profile = _repo_brain_profile()
+        config = decay_config_from_profile(profile)
+        for tier_name in ["architectural", "pattern", "procedural", "context"]:
+            assert config.layer_decay_models.get(tier_name) == "power_law", (
+                f"Tier '{tier_name}' should use power_law decay after STORY-SC02 migration"
             )
 
 

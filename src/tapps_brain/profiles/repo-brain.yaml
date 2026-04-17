@@ -1,14 +1,21 @@
 profile:
   name: "repo-brain"
-  version: "1.0"
+  version: "1.1"
   description: "Memory for code repositories and AI coding assistants"
 
+  # STORY-SC02 (TAP-558): All four tiers use power-law decay with the
+  # half-life-anchor exponent β = ln(2) / ln(1 + 1/k) ≈ 3.29 (k = 81/19,
+  # FSRS canonical). This preserves R(t = half_life_days) = 0.5 — median
+  # retention at the half-life mark is unchanged from the prior exponential
+  # configuration. Near-term and tail behavior intentionally diverge: the
+  # tail is fatter (matches the Ebbinghaus / Wixted power-law shape).
+  # See docs/guides/decay.md for the calibration math.
   layers:
     - name: "architectural"
       description: "System decisions, tech stack, infrastructure"
       half_life_days: 180
-      decay_model: "exponential"
-      decay_exponent: 1.0
+      decay_model: "power_law"
+      decay_exponent: 3.29
       confidence_floor: 0.10
       importance_tags:
         critical: 2.0
@@ -19,8 +26,8 @@ profile:
     - name: "pattern"
       description: "Coding conventions, API patterns, design patterns"
       half_life_days: 60
-      decay_model: "exponential"
-      decay_exponent: 1.0
+      decay_model: "power_law"
+      decay_exponent: 3.29
       confidence_floor: 0.10
       importance_tags:
         critical: 1.5
@@ -34,8 +41,8 @@ profile:
     - name: "procedural"
       description: "Workflows, deployment steps, build commands"
       half_life_days: 30
-      decay_model: "exponential"
-      decay_exponent: 1.0
+      decay_model: "power_law"
+      decay_exponent: 3.29
       confidence_floor: 0.10
       promotion_to: "pattern"
       promotion_threshold:
@@ -47,8 +54,8 @@ profile:
     - name: "context"
       description: "Session-specific facts, current task details"
       half_life_days: 14
-      decay_model: "exponential"
-      decay_exponent: 1.0
+      decay_model: "power_law"
+      decay_exponent: 3.29
       confidence_floor: 0.05
       promotion_to: "procedural"
       promotion_threshold:

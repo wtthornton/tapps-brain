@@ -51,7 +51,7 @@ Sorted by overall score desc. 16 systems scored. Raw totals to one decimal.
 | 1 | mem0 | 79.6 | Published LoCoMo 91.6, Python + TS SDK + REST + hosted tier, Apache-2.0 | No DB-layer tenant isolation, LLM required in write path, no first-party MCP server (third-party wrappers only) |
 | 2 | Graphiti (Zep OSS) | 75.8 | Bi-temporal knowledge graph, Apache-2.0, first-class MCP server (mcp-v1.0.2) | Requires Neo4j/FalkorDB backend, graph-build latency, no public recall-quality benchmark on LongMemEval leaderboard |
 | 3 | Supermemory | 73.4 | MIT + self-host + 21.9k stars, MCP shipped, JS/TS + Python SDKs | SaaS-primary, architecture proprietary, "leaderboard" claims externally disputed *(D7 raised from 0 to 3 in 2026-04-17 score audit: MIT license + real self-host confirmed)* |
-| 4 | **tapps-brain** | **72.6** | DB-layer RLS tenant isolation, 55-tool first-class MCP surface with dual transport (data :8080 + operator :8090), production-ready (OTel, migrations, 127 test files) | No published benchmark, no external adopters, single-language SDK |
+| 2-3 | **tapps-brain** | **75.8** | Power-law per-tier decay (FSRS-canonical, STORY-SC02 2026-04-17), DB-layer RLS tenant isolation, 55-tool first-class MCP surface with dual transport (data :8080 + operator :8090), production-ready (OTel, migrations, 127 test files) | No published benchmark, no external adopters, single-language SDK |
 | 5 | Memori (MemoriLabs) | 72.2 | Published LoCoMo 81.95, Apache-2.0, Rust components + Python/TS SDK + MCP | LLM-in-path only, smaller ecosystem than mem0, entity-process-session isolation is app-layer |
 | 6 | LangGraph memory | 68.6 | Ubiquitous adoption (29.5k stars), MIT, multi-backend checkpointers + Store abstraction | Not a memory product (primitive), user must implement decay/consolidation, no first-party MCP server |
 | 7 | Cognee | 68.0 | `remember/recall/forget/improve` API, Apache-2.0, first-class `cognee-mcp` server | Multi-service ops burden, no published benchmark, per-user isolation on 2026 roadmap not shipped |
@@ -81,7 +81,7 @@ weighted sums rounded to one decimal. Sorted by T desc.
 | mem0 | 3 | 5 | 3 | 5 | 3 | 2 | 5 | 5 | 4 | 3 | 5 | **79.6** |
 | Graphiti (Zep OSS) | 2 | 4 | 3 | 5 | 2 | 5 | 4 | 5 | 4 | 3 | 5 | **75.8** |
 | Supermemory | 3 | 4 | 3 | 4 | 3 | 4 | 4 | 3 | 4 | 3 | 5 | **73.4** |
-| **tapps-brain** | **4** | **2** | **3** | **4** | **5** | **5** | **3** | **5** | **5** | **4** | **1** | **72.6** |
+| **tapps-brain** | **4** | **2** | **5** | **4** | **5** | **5** | **3** | **5** | **5** | **4** | **1** | **75.8** |
 | Memori (MemoriLabs) | 3 | 4 | 3 | 4 | 2 | 4 | 4 | 5 | 4 | 3 | 4 | **72.2** |
 | LangGraph memory | 4 | 2 | 1 | 2 | 3 | 2 | 4 | 5 | 5 | 5 | 5 | **68.6** |
 | Cognee | 2 | 3 | 3 | 4 | 2 | 5 | 3 | 5 | 4 | 3 | 4 | **68.0** |
@@ -121,8 +121,10 @@ throughput.
   owned by the service; no second datastore.
 - Retrieval: BM25 (tsvector) + dense (pgvector) → Reciprocal Rank Fusion with
   composite recency/importance scoring.
-- Decay: exponential per-tier half-lives (180/60/30/14 d) driven by a
-  background consolidator; configurable per category.
+- Decay: power-law per-tier (180/60/30/14 d half-lives) with FSRS-canonical
+  `k = 81/19`, calibrated β ≈ 3.29 preserving `R(H) = 0.5`. Per-category
+  `decay_model` / `decay_exponent` / `decay_k` overrides on every profile
+  layer; exponential retained as an opt-in alternative. Lazy-on-read.
 - Consolidation: deterministic text-similarity merge + dedicated
   `contradictions.py`; LLM never touches the write path.
 - Isolation: `(project_id, agent_id)` composite key enforced at the DB layer
@@ -146,7 +148,7 @@ Rubric applied honestly; unverified claims scored conservatively.
 |---|---|---|---|
 | D1 Storage & ops | 4 | Single Postgres backend, auto-migrations, Docker Compose one-liner; docked 1 because the brain also ships a separate operator MCP on :8090 and a dashboard on :8088. | `/home/wtthornton/code/tapps-brain/README.md`; ADR-007 Postgres-only; `docker/docker-compose.hive.yaml` |
 | D2 Retrieval quality | 2 | BM25+vector RRF with composite scoring is structurally solid, but there is **no published LoCoMo or LongMemEval number** for tapps-brain. `[unverified]` quality claim. **STORY-SC01 (TAP-557) landed the eval harness — dataset loaders, reproducer CLI, CI smoke — on 2026-04-17; score moves to 4 once a full run is published (placeholders in `docs/benchmarks/locomo.md` + `longmemeval.md`).** | `docs/research/memory-systems-2026.md` §5.4 ("No published LoCoMo or LongMemEval number"); `src/tapps_brain/retrieval.py`, `fusion.py`; `src/tapps_brain/benchmarks/`; `scripts/run_benchmark.py` |
-| D3 Decay / forgetting | 3 | Exponential per-tier half-lives (180/60/30/14d). Rubric explicitly calls exponential-per-tier a 3; power-law is the 5. | `src/tapps_brain/decay.py`; knowledge base §1.3 (power-law is canon, exponential is simplification) |
+| D3 Decay / forgetting | 5 | Power-law per-tier with FSRS-canonical `k = 81/19` (≈ 4.263); per-layer `decay_model` / `decay_exponent` / `decay_k` configurable on every profile. `repo-brain.yaml` ships power-law across all four tiers with `β = ln 2 / ln(1 + 1/k) ≈ 3.29` preserving `R(half_life) = 0.5`. **STORY-SC02 (TAP-558) landed the calibration + docs on 2026-04-17.** Rubric 5 = "power-law or learned, per-category, configurable" ✓ | `src/tapps_brain/decay.py` (`power_law_decay` standalone), `src/tapps_brain/profiles/repo-brain.yaml`, `docs/guides/decay.md`, `tests/benchmarks/test_decay_perf.py` (<5% CPU overhead at 10k scale) |
 | D4 Consolidation | 4 | Deterministic text-similarity merge + `contradictions.py` handling + provenance preserved via `source`+`audit`. Not a 5 because consolidation is text-sim only, not semantic. | `src/tapps_brain/auto_consolidation.py`, `consolidation.py`, `contradictions.py`, `audit.py` |
 | D5 Multi-tenancy | 5 | `(project_id, agent_id)` composite key enforced via Postgres RLS with `FORCE ROW LEVEL SECURITY` (migration 012) and role-bypass guards. This is the DB-layer 5-rubric. | `src/tapps_brain/migrations/private/012_rls_force.sql`; CHANGELOG 3.8.0 TAP-512, TAP-514; ADR-010 |
 | D6a MCP depth | 5 | 55 MCP tools, dual transport (data plane on :8080 + operator on :8090), Streamable HTTP. | `src/tapps_brain/mcp_server/`; CHANGELOG 3.7.0–3.9.0 |
@@ -156,7 +158,7 @@ Rubric applied honestly; unverified claims scored conservatively.
 | D9 Write-path design | 4 | Deterministic by design, **well-documented trade**: no LLM in hot path, consolidation is text-sim. Not a 5 because the design is one-way — there is no optional LLM-assisted write path. | README "Zero LLM dependency"; knowledge base §2.2 ("deliberate, defensible choice"); `docs/research/memory-systems-2026.md` open questions §3 |
 | D10 Momentum | 1 | Single-maintainer repo (`wtthornton/tapps-brain`), no named external adopters, <200 stars class. Honest score given the rubric. | `pyproject.toml` Homepage `github.com/wtthornton/tapps-brain`; memory-exclusions note on "deployment model: one box, 20 agents" = single-tenant ops |
 
-**Overall: 72.6/100.**
+**Overall: 75.8/100.** (D3 moved 3 → 5 on 2026-04-17 via STORY-SC02; +3.2 points.)
 
 ### mem0
 
@@ -890,17 +892,18 @@ not hard evidence. tapps-brain's complete absence from the leaderboard
 hurts it in D2 (score 2), but the field is converging on the view that
 being *on* the leaderboard is worth less than it was six months ago.
 
-**Where tapps-brain lands.** Rank 4/15, score 72.6. Post-audit the
-result is upper-tier, not mid-pack: tapps-brain is best-in-class on
-isolation (D5=5), MCP depth (D6a=5 — 55 tools + dual transport), and
-production readiness (D8=5), competitive on storage, license, and
+**Where tapps-brain lands.** Rank 2-3/15 (tied with Graphiti at 75.8),
+post STORY-SC02 (2026-04-17). tapps-brain is best-in-class on isolation
+(D5=5), MCP depth (D6a=5 — 55 tools + dual transport), production
+readiness (D8=5), and **decay (D3=5 — power-law per-tier with
+per-category overrides)**, competitive on storage, license, and
 write-path, **below average on retrieval quality evidence (D2=2)**
 because no benchmark has been run, and **last on momentum (D10=1)**
 because it has no external adopters and <200 stars. Removing either of
 those two remaining weaknesses — publishing a LoCoMo number or acquiring
-three named external adopters — would move the total toward 78–80 and
-put tapps-brain in direct contention with mem0 and Graphiti at the top
-of the leaders' cluster.
+three named external adopters — would move the total toward 79–82 and
+put tapps-brain in direct contention with mem0 at the top of the
+leaders' cluster.
 
 ---
 
@@ -1192,7 +1195,7 @@ Evidence tiers used below:
 
 **Rollup.**
 
-- **High confidence total:** tapps-brain (72.6), mem0 (79.6), LangGraph (68.6),
+- **High confidence total:** tapps-brain (75.8), mem0 (79.6), LangGraph (68.6),
   Anthropic KG (43.2), claude-memory-compiler (32.2).
 - **Medium–High:** Graphiti (75.8), LlamaIndex (63.8).
 - **Medium:** Memori (72.2), Cognee (68.0), Letta (67.6), A-MEM (50.8), MemRL (51.6).
