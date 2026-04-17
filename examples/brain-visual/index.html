@@ -4159,14 +4159,29 @@
         if (histMeta) histMeta.textContent = "—";
       }
 
-      /* Vector index tile */
+      /* Vector index tile — distinguish "field absent" from "field reports 0". */
       const vecRowsEl = el("rtl-vec-rows");
       const vecMetaEl = el("rtl-vec-meta");
       const vecModelEl = el("rtl-vec-model");
-      const vecRows = Number(data && (data.vector_index_rows != null ? data.vector_index_rows : data.sqlite_vec_rows)) || 0;
+      const rawVecRows = data && (data.vector_index_rows != null
+        ? data.vector_index_rows
+        : (data.sqlite_vec_rows != null ? data.sqlite_vec_rows : null));
+      const vecRowsReported = typeof rawVecRows === "number";
+      const vecRows = vecRowsReported ? rawVecRows : null;
+      const vecEnabledReported = data && (
+        typeof data.vector_index_enabled === "boolean" ||
+        typeof data.sqlite_vec_enabled === "boolean"
+      );
       const vecOn = (data && (data.vector_index_enabled === true || data.sqlite_vec_enabled === true)) || false;
-      if (vecRowsEl) vecRowsEl.textContent = String(vecRows);
-      if (vecMetaEl) vecMetaEl.textContent = (vecOn ? "pgvector enabled" : "pgvector disabled") + " · " + vecRows + " indexed row(s)";
+      if (vecRowsEl) vecRowsEl.textContent = vecRowsReported ? String(vecRows) : "N/A";
+      if (vecMetaEl) {
+        if (!vecEnabledReported && !vecRowsReported) {
+          vecMetaEl.textContent = "pgvector status not reported by this snapshot";
+        } else {
+          vecMetaEl.textContent = (vecOn ? "pgvector enabled" : "pgvector disabled") + " · " +
+            (vecRowsReported ? vecRows + " indexed row(s)" : "row count not reported");
+        }
+      }
       if (vecModelEl) {
         const model = retrieval && typeof retrieval.embedding_model === "string" && retrieval.embedding_model
           ? retrieval.embedding_model
@@ -4223,27 +4238,34 @@
       const meta = el("velocity-meta");
       if (!grid) return;
 
-      const v = velocity && typeof velocity === "object" ? velocity : {};
-      const w1h  = Number(v.writes_1h)  || 0;
-      const r1h  = Number(v.recalls_1h) || 0;
-      const w24h = Number(v.writes_24h) || 0;
-      const r24h = Number(v.recalls_24h)|| 0;
+      /* When the snapshot omits velocity entirely, don't synthesise zeros —
+       * zero reads as "no activity" but really means "not reported". Show N/A. */
+      const hasVelocity = velocity && typeof velocity === "object";
+      const num = (k) =>
+        hasVelocity && typeof velocity[k] === "number" ? velocity[k] : null;
+      const w1h  = num("writes_1h");
+      const r1h  = num("recalls_1h");
+      const w24h = num("writes_24h");
+      const r24h = num("recalls_24h");
 
       /** Returns "↑" when the 1 h rate exceeds the 24 h hourly average, else "↓". */
       function arrow(count1h, count24h) {
+        if (count1h === null || count24h === null) return "";
         const hourlyAvg = count24h / 24;
         return count1h > hourlyAvg ? "↑" : "↓";
       }
 
       function arrowClass(count1h, count24h) {
+        if (count1h === null || count24h === null) return "";
         return count1h > count24h / 24 ? "kpi-arrow-up" : "kpi-arrow-down";
       }
 
+      const fmt = (n) => (n === null ? "N/A" : String(n));
       const tiles = [
-        { lbl: "Writes 1 h",  val: String(w1h),  arrow: arrow(w1h,  w24h), cls: arrowClass(w1h,  w24h) },
-        { lbl: "Recalls 1 h", val: String(r1h),  arrow: arrow(r1h,  r24h), cls: arrowClass(r1h,  r24h) },
-        { lbl: "Writes 24 h", val: String(w24h), arrow: "",                 cls: "" },
-        { lbl: "Recalls 24 h",val: String(r24h), arrow: "",                 cls: "" },
+        { lbl: "Writes 1 h",  val: fmt(w1h),  arrow: arrow(w1h,  w24h), cls: arrowClass(w1h,  w24h) },
+        { lbl: "Recalls 1 h", val: fmt(r1h),  arrow: arrow(r1h,  r24h), cls: arrowClass(r1h,  r24h) },
+        { lbl: "Writes 24 h", val: fmt(w24h), arrow: "",                 cls: "" },
+        { lbl: "Recalls 24 h",val: fmt(r24h), arrow: "",                 cls: "" },
       ];
 
       grid.innerHTML = tiles.map(function (t) {
@@ -4259,11 +4281,12 @@
       }).join("");
 
       if (meta) {
-        meta.textContent =
-          "writes_1h=" + w1h +
-          " · writes_24h=" + w24h +
-          " · recalls_1h=" + r1h +
-          " · recalls_24h=" + r24h;
+        meta.textContent = hasVelocity
+          ? "writes_1h=" + fmt(w1h) +
+            " · writes_24h=" + fmt(w24h) +
+            " · recalls_1h=" + fmt(r1h) +
+            " · recalls_24h=" + fmt(r24h)
+          : "velocity block not reported by this snapshot.";
       }
     }
 
@@ -4517,16 +4540,22 @@
       /* STORY-068.5 — Retrieval page extras */
       renderRetrievalExtras(data);
 
-      /* STORY-065.7: Retrieval pipeline live metrics tiles */
+      /* STORY-065.7: Retrieval pipeline live metrics tiles.
+       * Show N/A when retrieval_metrics is missing (do not synthesise zeros —
+       * a real zero means "pipeline ran with no hits", missing means "not reported"). */
       (function renderRetrievalMetrics(metrics) {
-        const rm = (metrics && typeof metrics === "object") ? metrics : {};
         const setRm = (id, val) => { const e = el(id); if (e) e.textContent = val; };
-        setRm("rm-queries", Number(rm.total_queries) || 0);
-        setRm("rm-bm25", Number(rm.bm25_hits) || 0);
-        setRm("rm-vector", Number(rm.vector_hits) || 0);
-        setRm("rm-rrf", Number(rm.rrf_fusions) || 0);
-        const lat = typeof rm.mean_latency_ms === "number" ? rm.mean_latency_ms : 0;
-        setRm("rm-latency", lat.toFixed(1) + "ms");
+        const hasRm = metrics && typeof metrics === "object";
+        const numOrNA = (k) =>
+          hasRm && typeof metrics[k] === "number" ? String(metrics[k]) : "N/A";
+        setRm("rm-queries", numOrNA("total_queries"));
+        setRm("rm-bm25", numOrNA("bm25_hits"));
+        setRm("rm-vector", numOrNA("vector_hits"));
+        setRm("rm-rrf", numOrNA("rrf_fusions"));
+        setRm("rm-latency",
+          hasRm && typeof metrics.mean_latency_ms === "number"
+            ? metrics.mean_latency_ms.toFixed(1) + "ms"
+            : "N/A");
       })(data.retrieval_metrics);
 
       /* Hive hub detail — structured table */
@@ -4688,23 +4717,20 @@
         const nsGap = 12;
         const nsW = Math.max(90, (innerW - nsGap * (namespaces.length - 1)) / namespaces.length);
 
-        // Bucket agents per namespace
+        // Bucket agents per namespace. When agent_registry is empty we used to
+        // synthesise N placeholder circles spread round-robin across namespaces —
+        // that's fake placement (we don't actually know which ns each unregistered
+        // agent lives in). Instead, leave the namespace boxes empty and surface the
+        // Hive-reported count in the note area below.
         const buckets = {};
         namespaces.forEach(function (n) { buckets[n] = []; });
-        if (shownAgents.length > 0) {
-          shownAgents.forEach(function (a) {
-            const n = (a && a.namespace) || namespaces[0];
-            if (!buckets[n]) buckets[n] = [];
-            buckets[n].push(a);
-          });
-        } else if (hh && hh.connected) {
-          // Synthesize placeholder agents from hive_health.agents spread across ns
-          const n = Math.min(CAP, Number(hh.agents) || 0);
-          for (let i = 0; i < n; i++) {
-            const ns = namespaces[i % namespaces.length];
-            buckets[ns].push({ agent_id: "(agent-" + (i + 1) + ")", namespace: ns, _placeholder: true });
-          }
-        }
+        shownAgents.forEach(function (a) {
+          const n = (a && a.namespace) || namespaces[0];
+          if (!buckets[n]) buckets[n] = [];
+          buckets[n].push(a);
+        });
+        const hiveAgentCount = hh && hh.connected && typeof hh.agents === "number" ? hh.agents : null;
+        const unregisteredCount = (hiveAgentCount !== null && allAgents.length === 0) ? hiveAgentCount : 0;
 
         const NS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(NS, "svg");
@@ -4811,6 +4837,15 @@
           if (note) {
             note.hidden = false;
             note.textContent = "Showing 50 of " + allAgents.length + " agents (" + moreN + " more not drawn).";
+          }
+        } else if (unregisteredCount > 0) {
+          svg.appendChild(mkText(hubCx, H - 14,
+            hiveAgentCount + " agent" + (hiveAgentCount === 1 ? "" : "s") + " in Hive — namespaces not reported",
+            { anchor: "middle", size: "11" }));
+          if (note) {
+            note.hidden = false;
+            note.textContent = "Hive reports " + hiveAgentCount + " agent" + (hiveAgentCount === 1 ? "" : "s") +
+              " but agent_registry is empty — per-agent placement not rendered.";
           }
         } else if (note) {
           note.hidden = true;
