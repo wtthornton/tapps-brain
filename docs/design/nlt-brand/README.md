@@ -89,7 +89,7 @@ Each row is one canonical brand guide section mapped to the current implementati
 | Brand guide section | Expected spec | Current implementation | Status |
 |--------------------|---------------|------------------------|--------|
 | Spacing scale | 4 px or 8 px base grid | Uses `clamp()` + `rem` inline — no named spacing tokens | ❌ |
-| Max content width | Canonical breakpoint px | `max-width: 1080px` (one breakpoint) | ⚠️ |
+| Max content width | Canonical breakpoint px | `max-width: min(1400px, 95vw)` — dashboard-appropriate; reading-measure handled per-block via `ch` | ✅ |
 | Grid / column system | Named grid spec | CSS Grid ad-hoc in sections — no reusable grid tokens | ❌ |
 | Border radius tokens | Named radius scale | Inline values (`0.5rem`, `0.75rem`, `1rem`) — no token names | ❌ |
 

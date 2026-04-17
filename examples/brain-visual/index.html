@@ -115,7 +115,7 @@
     }
 
     .header-inner {
-      max-width: 1080px;
+      max-width: min(1400px, 95vw);
       margin: 0 auto;
       padding: 1rem clamp(1rem, 4vw, 2rem);
       display: flex;
@@ -214,8 +214,10 @@
 
     /* Single elevated surface so the page reads as a dashboard, not a readme on linen */
     .content-shell {
-      max-width: 1080px;
+      width: 100%;
+      max-width: min(1400px, 95vw);
       margin: 0 auto;
+      justify-self: center;
       padding: clamp(1.75rem, 4vw, 2.75rem) clamp(1.25rem, 3vw, 2.25rem);
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1517,7 +1519,7 @@
     }
 
     .site-footer {
-      max-width: 1080px;
+      max-width: min(1400px, 95vw);
       margin: 2rem auto 0;
       padding: 2rem clamp(1rem, 4vw, 2rem) 2.5rem;
       border-top: 1px solid var(--border);
@@ -3305,6 +3307,7 @@
               <div class="score-dim-bar"><div class="score-dim-fill" id="sdim-frequency"></div></div>
               <span class="score-dim-val" id="sdim-frequency-val">—</span>
             </div>
+            <p class="sub" id="diag-score-dims-note" hidden style="margin:0.5rem 0 0;"></p>
           </div>
         </div>
 
@@ -3900,24 +3903,36 @@
       }
 
       /* Dimension bars — composite = relevance*0.4 + confidence*0.3 + recency*0.15 + frequency*0.15
-       * The snapshot may not expose these directly; we show the overall score mapped to each weight. */
+       * Only render bars when the snapshot actually reports per-dimension scores. When the
+       * snapshot only carries the composite (the common case), show N/A instead of fabricating
+       * per-dimension values from the composite. */
       const dims = el("diag-score-dims");
-      if (dims && score !== null) {
-        dims.hidden = false;
-        const weights = { relevance: 0.4, confidence: 0.3, recency: 0.15, frequency: 0.15 };
+      if (dims) {
         const dimScores = {
-          relevance: typeof diag.relevance_score === "number" ? diag.relevance_score : score,
-          confidence: typeof diag.confidence_score === "number" ? diag.confidence_score : score,
-          recency: typeof diag.recency_score === "number" ? diag.recency_score : score,
-          frequency: typeof diag.frequency_score === "number" ? diag.frequency_score : score,
+          relevance: typeof diag.relevance_score === "number" ? diag.relevance_score : null,
+          confidence: typeof diag.confidence_score === "number" ? diag.confidence_score : null,
+          recency: typeof diag.recency_score === "number" ? diag.recency_score : null,
+          frequency: typeof diag.frequency_score === "number" ? diag.frequency_score : null,
         };
-        Object.keys(weights).forEach((dim) => {
+        const anyDim = Object.values(dimScores).some((v) => v !== null);
+        dims.hidden = false;
+        Object.keys(dimScores).forEach((dim) => {
           const fill = el("sdim-" + dim);
           const val = el("sdim-" + dim + "-val");
           const v = dimScores[dim];
-          if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round(v * 100))) + "%";
-          if (val) val.textContent = v.toFixed(2);
+          if (v === null) {
+            if (fill) fill.style.width = "0%";
+            if (val) val.textContent = "N/A";
+          } else {
+            if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round(v * 100))) + "%";
+            if (val) val.textContent = v.toFixed(2);
+          }
         });
+        const note = el("diag-score-dims-note");
+        if (note) {
+          note.hidden = anyDim;
+          if (!anyDim) note.textContent = "Per-dimension scores not reported by this snapshot — only composite_score is available.";
+        }
       }
 
       /* Circuit breaker panel */
@@ -4003,10 +4018,12 @@
         ? data.memory_group_counts : null;
       body.replaceChildren();
       if (!counts || !Object.keys(counts).length) {
-        const tier = data && data.privacy_tier ? String(data.privacy_tier) : "standard";
+        const tier = data && data.privacy_tier ? String(data.privacy_tier) : null;
         const msg = tier === "local"
           ? "No named memory groups in this snapshot."
-          : "Memory group names hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal.";
+          : tier
+            ? "Memory group names hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal."
+            : "Memory group counts not reported by this snapshot.";
         const p = document.createElement("p");
         p.className = "prose-small";
         p.style.margin = "0";
@@ -4048,7 +4065,7 @@
       const body = el("tag-cloud-body");
       if (!body) return;
       body.replaceChildren();
-      const tier = data && data.privacy_tier ? String(data.privacy_tier) : "standard";
+      const tier = data && data.privacy_tier ? String(data.privacy_tier) : null;
       const stats = data && Array.isArray(data.tag_stats) ? data.tag_stats : null;
       if (!stats || !stats.length) {
         const p = document.createElement("p");
@@ -4056,7 +4073,9 @@
         p.style.margin = "0";
         p.textContent = tier === "local"
           ? "No tag frequencies in this snapshot."
-          : "Tag frequencies hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal.";
+          : tier
+            ? "Tag frequencies hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal."
+            : "Tag frequencies not reported by this snapshot.";
         body.appendChild(p);
         return;
       }
@@ -4417,17 +4436,21 @@
           { lbl: "DB schema", val: el("schema").textContent, sub: "Postgres schema version" },
           {
             lbl: "Privacy",
-            val: isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard",
-            sub: isV2 ? "export tier" : "v1 export",
+            val: isV2 && data.privacy_tier ? String(data.privacy_tier) : "N/A",
+            sub: isV2 && data.privacy_tier ? "export tier" : "privacy_tier not reported",
           },
           {
             lbl: "Hive hub",
-            val: hiveH && hiveH.connected ? "live" : "n/a",
-            sub: hiveEntries !== "—" ? hiveEntries + " shared entries" : "open CLI export v2",
+            val: hiveH && hiveH.connected ? "live" : (hiveH ? "offline" : "N/A"),
+            sub: hiveH && hiveH.connected
+              ? (hiveEntries !== "—" ? hiveEntries + " shared entries" : "—")
+              : "not connected",
           },
           {
             lbl: "Tiers (rows)",
-            val: String(tierN),
+            val: health.tier_distribution && typeof health.tier_distribution === "object"
+              ? String(tierN)
+              : "N/A",
             sub: "sum of tier_distribution",
           },
         ];
@@ -4950,13 +4973,18 @@
 
       /* Privacy tier badge + sync selector to snapshot tier (STORY-068.7) */
       const ptBadge = el("privacy-tier-badge");
-      const snapshotTier = isV2 && data.privacy_tier ? String(data.privacy_tier) : "standard";
+      const snapshotTier = isV2 && data.privacy_tier ? String(data.privacy_tier) : null;
       if (ptBadge) {
-        ptBadge.textContent = "Privacy tier: " + snapshotTier;
-        ptBadge.setAttribute("data-tier", snapshotTier);
+        if (snapshotTier) {
+          ptBadge.textContent = "Privacy tier: " + snapshotTier;
+          ptBadge.setAttribute("data-tier", snapshotTier);
+        } else {
+          ptBadge.textContent = "Privacy tier: N/A";
+          ptBadge.removeAttribute("data-tier");
+        }
       }
-      /* Reflect snapshot tier in the selector — user can override for re-export guidance */
-      if (selectedPrivacyTier === "standard") {
+      /* Reflect snapshot tier in the selector only when the snapshot reports one. */
+      if (snapshotTier && selectedPrivacyTier === "standard") {
         selectedPrivacyTier = snapshotTier;
         applyPrivacyTierSelector(snapshotTier);
       }
