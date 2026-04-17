@@ -126,6 +126,44 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 - **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls.
 - **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore.
 
+## Cross-session memory (tapps-brain MCP)
+
+This repo is wired to the deployed tapps-brain at `http://127.0.0.1:8080/mcp/` as `project_id=tapps-brain`, agent `claude-code-wtthornton`. See [`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md) for the wiring.
+
+**Call `brain_recall` when:**
+- Starting a session in this repo — recall with the topic the user opens with (architecture, a recent epic, a specific module).
+- The user asks "what did we decide about X", "why is Y the way it is", or "have we seen this before".
+- You're about to make a non-trivial choice (a new pattern, a deviation from an existing approach) — recall first so prior decisions inform you.
+
+**Call `brain_remember` when:**
+- The user corrects your approach or teaches a non-obvious rule.
+- A decision is made *with rationale* — the rationale is the memory-worthy part, not the decision itself.
+- A debug session reveals a subtle invariant or a surprising constraint that isn't obvious from the code.
+
+**Pick a tier (from the `repo-brain` profile):**
+- `architectural` — system decisions, tech-stack choices, infra contracts. Half-life 180 days.
+- `pattern` — coding conventions, API shapes, design patterns. 60d.
+- `procedural` — workflows, build/deploy commands, runbooks. 30d.
+- `context` — session-scope facts; use sparingly, decays in 14d.
+
+Tag important entries with `critical` or `security` for ranking boost.
+
+**Do NOT save:**
+- Code patterns / file paths / module layout — derivable by reading the repo.
+- Git history, recent diffs, who-changed-what — `git log` / `git blame` are authoritative.
+- Ephemeral task state, current-conversation context, debug fix recipes — these belong in `TodoWrite` or the commit message.
+- Anything with secrets, tokens, or PII.
+
+**Split with the file-based auto-memory** at `~/.claude/projects/.../memory/`:
+- File auto-memory → **user** preferences + **feedback** on how to collaborate with this specific user. Lives across repos.
+- tapps-brain MCP → **project** knowledge + **reference** pointers scoped to this repo. Shared across sessions and agents on this project. No manual sync between the two.
+
+## Linear automation (Claude Agent user)
+
+**Status: PLANNED — not yet wired.** Full design in [`docs/guides/linear-claude-agent.md`](docs/guides/linear-claude-agent.md). Read the guide before generating the API key or starting the poller.
+
+Summary: a dedicated Linear user *Claude Agent* (`tapp.thornton+claude@gmail.com`, username `claude`) will be driven by a scheduled poller authed with a Personal API key at `~/.config/claude-agent/linear.env` (chmod 600, never committed). The interactive Linear plugin inside Claude Code stays authed as the operator — only the poller posts as Claude Agent. Trigger convention: `@Claude Agent` in a comment. Dedup: watermark in tapps-brain + in-thread reply check + hidden `<!-- claude-reply:<id> -->` marker.
+
 ## Code Quality
 
 - Python 3.12+, strict mypy, ruff with extensive rule set

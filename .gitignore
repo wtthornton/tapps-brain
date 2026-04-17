@@ -1,5 +1,11 @@
 .venv/
 .venv-release-smoke/
+
+# Local env — holds bearer tokens + client-side config.
+# .env.example is the committed template.
+.env
+.env.local
+
 __pycache__/
 *.egg-info/
 dist/

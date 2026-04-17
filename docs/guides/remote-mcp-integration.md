@@ -3,6 +3,9 @@
 This guide describes how remote agents (AgentForge, OpenClaw, etc.) connect to
 a deployed tapps-brain over the MCP **Streamable HTTP** transport introduced
 in EPIC-070. For the local in-process stdio transport, see `mcp.md`.
+For a step-by-step checklist to wire **a developer's own repo** (Claude Code
+or similar) to a running deployment — `.env` + direnv + `.mcp.json` — see
+[mcp-client-repo-setup.md](mcp-client-repo-setup.md).
 
 ## Why Streamable HTTP
 
