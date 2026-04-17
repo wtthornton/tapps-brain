@@ -22,7 +22,7 @@ BRAIN_IMAGE   ?= docker-tapps-brain-http
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
-        brain-lint brain-type brain-qa brain-psql \
+        brain-lint brain-type brain-qa brain-psql brain-healthcheck \
         hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-hive-secrets \
         publish-brain-image
 
@@ -131,6 +131,9 @@ hive-logs:  ## Tail logs from running hive services
 
 hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints, tears down)
 	@bash scripts/hive_smoke.sh
+
+brain-healthcheck:  ## Verify this repo is wired to the deployed tapps-brain and MCP tools work
+	@bash scripts/brain-healthcheck.sh
 
 publish-brain-image:  ## Build wheel + docker-tapps-brain-http:latest (called by AgentForge brain-build)
 	rm -f dist/*.whl dist/*.tar.gz
