@@ -162,6 +162,40 @@ jobs:
           name: eval-report
           path: eval-report.json
 
+  # STORY-SC01 (TAP-557): smoke-size end-to-end run of the LoCoMo + LongMemEval
+  # benchmark CLI against committed fixtures. Uses deterministic answer model
+  # and judge — no LLM credentials required. Full runs are operator-executed.
+  benchmark-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          enable-cache: true
+      - run: uv sync --group dev
+      - name: LoCoMo smoke
+        run: |
+          uv run python scripts/run_benchmark.py locomo \
+            --dataset tests/benchmarks/fixtures/locomo_fixture.json \
+            --answer-model deterministic --judge deterministic \
+            --output locomo-smoke.json
+      - name: LongMemEval smoke
+        run: |
+          uv run python scripts/run_benchmark.py longmemeval \
+            --dataset tests/benchmarks/fixtures/longmemeval_fixture.json \
+            --answer-model deterministic --judge deterministic \
+            --output longmemeval-smoke.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-smoke
+          path: |
+            locomo-smoke.json
+            longmemeval-smoke.json
+
   # STORY-070.14: compatibility test suite — embedded AgentBrain API vs live Postgres.
   # Runs on every PR/push alongside the main test suite to catch regressions.
   compat:

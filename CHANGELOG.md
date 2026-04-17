@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- End-to-end QA benchmark adapters for LoCoMo (arXiv:2402.17753) and LongMemEval (arXiv:2410.10813) under `src/tapps_brain/benchmarks/` (TAP-557 / STORY-SC01). New package ships `AnswerModel` / `AnswerJudge` Protocols, dataset loaders (`load_locomo`, `load_longmemeval`), a store-agnostic runner (`run_benchmark`) with per-category aggregation, and deterministic stand-ins (`DeterministicAnswerModel`, `DeterministicAnswerJudge`) so smoke runs need no API keys. Optional Anthropic + OpenAI answer/judge wrappers live in `scripts/run_benchmark.py`. Reports serialise as `BenchmarkReport` JSON with overall accuracy, per-category accuracy, per-item results, wall time, and run metadata. Closes the first (and largest) lever in EPIC TAP-556 — moves scorecard D2 from a pure `[unverified]` claim to "harness landed, run pending." Full run numbers will be filled into `docs/benchmarks/locomo.md` + `docs/benchmarks/longmemeval.md` once executed with a judge LLM.
+- `scripts/run_benchmark.py` CLI reproducer with `--answer-model {deterministic,anthropic,openai}`, `--judge {deterministic,anthropic,openai}`, `--store {in-memory,live}`, `--limit` for smoke runs, `--k` retrieval cutoff, and `--output` JSON report path. Live store path opens a fresh `AgentBrain` per item so LoCoMo / LongMemEval histories don't bleed across questions.
+- `benchmark-smoke` CI job exercises the CLI end-to-end against committed fixtures under `tests/benchmarks/fixtures/` using deterministic answer/judge — no API credentials required, < 5 min runtime. Runs after the main `test` job and uploads both report JSONs as build artifacts.
+- `docs/benchmarks/` — methodology docs for LoCoMo, LongMemEval, and an index README covering the library, CLI, cost envelope, and reproducibility notes. Numbers tables are placeholders until the first full run lands.
+
 ## [3.9.0] - 2026-04-16
 
 ### Security

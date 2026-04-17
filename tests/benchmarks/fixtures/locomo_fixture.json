@@ -1,0 +1,39 @@
+[
+  {
+    "sample_id": "fixture-001",
+    "conversation": {
+      "speaker_a": "Alice",
+      "speaker_b": "Bob",
+      "session_1_date_time": "2024-01-01",
+      "session_1": [
+        {"dia_id": "D1:1", "speaker": "Alice", "text": "I adopted a golden retriever named Biscuit."},
+        {"dia_id": "D1:2", "speaker": "Bob", "text": "Cute name for a dog."},
+        {"dia_id": "D1:3", "speaker": "Alice", "text": "Biscuit is two years old."}
+      ],
+      "session_2_date_time": "2024-01-08",
+      "session_2": [
+        {"dia_id": "D2:1", "speaker": "Alice", "text": "Biscuit loves walks in the park."}
+      ]
+    },
+    "qa": [
+      {"question": "What is the dog's name?", "answer": "Biscuit", "category": 1},
+      {"question": "How old is Biscuit?", "answer": "two years old", "category": 1},
+      {"question": "Where does Biscuit like to walk?", "answer": "the park", "category": 2}
+    ]
+  },
+  {
+    "sample_id": "fixture-002",
+    "conversation": {
+      "speaker_a": "Carol",
+      "speaker_b": "Dave",
+      "session_1_date_time": "2024-02-01",
+      "session_1": [
+        {"dia_id": "D1:1", "speaker": "Carol", "text": "My favorite coffee is a flat white."},
+        {"dia_id": "D1:2", "speaker": "Dave", "text": "I prefer espresso myself."}
+      ]
+    },
+    "qa": [
+      {"question": "What coffee does Carol like?", "answer": "flat white", "category": 1}
+    ]
+  }
+]
