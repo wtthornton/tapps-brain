@@ -21,6 +21,15 @@
         ]
       },
       {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-brain-session-start.sh"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {

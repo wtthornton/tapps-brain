@@ -128,7 +128,7 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 
 ## Cross-session memory (tapps-brain MCP)
 
-This repo is wired to the deployed tapps-brain at `http://127.0.0.1:8080/mcp/` as `project_id=tapps-brain`, agent `claude-code-wtthornton`. See [`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md) for the wiring.
+This repo is wired to the deployed tapps-brain at `http://127.0.0.1:8080/mcp/` as `project_id=tapps-brain`, agent `claude-code-wtthornton`. See [`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md) for the wiring and [`docs/guides/claude-code-hooks.md`](docs/guides/claude-code-hooks.md) for the SessionStart hook that auto-primes recall on turn 1.
 
 **Call `brain_recall` when:**
 - Starting a session in this repo — recall with the topic the user opens with (architecture, a recent epic, a specific module).

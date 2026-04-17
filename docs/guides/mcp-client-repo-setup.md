@@ -157,6 +157,15 @@ Tag important entries with `critical` or `security` for ranking boost.
   project. No manual sync between the two.
 ````
 
+### 6b. (Optional) Wire a SessionStart hook to auto-prime recall
+
+The CLAUDE.md rules above tell Claude *when* to call `brain_recall`, but a
+fresh session can still forget on turn 1. If you want the harness to
+guarantee the recall happens, add the SessionStart hook documented in
+[claude-code-hooks.md](claude-code-hooks.md). It is additive to any
+existing Ralph / TappsMCP hooks and does not require secrets in the hook
+script (it uses the MCP session that `.mcp.json` already opens).
+
 ### 7. Restart the MCP client
 
 Launch Claude Code from a shell where `direnv` has loaded `.env` (i.e.
