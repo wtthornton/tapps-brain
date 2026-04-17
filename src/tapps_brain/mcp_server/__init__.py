@@ -659,10 +659,28 @@ def create_server(  # noqa: PLR0915
             )
 
     # STORY-070.2: Modern MCP 2025-03-26 Streamable HTTP transport.
-    # - stateless_http=True  → no Mcp-Session-Id bookkeeping between calls;
-    #   each POST to /mcp is self-contained.  Required for horizontal scaling.
-    # - json_response=True   → return plain application/json bodies instead
-    #   of SSE streams so ordinary HTTP clients (curl, requests, httpx) work.
+    #
+    # - stateless_http: when True, no Mcp-Session-Id is issued and each POST
+    #   to /mcp is self-contained (required for horizontal scaling).  Some
+    #   MCP HTTP clients — notably Claude Code's VSCode extension
+    #   (agent-sdk) — complete the initialize handshake but then never
+    #   enumerate tools when no session id comes back.  The Python MCP SDK
+    #   client (mcp.client.streamable_http) works fine either way.
+    #   Default: False (stateful) for broad client compatibility; set
+    #   TAPPS_BRAIN_STATELESS_HTTP=1 to opt in to stateless behaviour.
+    # - json_response: when True, /mcp returns plain application/json bodies
+    #   instead of text/event-stream frames so ordinary HTTP clients (curl,
+    #   requests, httpx) work out of the box.  Kept on by default.
+    #   Override with TAPPS_BRAIN_JSON_RESPONSE=0 to force SSE-only responses.
+    def _env_flag(name: str, default: bool) -> bool:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    stateless_http = _env_flag("TAPPS_BRAIN_STATELESS_HTTP", default=False)
+    json_response = _env_flag("TAPPS_BRAIN_JSON_RESPONSE", default=True)
+
     mcp_kwargs: dict[str, Any] = {"instructions": _MCP_INSTRUCTIONS}
     transport_security = _build_transport_security()
     if transport_security is not None:
@@ -670,8 +688,8 @@ def create_server(  # noqa: PLR0915
     try:
         mcp = fastmcp_cls(
             "tapps-brain",
-            stateless_http=True,
-            json_response=True,
+            stateless_http=stateless_http,
+            json_response=json_response,
             **mcp_kwargs,
         )
     except TypeError:

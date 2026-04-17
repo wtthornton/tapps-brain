@@ -70,7 +70,15 @@ def _build_app_and_mcp():
     We construct everything manually so we can pass ``enable_operator_tools=True``
     (the parity test wants to see operator tools too) and avoid the lazy
     mcp build in the module-level ``app``.
+
+    Forces stateless mode via ``TAPPS_BRAIN_STATELESS_HTTP=1`` so the test can
+    call ``tools/call`` directly without an initialize handshake — the SDK
+    skips the init-required check only in stateless mode.  Production default
+    is stateful (VSCode / agent-sdk compat); this switch is test-scoped.
     """
+    import os as _os
+
+    _os.environ["TAPPS_BRAIN_STATELESS_HTTP"] = "1"
     from tapps_brain.http_adapter import create_app
     from tapps_brain.mcp_server import create_server
 
