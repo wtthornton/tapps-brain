@@ -19,6 +19,13 @@ cd "$ROOT"
 
 SKIP_FULL_PYTEST="${SKIP_FULL_PYTEST:-0}"
 SKIP_LINT="${SKIP_LINT:-0}"
+# TAP-570: set TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 to include the cross-tenant HTTP
+# denial smoke test.  Requires a live sidecar on TAPPS_BRAIN_SIDECAR_URL (default
+# http://localhost:8080) with TAPPS_BRAIN_ADMIN_TOKEN + TAPPS_BRAIN_AUTH_TOKEN set.
+# Strongly recommended before any production deployment that touches RLS, the HTTP
+# adapter, or per-tenant auth.  Off by default to avoid blocking release gates in
+# environments without a running sidecar.
+TAPPS_BRAIN_CROSS_TENANT_SMOKE="${TAPPS_BRAIN_CROSS_TENANT_SMOKE:-0}"
 
 fail() {
   echo "release-ready: FAILED — $*" >&2
@@ -92,5 +99,19 @@ need_node
   npm run build
   npm test
 ) || fail "openclaw-plugin"
+
+# TAP-570: optional cross-tenant HTTP denial smoke test (recommended pre-prod).
+if [[ "$TAPPS_BRAIN_CROSS_TENANT_SMOKE" == "1" ]]; then
+  echo "==> [9/9] Cross-tenant HTTP denial smoke test (TAP-570)"
+  if [[ -z "${TAPPS_BRAIN_ADMIN_TOKEN:-}" || -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
+    fail "cross-tenant smoke requires TAPPS_BRAIN_ADMIN_TOKEN and TAPPS_BRAIN_AUTH_TOKEN"
+  fi
+  uv run pytest tests/integration/test_cross_tenant_http.py \
+    -v --tb=short -s \
+    || fail "cross-tenant HTTP smoke (TAP-570) — check sidecar at ${TAPPS_BRAIN_SIDECAR_URL:-http://localhost:8080}"
+else
+  echo "==> [9/9] Cross-tenant HTTP denial smoke (skipped: TAPPS_BRAIN_CROSS_TENANT_SMOKE != 1)"
+  echo "    Set TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 to run before production deployments."
+fi
 
 echo "release-ready: OK (all stages passed)"

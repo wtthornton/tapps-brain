@@ -160,6 +160,72 @@ data:
 | `TAPPS_HIVE_PORT` | `5432` | Host port for Compose port mapping |
 | `TAPPS_HIVE_PASSWORD` | `tapps` | Compose default password (override in production) |
 
+## Verifying Multi-Tenancy (Cross-Tenant Smoke Test)
+
+The canonical end-to-end gate for "did multi-tenancy survive this change?" is:
+
+```bash
+tests/integration/test_cross_tenant_http.py
+```
+
+This test file (TAP-570) exercises all three isolation layers — the
+`(project_id, agent_id)` composite key, RLS policies (migration 009), and
+`FORCE ROW LEVEL SECURITY` (migration 012) — through the **live HTTP sidecar**
+on `:8080`. It is the proof that downstream users of the AgentForge
+multi-tenant topology actually depend on.
+
+### What the test asserts
+
+| Case | Assertion |
+|------|-----------|
+| 1 | `proj-a` saves a uniquely-valued memory → 200 |
+| 2 | `proj-b` recall for `proj-a`'s sentinel value → **0 results** (RLS) |
+| 3 | `proj-b` recall for `proj-a`'s exact key → **0 results** (RLS) |
+| 4 | `proj-b` only sees its own data; `proj-a`'s rows never appear |
+| 5 | `token-a` + `X-Project-Id: proj-b` → **403** (per-tenant token mismatch) |
+| 6 | `token-b` + `X-Project-Id: proj-a` → **403** (symmetric) |
+| 7 | `FORCE ROW LEVEL SECURITY` confirmed on both tenanted tables via SQL; owner-role SELECT scoped to `proj-b` returns **0 rows** for `proj-a`'s key |
+
+### Running the smoke test
+
+Start the compose stack, then:
+
+```bash
+# Required env vars:
+export TAPPS_BRAIN_CROSS_TENANT_SMOKE=1
+export TAPPS_BRAIN_ADMIN_TOKEN="your-admin-token"
+export TAPPS_BRAIN_AUTH_TOKEN="your-data-token"
+
+# Optional — enable per-tenant token mismatch assertions (cases 5–6).
+# Must match the sidecar's TAPPS_BRAIN_PER_TENANT_AUTH setting.
+export TAPPS_BRAIN_PER_TENANT_AUTH=1
+
+# Optional — enable FORCE RLS SQL verification (case 7).
+export TAPPS_TEST_POSTGRES_DSN="postgresql://tapps:tapps@localhost:5432/tapps_brain"
+
+uv run pytest tests/integration/test_cross_tenant_http.py -v --tb=short -s
+```
+
+Or via the release gate (recommended pre-production):
+
+```bash
+TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 \
+TAPPS_BRAIN_ADMIN_TOKEN="..." \
+TAPPS_BRAIN_AUTH_TOKEN="..." \
+bash scripts/release-ready.sh
+```
+
+### When to run it
+
+Run the cross-tenant smoke test before **any** production deployment that touches:
+- `src/tapps_brain/http_adapter.py` (auth, tenant headers, data-plane routes)
+- `src/tapps_brain/migrations/private/` (RLS policies, FORCE RLS)
+- `src/tapps_brain/project_registry.py` (token storage, verification)
+- `src/tapps_brain/postgres_connection.py` (role assertion, connection management)
+
+The CI workflow runs it automatically on `workflow_dispatch` (manual trigger)
+via the `cross-tenant-smoke` job.
+
 ## Security
 
 ### SSL / TLS

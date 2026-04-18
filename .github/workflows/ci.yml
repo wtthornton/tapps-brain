@@ -259,6 +259,85 @@ jobs:
             exit 1
           fi
 
+  # TAP-570: cross-tenant denial smoke test — runs against a live compose stack.
+  # Gated on TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 (not in default matrix; needs sidecar).
+  # Triggered manually (workflow_dispatch) or on push/PR when the compose stack is
+  # available.  Requires TAPPS_BRAIN_ADMIN_TOKEN and TAPPS_BRAIN_AUTH_TOKEN secrets.
+  cross-tenant-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: tapps
+          POSTGRES_PASSWORD: tapps
+          POSTGRES_DB: tapps_smoke
+        options: >-
+          --health-cmd "pg_isready -U tapps -d tapps_smoke"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 10s
+    env:
+      TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_smoke
+      TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_smoke
+      TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
+      TAPPS_BRAIN_CROSS_TENANT_SMOKE: "1"
+      TAPPS_BRAIN_SIDECAR_URL: "http://localhost:8080"
+      # Sidecar admin token — set a test value for the compose stack.
+      TAPPS_BRAIN_ADMIN_TOKEN: "smoke-admin-token-ci"
+      TAPPS_BRAIN_AUTH_TOKEN: "smoke-data-token-ci"
+      TAPPS_BRAIN_PER_TENANT_AUTH: "1"
+      HF_DATASETS_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          enable-cache: true
+      - run: uv sync --group dev
+      - name: Apply schema migrations
+        run: uv run python scripts/apply_all_migrations.py
+      - name: Build sidecar image
+        run: docker build -f docker/Dockerfile.http -t docker-tapps-brain-http:smoke .
+      - name: Start sidecar container
+        run: |
+          docker run -d \
+            --name tapps-smoke-sidecar \
+            --network host \
+            -e TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_smoke \
+            -e TAPPS_BRAIN_AUTH_TOKEN=smoke-data-token-ci \
+            -e TAPPS_BRAIN_ADMIN_TOKEN=smoke-admin-token-ci \
+            -e TAPPS_BRAIN_PER_TENANT_AUTH=1 \
+            -e TAPPS_BRAIN_AUTO_MIGRATE=1 \
+            -e TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 \
+            -e TAPPS_BRAIN_HTTP_PORT=8080 \
+            -e TAPPS_BRAIN_MCP_HTTP_PORT=0 \
+            docker-tapps-brain-http:smoke
+      - name: Wait for sidecar health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Sidecar healthy after ${i}s"; break
+            fi
+            echo "Waiting for sidecar (attempt ${i}/30)..."; sleep 2
+          done
+          curl -sf http://localhost:8080/health || (docker logs tapps-smoke-sidecar; exit 1)
+      - name: Run cross-tenant smoke tests
+        run: |
+          uv run pytest tests/integration/test_cross_tenant_http.py \
+            -v --tb=short -s
+      - name: Collect sidecar logs on failure
+        if: failure()
+        run: docker logs tapps-smoke-sidecar || true
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 5
