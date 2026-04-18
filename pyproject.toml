@@ -100,7 +100,7 @@ include = ["src/tapps_brain/", "examples/coding-project-init/"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tapps_brain"]
-artifacts = ["src/tapps_brain/profiles/*.yaml"]
+artifacts = ["src/tapps_brain/profiles/*.yaml", "src/tapps_brain/mcp_server/*.yaml"]
 
 # Ship the coding-project-init scaffold as package data so `tapps-brain init`
 # works from an installed wheel (examples/ lives outside the wheel normally).

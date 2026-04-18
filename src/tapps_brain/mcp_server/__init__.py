@@ -2134,6 +2134,18 @@ def create_server(  # noqa: PLR0915
         )
 
     # ------------------------------------------------------------------
+    # Profile registry (EPIC-073 STORY-073.1)
+    # Validate YAML tool names against the full registered set *before* the
+    # operator-tool removal pass so the ``operator`` profile (which references
+    # all 68 tools) passes validation even when enable_operator_tools=False.
+    # ------------------------------------------------------------------
+    from tapps_brain.mcp_server.profile_registry import ProfileRegistry
+
+    _profile_registry = ProfileRegistry()
+    _all_registered = frozenset(t.name for t in mcp._tool_manager.list_tools())
+    _profile_registry.validate_against(_all_registered)
+
+    # ------------------------------------------------------------------
     # Operator tool gate
     # ------------------------------------------------------------------
 
@@ -2183,6 +2195,9 @@ def create_server(  # noqa: PLR0915
     mcp._tapps_hive_enabled = enable_hive
     mcp._tapps_operator_tools_enabled = enable_operator_tools
     mcp._tapps_hive_store = getattr(default_store, "_hive_store", None)
+    # EPIC-073 STORY-073.1: attach profile registry so middleware / tools can
+    # resolve the active profile without re-loading YAML per request.
+    mcp._tapps_profile_registry = _profile_registry
 
     return mcp
 

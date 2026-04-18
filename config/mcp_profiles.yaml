@@ -1,0 +1,227 @@
+# MCP tool profiles for tapps-brain server — EPIC-073 STORY-073.1
+#
+# Maps profile names → sets of tool names exposed to that profile.
+# Tool names must exactly match the @mcp.tool()-decorated function names in
+# src/tapps_brain/mcp_server/__init__.py.
+#
+# ProfileRegistry validates all names at startup — add new tools here when
+# adding @mcp.tool decorators, otherwise the server will refuse to start.
+#
+# Profile summary:
+#   full      (55 tools) — all standard tools; default fallback (backwards-compat)
+#   operator  (68 tools) — full + operator-only maintenance tools
+#   coder     (15 tools) — repo-embedded coding agent subset (~14 per epic spec)
+#   reviewer  ( 8 tools) — read-only PR/code review agents
+#   seeder    ( 6 tools) — bulk ingestion scripts
+
+profiles:
+  # --------------------------------------------------------------------------
+  # full — all standard tools (default fallback, backwards-compatible)
+  # 55 tools: all registered tools minus the 13 operator-only tools
+  # --------------------------------------------------------------------------
+  full:
+    description: >
+      All standard (non-operator) tools. Default profile when no X-Brain-Profile
+      header is set. Preserves today's 55-tool surface — zero breaking change for
+      existing clients.
+    tools:
+      - agent_create
+      - agent_delete
+      - agent_list
+      - agent_register
+      - brain_forget
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_recall
+      - brain_remember
+      - brain_status
+      - diagnostics_history
+      - diagnostics_report
+      - feedback_gap
+      - feedback_issue
+      - feedback_query
+      - feedback_rate
+      - feedback_record
+      - flywheel_gaps
+      - flywheel_process
+      - flywheel_report
+      - hive_propagate
+      - hive_push
+      - hive_search
+      - hive_status
+      - hive_wait_write
+      - hive_write_revision
+      - memory_audit
+      - memory_capture
+      - memory_delete
+      - memory_entries_by_tag
+      - memory_find_related
+      - memory_get
+      - memory_history
+      - memory_index_session
+      - memory_ingest
+      - memory_list
+      - memory_list_groups
+      - memory_list_tags
+      - memory_profile_onboarding
+      - memory_query_relations
+      - memory_recall
+      - memory_recall_many
+      - memory_reinforce
+      - memory_reinforce_many
+      - memory_relations
+      - memory_relations_get_batch
+      - memory_save
+      - memory_save_many
+      - memory_search
+      - memory_search_sessions
+      - memory_supersede
+      - memory_update_tags
+      - profile_info
+      - profile_switch
+      - tapps_brain_session_end
+
+  # --------------------------------------------------------------------------
+  # operator — all tools (standard + operator-only maintenance)
+  # 68 tools: full + 13 operator-only tools
+  # --------------------------------------------------------------------------
+  operator:
+    description: >
+      All tools including operator-only maintenance operations. Intended for
+      the human operator / tapps-brain-operator-mcp server. Requires operator
+      bearer token.
+    tools:
+      # Standard 55 (same as full)
+      - agent_create
+      - agent_delete
+      - agent_list
+      - agent_register
+      - brain_forget
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_recall
+      - brain_remember
+      - brain_status
+      - diagnostics_history
+      - diagnostics_report
+      - feedback_gap
+      - feedback_issue
+      - feedback_query
+      - feedback_rate
+      - feedback_record
+      - flywheel_gaps
+      - flywheel_process
+      - flywheel_report
+      - hive_propagate
+      - hive_push
+      - hive_search
+      - hive_status
+      - hive_wait_write
+      - hive_write_revision
+      - memory_audit
+      - memory_capture
+      - memory_delete
+      - memory_entries_by_tag
+      - memory_find_related
+      - memory_get
+      - memory_history
+      - memory_index_session
+      - memory_ingest
+      - memory_list
+      - memory_list_groups
+      - memory_list_tags
+      - memory_profile_onboarding
+      - memory_query_relations
+      - memory_recall
+      - memory_recall_many
+      - memory_reinforce
+      - memory_reinforce_many
+      - memory_relations
+      - memory_relations_get_batch
+      - memory_save
+      - memory_save_many
+      - memory_search
+      - memory_search_sessions
+      - memory_supersede
+      - memory_update_tags
+      - profile_info
+      - profile_switch
+      - tapps_brain_session_end
+      # Operator-only tools (+13)
+      - flywheel_evaluate
+      - flywheel_hive_feedback
+      - maintenance_consolidate
+      - maintenance_gc
+      - maintenance_stale
+      - memory_consolidation_config
+      - memory_consolidation_config_set
+      - memory_export
+      - memory_gc_config
+      - memory_gc_config_set
+      - memory_import
+      - tapps_brain_health
+      - tapps_brain_relay_export
+
+  # --------------------------------------------------------------------------
+  # coder — repo-embedded coding agent (~15 tools per EPIC-073)
+  # Facade + hook-callable + quality loop + cross-repo graph tools
+  # --------------------------------------------------------------------------
+  coder:
+    description: >
+      Repo-embedded coding agent subset. Exposes the brain_* facade, session
+      hooks, quality-loop tools, and cross-repo graph lookups. Intentionally
+      excludes destructive ops (memory_delete, agent_delete, etc.) and bulk
+      admin tools to reduce context-bloat and attack surface.
+    tools:
+      # Facade (6) — primary agent API
+      - brain_recall
+      - brain_remember
+      - brain_forget
+      - brain_learn_success
+      - brain_learn_failure
+      - brain_status
+      # Hook-callable (4) — invoked by SessionStart / SessionEnd hooks
+      - memory_index_session
+      - memory_capture
+      - tapps_brain_session_end
+      - memory_search_sessions
+      # Quality loop (3) — reinforcement + feedback
+      - memory_reinforce
+      - feedback_rate
+      - feedback_gap
+      # Cross-repo + graph (2) — Hive and relation lookups
+      - hive_search
+      - memory_find_related
+
+  # --------------------------------------------------------------------------
+  # reviewer — read-only PR/code review agents (8 tools)
+  # --------------------------------------------------------------------------
+  reviewer:
+    description: >
+      Read-only subset for PR/code review agents. No writes, no deletes.
+      Provides recall, search, and graph traversal only.
+    tools:
+      - brain_recall
+      - hive_search
+      - memory_find_related
+      - memory_get
+      - memory_list
+      - memory_relations
+      - memory_search
+      - memory_search_sessions
+
+  # --------------------------------------------------------------------------
+  # seeder — bulk ingestion scripts (6 tools)
+  # --------------------------------------------------------------------------
+  seeder:
+    description: >
+      Bulk write subset for one-shot ingestion scripts. No read ops beyond
+      status. Intended for pipeline agents that bulk-populate memory before
+      a coding session starts.
+    tools:
+      - brain_status
+      - memory_capture
+      - memory_ingest
+      - memory_save
+      - memory_save_many
+      - memory_supersede
