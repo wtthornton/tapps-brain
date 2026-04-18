@@ -56,6 +56,12 @@ REQUEST_SCOPE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 REQUEST_GROUP: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "tapps_brain_request_group", default=None
 )
+# STORY-073.2: resolved MCP profile contextvar (set by ProfileResolutionMiddleware
+# from the X-Brain-Profile header / agent-registry lookup / server default).
+# STORY-073.3 reads this in list_tools and call_tool interceptors.
+REQUEST_PROFILE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "tapps_brain_request_profile", default=None
+)
 
 import structlog
 
