@@ -1371,6 +1371,45 @@ def maintenance_consolidation_merge_undo(
         store.close()
 
 
+@maintenance_app.command("consolidation-diff")
+def maintenance_consolidation_diff(
+    merge_id: Annotated[str, typer.Argument(help="Consolidated key (merge ID) to inspect.")],
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Inspect details of a past auto-consolidation merge (STORY-SC03 / TAP-559).
+
+    Reads the audit log for the given consolidated key and displays source keys,
+    trigger, threshold, similarity score, merge rule (embedding_cosine vs
+    text_similarity), and consolidation reason.  Read-only — no store mutations.
+    """
+    from tapps_brain.auto_consolidation import find_last_consolidation_merge_audit
+
+    store = _get_store(project_dir)
+    try:
+        audit_path = store._persistence.audit_path
+        record = find_last_consolidation_merge_audit(
+            audit_path, merge_id, persistence=store._persistence
+        )
+        if record is None:
+            typer.echo(f"No consolidation merge audit found for key: {merge_id}", err=True)
+            raise typer.Exit(code=1)
+        data = dict(record)
+        if as_json:
+            _output(data, as_json=True)
+        else:
+            typer.echo(f"Merge ID:        {merge_id}")
+            typer.echo(f"  Source keys:   {record.get('source_keys', [])}")
+            typer.echo(f"  Trigger:       {record.get('trigger', 'unknown')}")
+            typer.echo(f"  Threshold:     {record.get('threshold', 'unknown')}")
+            typer.echo(f"  Merge rule:    {record.get('merge_rule', 'text_similarity')}")
+            sim = record.get("similarity_score")
+            typer.echo(f"  Similarity:    {round(sim, 4) if sim is not None else 'n/a'}")
+            typer.echo(f"  Reason:        {record.get('consolidation_reason', 'unknown')}")
+    finally:
+        store.close()
+
+
 @maintenance_app.command("stale")
 def maintenance_stale(
     project_dir: ProjectDir = None,

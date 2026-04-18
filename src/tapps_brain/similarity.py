@@ -3,6 +3,12 @@
 Provides Jaccard similarity on tags and TF (term-frequency) cosine similarity
 on text content to identify related memory entries that can be consolidated.
 Note: the text similarity is TF-cosine (no IDF weighting), not full TF-IDF.
+
+STORY-SC03 (TAP-559): :func:`compute_similarity_with_embeddings` uses stored
+vector embeddings as the primary similarity signal when both entries carry an
+``embedding`` field, with Jaccard + TF-cosine as secondary / fallback.  Use
+``use_embeddings=True`` (the default) in :func:`find_similar` and
+:func:`find_consolidation_groups` to activate the semantic path.
 """
 
 from __future__ import annotations
@@ -25,6 +31,12 @@ if TYPE_CHECKING:
 DEFAULT_SIMILARITY_THRESHOLD = 0.7
 DEFAULT_TAG_WEIGHT = 0.4
 DEFAULT_TEXT_WEIGHT = 0.6
+
+# When stored embeddings are available, embedding cosine is the primary signal.
+# Tag Jaccard provides the secondary signal; text TF-cosine is excluded from
+# the blended score (embeddings subsume it).
+DEFAULT_EMBEDDING_WEIGHT = 0.7
+DEFAULT_EMBEDDING_TAG_WEIGHT = 0.3
 
 # Minimum fraction of tags that must overlap for a match.
 _MIN_TAG_OVERLAP_RATIO = 0.5
@@ -133,6 +145,9 @@ class SimilarityResult:
     combined_score: float
     tag_score: float
     text_score: float
+    # Populated by compute_similarity_with_embeddings when embeddings are present.
+    embedding_score: float | None = None
+    used_embeddings: bool = False
 
     def __lt__(self, other: SimilarityResult) -> bool:
         """Allow sorting by combined score (descending)."""
@@ -179,6 +194,60 @@ def compute_similarity(
     )
 
 
+def compute_similarity_with_embeddings(
+    entry_a: MemoryEntry,
+    entry_b: MemoryEntry,
+    *,
+    tag_weight: float = DEFAULT_EMBEDDING_TAG_WEIGHT,
+    text_weight: float = DEFAULT_TEXT_WEIGHT,
+    embedding_weight: float = DEFAULT_EMBEDDING_WEIGHT,
+) -> SimilarityResult:
+    """Compute similarity using stored embeddings as the primary signal when available.
+
+    When both entries carry a non-empty ``embedding`` vector, embedding cosine
+    similarity is weighted at *embedding_weight* (default 0.7) and Jaccard tag
+    similarity at *tag_weight* (default 0.3).  When either entry lacks an
+    embedding the function falls back to the Jaccard + TF-cosine baseline via
+    :func:`compute_similarity` (STORY-SC03 / TAP-559).
+
+    Args:
+        entry_a: First memory entry.
+        entry_b: Second memory entry.
+        tag_weight: Weight for Jaccard tag similarity in the embedding path.
+        text_weight: Weight for TF-cosine text similarity in the fallback path.
+        embedding_weight: Weight for embedding cosine similarity (primary signal).
+
+    Returns:
+        SimilarityResult with ``used_embeddings=True`` when the semantic path fired.
+    """
+    from tapps_brain.embeddings import embedding_cosine_similarity
+
+    tag_score = tag_similarity(entry_a, entry_b)
+    text_score = text_similarity(entry_a, entry_b)
+
+    if entry_a.embedding and entry_b.embedding:
+        emb_score = embedding_cosine_similarity(entry_a.embedding, entry_b.embedding)
+        # Primary: embedding cosine; secondary: Jaccard tag similarity.
+        total = embedding_weight + tag_weight
+        combined = (emb_score * embedding_weight + tag_score * tag_weight) / total
+        return SimilarityResult(
+            entry_key=entry_b.key,
+            combined_score=round(combined, 4),
+            tag_score=round(tag_score, 4),
+            text_score=round(text_score, 4),
+            embedding_score=round(emb_score, 4),
+            used_embeddings=True,
+        )
+
+    # Fallback: Jaccard tag + TF-cosine (original path).
+    return compute_similarity(
+        entry_a,
+        entry_b,
+        tag_weight=DEFAULT_TAG_WEIGHT,
+        text_weight=text_weight,
+    )
+
+
 def find_similar(
     entry: MemoryEntry,
     candidates: list[MemoryEntry],
@@ -187,6 +256,7 @@ def find_similar(
     tag_weight: float = DEFAULT_TAG_WEIGHT,
     text_weight: float = DEFAULT_TEXT_WEIGHT,
     exclude_self: bool = True,
+    use_embeddings: bool = True,
 ) -> list[SimilarityResult]:
     """Find entries similar to the given entry above a threshold.
 
@@ -197,6 +267,9 @@ def find_similar(
         tag_weight: Weight for tag similarity (default 0.4).
         text_weight: Weight for text similarity (default 0.6).
         exclude_self: If True, exclude entries with the same key.
+        use_embeddings: When True (default), use :func:`compute_similarity_with_embeddings`
+            which activates the embedding-cosine primary signal when stored vectors are
+            present (STORY-SC03 / TAP-559). Set False to force the Jaccard+TF-cosine path.
 
     Returns:
         List of SimilarityResult for entries above threshold, sorted by score.
@@ -208,12 +281,19 @@ def find_similar(
         if exclude_self and candidate.key == entry.key:
             continue
 
-        result = compute_similarity(
-            entry,
-            candidate,
-            tag_weight=tag_weight,
-            text_weight=text_weight,
-        )
+        if use_embeddings:
+            result = compute_similarity_with_embeddings(
+                entry,
+                candidate,
+                text_weight=text_weight,
+            )
+        else:
+            result = compute_similarity(
+                entry,
+                candidate,
+                tag_weight=tag_weight,
+                text_weight=text_weight,
+            )
 
         if result.combined_score >= threshold:
             results.append(result)
@@ -235,6 +315,7 @@ def find_consolidation_groups(
     tag_weight: float = DEFAULT_TAG_WEIGHT,
     text_weight: float = DEFAULT_TEXT_WEIGHT,
     min_group_size: int = 2,
+    use_embeddings: bool = True,
 ) -> list[list[str]]:
     """Find groups of similar entries that can be consolidated.
 
@@ -247,6 +328,8 @@ def find_consolidation_groups(
         tag_weight: Weight for tag similarity.
         text_weight: Weight for text similarity.
         min_group_size: Minimum entries required to form a group.
+        use_embeddings: When True (default), prefer embedding cosine similarity
+            when stored vectors are present (STORY-SC03 / TAP-559).
 
     Returns:
         List of groups, where each group is a list of entry keys.
@@ -269,6 +352,7 @@ def find_consolidation_groups(
             tag_weight=tag_weight,
             text_weight=text_weight,
             exclude_self=True,
+            use_embeddings=use_embeddings,
         )
 
         if len(similar) >= min_group_size - 1:
