@@ -154,3 +154,41 @@ RALPH_PROMPT_CACHE_ENABLED=true
 
 # Monthly cost budget in USD (0 = disabled, triggers alert at 80% by default)
 # RALPH_COST_BUDGET_USD=0
+# =============================================================================
+# TASK BACKEND
+# =============================================================================
+
+# Task backend: "file" (default) reads from .ralph/fix_plan.md
+#               "linear" reads from a Linear project via the Linear API
+# Switching to "linear" requires LINEAR_API_KEY and RALPH_LINEAR_PROJECT below.
+RALPH_TASK_SOURCE="file"
+
+# Linear project name (required when RALPH_TASK_SOURCE=linear)
+# Must exactly match the project name in your Linear workspace.
+# RALPH_LINEAR_PROJECT="Ralph Continuous Coding"
+
+# Linear team name (optional — used in log messages only)
+# RALPH_LINEAR_TEAM="TappsCodingAgents"
+
+# Linear personal API key (can also be set as environment variable)
+# Generate at: https://linear.app/settings/api
+# LINEAR_API_KEY=""
+# =============================================================================
+# MONOREPO SUPPORT (Issue #163)
+# =============================================================================
+# Comma-separated list of service directories
+# MONOREPO_SERVICES=""
+# Root directory containing services (relative to project root)
+# MONOREPO_ROOT="services/"
+# =============================================================================
+# Comma-separated list of service directories
+# =============================================================================
+# BEADS INTEGRATION (Issue #87)
+# =============================================================================
+# BEADS INTEGRATION (Issue #87)
+# =============================================================================
+# Beads project for scoped queries
+# BEADS_PROJECT=""
+# =============================================================================
+# Beads project for scoped queries
+# =============================================================================

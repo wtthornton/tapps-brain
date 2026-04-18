@@ -1,22 +1,7 @@
-# Ralph Fix Plan — EPIC-070 AgentForge Integration (Remote-First Brain as a Shared Service)
+# fix_plan.md — sentinel for Linear-driven Ralph
 
-**Scope:** EPIC-070 — make tapps-brain deployable as a shared networked service consumable by AgentForge workers, Claude Code sessions, and AGENT.md-driven agents via MCP Streamable HTTP.
-**Reference:** [EPIC-070](../docs/epics/EPIC-070-agentforge-integration.md) | Stories in `docs/stories/`
-**Already done:** STORY-070.1 (Streamable-HTTP MCP transport), STORY-070.2 (service layer), STORY-070.3 (FastAPI HTTP adapter). Start from 070.4.
-**Task sizing:** One story per Ralph loop unless marked [BATCH].
-**Commits:** Use `feat(story-070.N): description` format.
+> **This file is a sentinel, not a task list.** Ralph is configured in Linear-driven mode (Path A hybrid — see `.ralph/PROMPT.md` and `docs/guides/linear-claude-agent.md`). The Ralph harness reads this file only to count unchecked items; task selection happens against the Linear project `tapps-brain` via the plugin:linear:linear MCP inside each loop.
+>
+> **Do not edit.** Do not check the sentinel task. Do not add new tasks here — file new Linear issues in the `tapps-brain` project instead.
 
----
-
-## EPIC-070: Remote-First Brain as a Shared Service
-
-
-
-
-
-
-
-
-
-
-
+- [ ] Linear-driven mode: pick next eligible issue from the tapps-brain Linear project per `.ralph/PROMPT.md` task-selection flow

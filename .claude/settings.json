@@ -164,6 +164,18 @@
           }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit\\",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "server_error",
+            "statusMessage": "bash .ralph/hooks/on-stop-failure.sh|Handling API error..."
+          }
+        ]
+      }
     ]
   },
   "$schema": "https://json.schemastore.org/claude-code-settings.json",

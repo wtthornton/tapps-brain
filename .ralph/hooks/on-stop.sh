@@ -53,6 +53,12 @@ if [[ -n "$_status_block" ]]; then
   files_modified_reported=$(echo "$_status_block" | grep "FILES_MODIFIED:" | tail -1 | sed 's/.*FILES_MODIFIED:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
   work_type=$(echo "$_status_block" | grep "WORK_TYPE:" | tail -1 | sed 's/.*WORK_TYPE:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
   recommendation=$(echo "$_status_block" | grep "RECOMMENDATION:" | tail -1 | sed 's/.*RECOMMENDATION:[[:space:]]*//' || echo "")
+  # LINEAR-DASH: optional Linear-driven fields. Absent in file-mode projects.
+  linear_issue=$(echo "$_status_block" | grep "LINEAR_ISSUE:" | tail -1 | sed 's/.*LINEAR_ISSUE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_url=$(echo "$_status_block" | grep "LINEAR_URL:" | tail -1 | sed 's/.*LINEAR_URL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic=$(echo "$_status_block" | grep "LINEAR_EPIC:" | grep -v "LINEAR_EPIC_DONE\|LINEAR_EPIC_TOTAL" | tail -1 | sed 's/.*LINEAR_EPIC:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic_done=$(echo "$_status_block" | grep "LINEAR_EPIC_DONE:" | tail -1 | sed 's/.*LINEAR_EPIC_DONE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic_total=$(echo "$_status_block" | grep "LINEAR_EPIC_TOTAL:" | tail -1 | sed 's/.*LINEAR_EPIC_TOTAL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
 else
   # No structured status block found — extract from full text
   exit_signal="false"
@@ -61,7 +67,18 @@ else
   files_modified_reported="0"
   work_type="UNKNOWN"
   recommendation=""
+  linear_issue=""
+  linear_url=""
+  linear_epic=""
+  linear_epic_done=""
+  linear_epic_total=""
 fi
+
+# LINEAR-DASH: sanitize Linear fields; empty strings become JSON null
+[[ "$linear_issue" =~ ^[Nn]one$ ]] && linear_issue=""
+[[ "$linear_epic" =~ ^[Nn]one$ ]] && linear_epic=""
+[[ "$linear_epic_done" =~ ^[0-9]+$ ]] || linear_epic_done=""
+[[ "$linear_epic_total" =~ ^[0-9]+$ ]] || linear_epic_total=""
 
 # Defaults for empty values
 exit_signal="${exit_signal:-false}"
@@ -107,6 +124,8 @@ question_count=0
 if [[ -n "$response_text" ]]; then
   for pattern in "${QUESTION_PATTERNS[@]}"; do
     count=$(echo "$response_text" | grep -ciE "$pattern" 2>/dev/null || echo "0")
+    count=$(echo "$count" | tr -cd '0-9')
+    count=${count:-0}
     question_count=$((question_count + count))
   done
   [[ "$question_count" -gt 0 ]] && asking_questions="true"
@@ -118,13 +137,16 @@ has_permission_denials="false"
 permission_denial_count=0
 if [[ -n "$response_text" ]]; then
   permission_denial_count=$(echo "$response_text" | grep -ciE '(permission denied|tool not allowed|not in allowed|disallowed tool|not permitted)' 2>/dev/null || echo "0")
+  permission_denial_count=$(echo "$permission_denial_count" | tr -cd '0-9')
+  permission_denial_count=${permission_denial_count:-0}
   [[ "$permission_denial_count" -gt 0 ]] && has_permission_denials="true"
 fi
 
 # Count actual files modified (from PostToolUse tracking)
 actual_files_modified=0
 if [[ -f "$RALPH_DIR/.files_modified_this_loop" ]]; then
-  actual_files_modified=$(sort -u "$RALPH_DIR/.files_modified_this_loop" | wc -l | tr -d '[:space:]')
+  actual_files_modified=$(sort -u "$RALPH_DIR/.files_modified_this_loop" | wc -l | tr -cd '0-9')
+  actual_files_modified=${actual_files_modified:-0}
 fi
 
 # Use the higher of reported vs actual (defense-in-depth)
@@ -148,37 +170,198 @@ fi
 
 # PERF: Read loop count and write status.json in single operation (was: jq read + date + jq write = 3 subprocesses)
 loop_count=0
+prev_session_cost=0
+prev_session_input=0
+prev_session_output=0
 if [[ -f "$RALPH_DIR/status.json" ]]; then
   loop_count=$(jq -r '.loop_count // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_cost=$(jq -r '.session_cost_usd // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_input=$(jq -r '.session_input_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_output=$(jq -r '.session_output_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
 fi
 # Validate loop_count is numeric before arithmetic
 [[ "$loop_count" =~ ^[0-9]+$ ]] || loop_count=0
 loop_count=$((loop_count + 1))
+[[ "$prev_session_cost" =~ ^[0-9]+(\.[0-9]+)?$ ]] || prev_session_cost=0
+[[ "$prev_session_input" =~ ^[0-9]+$ ]] || prev_session_input=0
+[[ "$prev_session_output" =~ ^[0-9]+$ ]] || prev_session_output=0
 
-# Write status.json (atomic write via temp file)
-# PERF: Use printf for timestamp instead of date subprocess where possible
+# LINEAR-DASH: Best-effort extraction of token/cost usage from this loop.
+# Claude Code supplies usage+cost in the stream result; try INPUT first, then transcript_path.
+loop_input_tokens=0
+loop_output_tokens=0
+loop_cost_usd=0
+_ti=$(echo "$INPUT" | jq -r '.usage.input_tokens // .message.usage.input_tokens // empty' 2>/dev/null || echo "")
+_to=$(echo "$INPUT" | jq -r '.usage.output_tokens // .message.usage.output_tokens // empty' 2>/dev/null || echo "")
+_tc=$(echo "$INPUT" | jq -r '.total_cost_usd // .message.total_cost_usd // empty' 2>/dev/null || echo "")
+[[ "$_ti" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ti"
+[[ "$_to" =~ ^[0-9]+$ ]] && loop_output_tokens="$_to"
+[[ "$_tc" =~ ^[0-9]+(\.[0-9]+)?$ ]] && loop_cost_usd="$_tc"
+
+_transcript=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+
+if [[ "$loop_cost_usd" == "0" ]]; then
+  if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+    # Last "result" message in the transcript JSONL — agent mode emits one per turn.
+    _result=$(tac "$_transcript" 2>/dev/null | grep -m 1 '"type":"result"' || true)
+    if [[ -n "$_result" ]]; then
+      _ti2=$(echo "$_result" | jq -r '.usage.input_tokens // empty' 2>/dev/null || echo "")
+      _to2=$(echo "$_result" | jq -r '.usage.output_tokens // empty' 2>/dev/null || echo "")
+      _tc2=$(echo "$_result" | jq -r '.total_cost_usd // empty' 2>/dev/null || echo "")
+      [[ "$_ti2" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ti2"
+      [[ "$_to2" =~ ^[0-9]+$ ]] && loop_output_tokens="$_to2"
+      [[ "$_tc2" =~ ^[0-9]+(\.[0-9]+)?$ ]] && loop_cost_usd="$_tc2"
+    fi
+  fi
+fi
+
+# PHASE1: model used this loop (from last assistant message in transcript)
+loop_model=""
+loop_cache_read=0
+loop_cache_create=0
+if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+  _last_asst=$(tac "$_transcript" 2>/dev/null | grep -m 1 '"type":"assistant"' || true)
+  if [[ -n "$_last_asst" ]]; then
+    loop_model=$(echo "$_last_asst" | jq -r '.message.model // .model // empty' 2>/dev/null || echo "")
+  fi
+  # Sum cache read/create tokens across all assistant messages this loop
+  _cr=$(grep '"type":"assistant"' "$_transcript" 2>/dev/null | jq -r '.message.usage.cache_read_input_tokens // 0' 2>/dev/null | awk '{s+=$1} END{print s+0}')
+  _cc=$(grep '"type":"assistant"' "$_transcript" 2>/dev/null | jq -r '.message.usage.cache_creation_input_tokens // 0' 2>/dev/null | awk '{s+=$1} END{print s+0}')
+  [[ "$_cr" =~ ^[0-9]+$ ]] && loop_cache_read="$_cr"
+  [[ "$_cc" =~ ^[0-9]+$ ]] && loop_cache_create="$_cc"
+fi
+
+# PHASE1: sub-agent invocations this loop — count Task tool calls by subagent_type
+# Single jq pass over the transcript (treated as JSONL via -s slurp) so counts sum correctly.
+loop_subagents_json="{}"
+if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+  loop_subagents_json=$(jq -cs '
+    [ .[] | select(.type == "assistant") | .message.content[]?
+      | select(.type == "tool_use" and .name == "Task")
+      | .input.subagent_type // "unknown" ]
+    | group_by(.) | map({(.[0]): length}) | add // {}
+  ' "$_transcript" 2>/dev/null || echo "{}")
+  [[ -z "$loop_subagents_json" || "$loop_subagents_json" == "null" ]] && loop_subagents_json="{}"
+fi
+
+# Merge session sub-agent counts (previous + this loop)
+prev_subagents_json=$(jq -r '.session_subagents // {}' "$RALPH_DIR/status.json" 2>/dev/null || echo "{}")
+[[ -z "$prev_subagents_json" || "$prev_subagents_json" == "null" ]] && prev_subagents_json="{}"
+session_subagents_json=$(jq -cn --argjson a "$prev_subagents_json" --argjson b "$loop_subagents_json" \
+  '$a as $a | $b as $b | ($a | to_entries) + ($b | to_entries) | group_by(.key) | map({(.[0].key): (map(.value) | add)}) | add // {}' 2>/dev/null || echo "{}")
+[[ -z "$session_subagents_json" || "$session_subagents_json" == "null" ]] && session_subagents_json="{}"
+
+session_cost_usd=$(awk -v p="$prev_session_cost" -v l="$loop_cost_usd" 'BEGIN{printf "%.6f", p+l}')
+session_input_tokens=$((prev_session_input + loop_input_tokens))
+session_output_tokens=$((prev_session_output + loop_output_tokens))
+
+# MERGE-1: also refresh calls_made_this_hour from .call_count, which ralph_loop.sh's
+# update_status may have written as a stale pre-increment value at loop start.
+fresh_calls_made=""
+if [[ -f "$RALPH_DIR/.call_count" ]]; then
+  read -r fresh_calls_made < "$RALPH_DIR/.call_count" 2>/dev/null || true
+  [[ "$fresh_calls_made" =~ ^[0-9]+$ ]] || fresh_calls_made=""
+fi
+
+# Accumulate session cache stats
+prev_session_cache_read=$(jq -r '.session_cache_read_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+prev_session_cache_create=$(jq -r '.session_cache_create_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+[[ "$prev_session_cache_read" =~ ^[0-9]+$ ]] || prev_session_cache_read=0
+[[ "$prev_session_cache_create" =~ ^[0-9]+$ ]] || prev_session_cache_create=0
+session_cache_read=$((prev_session_cache_read + loop_cache_read))
+session_cache_create=$((prev_session_cache_create + loop_cache_create))
+
+# Sanitize all numeric/boolean fields for valid JSON output (MINGW/CRLF safety)
+[[ "$question_count" =~ ^[0-9]+$ ]] || question_count=0
+[[ "$permission_denial_count" =~ ^[0-9]+$ ]] || permission_denial_count=0
+[[ "$files_modified" =~ ^[0-9]+$ ]] || files_modified=0
+[[ "$asking_questions" == "true" ]] || asking_questions="false"
+[[ "$has_permission_denials" == "true" ]] || has_permission_denials="false"
+
+# Write status.json (atomic write via temp file).
+# MERGE-1: Two writers (ralph_loop.sh update_status and this hook) emit different fields.
+# Preserve the loop-writer fields (calls_made_this_hour, max_calls_per_hour, last_action,
+# exit_reason, next_reset) so the monitor has a complete view regardless of which writer
+# ran last.
 local_tmp=$(mktemp "$RALPH_DIR/status.json.XXXXXX")
-cat > "$local_tmp" <<EOF
-{
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "loop_count": $loop_count,
-  "status": "${status}",
-  "exit_signal": "${exit_signal}",
-  "tasks_completed": ${tasks_done},
-  "files_modified": ${files_modified},
-  "work_type": "${work_type}",
-  "recommendation": $(echo "${recommendation}" | jq -Rs .),
-  "asking_questions": ${asking_questions},
-  "question_count": ${question_count},
-  "has_permission_denials": ${has_permission_denials},
-  "permission_denial_count": ${permission_denial_count}
-}
-EOF
+_now_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Build this-hook's object, then merge onto the prior status.json so unrelated fields survive.
+jq -n \
+  --arg ts "$_now_ts" \
+  --argjson lc "$loop_count" \
+  --arg st "$status" \
+  --arg es "$exit_signal" \
+  --argjson td "$tasks_done" \
+  --argjson fm "$files_modified" \
+  --arg wt "$work_type" \
+  --arg rec "$recommendation" \
+  --argjson aq "$asking_questions" \
+  --argjson qc "$question_count" \
+  --argjson hpd "$has_permission_denials" \
+  --argjson pdc "$permission_denial_count" \
+  --arg li "$linear_issue" \
+  --arg lu "$linear_url" \
+  --arg le "$linear_epic" \
+  --arg led "${linear_epic_done}" \
+  --arg let "${linear_epic_total}" \
+  --argjson lit "$loop_input_tokens" \
+  --argjson lot "$loop_output_tokens" \
+  --argjson lcu "$loop_cost_usd" \
+  --argjson sit "$session_input_tokens" \
+  --argjson sot "$session_output_tokens" \
+  --argjson scu "$session_cost_usd" \
+  --arg lm "$loop_model" \
+  --argjson lcr "$loop_cache_read" \
+  --argjson lcc "$loop_cache_create" \
+  --argjson scr "$session_cache_read" \
+  --argjson scc "$session_cache_create" \
+  --argjson lsa "$loop_subagents_json" \
+  --argjson ssa "$session_subagents_json" \
+  --arg fcm "$fresh_calls_made" \
+  '{
+    timestamp: $ts, loop_count: $lc, status: $st, exit_signal: $es,
+    tasks_completed: $td, files_modified: $fm, work_type: $wt, recommendation: $rec,
+    asking_questions: $aq, question_count: $qc,
+    has_permission_denials: $hpd, permission_denial_count: $pdc,
+    linear_issue: (if $li == "" then null else $li end),
+    linear_url: (if $lu == "" then null else $lu end),
+    linear_epic: (if $le == "" then null else $le end),
+    linear_epic_done: (if $led == "" then null else ($led|tonumber) end),
+    linear_epic_total: (if $let == "" then null else ($let|tonumber) end),
+    loop_input_tokens: $lit, loop_output_tokens: $lot, loop_cost_usd: $lcu,
+    session_input_tokens: $sit, session_output_tokens: $sot, session_cost_usd: $scu,
+    loop_model: (if $lm == "" then null else $lm end),
+    loop_cache_read_tokens: $lcr, loop_cache_create_tokens: $lcc,
+    session_cache_read_tokens: $scr, session_cache_create_tokens: $scc,
+    loop_subagents: $lsa, session_subagents: $ssa
+  }
+  | if $fcm != "" then .calls_made_this_hour = ($fcm|tonumber) else . end
+  ' > "$local_tmp.hook" 2>/dev/null
+
+if [[ -f "$RALPH_DIR/status.json" ]] && jq -e 'type == "object"' "$RALPH_DIR/status.json" >/dev/null 2>&1; then
+  # Merge: existing status.json + hook fields (hook wins on overlap).
+  jq -s '.[0] * .[1]' "$RALPH_DIR/status.json" "$local_tmp.hook" > "$local_tmp" 2>/dev/null \
+    || cp "$local_tmp.hook" "$local_tmp"
+else
+  cp "$local_tmp.hook" "$local_tmp"
+fi
+rm -f "$local_tmp.hook" 2>/dev/null
+
 mv "$local_tmp" "$RALPH_DIR/status.json"
 rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs copy+unlink orphans
 
 # PERF: Update circuit breaker in a single jq call (was: 2-3 separate jq + mktemp + mv per branch)
 if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
+  # TAP-538: Guard against corrupt CB state. If jq cannot parse the file the
+  # downstream `jq … > tmp && mv` pattern silently no-ops and the state stays
+  # corrupt forever. Re-initialize to a safe skeleton and emit a WARN line so
+  # the hook still exits 0 (preserving the loop) instead of crashing.
+  if ! jq -e 'type == "object"' "$RALPH_DIR/.circuit_breaker_state" >/dev/null 2>&1; then
+    echo "[$(date '+%H:%M:%S')] WARN: .circuit_breaker_state is corrupt — reinitializing to CLOSED" >&2
+    printf '%s\n' '{"state":"CLOSED","consecutive_no_progress":0,"consecutive_permission_denials":0,"total_opens":0}' \
+      > "$RALPH_DIR/.circuit_breaker_state"
+  fi
   local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
   if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
     # Progress detected — reset no-progress counter, permission denials, and close

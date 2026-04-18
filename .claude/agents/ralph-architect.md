@@ -14,16 +14,14 @@ tools:
   - Agent(ralph-explorer, ralph-tester, ralph-reviewer)
   - TodoWrite
   - WebFetch
-  - mcp__tapps-mcp
-  - mcp__docs-mcp
 disallowedTools:
   - Bash(git clean *)
   - Bash(git rm *)
   - Bash(git reset --hard *)
   - Bash(rm -rf *)
-model: opus
+model: claude-opus-4-7
 permissionMode: bypassPermissions
-maxTurns: 100
+maxTurns: 50
 memory: project
 effort: high
 ---
