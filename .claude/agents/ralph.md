@@ -21,7 +21,7 @@ disallowedTools:
   - Bash(rm -rf *)
 model: sonnet
 permissionMode: bypassPermissions
-maxTurns: 75
+maxTurns: 100
 memory: project
 effort: medium
 ---

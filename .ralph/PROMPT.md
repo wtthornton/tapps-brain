@@ -119,11 +119,15 @@ Do NOT read `.ralph/fix_plan.md` — it is a harness sentinel only.
 6. Search codebase for existing implementations first.
 7. Implement the smallest complete change for that issue.
 8. Run targeted verification for the touched scope (see Testing Guidelines below).
-9. Commit with the Linear ID: `feat(TAP-NNN): description` or `fix(TAP-NNN): description`.
-10. `save_issue` to `In Review`.
-11. `save_comment` with summary + branch + SHA(s) + test status.
-12. Report: issue, branch, files changed, verification, next action/blocker.
-13. **STOP. End response immediately after the status block.**
+9. Commit with the Linear ID: `feat(TAP-NNN): description` or `fix(TAP-NNN): description`. Commits go to the issue branch, not main.
+10. **Spawn `ralph-reviewer` subagent** to review your diff. Give it the issue ID + branch name + commit SHA(s). It reads the diff and returns a verdict: blockers, suggestions, or clean.
+    - **Blockers** (obvious bugs, missing error handling, security issues, broken tests): address them in an additional commit on the same branch, then re-spawn the reviewer to re-verify. Max 2 review cycles per loop.
+    - **Non-blocker suggestions** (style nits, optional refactors): note in the `save_comment` for the human. Do not block the In Review transition.
+    - **Reviewer errors or unavailable**: log it in your reply, proceed to In Review anyway. Do not spin on reviewer failures.
+11. `save_issue` to `In Review`.
+12. `save_comment` with summary + branch + SHA(s) + test status + reviewer verdict (`clean` / `suggestions` / `blockers-addressed`).
+13. Report: issue, branch, files changed, verification, reviewer outcome, next action/blocker.
+14. **STOP. End response immediately after the status block.**
 
 ## Testing Guidelines (Epic-Boundary QA)
 
