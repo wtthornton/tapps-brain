@@ -51,7 +51,7 @@ Sorted by overall score desc. 16 systems scored. Raw totals to one decimal.
 | 2 | mem0 | 79.6 | Published LoCoMo 91.6, Python + TS SDK + REST + hosted tier, Apache-2.0 | No DB-layer tenant isolation, LLM required in write path, no first-party MCP server (third-party wrappers only) |
 | 3 | Graphiti (Zep OSS) | 75.8 | Bi-temporal knowledge graph, Apache-2.0, first-class MCP server (mcp-v1.0.2) | Requires Neo4j/FalkorDB backend, graph-build latency, no public recall-quality benchmark on LongMemEval leaderboard |
 | 4 | Supermemory | 73.4 | MIT + self-host + 21.9k stars, MCP shipped, JS/TS + Python SDKs | SaaS-primary, architecture proprietary, "leaderboard" claims externally disputed *(D7 raised from 0 to 3 in 2026-04-17 score audit: MIT license + real self-host confirmed)* |
-| 1 | **tapps-brain** | **79.8** | Power-law per-tier decay (FSRS-canonical, STORY-SC02 2026-04-17), embedding-cosine consolidation + polarity contradiction detection (STORY-SC03 2026-04-18), DB-layer RLS tenant isolation, 55-tool first-class MCP surface with dual transport (data :8080 + operator :8090), production-ready (OTel, migrations, 127 test files) | No published benchmark, no external adopters, single-language SDK |
+| 1 | **tapps-brain** | **80.6** | Power-law per-tier decay (FSRS-canonical, STORY-SC02 2026-04-17), embedding-cosine consolidation + polarity contradiction detection (STORY-SC03 2026-04-18), DB-layer RLS tenant isolation, 55-tool first-class MCP surface with dual transport (data :8080 + operator :8090), TypeScript SDK + LangGraph Store adapter (STORY-SC05 2026-04-18), production-ready (OTel, migrations, 127 test files) | No published benchmark, no external adopters |
 | 5 | Memori (MemoriLabs) | 72.2 | Published LoCoMo 81.95, Apache-2.0, Rust components + Python/TS SDK + MCP | LLM-in-path only, smaller ecosystem than mem0, entity-process-session isolation is app-layer |
 | 6 | LangGraph memory | 68.6 | Ubiquitous adoption (29.5k stars), MIT, multi-backend checkpointers + Store abstraction | Not a memory product (primitive), user must implement decay/consolidation, no first-party MCP server |
 | 7 | Cognee | 68.0 | `remember/recall/forget/improve` API, Apache-2.0, first-class `cognee-mcp` server | Multi-service ops burden, no published benchmark, per-user isolation on 2026 roadmap not shipped |
@@ -81,7 +81,7 @@ weighted sums rounded to one decimal. Sorted by T desc.
 | mem0 | 3 | 5 | 3 | 5 | 3 | 2 | 5 | 5 | 4 | 3 | 5 | **79.6** |
 | Graphiti (Zep OSS) | 2 | 4 | 3 | 5 | 2 | 5 | 4 | 5 | 4 | 3 | 5 | **75.8** |
 | Supermemory | 3 | 4 | 3 | 4 | 3 | 4 | 4 | 3 | 4 | 3 | 5 | **73.4** |
-| **tapps-brain** | **4** | **2** | **5** | **5** | **5** | **5** | **3** | **5** | **5** | **5** | **1** | **79.8** |
+| **tapps-brain** | **4** | **2** | **5** | **5** | **5** | **5** | **4** | **5** | **5** | **5** | **1** | **80.6** |
 | Memori (MemoriLabs) | 3 | 4 | 3 | 4 | 2 | 4 | 4 | 5 | 4 | 3 | 4 | **72.2** |
 | LangGraph memory | 4 | 2 | 1 | 2 | 3 | 2 | 4 | 5 | 5 | 5 | 5 | **68.6** |
 | Cognee | 2 | 3 | 3 | 4 | 2 | 5 | 3 | 5 | 4 | 3 | 4 | **68.0** |
@@ -152,13 +152,13 @@ Rubric applied honestly; unverified claims scored conservatively.
 | D4 Consolidation | 5 | Embedding-cosine merge (primary, 0.7 weight) with Jaccard+TF-cosine fallback when no stored vectors; pairwise `contradictions.py` polarity + numeric-divergence detection; provenance via `source`+`audit` with `merge_rule` + `similarity_score`; `maintenance consolidation-diff <key>` for merge inspection. **STORY-SC03 (TAP-559) 2026-04-18.** | `src/tapps_brain/auto_consolidation.py`, `consolidation.py`, `contradictions.py`, `similarity.py` |
 | D5 Multi-tenancy | 5 | `(project_id, agent_id)` composite key enforced via Postgres RLS with `FORCE ROW LEVEL SECURITY` (migration 012) and role-bypass guards. This is the DB-layer 5-rubric. | `src/tapps_brain/migrations/private/012_rls_force.sql`; CHANGELOG 3.8.0 TAP-512, TAP-514; ADR-010 |
 | D6a MCP depth | 5 | 55 MCP tools, dual transport (data plane on :8080 + operator on :8090), Streamable HTTP. | `src/tapps_brain/mcp_server/`; CHANGELOG 3.7.0–3.9.0 |
-| D6b Language/SDK reach | 3 | Python SDK + httpx client + REST/OpenAPI; single-language. | `src/tapps_brain/http_adapter.py`, `openapi_contract.py`; CHANGELOG 3.8.0 TAP-508/509 |
+| D6b Language/SDK reach | 4 | Python SDK (`tapps_brain`) + TypeScript SDK (`@tapps-brain/sdk`) + LangGraph `BaseStore` adapter (`@tapps-brain/langgraph`) + REST/OpenAPI; 2 stable SDKs + REST meets rubric-4. **STORY-SC05 (TAP-561) 2026-04-18.** | `packages/sdk/`, `packages/langgraph/`; `docs/guides/typescript-sdk.md`, `docs/guides/langgraph-adapter.md`; CHANGELOG [Unreleased] |
 | D7 License | 5 | MIT, real self-host; no hosted tier to compete with. | `LICENSE`; `pyproject.toml` L9 |
 | D8 Production readiness | 5 | OTel exporters, migrations system, 127 test files, versioned OpenAPI with CI-gated snapshot, releases every 1–3 days in April 2026 (3.7.0 → 3.9.0 in 48h). | `src/tapps_brain/otel_*.py`; `src/tapps_brain/postgres_migrations.py`; CHANGELOG §3.7.0–3.9.0 |
 | D9 Write-path design | 5 | **User-choosable**: deterministic (default, zero LLM cost) OR LLM-assisted (opt-in via `TAPPS_BRAIN_WRITE_POLICY=llm`). Both modes documented with cost/quality trade table. LLM mode implements ADD/UPDATE/DELETE/NOOP state machine via pluggable `WritePolicy` protocol; safety filter runs before LLM call; rate-limited per agent. Single env-var flip, no code change required. | `src/tapps_brain/write_policy.py`; `src/tapps_brain/_protocols.py` `WritePolicy`; `docs/guides/write-path-tradeoff.md`; TAP-560/STORY-SC04 |
-| D10 Momentum | 1 | Single-maintainer repo (`wtthornton/tapps-brain`), no named external adopters, <200 stars class. Honest score given the rubric. | `pyproject.toml` Homepage `github.com/wtthornton/tapps-brain`; memory-exclusions note on "deployment model: one box, 20 agents" = single-tenant ops |
+| D10 Momentum | 1 | Single-maintainer repo (`wtthornton/tapps-brain`), no named external adopters, <200 stars class. Honest score given the rubric. **Path to D10=3:** 3 named external production adopters publicly listed (with permission) + case studies at `docs/case-studies/`. STORY-SC06 (TAP-562) tracks this. | `pyproject.toml` Homepage `github.com/wtthornton/tapps-brain`; `docs/case-studies/` (scaffolded STORY-SC06 2026-04-18) |
 
-**Overall: 77.8/100.** (D3 moved 3 → 5 on 2026-04-17 via STORY-SC02 +3.2 pts; D9 moved 4 → 5 on 2026-04-18 via TAP-560/STORY-SC04 +2.0 pts.)
+**Overall: 80.6/100.** (D3: 3 → 5 via STORY-SC02 +3.2 pts 2026-04-17; D4: 4 → 5 via STORY-SC03 +2.0 pts 2026-04-18; D9: 4 → 5 via STORY-SC04 +2.0 pts 2026-04-18; D6b: 3 → 4 via STORY-SC05 +0.8 pts 2026-04-18.)
 
 ### mem0
 
