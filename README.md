@@ -70,12 +70,16 @@ The scaffold lives at [examples/coding-project-init/](examples/coding-project-in
 > **PostgreSQL is required.** As of [ADR-007](docs/planning/adr/ADR-007-postgres-only-no-sqlite.md) (2026-04-11), tapps-brain is **Postgres-only** — there is no SQLite or in-process fallback.  `MemoryStore.__init__` raises `ValueError` if `TAPPS_BRAIN_DATABASE_URL` is unset and no explicit `private_backend` is supplied.  For local dev, run `make brain-up` to start the bundled `pgvector/pg17` container.
 
 ```bash
-pip install tapps-brain
-make brain-up   # starts Postgres + pgvector on localhost:5432
-export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_dev
+# One-liner: Postgres + HTTP adapter + dashboard
+docker compose -f docker/docker-compose.hive.yaml up -d
+export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_brain
 ```
 
-> **Dev tip:** set `TAPPS_BRAIN_AUTO_MIGRATE=1` to enable auto-migration of the private schema on startup — no need to run `make brain-migrate` manually in local dev. In production, run migrations explicitly before deploying.
+**Python**
+
+```bash
+pip install tapps-brain
+```
 
 ```python
 from pathlib import Path
@@ -99,8 +103,40 @@ print(result.token_count)      # token budget enforced (default 2000)
 store.close()
 ```
 
+**TypeScript / Node.js**
+
+```bash
+npm install @tapps-brain/sdk
+```
+
+```typescript
+import { TappsBrainClient } from "@tapps-brain/sdk";
+
+const brain = new TappsBrainClient({
+  url: "http://localhost:8080",
+  projectId: "my-project",
+  agentId: "my-agent",
+  authToken: process.env.TAPPS_BRAIN_AUTH_TOKEN,
+});
+
+// Save a fact
+await brain.remember("Prefer ruff over pylint for linting", { tier: "pattern" });
+
+// Recall relevant memories (BM25 + vector hybrid)
+const memories = await brain.recall("linting conventions");
+for (const m of memories) {
+  console.log(`[${m.tier}] ${m.key}: ${m.value}`);
+}
+
+await brain.close();
+```
+
+Full guides: [TypeScript SDK](docs/guides/typescript-sdk.md) · [LangGraph Store adapter](docs/guides/langgraph-adapter.md)
+
+> **Dev tip:** set `TAPPS_BRAIN_AUTO_MIGRATE=1` to enable auto-migration of the private schema on startup — no need to run `make brain-migrate` manually in local dev. In production, run migrations explicitly before deploying.
+
 <details>
-<summary><strong>More examples</strong></summary>
+<summary><strong>More Python examples</strong></summary>
 
 ```python
 store.reinforce("auth-pattern", confidence_boost=0.1)
@@ -609,6 +645,9 @@ tests/
 
 | Guide | Description |
 |-------|-------------|
+| [**Benchmarks**](docs/benchmarks/README.md) | **LoCoMo + LongMemEval** eval harness — methodology, reproducer CLI, cost envelope, and score tracking (D2 impact: STORY-SC01) |
+| [TypeScript SDK](docs/guides/typescript-sdk.md) | `@tapps-brain/sdk` install, quick-start, API reference, and environment variables |
+| [LangGraph adapter](docs/guides/langgraph-adapter.md) | `@tapps-brain/langgraph` LangGraph `BaseStore` drop-in — wiring, query translation, pagination notes |
 | [Documentation index](docs/DOCUMENTATION_INDEX.md) | Categorized map of guides, engineering references, and planning epics |
 | [**Environment variables**](docs/guides/postgres-dsn.md) | **Full env-var contract** — all variables, examples, required (prod/dev). Template: [`.env.example`](.env.example) |
 | [Contributing](CONTRIBUTING.md) | Contributor setup (`uv`), tests, lint, types, and PR expectations |
@@ -625,6 +664,7 @@ tests/
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup |
 | [Visual snapshot guide](docs/guides/visual-snapshot.md) | Export a `brain-visual.json` snapshot and explore the brain-visual dashboard |
 | [Dashboard README](examples/brain-visual/README.md) | Live `/snapshot` polling, motion test checklist, brand notes |
+| [Case Studies](docs/case-studies/README.md) | Production adopter case studies — template + submission guide |
 | [Changelog](CHANGELOG.md) | Version history |
 
 <details>
@@ -644,6 +684,20 @@ tests/
 See [`docs/planning/STATUS.md`](docs/planning/STATUS.md) and [`docs/planning/epics/`](docs/planning/epics/) for the full list (including code-review epics 017–025).
 
 </details>
+
+---
+
+## Early Adopters
+
+tapps-brain is looking for **production deployments to highlight**. If you're running tapps-brain in a real agent fleet — coding assistants, customer-support bots, multi-tenant SaaS, anything — we'd love to list you here and write up how you're using it.
+
+What you get:
+
+- Listed in this README and in the [memory-systems scorecard](docs/research/memory-systems-scorecard.md) (helping tapps-brain move D10 from 1 → 3)
+- A case study published under `docs/case-studies/<your-project>.md` (we'll draft it, you review before publish)
+- White-glove onboarding support if you're still setting up
+
+**Contact:** open an issue titled "Adopter: \<your project>" or email `tapp.thornton@gmail.com`. See the [case studies guide](docs/case-studies/README.md) for what a case study covers.
 
 ---
 
