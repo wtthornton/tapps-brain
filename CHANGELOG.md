@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 - `docs/guides/fleet-topology.md` — new reference guide for the "N FastAPI containers + 1 brain sidecar" deployment pattern. Covers the topology diagram, what the brain vs each project container owns, the `X-Project-Id` / bearer-token wire contract, deployment checklist, `tapps-brain project` token-lifecycle runbook, and a "What NOT to try" section. Attribution correction: FORCE RLS + non-privileged-role startup assertion (`postgres.role_check_ok`) shipped in **3.8.0** (TAP-512), not 3.9.0 as previously reported in some external summaries. Cross-linked from `README.md` (Documentation table) and `docs/guides/agentforge-integration.md` (Related Guides). (TAP-571)
+- `docs/case-studies/` — adopter case-study directory: `README.md` (submission guide, five-section structure, scorecard-impact note) and `TEMPLATE.md` (adopter-facing fill-in template). Infrastructure for STORY-SC06 (TAP-562); case studies published here once external adopters confirm. (TAP-562)
+
+### Release cadence
+
+tapps-brain targets a **biweekly minor release** cadence (approximately every 14 days). Patch releases ship as needed for security fixes and critical bugs. Every release must pass `bash scripts/release-ready.sh` (packaging, tests ≥95% coverage, ruff, mypy, OpenClaw plugin build) before tagging. The CHANGELOG entry for each version is the release notes — no separate release-notes doc.
+
+Historical cadence: v3.7.0 → v3.8.0 → v3.9.0 shipped across 48 hours in April 2026 (accelerated by the EPIC TAP-556 scorecard push). Normal inter-release interval resumes at biweekly once the epic closes.
 
 ## [3.9.0] - 2026-04-16
 
