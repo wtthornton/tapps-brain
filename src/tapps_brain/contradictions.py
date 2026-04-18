@@ -9,6 +9,13 @@ Save-time similarity conflicts (:func:`detect_save_conflicts`) stay on that
 deterministic path. Optional neural NLI labeling belongs in offline jobs only;
 see ``docs/guides/save-conflict-nli-offline.md`` and
 :func:`tapps_brain.evaluation.run_save_conflict_candidate_report`.
+
+STORY-SC03 (TAP-559): :func:`detect_pairwise_contradictions` scans pairs of
+memory entries for keyword polarity ("uses Postgres" vs "uses SQLite"), numeric
+divergence (same metric label, different value) and boolean polarity
+("enabled" vs "disabled").  Results are :class:`PolarityContradiction` instances
+so that both sides can be preserved with ``audit.supersedes`` edges rather than
+silently dropped.
 """
 
 from __future__ import annotations
@@ -390,3 +397,230 @@ class ContradictionDetector:
             logger.debug("branch_check_failed", branch=entry.branch, error=str(exc))
 
         return None
+
+
+# ---------------------------------------------------------------------------
+# Pairwise polarity & numeric-divergence contradiction detection (TAP-559)
+# ---------------------------------------------------------------------------
+
+
+class PolarityContradiction(NamedTuple):
+    """A detected polarity or numeric contradiction between two memory entries.
+
+    Unlike :class:`Contradiction` (which compares a memory to observable project
+    state), ``PolarityContradiction`` flags a pair of memories that contradict
+    each other.  Both entries are preserved — callers can write
+    ``audit.supersedes`` / ``audit.superseded_by`` edges rather than silently
+    dropping one side.
+    """
+
+    entry_a_key: str
+    entry_b_key: str
+    reason: str
+    contradiction_type: str  # "keyword_polarity" | "numeric_divergence" | "boolean_polarity"
+    detected_at: str = ""
+
+
+# Regex patterns for extracting semantic signals.
+_USE_PATTERN: re.Pattern[str] = re.compile(
+    r"(?:we\s+)?(?:use[sd]?|using|built\s+(?:with|on)|migrated?\s+to|switched?\s+to)"
+    r"\s+([A-Za-z][\w.-]*)",
+    re.IGNORECASE,
+)
+
+# Label + numeric value, e.g. "threshold is 0.7", "timeout = 30", "max_entries: 5000".
+_NUMERIC_LABEL_PATTERN: re.Pattern[str] = re.compile(
+    r"([\w][\w\s]{1,30}?)\s+(?:is|=|:|are|was|set\s+to)\s+(\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+# Boolean state, e.g. "auto_migrate is enabled", "logging is true".
+_BOOL_PATTERN: re.Pattern[str] = re.compile(
+    r"([\w][\w\s]{1,30}?)\s+(?:is|was)\s+(enabled|disabled|true|false|on|off)",
+    re.IGNORECASE,
+)
+
+_BOOL_OPPOSITES: dict[str, str] = {
+    "enabled": "disabled",
+    "disabled": "enabled",
+    "true": "false",
+    "false": "true",
+    "on": "off",
+    "off": "on",
+}
+
+# Relative divergence threshold: values must differ by at least this fraction
+# of the larger value to be flagged.
+_NUMERIC_DIVERGENCE_THRESHOLD = 0.15
+
+
+def detect_keyword_polarity(
+    entry_a: MemoryEntry,
+    entry_b: MemoryEntry,
+) -> PolarityContradiction | None:
+    """Detect conflicting technology claims (e.g., 'uses Postgres' vs 'uses SQLite').
+
+    Extracts technology names from ``uses / using / built with / migrated to``
+    patterns in both entries.  When both entries make technology claims that are
+    entirely disjoint (no common tech), the pair is flagged as a keyword polarity
+    contradiction.
+
+    Args:
+        entry_a: First memory entry.
+        entry_b: Second memory entry.
+
+    Returns:
+        A :class:`PolarityContradiction` if conflicting claims are found, else ``None``.
+    """
+    techs_a = {m.lower() for m in _USE_PATTERN.findall(entry_a.value)}
+    techs_b = {m.lower() for m in _USE_PATTERN.findall(entry_b.value)}
+
+    if not techs_a or not techs_b:
+        return None
+
+    # Fully disjoint technology claims → contradiction.
+    if not (techs_a & techs_b):
+        rep_a = sorted(techs_a)[0]
+        rep_b = sorted(techs_b)[0]
+        return PolarityContradiction(
+            entry_a_key=entry_a.key,
+            entry_b_key=entry_b.key,
+            reason=f"Conflicting technology claims: '{rep_a}' vs '{rep_b}'",
+            contradiction_type="keyword_polarity",
+            detected_at=datetime.now(tz=UTC).isoformat(),
+        )
+
+    return None
+
+
+def detect_numeric_divergence(
+    entry_a: MemoryEntry,
+    entry_b: MemoryEntry,
+    *,
+    divergence_threshold: float = _NUMERIC_DIVERGENCE_THRESHOLD,
+) -> PolarityContradiction | None:
+    """Detect the same metric label carrying divergent numeric values across two entries.
+
+    Scans for ``<label> is/= <number>`` patterns, then checks whether a shared
+    label has values that differ by more than *divergence_threshold* (relative to
+    the larger value).
+
+    Args:
+        entry_a: First memory entry.
+        entry_b: Second memory entry.
+        divergence_threshold: Minimum relative difference to flag (default 0.15 = 15%).
+
+    Returns:
+        A :class:`PolarityContradiction` for the first divergent label found, or ``None``.
+    """
+    nums_a = {
+        label.strip().lower(): float(val)
+        for label, val in _NUMERIC_LABEL_PATTERN.findall(entry_a.value)
+    }
+    nums_b = {
+        label.strip().lower(): float(val)
+        for label, val in _NUMERIC_LABEL_PATTERN.findall(entry_b.value)
+    }
+
+    for label, val_a in sorted(nums_a.items()):
+        if label not in nums_b:
+            continue
+        val_b = nums_b[label]
+        base = max(abs(val_a), abs(val_b), 1.0)
+        if abs(val_a - val_b) / base > divergence_threshold:
+            return PolarityContradiction(
+                entry_a_key=entry_a.key,
+                entry_b_key=entry_b.key,
+                reason=f"Numeric divergence for '{label}': {val_a} vs {val_b}",
+                contradiction_type="numeric_divergence",
+                detected_at=datetime.now(tz=UTC).isoformat(),
+            )
+
+    return None
+
+
+def detect_boolean_polarity(
+    entry_a: MemoryEntry,
+    entry_b: MemoryEntry,
+) -> PolarityContradiction | None:
+    """Detect boolean polarity flips (e.g., 'auto_migrate is enabled' vs 'disabled').
+
+    Scans for ``<label> is <enabled|disabled|true|false|on|off>`` patterns and
+    flags pairs where the same label has opposite boolean states.
+
+    Args:
+        entry_a: First memory entry.
+        entry_b: Second memory entry.
+
+    Returns:
+        A :class:`PolarityContradiction` for the first polarity flip found, or ``None``.
+    """
+    bools_a = {
+        label.strip().lower(): state.lower()
+        for label, state in _BOOL_PATTERN.findall(entry_a.value)
+    }
+    bools_b = {
+        label.strip().lower(): state.lower()
+        for label, state in _BOOL_PATTERN.findall(entry_b.value)
+    }
+
+    for label in sorted(bools_a):
+        if label not in bools_b:
+            continue
+        val_a = bools_a[label]
+        val_b = bools_b[label]
+        if _BOOL_OPPOSITES.get(val_a) == val_b:
+            return PolarityContradiction(
+                entry_a_key=entry_a.key,
+                entry_b_key=entry_b.key,
+                reason=f"Boolean polarity conflict for '{label}': {val_a} vs {val_b}",
+                contradiction_type="boolean_polarity",
+                detected_at=datetime.now(tz=UTC).isoformat(),
+            )
+
+    return None
+
+
+def detect_pairwise_contradictions(
+    entries: list[MemoryEntry],
+) -> list[PolarityContradiction]:
+    """Scan all active entry pairs for polarity and numeric contradictions.
+
+    Runs :func:`detect_keyword_polarity`, :func:`detect_numeric_divergence`, and
+    :func:`detect_boolean_polarity` on every unique pair of non-contradicted entries.
+    At most one contradiction is reported per pair (first match wins).
+
+    Pairs are examined in deterministic sorted order so results are stable across
+    calls with the same input.
+
+    Args:
+        entries: Memory entries to scan (contradicted entries are skipped).
+
+    Returns:
+        List of :class:`PolarityContradiction` instances, at most one per pair.
+    """
+    active = [e for e in entries if not getattr(e, "contradicted", False)]
+    sorted_keys = sorted(e.key for e in active)
+    entry_map: dict[str, MemoryEntry] = {e.key: e for e in active}
+
+    results: list[PolarityContradiction] = []
+
+    for i, key_a in enumerate(sorted_keys):
+        for key_b in sorted_keys[i + 1 :]:
+            ea = entry_map[key_a]
+            eb = entry_map[key_b]
+            hit = (
+                detect_keyword_polarity(ea, eb)
+                or detect_numeric_divergence(ea, eb)
+                or detect_boolean_polarity(ea, eb)
+            )
+            if hit:
+                results.append(hit)
+                logger.debug(
+                    "pairwise_contradiction_detected",
+                    type=hit.contradiction_type,
+                    key_a=key_a,
+                    key_b=key_b,
+                )
+
+    return results

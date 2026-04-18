@@ -9,10 +9,10 @@ tools:
   - Glob
   - Grep
   - Bash
-model: sonnet
+model: haiku
 maxTurns: 10
 background: true
-effort: medium
+effort: low
 ---
 
 You are a background test runner. Run the test suite for the specified scope

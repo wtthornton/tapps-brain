@@ -32,7 +32,7 @@ from tapps_brain.models import (
     MemoryEntry,
     _utc_now_iso,
 )
-from tapps_brain.similarity import find_consolidation_groups
+from tapps_brain.similarity import compute_similarity_with_embeddings, find_consolidation_groups
 
 if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
@@ -374,6 +374,11 @@ def check_consolidation_on_save(
     entries_to_consolidate = [entry, *matches[: min_entries - 1]]
     reason = detect_consolidation_reason(entry, matches)
 
+    # Compute similarity signal for audit provenance (STORY-SC03 / TAP-559).
+    sim_result = compute_similarity_with_embeddings(entry, entries_to_consolidate[1])
+    audit_similarity_score: float | None = sim_result.combined_score
+    audit_merge_rule = "embedding_cosine" if sim_result.used_embeddings else "text_similarity"
+
     try:
         consolidated = consolidate(entries_to_consolidate, reason=reason)
     except ValueError as exc:
@@ -395,6 +400,8 @@ def check_consolidation_on_save(
         source_keys,
         audit_trigger="save",
         audit_threshold=threshold,
+        audit_similarity_score=audit_similarity_score,
+        audit_merge_rule=audit_merge_rule,
     )
 
     logger.info(
@@ -431,8 +438,14 @@ def _append_consolidation_audit(
     trigger: Literal["save", "periodic_scan"],
     threshold: float,
     consolidation_reason: str,
+    similarity_score: float | None = None,
+    merge_rule: str = "text_similarity",
 ) -> None:
-    """Append merge + per-source audit rows for operator traceability (EPIC-044 STORY-044.4)."""
+    """Append merge + per-source audit rows for operator traceability (EPIC-044 STORY-044.4).
+
+    STORY-SC03 (TAP-559): *similarity_score* and *merge_rule* are now recorded so
+    ``maintenance consolidation-diff <key>`` can surface the exact merge signal used.
+    """
     persistence = getattr(store, "_persistence", None)
     if persistence is None:
         return
@@ -442,6 +455,8 @@ def _append_consolidation_audit(
         "trigger": trigger,
         "threshold": threshold,
         "consolidation_reason": consolidation_reason,
+        "similarity_score": similarity_score,
+        "merge_rule": merge_rule,
     }
     persistence.append_audit("consolidation_merge", consolidated_key, extra=merge_extra)
     for sk in source_keys:
@@ -464,11 +479,16 @@ def _persist_consolidated_entry(
     *,
     audit_trigger: Literal["save", "periodic_scan"] | None = None,
     audit_threshold: float | None = None,
+    audit_similarity_score: float | None = None,
+    audit_merge_rule: str = "text_similarity",
 ) -> None:
     """Persist the consolidated entry and mark sources as consolidated.
 
     Saves the new consolidated entry and marks source entries by updating
     their metadata. Source entries are NOT deleted (retained for provenance).
+
+    STORY-SC03 (TAP-559): *audit_similarity_score* and *audit_merge_rule* are
+    forwarded to :func:`_append_consolidation_audit` for operator traceability.
     """
     store.save(
         key=consolidated.key,
@@ -509,6 +529,8 @@ def _persist_consolidated_entry(
             trigger=audit_trigger,
             threshold=audit_threshold,
             consolidation_reason=_consolidation_reason_str(consolidated),
+            similarity_score=audit_similarity_score,
+            merge_rule=audit_merge_rule,
         )
 
 
@@ -591,6 +613,13 @@ def run_periodic_consolidation_scan(
 
         reason = detect_consolidation_reason(group_entries[0], group_entries[1:])
 
+        # Compute similarity signal for audit provenance (STORY-SC03 / TAP-559).
+        sim_result = compute_similarity_with_embeddings(group_entries[0], group_entries[1])
+        periodic_sim_score: float | None = sim_result.combined_score
+        periodic_merge_rule = (
+            "embedding_cosine" if sim_result.used_embeddings else "text_similarity"
+        )
+
         try:
             consolidated = consolidate(group_entries, reason=reason)
         except ValueError:
@@ -607,6 +636,8 @@ def run_periodic_consolidation_scan(
             group_keys,
             audit_trigger="periodic_scan",
             audit_threshold=threshold,
+            audit_similarity_score=periodic_sim_score,
+            audit_merge_rule=periodic_merge_rule,
         )
         consolidated_keys.append(consolidated.key)
         total_entries_consolidated += len(group_entries)
