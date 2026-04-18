@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `benchmark-smoke` CI job exercises the CLI end-to-end against committed fixtures under `tests/benchmarks/fixtures/` using deterministic answer/judge — no API credentials required, < 5 min runtime. Runs after the main `test` job and uploads both report JSONs as build artifacts.
 - `docs/benchmarks/` — methodology docs for LoCoMo, LongMemEval, and an index README covering the library, CLI, cost envelope, and reproducibility notes. Numbers tables are placeholders until the first full run lands.
 
+### Documentation
+- `docs/guides/fleet-topology.md` — new reference guide for the "N FastAPI containers + 1 brain sidecar" deployment pattern. Covers the topology diagram, what the brain vs each project container owns, the `X-Project-Id` / bearer-token wire contract, deployment checklist, `tapps-brain project` token-lifecycle runbook, and a "What NOT to try" section. Attribution correction: FORCE RLS + non-privileged-role startup assertion (`postgres.role_check_ok`) shipped in **3.8.0** (TAP-512), not 3.9.0 as previously reported in some external summaries. Cross-linked from `README.md` (Documentation table) and `docs/guides/agentforge-integration.md` (Related Guides). (TAP-571)
+
 ## [3.9.0] - 2026-04-16
 
 ### Security

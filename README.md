@@ -615,6 +615,7 @@ tests/
 | [Getting Started](docs/guides/getting-started.md) | Use-case map and quick example for each interface |
 | [Profile Design Guide](docs/guides/profiles.md) | Custom profiles: layers, decay, scoring, promotion, Hive config |
 | [Profile Catalog](docs/guides/profile-catalog.md) | All 6 built-in profiles with comparison tables |
+| [**Fleet Topology**](docs/guides/fleet-topology.md) | **Deploying at scale** — N FastAPI containers + 1 brain sidecar, wire contract, deployment checklist, token lifecycle |
 | [Hive Guide](docs/guides/hive.md) | Cross-agent memory sharing: namespaces, propagation, conflict resolution |
 | [MCP Server Guide](docs/guides/mcp.md) | Client setup for Claude Code, Cursor, VS Code Copilot; full tool reference |
 | [OpenClaw Guide](docs/guides/openclaw.md) | Install, configure, and test with OpenClaw |

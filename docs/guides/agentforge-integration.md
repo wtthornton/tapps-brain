@@ -286,3 +286,4 @@ This integration guide intentionally **does not** cover:
 | [postgres-dsn.md](postgres-dsn.md) | DSN format, connection pool env vars, health JSON |
 | [mcp.md](mcp.md) | MCP server setup — primary tool surface for IDE-connected agents |
 | [ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md) | Rationale for Postgres-only backend |
+| [fleet-topology.md](fleet-topology.md) | **Deploying at scale** — N FastAPI containers sharing one brain sidecar, wire contract (`X-Project-Id`, bearer tokens), deployment checklist, token lifecycle |
