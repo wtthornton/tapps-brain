@@ -128,7 +128,7 @@ for (const m of memories) {
   console.log(`[${m.tier}] ${m.key}: ${m.value}`);
 }
 
-await brain.close();
+brain.close();
 ```
 
 Full guides: [TypeScript SDK](docs/guides/typescript-sdk.md) · [LangGraph Store adapter](docs/guides/langgraph-adapter.md)
