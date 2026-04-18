@@ -394,6 +394,55 @@ class HiveConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Write-path policy profile config (TAP-560 / STORY-SC04)
+# ---------------------------------------------------------------------------
+
+
+class WritePolicyConfig(BaseModel):
+    """Profile-level override for the write-path policy.
+
+    Maps to ``write_policy:`` in the profile YAML.  The env var
+    ``TAPPS_BRAIN_WRITE_POLICY`` takes precedence over this when set.
+
+    Example YAML:
+
+    .. code-block:: yaml
+
+       write_policy:
+         mode: llm
+         llm_judge_model: claude-3-5-haiku-20241022
+         rate_limit_per_minute: 60
+         candidates_limit: 5
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = Field(
+        default="deterministic",
+        description=(
+            "Write-path policy mode. ``deterministic`` (default) preserves the "
+            "current behaviour. ``llm`` enables the LLM-assisted ADD/UPDATE/DELETE/NOOP "
+            "state machine (requires an LLM judge backend)."
+        ),
+    )
+    llm_judge_model: str = Field(
+        default="claude-3-5-haiku-20241022",
+        description="LLM model used by :class:`~tapps_brain.write_policy.LLMWritePolicy`.",
+    )
+    rate_limit_per_minute: int = Field(
+        default=60,
+        ge=1,
+        description="Maximum LLM calls per 60-second window in LLM-mode.",
+    )
+    candidates_limit: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Max existing entries included in the LLM prompt.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main profile model
 # ---------------------------------------------------------------------------
 
@@ -482,6 +531,13 @@ class MemoryProfile(BaseModel):
     consolidation: ConsolidationProfileConfig = Field(
         default_factory=ConsolidationProfileConfig,
         description="Auto-consolidation defaults (Issue #71).",
+    )
+    write_policy: WritePolicyConfig = Field(
+        default_factory=WritePolicyConfig,
+        description=(
+            "Pluggable write-path policy (TAP-560/STORY-SC04). "
+            "Overridden by TAPPS_BRAIN_WRITE_POLICY env var when set."
+        ),
     )
 
     @model_validator(mode="after")

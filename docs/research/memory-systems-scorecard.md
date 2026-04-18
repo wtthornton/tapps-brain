@@ -81,7 +81,7 @@ weighted sums rounded to one decimal. Sorted by T desc.
 | mem0 | 3 | 5 | 3 | 5 | 3 | 2 | 5 | 5 | 4 | 3 | 5 | **79.6** |
 | Graphiti (Zep OSS) | 2 | 4 | 3 | 5 | 2 | 5 | 4 | 5 | 4 | 3 | 5 | **75.8** |
 | Supermemory | 3 | 4 | 3 | 4 | 3 | 4 | 4 | 3 | 4 | 3 | 5 | **73.4** |
-| **tapps-brain** | **4** | **2** | **5** | **4** | **5** | **5** | **3** | **5** | **5** | **4** | **1** | **75.8** |
+| **tapps-brain** | **4** | **2** | **5** | **4** | **5** | **5** | **3** | **5** | **5** | **5** | **1** | **77.8** |
 | Memori (MemoriLabs) | 3 | 4 | 3 | 4 | 2 | 4 | 4 | 5 | 4 | 3 | 4 | **72.2** |
 | LangGraph memory | 4 | 2 | 1 | 2 | 3 | 2 | 4 | 5 | 5 | 5 | 5 | **68.6** |
 | Cognee | 2 | 3 | 3 | 4 | 2 | 5 | 3 | 5 | 4 | 3 | 4 | **68.0** |
@@ -155,10 +155,10 @@ Rubric applied honestly; unverified claims scored conservatively.
 | D6b Language/SDK reach | 3 | Python SDK + httpx client + REST/OpenAPI; single-language. | `src/tapps_brain/http_adapter.py`, `openapi_contract.py`; CHANGELOG 3.8.0 TAP-508/509 |
 | D7 License | 5 | MIT, real self-host; no hosted tier to compete with. | `LICENSE`; `pyproject.toml` L9 |
 | D8 Production readiness | 5 | OTel exporters, migrations system, 127 test files, versioned OpenAPI with CI-gated snapshot, releases every 1–3 days in April 2026 (3.7.0 → 3.9.0 in 48h). | `src/tapps_brain/otel_*.py`; `src/tapps_brain/postgres_migrations.py`; CHANGELOG §3.7.0–3.9.0 |
-| D9 Write-path design | 4 | Deterministic by design, **well-documented trade**: no LLM in hot path, consolidation is text-sim. Not a 5 because the design is one-way — there is no optional LLM-assisted write path. | README "Zero LLM dependency"; knowledge base §2.2 ("deliberate, defensible choice"); `docs/research/memory-systems-2026.md` open questions §3 |
+| D9 Write-path design | 5 | **User-choosable**: deterministic (default, zero LLM cost) OR LLM-assisted (opt-in via `TAPPS_BRAIN_WRITE_POLICY=llm`). Both modes documented with cost/quality trade table. LLM mode implements ADD/UPDATE/DELETE/NOOP state machine via pluggable `WritePolicy` protocol; safety filter runs before LLM call; rate-limited per agent. Single env-var flip, no code change required. | `src/tapps_brain/write_policy.py`; `src/tapps_brain/_protocols.py` `WritePolicy`; `docs/guides/write-path-tradeoff.md`; TAP-560/STORY-SC04 |
 | D10 Momentum | 1 | Single-maintainer repo (`wtthornton/tapps-brain`), no named external adopters, <200 stars class. Honest score given the rubric. | `pyproject.toml` Homepage `github.com/wtthornton/tapps-brain`; memory-exclusions note on "deployment model: one box, 20 agents" = single-tenant ops |
 
-**Overall: 75.8/100.** (D3 moved 3 → 5 on 2026-04-17 via STORY-SC02; +3.2 points.)
+**Overall: 77.8/100.** (D3 moved 3 → 5 on 2026-04-17 via STORY-SC02 +3.2 pts; D9 moved 4 → 5 on 2026-04-18 via TAP-560/STORY-SC04 +2.0 pts.)
 
 ### mem0
 

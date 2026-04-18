@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore, InMemoryFeedbackStore
+    from tapps_brain.write_policy import DeterministicWritePolicy, LLMWritePolicy
 
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.metrics import (
@@ -260,6 +261,7 @@ class MemoryStore:
         lock_timeout_seconds: float | None = None,
         auto_register: bool = True,
         private_backend: PrivateBackend | None = None,
+        write_policy: DeterministicWritePolicy | LLMWritePolicy | None = None,
     ) -> None:
         self._project_root = project_root
         self._agent_id = agent_id
@@ -347,6 +349,14 @@ class MemoryStore:
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
+        # Write-path policy (TAP-560/STORY-SC04). Resolve in precedence order:
+        # 1. Explicit constructor argument.
+        # 2. TAPPS_BRAIN_WRITE_POLICY env var.
+        # 3. Profile write_policy.mode.
+        # 4. Default → DeterministicWritePolicy (zero-cost, current behaviour).
+        self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
+            self._resolve_write_policy(write_policy)
+        )
         from tapps_brain.gc import GCConfig as _GCConfig
 
         self._gc_config = _GCConfig()
@@ -604,6 +614,94 @@ class MemoryStore:
         finally:
             cm.close()
 
+    def _resolve_write_policy(
+        self,
+        explicit: DeterministicWritePolicy | LLMWritePolicy | None,
+    ) -> DeterministicWritePolicy | LLMWritePolicy | None:
+        """Resolve the active write policy (TAP-560/STORY-SC04).
+
+        Precedence:
+        1. Explicit ``write_policy=`` constructor arg.
+        2. ``TAPPS_BRAIN_WRITE_POLICY`` env var (``deterministic`` or ``llm``).
+        3. Profile ``write_policy.mode`` (when a profile is active).
+        4. ``None`` → store uses the built-in ADD path (equivalent to deterministic).
+        """
+        if explicit is not None:
+            return explicit
+
+        from tapps_brain.write_policy import build_write_policy
+
+        # Env var takes precedence over profile.
+        env_mode = os.environ.get("TAPPS_BRAIN_WRITE_POLICY", "").strip().lower()
+        profile_mode = ""
+        profile_judge_model = "claude-3-5-haiku-20241022"
+        profile_rate_limit = 60
+        profile_candidates = 5
+        if self._profile is not None:
+            _wp_cfg = getattr(self._profile, "write_policy", None)
+            if _wp_cfg is not None:
+                profile_mode = getattr(_wp_cfg, "mode", "deterministic").strip().lower()
+                profile_judge_model = getattr(
+                    _wp_cfg, "llm_judge_model", profile_judge_model
+                )
+                profile_rate_limit = getattr(
+                    _wp_cfg, "rate_limit_per_minute", profile_rate_limit
+                )
+                profile_candidates = getattr(
+                    _wp_cfg, "candidates_limit", profile_candidates
+                )
+
+        mode = env_mode or profile_mode
+        if not mode or mode == "deterministic":
+            return None  # None → store uses fast ADD path; no extra overhead.
+
+        if mode == "llm":
+            judge = self._build_llm_judge(profile_judge_model)
+            if judge is None:
+                logger.warning(
+                    "write_policy.llm.no_judge",
+                    detail=(
+                        "TAPPS_BRAIN_WRITE_POLICY=llm but no LLM SDK is available. "
+                        "Falling back to deterministic mode. "
+                        "Install anthropic or openai to enable LLM-assisted writes."
+                    ),
+                )
+                return None
+            try:
+                return build_write_policy(
+                    "llm",
+                    judge=judge,
+                    candidates_limit=profile_candidates,
+                    rate_limit_per_minute=profile_rate_limit,
+                )
+            except ValueError:
+                logger.warning(
+                    "write_policy.build_failed",
+                    mode=mode,
+                    exc_info=True,
+                )
+                return None
+
+        logger.warning("write_policy.unknown_mode", mode=mode)
+        return None
+
+    @staticmethod
+    def _build_llm_judge(model: str) -> Any:  # noqa: ANN401
+        """Instantiate the best available LLM judge (lazy, no hard dependency)."""
+        try:
+            from tapps_brain.evaluation import AnthropicJudge
+
+            return AnthropicJudge(model=model)
+        except Exception:
+            pass
+        try:
+            from tapps_brain.evaluation import OpenAIJudge
+
+            return OpenAIJudge()
+        except Exception:
+            pass
+        return None
+
     @property
     def profile(self) -> Any:  # noqa: ANN401
         """Return the active ``MemoryProfile``, or ``None``."""
@@ -803,6 +901,54 @@ class MemoryStore:
 
         if safety.sanitised_content is not None:
             value = safety.sanitised_content
+
+        # Write-path policy decision (TAP-560/STORY-SC04).
+        # Called after safety check so the policy always receives sanitised content.
+        # DeterministicWritePolicy returns ADD unconditionally (zero overhead).
+        # LLMWritePolicy consults an LLM and may return NOOP, DELETE, or UPDATE.
+        if self._write_policy is not None:
+            from tapps_brain.write_policy import WriteDecision
+
+            with self._serialized():
+                _wp_candidates = list(self._entries.values())
+            _wp_result = self._write_policy.decide(key, value, _wp_candidates)
+            if _wp_result.decision == WriteDecision.NOOP:
+                # The policy determined this entry is already captured.
+                self._metrics.increment("store.save.write_policy.noop")
+                logger.info(
+                    "memory_save_write_policy_noop",
+                    key=key,
+                    reasoning=_wp_result.reasoning,
+                )
+                with self._serialized():
+                    _existing_noop = self._entries.get(key)
+                if _existing_noop is not None:
+                    return _existing_noop
+                return {"write_policy": "noop", "key": key, "reasoning": _wp_result.reasoning}
+            elif _wp_result.decision == WriteDecision.DELETE and _wp_result.target_key:
+                # The policy wants to remove an existing entry and discard the new one.
+                self._metrics.increment("store.save.write_policy.delete")
+                logger.info(
+                    "memory_save_write_policy_delete",
+                    key=key,
+                    target_key=_wp_result.target_key,
+                    reasoning=_wp_result.reasoning,
+                )
+                self.delete(_wp_result.target_key)
+                return {
+                    "write_policy": "delete",
+                    "deleted_key": _wp_result.target_key,
+                    "reasoning": _wp_result.reasoning,
+                }
+            # WriteDecision.ADD and WriteDecision.UPDATE fall through to the
+            # standard save path.  For UPDATE with a different target_key, the
+            # caller may redirect; for now we save the incoming entry as-is.
+            if _wp_result.decision != WriteDecision.ADD:
+                logger.debug(
+                    "memory_save_write_policy_passthrough",
+                    key=key,
+                    decision=_wp_result.decision.value,
+                )
 
         # Bloom filter dedup fast-path (GitHub #31)
         if dedup:

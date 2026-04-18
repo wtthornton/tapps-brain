@@ -6,7 +6,8 @@ on specific implementations. Consumers pass concrete objects that
 satisfy these protocols.
 
 Key public API: :class:`ProjectProfileLike` (project-profile duck-type),
-:class:`PathValidatorLike` (path-validation duck-type).
+:class:`PathValidatorLike` (path-validation duck-type),
+:class:`WritePolicy` (pluggable write-path policy, TAP-560/STORY-SC04).
 """
 
 from __future__ import annotations
@@ -451,3 +452,38 @@ class PrivateBackend(Protocol):
         ...
 
     def close(self) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# Write-path policy protocol (TAP-560 / STORY-SC04)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class WritePolicy(Protocol):
+    """Protocol for pluggable write-path policies.
+
+    Implementations decide what action :class:`~tapps_brain.store.MemoryStore`
+    should take when a new entry arrives.  The store calls ``decide()`` *after*
+    the RAG safety check and *before* persisting the entry, so the policy always
+    receives sanitised content.
+
+    Built-in implementations live in :mod:`tapps_brain.write_policy`:
+
+    * :class:`~tapps_brain.write_policy.DeterministicWritePolicy` — default,
+      zero-cost, always returns ADD.
+    * :class:`~tapps_brain.write_policy.LLMWritePolicy` — opt-in LLM-assisted
+      ADD/UPDATE/DELETE/NOOP state machine.
+
+    Custom policies must satisfy this protocol.  The ``candidates`` list
+    contains existing entries that may be semantically related to the incoming
+    key/value pair; the policy uses them to decide whether to merge, supersede,
+    or discard.
+    """
+
+    def decide(
+        self,
+        key: str,
+        value: str,
+        candidates: list[MemoryEntry],
+    ) -> Any: ...  # returns WritePolicyResult; Any avoids circular import
