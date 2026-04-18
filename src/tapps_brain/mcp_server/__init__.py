@@ -2205,6 +2205,17 @@ def create_server(  # noqa: PLR0915
     # resolve the active profile without re-loading YAML per request.
     mcp._tapps_profile_registry = _profile_registry
 
+    # ------------------------------------------------------------------
+    # Per-request tool filter (EPIC-073 STORY-073.3)
+    # Wraps _tool_manager.list_tools and _tool_manager.call_tool so that:
+    # - tools/list returns only tools allowed by the resolved profile
+    # - tools/call raises McpError(-32601) for tools outside the profile
+    # The "full" profile is the fast path — zero overhead for existing clients.
+    # ------------------------------------------------------------------
+    from tapps_brain.mcp_server.tool_filter import install_tool_filter
+
+    install_tool_filter(mcp, profile_registry=_profile_registry)
+
     return mcp
 
 

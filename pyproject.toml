@@ -207,6 +207,10 @@ ignore = [
     "ANN401", "PLR0911", "N806",
     "E402",   # conditional imports after module-level contextvars setup
 ]
+"src/tapps_brain/mcp_server/tool_filter.py" = [
+    "ANN401",  # mcp: Any and **kwargs: Any — FastMCP is optional dep, typed as Any intentionally
+    "TC003",   # contextvars used in runtime annotation (ContextVar.get() called at request time)
+]
 "src/tapps_brain/http_adapter.py" = [
     "ANN401",
     "B904",     # HTTP adapters re-raise as HTTPException deliberately
