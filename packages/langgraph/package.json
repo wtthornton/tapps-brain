@@ -1,0 +1,60 @@
+{
+  "name": "@tapps-brain/langgraph",
+  "version": "1.0.0",
+  "description": "LangGraph BaseStore adapter backed by tapps-brain persistent memory",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "tapps-brain",
+    "langgraph",
+    "langchain",
+    "memory",
+    "ai",
+    "agent",
+    "store"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wtthornton/tapps-brain.git",
+    "directory": "packages/langgraph"
+  },
+  "dependencies": {
+    "@tapps-brain/sdk": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@langchain/langgraph": ">=0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/langgraph": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@tapps-brain/sdk": "*",
+    "@langchain/langgraph": "^0.2.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
+}
