@@ -100,7 +100,7 @@ include = ["src/tapps_brain/", "examples/coding-project-init/"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tapps_brain"]
-artifacts = ["src/tapps_brain/profiles/*.yaml"]
+artifacts = ["src/tapps_brain/profiles/*.yaml", "src/tapps_brain/mcp_server/*.yaml"]
 
 # Ship the coding-project-init scaffold as package data so `tapps-brain init`
 # works from an installed wheel (examples/ lives outside the wheel normally).
@@ -206,6 +206,10 @@ ignore = [
 "src/tapps_brain/mcp_server/__init__.py" = [
     "ANN401", "PLR0911", "N806",
     "E402",   # conditional imports after module-level contextvars setup
+]
+"src/tapps_brain/mcp_server/tool_filter.py" = [
+    "ANN401",  # mcp: Any and **kwargs: Any — FastMCP is optional dep, typed as Any intentionally
+    "TC003",   # contextvars used in runtime annotation (ContextVar.get() called at request time)
 ]
 "src/tapps_brain/http_adapter.py" = [
     "ANN401",
