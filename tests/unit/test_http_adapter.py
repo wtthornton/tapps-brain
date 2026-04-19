@@ -1573,7 +1573,9 @@ def _make_settings_with_origins(
 ) -> _Settings:
     """Helper: settings with an Origin allowlist configured."""
     s = _make_settings(auth_token=auth_token, admin_token=admin_token)
-    s.allowed_origins = allowed_origins if allowed_origins is not None else ["https://allowed.example.com"]
+    s.allowed_origins = (
+        allowed_origins if allowed_origins is not None else ["https://allowed.example.com"]
+    )
     return s
 
 
@@ -1588,6 +1590,19 @@ class TestOriginAllowlistMiddlewareTAP627:
         """Existing /mcp protection must still work after the fix."""
         with _client(_make_settings_with_origins()) as c:
             resp = c.get("/mcp", headers={"Origin": "https://evil.example.com"})
+        assert resp.status_code == 403
+
+    def test_info_route_blocked_with_bad_origin(self) -> None:
+        """/info bearer-authenticated GET must be blocked by a foreign Origin (TAP-627)."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.get(
+                "/info",
+                headers={
+                    "Authorization": "Bearer data-tok",
+                    "Origin": "https://evil.example.com",
+                },
+            )
         assert resp.status_code == 403
 
     def test_v1_route_blocked_with_bad_origin(self) -> None:

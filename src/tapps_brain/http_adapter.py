@@ -10,8 +10,10 @@ implementation with a FastAPI ASGI application that:
 * Applies two bearer tokens — ``TAPPS_BRAIN_AUTH_TOKEN`` for the data
   plane + ``/mcp`` and ``TAPPS_BRAIN_ADMIN_TOKEN`` for ``/admin/*`` —
   per the dual-token scheme from EPIC-069.
-* Performs ``Origin``-header allow-listing for ``/mcp`` to prevent DNS
-  rebinding (MCP spec requirement).
+* Performs ``Origin``-header allow-listing on all bearer-authenticated
+  routes to prevent DNS rebinding (TAP-627; previously ``/mcp`` only).
+  Unauthenticated probe/scrape endpoints (``/``, ``/health``, ``/ready``,
+  ``/metrics``) are explicitly exempt — see ``_ORIGIN_EXEMPT_PATHS``.
 * Propagates W3C ``traceparent`` via an ASGI middleware that calls into
   :mod:`tapps_brain.otel_tracer`.
 
