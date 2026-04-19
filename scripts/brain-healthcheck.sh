@@ -165,6 +165,13 @@ else
     fail "TAPPS_BRAIN_AUTH_TOKEN is not set in this shell"
 fi
 
+BRAIN_PROFILE="$(jq_path mcpServers tapps-brain headers X-Brain-Profile)"
+if [[ -n "$BRAIN_PROFILE" ]]; then
+    pass "X-Brain-Profile: $BRAIN_PROFILE (tool filter active)"
+else
+    warn "X-Brain-Profile not set — using 'full' profile (all 55 tools). Add header to .mcp.json to reduce context bloat."
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Server reachability
 # ---------------------------------------------------------------------------

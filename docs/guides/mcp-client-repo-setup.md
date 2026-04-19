@@ -93,6 +93,82 @@ direnv allow .
 token. The trailing slash in `/mcp/` matters; `/mcp` responds with a 307
 redirect.
 
+### 5b. (Optional) Restrict tools with a profile
+
+By default every client receives all 55 standard tools (`full` profile).
+Adding an `X-Brain-Profile` header cuts that down to the subset appropriate
+for the use case — fewer tool names in context, smaller schema payload, and
+narrower attack surface.
+
+**Choosing a profile:**
+
+| Use case | Profile | Tools |
+|---|---|---|
+| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 15 |
+| Read-only PR / code-review bot | `reviewer` | 8 |
+| Bulk ingestion / seeding script | `seeder` | 6 |
+| Human admin or operator console | `operator` | 68 |
+| Everything (backwards-compatible default) | `full` | 55 |
+
+Omitting the header is equivalent to `full` — no existing client breaks.
+
+**Claude Code** — add `X-Brain-Profile` to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "tapps-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
+        "X-Project-Id": "<slug>",
+        "X-Agent-Id": "claude-code-<user>",
+        "X-Brain-Profile": "coder"
+      }
+    }
+  }
+}
+```
+
+**Cursor** — same structure (Cursor reads `.mcp.json` from the project root):
+
+```json
+{
+  "mcpServers": {
+    "tapps-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
+        "X-Project-Id": "<slug>",
+        "X-Agent-Id": "cursor-<user>",
+        "X-Brain-Profile": "coder"
+      }
+    }
+  }
+}
+```
+
+**Aider** — pass headers via `aider.conf.yml` `mcp_servers` block (Aider ≥ 0.60):
+
+```yaml
+# .aider.conf.yml
+mcp_servers:
+  tapps-brain:
+    type: http
+    url: http://127.0.0.1:8080/mcp/
+    headers:
+      Authorization: "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}"
+      X-Project-Id: "<slug>"
+      X-Agent-Id: "aider-<user>"
+      X-Brain-Profile: "coder"
+```
+
+**Verification** — after restarting your MCP client run `tools/list`; you
+should see ~15 tools instead of 55 when using the `coder` profile.
+The healthcheck script (step 7) also reports the configured profile.
+
 ### 6. Teach the MCP client how and when to use the brain
 
 Wiring the MCP transport only opens the pipe — the client also needs
@@ -187,7 +263,8 @@ curl -sSL -X POST \
   http://127.0.0.1:8080/mcp/
 ```
 
-A healthy response is a JSON envelope with ~55 tool definitions.
+A healthy response is a JSON envelope with tool definitions. Expect ~55 tools
+for the `full` profile (default) or ~15 for `coder`.
 
 ## Troubleshooting
 

@@ -2,6 +2,22 @@
 
 Complete reference for every tool the deployed tapps-brain exposes over MCP (55 tools, verified live against `tapps-brain-http` on 2026-04-17). For each tool: purpose, arguments, and *when I'd actually reach for it* as a repo-embedded coding agent. Tools I genuinely would not use from a coding turn are marked **Not needed** with a reason.
 
+## Which profile should this agent use?
+
+tapps-brain exposes tools through **profiles** — named subsets that reduce context bloat and limit the tool surface to what each agent type actually needs. Set the profile in `.mcp.json` via `X-Brain-Profile`.
+
+| Agent type | Profile | Tools visible |
+|---|---|---|
+| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 15 |
+| PR/code-review bot (read-only) | `reviewer` | 8 |
+| Bulk ingestion / seed script | `seeder` | 6 |
+| Human admin console | `operator` | 68 |
+| Anything else (backwards-compat default) | `full` | 55 |
+
+**For everyday coding work, use `coder`.** It exposes exactly the [six tools you use every turn](#minimal-working-set) plus hooks and quality-loop signals. See [mcp-client-repo-setup.md](mcp-client-repo-setup.md#5b-optional-restrict-tools-with-a-profile) for the `.mcp.json` snippet.
+
+---
+
 Rule of thumb: prefer the **AgentBrain facade** (`brain_*`) for day-to-day work. Drop to `memory_*` only when the facade doesn't expose the knob I need. Everything else is either operator tooling, bulk jobs, internal sync primitives, or hook-driven.
 
 Notation: `*` marks required args; everything else is optional. `agent_id` appears on most tools (STORY-070.7) and overrides the server-level default for a single call — omit it unless I'm intentionally impersonating another agent.
@@ -337,7 +353,7 @@ All entries carrying a specific tag.
 
 ## Minimal working set
 
-If I could only have six tools for everyday coding turns, this is the set:
+The **`coder` profile** (15 tools, set via `X-Brain-Profile: coder` in `.mcp.json`) is purpose-built for everyday coding turns. If I could only have six tools from that set, this is the core:
 
 1. `brain_recall` — read
 2. `brain_remember` — write
@@ -347,6 +363,10 @@ If I could only have six tools for everyday coding turns, this is the set:
 6. `memory_find_related` — explore context around a decision
 
 Everything else is either covered by these, handled by hooks, or an operator task.
+
+To opt in: add `"X-Brain-Profile": "coder"` to the `headers` block in `.mcp.json` —
+see [mcp-client-repo-setup.md § Restrict tools with a profile](mcp-client-repo-setup.md#5b-optional-restrict-tools-with-a-profile)
+for full client-specific examples (Claude Code, Cursor, Aider).
 
 ---
 
