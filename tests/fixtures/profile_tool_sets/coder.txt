@@ -1,0 +1,15 @@
+brain_forget
+brain_learn_failure
+brain_learn_success
+brain_recall
+brain_remember
+brain_status
+feedback_gap
+feedback_rate
+hive_search
+memory_capture
+memory_find_related
+memory_index_session
+memory_reinforce
+memory_search_sessions
+tapps_brain_session_end
