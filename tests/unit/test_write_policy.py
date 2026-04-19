@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
@@ -162,6 +163,32 @@ class TestLLMWritePolicy:
         # Third call must fall back to ADD
         assert r3.decision == WriteDecision.ADD
         assert "rate limit" in r3.reasoning.lower()
+
+    def test_rate_limit_thread_safe(self) -> None:
+        """32 concurrent threads must not exceed the configured rate cap."""
+        cap = 10
+        # Judge always returns ADD so no LLM parsing is needed; we only care
+        # that _check_rate_limit counts correctly under concurrent access.
+        judge = _make_judge("ADD")
+        policy = LLMWritePolicy(judge, rate_limit_per_minute=cap)
+
+        accepted: list[bool] = []
+        lock = threading.Lock()
+
+        def call() -> None:
+            result = policy._check_rate_limit()
+            with lock:
+                accepted.append(result)
+
+        threads = [threading.Thread(target=call) for _ in range(32)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Exactly cap calls should have been accepted.
+        assert accepted.count(True) == cap
+        assert accepted.count(False) == 32 - cap
 
     def test_candidates_limited_to_max(self) -> None:
         """The policy should only pass candidates_limit entries to the LLM."""
