@@ -26,6 +26,7 @@ The ASGI entry point is :data:`app`; run it with
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import logging
@@ -1215,19 +1216,54 @@ def create_app(
             )
         return cfg.store
 
-    def _idempotency_check(request: Request, project_id: str) -> tuple[str | None, Any | None]:
-        """Return (ikey, cached_response_json) when idempotency is enabled and a hit exists.
+    # ------------------------------------------------------------------
+    # TAP-629: per-key asyncio guards for idempotency serialization.
+    #
+    # Before TAP-629, two concurrent requests with the same idempotency
+    # key both saw a cache miss, both ran the handler body (Postgres
+    # writes, Hive propagation, metrics), and then raced to save().
+    # ON CONFLICT DO NOTHING only deduplicated the stored response — not
+    # the handler execution itself.
+    #
+    # Fix: acquire an asyncio.Lock keyed by (project_id, ikey) BEFORE
+    # the cache check.  The second (and later) coroutines yield control
+    # at ``await lock.acquire()`` rather than blocking the event loop.
+    # When the first request completes and releases the lock, the waiting
+    # coroutines wake up, re-check the cache, and short-circuit on the
+    # stored response — the handler never executes twice.
+    #
+    # The dict is closure-scoped (not module-level) so each create_app()
+    # call — and therefore each TestClient context — starts with an empty
+    # table, preventing state leakage across test cases.
+    # ------------------------------------------------------------------
+    _idem_guards: dict[str, asyncio.Lock] = {}
 
-        Returns (ikey, None) when the key is present but not yet cached.
-        Returns (None, None) when idempotency is disabled or no key header.
+    def _idem_guard_key(pid: str, ikey: str) -> str:
+        return f"{pid}\x00{ikey}"
 
-        TAP-548: reads the process-wide ``IdempotencyStore`` singleton
-        from ``cfg.idempotency_store`` (built once in the lifespan
-        startup hook) instead of constructing — and immediately tearing
-        down — a fresh store per request.  When the singleton is absent
-        (lifespan not yet run, or the ctor failed at startup) we fall
-        through as if idempotency were disabled so the real write still
-        executes.
+    def _ensure_idem_guard(pid: str, ikey: str) -> asyncio.Lock:
+        """Return (creating if absent) the asyncio.Lock for ``(pid, ikey)``."""
+        gk = _idem_guard_key(pid, ikey)
+        if gk not in _idem_guards:
+            _idem_guards[gk] = asyncio.Lock()
+        return _idem_guards[gk]
+
+    def _drop_idem_guard(pid: str, ikey: str) -> None:
+        """Remove the guard for ``(pid, ikey)`` when no coroutine is waiting."""
+        gk = _idem_guard_key(pid, ikey)
+        lk = _idem_guards.get(gk)
+        if lk is not None and not lk.locked():
+            _idem_guards.pop(gk, None)
+
+    def _get_ikey_and_istore(request: Request) -> tuple[str | None, Any]:
+        """Extract idempotency key + singleton store, or (None, None).
+
+        Returns (None, None) when idempotency is disabled, the header is
+        absent, or the ``IdempotencyStore`` singleton was not built at
+        startup (lifespan failure / feature flag off).
+
+        TAP-548: reads the process-wide singleton built once in the
+        lifespan startup hook.
         """
         from tapps_brain.idempotency import is_idempotency_enabled
 
@@ -1237,17 +1273,7 @@ def create_app(
         if not ikey:
             return ikey, None
         istore = getattr(cfg, "idempotency_store", None)
-        if istore is None:
-            return ikey, None
-        cached = istore.check(project_id, ikey)
-        if cached is None:
-            return ikey, None
-        _status, _body = cached
-        return ikey, JSONResponse(
-            status_code=_status,
-            content=_body,
-            headers={"Idempotency-Replayed": "true"},
-        )
+        return ikey, istore
 
     def _idempotency_save(project_id: str, ikey: str, status: int, body: dict[str, Any]) -> None:
         """Persist idempotency key → response when enabled.
@@ -1292,74 +1318,105 @@ def create_app(
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
-        # Idempotency check.
-        ikey, replay = _idempotency_check(request, project_id)
-        if replay is not None:
-            return replay  # type: ignore[no-any-return]
+        # TAP-629: acquire per-key guard BEFORE the cache check so that
+        # concurrent duplicates yield at ``await guard.acquire()`` rather
+        # than racing through check → execute → save.  The second (and
+        # later) coroutines wake up after the first stores its result,
+        # see the cached body, and return without re-running the handler.
+        ikey, istore = _get_ikey_and_istore(request)
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
 
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.read_body_failed")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        if len(raw) > 65_536:
-            raise HTTPException(
-                status_code=413, detail={"error": "payload_too_large", "detail": "Max 65536 bytes."}
-            )
-        try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            logger.exception("http_adapter.invalid_json")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            # Cache check — inside the guard so we observe the result
+            # stored by whichever concurrent duplicate ran first.
+            if ikey and istore is not None:
+                _cached = istore.check(project_id, ikey)
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        mem_key = (body.get("key") or "").strip()
-        mem_value = body.get("value") or ""
-        if not mem_key or not mem_value:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "key and value are required."},
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
+                )
+            if len(raw) > 65_536:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
+
+            mem_key = (body.get("key") or "").strip()
+            mem_value = body.get("value") or ""
+            if not mem_key or not mem_value:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "key and value are required."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            result = _ms.memory_save(
+                store,
+                project_id,
+                agent_id,
+                key=mem_key,
+                value=mem_value,
+                tier=body.get("tier", "pattern"),
+                source=body.get("source", "agent"),
+                tags=body.get("tags"),
+                scope=body.get("scope", "project"),
+                confidence=float(body.get("confidence", -1.0)),
+                agent_scope=body.get("agent_scope", "private"),
+                group=body.get("group"),
             )
+            if isinstance(result, dict) and "error" in result:
+                status_code = 400
+            else:
+                status_code = 200
 
-        from tapps_brain.services import memory_service as _ms
+            # Persist idempotency result inside the guard so that waiting
+            # duplicates see the stored response when they re-check.
+            if ikey and istore is not None:
+                istore.save(project_id, ikey, status_code, result)
 
-        result = _ms.memory_save(
-            store,
-            project_id,
-            agent_id,
-            key=mem_key,
-            value=mem_value,
-            tier=body.get("tier", "pattern"),
-            source=body.get("source", "agent"),
-            tags=body.get("tags"),
-            scope=body.get("scope", "project"),
-            confidence=float(body.get("confidence", -1.0)),
-            agent_scope=body.get("agent_scope", "private"),
-            group=body.get("group"),
-        )
-        if isinstance(result, dict) and "error" in result:
-            status_code = 400
-        else:
-            status_code = 200
+            return JSONResponse(status_code=status_code, content=result)
 
-        if ikey:
-            _idempotency_save(project_id, ikey, status_code, result)
-
-        return JSONResponse(status_code=status_code, content=result)
+        finally:
+            # Release the per-key guard so any waiting duplicates can wake
+            # up, re-check the cache, and return the stored response.
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     @app.post("/v1/reinforce", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_reinforce(request: Request) -> JSONResponse:
@@ -1386,65 +1443,88 @@ def create_app(
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
-        # Idempotency check.
-        ikey, replay = _idempotency_check(request, project_id)
-        if replay is not None:
-            return replay  # type: ignore[no-any-return]
+        # TAP-629: acquire per-key guard before cache check (see _v1_remember).
+        ikey, istore = _get_ikey_and_istore(request)
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
 
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.read_body_failed")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        if len(raw) > 65_536:
-            raise HTTPException(
-                status_code=413, detail={"error": "payload_too_large", "detail": "Max 65536 bytes."}
-            )
-        try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            logger.exception("http_adapter.invalid_json")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            # Cache check inside the guard.
+            if ikey and istore is not None:
+                _cached = istore.check(project_id, ikey)
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        mem_key = (body.get("key") or "").strip()
-        if not mem_key:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "key is required."}
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
+                )
+            if len(raw) > 65_536:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
+
+            mem_key = (body.get("key") or "").strip()
+            if not mem_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "key is required."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            result = _ms.memory_reinforce(
+                store,
+                project_id,
+                agent_id,
+                key=mem_key,
+                confidence_boost=float(body.get("confidence_boost", 0.0)),
             )
+            if isinstance(result, dict) and "error" in result:
+                status_code = 400
+            else:
+                status_code = 200
 
-        from tapps_brain.services import memory_service as _ms
+            if ikey and istore is not None:
+                istore.save(project_id, ikey, status_code, result)
 
-        result = _ms.memory_reinforce(
-            store,
-            project_id,
-            agent_id,
-            key=mem_key,
-            confidence_boost=float(body.get("confidence_boost", 0.0)),
-        )
-        if isinstance(result, dict) and "error" in result:
-            status_code = 400
-        else:
-            status_code = 200
+            return JSONResponse(status_code=status_code, content=result)
 
-        if ikey:
-            _idempotency_save(project_id, ikey, status_code, result)
-
-        return JSONResponse(status_code=status_code, content=result)
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     # -------- bulk data-plane routes (STORY-070.6) --------
 

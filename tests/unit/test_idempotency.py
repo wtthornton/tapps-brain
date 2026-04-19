@@ -834,3 +834,128 @@ class TestMaintenanceGcWithIdempotencySweep:
 
         mock_sweep.assert_not_called()
         assert "idempotency_keys_swept" not in result
+
+
+# ---------------------------------------------------------------------------
+# TAP-629: concurrent same-key requests must execute the handler exactly once
+# ---------------------------------------------------------------------------
+
+
+class TestIdempotencyRaceFixed:
+    """TAP-629 acceptance: N concurrent identical POSTs must execute the handler once.
+
+    Before TAP-629 the check → execute → save sequence had a race window:
+    two concurrent requests both saw a cache miss, both ran the handler
+    (with all its side effects), then raced to save().  ON CONFLICT DO NOTHING
+    only deduplicated the *stored response*, not the handler execution.
+
+    After TAP-629 each idempotency key is guarded by a per-key asyncio.Lock
+    acquired before the cache check and released after save().  Concurrent
+    duplicates yield at ``await guard.acquire()``; when they wake up the
+    cached response is already present and they short-circuit.
+    """
+
+    def test_concurrent_same_key_executes_handler_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """N concurrent identical POSTs → handler runs exactly once.
+
+        A threading-level simulation: N threads each call client.post() with
+        the same idempotency key.  The mock ``check()`` / ``save()`` pair
+        maintains an in-memory cache that matches real IdempotencyStore
+        semantics.  A sleep in the mock handler widens the race window so
+        the guard is essential (without it, all N threads would slip through
+        to the handler before any of them stores the result).
+        """
+        import time
+
+        monkeypatch.setenv("TAPPS_BRAIN_IDEMPOTENCY", "1")
+
+        call_count = 0
+        saved_result: dict[str, Any] = {
+            "status": "saved",
+            "key": "k",
+            "tier": "pattern",
+            "confidence": 0.8,
+            "memory_group": None,
+        }
+        # Simulated idempotency cache — mirrors real check/save semantics.
+        cache: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
+        call_count_lock = threading.Lock()
+
+        def fake_memory_save(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            with call_count_lock:
+                call_count += 1
+            time.sleep(0.02)  # Widen race window to stress the guard
+            return saved_result
+
+        def check_side_effect(project_id: str, key: str) -> tuple[int, dict[str, Any]] | None:
+            return cache.get((project_id, key))
+
+        def save_side_effect(
+            project_id: str, key: str, status: int, body: dict[str, Any]
+        ) -> None:
+            cache[(project_id, key)] = (status, body)
+
+        N = 8
+        ikey = "race-uuid-tap-629"
+
+        store = _make_store()
+        settings = _make_settings(dsn="postgresql://fake/db", store=store)
+        client = _client_with_store(settings)
+
+        responses: list[Any] = []
+        errors: list[Exception] = []
+        resp_lock = threading.Lock()
+
+        def post_request() -> None:
+            try:
+                r = client.post(
+                    "/v1/remember",
+                    headers={"x-project-id": "proj", "x-idempotency-key": ikey},
+                    json={"key": "k", "value": "v"},
+                )
+                with resp_lock:
+                    responses.append(r)
+            except Exception as exc:
+                with resp_lock:
+                    errors.append(exc)
+
+        inst = MagicMock()
+        inst.check = MagicMock(side_effect=check_side_effect)
+        inst.save = MagicMock(side_effect=save_side_effect)
+        inst.close = MagicMock()
+
+        with (
+            # Ensure get_settings() returns the test settings during request
+            # handling so that require_data_plane_auth sees auth_token=None
+            # and bypasses the bearer-token check (same settings isolation
+            # used by _client_with_store during app construction).
+            patch.object(_adapter_mod, "get_settings", return_value=settings),
+            patch.object(_adapter_mod, "_settings", settings),
+            patch(
+                "tapps_brain.services.memory_service.memory_save",
+                side_effect=fake_memory_save,
+            ),
+            patch("tapps_brain.idempotency.IdempotencyStore", return_value=inst),
+            client,
+        ):
+            threads = [threading.Thread(target=post_request) for _ in range(N)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+
+        assert not errors, f"Request errors: {errors}"
+        assert len(responses) == N, f"Expected {N} responses, got {len(responses)}"
+        # Handler must run at most once.  (In strict single-event-loop mode it
+        # will be exactly 1; in multi-threaded ASGI deployments the asyncio.Lock
+        # guarantees at-most-1 within the same process.)
+        assert call_count <= 1, (
+            f"TAP-629 regression: handler executed {call_count} times for {N} "
+            f"concurrent requests with the same idempotency key — expected ≤ 1"
+        )
+        # All responses must be 200.
+        for resp in responses:
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
