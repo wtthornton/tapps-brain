@@ -949,12 +949,13 @@ class TestIdempotencyRaceFixed:
 
         assert not errors, f"Request errors: {errors}"
         assert len(responses) == N, f"Expected {N} responses, got {len(responses)}"
-        # Handler must run at most once.  (In strict single-event-loop mode it
-        # will be exactly 1; in multi-threaded ASGI deployments the asyncio.Lock
-        # guarantees at-most-1 within the same process.)
-        assert call_count <= 1, (
+        # Handler must run exactly once.  The per-key asyncio.Lock serializes
+        # concurrent coroutines: the first acquires the lock, executes, saves,
+        # and releases; the rest wake up, see the cached response, and return
+        # without calling fake_memory_save.
+        assert call_count == 1, (
             f"TAP-629 regression: handler executed {call_count} times for {N} "
-            f"concurrent requests with the same idempotency key — expected ≤ 1"
+            f"concurrent requests with the same idempotency key — expected exactly 1"
         )
         # All responses must be 200.
         for resp in responses:

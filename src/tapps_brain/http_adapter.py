@@ -1242,11 +1242,15 @@ def create_app(
         return f"{pid}\x00{ikey}"
 
     def _ensure_idem_guard(pid: str, ikey: str) -> asyncio.Lock:
-        """Return (creating if absent) the asyncio.Lock for ``(pid, ikey)``."""
+        """Return (creating if absent) the asyncio.Lock for ``(pid, ikey)``.
+
+        Uses ``dict.setdefault`` so the check-and-insert is a single atomic
+        dict operation on CPython, avoiding the two-step check-then-assign
+        race if this function is ever called from an executor thread or if a
+        future refactor introduces a yield point between the two lines.
+        """
         gk = _idem_guard_key(pid, ikey)
-        if gk not in _idem_guards:
-            _idem_guards[gk] = asyncio.Lock()
-        return _idem_guards[gk]
+        return _idem_guards.setdefault(gk, asyncio.Lock())
 
     def _drop_idem_guard(pid: str, ikey: str) -> None:
         """Remove the guard for ``(pid, ikey)`` when no coroutine is waiting."""
