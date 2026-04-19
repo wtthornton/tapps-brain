@@ -27,7 +27,7 @@ def _parse_iso(iso: str) -> datetime:
     All results are normalised to UTC so that comparisons between any mix
     of the above formats return the correct ordering.
     """
-    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    dt = datetime.fromisoformat(iso[:-1] + "+00:00" if iso.endswith("Z") else iso)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
