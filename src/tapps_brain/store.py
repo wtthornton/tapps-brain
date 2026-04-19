@@ -1187,6 +1187,15 @@ class MemoryStore:
                         self._entries[key] = existing
                     else:
                         self._entries.pop(key, None)
+                    # TAP-644: The bloom filter was mutated before the persist
+                    # attempt and does not support item removal.  Rebuild it
+                    # from the now-rolled-back _entries so might_contain()
+                    # returns accurate results.  This is O(N) but persist
+                    # failures are exceptional.
+                    if dedup:
+                        self._bloom = BloomFilter()
+                        for _e in self._entries.values():
+                            self._bloom.add(normalize_for_dedup(_e.value))
                 raise
 
             # Audit (best-effort — append_audit swallows its own exceptions).
