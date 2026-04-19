@@ -101,6 +101,11 @@ def index_session(
                 "created_at": now,
             }
             # Evict the oldest entry only when a new key pushes the bucket over cap.
+            # Note: all chunks in the same call share the same `now` timestamp, so
+            # when multiple new entries arrive in one batch and eviction fires, the
+            # choice among same-timestamp entries is deterministic but arbitrary (min
+            # falls back to tuple key order).  This is acceptable for the fallback
+            # index — true FIFO within a batch is not guaranteed.
             if is_new and len(bucket) > _max_in_memory:
                 oldest = min(bucket, key=lambda k: bucket[k]["created_at"])
                 del bucket[oldest]
@@ -120,6 +125,11 @@ def search_session_index(
 
     Scoring is performed inside the lock to avoid an O(N) ``list()`` copy;
     only matched records are shallow-copied before the lock is released.
+
+    Trade-off: holding the lock for the full iteration serialises concurrent
+    searches against each other and against writers.  For the in-memory fallback
+    (unit tests / non-Postgres installs) this is acceptable; do not add
+    expensive I/O or blocking calls inside the lock.
     """
     if not query or not query.strip():
         return []
@@ -158,6 +168,10 @@ def delete_expired_sessions(project_root: Path, ttl_days: int) -> int:
         expired = [k for k, r in bucket.items() if r.get("created_at", "") < cutoff]
         for k in expired:
             del bucket[k]
+        # Remove the project-root key entirely when the bucket is emptied so
+        # _in_memory_index does not accumulate empty dicts over a long lifetime.
+        if not bucket:
+            del _in_memory_index[key]
         return len(expired)
 
 

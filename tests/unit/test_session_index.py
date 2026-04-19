@@ -121,12 +121,9 @@ def test_cap_limits_bucket_size(tmp_path: Path) -> None:
     assert len(_bucket(tmp_path)) <= cap
 
 
-def test_cap_evicts_oldest_first(tmp_path: Path) -> None:
-    """After filling beyond cap, the remaining entries should be the newest ones."""
+def test_cap_enforces_size_after_overflow(tmp_path: Path) -> None:
+    """After inserting more sessions than the cap, bucket stays at cap size."""
     cap = 5
-    # Insert sessions with slightly different created_at values by sleeping briefly
-    # between batches — use monkeypatch on datetime is complex, so just check that
-    # exactly `cap` entries remain and no duplicates exist.
     for i in range(cap + 3):
         index_session(tmp_path, f"sess-{i}", [f"content {i}"], _max_in_memory=cap)
 
@@ -134,14 +131,26 @@ def test_cap_evicts_oldest_first(tmp_path: Path) -> None:
     assert len(bucket) == cap
 
 
+@pytest.mark.slow
 def test_cap_20001_chunks_yields_10000(tmp_path: Path) -> None:
-    """Acceptance criterion: 20 001 inserts with cap=10 000 → exactly 10 000."""
+    """Acceptance criterion: 20 001 inserts with cap=10 000 → exactly 10 000.
+
+    Marked slow — skipped in fast unit-test runs; run with -m slow explicitly.
+    """
     cap = 10_000
     # Each unique (session_id, chunk_index) is a distinct key; use many sessions.
     for i in range(20_001):
         session_id = f"s{i}"
         index_session(tmp_path, session_id, ["x"], _max_in_memory=cap)
 
+    assert len(_bucket(tmp_path)) == cap
+
+
+def test_cap_scaled_yields_exact_cap(tmp_path: Path) -> None:
+    """Scaled-down equivalent of the 20 001/10 000 acceptance criterion (fast)."""
+    cap = 50
+    for i in range(120):
+        index_session(tmp_path, f"sess-{i}", ["x"], _max_in_memory=cap)
     assert len(_bucket(tmp_path)) == cap
 
 
@@ -222,7 +231,8 @@ def test_delete_expired_removes_old_chunks(tmp_path: Path) -> None:
 
     deleted = delete_expired_sessions(tmp_path, ttl_days=1)
     assert deleted == 1
-    assert len(_bucket(tmp_path)) == 0
+    # Bucket is now empty — the project-root key must also be removed.
+    assert str(tmp_path) not in _mod._in_memory_index
 
 
 def test_delete_expired_keeps_fresh_chunks(tmp_path: Path) -> None:
@@ -297,5 +307,6 @@ def test_concurrent_writers_no_duplicate_keys(tmp_path: Path) -> None:
     t2.join(timeout=5)
 
     bucket = _bucket(tmp_path)
-    # No (session, chunk_index) key should appear more than once (dict enforces this)
-    assert len(bucket) <= 20  # 20 unique chunk_index values for "shared-session"
+    # Both threads write chunks 0-19 for the same session; dict enforces one entry
+    # per (session_id, chunk_index) key, so exactly 20 keys must exist.
+    assert len(bucket) == 20
