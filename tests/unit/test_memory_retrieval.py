@@ -320,6 +320,42 @@ class TestScoringHelpers:
         entry = _make_entry(access_count=100)
         assert retriever._frequency_score(entry) == 1.0
 
+    def test_frequency_score_no_zero_division_when_cap_zero(self) -> None:
+        """Duck-typed scoring_config with frequency_cap=0 must not raise ZeroDivisionError (TAP-635)."""
+        cfg = SimpleNamespace(
+            relevance=0.4,
+            confidence=0.3,
+            recency=0.15,
+            frequency=0.15,
+            frequency_cap=0,  # invalid but must not crash
+            graph_centrality=0.0,
+            provenance_trust=0.0,
+            source_trust=None,
+        )
+        retriever = MemoryRetriever(scoring_config=cfg)
+        # _frequency_cap must have been floored to 1.0
+        assert retriever._frequency_cap >= 1.0
+        entry = _make_entry(access_count=5)
+        score = retriever._frequency_score(entry)
+        assert score == 1.0  # 5/1.0 capped at 1.0
+
+    def test_frequency_score_no_zero_division_when_cap_negative(self) -> None:
+        """Negative frequency_cap via duck-typed config also must not raise (TAP-635)."""
+        cfg = SimpleNamespace(
+            relevance=0.4,
+            confidence=0.3,
+            recency=0.15,
+            frequency=0.15,
+            frequency_cap=-5,
+            graph_centrality=0.0,
+            provenance_trust=0.0,
+            source_trust=None,
+        )
+        retriever = MemoryRetriever(scoring_config=cfg)
+        assert retriever._frequency_cap >= 1.0
+        entry = _make_entry(access_count=0)
+        assert retriever._frequency_score(entry) == 0.0
+
 
 class TestRelevanceNormalizationMinmax:
     """Min-max relevance normalization is always active."""

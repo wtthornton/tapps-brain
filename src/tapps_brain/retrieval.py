@@ -178,7 +178,7 @@ class MemoryRetriever:
             self._w_confidence = getattr(scoring_config, "confidence", _W_CONFIDENCE)
             self._w_recency = getattr(scoring_config, "recency", _W_RECENCY)
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
-            self._frequency_cap = float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP))
+            self._frequency_cap = max(float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP)), 1.0)
             self._w_graph = float(getattr(scoring_config, "graph_centrality", 0.0))
             self._w_provenance = float(getattr(scoring_config, "provenance_trust", 0.0))
             raw_trust = getattr(scoring_config, "source_trust", None)
@@ -932,5 +932,10 @@ class MemoryRetriever:
 
         The frequency cap defaults to 20.0 and is configurable via
         ``scoring_config.frequency_cap`` (EPIC-010).
+
+        The cap is floored at 1.0 defensively to prevent ``ZeroDivisionError``
+        when a duck-typed ``scoring_config`` bypasses ``ScoringConfig`` Pydantic
+        validation (TAP-635).
         """
-        return min(1.0, entry.access_count / self._frequency_cap)
+        cap = max(self._frequency_cap, 1.0)
+        return min(1.0, entry.access_count / cap)
