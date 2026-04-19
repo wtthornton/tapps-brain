@@ -277,6 +277,10 @@ class AgentBrain:
         elif isinstance(share_with, str):
             agent_scope = f"group:{share_with}"
         elif isinstance(share_with, list):
+            if not share_with or any(not g.strip() for g in share_with):
+                raise BrainValidationError(
+                    "share_with list must not be empty and must not contain blank group names"
+                )
             # Save to each specified group
             for group in share_with:
                 self._store.save(key=key, value=fact, tier=tier, agent_scope=f"group:{group}")

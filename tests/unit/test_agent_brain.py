@@ -183,6 +183,21 @@ class TestRememberValidation:
             key = brain.remember("some fact", share_with="my-group")
             assert isinstance(key, str)
 
+    def test_remember_share_with_list_containing_empty_string_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=[""])
+
+    def test_remember_share_with_list_containing_whitespace_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=["valid-group", "   "])
+
+    def test_remember_share_with_empty_list_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=[])
+
 
 class TestRecallValidation:
     """TAP-632: recall() enforces BrainValidationError contract for max_results."""
