@@ -287,8 +287,31 @@ class AgentBrain:
         max_results: int = 5,
         scope: str = "all",
     ) -> list[dict[str, Any]]:
-        """Recall memories matching *query*.  Returns list of result dicts."""
+        """Recall memories matching *query*.  Returns list of result dicts.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum number of results to return.
+            scope: Filter by agent scope.  One of ``"all"`` (default, no
+                filtering), ``"private"`` (only this agent's memories),
+                ``"domain"`` (domain-shared memories), ``"hive"`` (hive-wide
+                shared memories), or a group name (``"group:<name>"``).
+        """
         entries = self._store.search(query)
+
+        # Filter by agent_scope when the caller requests a specific scope.
+        # ``"all"`` is the opt-out sentinel — no filtering applied.
+        if scope != "all":
+            entries = [
+                e
+                for e in entries
+                if (
+                    isinstance(e, dict) and e.get("agent_scope") == scope
+                )
+                or (
+                    not isinstance(e, dict) and getattr(e, "agent_scope", None) == scope
+                )
+            ]
 
         # Convert MemoryEntry objects to dicts and limit results
         results: list[dict[str, Any]] = []
@@ -303,6 +326,7 @@ class AgentBrain:
                         "tier": str(entry.tier),
                         "confidence": entry.confidence,
                         "tags": list(entry.tags) if entry.tags else [],
+                        "agent_scope": entry.agent_scope,
                     }
                 )
 
