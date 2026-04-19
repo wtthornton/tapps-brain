@@ -228,6 +228,25 @@ class TestRecall:
             assert "private" in scopes
             assert "hive" in scopes
 
+    def test_recall_scope_case_insensitive(self, tmp_path: Path) -> None:
+        """scope values are normalised so 'Private' matches 'private' entries."""
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Private cache invalidation fact")
+            # "Private" (title-case) should be normalised to "private"
+            results = brain.recall("cache invalidation", scope="Private")
+            assert len(results) >= 1
+            for r in results:
+                assert r.get("agent_scope") == "private"
+
+    def test_recall_scope_invalid_raises(self, tmp_path: Path) -> None:
+        """An unrecognised scope value raises BrainValidationError."""
+        from tapps_brain.agent_brain import BrainValidationError
+
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Some fact")
+            with pytest.raises(BrainValidationError, match="Invalid scope"):
+                brain.recall("fact", scope="bogus-scope")
+
 
 class TestForget:
     def test_forget_archives_memory(self, tmp_path: Path) -> None:

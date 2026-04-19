@@ -301,34 +301,34 @@ class AgentBrain:
 
         # Filter by agent_scope when the caller requests a specific scope.
         # ``"all"`` is the opt-out sentinel — no filtering applied.
+        # Normalise the scope value so ``"Hive"`` / ``"Private"`` match stored
+        # entries whose agent_scope is always lowercase-normalised.
         if scope != "all":
-            entries = [
-                e
-                for e in entries
-                if (
-                    isinstance(e, dict) and e.get("agent_scope") == scope
-                )
-                or (
-                    not isinstance(e, dict) and getattr(e, "agent_scope", None) == scope
-                )
-            ]
+            from tapps_brain.agent_scope import normalize_agent_scope
 
-        # Convert MemoryEntry objects to dicts and limit results
+            try:
+                _normalised_scope = normalize_agent_scope(scope)
+            except ValueError as exc:
+                raise BrainValidationError(
+                    f"Invalid scope {scope!r}: {exc}"
+                ) from exc
+            entries = [e for e in entries if e.agent_scope == _normalised_scope]
+
+        # Convert MemoryEntry objects to dicts and limit results.
+        # MemoryStore.search() always returns list[MemoryEntry], so no dict
+        # branch is needed here.
         results: list[dict[str, Any]] = []
         for entry in entries[:max_results]:
-            if isinstance(entry, dict):
-                results.append(entry)
-            else:
-                results.append(
-                    {
-                        "key": entry.key,
-                        "value": entry.value,
-                        "tier": str(entry.tier),
-                        "confidence": entry.confidence,
-                        "tags": list(entry.tags) if entry.tags else [],
-                        "agent_scope": entry.agent_scope,
-                    }
-                )
+            results.append(
+                {
+                    "key": entry.key,
+                    "value": entry.value,
+                    "tier": str(entry.tier),
+                    "confidence": entry.confidence,
+                    "tags": list(entry.tags) if entry.tags else [],
+                    "agent_scope": entry.agent_scope,
+                }
+            )
 
         # Track for learn_from_success
         self._last_recalled_keys = [r.get("key", "") for r in results]
