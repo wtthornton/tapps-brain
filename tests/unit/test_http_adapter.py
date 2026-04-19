@@ -1558,3 +1558,135 @@ class TestErrorEnvelopesDoNotLeakExceptions:
             )
         assert resp.status_code == 400
         self._assert_no_leak(resp.text)
+
+
+# ---------------------------------------------------------------------------
+# TAP-627: OriginAllowlistMiddleware — DNS-rebinding guard on all auth routes
+# ---------------------------------------------------------------------------
+
+
+def _make_settings_with_origins(
+    *,
+    auth_token: str | None = "data-tok",
+    admin_token: str | None = "admin-tok",
+    allowed_origins: list[str] | None = None,
+) -> _Settings:
+    """Helper: settings with an Origin allowlist configured."""
+    s = _make_settings(auth_token=auth_token, admin_token=admin_token)
+    s.allowed_origins = allowed_origins if allowed_origins is not None else ["https://allowed.example.com"]
+    return s
+
+
+class TestOriginAllowlistMiddlewareTAP627:
+    """`OriginAllowlistMiddleware` must cover every bearer-authenticated route (TAP-627)."""
+
+    # ------------------------------------------------------------------
+    # Acceptance: foreign Origin → 403 on authenticated routes
+    # ------------------------------------------------------------------
+
+    def test_mcp_path_blocked_with_bad_origin(self) -> None:
+        """Existing /mcp protection must still work after the fix."""
+        with _client(_make_settings_with_origins()) as c:
+            resp = c.get("/mcp", headers={"Origin": "https://evil.example.com"})
+        assert resp.status_code == 403
+
+    def test_v1_route_blocked_with_bad_origin(self) -> None:
+        """/v1/* bearer-authenticated routes must be blocked by a foreign Origin."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.post(
+                "/v1/remember",
+                json={"key": "k", "value": "v"},
+                headers={
+                    "Authorization": "Bearer data-tok",
+                    "X-Project-Id": "proj-test",
+                    "Origin": "https://evil.example.com",
+                },
+            )
+        assert resp.status_code == 403
+
+    def test_admin_route_blocked_with_bad_origin(self) -> None:
+        """/admin/* routes must be blocked by a foreign Origin."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.get(
+                "/admin/projects",
+                headers={
+                    "Authorization": "Bearer admin-tok",
+                    "Origin": "https://evil.example.com",
+                },
+            )
+        assert resp.status_code == 403
+
+    # ------------------------------------------------------------------
+    # Acceptance: allowed Origin → passes through (auth may still gate)
+    # ------------------------------------------------------------------
+
+    def test_v1_route_passes_with_allowed_origin(self) -> None:
+        """A request from an allowed Origin must reach the handler (not be 403'd by middleware)."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.post(
+                "/v1/remember",
+                json={"key": "k", "value": "v"},
+                headers={
+                    "Authorization": "Bearer data-tok",
+                    "X-Project-Id": "proj-test",
+                    "Origin": "https://allowed.example.com",
+                },
+            )
+        # Must not be 403 from the Origin middleware (auth/DB may cause other codes)
+        assert resp.status_code != 403
+
+    # ------------------------------------------------------------------
+    # Acceptance: unauthenticated probe endpoints exempt from Origin check
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("path", ["/health", "/ready", "/metrics", "/"])
+    def test_probe_endpoints_exempt_from_origin_check(self, path: str) -> None:
+        """Probe/scrape endpoints must never 403 due to Origin check (TAP-627)."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.get(path, headers={"Origin": "https://evil.example.com"})
+        assert resp.status_code != 403, (
+            f"{path} returned 403 — probe endpoints must be exempt from Origin check"
+        )
+
+    # ------------------------------------------------------------------
+    # No allowlist configured → middleware is a no-op
+    # ------------------------------------------------------------------
+
+    def test_no_allowlist_configured_passthrough_on_v1(self) -> None:
+        """When allowed_origins is empty, any Origin is accepted on /v1/*."""
+        settings = _make_settings_with_origins(allowed_origins=[])
+        with _client(settings) as c:
+            resp = c.post(
+                "/v1/remember",
+                json={"key": "k", "value": "v"},
+                headers={
+                    "Authorization": "Bearer data-tok",
+                    "X-Project-Id": "proj-test",
+                    "Origin": "https://random.example.com",
+                },
+            )
+        # Must not be blocked by the middleware when no allowlist is set
+        assert resp.status_code != 403
+
+    # ------------------------------------------------------------------
+    # No Origin header → always passes through (non-browser requests)
+    # ------------------------------------------------------------------
+
+    def test_no_origin_header_passthrough(self) -> None:
+        """Requests without an Origin header (e.g., curl, server-to-server) are not blocked."""
+        settings = _make_settings_with_origins()
+        with _client(settings) as c:
+            resp = c.post(
+                "/v1/remember",
+                json={"key": "k", "value": "v"},
+                headers={
+                    "Authorization": "Bearer data-tok",
+                    "X-Project-Id": "proj-test",
+                    # No Origin header
+                },
+            )
+        assert resp.status_code != 403

@@ -724,19 +724,43 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
             return await call_next(request)  # type: ignore[no-any-return]
 
 
+# Paths that are intentionally unauthenticated and Origin-agnostic (TAP-627).
+# These are probe / scrape endpoints that must remain reachable from any origin
+# (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
+# bearer tokens that a DNS-rebinding attacker could steal.
+_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})
+
+
 class OriginAllowlistMiddleware(BaseHTTPMiddleware):
-    """MCP DNS-rebinding guard for ``/mcp`` (STORY-070.3/4)."""
+    """DNS-rebinding guard applied to every bearer-authenticated route (TAP-627).
+
+    When ``TAPPS_BRAIN_ALLOWED_ORIGINS`` is set, any browser-originated request
+    (``Origin`` header present) whose origin is not in the allowlist receives a
+    ``403 Forbidden`` response before the handler is reached.
+
+    Intentionally exempt (unauthenticated probe / scrape endpoints that are
+    Origin-agnostic by design):
+
+    * ``/`` — root liveness check
+    * ``/health`` — liveness probe
+    * ``/ready`` — readiness probe
+    * ``/metrics`` — Prometheus scrape endpoint
+
+    Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
+    protection to all bearer-authenticated routes (``/v1/*``, ``/admin/*``,
+    ``/mcp``, ``/info``, etc.) so that DNS-rebinding attacks against REST
+    endpoints are also blocked.
+    """
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
-        if request.url.path.startswith("/mcp"):
-            cfg = get_settings()
-            if cfg.allowed_origins:
-                origin = request.headers.get("origin", "")
-                if origin and origin not in cfg.allowed_origins:
-                    return JSONResponse(
-                        status_code=403,
-                        content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
-                    )
+        cfg = get_settings()
+        if cfg.allowed_origins and request.url.path not in _ORIGIN_EXEMPT_PATHS:
+            origin = request.headers.get("origin", "")
+            if origin and origin not in cfg.allowed_origins:
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
+                )
         return await call_next(request)  # type: ignore[no-any-return]
 
 
