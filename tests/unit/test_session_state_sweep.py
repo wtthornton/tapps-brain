@@ -267,6 +267,103 @@ class TestMetricsGauge:
         assert "tapps_brain_store_active_sessions 1" in redacted
 
 
+class TestPerSessionLogCap:
+    """TAP-645 — per-session entry cap on session log lists.
+
+    A long-lived session that issues thousands of recalls must not grow
+    ``_session_query_log``, ``_session_recall_log``, or
+    ``_session_recalled_values`` without bound.  The cap is
+    ``_SESSION_LOG_PER_SESSION_CAP`` (default 100).
+
+    Acceptance criteria from the ticket:
+    * 10 000 recall calls on one session_id → len <= 100.
+    * ``get_metrics()`` exposes the total session_query_log entry count.
+    """
+
+    def test_session_query_log_bounded_after_many_recalls(
+        self, store: MemoryStore
+    ) -> None:
+        """Recall 200 times on one session_id — query log stays at cap."""
+        sid = "long-session"
+        for i in range(200):
+            store.recall(f"query {i}", session_id=sid)
+
+        with store._serialized():
+            actual = len(store._session_query_log.get(sid, []))
+        assert actual <= 100, f"expected ≤100 entries, got {actual}"
+
+    def test_session_query_log_cap_is_100_default(
+        self, store: MemoryStore
+    ) -> None:
+        """Cap is exactly 100 — oldest entries are dropped, newest kept."""
+        from tapps_brain.store import _SESSION_LOG_PER_SESSION_CAP
+
+        assert _SESSION_LOG_PER_SESSION_CAP == 100
+
+        sid = "bounded-session"
+        for i in range(200):
+            store.recall(f"unique query #{i}", session_id=sid)
+
+        with store._serialized():
+            q_log = store._session_query_log.get(sid, [])
+        assert len(q_log) <= _SESSION_LOG_PER_SESSION_CAP
+
+    def test_recall_log_and_values_log_bounded(
+        self, store: MemoryStore
+    ) -> None:
+        """``_session_recall_log`` and ``_session_recalled_values`` also
+        respect the per-session cap when entries are returned by recall.
+
+        Seeds the internal entry cache directly (bypassing Postgres) so
+        the recall path can populate the recall log and values log.
+        """
+        from tapps_brain.store import _SESSION_LOG_PER_SESSION_CAP
+        from tapps_brain.models import MemoryEntry, MemoryTier
+
+        sid = "vals-session"
+        key = "test-key"
+
+        # Seed one entry directly into the in-memory cache so recall can find it.
+        entry = MemoryEntry(
+            key=key,
+            value="test value",
+            tier=MemoryTier.CONTEXT,
+        )
+        with store._serialized():
+            store._entries[key] = entry
+
+        # Recall 200 times — each recall should find and log the seeded entry.
+        for i in range(200):
+            store.recall("test value", session_id=sid)
+
+        with store._serialized():
+            r_log_len = len(store._session_recall_log.get(sid, []))
+            val_log_len = len(store._session_recalled_values.get(sid, []))
+
+        assert r_log_len <= _SESSION_LOG_PER_SESSION_CAP, (
+            f"_session_recall_log: expected ≤{_SESSION_LOG_PER_SESSION_CAP}, got {r_log_len}"
+        )
+        assert val_log_len <= _SESSION_LOG_PER_SESSION_CAP, (
+            f"_session_recalled_values: expected ≤{_SESSION_LOG_PER_SESSION_CAP}, got {val_log_len}"
+        )
+
+    def test_get_metrics_exposes_session_query_log_gauge(
+        self, store: MemoryStore
+    ) -> None:
+        """``get_metrics()`` must include the ``tapps_brain.session_query_log.entries``
+        gauge so operators can observe per-session log growth in dashboards.
+        """
+        sid = "gauge-session"
+        for i in range(50):
+            store.recall(f"metric query {i}", session_id=sid)
+
+        snapshot = store.get_metrics()
+        assert "tapps_brain.session_query_log.entries" in snapshot.gauges, (
+            "expected 'tapps_brain.session_query_log.entries' in MetricsSnapshot.gauges"
+        )
+        assert snapshot.gauges["tapps_brain.session_query_log.entries"] <= 100.0
+
+
 class TestSweepIdempotency:
     """Running the sweep twice must not over-count or drop anything."""
 

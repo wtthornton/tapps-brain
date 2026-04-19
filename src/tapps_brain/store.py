@@ -160,6 +160,12 @@ _REFORMULATION_WINDOW = 60
 # ~20 agents per box) but cheap enough that sweeps stay ~O(ms).
 _SESSION_STATE_HARD_CAP = 10_000
 
+# TAP-645: per-session entry cap for the session log lists.  A single
+# long-lived session that issues thousands of recall calls would otherwise
+# append without bound.  100 entries covers the reformulation/correction
+# detection window (60 s / ~1 recall/s) with generous headroom.
+_SESSION_LOG_PER_SESSION_CAP = 100
+
 
 class MemoryStoreLockTimeout(RuntimeError):  # noqa: N818 — Timeout reads better for operators
     """Raised when the store lock is not acquired within the configured timeout (EPIC-050.2)."""
@@ -2398,6 +2404,10 @@ class MemoryStore:
                 # so we don't match the current query against itself)
                 _q_log = self._session_query_log.setdefault(session_id, [])
                 _q_log.append((message, list(_recalled_keys), _now_track))
+                # TAP-645: cap per-session query log to prevent unbounded growth in
+                # long-lived sessions.  Keep the most-recent entries (trim oldest).
+                if len(_q_log) > _SESSION_LOG_PER_SESSION_CAP:
+                    del _q_log[:-_SESSION_LOG_PER_SESSION_CAP]
                 # Record recalled keys + values for positive/negative/correction tracking
                 if _recalled_keys:
                     _r_log = self._session_recall_log.setdefault(session_id, [])
@@ -2407,6 +2417,11 @@ class MemoryStore:
                         _entry_val = self._entries.get(_k)
                         if _entry_val is not None:
                             _val_log.append((_k, _entry_val.value, _now_track))
+                    # TAP-645: cap recall log and values log per-session.
+                    if len(_r_log) > _SESSION_LOG_PER_SESSION_CAP:
+                        del _r_log[:-_SESSION_LOG_PER_SESSION_CAP]
+                    if len(_val_log) > _SESSION_LOG_PER_SESSION_CAP:
+                        del _val_log[:-_SESSION_LOG_PER_SESSION_CAP]
 
             for _k, _sim in _reform_targets:
                 self._emit_implicit_feedback(
@@ -2711,6 +2726,9 @@ class MemoryStore:
           (updated by :meth:`health` or :meth:`gc`; stale between runs)
         - ``tapps_brain.gc.candidates`` — last known GC candidate count
           (updated by :meth:`gc`; stale between runs)
+        - ``tapps_brain.session_query_log.entries`` — total entries across all active
+          session query logs (TAP-645); capped at ``_SESSION_LOG_PER_SESSION_CAP``
+          entries per session
 
         .. note::
             **Cardinality rule:** these gauges must **never** carry ``entry_key``,
@@ -2737,7 +2755,13 @@ class MemoryStore:
         # tapps_brain.* gauges — STORY-032.6
         with self._serialized():
             _entry_count = len(self._entries)
+            # TAP-645: expose per-session log size so growth is visible in metrics.
+            _session_log_entries = sum(len(v) for v in self._session_query_log.values())
         self._metrics.set_gauge("tapps_brain.entries.count", float(_entry_count))
+        self._metrics.set_gauge(
+            "tapps_brain.session_query_log.entries",
+            float(_session_log_entries),
+        )
         self._metrics.set_gauge(
             "tapps_brain.consolidation.candidates",
             float(self._last_consolidation_candidates),
