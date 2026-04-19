@@ -393,6 +393,16 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     if [[ "$new_pd" -ge "${pd_threshold}" ]]; then
       echo "Circuit breaker OPEN: permission denied $new_pd consecutive times" >&2
     fi
+  elif [[ "$exit_signal" == "true" && "$status" == "COMPLETE" ]]; then
+    # EXIT-CLEAN: Claude reported clean completion (EXIT_SIGNAL: true + STATUS: COMPLETE)
+    # but with 0 files modified and 0 tasks completed — this is the legitimate
+    # "plan is empty / nothing to do" path, not stagnation. Reset the no-progress
+    # counter so consecutive empty-plan loops don't trip the breaker on the
+    # SAME signal Claude is already using to ask for clean shutdown.
+    # Also reset permission denials (none happened) and ensure state stays CLOSED.
+    jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
+      "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
+      && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
   else
     # No progress — single jq call to read threshold, increment, and conditionally open
     # LOGFIX-8: Also increment total_opens when transitioning to OPEN
