@@ -150,7 +150,7 @@ Omitting the header is equivalent to `full` — no existing client breaks.
 }
 ```
 
-**Aider** — pass headers via `aider.conf.yml` `mcp_servers` block (Aider ≥ 0.60):
+**Aider** — pass headers via `.aider.conf.yml` `mcp_servers` block (Aider ≥ 0.60):
 
 ```yaml
 # .aider.conf.yml
@@ -167,7 +167,7 @@ mcp_servers:
 
 **Verification** — after restarting your MCP client run `tools/list`; you
 should see ~15 tools instead of 55 when using the `coder` profile.
-The healthcheck script (step 7) also reports the configured profile.
+The healthcheck script (`scripts/brain-healthcheck.sh`) also reports the configured profile.
 
 ### 6. Teach the MCP client how and when to use the brain
 
