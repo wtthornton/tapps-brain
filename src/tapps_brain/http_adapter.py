@@ -482,8 +482,9 @@ def _collect_metrics(
                     "Profile resolver cache events (hit/miss/invalidated)."
                 )
                 lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
-                for _result in ("hit", "miss", "invalidated"):
-                    _key = "hits" if _result == "hit" else ("misses" if _result == "miss" else "invalidated")
+                # Map result label → cache_stats() key; extend here when new event types land.
+                _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
+                for _result, _key in _result_to_key.items():
                     _count = _cache.get(_key, 0)
                     if _count:
                         lines.append(
