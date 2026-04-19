@@ -110,6 +110,10 @@ describe("request shape", () => {
   });
 
   it("omits Authorization header when no authToken", async () => {
+    // Temporarily clear the env var so it doesn't leak into the client under test.
+    const savedToken = process.env["TAPPS_BRAIN_AUTH_TOKEN"];
+    delete process.env["TAPPS_BRAIN_AUTH_TOKEN"];
+
     const noAuthClient = new TappsBrainClient({
       url: "http://brain.test:8080",
       projectId: "p",
@@ -119,12 +123,18 @@ describe("request shape", () => {
     const fetchSpy = vi.fn().mockResolvedValue(makeMcpResponse([]));
     vi.stubGlobal("fetch", fetchSpy);
 
-    await noAuthClient.recall("test");
+    try {
+      await noAuthClient.recall("test");
 
-    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBeUndefined();
-    noAuthClient.close();
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers["Authorization"]).toBeUndefined();
+    } finally {
+      if (savedToken !== undefined) {
+        process.env["TAPPS_BRAIN_AUTH_TOKEN"] = savedToken;
+      }
+      noAuthClient.close();
+    }
   });
 });
 
