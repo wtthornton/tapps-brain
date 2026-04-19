@@ -1558,3 +1558,101 @@ class TestErrorEnvelopesDoNotLeakExceptions:
             )
         assert resp.status_code == 400
         self._assert_no_leak(resp.text)
+
+
+# ---------------------------------------------------------------------------
+# TAP-626: per-tenant auth — X-Project-Id required when flag is enabled
+# ---------------------------------------------------------------------------
+
+
+class TestPerTenantAuthRequiresProjectId:
+    """TAP-626: when TAPPS_BRAIN_PER_TENANT_AUTH=1, requests missing
+    X-Project-Id must be rejected (400) instead of falling through to
+    the global-token check.
+
+    These tests use a fake DSN so the per-tenant branch activates without
+    hitting Postgres — the 400 is raised before any DB call is made.
+    """
+
+    _GLOBAL_TOKEN = "global-super-token"
+    _FAKE_DSN = "postgres://tapps:tapps@localhost:5432/tapps_brain"
+
+    @contextmanager
+    def _per_tenant_client(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[return]
+        """Yield a TestClient with per-tenant auth enabled and a fake DSN."""
+        monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
+        settings = _make_settings(
+            auth_token=self._GLOBAL_TOKEN,
+            dsn=self._FAKE_DSN,
+        )
+        with _client(settings) as c:
+            yield c
+
+    def test_missing_project_id_header_returns_400(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Global token + no X-Project-Id → 400 (not 200 or 403)."""
+        with self._per_tenant_client(monkeypatch) as c:
+            resp = c.get(
+                "/info",
+                headers={"Authorization": f"Bearer {self._GLOBAL_TOKEN}"},
+            )
+        assert resp.status_code == 400, (
+            f"Expected 400 for missing X-Project-Id with per-tenant auth enabled, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body.get("error") == "bad_request"
+        assert "X-Project-Id" in body.get("detail", "")
+
+    def test_empty_project_id_header_returns_400(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Global token + empty X-Project-Id (whitespace only) → 400."""
+        with self._per_tenant_client(monkeypatch) as c:
+            resp = c.get(
+                "/info",
+                headers={
+                    "Authorization": f"Bearer {self._GLOBAL_TOKEN}",
+                    "X-Project-Id": "   ",
+                },
+            )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body.get("error") == "bad_request"
+
+    def test_global_token_not_accepted_as_supertoken(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The global token must NOT bypass per-tenant isolation when
+        X-Project-Id is absent — that is the core security regression
+        fixed by TAP-626."""
+        with self._per_tenant_client(monkeypatch) as c:
+            resp = c.get(
+                "/info",
+                # Correct global token but deliberately omitting X-Project-Id
+                headers={"Authorization": f"Bearer {self._GLOBAL_TOKEN}"},
+            )
+        # Must NOT be 200 — that would mean the global token acted as a supertoken
+        assert resp.status_code != 200, (
+            "SECURITY REGRESSION (TAP-626): global token was accepted without "
+            "X-Project-Id when TAPPS_BRAIN_PER_TENANT_AUTH=1"
+        )
+        assert resp.status_code == 400
+
+    def test_per_tenant_flag_off_global_token_still_works(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When TAPPS_BRAIN_PER_TENANT_AUTH is not set, the global-token path
+        is unchanged — no X-Project-Id required for non-per-tenant deployments."""
+        monkeypatch.delenv("TAPPS_BRAIN_PER_TENANT_AUTH", raising=False)
+        settings = _make_settings(auth_token=self._GLOBAL_TOKEN)
+        with _client(settings) as c:
+            resp = c.get(
+                "/info",
+                headers={"Authorization": f"Bearer {self._GLOBAL_TOKEN}"},
+            )
+        assert resp.status_code == 200, (
+            f"Global token without X-Project-Id should work when per-tenant auth "
+            f"is disabled, got {resp.status_code}: {resp.text}"
+        )
