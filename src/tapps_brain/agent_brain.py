@@ -261,6 +261,11 @@ class AgentBrain:
         except ValueError as exc:
             valid = [t.value for t in MemoryTier]
             raise BrainValidationError(f"Invalid tier {tier!r}: must be one of {valid}") from exc
+        if isinstance(share_with, str) and not share_with.strip():
+            raise BrainValidationError(
+                "share_with must be a non-empty group name or 'hive'"
+            )
+
         key = _content_key(fact)
 
         # Determine agent_scope
@@ -288,6 +293,8 @@ class AgentBrain:
         scope: str = "all",
     ) -> list[dict[str, Any]]:
         """Recall memories matching *query*.  Returns list of result dicts."""
+        if max_results <= 0:
+            raise BrainValidationError("max_results must be a positive integer")
         entries = self._store.search(query)
 
         # Convert MemoryEntry objects to dicts and limit results
