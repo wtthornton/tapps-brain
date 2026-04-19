@@ -232,9 +232,11 @@ class BM25Scorer:
         """Score every indexed document against *query*.
 
         Returns a list of BM25 scores (one per document) in index order.
+        Returns an empty list for an empty corpus and a zero-score list
+        when the corpus has only empty/whitespace-only documents.
         """
         query_terms = self._preprocess_doc(query)
-        if not self._doc_count or not query_terms:
+        if not self._doc_count or self._avgdl == 0.0 or not query_terms:
             return [0.0] * self._doc_count
 
         scores: list[float] = []
@@ -254,7 +256,14 @@ class BM25Scorer:
     # ------------------------------------------------------------------
 
     def _score_doc(self, query_terms: list[str], doc_idx: int) -> float:
-        """BM25 score for a single document."""
+        """BM25 score for a single document.
+
+        Returns 0.0 immediately when the average document length is zero
+        (empty corpus or all-empty documents) to avoid ZeroDivisionError
+        in the length-normalisation term ``b * dl / _avgdl``.
+        """
+        if self._avgdl == 0.0:
+            return 0.0
         dl = self._doc_lens[doc_idx]
         tf_map = self._tf_maps[doc_idx]
 

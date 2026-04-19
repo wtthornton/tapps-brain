@@ -248,3 +248,34 @@ class TestBM25Scorer:
         scorer.build_index(["Use getUserId when authenticating users"])
         scores = scorer.score("user authentication")
         assert scores[0] > 0.0
+
+    # ------------------------------------------------------------------
+    # Edge cases: empty / whitespace-only corpus (TAP-634)
+    # ------------------------------------------------------------------
+
+    def test_single_empty_document_no_exception(self) -> None:
+        """All-empty corpus: _avgdl==0; score() must return zeros, not raise."""
+        scorer = BM25Scorer()
+        scorer.build_index([""])
+        result = scorer.score("foo")
+        assert result == [0.0]
+
+    def test_multiple_empty_documents_no_exception(self) -> None:
+        """Multiple empty docs: _avgdl==0; score() returns zero-list, not raise."""
+        scorer = BM25Scorer()
+        scorer.build_index(["", ""])
+        result = scorer.score("foo")
+        assert result == [0.0, 0.0]
+
+    def test_whitespace_only_documents_no_exception(self) -> None:
+        """Whitespace-only docs tokenise to nothing; _avgdl==0; no exception."""
+        scorer = BM25Scorer()
+        scorer.build_index(["   ", "\t\n"])
+        result = scorer.score("hello")
+        assert result == [0.0, 0.0]
+
+    def test_score_doc_guard_when_avgdl_zero(self) -> None:
+        """_score_doc returns 0.0 directly when _avgdl==0 (internal guard)."""
+        scorer = BM25Scorer()
+        scorer.build_index([""])
+        assert scorer._score_doc(["anything"], 0) == 0.0
