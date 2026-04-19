@@ -541,6 +541,8 @@ def require_data_plane_auth(request: Request) -> None:
 
     When ``TAPPS_BRAIN_PER_TENANT_AUTH=1``:
       * ``X-Project-Id`` header is **required** — 400 when missing or empty.
+      * If no DSN is configured alongside the flag, fails closed with 500
+        (misconfiguration) rather than falling through to the global token.
       * Verifies the bearer token against the project's argon2id hash in
         ``project_profiles.hashed_token``.
       * If the project has **no** per-tenant token configured, falls back to
@@ -560,7 +562,20 @@ def require_data_plane_auth(request: Request) -> None:
     tok = _extract_bearer(request)
 
     # ---- per-tenant path (STORY-070.8) ----
-    if _per_tenant_auth_enabled() and cfg.dsn:
+    if _per_tenant_auth_enabled():
+        # TAP-626: flag on but no DSN is a server misconfiguration — fail closed
+        # rather than silently falling through to the global-token check (which
+        # would reproduce the supertoken bypass this fix is meant to close).
+        if not cfg.dsn:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "server_misconfiguration",
+                    "detail": (
+                        "TAPPS_BRAIN_PER_TENANT_AUTH is enabled but no database DSN is configured."
+                    ),
+                },
+            )
         project_id = (request.headers.get("x-project-id") or "").strip()
         # TAP-626: reject instead of falling through to the global-token check.
         # Allowing the global token when X-Project-Id is absent makes it a
