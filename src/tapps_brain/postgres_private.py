@@ -264,21 +264,38 @@ class PostgresPrivateBackend:
             key=entry.key,
         )
 
-    def load_all(self) -> list[MemoryEntry]:
-        """Load all entries for this ``(project_id, agent_id)`` scope.
+    def load_all(self, *, limit: int | None = None) -> list[MemoryEntry]:
+        """Load entries for this ``(project_id, agent_id)`` scope.
 
         Used by :class:`MemoryStore` on cold-start to populate the in-memory cache.
+        Streams rows in chunks of 1 000 to avoid materialising the full result set
+        at once.  Pass *limit* to apply an early-cutoff after the most-recently-
+        updated entries have been collected (entries are ordered by ``updated_at
+        DESC`` so callers that honour a max-entries cap can stop early instead of
+        loading stale rows that would be evicted anyway).
+
+        Args:
+            limit: Maximum number of entries to return.  ``None`` means no cap.
         """
+        _CHUNK = 1000
+        results: list[MemoryEntry] = []
         with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT * FROM private_memories WHERE project_id = %s AND agent_id = %s",
+                "SELECT * FROM private_memories"
+                " WHERE project_id = %s AND agent_id = %s"
+                " ORDER BY updated_at DESC",
                 (self._project_id, self._agent_id),
             )
-            rows = cur.fetchall()
-            if not rows:
-                return []
             col_names = [desc[0] for desc in cur.description]
-        return [self._row_to_entry(dict(zip(col_names, row, strict=False))) for row in rows]
+            while True:
+                chunk = cur.fetchmany(_CHUNK)
+                if not chunk:
+                    break
+                for row in chunk:
+                    results.append(self._row_to_entry(dict(zip(col_names, row, strict=False))))
+                    if limit is not None and len(results) >= limit:
+                        return results
+        return results
 
     def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""

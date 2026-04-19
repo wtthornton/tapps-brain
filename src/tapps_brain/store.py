@@ -364,9 +364,12 @@ class MemoryStore:
         self._hive_store = hive_store
         self._hive_agent_id = hive_agent_id
 
-        # Cold-start: load all entries into memory
+        # Cold-start: load all entries into memory.
+        # Pass the effective max-entries cap so backends that support early-cutoff
+        # (e.g. PostgresPrivateBackend with ORDER BY updated_at DESC) can stop
+        # streaming once we have the most-recent entries up to the limit.
         self._entries: dict[str, MemoryEntry] = {}
-        for entry in self._persistence.load_all():
+        for entry in self._persistence.load_all(limit=self._max_entries):
             self._entries[entry.key] = entry
 
         # Bloom filter for write-path deduplication (GitHub #31)

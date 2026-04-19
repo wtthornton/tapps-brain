@@ -45,7 +45,11 @@ def _make_mocks(
     Returns ``(cm, conn, cur, _)`` so callers can inspect the cursor directly.
     """
     cur = MagicMock()
-    cur.fetchall.return_value = rows or []
+    # load_all() uses fetchmany() in a loop; simulate with a one-shot batch then
+    # an empty terminator so the loop exits cleanly.
+    _rows = rows or []
+    cur.fetchmany.side_effect = [_rows, []] if _rows else [[]]
+    cur.fetchall.return_value = _rows  # kept for other tests that still use fetchall
     cur.fetchone.return_value = (0,)
     cur.rowcount = 1
     cur.description = [(name,) for name in (col_names or [])]
@@ -328,6 +332,53 @@ class TestLoadAll:
         assert e.value == "my value"
         assert e.confidence == 0.8
         assert "tag1" in e.tags
+
+    def test_load_all_uses_fetchmany_not_fetchall(self) -> None:
+        """Streaming path must use fetchmany(); fetchall() must NOT be called."""
+        backend, cur = _make_backend()
+        backend.load_all()
+        cur.fetchmany.assert_called()
+        cur.fetchall.assert_not_called()
+
+    def test_load_all_sql_has_order_by_updated_at(self) -> None:
+        """Query must include ORDER BY updated_at DESC for recency ordering."""
+        backend, cur = _make_backend()
+        backend.load_all()
+        sql = cur.execute.call_args[0][0]
+        assert "ORDER BY updated_at DESC" in sql
+
+    def test_load_all_limit_stops_early(self) -> None:
+        """When limit=N, at most N entries are returned even if more exist."""
+        col_names = [
+            "project_id", "agent_id", "key", "value", "tier", "confidence",
+            "source", "source_agent", "scope", "agent_scope", "memory_group",
+            "tags", "created_at", "updated_at", "last_accessed", "access_count",
+            "useful_access_count", "total_access_count", "branch", "last_reinforced",
+            "reinforce_count", "contradicted", "contradiction_reason", "seeded_from",
+            "valid_at", "invalid_at", "superseded_by", "valid_from", "valid_until",
+            "source_session_id", "source_channel", "source_message_id", "triggered_by",
+            "stability", "difficulty", "positive_feedback_count", "negative_feedback_count",
+            "integrity_hash", "embedding_model_id", "search_vector", "embedding",
+        ]
+        now = datetime.now(tz=UTC)
+
+        def _row(key: str) -> tuple:  # type: ignore[return]
+            return (
+                "proj-abc", "agent-1", key, f"val-{key}", "pattern", 0.8,
+                "agent", "test-agent", "project", "private", None, [],
+                now, now, now, 1, 0, 0, None, None, 0, False, None, None,
+                None, None, None, "", "", "", "", "", "", 0.0, 0.0, 0.0, 0.0,
+                None, None, None, None,
+            )
+
+        rows = [_row(f"key-{i}") for i in range(5)]
+        backend, cur = _make_backend()
+        # Simulate two fetchmany batches of 3 and 2 rows
+        cur.fetchmany.side_effect = [rows[:3], rows[3:], []]
+        cur.description = [(name,) for name in col_names]
+        entries = backend.load_all(limit=4)
+        # Must stop at 4 even though 5 rows exist
+        assert len(entries) == 4
 
 
 class TestDelete:
