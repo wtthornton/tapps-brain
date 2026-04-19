@@ -330,3 +330,26 @@ class MetricsTimer:
     def __exit__(self, *_: object) -> None:
         elapsed_ms = (time.perf_counter() - self._start) * 1000.0
         self._collector.observe(self._name, elapsed_ms, self._tags)
+
+
+# ---------------------------------------------------------------------------
+# STORY-073.4: Profile-filter metric name constants
+# ---------------------------------------------------------------------------
+
+#: Counter — incremented on every ``tools/list`` call, labelled by profile.
+MCP_TOOLS_LIST_TOTAL = "mcp_tools_list_total"
+
+#: Gauge — last observed visible-tool count per profile after filtering.
+MCP_TOOLS_LIST_VISIBLE_TOOLS = "mcp_tools_list_visible_tools"
+
+#: Counter — tool invocations labelled by profile, tool, and outcome.
+#: ``outcome`` ∈ ``{allowed, denied_profile, error}``.
+MCP_TOOLS_CALL_TOTAL = "mcp_tools_call_total"
+
+#: Counter — profile resolution source per request.
+#: ``source`` ∈ ``{header, agent_registry, default}``.
+MCP_PROFILE_RESOLUTION_SOURCE_TOTAL = "mcp_profile_resolution_source_total"
+
+#: Counter — profile resolver cache events.
+#: ``result`` ∈ ``{hit, miss, invalidated}``.
+MCP_PROFILE_CACHE_EVENTS_TOTAL = "mcp_profile_cache_events_total"

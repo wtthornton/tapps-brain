@@ -28,11 +28,26 @@ Thread-safety
 The filter reads a ``contextvars.ContextVar`` on each request — no shared
 mutable state, no locking required.  The resolved profile is set per-request
 by ``ProfileResolutionMiddleware`` in ``http_adapter.py`` (STORY-073.2).
+
+Observability — STORY-073.4
+----------------------------
+Module-level thread-safe counters are incremented inline:
+
+* ``_MCP_TOOLS_LIST_TOTAL`` — ``{profile: count}`` counter
+* ``_MCP_TOOLS_LIST_VISIBLE_GAUGE`` — ``{profile: visible_count}`` last-seen gauge
+* ``_MCP_TOOLS_CALL_TOTAL`` — ``{(profile, tool, outcome): count}`` counter;
+  ``outcome`` ∈ ``{allowed, denied_profile, error}``
+
+Use :func:`get_profile_filter_metrics_snapshot` to read a frozen copy suitable
+for the ``/metrics`` Prometheus renderer in ``http_adapter.py``.
+
+Use :func:`reset_profile_filter_counters` in tests to clear state between runs.
 """
 
 from __future__ import annotations
 
 import contextvars
+import threading
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -43,6 +58,48 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _DEFAULT_PROFILE = "full"
+
+# ---------------------------------------------------------------------------
+# STORY-073.4: module-level Prometheus counters (no per-agent-id cardinality)
+# ---------------------------------------------------------------------------
+
+_METRICS_LOCK = threading.Lock()
+
+# mcp_tools_list_total{profile}
+_MCP_TOOLS_LIST_TOTAL: dict[str, int] = {}
+# mcp_tools_list_visible_tools{profile} — gauge (last observed value)
+_MCP_TOOLS_LIST_VISIBLE_GAUGE: dict[str, int] = {}
+# mcp_tools_call_total{profile, tool, outcome}
+# key: (profile, tool, outcome) where outcome in {allowed, denied_profile, error}
+_MCP_TOOLS_CALL_TOTAL: dict[tuple[str, str, str], int] = {}
+
+
+def get_profile_filter_metrics_snapshot() -> dict[str, Any]:
+    """Return a frozen copy of the profile-filter counters for ``/metrics``.
+
+    Returns a dict with three keys:
+
+    ``list_total``
+        ``{profile: count}`` — total ``tools/list`` calls per profile.
+    ``list_visible``
+        ``{profile: last_visible_count}`` — last observed tool count returned.
+    ``call_total``
+        ``{(profile, tool, outcome): count}`` — tool invocations by outcome.
+    """
+    with _METRICS_LOCK:
+        return {
+            "list_total": dict(_MCP_TOOLS_LIST_TOTAL),
+            "list_visible": dict(_MCP_TOOLS_LIST_VISIBLE_GAUGE),
+            "call_total": dict(_MCP_TOOLS_CALL_TOTAL),
+        }
+
+
+def reset_profile_filter_counters() -> None:
+    """Clear all profile-filter metric counters.  For use in tests only."""
+    with _METRICS_LOCK:
+        _MCP_TOOLS_LIST_TOTAL.clear()
+        _MCP_TOOLS_LIST_VISIBLE_GAUGE.clear()
+        _MCP_TOOLS_CALL_TOTAL.clear()
 
 
 def install_tool_filter(
@@ -95,6 +152,10 @@ def install_tool_filter(
         profile: str = profile_contextvar.get() or default_profile  # type: ignore[union-attr]
         if profile == default_profile:
             # Fast path: no filtering for the default ("full") profile.
+            visible_count = len(all_tools)
+            with _METRICS_LOCK:
+                _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
             return all_tools
         try:
             allowed: frozenset[str] = profile_registry.get(profile)
@@ -105,8 +166,16 @@ def install_tool_filter(
                 profile=profile,
                 action="fail_open",
             )
+            visible_count = len(all_tools)
+            with _METRICS_LOCK:
+                _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
             return all_tools
-        return [t for t in all_tools if t.name in allowed]
+        filtered = [t for t in all_tools if t.name in allowed]
+        with _METRICS_LOCK:
+            _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+            _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
+        return filtered
 
     # ------------------------------------------------------------------
     # Wrap call_tool
@@ -132,6 +201,9 @@ def install_tool_filter(
                     profile=profile,
                     action="fail_open",
                 )
+                with _METRICS_LOCK:
+                    key = (profile, name, "error")
+                    _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
             else:
                 if name not in allowed:
                     # Lazy imports: keep the ``mcp`` package optional at
@@ -140,11 +212,31 @@ def install_tool_filter(
                     from mcp.shared.exceptions import McpError
                     from mcp.types import METHOD_NOT_FOUND, ErrorData
 
-                    logger.info(
+                    # STORY-073.4: WARN log with structured fields for alerting.
+                    # Read agent_id / project_id from contextvars (best-effort;
+                    # None when not running under the HTTP adapter).
+                    try:
+                        from tapps_brain.mcp_server import (
+                            REQUEST_AGENT_ID,
+                            REQUEST_PROJECT_ID,
+                        )
+                        _agent_id = REQUEST_AGENT_ID.get()
+                        _project_id = REQUEST_PROJECT_ID.get()
+                    except Exception:
+                        _agent_id = None
+                        _project_id = None
+
+                    logger.warning(
                         "tool_filter.call_tool.denied",
                         tool=name,
                         profile=profile,
+                        agent_id=_agent_id,
+                        project_id=_project_id,
+                        request_id=None,
                     )
+                    with _METRICS_LOCK:
+                        key = (profile, name, "denied_profile")
+                        _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
                     raise McpError(
                         ErrorData(
                             code=METHOD_NOT_FOUND,
@@ -156,6 +248,16 @@ def install_tool_filter(
                             },
                         )
                     )
+                else:
+                    with _METRICS_LOCK:
+                        key = (profile, name, "allowed")
+                        _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+        else:
+            # Fast path: full profile — count as allowed without tool-name label
+            # to keep cardinality bounded (no per-tool explosion on full profile).
+            with _METRICS_LOCK:
+                key = (profile, "", "allowed")
+                _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
         return await _orig_call_tool(name, arguments, **kwargs)
 
     # Install wrappers on the tool manager instance (not the class) so only

@@ -302,3 +302,77 @@ class TestRequestProfileContextvar:
         finally:
             _mcp_mod.REQUEST_PROFILE.reset(token)
         assert _mcp_mod.REQUEST_PROFILE.get() is None
+
+
+# ---------------------------------------------------------------------------
+# STORY-073.4: resolution_stats() and updated cache_stats() with invalidations
+# ---------------------------------------------------------------------------
+
+
+class TestResolutionStats:
+    """Verify resolution_stats() tracks per-source counts."""
+
+    def test_header_resolution_counted(self) -> None:
+        resolver = _make_resolver()
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile="coder")
+        stats = resolver.resolution_stats()
+        assert stats.get("header", 0) == 1
+
+    def test_default_resolution_counted(self) -> None:
+        resolver = _make_resolver(default_profile="full")
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        stats = resolver.resolution_stats()
+        assert stats.get("default", 0) == 1
+
+    def test_agent_registry_resolution_counted(self) -> None:
+        getter = MagicMock(return_value="reviewer")
+        resolver = _make_resolver(getter=getter)
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        stats = resolver.resolution_stats()
+        assert stats.get("agent_registry", 0) == 1
+
+    def test_multiple_sources_accumulate(self) -> None:
+        getter = MagicMock(return_value=None)
+        resolver = _make_resolver(getter=getter, default_profile="full")
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile="coder")
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        stats = resolver.resolution_stats()
+        assert stats.get("header", 0) == 1
+        assert stats.get("default", 0) == 2
+
+    def test_resolution_stats_returns_copy(self) -> None:
+        """Mutating the returned dict must not affect internal state."""
+        resolver = _make_resolver()
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile="coder")
+        stats = resolver.resolution_stats()
+        stats["header"] = 999
+        # Internal state should be unchanged
+        assert resolver.resolution_stats().get("header", 0) == 1
+
+
+class TestCacheStatsWithInvalidations:
+    """Verify cache_stats() now includes invalidated count (STORY-073.4)."""
+
+    def test_cache_stats_includes_invalidated_key(self) -> None:
+        resolver = _make_resolver()
+        stats = resolver.cache_stats()
+        assert "invalidated" in stats
+
+    def test_invalidation_increments_counter(self) -> None:
+        resolver = _make_resolver()
+        resolver.invalidate("proj1", "agent1")
+        resolver.invalidate("proj1", "agent2")
+        stats = resolver.cache_stats()
+        assert stats["invalidated"] == 2
+
+    def test_cache_hit_miss_still_tracked(self) -> None:
+        getter = MagicMock(return_value="coder")
+        resolver = _make_resolver(getter=getter, cache_ttl=60.0)
+        # First call — cache miss
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        # Second call — cache hit
+        resolver.resolve(project_id="p1", agent_id="a1", header_profile=None)
+        stats = resolver.cache_stats()
+        assert stats["misses"] == 1
+        assert stats["hits"] == 1

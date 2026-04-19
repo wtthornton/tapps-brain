@@ -84,6 +84,10 @@ class ProfileResolver:
         self._lock = threading.Lock()
         self._cache_hits = 0
         self._cache_misses = 0
+        # STORY-073.4: resolution-source counters (source ∈ {header, agent_registry, default})
+        self._resolution_source_counts: dict[str, int] = {}
+        # STORY-073.4: invalidation counter (for mcp_profile_cache_events_total{invalidated})
+        self._cache_invalidations = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -114,15 +118,27 @@ class ProfileResolver:
         """
         # 1. Header override — highest precedence, zero overhead.
         if header_profile is not None:
+            with self._lock:
+                self._resolution_source_counts["header"] = (
+                    self._resolution_source_counts.get("header", 0) + 1
+                )
             return header_profile
 
         # 2. Agent-registry lookup (cached).
         if self._getter is not None:
             registered = self._lookup_cached(project_id, agent_id)
             if registered:
+                with self._lock:
+                    self._resolution_source_counts["agent_registry"] = (
+                        self._resolution_source_counts.get("agent_registry", 0) + 1
+                    )
                 return registered
 
         # 3. Server-level default.
+        with self._lock:
+            self._resolution_source_counts["default"] = (
+                self._resolution_source_counts.get("default", 0) + 1
+            )
         return self._default
 
     def invalidate(self, project_id: str, agent_id: str) -> None:
@@ -133,25 +149,42 @@ class ProfileResolver:
         """
         with self._lock:
             self._cache.pop((project_id, agent_id), None)
+            self._cache_invalidations += 1
 
     def cache_stats(self) -> dict[str, int | float]:
-        """Return hit/miss counters and derived hit-rate.
+        """Return hit/miss/invalidation counters and derived hit-rate.
 
-        Used by STORY-073.4 to expose the cache hit rate on ``/metrics``.
+        Used by STORY-073.4 to expose the cache metrics on ``/metrics``.
 
         Returns
         -------
-        dict with keys ``hits``, ``misses``, ``hit_rate``.
+        dict with keys ``hits``, ``misses``, ``invalidated``, ``hit_rate``.
         """
         with self._lock:
             hits = self._cache_hits
             misses = self._cache_misses
+            invalidated = self._cache_invalidations
         total = hits + misses
         return {
             "hits": hits,
             "misses": misses,
+            "invalidated": invalidated,
             "hit_rate": hits / total if total > 0 else 0.0,
         }
+
+    def resolution_stats(self) -> dict[str, int]:
+        """Return resolution-source counters.
+
+        Used by STORY-073.4 to expose ``mcp_profile_resolution_source_total``
+        on ``/metrics``.
+
+        Returns
+        -------
+        dict mapping source names (``header``, ``agent_registry``, ``default``)
+        to their cumulative call counts.
+        """
+        with self._lock:
+            return dict(self._resolution_source_counts)
 
     # ------------------------------------------------------------------
     # Internal helpers

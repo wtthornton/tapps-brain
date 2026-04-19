@@ -21,7 +21,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from tapps_brain.mcp_server.profile_registry import ProfileRegistry, UnknownProfileError
-from tapps_brain.mcp_server.tool_filter import _DEFAULT_PROFILE, install_tool_filter
+from tapps_brain.mcp_server.tool_filter import (
+    _DEFAULT_PROFILE,
+    get_profile_filter_metrics_snapshot,
+    install_tool_filter,
+    reset_profile_filter_counters,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures
@@ -391,3 +396,173 @@ class TestDefaultProfile:
     def test_default_profile_constant(self) -> None:
         """_DEFAULT_PROFILE must be 'full'."""
         assert _DEFAULT_PROFILE == "full"
+
+
+# ---------------------------------------------------------------------------
+# STORY-073.4: observability — metric counter tests
+# ---------------------------------------------------------------------------
+
+
+class TestProfileFilterMetrics:
+    """Tests for module-level counter increments (STORY-073.4)."""
+
+    def setup_method(self) -> None:
+        """Reset counters before each test to avoid cross-test pollution."""
+        reset_profile_filter_counters()
+
+    # ------------------------------------------------------------------
+    # list_tools counters
+    # ------------------------------------------------------------------
+
+    def test_list_tools_full_profile_increments_list_total(self) -> None:
+        """tools/list with full profile increments mcp_tools_list_total."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics1", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        mcp._tool_manager.list_tools()
+
+        snap = get_profile_filter_metrics_snapshot()
+        assert snap["list_total"].get("full", 0) == 1
+        assert snap["list_visible"].get("full", 0) == len(ALL_TOOLS)
+
+    def test_list_tools_restricted_profile_increments_list_total(self) -> None:
+        """tools/list with coder profile increments list_total with visible subset."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics2", default=None
+        )
+        cv.set("coder")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        mcp._tool_manager.list_tools()
+
+        snap = get_profile_filter_metrics_snapshot()
+        assert snap["list_total"].get("coder", 0) == 1
+        assert snap["list_visible"].get("coder", 0) == len(CODER_TOOLS)
+
+    def test_list_tools_accumulates_across_calls(self) -> None:
+        """Multiple tools/list calls accumulate in list_total counter."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics3", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        mcp._tool_manager.list_tools()
+        mcp._tool_manager.list_tools()
+        mcp._tool_manager.list_tools()
+
+        snap = get_profile_filter_metrics_snapshot()
+        assert snap["list_total"].get("full", 0) == 3
+
+    # ------------------------------------------------------------------
+    # call_tool counters
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_allowed_call_increments_allowed_counter(self) -> None:
+        """Allowed tool call increments mcp_tools_call_total with outcome=allowed."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics4", default=None
+        )
+        cv.set("coder")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        await mcp._tool_manager.call_tool("brain_recall", {})
+
+        snap = get_profile_filter_metrics_snapshot()
+        call_total = snap["call_total"]
+        assert call_total.get(("coder", "brain_recall", "allowed"), 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_denied_call_increments_denied_profile_counter(self) -> None:
+        """Denied tool call increments mcp_tools_call_total with outcome=denied_profile."""
+        try:
+            from mcp.shared.exceptions import McpError
+        except ImportError:
+            pytest.skip("mcp package not installed")
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics5", default=None
+        )
+        cv.set("coder")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        with pytest.raises(McpError):
+            await mcp._tool_manager.call_tool("memory_delete", {})
+
+        snap = get_profile_filter_metrics_snapshot()
+        call_total = snap["call_total"]
+        assert call_total.get(("coder", "memory_delete", "denied_profile"), 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_full_profile_call_increments_allowed_counter(self) -> None:
+        """Full-profile call increments allowed counter with empty tool label (fast path)."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics6", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        await mcp._tool_manager.call_tool("memory_delete", {})
+
+        snap = get_profile_filter_metrics_snapshot()
+        call_total = snap["call_total"]
+        assert call_total.get(("full", "", "allowed"), 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_unknown_profile_call_increments_error_counter(self) -> None:
+        """Unknown profile fail-open increments error counter."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics7", default=None
+        )
+        cv.set("nonexistent_profile")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        await mcp._tool_manager.call_tool("memory_delete", {})
+
+        snap = get_profile_filter_metrics_snapshot()
+        call_total = snap["call_total"]
+        assert call_total.get(("nonexistent_profile", "memory_delete", "error"), 0) == 1
+
+    # ------------------------------------------------------------------
+    # reset helper
+    # ------------------------------------------------------------------
+
+    def test_reset_clears_all_counters(self) -> None:
+        """reset_profile_filter_counters clears list_total, list_visible, call_total."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_profile_metrics8", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+        mcp._tool_manager.list_tools()
+
+        snap_before = get_profile_filter_metrics_snapshot()
+        assert snap_before["list_total"].get("full", 0) > 0
+
+        reset_profile_filter_counters()
+
+        snap_after = get_profile_filter_metrics_snapshot()
+        assert snap_after["list_total"] == {}
+        assert snap_after["list_visible"] == {}
+        assert snap_after["call_total"] == {}
