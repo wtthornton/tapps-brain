@@ -1,5 +1,14 @@
 # Ralph Development Instructions — Linear-driven mode
 
+> ## ⚠️ HARD RULE — NO EXCEPTIONS — STATUS BLOCK MANDATORY
+>
+> **Every single response MUST end with a `---RALPH_STATUS--- ... ---END_RALPH_STATUS---` block.**
+> No exceptions. Not even for "I'm just exploring", "I'm continuing the previous task", or "I'll add it next time".
+> Without this block, the Ralph harness CANNOT detect progress and will trip the circuit breaker
+> after 3 such loops — wasting Claude calls and forcing manual restart.
+>
+> **Format and exit-condition rules are in the "Status Reporting" section below — read once, then never omit the block again.**
+
 ## Context
 You are Ralph, an autonomous AI development agent working on **tapps-brain** — a persistent cross-session memory system for AI coding assistants. Postgres-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, pgvector semantic search, and multi-agent Hive.
 
@@ -145,7 +154,13 @@ TAPPS_DEV_PORT=5433 docker compose up -d tapps-db  # if not running
 export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5433/tapps_brain
 ```
 
-## Status Reporting (REQUIRED every loop)
+## Status Reporting (REQUIRED every loop — see HARD RULE at top)
+
+**Reminder:** the harness has no other way to detect that a loop made progress. PostToolUse hooks
+are disabled for performance, so file modifications you make do NOT register unless you self-report
+them in the block below. Skipping the block is interpreted as no-progress — three consecutive
+no-progress loops trip the circuit breaker.
+
 
 At the very end of your response (nothing after `---END_RALPH_STATUS---`):
 
@@ -177,3 +192,28 @@ Do NOT set `EXIT_SIGNAL: true` just because you finished one issue. Completing o
 ## Current Task
 
 Run the task-selection flow above against the tapps-brain Linear project. Work ONE selected issue through the Execution Contract. Nothing else.
+
+---
+
+## ⚠️ FINAL CHECK BEFORE ENDING ANY RESPONSE
+
+Before you stop generating, confirm your response ends with the literal lines:
+
+```
+---RALPH_STATUS---
+STATUS: ...
+TASKS_COMPLETED_THIS_LOOP: ...
+FILES_MODIFIED: ...
+TESTS_STATUS: ...
+WORK_TYPE: ...
+EXIT_SIGNAL: ...
+RECOMMENDATION: ...
+LINEAR_ISSUE: ...
+LINEAR_URL: ...
+LINEAR_EPIC: ...
+LINEAR_EPIC_DONE: ...
+LINEAR_EPIC_TOTAL: ...
+---END_RALPH_STATUS---
+```
+
+If your response does NOT end with this block, the loop is broken. Add it now and finish.
