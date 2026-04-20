@@ -893,9 +893,7 @@ class TestIdempotencyRaceFixed:
         def check_side_effect(project_id: str, key: str) -> tuple[int, dict[str, Any]] | None:
             return cache.get((project_id, key))
 
-        def save_side_effect(
-            project_id: str, key: str, status: int, body: dict[str, Any]
-        ) -> None:
+        def save_side_effect(project_id: str, key: str, status: int, body: dict[str, Any]) -> None:
             cache[(project_id, key)] = (status, body)
 
         N = 8

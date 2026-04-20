@@ -285,7 +285,7 @@ def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
         from opentelemetry import trace  # lazy — API is a core dep but guard anyway
 
         return trace.get_tracer(cfg.service_name)
-    except Exception:  # noqa: BLE001 — OTel import/init errors must not crash callers; returns None tracer
+    except Exception:
         return None  # pragma: no cover
 
 
@@ -439,7 +439,7 @@ class MemoryBodyRedactionFilter(logging.Filter):
         """Redact inline forbidden-key patterns in the formatted message."""
         try:
             msg = record.getMessage()
-        except Exception:  # noqa: BLE001 — log record getMessage() can raise; silently skip redaction
+        except Exception:
             return
 
         def _replace(m: re.Match[str]) -> str:
@@ -519,7 +519,7 @@ def create_allowed_attribute_views() -> list[Any]:
                 attribute_keys=set(ALLOWED_METRIC_DIMENSIONS),
             )
         ]
-    except Exception:  # noqa: BLE001 — OTel SDK internal changes must not crash callers; returns empty view list
+    except Exception:
         return []
 
 
@@ -631,7 +631,7 @@ class OTelExporter:
                     udc.add(delta_g)
                 self._last_gauge_values[name] = current
 
-        except Exception:  # noqa: BLE001  # nosec B110 — OTel SDK export failures must not propagate; silent by design (logging would recurse)
+        except Exception:  # nosec B110 — OTel SDK export failures must not propagate; silent by design (logging would recurse)
             pass
 
 
@@ -746,7 +746,7 @@ class GenAIMetricsRecorder:
                 description="Number of tokens processed in GenAI operations",
                 unit="{token}",
             )
-        except Exception:  # noqa: BLE001  # nosec B110 — OTel SDK instrument-create errors must not propagate; silent by design
+        except Exception:  # nosec B110 — OTel SDK instrument-create errors must not propagate; silent by design
             pass
 
     def record_gen_ai_operation(

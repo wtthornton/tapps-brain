@@ -102,7 +102,7 @@ def reset_profile_filter_counters() -> None:
         _MCP_TOOLS_CALL_TOTAL.clear()
 
 
-def install_tool_filter(
+def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools + call_tool hooks
     mcp: Any,
     *,
     profile_registry: ProfileRegistry,
@@ -148,8 +148,8 @@ def install_tool_filter(
 
     def _filtered_list_tools() -> list[Any]:
         """Return tool list filtered to the caller's active profile."""
-        all_tools = _orig_list_tools()
-        profile: str = profile_contextvar.get() or default_profile  # type: ignore[union-attr]
+        all_tools: list[Any] = list(_orig_list_tools())
+        profile: str = profile_contextvar.get() or default_profile
         if profile == default_profile:
             # Fast path: no filtering for the default ("full") profile.
             visible_count = len(all_tools)
@@ -159,7 +159,7 @@ def install_tool_filter(
             return all_tools
         try:
             allowed: frozenset[str] = profile_registry.get(profile)
-        except Exception:  # noqa: BLE001 — profile registry lookup failure; fail open returning full tool list
+        except Exception:
             # Unknown profile — fail open for list_tools; return full list.
             logger.warning(
                 "tool_filter.list_tools.unknown_profile",
@@ -189,11 +189,11 @@ def install_tool_filter(
         fails open (allows the call) to avoid denying legitimate operators who
         may have a profile that the server hasn't reloaded yet.
         """
-        profile: str = profile_contextvar.get() or default_profile  # type: ignore[union-attr]
+        profile: str = profile_contextvar.get() or default_profile
         if profile != default_profile:
             try:
                 allowed = profile_registry.get(profile)
-            except Exception:  # noqa: BLE001 — profile registry lookup failure; fail open allowing tool call
+            except Exception:
                 # Unknown profile — fail open for call_tool.
                 logger.warning(
                     "tool_filter.call_tool.unknown_profile",
@@ -220,9 +220,10 @@ def install_tool_filter(
                             REQUEST_AGENT_ID,
                             REQUEST_PROJECT_ID,
                         )
+
                         _agent_id = REQUEST_AGENT_ID.get()
                         _project_id = REQUEST_PROJECT_ID.get()
-                    except Exception:  # noqa: BLE001 — context-var access can fail in some test/thread contexts; proceed with None
+                    except Exception:
                         _agent_id = None
                         _project_id = None
 

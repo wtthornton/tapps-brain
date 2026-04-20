@@ -293,7 +293,7 @@ def import_memories(
     for raw_entry in memory_dicts:
         try:
             entry = MemoryEntry.model_validate(raw_entry)
-        except Exception as exc:  # noqa: BLE001 — Pydantic validation raises various errors on bad import data; skip and count
+        except Exception as exc:
             errors += 1
             logger.warning("memory_import_entry_invalid", entry=raw_entry, error=str(exc))
             continue

@@ -50,13 +50,9 @@ def _make_judge(action: str, target: str | None = None, reasoning: str = "") -> 
     """Return a mock LLMJudge that returns the given write-decision payload."""
     import json
 
-    payload = json.dumps(
-        {"action": action, "target_key": target, "reasoning": reasoning}
-    )
+    payload = json.dumps({"action": action, "target_key": target, "reasoning": reasoning})
     judge = MagicMock()
-    judge.judge_relevance.return_value = JudgeResult(
-        score=1.0, reasoning=payload, confident=True
-    )
+    judge.judge_relevance.return_value = JudgeResult(score=1.0, reasoning=payload, confident=True)
     return judge
 
 

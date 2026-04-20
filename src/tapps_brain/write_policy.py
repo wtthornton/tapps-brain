@@ -178,7 +178,7 @@ class LLMWritePolicy:
         top_candidates = candidates[: self._candidates_limit]
         try:
             return self._call_llm(key, value, top_candidates)
-        except Exception:  # noqa: BLE001 — LLM judge raises heterogeneous errors (network, auth, model); fallback to ADD
+        except Exception:
             logger.warning(
                 "write_policy.llm.error",
                 key=key,
@@ -197,24 +197,22 @@ class LLMWritePolicy:
     ) -> str:
         """Build the LLM prompt for a write-path decision."""
         cand_lines = "\n".join(
-            f"  [{i+1}] key={c.key!r} value={c.value!r}"
-            for i, c in enumerate(candidates)
+            f"  [{i + 1}] key={c.key!r} value={c.value!r}" for i, c in enumerate(candidates)
         )
         if not cand_lines:
             cand_lines = "  (none)"
         header = (
-            "You are a memory-management assistant. "
-            "Decide the best action for a new memory entry."
+            "You are a memory-management assistant. Decide the best action for a new memory entry."
         )
         return (
             f"{header}\n\n"
             f"New entry:\n  key={key!r}\n  value={value!r}\n\n"
             f"Existing similar entries:\n{cand_lines}\n\n"
             "Choose one action:\n"
-            '  ADD    — the new entry contains information not already present.\n'
-            '  UPDATE — the new entry replaces an existing one (set target_key).\n'
-            '  DELETE — an existing entry is wrong; remove it (set target_key).\n'
-            '  NOOP   — the new entry is already captured; skip the write.\n\n'
+            "  ADD    — the new entry contains information not already present.\n"
+            "  UPDATE — the new entry replaces an existing one (set target_key).\n"
+            "  DELETE — an existing entry is wrong; remove it (set target_key).\n"
+            "  NOOP   — the new entry is already captured; skip the write.\n\n"
             "Respond with JSON only (no markdown fences):\n"
             '{"action": "ADD|UPDATE|DELETE|NOOP", "target_key": null_or_string, '
             '"reasoning": "brief explanation"}'

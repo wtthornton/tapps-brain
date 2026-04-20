@@ -83,7 +83,7 @@ def find_last_consolidation_merge_audit(
                 event_type="consolidation_merge",
                 limit=1000,
             )
-        except Exception:  # noqa: BLE001 — merge history query is best-effort; failure treated as no prior merges
+        except Exception:
             rows = []
         if rows:
             last_row = rows[-1]
@@ -240,14 +240,14 @@ def undo_consolidation_merge(  # noqa: PLR0911
             if not deleted:
                 msg = "consolidated_row_delete_failed"
                 raise RuntimeError(msg)
-        except Exception:  # noqa: BLE001 — undo must restore in-memory state regardless of exception type; re-raises after rollback
+        except Exception:
             store._entries[consolidated_key] = backup_consolidated
             for sk, old in backup_sources.items():
                 store._entries[sk] = old
             try:
                 for _sk, old in backup_sources.items():
                     store._persistence.save(old)
-            except Exception:  # noqa: BLE001 — rollback persistence is best-effort; in-memory state already restored
+            except Exception:
                 logger.warning("undo_consolidation_merge_rollback_failed", exc_info=True)
             raise
 

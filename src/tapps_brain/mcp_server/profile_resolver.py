@@ -74,10 +74,7 @@ class ProfileResolver:
     ) -> None:
         self._registry = registry
         self._getter = agent_profile_getter
-        self._default = (
-            default_profile
-            or os.environ.get("TAPPS_BRAIN_DEFAULT_PROFILE", "full")
-        )
+        self._default = default_profile or os.environ.get("TAPPS_BRAIN_DEFAULT_PROFILE", "full")
         self._cache_ttl = cache_ttl
         # (project_id, agent_id) -> (profile | None, expires_monotonic)
         self._cache: dict[tuple[str, str], tuple[str | None, float]] = {}

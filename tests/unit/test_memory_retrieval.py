@@ -1001,9 +1001,7 @@ class TestScoringCorrectnessReview:
 class TestGraphCentrality:
     """Unit tests for MemoryRetriever._compute_graph_centrality (TAP-734)."""
 
-    def _make_entity_index(
-        self, mapping: dict[str, list[str]]
-    ) -> dict[str, set[str]]:
+    def _make_entity_index(self, mapping: dict[str, list[str]]) -> dict[str, set[str]]:
         """Build entity_index fixture: token → set of keys."""
         return {token: set(keys) for token, keys in mapping.items()}
 

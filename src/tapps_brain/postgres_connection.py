@@ -189,7 +189,7 @@ class PostgresConnectionManager:
         # set TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 to acknowledge the risk.
         try:
             self._assert_non_privileged_role()
-        except Exception:  # noqa: BLE001 — close the pool on any privileged-role error then re-raise; must not swallow
+        except Exception:
             self._pool.close()
             self._pool = None
             raise

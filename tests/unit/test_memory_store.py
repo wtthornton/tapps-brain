@@ -1695,8 +1695,6 @@ class TestSaveFailureRollback:
             assert isinstance(result, MemoryEntry)
             assert s.get("hive-fail-key") is not None
             # Bloom filter must contain the value (private save committed)
-            assert s._bloom.might_contain(
-                normalize_for_dedup("stored locally even if hive fails")
-            )
+            assert s._bloom.might_contain(normalize_for_dedup("stored locally even if hive fails"))
         finally:
             s.close()

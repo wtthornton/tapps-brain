@@ -326,8 +326,12 @@ class TestF1BenchmarkEmbeddingVsText:
         assert len(emb_only_pairs) == 2, "Expected 2 embedding-only positive pairs"
 
         for pair in emb_only_pairs:
-            text_pred = _classify_pair(pair.entry_a, pair.entry_b, self.THRESHOLD, use_embeddings=False)
-            emb_pred = _classify_pair(pair.entry_a, pair.entry_b, self.THRESHOLD, use_embeddings=True)
+            text_pred = _classify_pair(
+                pair.entry_a, pair.entry_b, self.THRESHOLD, use_embeddings=False
+            )
+            emb_pred = _classify_pair(
+                pair.entry_a, pair.entry_b, self.THRESHOLD, use_embeddings=True
+            )
             assert emb_pred is True, (
                 f"Embedding path should identify {pair.entry_a.key} ↔ {pair.entry_b.key} as positive"
             )
@@ -377,7 +381,9 @@ class TestFindSimilarRoutesEmbeddings:
         results_text = find_similar(entry, [candidate], threshold=0.7, use_embeddings=False)
         results_emb = find_similar(entry, [candidate], threshold=0.7, use_embeddings=True)
         # Text path should score lower (different tokens).
-        assert len(results_text) == 0 or results_text[0].combined_score < results_emb[0].combined_score
+        assert (
+            len(results_text) == 0 or results_text[0].combined_score < results_emb[0].combined_score
+        )
 
     def test_find_consolidation_groups_uses_embeddings(self) -> None:
         """find_consolidation_groups with use_embeddings=True forms groups via embeddings."""

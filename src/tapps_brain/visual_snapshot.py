@@ -358,7 +358,7 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
             )
         finally:
             hive.close()
-    except Exception:  # noqa: BLE001 — hive health probe is best-effort; failure returns degraded status
+    except Exception:
         return HiveHealthSummary(connected=False, status="warn")
 
 
@@ -414,7 +414,7 @@ def _collect_agent_registry(
                 )
             )
         return result
-    except Exception:  # noqa: BLE001 — agent list probe is best-effort; failure returns empty list
+    except Exception:
         return []
 
 
@@ -851,7 +851,7 @@ def _collect_velocity(store: MemoryStore) -> MemoryVelocity:
             recalls_1h=int(row[2] or 0),
             recalls_24h=int(row[3] or 0),
         )
-    except Exception:  # noqa: BLE001 — memory velocity snapshot is best-effort; failure returns empty metrics
+    except Exception:
         return MemoryVelocity()
 
 
@@ -872,7 +872,7 @@ def _collect_retrieval_metrics() -> RetrievalMetrics:
             rrf_fusions=int(snap.get("rrf_fusions", 0)),
             mean_latency_ms=float(snap.get("mean_latency_ms", 0.0)),
         )
-    except Exception:  # noqa: BLE001 — retrieval metrics snapshot is best-effort; failure returns empty metrics
+    except Exception:
         return RetrievalMetrics()
 
 
@@ -939,7 +939,7 @@ def build_visual_snapshot(
                 agent_registry = _collect_agent_registry(_hive_for_agents, privacy=privacy)
             finally:
                 _hive_for_agents.close()
-    except Exception:  # noqa: BLE001  # nosec B110 — hive agent registry unavailable; snapshot continues without it
+    except Exception:  # nosec B110 — hive agent registry unavailable; snapshot continues without it
         pass
 
     # STORY-069.7: include recent diagnostics history + feedback events with
@@ -952,7 +952,7 @@ def build_visual_snapshot(
             if "project_id" not in _row:
                 _row["project_id"] = getattr(store, "_project_id", None)
             diagnostics_history.append(_row)
-    except Exception:  # noqa: BLE001 — diagnostics history snapshot is best-effort; failure returns empty list
+    except Exception:
         diagnostics_history = []
 
     feedback_events: list[dict[str, Any]] = []
@@ -964,7 +964,7 @@ def build_visual_snapshot(
             # rows so /snapshot?project=<id> can safely exclude them.
             _dump.setdefault("project_id", None)
             feedback_events.append(_dump)
-    except Exception:  # noqa: BLE001 — feedback events snapshot is best-effort; failure returns empty list
+    except Exception:
         feedback_events = []
 
     scorecard = _build_scorecard(

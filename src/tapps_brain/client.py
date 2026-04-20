@@ -255,7 +255,7 @@ def _post_tool(
             )
             if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
                 _hint = float(body.get("retry_after") or 0.0)
-                _base = _hint if _hint > 0.0 else min(2.0 ** attempt, 30.0)
+                _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
                 time.sleep(_base * random.uniform(0.8, 1.2))
                 last_exc = exc
                 continue
@@ -309,7 +309,7 @@ async def _async_post_tool(
             )
             if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
                 _hint = float(body.get("retry_after") or 0.0)
-                _base = _hint if _hint > 0.0 else min(2.0 ** attempt, 30.0)
+                _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
                 await asyncio.sleep(_base * random.uniform(0.8, 1.2))
                 last_exc = exc
                 continue

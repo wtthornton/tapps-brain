@@ -179,7 +179,9 @@ class MemoryRetriever:
             self._w_confidence = getattr(scoring_config, "confidence", _W_CONFIDENCE)
             self._w_recency = getattr(scoring_config, "recency", _W_RECENCY)
             self._w_frequency = getattr(scoring_config, "frequency", _W_FREQUENCY)
-            self._frequency_cap = max(float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP)), 1.0)
+            self._frequency_cap = max(
+                float(getattr(scoring_config, "frequency_cap", _FREQUENCY_CAP)), 1.0
+            )
             self._w_graph = float(getattr(scoring_config, "graph_centrality", 0.0))
             self._w_provenance = float(getattr(scoring_config, "provenance_trust", 0.0))
             raw_trust = getattr(scoring_config, "source_trust", None)
@@ -349,9 +351,11 @@ class MemoryRetriever:
             frequency = self._frequency_score(entry)
 
             # Graph centrality: degree centrality via entity co-occurrence (TAP-734).
-            graph_centrality = self._compute_graph_centrality(
-                entry, _entity_index, _entity_total
-            ) if self._w_graph > 0.0 else 0.0
+            graph_centrality = (
+                self._compute_graph_centrality(entry, _entity_index, _entity_total)
+                if self._w_graph > 0.0
+                else 0.0
+            )
 
             # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
             source_key_pt = (
@@ -426,7 +430,7 @@ class MemoryRetriever:
 
         try:
             reranked = self._reranker.rerank(query, candidates, top_k=effective_top_k)
-        except Exception as e:  # noqa: BLE001 — reranker providers raise heterogeneous errors; fall back to original ranking
+        except Exception as e:
             latency_ms = round((time.perf_counter() - t0) * 1000, 3)
             self.last_rerank_stats = {
                 "applied": False,
@@ -557,7 +561,7 @@ class MemoryRetriever:
                     terms_added=len(expanded_terms),
                 )
                 return expanded_query
-        except Exception:  # noqa: BLE001 — relation expansion is best-effort; failure returns original query
+        except Exception:
             logger.warning("relation_expansion_failed", query=query, exc_info=True)
 
         return query
@@ -622,7 +626,7 @@ class MemoryRetriever:
                 results = self._bm25_score_entries(query, fts_results, store)
                 rm_add_bm25_candidates(len(results))
                 return results
-        except Exception:  # noqa: BLE001 — FTS search is best-effort; failure falls back to BM25 full scan
+        except Exception:
             logger.warning("fts5_search_failed", query=query, exc_info=True)
 
         # Fallback: full corpus BM25 scan
@@ -757,7 +761,7 @@ class MemoryRetriever:
 
         try:
             q = embedder.embed(query)
-        except Exception as e:  # noqa: BLE001 — embedding providers raise heterogeneous errors; vector search degrades to BM25
+        except Exception as e:
             logger.warning("vector_search_embed_failed", error=str(e), exc_info=True)
             return empty
         if not q:
@@ -786,7 +790,7 @@ class MemoryRetriever:
         texts = [self._entry_to_document(e) for e in all_entries]
         try:
             entry_embs = embedder.embed_batch(texts)
-        except Exception as e:  # noqa: BLE001 — embedding providers raise heterogeneous errors; vector search degrades to BM25
+        except Exception as e:
             logger.warning("vector_search_embed_failed_batch", error=str(e), exc_info=True)
             return empty
 
@@ -834,7 +838,7 @@ class MemoryRetriever:
                     # Entry not in index (new entry?), use word overlap
                     results.append((entry, self._word_overlap_score(query, entry)))
             return results
-        except Exception:  # noqa: BLE001 — BM25 scoring is best-effort; failure falls back to word-overlap scoring
+        except Exception:
             logger.warning("bm25_scoring_failed_using_word_overlap", query=query, exc_info=True)
             return [(entry, self._word_overlap_score(query, entry)) for entry in entries]
 
@@ -861,7 +865,7 @@ class MemoryRetriever:
                 for entry, score in zip(all_entries, scores, strict=True)
                 if score > 0
             ]
-        except Exception:  # noqa: BLE001 — BM25 full scan is best-effort; failure falls back to like-search
+        except Exception:
             logger.warning("bm25_full_scan_failed_using_word_overlap", query=query, exc_info=True)
             return self._like_search(query, store, memory_group=memory_group)
 

@@ -696,7 +696,7 @@ class AnthropicJudge:
             raise FeatureNotAvailable(
                 "anthropic package is not installed; install optional extra or `pip install anthropic`"
             )
-        import anthropic  # type: ignore[import-not-found]
+        import anthropic
 
         self._client = anthropic.Anthropic()
         self._model = model

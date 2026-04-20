@@ -37,7 +37,9 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "profile_tool_sets"
-_MCP_INIT = Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server" / "__init__.py"
+_MCP_INIT = (
+    Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server" / "__init__.py"
+)
 
 # Profiles exposed on the standard server (no operator tools).
 _STANDARD_PROFILES = ["coder", "full", "reviewer", "seeder"]
@@ -303,13 +305,16 @@ class TestProfileFilterIntegration:
         registry = ProfileRegistry()
         reviewer_tools = registry.get("reviewer")
         write_tools = {
-            "memory_save", "memory_save_many", "memory_delete", "memory_ingest",
-            "memory_capture", "memory_supersede", "memory_reinforce",
+            "memory_save",
+            "memory_save_many",
+            "memory_delete",
+            "memory_ingest",
+            "memory_capture",
+            "memory_supersede",
+            "memory_reinforce",
         }
         overlap = reviewer_tools & write_tools
-        assert not overlap, (
-            f"'reviewer' profile contains write tools: {sorted(overlap)}"
-        )
+        assert not overlap, f"'reviewer' profile contains write tools: {sorted(overlap)}"
 
 
 # ---------------------------------------------------------------------------
@@ -324,14 +329,17 @@ class TestCallEnforcement:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("profile,allowed_tool", [
-        ("coder", "brain_recall"),
-        ("coder", "memory_reinforce"),
-        ("reviewer", "memory_search"),
-        ("reviewer", "hive_search"),
-        ("seeder", "memory_save"),
-        ("seeder", "memory_ingest"),
-    ])
+    @pytest.mark.parametrize(
+        "profile,allowed_tool",
+        [
+            ("coder", "brain_recall"),
+            ("coder", "memory_reinforce"),
+            ("reviewer", "memory_search"),
+            ("reviewer", "hive_search"),
+            ("seeder", "memory_save"),
+            ("seeder", "memory_ingest"),
+        ],
+    )
     async def test_in_profile_tool_is_callable(self, profile: str, allowed_tool: str) -> None:
         """An in-profile tool must pass through to the original call_tool."""
         registry = ProfileRegistry()
@@ -346,15 +354,18 @@ class TestCallEnforcement:
         assert result == "ok"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("profile,denied_tool", [
-        ("coder", "memory_delete"),
-        ("coder", "agent_delete"),
-        ("coder", "maintenance_gc"),
-        ("reviewer", "memory_save"),
-        ("reviewer", "memory_delete"),
-        ("seeder", "memory_delete"),
-        ("seeder", "brain_recall"),
-    ])
+    @pytest.mark.parametrize(
+        "profile,denied_tool",
+        [
+            ("coder", "memory_delete"),
+            ("coder", "agent_delete"),
+            ("coder", "maintenance_gc"),
+            ("reviewer", "memory_save"),
+            ("reviewer", "memory_delete"),
+            ("seeder", "memory_delete"),
+            ("seeder", "brain_recall"),
+        ],
+    )
     async def test_out_of_profile_tool_raises_mcp_error(
         self, profile: str, denied_tool: str
     ) -> None:
@@ -376,9 +387,7 @@ class TestCallEnforcement:
             await mcp._tool_manager.call_tool(denied_tool, {})
 
         err = exc_info.value
-        assert err.error.code == -32601, (
-            f"Expected METHOD_NOT_FOUND (-32601), got {err.error.code}"
-        )
+        assert err.error.code == -32601, f"Expected METHOD_NOT_FOUND (-32601), got {err.error.code}"
         assert err.error.data is not None
         assert err.error.data["error"] == "tool_not_in_profile"
         assert err.error.data["tool"] == denied_tool
@@ -393,9 +402,7 @@ class TestCallEnforcement:
             pytest.skip("mcp package not installed")
 
         registry = ProfileRegistry()
-        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-            "cv_msg_test", default=None
-        )
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar("cv_msg_test", default=None)
         cv.set("reviewer")
         mcp = _make_mock_mcp(list(registry.get("full")))
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
@@ -505,9 +512,7 @@ def _mcp_server(_project_dir: Path):
 
     from tapps_brain.mcp_server import create_server
 
-    dsn = os.environ.get("TAPPS_TEST_POSTGRES_DSN") or os.environ.get(
-        "TAPPS_BRAIN_DATABASE_URL"
-    )
+    dsn = os.environ.get("TAPPS_TEST_POSTGRES_DSN") or os.environ.get("TAPPS_BRAIN_DATABASE_URL")
     if not dsn:
         pytest.skip("requires TAPPS_TEST_POSTGRES_DSN / TAPPS_BRAIN_DATABASE_URL")
 
@@ -526,12 +531,15 @@ class TestEndToEndProfileFiltering:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("profile,expected_count", [
-        ("full", 55),
-        ("coder", 15),
-        ("reviewer", 8),
-        ("seeder", 6),
-    ])
+    @pytest.mark.parametrize(
+        "profile,expected_count",
+        [
+            ("full", 55),
+            ("coder", 15),
+            ("reviewer", 8),
+            ("seeder", 6),
+        ],
+    )
     async def test_list_tools_count_per_profile(
         self, _mcp_server, profile: str, expected_count: int
     ) -> None:

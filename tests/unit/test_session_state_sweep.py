@@ -280,9 +280,7 @@ class TestPerSessionLogCap:
     * ``get_metrics()`` exposes the total session_query_log entry count.
     """
 
-    def test_session_query_log_bounded_after_many_recalls(
-        self, store: MemoryStore
-    ) -> None:
+    def test_session_query_log_bounded_after_many_recalls(self, store: MemoryStore) -> None:
         """Recall 200 times on one session_id — query log stays at cap."""
         sid = "long-session"
         for i in range(200):
@@ -292,9 +290,7 @@ class TestPerSessionLogCap:
             actual = len(store._session_query_log.get(sid, []))
         assert actual <= 100, f"expected ≤100 entries, got {actual}"
 
-    def test_session_query_log_cap_is_100_default(
-        self, store: MemoryStore
-    ) -> None:
+    def test_session_query_log_cap_is_100_default(self, store: MemoryStore) -> None:
         """Cap is exactly 100 — oldest entries are dropped, newest kept."""
         from tapps_brain.store import _SESSION_LOG_PER_SESSION_CAP
 
@@ -308,17 +304,15 @@ class TestPerSessionLogCap:
             q_log = store._session_query_log.get(sid, [])
         assert len(q_log) <= _SESSION_LOG_PER_SESSION_CAP
 
-    def test_recall_log_and_values_log_bounded(
-        self, store: MemoryStore
-    ) -> None:
+    def test_recall_log_and_values_log_bounded(self, store: MemoryStore) -> None:
         """``_session_recall_log`` and ``_session_recalled_values`` also
         respect the per-session cap when entries are returned by recall.
 
         Seeds the internal entry cache directly (bypassing Postgres) so
         the recall path can populate the recall log and values log.
         """
-        from tapps_brain.store import _SESSION_LOG_PER_SESSION_CAP
         from tapps_brain.models import MemoryEntry, MemoryTier
+        from tapps_brain.store import _SESSION_LOG_PER_SESSION_CAP
 
         sid = "vals-session"
         key = "test-key"
@@ -333,7 +327,7 @@ class TestPerSessionLogCap:
             store._entries[key] = entry
 
         # Recall 200 times — each recall should find and log the seeded entry.
-        for i in range(200):
+        for _i in range(200):
             store.recall("test value", session_id=sid)
 
         with store._serialized():
@@ -347,9 +341,7 @@ class TestPerSessionLogCap:
             f"_session_recalled_values: expected ≤{_SESSION_LOG_PER_SESSION_CAP}, got {val_log_len}"
         )
 
-    def test_get_metrics_exposes_session_query_log_gauge(
-        self, store: MemoryStore
-    ) -> None:
+    def test_get_metrics_exposes_session_query_log_gauge(self, store: MemoryStore) -> None:
         """``get_metrics()`` must include the ``tapps_brain.session_query_log.entries``
         gauge so operators can observe per-session log growth in dashboards.
         """

@@ -34,7 +34,7 @@ def agent_register(
             "profile": profile,
             "skills": skill_list,
         }
-    except Exception as exc:  # noqa: BLE001 — agent service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_register")
         return {"error": "registry_error", "message": str(exc)}
 
@@ -88,7 +88,7 @@ def agent_create(
             "skills": skill_list,
             "profile_summary": profile_summary,
         }
-    except Exception as exc:  # noqa: BLE001 — agent service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_create")
         return {"error": "agent_create_error", "message": str(exc)}
 
@@ -100,7 +100,7 @@ def agent_list(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
         registry = AgentRegistry()
         agents = [a.model_dump(mode="json") for a in registry.list_agents()]
         return {"agents": agents, "count": len(agents)}
-    except Exception as exc:  # noqa: BLE001 — agent service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_list")
         return {"error": "registry_error", "message": str(exc)}
 
@@ -120,6 +120,6 @@ def agent_delete(
             "agent_id": target_agent_id,
             "message": f"Agent '{target_agent_id}' not found.",
         }
-    except Exception as exc:  # noqa: BLE001 — agent service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_delete")
         return {"error": "registry_error", "message": str(exc)}

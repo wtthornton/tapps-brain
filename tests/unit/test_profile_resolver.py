@@ -25,6 +25,7 @@ from tapps_brain.mcp_server.profile_resolver import ProfileResolver
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_registry(profiles: dict[str, list[str]] | None = None) -> ProfileRegistry:
     """Return a ProfileRegistry with a small in-memory profile set."""
     reg = ProfileRegistry.__new__(ProfileRegistry)
@@ -55,6 +56,7 @@ def _make_resolver(
 # ---------------------------------------------------------------------------
 # Precedence 1: X-Brain-Profile header
 # ---------------------------------------------------------------------------
+
 
 class TestHeaderPrecedence:
     def test_header_profile_returned_directly(self) -> None:
@@ -92,6 +94,7 @@ class TestHeaderPrecedence:
 # Precedence 2: Agent-registry lookup
 # ---------------------------------------------------------------------------
 
+
 class TestAgentRegistryPrecedence:
     def test_registered_agent_profile_returned(self) -> None:
         getter = MagicMock(return_value="reviewer")
@@ -128,6 +131,7 @@ class TestAgentRegistryPrecedence:
 # ---------------------------------------------------------------------------
 # Precedence 3: Server default
 # ---------------------------------------------------------------------------
+
 
 class TestServerDefault:
     def test_unregistered_agent_returns_default(self) -> None:
@@ -182,6 +186,7 @@ class TestServerDefault:
 # ---------------------------------------------------------------------------
 # TTL cache
 # ---------------------------------------------------------------------------
+
 
 class TestTtlCache:
     def test_second_call_hits_cache(self) -> None:
@@ -255,6 +260,7 @@ class TestTtlCache:
 # Unknown-profile header rejection (validated by the registry in the middleware)
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownProfileValidation:
     """Verify that UnknownProfileError is raised by the registry so the
     McpTenantMiddleware can catch it and return a 400.  ProfileResolver
@@ -282,20 +288,24 @@ class TestUnknownProfileValidation:
 # REQUEST_PROFILE contextvar exported from mcp_server
 # ---------------------------------------------------------------------------
 
+
 class TestRequestProfileContextvar:
     def test_contextvar_exported(self) -> None:
         import contextvars
 
         from tapps_brain import mcp_server as _mcp_mod
+
         assert hasattr(_mcp_mod, "REQUEST_PROFILE")
         assert isinstance(_mcp_mod.REQUEST_PROFILE, contextvars.ContextVar)
 
     def test_contextvar_default_is_none(self) -> None:
         from tapps_brain import mcp_server as _mcp_mod
+
         assert _mcp_mod.REQUEST_PROFILE.get() is None
 
     def test_contextvar_can_be_set_and_reset(self) -> None:
         from tapps_brain import mcp_server as _mcp_mod
+
         token = _mcp_mod.REQUEST_PROFILE.set("coder")
         try:
             assert _mcp_mod.REQUEST_PROFILE.get() == "coder"

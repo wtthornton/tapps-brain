@@ -1745,9 +1745,7 @@ class TestPerTenantAuthRequiresProjectId:
     hitting Postgres — the 400 is raised before any DB call is made.
     """
 
-    def test_missing_project_id_header_returns_400(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_project_id_header_returns_400(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Global token + no X-Project-Id → 400 (not 200 or 403)."""
         with _per_tenant_client(monkeypatch) as c:
             resp = c.get(
@@ -1762,9 +1760,7 @@ class TestPerTenantAuthRequiresProjectId:
         assert body.get("error") == "bad_request"
         assert "X-Project-Id" in body.get("detail", "")
 
-    def test_empty_project_id_header_returns_400(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_project_id_header_returns_400(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Global token + empty X-Project-Id (whitespace only) → 400."""
         with _per_tenant_client(monkeypatch) as c:
             resp = c.get(
@@ -1778,9 +1774,7 @@ class TestPerTenantAuthRequiresProjectId:
         body = resp.json()
         assert body.get("error") == "bad_request"
 
-    def test_global_token_not_accepted_as_supertoken(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_global_token_not_accepted_as_supertoken(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The global token must NOT bypass per-tenant isolation when
         X-Project-Id is absent — that is the core security regression
         fixed by TAP-626."""
@@ -1797,9 +1791,7 @@ class TestPerTenantAuthRequiresProjectId:
         )
         assert resp.status_code == 400
 
-    def test_per_tenant_flag_on_no_dsn_returns_500(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_per_tenant_flag_on_no_dsn_returns_500(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """TAPPS_BRAIN_PER_TENANT_AUTH=1 + no DSN → 500 server_misconfiguration.
 
         Without this guard, the per-tenant block is skipped entirely and the

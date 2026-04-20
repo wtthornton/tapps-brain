@@ -52,7 +52,7 @@ def hive_status(
             "total_entries": sum(ns_counts.values()),
             "agents": agents,
         }
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_status")
         return {"error": "hive_error", "message": str(exc)}
 
@@ -75,7 +75,7 @@ def hive_search(
             if should_close:
                 hive.close()
         return {"results": results, "count": len(results)}
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_search")
         return {"error": "hive_error", "message": str(exc)}
 
@@ -159,7 +159,7 @@ def hive_propagate(
             if should_close:
                 hive.close()
         return outcome
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_propagate")
         return {"error": "hive_error", "message": str(exc)}
 
@@ -245,7 +245,7 @@ def hive_push(
             if should_close:
                 hive.close()
         return report
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_push")
         return {"error": "hive_error", "message": str(exc)}
 
@@ -265,7 +265,7 @@ def hive_write_revision(
             if should_close:
                 hive.close()
         return state  # type: ignore[no-any-return]
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_write_revision")
         return {"error": "hive_error", "message": str(exc)}
 
@@ -295,6 +295,6 @@ def hive_wait_write(
             if should_close:
                 hive.close()
         return result  # type: ignore[no-any-return]
-    except Exception as exc:  # noqa: BLE001 — hive service tool must not propagate to MCP caller
+    except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_wait_write")
         return {"error": "hive_error", "message": str(exc)}

@@ -64,7 +64,7 @@ def _bundled_schema_version() -> int:
         if not migs:
             return 0
         return max(v for v, _, _ in migs)
-    except Exception:  # noqa: BLE001 — migration discovery raises heterogeneous import/file errors; returns 0 fallback
+    except Exception:
         return 0
 
 

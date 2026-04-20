@@ -21,6 +21,7 @@ from tapps_brain.mcp_server.profile_registry import ProfileRegistry, UnknownProf
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_registry(yaml_text: str, tmp_path: Path) -> ProfileRegistry:
     """Write *yaml_text* to a temp file and return a ProfileRegistry from it."""
     cfg = tmp_path / "profiles.yaml"
@@ -31,6 +32,7 @@ def _make_registry(yaml_text: str, tmp_path: Path) -> ProfileRegistry:
 # ---------------------------------------------------------------------------
 # Bundled default YAML
 # ---------------------------------------------------------------------------
+
 
 class TestBundledProfiles:
     """Tests against the bundled mcp_profiles.yaml (no custom path)."""
@@ -170,6 +172,7 @@ class TestBundledProfiles:
 # UnknownProfileError
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownProfileError:
     def test_raises_unknown_profile_error_for_missing_name(self) -> None:
         reg = ProfileRegistry()
@@ -197,6 +200,7 @@ class TestUnknownProfileError:
 # validate_against — drift detection
 # ---------------------------------------------------------------------------
 
+
 class TestValidateAgainst:
     def test_passes_with_superset(self) -> None:
         yaml_text = textwrap.dedent("""\
@@ -208,10 +212,9 @@ class TestValidateAgainst:
         """)
         reg = ProfileRegistry.__new__(ProfileRegistry)
         import yaml
+
         data = yaml.safe_load(yaml_text)
-        reg._profiles = {
-            "simple": frozenset(["tool_a", "tool_b"])
-        }
+        reg._profiles = {"simple": frozenset(["tool_a", "tool_b"])}
         # Does not raise when known_tools is a superset
         reg.validate_against(frozenset(["tool_a", "tool_b", "tool_c"]))
 
@@ -273,6 +276,7 @@ class TestValidateAgainst:
 # ---------------------------------------------------------------------------
 # Custom config_path
 # ---------------------------------------------------------------------------
+
 
 class TestCustomConfigPath:
     def test_loads_from_custom_path(self, tmp_path: Path) -> None:

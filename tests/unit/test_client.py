@@ -304,7 +304,7 @@ def test_retry_backoff_spreads_across_concurrent_calls() -> None:
     import random as _random
 
     # Seed-independent: collect 100 jittered values for attempt=0 (base=1.0)
-    durations = [min(2.0 ** 0, 30.0) * _random.uniform(0.8, 1.2) for _ in range(100)]
+    durations = [min(2.0**0, 30.0) * _random.uniform(0.8, 1.2) for _ in range(100)]
     # If there is no jitter every value equals 1.0; with jitter they spread 0.8–1.2
     unique_values = len({round(d, 6) for d in durations})
     assert unique_values > 1, "All 100 retry sleeps are identical — jitter is missing"
