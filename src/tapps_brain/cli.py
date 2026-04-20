@@ -3490,7 +3490,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
     host: Annotated[
         str,
         typer.Option("--host", envvar="TAPPS_BRAIN_HTTP_HOST", help="Bind address."),
-    ] = "0.0.0.0",
+    ] = "127.0.0.1",
     port: Annotated[
         int,
         typer.Option("--port", envvar="TAPPS_BRAIN_HTTP_PORT", help="HTTP data-plane TCP port."),
@@ -3510,7 +3510,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
             envvar="TAPPS_BRAIN_MCP_HOST",
             help="Bind address for the Streamable-HTTP MCP transport.",
         ),
-    ] = "0.0.0.0",
+    ] = "127.0.0.1",
     mcp_port: Annotated[
         int,
         typer.Option(
@@ -3554,6 +3554,32 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
             agent_id="http-adapter",
             hive_store=resolve_hive_backend_from_env(),
             hive_agent_id="http-adapter",
+        )
+
+    # ---- Security: warn when binding to all interfaces without auth ------
+    _auth_configured = bool(
+        os.environ.get("TAPPS_BRAIN_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH") == "1"
+    )
+    if host == "0.0.0.0" and not _auth_configured:
+        structlog.get_logger(__name__).warning(
+            "http_adapter.bind_all_interfaces_unauthenticated",
+            host=host,
+            port=port,
+            advice=(
+                "Set TAPPS_BRAIN_AUTH_TOKEN or TAPPS_BRAIN_PER_TENANT_AUTH=1 "
+                "when binding to 0.0.0.0, or restrict to 127.0.0.1."
+            ),
+        )
+    if mcp_port > 0 and mcp_host == "0.0.0.0" and not _auth_configured:
+        structlog.get_logger(__name__).warning(
+            "http_adapter.mcp_bind_all_interfaces_unauthenticated",
+            mcp_host=mcp_host,
+            mcp_port=mcp_port,
+            advice=(
+                "Set TAPPS_BRAIN_AUTH_TOKEN or restrict --mcp-host to 127.0.0.1."
+            ),
         )
 
     # ---- HTTP data-plane ------------------------------------------------
