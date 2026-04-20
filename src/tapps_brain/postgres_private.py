@@ -733,16 +733,18 @@ class PostgresPrivateBackend:
         if until is not None:
             conditions.append("timestamp <= %s")
             params.append(until)
-        where = " AND ".join(conditions)
-        sql = (
+        from psycopg import sql as pgsql
+
+        where = pgsql.SQL(" AND ").join(pgsql.SQL(c) for c in conditions)
+        stmt = pgsql.SQL(
             "SELECT timestamp, event_type, key, details "
-            f"FROM audit_log WHERE {where} "
-            "ORDER BY timestamp ASC, id ASC LIMIT %s"
-        )
+            "FROM audit_log WHERE {} "
+            "ORDER BY timestamp ASC, id ASC LIMIT {}"
+        ).format(where, pgsql.Placeholder())
         params.append(limit)
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql, params)
+                cur.execute(stmt, params)
                 rows = cur.fetchall()
         except Exception:
             logger.debug("postgres_private.audit_query_failed", exc_info=True)
