@@ -155,9 +155,10 @@ class InMemoryPrivateBackend:
         with self._lock:
             self._entries[entry.key] = entry
 
-    def load_all(self) -> list[Any]:
+    def load_all(self, *, limit: int | None = None) -> list[Any]:
         with self._lock:
-            return list(self._entries.values())
+            entries = list(self._entries.values())
+            return entries[:limit] if limit is not None else entries
 
     def delete(self, key: str) -> bool:
         with self._lock:
