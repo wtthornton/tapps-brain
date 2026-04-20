@@ -15,6 +15,24 @@ def _utc_now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
+def _parse_iso(iso: str) -> datetime:
+    """Parse an ISO-8601 string to a UTC-aware :class:`datetime`.
+
+    Accepts any of the three common formats callers may supply:
+
+    * ``"2026-04-19T12:00:00+00:00"`` — already tz-aware (any offset)
+    * ``"2026-04-19T12:00:00Z"``       — Zulu suffix
+    * ``"2026-04-19T12:00:00"``         — tz-naïve (assumed UTC)
+
+    All results are normalised to UTC so that comparisons between any mix
+    of the above formats return the correct ordering.
+    """
+    dt = datetime.fromisoformat(iso[:-1] + "+00:00" if iso.endswith("Z") else iso)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -323,11 +341,13 @@ class MemoryEntry(BaseModel):
             msg = "Branch name is required when scope is 'branch'."
             raise ValueError(msg)
 
-        # Temporal validation: invalid_at must be after valid_at
+        # Temporal validation: invalid_at must be after valid_at.
+        # Compare as datetime objects so tz-naïve / Zulu / offset strings
+        # are ordered correctly rather than relying on lexical sort.
         if (
             self.valid_at is not None
             and self.invalid_at is not None
-            and self.invalid_at <= self.valid_at
+            and _parse_iso(self.invalid_at) <= _parse_iso(self.valid_at)
         ):
             msg = "invalid_at must be after valid_at."
             raise ValueError(msg)
@@ -342,24 +362,29 @@ class MemoryEntry(BaseModel):
 
         The window is ``[valid_at, invalid_at)`` — inclusive start, exclusive end.
         Also checks ``valid_from`` / ``valid_until`` (GitHub #29, task 040.3).
+
+        *as_of* may be any ISO-8601 string (tz-aware, Zulu, or tz-naïve). All
+        comparisons are performed as UTC :class:`datetime` objects so that
+        different-but-equivalent representations (``+00:00`` vs ``Z`` vs naïve
+        assumed-UTC) produce the same result.
         """
-        ts = as_of or _utc_now_iso()
+        ts_dt = _parse_iso(as_of) if as_of else datetime.now(tz=UTC)
         # Check valid_at / invalid_at (bi-temporal EPIC-004 fields)
-        if self.valid_at is not None and ts < self.valid_at:
+        if self.valid_at is not None and ts_dt < _parse_iso(self.valid_at):
             return False
-        if self.invalid_at is not None and ts >= self.invalid_at:
+        if self.invalid_at is not None and ts_dt >= _parse_iso(self.invalid_at):
             return False
         # Check valid_from / valid_until (human-friendly alias fields, GitHub #29)
-        if self.valid_from and ts < self.valid_from:
+        if self.valid_from and ts_dt < _parse_iso(self.valid_from):
             return False
-        return not (self.valid_until and ts >= self.valid_until)
+        return not (self.valid_until and ts_dt >= _parse_iso(self.valid_until))
 
     @property
     def is_superseded(self) -> bool:
         """Return ``True`` if this entry has been superseded (invalid_at in the past)."""
         if self.invalid_at is None:
             return False
-        return _utc_now_iso() >= self.invalid_at
+        return datetime.now(tz=UTC) >= _parse_iso(self.invalid_at)
 
 
 # ---------------------------------------------------------------------------

@@ -295,3 +295,96 @@ class TestTemporalFields:
             superseded_by="new-version",
         )
         assert entry.superseded_by == "new-version"
+
+    # ------------------------------------------------------------------
+    # TAP-639: ISO format normalisation tests
+    # is_temporally_valid() must treat "+00:00", "Z", and tz-naïve strings
+    # that represent the same wall-clock instant as equivalent.
+    # ------------------------------------------------------------------
+
+    def test_is_temporally_valid_zulu_equals_utc_offset(self) -> None:
+        """Zulu and +00:00 that represent the same instant are identical."""
+        entry = MemoryEntry(
+            key="zulu-test",
+            value="zulu test",
+            valid_at="2026-06-01T00:00:00+00:00",
+            invalid_at="2026-12-31T00:00:00+00:00",
+        )
+        # Same instant expressed with Z suffix
+        assert entry.is_temporally_valid("2026-06-15T12:00:00Z") is True
+        assert entry.is_temporally_valid("2026-01-01T00:00:00Z") is False
+        assert entry.is_temporally_valid("2027-01-01T00:00:00Z") is False
+
+    def test_is_temporally_valid_naive_assumed_utc(self) -> None:
+        """A tz-naïve *as_of* string is assumed UTC and compared correctly."""
+        entry = MemoryEntry(
+            key="naive-test",
+            value="naive test",
+            valid_at="2026-06-01T00:00:00+00:00",
+            invalid_at="2026-12-31T00:00:00+00:00",
+        )
+        # Naïve — should be treated as UTC
+        assert entry.is_temporally_valid("2026-06-15T12:00:00") is True
+        assert entry.is_temporally_valid("2025-12-31T23:59:59") is False
+        assert entry.is_temporally_valid("2027-01-01T00:00:00") is False
+
+    def test_is_temporally_valid_mixed_field_formats(self) -> None:
+        """Fields stored with Zulu suffix compare correctly against +00:00 as_of."""
+        entry = MemoryEntry(
+            key="zulu-field",
+            value="zulu field",
+            valid_from="2026-06-01T00:00:00Z",
+            valid_until="2026-12-31T00:00:00Z",
+        )
+        assert entry.is_temporally_valid("2026-07-04T00:00:00+00:00") is True
+        assert entry.is_temporally_valid("2026-05-31T23:59:59+00:00") is False
+        assert entry.is_temporally_valid("2026-12-31T00:00:00+00:00") is False
+
+    def test_is_temporally_valid_aware_vs_naive_boundary(self) -> None:
+        """Boundary check: aware and naïve representations of the same instant."""
+        entry = MemoryEntry(
+            key="boundary",
+            value="boundary test",
+            valid_at="2026-01-01T00:00:00+00:00",
+        )
+        # Exactly at the boundary — entry is valid (inclusive start)
+        assert entry.is_temporally_valid("2026-01-01T00:00:00Z") is True
+        assert entry.is_temporally_valid("2026-01-01T00:00:00") is True
+        # One second before — not yet valid
+        assert entry.is_temporally_valid("2025-12-31T23:59:59Z") is False
+
+    def test_model_validator_rejects_invalid_at_not_after_valid_at_mixed_formats(
+        self,
+    ) -> None:
+        """model_validator correctly rejects invalid windows even with mixed formats."""
+        with pytest.raises(ValidationError, match="invalid_at must be after valid_at"):
+            MemoryEntry(
+                key="bad-zulu-window",
+                value="bad window",
+                valid_at="2026-06-01T00:00:00Z",
+                invalid_at="2026-01-01T00:00:00+00:00",  # before valid_at
+            )
+        # Naïve strings that represent the same instant should also be rejected
+        with pytest.raises(ValidationError, match="invalid_at must be after valid_at"):
+            MemoryEntry(
+                key="bad-naive-window",
+                value="bad window",
+                valid_at="2026-06-01T00:00:00",
+                invalid_at="2026-06-01T00:00:00+00:00",  # equal, not after
+            )
+
+    def test_is_superseded_with_zulu_invalid_at(self) -> None:
+        """is_superseded handles a Zulu-suffix invalid_at correctly."""
+        past = MemoryEntry(
+            key="past-zulu",
+            value="past value",
+            invalid_at="2020-01-01T00:00:00Z",
+        )
+        assert past.is_superseded is True
+
+        future = MemoryEntry(
+            key="future-zulu",
+            value="future value",
+            invalid_at="2099-01-01T00:00:00Z",
+        )
+        assert future.is_superseded is False
