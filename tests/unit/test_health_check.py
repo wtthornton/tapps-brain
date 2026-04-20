@@ -489,3 +489,81 @@ def test_run_health_check_store_last_migration_version_none_without_dsn(
 
     report = run_health_check(project_root=tmp_path, check_hive=False)
     assert report.store.last_migration_version is None
+
+
+# ---------------------------------------------------------------------------
+# Security: exception text must not leak into HealthReport (TAP-724)
+# ---------------------------------------------------------------------------
+
+
+def test_store_error_does_not_leak_exception_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Store errors must not include psycopg/db internals in the client-visible error list."""
+    sensitive_msg = "connection to server at 'prod-db.internal' failed: password authentication failed"
+    monkeypatch.setattr(
+        "tapps_brain.store.MemoryStore",
+        MagicMock(side_effect=RuntimeError(sensitive_msg)),
+    )
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.status == "error"
+    # The error message in the report must not contain any sensitive exception text.
+    for err in report.errors:
+        assert "prod-db.internal" not in err, f"Exception text leaked into errors: {err!r}"
+        assert sensitive_msg not in err, f"Exception text leaked into errors: {err!r}"
+    # But a generic store error entry must still be present.
+    assert any("Store error" in e for e in report.errors)
+
+
+def test_hive_unavailable_does_not_leak_exception_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Hive errors must not include connection string or db internals in warnings."""
+    sensitive_msg = "connection to server at 'hive-db.internal' failed: password authentication failed"
+
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = None
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://hive-db.internal/hive")
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    import tapps_brain.backends as _backends
+
+    monkeypatch.setattr(
+        _backends,
+        "create_hive_backend",
+        MagicMock(side_effect=RuntimeError(sensitive_msg)),
+    )
+
+    report = run_health_check(project_root=tmp_path, check_hive=True)
+    assert report.hive.status == "warn"
+    for w in report.warnings:
+        assert "hive-db.internal" not in w, f"Exception text leaked into warnings: {w!r}"
+        assert sensitive_msg not in w, f"Exception text leaked into warnings: {w!r}"
+    assert any("Hive unavailable" in w for w in report.warnings)
+
+
+def test_integrity_check_does_not_leak_exception_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Integrity check failures must not include internal entry keys or paths in warnings."""
+    sensitive_msg = "entry key '/secret/project/token' not found in index"
+    calls: list[int] = []
+
+    def store_factory(*a: object, **k: object) -> MagicMock:
+        calls.append(1)
+        if len(calls) == 1:
+            m = _make_mock_store(tmp_path, entry_count=1)
+            m._persistence._cm = None
+            return m
+        raise RuntimeError(sensitive_msg)
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", store_factory)
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.integrity.status == "warn"
+    for w in report.warnings:
+        assert "/secret/project/token" not in w, f"Exception text leaked into warnings: {w!r}"
+        assert sensitive_msg not in w, f"Exception text leaked into warnings: {w!r}"
+    assert any("Integrity check failed" in w for w in report.warnings)
