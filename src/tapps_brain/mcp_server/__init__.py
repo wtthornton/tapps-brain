@@ -623,7 +623,7 @@ def create_server(  # noqa: PLR0915
                 agent_id=_server_agent_id,
                 call_agent_id=eff,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — catch-to-classify pattern: re-raises all non-ProjectNotRegisteredError as-is
             from tapps_brain.project_registry import ProjectNotRegisteredError
 
             if isinstance(exc, ProjectNotRegisteredError):

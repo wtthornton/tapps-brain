@@ -117,7 +117,7 @@ class FlashRankReranker:
             ranker = self._get_ranker()
             request = RerankRequest(query=query, passages=passages)
             results = ranker.rerank(request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — flashrank raises heterogeneous errors (model load, tokenizer); fallback to noop ranking
             logger.warning(
                 "flashrank_reranker_failed",
                 reason=str(e),

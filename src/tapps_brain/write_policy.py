@@ -178,7 +178,7 @@ class LLMWritePolicy:
         top_candidates = candidates[: self._candidates_limit]
         try:
             return self._call_llm(key, value, top_candidates)
-        except Exception:
+        except Exception:  # noqa: BLE001 — LLM judge raises heterogeneous errors (network, auth, model); fallback to ADD
             logger.warning(
                 "write_policy.llm.error",
                 key=key,

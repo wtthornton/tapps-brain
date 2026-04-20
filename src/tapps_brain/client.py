@@ -241,7 +241,7 @@ def _post_tool(
         # Parse structured error body
         try:
             body: dict[str, Any] = resp.json()
-        except Exception:
+        except ValueError:
             body = {}
 
         exc = _parse_error_response(resp.status_code, body)
@@ -295,7 +295,7 @@ async def _async_post_tool(
 
         try:
             body: dict[str, Any] = resp.json()
-        except Exception:
+        except ValueError:
             body = {}
 
         exc = _parse_error_response(resp.status_code, body)

@@ -842,7 +842,7 @@ def get_retrieval_meter_snapshot() -> dict[str, int | float]:
                 "rrf_fusions": _rm_rrf_fusions,
                 "mean_latency_ms": mean_lat,
             }
-    except Exception:  # pragma: no cover
+    except Exception:  # noqa: BLE001 — metrics snapshot is best-effort; failure returns zeroed counters  # pragma: no cover
         return {
             "total_queries": 0,
             "bm25_hits": 0,

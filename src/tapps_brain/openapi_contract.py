@@ -42,10 +42,10 @@ _IDEMPOTENCY_PREFIXES = ("/v1/remember", "/v1/reinforce")
 def _service_version() -> str:
     """Return the installed brain version, or ``"unknown"`` if not packaged."""
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
 
         return version("tapps-brain")
-    except Exception:
+    except (ImportError, PackageNotFoundError):
         return "unknown"
 
 
@@ -64,7 +64,7 @@ def _bundled_schema_version() -> int:
         if not migs:
             return 0
         return max(v for v, _, _ in migs)
-    except Exception:
+    except Exception:  # noqa: BLE001 — migration discovery raises heterogeneous import/file errors; returns 0 fallback
         return 0
 
 

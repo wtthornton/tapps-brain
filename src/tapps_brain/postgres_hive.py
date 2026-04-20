@@ -610,7 +610,7 @@ class PostgresHiveBackend:
                 since_revision=since_revision,
                 timeout_sec=timeout_sec,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — LISTEN/NOTIFY errors are heterogeneous; fallback to polling is safe
             # Fallback to polling.
             return self._wait_with_polling(
                 since_revision=since_revision,
