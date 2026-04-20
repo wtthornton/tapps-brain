@@ -151,6 +151,8 @@ module = [
     "playwright.*",
     "psycopg",
     "psycopg.*",
+    "anthropic",
+    "anthropic.*",
 ]
 ignore_missing_imports = true
 
