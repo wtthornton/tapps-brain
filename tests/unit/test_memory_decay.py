@@ -433,6 +433,12 @@ class TestDaysSince:
         result = _days_since("None")
         assert math.isinf(result)
 
+    def test_non_string_type_returns_inf_without_crash(self) -> None:
+        # TAP-725: non-string values (e.g. int accidentally passed) must not crash
+        # the logger.warning handler — str() coercion guards the slice.
+        result = _days_since(12345)  # type: ignore[arg-type]
+        assert math.isinf(result)
+
     def test_naive_timestamp_treated_as_utc(self) -> None:
         now = datetime.now(tz=UTC)
         naive = now.replace(tzinfo=None) - timedelta(days=5)

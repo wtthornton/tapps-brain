@@ -283,7 +283,7 @@ def _days_since(iso_timestamp: str, now: datetime | None = None) -> float:
     except (ValueError, TypeError):
         logger.warning(
             "decay.invalid_iso_timestamp",
-            timestamp=iso_timestamp[:64],
+            timestamp=str(iso_timestamp)[:64],
             action="treating_as_maximally_stale",
         )
         return float("inf")
