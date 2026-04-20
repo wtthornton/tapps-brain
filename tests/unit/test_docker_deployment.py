@@ -183,3 +183,221 @@ class TestBackupHiveCLI:
             assert result.exit_code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "psql"
+
+
+class TestStripDsnPassword:
+    """Unit tests for the _strip_dsn_password helper (TAP-606)."""
+
+    def test_url_format_extracts_password(self) -> None:
+        from tapps_brain.cli import _strip_dsn_password
+
+        safe, pw = _strip_dsn_password("postgres://user:s3cr3t@host:5432/dbname")
+        assert pw == "s3cr3t"
+        assert "s3cr3t" not in safe
+        assert "user" in safe
+        assert "host" in safe
+
+    def test_url_format_no_password(self) -> None:
+        from tapps_brain.cli import _strip_dsn_password
+
+        dsn = "postgres://user@host/dbname"
+        safe, pw = _strip_dsn_password(dsn)
+        assert pw is None
+        assert safe == dsn
+
+    def test_kwv_format_extracts_password(self) -> None:
+        from tapps_brain.cli import _strip_dsn_password
+
+        safe, pw = _strip_dsn_password("host=localhost user=tapps password=s3cr3t dbname=db")
+        assert pw == "s3cr3t"
+        assert "s3cr3t" not in safe
+        assert "host=localhost" in safe
+
+    def test_kwv_quoted_password(self) -> None:
+        from tapps_brain.cli import _strip_dsn_password
+
+        safe, pw = _strip_dsn_password("host=localhost password='my secret' dbname=db")
+        assert pw == "my secret"
+        assert "my secret" not in safe
+
+    def test_postgresql_scheme_alias(self) -> None:
+        from tapps_brain.cli import _strip_dsn_password
+
+        safe, pw = _strip_dsn_password("postgresql://u:pw123@host/db")
+        assert pw == "pw123"
+        assert "pw123" not in safe
+
+
+class TestBackupHivePasswordSecurity:
+    """Security tests: DSN password must not appear in pg_dump argv (TAP-606)."""
+
+    SECRET = "supersecretpassword"
+    DSN_WITH_SECRET = f"postgres://tapps:{SECRET}@localhost:5432/tapps_hive"
+
+    @pytest.mark.requires_cli
+    def test_backup_hive_password_not_in_argv(self) -> None:
+        """pg_dump argv must not contain the DSN password."""
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "backup-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "--output",
+                    "/tmp/test-backup.sql",
+                ],
+            )
+            assert result.exit_code == 0
+            cmd = mock_run.call_args[0][0]
+            # Password must NOT appear in any argv element
+            assert all(self.SECRET not in arg for arg in cmd), (
+                f"Password leaked into argv: {cmd}"
+            )
+
+    @pytest.mark.requires_cli
+    def test_backup_hive_pgpassword_in_env(self) -> None:
+        """subprocess.run must receive PGPASSWORD in its env kwarg."""
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "backup-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "--output",
+                    "/tmp/test-backup.sql",
+                ],
+            )
+            call_kwargs = mock_run.call_args[1]
+            assert "env" in call_kwargs, "subprocess.run must receive env kwarg"
+            assert call_kwargs["env"].get("PGPASSWORD") == self.SECRET
+
+    @pytest.mark.requires_cli
+    def test_backup_hive_error_stderr_scrubbed(self) -> None:
+        """Password must be scrubbed from error output echoed to the user."""
+        from subprocess import CalledProcessError
+
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            err = CalledProcessError(
+                1,
+                ["pg_dump"],
+                stderr=f"connection to server failed: password={self.SECRET}",
+            )
+            mock_run.side_effect = err
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "backup-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "--output",
+                    "/tmp/test-backup.sql",
+                ],
+            )
+            assert result.exit_code != 0
+            assert self.SECRET not in result.output, (
+                "Password leaked into error output"
+            )
+
+    @pytest.mark.requires_cli
+    def test_restore_hive_password_not_in_argv(self) -> None:
+        """psql/pg_restore argv must not contain the DSN password."""
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "restore-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "backup.sql",
+                ],
+            )
+            assert result.exit_code == 0
+            cmd = mock_run.call_args[0][0]
+            assert all(self.SECRET not in arg for arg in cmd), (
+                f"Password leaked into argv: {cmd}"
+            )
+
+    @pytest.mark.requires_cli
+    def test_restore_hive_pgpassword_in_env(self) -> None:
+        """psql must receive PGPASSWORD in env kwarg."""
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "restore-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "backup.sql",
+                ],
+            )
+            call_kwargs = mock_run.call_args[1]
+            assert "env" in call_kwargs
+            assert call_kwargs["env"].get("PGPASSWORD") == self.SECRET
+
+    @pytest.mark.requires_cli
+    def test_restore_hive_error_stderr_scrubbed(self) -> None:
+        """Password must be scrubbed from restore error output."""
+        from subprocess import CalledProcessError
+
+        from typer.testing import CliRunner
+
+        from tapps_brain.cli import app
+
+        runner = CliRunner()
+        with patch("subprocess.run") as mock_run:
+            err = CalledProcessError(
+                1,
+                ["psql"],
+                stderr=f"FATAL: password authentication failed; dsn={self.DSN_WITH_SECRET}",
+            )
+            mock_run.side_effect = err
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "restore-hive",
+                    "--dsn",
+                    self.DSN_WITH_SECRET,
+                    "backup.sql",
+                ],
+            )
+            assert result.exit_code != 0
+            assert self.SECRET not in result.output, (
+                "Password leaked into error output"
+            )
