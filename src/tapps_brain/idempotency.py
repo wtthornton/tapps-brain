@@ -97,7 +97,7 @@ class IdempotencyStore:
                     (key, project_id, self.ttl_hours),
                 )
                 row = cur.fetchone()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — psycopg+connection errors are heterogeneous; idempotency check failure treated as miss
             logger.warning(
                 "idempotency.check_failed",
                 key=key,
@@ -155,7 +155,7 @@ class IdempotencyStore:
                         (key, project_id, status, body_json),
                     )
                 conn.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — psycopg+connection errors are heterogeneous; idempotency save failure logged and retried by caller
             logger.warning(
                 "idempotency.save_failed",
                 key=key,
@@ -179,7 +179,7 @@ class IdempotencyStore:
                     )
                     deleted: int = cur.rowcount or 0
                 conn.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — psycopg+connection errors are heterogeneous; sweep failure returns 0 deleted
             logger.warning("idempotency.sweep_failed", error=str(exc))
             return 0
         logger.debug("idempotency.sweep_complete", deleted=deleted, ttl_hours=hours)

@@ -159,7 +159,7 @@ def install_tool_filter(
             return all_tools
         try:
             allowed: frozenset[str] = profile_registry.get(profile)
-        except Exception:
+        except Exception:  # noqa: BLE001 — profile registry lookup failure; fail open returning full tool list
             # Unknown profile — fail open for list_tools; return full list.
             logger.warning(
                 "tool_filter.list_tools.unknown_profile",
@@ -193,7 +193,7 @@ def install_tool_filter(
         if profile != default_profile:
             try:
                 allowed = profile_registry.get(profile)
-            except Exception:
+            except Exception:  # noqa: BLE001 — profile registry lookup failure; fail open allowing tool call
                 # Unknown profile — fail open for call_tool.
                 logger.warning(
                     "tool_filter.call_tool.unknown_profile",
@@ -222,7 +222,7 @@ def install_tool_filter(
                         )
                         _agent_id = REQUEST_AGENT_ID.get()
                         _project_id = REQUEST_PROJECT_ID.get()
-                    except Exception:
+                    except Exception:  # noqa: BLE001 — context-var access can fail in some test/thread contexts; proceed with None
                         _agent_id = None
                         _project_id = None
 
