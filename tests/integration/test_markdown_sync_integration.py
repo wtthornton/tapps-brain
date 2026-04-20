@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture()
 def tmp_store(tmp_path: Path) -> MemoryStore:
-    """A clean MemoryStore backed by a temp SQLite DB."""
+    """A clean in-memory MemoryStore (no Postgres backend required)."""
     store = MemoryStore(tmp_path / "store")
     return store
 

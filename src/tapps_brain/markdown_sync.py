@@ -135,6 +135,19 @@ def _resolve_slug_collision(
     # Reserve 7 chars for "-" + 6 hex digits so the result fits MAX_KEY_LENGTH.
     max_base = MAX_KEY_LENGTH - 7
     disambiguated = f"{slug[:max_base]}-{suffix}"
+
+    # If the hash-based key itself collides (two headings with identical text
+    # both collide against a third, or a heading's text happens to produce the
+    # same hash suffix as a previously disambiguated key), fall back to a
+    # numeric counter appended to the hash-based key.
+    counter = 2
+    while disambiguated in seen_slugs:
+        counter_str = str(counter)
+        # Fit: base + "-" + 6hex + "-" + counter  (total ≤ MAX_KEY_LENGTH)
+        adjusted_max = MAX_KEY_LENGTH - 7 - 1 - len(counter_str)
+        disambiguated = f"{slug[:adjusted_max]}-{suffix}-{counter_str}"
+        counter += 1
+
     logger.warning(
         "markdown_sync.slug_collision",
         slug=slug,
@@ -142,6 +155,8 @@ def _resolve_slug_collision(
         first_heading=seen_slugs[slug],
         disambiguated_key=disambiguated,
     )
+    # Record the disambiguated key so subsequent headings cannot claim it.
+    seen_slugs[disambiguated] = heading_text
     return disambiguated
 
 
