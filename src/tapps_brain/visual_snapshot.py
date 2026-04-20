@@ -939,7 +939,7 @@ def build_visual_snapshot(
                 agent_registry = _collect_agent_registry(_hive_for_agents, privacy=privacy)
             finally:
                 _hive_for_agents.close()
-    except Exception:  # nosec B110 — hive agent registry unavailable; snapshot continues without it
+    except Exception:  # noqa: BLE001  # nosec B110 — hive agent registry unavailable; snapshot continues without it
         pass
 
     # STORY-069.7: include recent diagnostics history + feedback events with
