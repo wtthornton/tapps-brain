@@ -91,6 +91,14 @@ class StoreHealth(BaseModel):
             "None when the DSN is unavailable or the version table is absent."
         ),
     )
+    embedding_provider_healthy: bool | None = Field(
+        default=None,
+        description=(
+            "True when sentence-transformers is installed and importable. "
+            "False when the import fails (semantic recall degrades to BM25-only). "
+            "None when the check was not attempted."
+        ),
+    )
 
 
 class HiveHealth(BaseModel):
@@ -296,6 +304,18 @@ def run_health_check(  # noqa: PLR0915
                     store_health.last_migration_version = _schema.current_version
                 except Exception:  # nosec B110 — best-effort; missing migration info must not abort health check
                     pass
+
+            # Embedding provider availability (import check only — no model load).
+            try:
+                from sentence_transformers import SentenceTransformer as _ST  # noqa: F401
+
+                store_health.embedding_provider_healthy = True
+            except ImportError:
+                store_health.embedding_provider_healthy = False
+                warnings.append(
+                    "sentence-transformers not installed — semantic recall degraded to BM25-only. "
+                    "Install with: pip install 'tapps-brain[all]'"
+                )
 
             # Checks
             if report.entry_count == 0:
