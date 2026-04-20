@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tapps_brain.agent_brain import AgentBrain, _content_key, _parse_csv_env
+from tapps_brain.agent_brain import AgentBrain, BrainValidationError, _content_key, _parse_csv_env
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -157,6 +157,70 @@ class TestRecall:
             brain.remember("Use Tailwind for styling components")
             brain.recall("styling")
             assert len(brain._last_recalled_keys) >= 1
+
+
+class TestRememberValidation:
+    """TAP-632: remember() enforces BrainValidationError contract for share_with."""
+
+    def test_remember_share_with_empty_string_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="share_with"):
+                brain.remember("some fact", share_with="")
+
+    def test_remember_share_with_whitespace_only_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="share_with"):
+                brain.remember("some fact", share_with="   ")
+
+    def test_remember_share_with_hive_is_valid(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            # "hive" is a valid share_with value — must not raise
+            key = brain.remember("some fact", share_with="hive")
+            assert isinstance(key, str)
+
+    def test_remember_share_with_nonempty_group_is_valid(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            key = brain.remember("some fact", share_with="my-group")
+            assert isinstance(key, str)
+
+    def test_remember_share_with_list_containing_empty_string_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=[""])
+
+    def test_remember_share_with_list_containing_whitespace_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=["valid-group", "   "])
+
+    def test_remember_share_with_empty_list_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError):
+                brain.remember("some fact", share_with=[])
+
+
+class TestRecallValidation:
+    """TAP-632: recall() enforces BrainValidationError contract for max_results."""
+
+    def test_recall_max_results_zero_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="max_results"):
+                brain.recall("query", max_results=0)
+
+    def test_recall_max_results_negative_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="max_results"):
+                brain.recall("query", max_results=-5)
+
+    def test_recall_max_results_negative_one_raises(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="max_results"):
+                brain.recall("query", max_results=-1)
+
+    def test_recall_max_results_positive_is_valid(self, tmp_path: Path) -> None:
+        with _make_brain(tmp_path) as brain:
+            results = brain.recall("query", max_results=1)
+            assert isinstance(results, list)
 
 
 class TestForget:
