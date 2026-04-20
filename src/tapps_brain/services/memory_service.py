@@ -227,8 +227,8 @@ def memory_save(
         # error dict ({"error": "bad_request", "detail": "<message>"}) and can
         # surface a 400 to the caller without any code change in the handlers.
         errors = exc.errors()
-        detail = errors[0].get("msg", str(exc)) if errors else str(exc)
-        return {"error": "bad_request", "detail": detail}
+        msg = errors[0].get("msg", str(exc)) if errors else str(exc)
+        return {"error": "bad_request", "message": msg}
 
     if isinstance(result, dict):
         return result

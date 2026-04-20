@@ -109,9 +109,11 @@ class TestMemorySaveSlugValidation:
         result = memory_save(store, "proj", "agent", key="_leading_underscore", value="v")
 
         assert result.get("error") == "bad_request", f"expected bad_request, got: {result}"
-        assert "detail" in result
-        assert isinstance(result["detail"], str)
-        assert len(result["detail"]) > 0
+        assert "message" in result
+        assert isinstance(result["message"], str)
+        assert len(result["message"]) > 0
+        # The pydantic error message should include the key name or slug constraint hint
+        assert "_leading_underscore" in result["message"] or "slug" in result["message"].lower()
 
     def test_valid_key_passes_through(self) -> None:
         """TAP-747: valid slug key does not trigger error path."""
@@ -226,5 +228,6 @@ class TestRememberBatchRoute400OnBadKey:
         results = body["results"]
         # First entry should have saved successfully
         assert results[0].get("status") == "saved"
-        # Second entry should surface the validation error
+        # Second entry should surface the validation error (service-layer key: "message")
         assert results[1].get("error") == "bad_request"
+        assert "message" in results[1]
