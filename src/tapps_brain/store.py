@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from tapps_brain.write_policy import DeterministicWritePolicy, LLMWritePolicy
 
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
+from tapps_brain.bm25 import preprocess as _bm25_preprocess
 from tapps_brain.metrics import (
     MetricsCollector,
     MetricsSnapshot,
@@ -387,6 +388,13 @@ class MemoryStore:
         self._bloom = BloomFilter()
         for _entry in self._entries.values():
             self._bloom.add(normalize_for_dedup(_entry.value))
+
+        # Entity index for graph centrality scoring (TAP-734).
+        # Maps BM25 token → set of entry keys that contain it.
+        # Derived state only — never persisted; rebuilt from _entries at startup.
+        self._entity_index: dict[str, set[str]] = {}
+        for _entry in self._entries.values():
+            self._index_entry_entities(_entry.key, _entry.value)
 
         # Cold-start: load all relations into memory, indexed by entry key
         self._relations: dict[str, list[dict[str, Any]]] = {}
@@ -1223,6 +1231,12 @@ class MemoryStore:
                 },
             )
 
+            # Entity index update for graph centrality (TAP-734).
+            # Remove old tokens first (for updates), then add new ones.
+            if existing is not None:
+                self._remove_entry_entities(key)
+            self._index_entry_entities(key, entry.value)
+
             # Hive propagation (EPIC-011)
             if self._hive_store is not None:
                 with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
@@ -1416,6 +1430,32 @@ class MemoryStore:
         finally:
             self._consolidation_in_progress = False
 
+    def _index_entry_entities(self, key: str, value: str) -> None:
+        """Add *key* to the entity index for all BM25 tokens in *value* (TAP-734).
+
+        Tokens shorter than 3 characters are excluded (post-stemming length).
+        Must be called without holding the store lock — it accesses only the
+        entity index, not ``_entries``.  Thread safety relies on CPython's GIL
+        for dict mutations; callers that need strict consistency should operate
+        under ``_serialized()``.
+        """
+        tokens = [t for t in _bm25_preprocess(value) if len(t) >= 3]
+        for token in tokens:
+            self._entity_index.setdefault(token, set()).add(key)
+
+    def _remove_entry_entities(self, key: str) -> None:
+        """Remove *key* from all entity index token sets (TAP-734).
+
+        Empty token sets are pruned to keep memory bounded.
+        """
+        empty_tokens: list[str] = []
+        for token, keys in self._entity_index.items():
+            keys.discard(key)
+            if not keys:
+                empty_tokens.append(token)
+        for token in empty_tokens:
+            self._entity_index.pop(token, None)
+
     def _propagate_to_hive(self, entry: MemoryEntry) -> None:
         """Propagate a saved entry to the Hive if appropriate (EPIC-011)."""
         if self._hive_store is None:
@@ -1568,6 +1608,9 @@ class MemoryStore:
                 with self._serialized():
                     self._entries[key] = removed
                 raise
+
+            # Remove from entity index (TAP-734).
+            self._remove_entry_entities(key)
 
             # Audit (best-effort).
             self._persistence.append_audit(
