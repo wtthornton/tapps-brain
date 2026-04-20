@@ -614,8 +614,12 @@ def load_profile(path: Path) -> MemoryProfile:
         msg = f"Profile YAML must be a mapping, got {type(data).__name__}"
         raise ValueError(msg)
 
-    profile_data = data.get("profile", data)
-    return MemoryProfile.model_validate(profile_data)
+    if "profile" not in data:
+        msg = (
+            f"Profile YAML must have a top-level 'profile:' key, got keys: {list(data)}"
+        )
+        raise ValueError(msg)
+    return MemoryProfile.model_validate(data["profile"])
 
 
 def _builtin_profiles_dir() -> Path:

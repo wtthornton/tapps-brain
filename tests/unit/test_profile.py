@@ -372,8 +372,8 @@ class TestLoadProfile:
         assert profile.name == "test-profile"
         assert len(profile.layers) == 2
 
-    def test_load_valid_yaml_without_profile_key(self, tmp_path: Path) -> None:
-        """When top-level key is not 'profile', treat the dict itself as profile data."""
+    def test_reject_yaml_without_profile_key(self, tmp_path: Path) -> None:
+        """Missing 'profile:' wrapper raises ValueError with a clear message."""
         data = {
             "name": "direct-profile",
             "layers": [
@@ -381,8 +381,20 @@ class TestLoadProfile:
             ],
         }
         path = _write_yaml(tmp_path / "direct.yaml", data)
-        profile = load_profile(path)
-        assert profile.name == "direct-profile"
+        with pytest.raises(ValueError, match="top-level 'profile:' key"):
+            load_profile(path)
+
+    def test_reject_yaml_with_typo_in_profile_key(self, tmp_path: Path) -> None:
+        """A typo like 'profil:' raises ValueError naming the missing key."""
+        data = {
+            "profil": {
+                "name": "typo-profile",
+                "layers": [{"name": "main", "half_life_days": 30}],
+            }
+        }
+        path = _write_yaml(tmp_path / "typo.yaml", data)
+        with pytest.raises(ValueError, match="top-level 'profile:' key"):
+            load_profile(path)
 
     def test_reject_non_mapping_yaml(self, tmp_path: Path) -> None:
         path = tmp_path / "bad.yaml"
