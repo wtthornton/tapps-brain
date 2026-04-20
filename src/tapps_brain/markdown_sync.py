@@ -15,6 +15,7 @@ Part of EPIC-026 (OpenClaw memory replacement, story-026.4).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -89,6 +90,61 @@ def _slugify(text: str) -> str:
     return slug[:MAX_KEY_LENGTH]
 
 
+def _short_hash(text: str) -> str:
+    """Return a 6-char deterministic hex suffix derived from *text*.
+
+    Used to disambiguate slug collisions: two headings that slugify to the
+    same key will receive different 6-char suffixes based on the heading text,
+    making the resulting keys distinct and deterministic across re-imports.
+    """
+    return hashlib.sha256(text.encode()).hexdigest()[:6]
+
+
+def _resolve_slug_collision(
+    slug: str,
+    heading_text: str,
+    seen_slugs: dict[str, str],
+) -> str:
+    """Return a unique key for *slug*, detecting and disambiguating collisions.
+
+    If *slug* has not been seen before, it is recorded in *seen_slugs* and
+    returned unchanged.
+
+    If *slug* was already recorded (i.e. two different headings produce the
+    same slug), a deterministic 6-char hex suffix derived from *heading_text*
+    is appended (``"<base>-<suffix>"``), and a structlog warning is emitted so
+    the operator knows a collision occurred and which headings were involved.
+
+    Args:
+        slug: The slugified form of the heading.
+        heading_text: The original (un-slugified) heading text, used for the
+            warning message and as input to the hash function.
+        seen_slugs: Mutable mapping of slug → first heading text that produced
+            that slug.  Callers pass the same dict for all sections in one
+            parse run.
+
+    Returns:
+        Either *slug* unchanged (no collision) or ``"<slug[:n]>-<6hex>"``
+        (collision disambiguated), always ≤ ``MAX_KEY_LENGTH`` characters.
+    """
+    if slug not in seen_slugs:
+        seen_slugs[slug] = heading_text
+        return slug
+
+    suffix = _short_hash(heading_text)
+    # Reserve 7 chars for "-" + 6 hex digits so the result fits MAX_KEY_LENGTH.
+    max_base = MAX_KEY_LENGTH - 7
+    disambiguated = f"{slug[:max_base]}-{suffix}"
+    logger.warning(
+        "markdown_sync.slug_collision",
+        slug=slug,
+        heading=heading_text,
+        first_heading=seen_slugs[slug],
+        disambiguated_key=disambiguated,
+    )
+    return disambiguated
+
+
 def _tier_from_heading_level(level: int) -> str:
     """Map a heading level (1-6) to a tier string.
 
@@ -151,6 +207,11 @@ def _parse_memory_md_sections(text: str) -> list[tuple[str, str, str]]:
     - H2 → architectural, H3 → pattern, H4 → procedural, H5/H6 → context.
     - Heading text is slugified to produce the key.
     - Each section body (stripped) becomes the value; empty bodies are dropped.
+    - **Slug collisions** (two headings that produce the same slug, e.g.
+      ``## Foo Bar`` and ``## foo-bar``) are disambiguated: the first occurrence
+      keeps the original slug; subsequent occurrences receive a deterministic
+      ``-<6hex>`` suffix and a ``WARNING`` log is emitted.  No entries are
+      silently dropped.
     """
     all_lines = text.splitlines()
 
@@ -163,7 +224,11 @@ def _parse_memory_md_sections(text: str) -> list[tuple[str, str, str]]:
                 break
 
     sections: list[tuple[str, str, str]] = []
+    # Maps slug → heading text of the first heading that produced that slug.
+    # Passed to _resolve_slug_collision to detect and disambiguate duplicates.
+    seen_slugs: dict[str, str] = {}
     current_key: str | None = None
+    current_heading: str = ""
     current_tier: str = MemoryTier.pattern
     body_lines: list[str] = []
 
@@ -178,7 +243,8 @@ def _parse_memory_md_sections(text: str) -> list[tuple[str, str, str]]:
             if current_key is not None:
                 body = "\n".join(body_lines).strip()
                 if body:
-                    sections.append((current_key, body, current_tier))
+                    key = _resolve_slug_collision(current_key, current_heading, seen_slugs)
+                    sections.append((key, body, current_tier))
 
             level = len(heading_match.group(1))
             heading_text = heading_match.group(2)
@@ -186,10 +252,12 @@ def _parse_memory_md_sections(text: str) -> list[tuple[str, str, str]]:
             # H1 is the document title — skip it
             if level == 1:
                 current_key = None
+                current_heading = ""
                 body_lines = []
                 continue
 
             current_key = _slugify(heading_text)
+            current_heading = heading_text
             current_tier = _tier_from_heading_level(level)
             body_lines = []
         else:
@@ -199,7 +267,8 @@ def _parse_memory_md_sections(text: str) -> list[tuple[str, str, str]]:
     if current_key is not None:
         body = "\n".join(body_lines).strip()
         if body:
-            sections.append((current_key, body, current_tier))
+            key = _resolve_slug_collision(current_key, current_heading, seen_slugs)
+            sections.append((key, body, current_tier))
 
     return sections
 

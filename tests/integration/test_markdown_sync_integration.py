@@ -6,6 +6,7 @@ sync_from_markdown → verify store state.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import TYPE_CHECKING
 
@@ -478,6 +479,178 @@ class TestParseMemoryMdSections:
         _, value, _ = sections[0]
         assert "schema_version" not in value
         assert "real value" in value
+
+
+# ---------------------------------------------------------------------------
+# Slug collision tests (TAP-718)
+# ---------------------------------------------------------------------------
+
+
+class TestSlugCollision:
+    """_parse_memory_md_sections must survive slug collisions without silently
+    dropping entries.  Two headings that slugify to the same key (e.g. "Foo Bar"
+    and "foo-bar") must both appear in the parsed output with distinct keys, and
+    a warning must be emitted so the user can fix the MEMORY.md."""
+
+    def _expected_disambiguated_key(self, base_slug: str, heading_text: str) -> str:
+        """Reproduce the deterministic suffix used by _resolve_slug_collision."""
+        suffix = hashlib.sha256(heading_text.encode()).hexdigest()[:6]
+        max_base = 121  # MAX_KEY_LENGTH(128) - 7
+        return f"{base_slug[:max_base]}-{suffix}"
+
+    def test_both_sections_survive(self) -> None:
+        """Two headings that collapse to the same slug both produce entries."""
+        # "Foo Bar" and "foo-bar" both slugify to "foo-bar"
+        text = "## Foo Bar\n\nFirst section.\n\n## foo-bar\n\nSecond section.\n"
+        sections = _parse_memory_md_sections(text)
+        assert len(sections) == 2, (
+            "Both sections must survive; the second must not be silently dropped."
+        )
+
+    def test_first_section_keeps_original_slug(self) -> None:
+        """The first occurrence retains the unmodified slug."""
+        text = "## Foo Bar\n\nFirst.\n\n## foo-bar\n\nSecond.\n"
+        sections = _parse_memory_md_sections(text)
+        keys = [s[0] for s in sections]
+        assert "foo-bar" in keys, "First occurrence must keep its original slug."
+
+    def test_second_section_gets_disambiguated_key(self) -> None:
+        """The second occurrence receives a deterministic -<hash> suffix."""
+        text = "## Foo Bar\n\nFirst.\n\n## foo-bar\n\nSecond.\n"
+        sections = _parse_memory_md_sections(text)
+        keys = [s[0] for s in sections]
+        # The second heading text is "foo-bar"; its slug is also "foo-bar".
+        expected_key = self._expected_disambiguated_key("foo-bar", "foo-bar")
+        assert expected_key in keys, (
+            f"Second occurrence should have key '{expected_key}' but got {keys!r}."
+        )
+
+    def test_values_are_preserved_after_disambiguation(self) -> None:
+        """Each section's body text is preserved unchanged after disambiguation."""
+        text = "## Foo Bar\n\nFirst section body.\n\n## foo-bar\n\nSecond section body.\n"
+        sections = _parse_memory_md_sections(text)
+        values = {k: v for k, v, _ in sections}
+        assert "First section body." in next(
+            v for k, v in values.items() if k == "foo-bar"
+        )
+        second_key = self._expected_disambiguated_key("foo-bar", "foo-bar")
+        assert "Second section body." in values[second_key]
+
+    def test_warning_logged_on_collision(self) -> None:
+        """A structlog warning is emitted when a slug collision is detected."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            text = "## Foo Bar\n\nFirst.\n\n## foo-bar\n\nSecond.\n"
+            with capture_logs() as log_entries:
+                _parse_memory_md_sections(text)
+            assert any(
+                entry.get("event") == "markdown_sync.slug_collision"
+                and entry.get("log_level") == "warning"
+                for entry in log_entries
+            ), f"Expected a slug_collision warning but got: {log_entries!r}"
+        finally:
+            structlog.configure(**saved)
+
+    def test_no_collision_no_warning(self) -> None:
+        """No warning is emitted when all headings produce distinct slugs."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            text = "## Alpha\n\nalpha value\n\n## Beta\n\nbeta value\n"
+            with capture_logs() as log_entries:
+                _parse_memory_md_sections(text)
+            assert not any(
+                entry.get("event") == "markdown_sync.slug_collision"
+                for entry in log_entries
+            ), f"Unexpected slug_collision warning: {log_entries!r}"
+        finally:
+            structlog.configure(**saved)
+
+    def test_three_way_collision_all_survive(self) -> None:
+        """Three headings colliding on the same slug all produce distinct keys."""
+        text = (
+            "## Foo Bar\n\nBody 1.\n\n"
+            "## foo-bar\n\nBody 2.\n\n"
+            "## FOO BAR\n\nBody 3.\n"
+        )
+        sections = _parse_memory_md_sections(text)
+        assert len(sections) == 3, "All three colliding sections must survive."
+        keys = [s[0] for s in sections]
+        # All keys must be distinct
+        assert len(set(keys)) == 3, f"Keys must be distinct but got {keys!r}."
+
+
+class TestSlugCollisionRoundTrip:
+    """Round-trip tests: save N entries → sync_to_markdown → sync_from_markdown
+    into an empty store → assert all N entries survive with the same keys and
+    values (TAP-718 acceptance criterion)."""
+
+    def test_round_trip_preserves_all_entries(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Full lossless round-trip: N entries survive export + fresh import."""
+        entries = [
+            ("alpha-key", "Alpha value.", "architectural"),
+            ("beta-key", "Beta value.", "pattern"),
+            ("gamma-key", "Gamma value.", "procedural"),
+            ("delta-key", "Delta value.", "context"),
+            ("epsilon-key", "Epsilon value.", "pattern"),
+        ]
+        for key, value, tier in entries:
+            tmp_store.save(key, value, tier=tier)
+
+        sync_to_markdown(tmp_store, workspace)
+
+        store2 = MemoryStore(workspace / "store2")
+        result = sync_from_markdown(store2, workspace)
+
+        assert result["imported"] == len(entries), (
+            f"Expected {len(entries)} imports but got {result['imported']}."
+        )
+        for key, value, tier in entries:
+            entry = store2.get(key)
+            assert entry is not None, f"Entry '{key}' missing after round-trip."
+            assert entry.value == value, f"Value mismatch for '{key}'."
+            assert str(entry.tier) == tier, f"Tier mismatch for '{key}'."
+
+    def test_round_trip_entry_count_after_manual_collision_in_md(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Hand-edited MEMORY.md with a slug collision: both entries are imported."""
+        # Write a MEMORY.md manually with two headings that collide
+        (workspace / "MEMORY.md").write_text(
+            "---\nschema_version: 1\n---\n\n"
+            "# Memory\n\n"
+            "## Foo Bar\n\nFirst entry body.\n\n"
+            "## foo-bar\n\nSecond entry body.\n",
+            encoding="utf-8",
+        )
+
+        result = sync_from_markdown(tmp_store, workspace)
+
+        # Both entries must be imported (not 1 silently dropped)
+        assert result["imported"] == 2, (
+            f"Expected 2 imports from colliding headings but got {result['imported']}."
+        )
+
+        # The first heading's slug survives as "foo-bar"
+        first = tmp_store.get("foo-bar")
+        assert first is not None, "First collision entry must be importable."
+        assert "First entry body." in first.value
+
+        # The second heading gets a deterministic suffix
+        suffix = hashlib.sha256("foo-bar".encode()).hexdigest()[:6]
+        second_key = f"foo-bar-{suffix}"
+        second = tmp_store.get(second_key)
+        assert second is not None, f"Second collision entry must be importable as '{second_key}'."
+        assert "Second entry body." in second.value
 
 
 # ---------------------------------------------------------------------------
