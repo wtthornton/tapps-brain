@@ -418,15 +418,57 @@ class TestDaysSince:
         result = _days_since(yesterday, now)
         assert abs(result - 1.0) < 0.01
 
-    def test_invalid_timestamp_returns_zero(self) -> None:
+    def test_invalid_timestamp_returns_inf(self) -> None:
+        # TAP-725: malformed timestamps must never be treated as "just now"
         result = _days_since("not-a-timestamp")
-        assert result == 0.0
+        assert math.isinf(result)
+
+    def test_empty_string_returns_inf(self) -> None:
+        # TAP-725: empty string is equally malformed
+        result = _days_since("")
+        assert math.isinf(result)
+
+    def test_none_as_string_returns_inf(self) -> None:
+        # TAP-725: "None" round-tripped through str() is not a valid ISO timestamp
+        result = _days_since("None")
+        assert math.isinf(result)
 
     def test_naive_timestamp_treated_as_utc(self) -> None:
         now = datetime.now(tz=UTC)
         naive = now.replace(tzinfo=None) - timedelta(days=5)
         result = _days_since(naive.isoformat(), now)
         assert abs(result - 5.0) < 0.01
+
+
+class TestCorruptTimestampDecay:
+    """TAP-725: verify corrupt timestamps produce confidence floor, not sticky full confidence."""
+
+    def _default_config(self) -> DecayConfig:
+        return DecayConfig()
+
+    def test_corrupt_updated_at_decays_to_floor(self) -> None:
+        """Entry with unparseable updated_at must return confidence floor, not original confidence."""
+        config = self._default_config()
+        floor = config.confidence_floor
+        entry = _make_entry(confidence=0.9, updated_at="totally-bogus-timestamp")
+        result = calculate_decayed_confidence(entry, config)
+        assert result == pytest.approx(floor), (
+            f"Expected floor {floor}, got {result}; corrupt timestamps must not stay at full confidence"
+        )
+
+    def test_corrupt_last_reinforced_decays_to_floor(self) -> None:
+        """Entry with unparseable last_reinforced must return confidence floor."""
+        config = self._default_config()
+        floor = config.confidence_floor
+        entry = _make_entry(confidence=0.85, last_reinforced="not-a-date", updated_at="also-garbage")
+        result = calculate_decayed_confidence(entry, config)
+        assert result == pytest.approx(floor)
+
+    def test_corrupt_timestamp_is_stale(self) -> None:
+        """Entry with corrupt timestamp must register as stale so GC can collect it."""
+        config = self._default_config()
+        entry = _make_entry(confidence=0.9, updated_at="garbage")
+        assert is_stale(entry, config), "Corrupt-timestamp entry must be considered stale"
 
 
 class TestDecayConfigFromProfile:

@@ -268,7 +268,12 @@ def _get_confidence_floor(tier: MemoryTier | str, config: DecayConfig) -> float:
 
 
 def _days_since(iso_timestamp: str, now: datetime | None = None) -> float:
-    """Return fractional days elapsed since an ISO-8601 timestamp."""
+    """Return fractional days elapsed since an ISO-8601 timestamp.
+
+    If the timestamp is malformed or unparseable, emits a structured warning
+    and returns ``float("inf")`` so the entry decays to its confidence floor
+    rather than being silently treated as freshly updated (TAP-725).
+    """
     if now is None:
         now = datetime.now(tz=UTC)
     try:
@@ -276,7 +281,12 @@ def _days_since(iso_timestamp: str, now: datetime | None = None) -> float:
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=UTC)
     except (ValueError, TypeError):
-        return 0.0
+        logger.warning(
+            "decay.invalid_iso_timestamp",
+            timestamp=iso_timestamp[:64],
+            action="treating_as_maximally_stale",
+        )
+        return float("inf")
     delta = now - ts
     return max(delta.total_seconds() / _SECONDS_PER_DAY, 0.0)
 
