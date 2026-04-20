@@ -227,6 +227,30 @@ class MemoryEntry(BaseModel):
         description="Tally of negative feedback signals applied to this entry.",
     )
 
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _normalize_tier(cls, v: object) -> MemoryTier | str:
+        """Coerce tier to MemoryTier when the string matches a known value.
+
+        Profile-defined layer names (EPIC-010) are valid tier values and are
+        stored as plain strings — they are intentionally allowed through.
+        Non-string, non-MemoryTier inputs and empty strings are rejected.
+        """
+        if isinstance(v, MemoryTier):
+            return v
+        if not isinstance(v, str):
+            msg = f"tier must be a MemoryTier or non-empty string, got {type(v).__name__!r}"
+            raise ValueError(msg)
+        if not v.strip():
+            msg = "tier must not be empty or whitespace-only"
+            raise ValueError(msg)
+        # Coerce strings that match a standard tier to the enum for type consistency;
+        # pass through unrecognised strings (they may be EPIC-010 profile layer names).
+        try:
+            return MemoryTier(v)
+        except ValueError:
+            return v
+
     @field_validator("key")
     @classmethod
     def _validate_key(cls, v: str) -> str:
