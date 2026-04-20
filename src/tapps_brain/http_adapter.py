@@ -111,6 +111,10 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
             agent_id = "other"
         key = (project_id, agent_id)
         _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
+        # Note: when agent_id was remapped to "other" the add below can grow
+        # the set to _MAX_AGENT_ID_CARDINALITY + 1.  This is intentional —
+        # subsequent overflow agents still bucket to "other" via the
+        # `agent_id not in distinct` check, which evaluates False for "other".
         distinct.add(agent_id)
 
 
