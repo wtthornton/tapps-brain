@@ -631,7 +631,7 @@ class OTelExporter:
                     udc.add(delta_g)
                 self._last_gauge_values[name] = current
 
-        except Exception:  # OTel SDK failures must not propagate to callers
+        except Exception:  # nosec B110 — OTel SDK failures must not propagate to callers
             pass
 
 
@@ -746,8 +746,7 @@ class GenAIMetricsRecorder:
                 description="Number of tokens processed in GenAI operations",
                 unit="{token}",
             )
-        except Exception:
-            # OTel SDK internal errors must not propagate
+        except Exception:  # nosec B110 — OTel SDK internal errors must not propagate
             pass
 
     def record_gen_ai_operation(

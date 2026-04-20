@@ -706,14 +706,18 @@ class MemoryStore:
             from tapps_brain.evaluation import AnthropicJudge
 
             return AnthropicJudge(model=model)
+        except ImportError:
+            pass  # anthropic optional dependency not installed
         except Exception:
-            pass
+            logger.debug("anthropic_judge_init_failed", exc_info=True)
         try:
             from tapps_brain.evaluation import OpenAIJudge
 
             return OpenAIJudge()
+        except ImportError:
+            pass  # openai optional dependency not installed
         except Exception:
-            pass
+            logger.debug("openai_judge_init_failed", exc_info=True)
         return None
 
     @property
@@ -746,8 +750,8 @@ class MemoryStore:
         if self._profile is not None:
             try:
                 return int(self._profile.limits.max_entries)
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError):
+                pass  # profile.limits.max_entries absent or non-numeric; fall through to env
         return _max_entries_from_env()
 
     @property
@@ -756,14 +760,14 @@ class MemoryStore:
         if self._profile is not None:
             try:
                 raw = self._profile.limits.max_entries_per_group
-            except Exception:
-                return None
+            except AttributeError:
+                return None  # profile.limits.max_entries_per_group not set
             if raw is None:
                 return None
             try:
                 return int(raw)
-            except Exception:
-                return None
+            except (TypeError, ValueError):
+                return None  # non-numeric cap value; disable the limit
         return None
 
     # ------------------------------------------------------------------
@@ -1188,7 +1192,7 @@ class MemoryStore:
                                 entry = current.model_copy(update=_embed_update)
                             self._entries[key] = entry
                     except Exception:
-                        logger.debug("embedding_compute_failed", key=key, exc_info=True)
+                        logger.warning("embedding_compute_failed", key=key, exc_info=True)
 
             # Persist to Postgres — rollback in-memory cache on failure to
             # maintain write-through consistency.
@@ -1412,7 +1416,7 @@ class MemoryStore:
                     source_keys=result.source_keys,
                 )
         except Exception:
-            logger.debug("auto_consolidation_check_failed", exc_info=True)
+            logger.warning("auto_consolidation_check_failed", exc_info=True)
         finally:
             self._consolidation_in_progress = False
 
@@ -1462,7 +1466,7 @@ class MemoryStore:
                     memory_group=entry.memory_group,
                 )
         except Exception:
-            logger.debug("hive_propagation_failed", key=entry.key, exc_info=True)
+            logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
 
     def get(
         self,
@@ -2766,8 +2770,8 @@ class MemoryStore:
                     )
                     self._metrics.set_gauge("pool.hive.pool_size", _size)
                     self._metrics.set_gauge("pool.hive.saturation", _saturation)
-                except Exception:
-                    pass
+                except (AttributeError, TypeError, KeyError):
+                    pass  # hive pool stats unavailable; best-effort metrics skip
 
         # tapps_brain.* gauges — STORY-032.6
         with self._serialized():

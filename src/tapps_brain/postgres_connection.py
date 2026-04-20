@@ -327,8 +327,8 @@ class PostgresConnectionManager:
                     "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
                 }
             )
-        except Exception:
-            pass
+        except (AttributeError, TypeError, ValueError, KeyError, ZeroDivisionError):
+            pass  # pool stats unavailable; return defaults
         return base
 
     @contextmanager

@@ -451,7 +451,7 @@ class PostgresPrivateBackend:
                 rows = cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
-            logger.debug("postgres_private.knn_search_failed", exc_info=True)
+            logger.warning("postgres_private.knn_search_failed", exc_info=True)
             return []
 
     def vector_row_count(self) -> int:

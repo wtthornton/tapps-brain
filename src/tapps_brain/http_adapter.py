@@ -252,8 +252,8 @@ def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
         if cm is not None and hasattr(cm, "get_pool_stats"):
             stats: dict[str, Any] = cm.get_pool_stats()
             return stats
-    except Exception:
-        pass
+    except (AttributeError, TypeError):
+        pass  # hive connection manager unavailable or pool_stats not exposed
     return None
 
 
@@ -336,7 +336,8 @@ def _collect_metrics(
     # TAP-547: when redacting, aggregate over (project_id, agent_id) but
     # keep (tool, status) — those are not tenant-identifying and remain
     # useful for ops / alerting on anonymous scrapes.
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
 
         tool_counts = get_tool_call_counts_snapshot()
@@ -369,8 +370,6 @@ def _collect_metrics(
                         f'agent_id="{safe_aid}",tool="{safe_tool}",'
                         f'status="{safe_status}"}} {count}'
                     )
-    except Exception:  # pragma: no cover — otel_tracer import error must not crash /metrics
-        pass
 
     # TAP-549: in-memory session-state cardinality gauge.  Alertable
     # signal for the "client rotates session_id every call" failure mode
@@ -410,7 +409,8 @@ def _collect_metrics(
     # TAP-655: per-project counter for missing HNSW indexes detected at startup.
     # Non-zero means migration 002 was not applied on that project's DB.
     # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.postgres_private import get_missing_index_counts_snapshot
 
         missing_idx_counts = get_missing_index_counts_snapshot()
@@ -431,11 +431,10 @@ def _collect_metrics(
                     lines.append(
                         f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
                     )
-    except Exception:  # pragma: no cover — import error must not crash /metrics
-        pass
 
     # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
 
         _filter_snap = get_profile_filter_metrics_snapshot()
@@ -484,11 +483,10 @@ def _collect_metrics(
                     f'tapps_brain_mcp_tools_call_total{{profile="{_sp}",'
                     f'tool="{_st}",outcome="{_so}"}} {_count}'
                 )
-    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
-        pass
 
     # STORY-073.4: profile resolver resolution-source + cache metrics.
-    try:
+    # suppress(Exception): any runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         _resolver = _PROFILE_RESOLVER
         if _resolver is not None:
             _res_stats = _resolver.resolution_stats()
@@ -520,8 +518,6 @@ def _collect_metrics(
                         lines.append(
                             f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
                         )
-    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
-        pass
 
     lines.append("")
     return "\n".join(lines)

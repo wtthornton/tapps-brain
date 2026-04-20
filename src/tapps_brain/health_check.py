@@ -281,8 +281,8 @@ def run_health_check(  # noqa: PLR0915
                     store_health.pool_max = int(_ps.get("pool_max", 0))
                     store_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                     store_health.pool_idle = int(_ps.get("pool_available", 0))
-                except Exception:
-                    pass
+                except (AttributeError, TypeError, ValueError, KeyError):
+                    pass  # pool stats unavailable; health check continues without them
 
             # Last applied private-memory migration version.
             import os as _os
@@ -294,7 +294,7 @@ def run_health_check(  # noqa: PLR0915
 
                     _schema = get_private_schema_status(_db_url)
                     store_health.last_migration_version = _schema.current_version
-                except Exception:
+                except Exception:  # nosec B110 — best-effort; missing migration info must not abort health check
                     pass
 
             # Checks
@@ -373,8 +373,8 @@ def run_health_check(  # noqa: PLR0915
                             hive_health.pool_max = int(_ps.get("pool_max", 0))
                             hive_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                             hive_health.pool_idle = int(_ps.get("pool_available", 0))
-                        except Exception:
-                            pass
+                        except (AttributeError, TypeError, ValueError, KeyError):
+                            pass  # hive pool stats unavailable; health check continues without them
 
                     # Migration version: last applied Hive schema version.
                     if _hive_dsn:
@@ -383,7 +383,7 @@ def run_health_check(  # noqa: PLR0915
 
                             _schema = get_hive_schema_status(_hive_dsn)
                             hive_health.migration_version = _schema.current_version
-                        except Exception:
+                        except Exception:  # nosec B110 — best-effort; missing hive migration info must not abort health check
                             pass
 
                 finally:
@@ -419,8 +419,8 @@ def run_health_check(  # noqa: PLR0915
                     for src_key in rel.get("source_entry_keys", []):
                         if src_key not in all_keys:
                             orphaned += 1
-            except Exception:
-                pass
+            except (AttributeError, TypeError):
+                pass  # _persistence.list_relations not available; skip orphan check
             integrity_health.orphaned_relations = orphaned
 
             # Expired entries (past valid_at)

@@ -231,7 +231,7 @@ def _get_context_attrs(span_name: str | None = None) -> dict[str, str | int | fl
             attrs[ATTR_AGENT_ID] = str(aid)
         if scope:
             attrs[ATTR_SCOPE] = str(scope)
-    except Exception:  # mcp_server unavailable in some test contexts
+    except Exception:  # nosec B110 — mcp_server context vars unavailable in some test contexts
         pass
 
     if span_name is not None:
@@ -412,7 +412,7 @@ def start_mcp_tool_span(
                 _pid = REQUEST_PROJECT_ID.get()
             if _aid is None:
                 _aid = REQUEST_AGENT_ID.get()
-        except Exception:
+        except Exception:  # nosec B110 — mcp_server context vars unavailable in some test contexts
             pass
     if _pid:
         attributes[ATTR_PROJECT_ID] = str(_pid)

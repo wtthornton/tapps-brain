@@ -980,8 +980,8 @@ def stats_cmd(  # noqa: PLR0915
                 created = datetime.fromisoformat(e.created_at.replace("Z", "+00:00"))
                 if created >= week_ago:
                     recent_count += 1
-            except Exception:
-                pass
+            except (ValueError, AttributeError, TypeError):
+                pass  # malformed or missing created_at; skip this entry in recency count
 
             # Near expiry
             if eff_conf < _STATS_NEAR_EXPIRY_THRESHOLD:
