@@ -273,8 +273,16 @@ def sync_to_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any]:
 
     memory_md_path = workspace_dir / "MEMORY.md"
     tmp_md_path = memory_md_path.with_name(memory_md_path.name + ".tmp")
-    tmp_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    os.replace(tmp_md_path, memory_md_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
+    try:
+        tmp_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(tmp_md_path, memory_md_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
+    except BaseException:
+        # Clean up the partial tmp file so stale artefacts do not accumulate.
+        try:
+            tmp_md_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
     state = _load_sync_state(workspace_dir)
     state["last_sync_to"] = datetime.now(tz=UTC).isoformat()
