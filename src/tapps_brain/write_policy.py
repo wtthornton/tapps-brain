@@ -23,6 +23,7 @@ Design notes
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -131,8 +132,9 @@ class LLMWritePolicy:
         self._judge = judge
         self._candidates_limit = candidates_limit
         self._rate_limit_per_minute = rate_limit_per_minute
-        # Simple sliding-window rate-limit state (thread-safe via GIL for CPython).
+        # Sliding-window rate-limit state, protected by a lock for thread safety.
         self._call_timestamps: list[float] = []
+        self._rate_limit_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Rate limit helpers
@@ -141,12 +143,12 @@ class LLMWritePolicy:
     def _check_rate_limit(self) -> bool:
         """Return True if a call is allowed, False if the cap is exceeded."""
         now = time.monotonic()
-        cutoff = now - 60.0
-        self._call_timestamps = [t for t in self._call_timestamps if t > cutoff]
-        if len(self._call_timestamps) >= self._rate_limit_per_minute:
-            return False
-        self._call_timestamps.append(now)
-        return True
+        with self._rate_limit_lock:
+            self._call_timestamps = [t for t in self._call_timestamps if t > now - 60.0]
+            if len(self._call_timestamps) >= self._rate_limit_per_minute:
+                return False
+            self._call_timestamps.append(now)
+            return True
 
     # ------------------------------------------------------------------
     # Core decision
