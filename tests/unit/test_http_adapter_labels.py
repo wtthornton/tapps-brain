@@ -3,6 +3,10 @@
 TAP-599: ``_record_labeled_request`` must use O(1) membership checks via
 ``_DISTINCT_AGENTS_PER_PROJECT`` instead of an O(N) set-comprehension.
 
+TAP-600: bounded project LRU — running 100k distinct project_ids must not
+grow ``_LABELED_REQUEST_COUNTS`` past ``_MAX_PROJECT_CARDINALITY`` entries;
+evictions are counted in ``_TENANT_LABELS_EVICTED_TOTAL``.
+
 Coverage targets:
 * Normal increment path.
 * 100-agent cap: first 100 unique agent_ids stored as-is.
@@ -11,12 +15,17 @@ Coverage targets:
 * ``"other"`` itself accumulates across overflow agents.
 * ``_DISTINCT_AGENTS_PER_PROJECT`` stays in sync with ``_LABELED_REQUEST_COUNTS``.
 * Projects are independent — overflow in project A does not affect project B.
+* TAP-600: project LRU bounds the number of tracked projects.
+* TAP-600: LRU eviction increments ``_TENANT_LABELS_EVICTED_TOTAL``.
+* TAP-600: most-recently-used project survives when LRU eviction fires.
 """
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Generator
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import tapps_brain.http_adapter as _mod
 from tapps_brain.http_adapter import (
@@ -32,12 +41,16 @@ from tapps_brain.http_adapter import (
 
 @contextmanager
 def _clean_state() -> Generator[None, None, None]:
-    """Zero both counters and restore on exit to prevent test-order effects."""
+    """Zero all counter state and restore on exit to prevent test-order effects."""
     with _LABELED_REQUEST_COUNTS_LOCK:
         prior_counts = dict(_mod._LABELED_REQUEST_COUNTS)
         prior_distinct = {k: set(v) for k, v in _mod._DISTINCT_AGENTS_PER_PROJECT.items()}
+        prior_lru: OrderedDict[str, None] = OrderedDict(_mod._PROJECT_LRU)
+        prior_evicted = _mod._TENANT_LABELS_EVICTED_TOTAL
         _mod._LABELED_REQUEST_COUNTS.clear()
         _mod._DISTINCT_AGENTS_PER_PROJECT.clear()
+        _mod._PROJECT_LRU.clear()
+        _mod._TENANT_LABELS_EVICTED_TOTAL = 0
     try:
         yield
     finally:
@@ -46,6 +59,9 @@ def _clean_state() -> Generator[None, None, None]:
             _mod._LABELED_REQUEST_COUNTS.update(prior_counts)
             _mod._DISTINCT_AGENTS_PER_PROJECT.clear()
             _mod._DISTINCT_AGENTS_PER_PROJECT.update(prior_distinct)
+            _mod._PROJECT_LRU.clear()
+            _mod._PROJECT_LRU.update(prior_lru)
+            _mod._TENANT_LABELS_EVICTED_TOTAL = prior_evicted
 
 
 # ---------------------------------------------------------------------------
@@ -192,3 +208,106 @@ class TestStateConsistency:
 
             distinct = _mod._DISTINCT_AGENTS_PER_PROJECT.get("proj-size", set())
             assert len(distinct) == 10
+
+
+# ---------------------------------------------------------------------------
+# TAP-600: bounded project-LRU cardinality
+# ---------------------------------------------------------------------------
+
+
+class TestProjectLRUBound:
+    """Verify that _LABELED_REQUEST_COUNTS never exceeds the project cardinality cap."""
+
+    def test_100k_projects_do_not_exceed_cap(self) -> None:
+        """Running 100k distinct project_ids keeps the dict within the cap."""
+        cap = 50  # use a small cap for speed
+        with _clean_state():
+            with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
+                for i in range(100_000):
+                    _record_labeled_request(f"proj-{i}", "agent-1")
+
+            # Number of distinct project_ids tracked must not exceed cap.
+            tracked_projects = {k[0] for k in _mod._LABELED_REQUEST_COUNTS}
+            assert len(tracked_projects) <= cap
+
+    def test_eviction_increments_evicted_total(self) -> None:
+        """Each project eviction increments _TENANT_LABELS_EVICTED_TOTAL."""
+        cap = 3
+        with _clean_state():
+            with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
+                # Fill to cap without triggering eviction.
+                for i in range(cap):
+                    _record_labeled_request(f"proj-{i}", "agent-x")
+                assert _mod._TENANT_LABELS_EVICTED_TOTAL == 0
+
+                # One more project forces one eviction.
+                _record_labeled_request("proj-overflow", "agent-x")
+                assert _mod._TENANT_LABELS_EVICTED_TOTAL == 1
+
+                # Three more overflow → three more evictions.
+                for j in range(3):
+                    _record_labeled_request(f"proj-extra-{j}", "agent-x")
+                assert _mod._TENANT_LABELS_EVICTED_TOTAL == 4
+
+    def test_lru_order_most_recently_used_survives(self) -> None:
+        """The MRU project must survive eviction; the LRU project is evicted."""
+        cap = 2
+        with _clean_state():
+            with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
+                _record_labeled_request("proj-old", "agent-1")   # LRU
+                _record_labeled_request("proj-new", "agent-1")   # MRU
+
+                # Re-touch proj-old to make it MRU; proj-new becomes LRU.
+                _record_labeled_request("proj-old", "agent-2")
+
+                # Adding a brand-new project evicts the LRU (proj-new).
+                _record_labeled_request("proj-third", "agent-1")
+
+                tracked = {k[0] for k in _mod._LABELED_REQUEST_COUNTS}
+                assert "proj-new" not in tracked, "LRU project was not evicted"
+                assert "proj-old" in tracked, "MRU project must survive"
+                assert "proj-third" in tracked
+
+    def test_evicted_project_entries_removed_from_distinct(self) -> None:
+        """Evicted project must also be removed from _DISTINCT_AGENTS_PER_PROJECT."""
+        cap = 1
+        with _clean_state():
+            with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
+                _record_labeled_request("proj-evict-me", "agent-1")
+                assert "proj-evict-me" in _mod._DISTINCT_AGENTS_PER_PROJECT
+
+                _record_labeled_request("proj-new", "agent-1")
+                assert "proj-evict-me" not in _mod._DISTINCT_AGENTS_PER_PROJECT
+
+    def test_repeated_access_same_project_no_eviction(self) -> None:
+        """A single project accessed many times never triggers eviction."""
+        cap = 5
+        with _clean_state():
+            with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
+                for _ in range(10_000):
+                    _record_labeled_request("proj-stable", "agent-1")
+                assert _mod._TENANT_LABELS_EVICTED_TOTAL == 0
+                assert len({k[0] for k in _mod._LABELED_REQUEST_COUNTS}) == 1
+
+
+class TestEvictionMetricExposed:
+    """_collect_metrics must include tapps_brain_tenant_labels_evicted_total."""
+
+    def test_eviction_counter_in_metrics_output(self) -> None:
+        from tapps_brain.http_adapter import _collect_metrics
+
+        with _clean_state():
+            with patch.object(_mod, "_TENANT_LABELS_EVICTED_TOTAL", 42):
+                output = _collect_metrics(dsn=None)
+
+        assert "tapps_brain_tenant_labels_evicted_total" in output
+        assert "42" in output
+
+    def test_eviction_counter_zero_still_emitted(self) -> None:
+        """Counter must always be emitted (even at zero) for stable Prometheus series."""
+        from tapps_brain.http_adapter import _collect_metrics
+
+        with _clean_state():
+            output = _collect_metrics(dsn=None)
+
+        assert "tapps_brain_tenant_labels_evicted_total 0" in output
