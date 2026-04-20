@@ -137,7 +137,7 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
         os.close(tmp_fd)
     try:
         os.replace(tmp_name, str(path))
-    except Exception:
+    except BaseException:
         Path(tmp_name).unlink(missing_ok=True)
         raise
 
