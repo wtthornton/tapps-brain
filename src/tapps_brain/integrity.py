@@ -184,7 +184,7 @@ def compute_integrity_hash(
     Returns:
         Hex-encoded HMAC-SHA256 digest.
     """
-    hmac_key = signing_key or get_signing_key()
+    hmac_key = signing_key if signing_key is not None else get_signing_key()
     canonical = f"{key}|{value}|{tier}|{source}".encode()
     return hmac.new(hmac_key, canonical, hashlib.sha256).hexdigest()
 
