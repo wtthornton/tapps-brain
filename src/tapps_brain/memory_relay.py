@@ -17,6 +17,7 @@ import structlog
 from tapps_brain.agent_scope import normalize_agent_scope
 from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.models import MemoryScope
+from tapps_brain.rate_limiter import batch_exempt_scope
 from tapps_brain.tier_normalize import normalize_save_tier
 
 if TYPE_CHECKING:
@@ -221,7 +222,6 @@ def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
         "tags": tag_list,
         "confidence": confidence,
         "branch": branch_s,
-        "batch_context": "memory_relay",
         **mg_kw,
     }
     return save_kw, None
@@ -263,7 +263,8 @@ def import_relay_to_store(store: MemoryStore, payload: dict[str, Any]) -> RelayI
         assert save_kw is not None
 
         try:
-            out = store.save(**save_kw)
+            with batch_exempt_scope("memory_relay"):
+                out = store.save(**save_kw)
         except (TypeError, ValueError) as exc:
             msg = f"{prefix}: save error ({exc}), skipped"
             logger.warning("relay_skip", reason=msg)

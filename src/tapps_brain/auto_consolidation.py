@@ -32,6 +32,7 @@ from tapps_brain.models import (
     MemoryEntry,
     _utc_now_iso,
 )
+from tapps_brain.rate_limiter import batch_exempt_scope
 from tapps_brain.similarity import compute_similarity_with_embeddings, find_consolidation_groups
 
 if TYPE_CHECKING:
@@ -490,18 +491,18 @@ def _persist_consolidated_entry(
     STORY-SC03 (TAP-559): *audit_similarity_score* and *audit_merge_rule* are
     forwarded to :func:`_append_consolidation_audit` for operator traceability.
     """
-    store.save(
-        key=consolidated.key,
-        value=consolidated.value,
-        tier=_get_enum_value(consolidated.tier),
-        source=_get_enum_value(consolidated.source),
-        source_agent=consolidated.source_agent,
-        scope=_get_enum_value(consolidated.scope),
-        tags=consolidated.tags,
-        confidence=consolidated.confidence,
-        batch_context="consolidate",
-        skip_consolidation=True,
-    )
+    with batch_exempt_scope("consolidate"):
+        store.save(
+            key=consolidated.key,
+            value=consolidated.value,
+            tier=_get_enum_value(consolidated.tier),
+            source=_get_enum_value(consolidated.source),
+            source_agent=consolidated.source_agent,
+            scope=_get_enum_value(consolidated.scope),
+            tags=consolidated.tags,
+            confidence=consolidated.confidence,
+            skip_consolidation=True,
+        )
 
     # Merge relations from all source entries onto the consolidated entry.
     relation_lists = [store.get_relations(k) for k in source_keys]

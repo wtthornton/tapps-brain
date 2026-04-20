@@ -392,7 +392,6 @@ def _import_memory_md_sync(
             value=value,
             tier=tier_str,
             source=MemorySource.system.value,
-            batch_context="sync_from_markdown",
         )
         imported += 1
         logger.debug("markdown_sync.imported", key=key, tier=tier_str)
@@ -454,7 +453,6 @@ def _import_daily_notes_sync(
             value=value,
             tier=MemoryTier.context.value,
             source=MemorySource.system.value,
-            batch_context="sync_from_markdown",
         )
         imported += 1
         logger.debug("markdown_sync.imported_daily", key=key, date=date_str)

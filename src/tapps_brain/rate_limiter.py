@@ -3,14 +3,30 @@
 Provides warn-only rate limiting to detect anomalous write bursts
 without blocking legitimate operations. Configurable per-minute and
 per-session limits with batch context exemptions.
+
+Security model
+--------------
+Rate-limit exemptions are granted exclusively through :func:`batch_exempt_scope`,
+a context manager that sets a thread/task-local :class:`~contextvars.ContextVar`.
+No public entry-point (HTTP, MCP, CLI) accepts a caller-supplied exemption string;
+``MemoryStore.save()`` no longer exposes ``batch_context`` as a parameter.
+
+Trusted internal callers (markdown importer, seeding, federation sync, memory
+relay, auto-consolidation) wrap their writes with::
+
+    with batch_exempt_scope("import_markdown"):
+        store.save(key=..., value=...)
 """
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Generator
 
 import structlog
 
@@ -20,7 +36,8 @@ logger = structlog.get_logger(__name__)
 _DEFAULT_WRITES_PER_MINUTE = 20
 _DEFAULT_WRITES_PER_SESSION = 100
 
-# Batch contexts exempt from rate limiting (H6b)
+# Batch contexts exempt from rate limiting (H6b).
+# This frozenset is the authority — batch_exempt_scope() validates against it.
 BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
     {
         "import_markdown",
@@ -30,6 +47,42 @@ BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
         "consolidate",
     }
 )
+
+# Internal contextvar — set only by batch_exempt_scope(); never from user input.
+_batch_ctx_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_batch_ctx_var", default=None
+)
+
+
+@contextmanager
+def batch_exempt_scope(context: str) -> Generator[None, None, None]:
+    """Grant rate-limit exemption for the current thread/task context.
+
+    Only trusted *internal* entry-points (markdown importer, federation sync,
+    seeding, consolidation, memory relay) should call this.  Never pass a
+    caller-supplied string through this function.
+
+    Args:
+        context: Must be one of :data:`BATCH_EXEMPT_CONTEXTS`.
+
+    Raises:
+        ValueError: If *context* is not a recognised exempt context name.
+
+    Example::
+
+        with batch_exempt_scope("import_markdown"):
+            store.save(key="x", value="y")
+    """
+    if context not in BATCH_EXEMPT_CONTEXTS:
+        raise ValueError(
+            f"Unknown batch context {context!r}. "
+            f"Valid contexts: {sorted(BATCH_EXEMPT_CONTEXTS)}"
+        )
+    token = _batch_ctx_var.set(context)
+    try:
+        yield
+    finally:
+        _batch_ctx_var.reset(token)
 
 
 @dataclass
@@ -103,12 +156,12 @@ class SlidingWindowRateLimiter:
                 exempt_writes=self._stats.exempt_writes,
             )
 
-    def check(self, *, batch_context: str | None = None) -> RateLimitResult:
+    def check(self) -> RateLimitResult:
         """Check rate limits and record the write.
 
-        Args:
-            batch_context: If provided and in ``BATCH_EXEMPT_CONTEXTS``,
-                the write is exempt from rate limiting.
+        Exemption is granted when the caller is inside a
+        :func:`batch_exempt_scope` context manager — never from a
+        caller-supplied parameter.
 
         Returns:
             ``RateLimitResult`` indicating whether limits were exceeded.
@@ -117,8 +170,10 @@ class SlidingWindowRateLimiter:
         if not self._config.enabled:
             return RateLimitResult()
 
-        # Batch context exemption (H6b)
-        if batch_context is not None and batch_context in BATCH_EXEMPT_CONTEXTS:
+        # Batch context exemption (H6b) — read from contextvar only; never
+        # from user-supplied data.
+        _ctx = _batch_ctx_var.get()
+        if _ctx is not None and _ctx in BATCH_EXEMPT_CONTEXTS:
             with self._lock:
                 self._stats.exempt_writes += 1
                 self._stats.total_writes += 1

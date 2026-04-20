@@ -797,7 +797,6 @@ class MemoryStore:
         failed_approaches: list[str] | None = None,
         *,
         skip_consolidation: bool = False,
-        batch_context: str | None = None,
         session_id: str | None = None,
         dedup: bool = True,
         conflict_check: bool = True,
@@ -807,6 +806,10 @@ class MemoryStore:
 
         Returns the saved ``MemoryEntry``, or an error dict if RAG safety
         blocks the content.
+
+        Rate-limit exemption is granted by wrapping trusted internal bulk
+        operations with :func:`~tapps_brain.rate_limiter.batch_exempt_scope`.
+        Never accept a caller-supplied exemption string from HTTP/MCP/CLI.
 
         Args:
             key: Unique identifier for the memory.
@@ -828,8 +831,6 @@ class MemoryStore:
             branch: Git branch name (required when scope=branch).
             confidence: Confidence score (-1.0 for auto from source).
             skip_consolidation: If True, skip auto-consolidation check.
-            batch_context: Operation context for rate limit exemption
-                (e.g. "import_markdown", "seed", "federation_sync", "consolidate").
             session_id: Optional session identifier for implicit feedback tracking
                 (STORY-029.3).  Used by 029-4b correction detection.
             conflict_check: When True, check for entries that may conflict with
@@ -884,8 +885,9 @@ class MemoryStore:
                 "message": wr_error,
             }
 
-        # Rate limit check (H6a) — warn-only, never blocks
-        rate_result = self._rate_limiter.check(batch_context=batch_context)
+        # Rate limit check (H6a) — warn-only, never blocks.
+        # Exemption is read from the batch_exempt_scope() contextvar only.
+        rate_result = self._rate_limiter.check()
         if rate_result.minute_exceeded or rate_result.session_exceeded:
             logger.warning(
                 "memory_save_rate_warning",

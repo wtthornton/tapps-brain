@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from tapps_brain.models import MAX_KEY_LENGTH, MAX_VALUE_LENGTH, MemorySource, MemoryTier
+from tapps_brain.rate_limiter import batch_exempt_scope
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -109,13 +110,13 @@ def _parse_and_import(text: str, store: MemoryStore) -> int:
         if len(value) > MAX_VALUE_LENGTH:
             value = value[:MAX_VALUE_LENGTH]
 
-        store.save(
-            key=key,
-            value=value,
-            tier=tier.value,
-            source=MemorySource.system.value,
-            batch_context="import_markdown",
-        )
+        with batch_exempt_scope("import_markdown"):
+            store.save(
+                key=key,
+                value=value,
+                tier=tier.value,
+                source=MemorySource.system.value,
+            )
         imported += 1
         logger.debug("markdown_import.imported", key=key, tier=tier.value)
 
@@ -188,13 +189,13 @@ def _import_daily_note(path: Path, store: MemoryStore) -> bool:
     # Truncate if needed
     value = text[:MAX_VALUE_LENGTH]
 
-    store.save(
-        key=key,
-        value=value,
-        tier=MemoryTier.context.value,
-        source=MemorySource.system.value,
-        batch_context="import_markdown",
-    )
+    with batch_exempt_scope("import_markdown"):
+        store.save(
+            key=key,
+            value=value,
+            tier=MemoryTier.context.value,
+            source=MemorySource.system.value,
+        )
     logger.debug("markdown_import.imported_daily", key=key, date=date_str)
     return True
 
@@ -236,13 +237,13 @@ def import_openclaw_workspace(
                 continue
             if len(value) > MAX_VALUE_LENGTH:
                 value = value[:MAX_VALUE_LENGTH]
-            store.save(
-                key=key,
-                value=value,
-                tier=tier.value,
-                source=MemorySource.system.value,
-                batch_context="import_markdown",
-            )
+            with batch_exempt_scope("import_markdown"):
+                store.save(
+                    key=key,
+                    value=value,
+                    tier=tier.value,
+                    source=MemorySource.system.value,
+                )
             memory_md_count += 1
     else:
         logger.info("markdown_import.no_memory_md", dir=str(workspace_dir))

@@ -119,7 +119,6 @@ def session_summary_save(
             scope=scope,
             tags=all_tags,
             agent_scope="private",
-            batch_context="session_summary",
         )
     finally:
         store.close()

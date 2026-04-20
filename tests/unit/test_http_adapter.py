@@ -1828,3 +1828,88 @@ class TestPerTenantAuthRequiresProjectId:
             f"Global token without X-Project-Id should work when per-tenant auth "
             f"is disabled, got {resp.status_code}: {resp.text}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TAP-714: BATCH_EXEMPT_CONTEXTS bypass prevention
+# ---------------------------------------------------------------------------
+
+
+class TestBatchContextBypassPrevented:
+    """TAP-714: HTTP callers cannot bypass rate limiting via batch_context.
+
+    Verifies that a caller supplying ``batch_context`` in the /v1/remember
+    JSON body cannot gain rate-limit exemption.  The handler must silently
+    ignore unknown body fields and must NOT pass batch_context through to
+    MemoryStore.save().
+    """
+
+    def test_batch_context_in_body_ignored_by_http_handler(self) -> None:
+        """Supplying batch_context in the JSON body must not reach store.save().
+
+        The /v1/remember handler only reads a fixed set of fields from the
+        JSON body (key, value, tier, source, tags, scope, confidence,
+        agent_scope, group).  Any additional field — including
+        ``batch_context`` — is silently dropped.
+        """
+        import inspect
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.services import memory_service as ms
+
+        mock_store = MagicMock()
+        settings = _make_settings(auth_token="tok", store=mock_store)
+
+        saved_calls: list[dict[str, Any]] = []
+
+        def _capture_save(store: Any, project_id: str, agent_id: str, **kwargs: Any) -> dict:
+            saved_calls.append(kwargs)
+            return {"status": "saved", "key": kwargs.get("key", "k"), "tier": "pattern",
+                    "confidence": 0.8, "memory_group": None}
+
+        with (
+            patch.object(ms, "memory_save", side_effect=_capture_save),
+            _client(settings) as client,
+        ):
+            resp = client.post(
+                "/v1/remember",
+                json={
+                    "key": "test-key",
+                    "value": "test-value",
+                    "batch_context": "federation_sync",  # attacker-supplied
+                },
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-Project-Id": "proj-test",
+                },
+            )
+
+        # Request must succeed (batch_context is unknown but harmless)
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+        # The memory_service must have been called
+        assert len(saved_calls) == 1
+        call_kwargs = saved_calls[0]
+
+        # SECURITY: batch_context must NOT be passed through from the HTTP body
+        assert "batch_context" not in call_kwargs, (
+            "SECURITY REGRESSION (TAP-714): batch_context was forwarded from the "
+            "HTTP body to memory_service.memory_save, enabling rate-limit bypass"
+        )
+
+    def test_rate_limiter_check_has_no_batch_context_param(self) -> None:
+        """SlidingWindowRateLimiter.check() must not accept batch_context parameter.
+
+        This is the API-surface guard: removing the parameter from check()
+        means no code path (HTTP, MCP, CLI, or direct SDK) can inject an
+        exemption string.
+        """
+        import inspect
+
+        from tapps_brain.rate_limiter import SlidingWindowRateLimiter
+
+        sig = inspect.signature(SlidingWindowRateLimiter.check)
+        assert "batch_context" not in sig.parameters, (
+            "SECURITY REGRESSION (TAP-714): SlidingWindowRateLimiter.check() "
+            "still accepts batch_context — external callers can forge exemptions"
+        )
