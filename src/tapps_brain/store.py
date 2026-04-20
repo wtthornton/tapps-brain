@@ -25,6 +25,7 @@ from tapps_brain.models import (
     MemoryScope,
     MemorySnapshot,
     MemorySource,
+    MemoryStatus,
     MemoryTier,
     _utc_now_iso,
 )
@@ -76,6 +77,27 @@ logger = structlog.get_logger(__name__)
 # YAML profile (``limits.max_entries``) still wins when set.  Precedence:
 # YAML > env > default.
 _MAX_ENTRIES_DEFAULT = 5000
+
+
+def _resolve_status(
+    explicit: str | None,
+    existing: MemoryEntry | None,
+) -> MemoryStatus:
+    """Return the status to write on a save() call.
+
+    Priority:
+    1. Caller-provided non-empty string → coerce to MemoryStatus (fallback active).
+    2. Existing entry's status → preserve on update.
+    3. Default active.
+    """
+    if explicit is not None and explicit != "":
+        try:
+            return MemoryStatus(explicit)
+        except ValueError:
+            return MemoryStatus.active
+    if existing is not None:
+        return existing.status
+    return MemoryStatus.active
 
 
 def _max_entries_from_env() -> int:
@@ -795,6 +817,10 @@ class MemoryStore:
         memory_group: str | None | object = MEMORY_GROUP_UNSET,
         temporal_sensitivity: Literal["high", "medium", "low"] | None = None,
         failed_approaches: list[str] | None = None,
+        status: str | None = None,
+        stale_reason: str | None = None,
+        stale_date: str | None = None,
+        superseded_by: str | None = None,
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
@@ -1144,7 +1170,9 @@ class MemoryStore:
                     if _conflict_valid_at
                     else (existing.valid_at if existing else None),
                     invalid_at=existing.invalid_at if existing else None,
-                    superseded_by=existing.superseded_by if existing else None,
+                    superseded_by=superseded_by
+                    if superseded_by is not None
+                    else (existing.superseded_by if existing else None),
                     # Provenance metadata (GitHub #38)
                     source_session_id=source_session_id,
                     source_channel=source_channel,
@@ -1164,6 +1192,14 @@ class MemoryStore:
                     failed_approaches=failed_approaches
                     if failed_approaches is not None
                     else (existing.failed_approaches if existing else []),
+                    # TAP-732: Lifecycle status — preserve on update unless explicitly overridden.
+                    status=_resolve_status(status, existing),
+                    stale_reason=stale_reason
+                    if stale_reason is not None
+                    else (existing.stale_reason if existing else None),
+                    stale_date=stale_date
+                    if stale_date is not None
+                    else (existing.stale_date if existing else None),
                 )
 
                 # Compute integrity hash (H4a)

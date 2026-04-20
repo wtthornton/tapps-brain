@@ -756,6 +756,7 @@ def create_server(  # noqa: PLR0915
         agent_id: str = "",
         temporal_sensitivity: str | None = None,
         failed_approaches: list[str] | None = None,
+        supersedes: str = "",
     ) -> str:
         """Save a memory to the agent's brain.
 
@@ -771,6 +772,12 @@ def create_server(  # noqa: PLR0915
         Pass ``failed_approaches`` to record dead-end investigation paths so future
         agents don't repeat them (max 5 items).  These are surfaced in brain_recall
         responses when non-empty.
+
+        Pass ``supersedes=<old-key>`` to mark an existing entry as superseded when
+        saving a replacement.  The old entry's status is set to 'superseded' and its
+        ``superseded_by`` field is updated to point to the new key.  When a response
+        contains ``supersession_candidate``, pass that key as ``supersedes`` in a
+        follow-up call to confirm the replacement.
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
@@ -785,15 +792,24 @@ def create_server(  # noqa: PLR0915
                 share_with=share_with,
                 temporal_sensitivity=temporal_sensitivity,
                 failed_approaches=failed_approaches,
+                supersedes=supersedes or None,
             )
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_recall(query: str, max_results: int = 5, agent_id: str = "") -> str:
+    def brain_recall(
+        query: str,
+        max_results: int = 5,
+        agent_id: str = "",
+        include_stale: bool = False,
+    ) -> str:
         """Recall memories matching a query.
 
         Pass ``agent_id`` to override the server-level default for this call
         (STORY-070.7).
+
+        By default, entries marked ``stale`` or ``superseded`` are excluded.
+        Pass ``include_stale=True`` to include them (useful for diagnostic queries).
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
@@ -804,6 +820,7 @@ def create_server(  # noqa: PLR0915
                 eff_aid,
                 query=query,
                 max_results=max_results,
+                include_stale=include_stale,
             ),
             default=str,
         )

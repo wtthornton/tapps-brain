@@ -234,6 +234,14 @@ class MemoryGarbageCollector:
 
     def _archive_reasons(self, entry: MemoryEntry, now: datetime) -> list[str]:
         """Return non-empty list when the entry should be archived; each item is a reason code."""
+        # TAP-732: stale entries are explicitly flagged for human review; never auto-archive.
+        # They will remain visible (filtered from brain_recall by default) until a replacement
+        # is written and the entry is superseded or manually archived.
+        from tapps_brain.models import MemoryStatus
+
+        if getattr(entry, "status", MemoryStatus.active) == MemoryStatus.stale:
+            return []
+
         reasons: list[str] = []
         effective = calculate_decayed_confidence(entry, self._config, now=now)
 

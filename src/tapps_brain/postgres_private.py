@@ -208,7 +208,10 @@ class PostgresPrivateBackend:
                     positive_feedback_count, negative_feedback_count,
                     integrity_hash, embedding_model_id,
                     temporal_sensitivity,
-                    failed_approaches
+                    failed_approaches,
+                    status,
+                    stale_reason,
+                    stale_date
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -224,7 +227,8 @@ class PostgresPrivateBackend:
                     %s, %s,
                     %s, %s,
                     %s,
-                    %s::jsonb
+                    %s::jsonb,
+                    %s, %s, %s
                 )
                 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
                     value                    = EXCLUDED.value,
@@ -263,7 +267,10 @@ class PostgresPrivateBackend:
                     integrity_hash           = EXCLUDED.integrity_hash,
                     embedding_model_id       = EXCLUDED.embedding_model_id,
                     temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
-                    failed_approaches        = EXCLUDED.failed_approaches
+                    failed_approaches        = EXCLUDED.failed_approaches,
+                    status                   = EXCLUDED.status,
+                    stale_reason             = EXCLUDED.stale_reason,
+                    stale_date               = EXCLUDED.stale_date
                 """,
                 (
                     self._project_id,
@@ -307,6 +314,9 @@ class PostgresPrivateBackend:
                     entry.embedding_model_id,
                     entry.temporal_sensitivity,
                     json.dumps(entry.failed_approaches, ensure_ascii=False),
+                    entry.status.value if hasattr(entry.status, "value") else str(entry.status),
+                    entry.stale_reason,
+                    entry.stale_date,
                 ),
             )
 
@@ -974,7 +984,13 @@ class PostgresPrivateBackend:
     @staticmethod
     def _row_to_entry(row: dict[str, Any]) -> MemoryEntry:
         """Convert a Postgres row dict to a :class:`MemoryEntry`."""
-        from tapps_brain.models import MemoryEntry, MemoryScope, MemorySource, MemoryTier
+        from tapps_brain.models import (
+            MemoryEntry,
+            MemoryScope,
+            MemorySource,
+            MemoryStatus,
+            MemoryTier,
+        )
 
         # Tags — stored as JSONB (may arrive as list or JSON string).
         tags_raw = row.get("tags")
@@ -1031,6 +1047,13 @@ class PostgresPrivateBackend:
         except (ValueError, KeyError):
             scope = MemoryScope.project
 
+        # TAP-732: lifecycle status
+        status_raw = str(row.get("status") or "active")
+        try:
+            mem_status = MemoryStatus(status_raw)
+        except ValueError:
+            mem_status = MemoryStatus.active
+
         return MemoryEntry(
             key=str(row["key"]),
             value=str(row["value"]),
@@ -1074,5 +1097,8 @@ class PostgresPrivateBackend:
                 _str_or_none(row.get("temporal_sensitivity")),
             ),
             failed_approaches=_parse_jsonb_list(row.get("failed_approaches")),
+            status=mem_status,
+            stale_reason=_str_or_none(row.get("stale_reason")),
+            stale_date=_iso_or_none(row.get("stale_date")),
             # embedding is not loaded from DB (large binary; on-demand via knn_search)
         )
