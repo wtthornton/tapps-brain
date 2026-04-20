@@ -9,7 +9,7 @@ tools:
   - Glob
   - Grep
   - Bash
-model: haiku
+model: sonnet
 maxTurns: 15
 isolation: worktree
 effort: low

@@ -231,7 +231,7 @@ def _get_context_attrs(span_name: str | None = None) -> dict[str, str | int | fl
             attrs[ATTR_AGENT_ID] = str(aid)
         if scope:
             attrs[ATTR_SCOPE] = str(scope)
-    except Exception:  # mcp_server unavailable in some test contexts
+    except Exception:  # nosec B110 — mcp_server context vars unavailable in some test contexts
         pass
 
     if span_name is not None:
@@ -333,7 +333,7 @@ def start_span(
         try:
             yield span
             span.set_status(StatusCode.OK)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — span context manager re-raises; broad catch needed to record the exception before re-raising
             if record_exception:
                 span.record_exception(exc)
                 span.set_status(StatusCode.ERROR, str(exc))
@@ -412,7 +412,7 @@ def start_mcp_tool_span(
                 _pid = REQUEST_PROJECT_ID.get()
             if _aid is None:
                 _aid = REQUEST_AGENT_ID.get()
-        except Exception:
+        except Exception:  # nosec B110 — mcp_server context vars unavailable in some test contexts
             pass
     if _pid:
         attributes[ATTR_PROJECT_ID] = str(_pid)
@@ -434,7 +434,7 @@ def start_mcp_tool_span(
         ) as span:
             try:
                 yield span
-            except Exception:
+            except Exception:  # noqa: BLE001 — tool-call span must track failure regardless of exception type; re-raises after marking success=False
                 _success = False
                 raise
     finally:
@@ -470,7 +470,7 @@ def extract_trace_context(carrier: dict[str, str]) -> Any:  # noqa: ANN401
         return None
     try:
         return _otel_propagate.extract(carrier)
-    except Exception:
+    except Exception:  # noqa: BLE001 — OTel propagation errors must not propagate to callers
         return None
 
 

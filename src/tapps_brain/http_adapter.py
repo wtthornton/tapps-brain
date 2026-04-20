@@ -146,7 +146,7 @@ def _get_profile_resolver() -> Any:
                     return str(row.get("profile") or "")  or None
 
                 getter = _pg_getter
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                 logger.warning(
                     "http_adapter.profile_resolver.agent_registry_unavailable",
                     error=str(exc),
@@ -178,7 +178,7 @@ def _service_version() -> str:
         from importlib.metadata import version
 
         return version("tapps-brain")
-    except Exception:
+    except Exception:  # noqa: BLE001 — optional dependency detection
         return "unknown"
 
 
@@ -221,7 +221,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
             )
         else:
             result = (True, version, f"ready (migration_version={version})")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort probe; failure returns degraded status
         err_str = str(exc)
         try:
             from urllib.parse import urlparse
@@ -235,7 +235,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 err_str = err_str.replace(parsed.username, "[user]")
             if parsed.password:
                 err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:
+        except Exception:  # noqa: BLE001 — DSN parse sanitization is best-effort; fall back to generic message
             err_str = "database unreachable"
         result = (False, None, f"db_error: {err_str}")
     _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
@@ -252,8 +252,8 @@ def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
         if cm is not None and hasattr(cm, "get_pool_stats"):
             stats: dict[str, Any] = cm.get_pool_stats()
             return stats
-    except Exception:
-        pass
+    except (AttributeError, TypeError):
+        pass  # hive connection manager unavailable or pool_stats not exposed
     return None
 
 
@@ -336,7 +336,8 @@ def _collect_metrics(
     # TAP-547: when redacting, aggregate over (project_id, agent_id) but
     # keep (tool, status) — those are not tenant-identifying and remain
     # useful for ops / alerting on anonymous scrapes.
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
 
         tool_counts = get_tool_call_counts_snapshot()
@@ -369,8 +370,6 @@ def _collect_metrics(
                         f'agent_id="{safe_aid}",tool="{safe_tool}",'
                         f'status="{safe_status}"}} {count}'
                     )
-    except Exception:  # pragma: no cover — otel_tracer import error must not crash /metrics
-        pass
 
     # TAP-549: in-memory session-state cardinality gauge.  Alertable
     # signal for the "client rotates session_id every call" failure mode
@@ -410,7 +409,8 @@ def _collect_metrics(
     # TAP-655: per-project counter for missing HNSW indexes detected at startup.
     # Non-zero means migration 002 was not applied on that project's DB.
     # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.postgres_private import get_missing_index_counts_snapshot
 
         missing_idx_counts = get_missing_index_counts_snapshot()
@@ -431,11 +431,10 @@ def _collect_metrics(
                     lines.append(
                         f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
                     )
-    except Exception:  # pragma: no cover — import error must not crash /metrics
-        pass
 
     # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
-    try:
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
 
         _filter_snap = get_profile_filter_metrics_snapshot()
@@ -484,11 +483,10 @@ def _collect_metrics(
                     f'tapps_brain_mcp_tools_call_total{{profile="{_sp}",'
                     f'tool="{_st}",outcome="{_so}"}} {_count}'
                 )
-    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
-        pass
 
     # STORY-073.4: profile resolver resolution-source + cache metrics.
-    try:
+    # suppress(Exception): any runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
         _resolver = _PROFILE_RESOLVER
         if _resolver is not None:
             _res_stats = _resolver.resolution_stats()
@@ -520,8 +518,6 @@ def _collect_metrics(
                         lines.append(
                             f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
                         )
-    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
-        pass
 
     lines.append("")
     return "\n".join(lines)
@@ -1167,7 +1163,7 @@ def create_app(
             if is_idempotency_enabled():
                 try:
                     cfg.idempotency_store = IdempotencyStore(cfg.dsn)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                     logger.warning(
                         "http_adapter.idempotency_store_init_failed",
                         error=str(exc),
@@ -1179,7 +1175,7 @@ def create_app(
             try:
                 mcp = _build_mcp_server()
                 mcp_holder["mcp"] = mcp
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                 logger.error("http_adapter.mcp_build_failed", error=str(exc))
                 mcp = None
 
@@ -1208,7 +1204,7 @@ def create_app(
                 try:
                     session_cm = sm.run()
                     await session_cm.__aenter__()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                     logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
         try:
@@ -1217,7 +1213,7 @@ def create_app(
             if session_cm is not None:
                 try:
                     await session_cm.__aexit__(None, None, None)
-                except Exception:
+                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
                     logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
             # TAP-548: release the pooled Postgres connections the
             # ``IdempotencyStore`` singleton is holding.  Set back to
@@ -1226,7 +1222,7 @@ def create_app(
             if getattr(cfg, "idempotency_store", None) is not None:
                 try:
                     cfg.idempotency_store.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
                     logger.debug(
                         "http_adapter.idempotency_store_close_failed",
                         exc_info=True,
@@ -1521,7 +1517,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:
+            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1641,7 +1637,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:
+            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1731,7 +1727,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1799,7 +1795,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1867,7 +1863,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1953,7 +1949,7 @@ def create_app(
     async def _admin_projects_register(request: Request) -> JSONResponse:
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -2003,7 +1999,7 @@ def create_app(
 
             validate_project_id(project_id)
             profile = MemoryProfile.model_validate(profile_json)
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.profile_validation_failed")
             raise HTTPException(
                 status_code=400,

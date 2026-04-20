@@ -197,7 +197,7 @@ def _retrieval_effectiveness(store: MemoryStore) -> DimensionScore:
     fb_score: float | None = None
     try:
         evs = store.query_feedback(event_type="recall_rated", limit=500)
-    except Exception:
+    except Exception:  # nosec B110 — diagnostics must not raise; feedback query failure yields intrinsic score only
         evs = []
     if evs:
         rmap = {"helpful": 1.0, "partial": 0.5, "irrelevant": 0.0, "outdated": 0.0}
@@ -349,7 +349,7 @@ def _hive_namespace_scores(
     for ns in ns_list:
         try:
             rows = hs.search("a", namespaces=[ns], limit=5, min_confidence=0.0)
-        except Exception:
+        except Exception:  # nosec B110 — hive search probe; failure treated as no results
             rows = []
         n = len(rows)
         freshness = clamp01(1.0 if n > 0 else 0.4)
@@ -386,8 +386,8 @@ def run_diagnostics(
     for d in dims:
         try:
             scores[d.name] = d.check(store)
-        except Exception:
-            logger.debug("diagnostics_dimension_failed", dimension=d.name, exc_info=True)
+        except Exception:  # noqa: BLE001 — individual dimension failures must not abort the whole diagnostics run
+            logger.warning("diagnostics_dimension_failed", dimension=d.name, exc_info=True)
             scores[d.name] = DimensionScore(name=d.name, score=0.5, raw_details={"error": True})
     composite = sum(weights.get(n, 0) * scores[n].score for n in scores)
     composite = clamp01(composite)
@@ -395,15 +395,18 @@ def run_diagnostics(
     gaps = 0
     try:
         gaps = len(store.query_feedback(event_type="gap_reported", limit=5000))
-    except Exception:
-        logger.debug("diagnostics_gap_count_failed", exc_info=True)
+    except Exception:  # noqa: BLE001 — gap count is best-effort; failure yields zero count
+        logger.warning("diagnostics_gap_count_failed", exc_info=True)
     recs: list[str] = []
     gap_line: str | None = None
     try:
         from tapps_brain.flywheel import knowledge_gap_summary_for_diagnostics
 
         gap_line = knowledge_gap_summary_for_diagnostics(store)
-    except Exception:
+    except ImportError:
+        gap_line = None  # flywheel optional — diagnostics runs without it
+    except Exception:  # noqa: BLE001 — gap summary is best-effort; failure yields no recommendation
+        logger.warning("diagnostics_gap_summary_failed", exc_info=True)
         gap_line = None
     if gap_line:
         recs.append(gap_line)
@@ -774,15 +777,15 @@ def maybe_remediate(
             )
             breaker._last_remediation_mono["consolidate"] = now_mono
             actions.append("consolidate")
-        except Exception:
-            logger.debug("remediation_consolidate_failed", exc_info=True)
+        except Exception:  # noqa: BLE001 — remediation actions are best-effort; failure must not abort the circuit breaker
+            logger.warning("remediation_consolidate_failed", exc_info=True)
     if st and st.score < 0.5 and _cool_ok("gc"):
         try:
             store.gc(dry_run=False)
             breaker._last_remediation_mono["gc"] = now_mono
             actions.append("gc")
-        except Exception:
-            logger.debug("remediation_gc_failed", exc_info=True)
+        except Exception:  # noqa: BLE001 — remediation actions are best-effort; failure must not abort the circuit breaker
+            logger.warning("remediation_gc_failed", exc_info=True)
     if inte and inte.score < 0.8 and _cool_ok("integrity_alert"):
         breaker._last_remediation_mono["integrity_alert"] = now_mono
         actions.append("integrity_alert")

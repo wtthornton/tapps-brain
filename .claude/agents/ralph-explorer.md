@@ -8,6 +8,7 @@ tools:
   - Read
   - Glob
   - Grep
+  - mcp__docs-mcp__*
 model: haiku
 maxTurns: 20
 effort: low
