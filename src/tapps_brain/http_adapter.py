@@ -434,6 +434,95 @@ def _collect_metrics(
     except Exception:  # pragma: no cover — import error must not crash /metrics
         pass
 
+    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
+    try:
+        from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
+
+        _filter_snap = get_profile_filter_metrics_snapshot()
+
+        # mcp_tools_list_total{profile}
+        list_total = _filter_snap.get("list_total", {})
+        if list_total:
+            lines.append(
+                "# HELP tapps_brain_mcp_tools_list_total "
+                "Total tools/list calls per MCP profile."
+            )
+            lines.append("# TYPE tapps_brain_mcp_tools_list_total counter")
+            for _profile, _count in sorted(list_total.items()):
+                _sp = _profile.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_mcp_tools_list_total{{profile="{_sp}"}} {_count}'
+                )
+
+        # mcp_tools_list_visible_tools{profile} — gauge
+        list_visible = _filter_snap.get("list_visible", {})
+        if list_visible:
+            lines.append(
+                "# HELP tapps_brain_mcp_tools_list_visible_tools "
+                "Last observed visible tool count per MCP profile after filtering."
+            )
+            lines.append("# TYPE tapps_brain_mcp_tools_list_visible_tools gauge")
+            for _profile, _vis in sorted(list_visible.items()):
+                _sp = _profile.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}'
+                )
+
+        # mcp_tools_call_total{profile, tool, outcome}
+        call_total = _filter_snap.get("call_total", {})
+        if call_total:
+            lines.append(
+                "# HELP tapps_brain_mcp_tools_call_total "
+                "Total tools/call attempts, labelled by profile, tool, and outcome."
+            )
+            lines.append("# TYPE tapps_brain_mcp_tools_call_total counter")
+            for (_profile, _tool, _outcome), _count in sorted(call_total.items()):
+                _sp = _profile.replace('"', '\\"')
+                _st = _tool.replace('"', '\\"')
+                _so = _outcome.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_mcp_tools_call_total{{profile="{_sp}",'
+                    f'tool="{_st}",outcome="{_so}"}} {_count}'
+                )
+    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
+        pass
+
+    # STORY-073.4: profile resolver resolution-source + cache metrics.
+    try:
+        _resolver = _PROFILE_RESOLVER
+        if _resolver is not None:
+            _res_stats = _resolver.resolution_stats()
+            if _res_stats:
+                lines.append(
+                    "# HELP tapps_brain_mcp_profile_resolution_source_total "
+                    "Profile resolution source per MCP request."
+                )
+                lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
+                for _src, _count in sorted(_res_stats.items()):
+                    _ss = _src.replace('"', '\\"')
+                    lines.append(
+                        f'tapps_brain_mcp_profile_resolution_source_total{{source="{_ss}"}} {_count}'
+                    )
+
+            _cache = _resolver.cache_stats()
+            # Only emit if at least one cache event has occurred.
+            if _cache.get("hits", 0) + _cache.get("misses", 0) + _cache.get("invalidated", 0) > 0:
+                lines.append(
+                    "# HELP tapps_brain_mcp_profile_cache_events_total "
+                    "Profile resolver cache events (hit/miss/invalidated)."
+                )
+                lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
+                # Map result label → cache_stats() key; extend here when new event types land.
+                _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
+                for _result, _key in _result_to_key.items():
+                    _count = _cache.get(_key, 0)
+                    if _count:
+                        lines.append(
+                            f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
+                        )
+    except Exception:  # pragma: no cover — import/runtime error must not crash /metrics
+        pass
+
     lines.append("")
     return "\n".join(lines)
 

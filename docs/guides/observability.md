@@ -331,6 +331,79 @@ When enough history rows exist (>= 20), `adjust_weights_for_correlation()` detec
 
 ---
 
+## Prometheus metrics — profile filter (STORY-073.4)
+
+The HTTP adapter exposes five profile-filter metrics on `/metrics` once the
+relevant events have occurred.  All labels have bounded cardinality — no
+per-agent-id or per-project-id dimensions.
+
+### `tapps_brain_mcp_tools_list_total` (counter)
+
+Incremented on every `tools/list` request.
+
+| Label | Values |
+|-------|--------|
+| `profile` | e.g. `full`, `coder`, `reviewer`, `seeder`, `operator` |
+
+### `tapps_brain_mcp_tools_list_visible_tools` (gauge)
+
+Last observed count of tools returned to the caller after profile filtering.
+Updates on every `tools/list` call.
+
+| Label | Values |
+|-------|--------|
+| `profile` | same as above |
+
+### `tapps_brain_mcp_tools_call_total` (counter)
+
+Counts every `tools/call` attempt, labelled by outcome.
+
+| Label | Values |
+|-------|--------|
+| `profile` | requesting profile |
+| `tool` | tool name (empty string `""` for fast-path `full` profile calls) |
+| `outcome` | `allowed` — call passed through; `denied_profile` — rejected by filter; `error` — unknown profile, failed open |
+
+When `outcome=denied_profile`, a WARN log line is also emitted (see below).
+
+### `tapps_brain_mcp_profile_resolution_source_total` (counter)
+
+Counts how the profile was resolved for each request.  Useful for spotting
+misconfigured clients (all traffic hitting `default` instead of `coder`).
+
+| Label | Values |
+|-------|--------|
+| `source` | `header` — from `X-Brain-Profile` HTTP header; `agent_registry` — from agent registry DB lookup; `default` — server-level default |
+
+### `tapps_brain_mcp_profile_cache_events_total` (counter)
+
+Counts agent-registry cache events.  Only emitted after at least one event.
+
+| Label | Values |
+|-------|--------|
+| `result` | `hit` — served from TTL cache; `miss` — DB fetch required; `invalidated` — entry evicted by `ProfileResolver.invalidate()` |
+
+### Denial log
+
+Every call rejected by the profile filter produces exactly **one WARN log**
+via structlog with the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `tool` | Tool name that was rejected |
+| `profile` | Active profile that blocked the call |
+| `agent_id` | From `X-Tapps-Agent` / `X-Agent-Id` header (or `None` for stdio) |
+| `project_id` | From `X-Project-Id` header (or `None` for stdio) |
+| `request_id` | Reserved for future correlation ID; `None` until wired |
+
+Example log line:
+
+```json
+{"event":"tool_filter.call_tool.denied","level":"warning","tool":"memory_delete","profile":"coder","agent_id":"claude-code-alice","project_id":"my-project","request_id":null}
+```
+
+---
+
 ## Distributed tracing (OpenTelemetry)
 
 The optional `[otel]` extra installs types and helpers in `src/tapps_brain/otel_exporter.py` (`create_exporter`, `OTelExporter`).
