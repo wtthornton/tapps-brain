@@ -142,6 +142,48 @@ class TestGCSkipsStale:
         details = self.gc.stale_candidate_details([stale_old])
         assert not any(d.key == "stale-no-detail" for d in details)
 
+    def test_superseded_entry_is_not_candidate(self) -> None:
+        """superseded entries must also survive GC — they preserve audit history."""
+        now = datetime.now(tz=UTC)
+        old_ts = (now - timedelta(days=600)).isoformat()
+        entry = make_entry(
+            key="superseded-protected",
+            confidence=0.05,
+            updated_at=old_ts,
+            status=MemoryStatus.superseded,
+        )
+        candidates = self.gc.identify_candidates([entry])
+        assert not any(e.key == "superseded-protected" for e in candidates)
+
+    def test_superseded_entry_excluded_from_reasons(self) -> None:
+        """_archive_reasons returns [] for superseded entries."""
+        now_dt = datetime.now(tz=UTC)
+        old_ts = (now_dt - timedelta(days=600)).isoformat()
+        entry = make_entry(
+            key="sup-reasons",
+            confidence=0.05,
+            updated_at=old_ts,
+            status=MemoryStatus.superseded,
+        )
+        reasons = self.gc._archive_reasons(entry, now_dt)
+        assert reasons == []
+
+    def test_mixed_list_skips_stale_and_superseded(self) -> None:
+        """GC only archives active decayed entries; stale and superseded are both skipped."""
+        now = datetime.now(tz=UTC)
+        old_ts = (now - timedelta(days=600)).isoformat()
+        active_old = _old_entry(key="active-old2")
+        stale_old = _stale_entry(key="stale-old2")
+        superseded_old = make_entry(
+            key="superseded-old2", confidence=0.05, updated_at=old_ts,
+            status=MemoryStatus.superseded,
+        )
+        candidates = self.gc.identify_candidates([active_old, stale_old, superseded_old])
+        keys = {e.key for e in candidates}
+        assert "active-old2" in keys
+        assert "stale-old2" not in keys
+        assert "superseded-old2" not in keys
+
 
 # ---------------------------------------------------------------------------
 # brain_recall filtering

@@ -3,7 +3,8 @@
 -- brain_recall excludes stale/superseded by default; use include_stale=True to opt in.
 
 ALTER TABLE private_memories
-    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'stale', 'superseded', 'archived')),
     ADD COLUMN IF NOT EXISTS stale_reason TEXT,
     ADD COLUMN IF NOT EXISTS stale_date TIMESTAMPTZ;
 
