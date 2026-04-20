@@ -88,7 +88,7 @@ class MemoryEntry(BaseModel):
 
     key: str = Field(description="Unique slug identifier (max 128 chars).")
     value: str = Field(description="Memory content (max 4096 chars).")
-    tier: MemoryTier | str = Field(default=MemoryTier.pattern, description="Decay classification.")
+    tier: MemoryTier = Field(default=MemoryTier.pattern, description="Decay classification.")
     confidence: float = Field(
         default=-1.0,
         ge=-1.0,
@@ -226,6 +226,19 @@ class MemoryEntry(BaseModel):
         ge=0.0,
         description="Tally of negative feedback signals applied to this entry.",
     )
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _normalize_tier(cls, v: object) -> MemoryTier:
+        """Coerce string tier values to MemoryTier; reject unknown values."""
+        if isinstance(v, MemoryTier):
+            return v
+        try:
+            return MemoryTier(v)
+        except ValueError as exc:
+            valid = [t.value for t in MemoryTier]
+            msg = f"tier must be one of {valid}, got {v!r}"
+            raise ValueError(msg) from exc
 
     @field_validator("key")
     @classmethod
