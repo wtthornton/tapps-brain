@@ -148,8 +148,8 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
 
     def _filtered_list_tools() -> list[Any]:
         """Return tool list filtered to the caller's active profile."""
-        all_tools = _orig_list_tools()
-        profile: str = profile_contextvar.get() or default_profile  # type: ignore[union-attr]
+        all_tools: list[Any] = list(_orig_list_tools())
+        profile: str = profile_contextvar.get() or default_profile
         if profile == default_profile:
             # Fast path: no filtering for the default ("full") profile.
             visible_count = len(all_tools)
@@ -189,7 +189,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
         fails open (allows the call) to avoid denying legitimate operators who
         may have a profile that the server hasn't reloaded yet.
         """
-        profile: str = profile_contextvar.get() or default_profile  # type: ignore[union-attr]
+        profile: str = profile_contextvar.get() or default_profile
         if profile != default_profile:
             try:
                 allowed = profile_registry.get(profile)
