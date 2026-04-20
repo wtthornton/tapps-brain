@@ -11,7 +11,7 @@ import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
@@ -188,7 +188,8 @@ class PostgresPrivateBackend:
                     source_session_id, source_channel, source_message_id, triggered_by,
                     stability, difficulty,
                     positive_feedback_count, negative_feedback_count,
-                    integrity_hash, embedding_model_id
+                    integrity_hash, embedding_model_id,
+                    temporal_sensitivity
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -202,7 +203,8 @@ class PostgresPrivateBackend:
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s,
-                    %s, %s
+                    %s, %s,
+                    %s
                 )
                 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
                     value                    = EXCLUDED.value,
@@ -239,7 +241,8 @@ class PostgresPrivateBackend:
                     positive_feedback_count  = EXCLUDED.positive_feedback_count,
                     negative_feedback_count  = EXCLUDED.negative_feedback_count,
                     integrity_hash           = EXCLUDED.integrity_hash,
-                    embedding_model_id       = EXCLUDED.embedding_model_id
+                    embedding_model_id       = EXCLUDED.embedding_model_id,
+                    temporal_sensitivity     = EXCLUDED.temporal_sensitivity
                 """,
                 (
                     self._project_id,
@@ -281,6 +284,7 @@ class PostgresPrivateBackend:
                     entry.negative_feedback_count,
                     entry.integrity_hash,
                     entry.embedding_model_id,
+                    entry.temporal_sensitivity,
                 ),
             )
 
@@ -1043,5 +1047,9 @@ class PostgresPrivateBackend:
             negative_feedback_count=float(row.get("negative_feedback_count", 0.0)),
             integrity_hash=_str_or_none(row.get("integrity_hash")),
             embedding_model_id=_str_or_none(row.get("embedding_model_id")),
+            temporal_sensitivity=cast(
+                "Literal['high', 'medium', 'low'] | None",
+                _str_or_none(row.get("temporal_sensitivity")),
+            ),
             # embedding is not loaded from DB (large binary; on-demand via knn_search)
         )

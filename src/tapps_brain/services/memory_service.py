@@ -31,6 +31,7 @@ def brain_remember(
     tier: str = "procedural",
     share: bool = False,
     share_with: str = "",
+    temporal_sensitivity: str | None = None,
 ) -> dict[str, Any]:
     from tapps_brain.agent_brain import _content_key
     from tapps_brain.otel_tracer import start_mcp_tool_span
@@ -44,7 +45,13 @@ def brain_remember(
             agent_scope = "hive"
         elif share_with:
             agent_scope = f"group:{share_with}"
-        result = store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        result = store.save(
+            key=key,
+            value=fact,
+            tier=tier,
+            agent_scope=agent_scope,
+            temporal_sensitivity=temporal_sensitivity,
+        )
         if isinstance(result, dict) and "error" in result:
             return result
         return {"saved": True, "key": key}

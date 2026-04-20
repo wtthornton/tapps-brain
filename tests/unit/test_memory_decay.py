@@ -701,3 +701,83 @@ class TestPersonalAssistantProfileDecay:
                 assert orc._decay_config is not None
             finally:
                 store.close()
+
+
+class TestTemporalSensitivity:
+    """TAP-735: per-entry decay velocity via temporal_sensitivity field."""
+
+    _DAYS_ELAPSED = 30  # simulate 30 days of ageing
+
+    def _aged_entry(
+        self,
+        *,
+        tier: MemoryTier = MemoryTier.pattern,
+        temporal_sensitivity: str | None = None,
+    ) -> MemoryEntry:
+        """Return a MemoryEntry whose updated_at is 30 days in the past."""
+        past = (datetime.now(tz=UTC) - timedelta(days=self._DAYS_ELAPSED)).isoformat()
+        entry = make_entry(
+            tier=tier,
+            confidence=0.8,
+            updated_at=past,
+        )
+        return entry.model_copy(update={"temporal_sensitivity": temporal_sensitivity})
+
+    def test_high_sensitivity_decays_faster_than_none(self) -> None:
+        """temporal_sensitivity='high' reduces the effective half-life (×0.25).
+
+        After 30 days an 'architectural' entry with high sensitivity should have a
+        lower confidence than one with sensitivity=None.
+        """
+        config = DecayConfig()
+        now = datetime.now(tz=UTC)
+        baseline = self._aged_entry(tier=MemoryTier.architectural, temporal_sensitivity=None)
+        fast = self._aged_entry(tier=MemoryTier.architectural, temporal_sensitivity="high")
+
+        conf_baseline = calculate_decayed_confidence(baseline, config, now=now)
+        conf_fast = calculate_decayed_confidence(fast, config, now=now)
+
+        assert conf_fast < conf_baseline, (
+            f"'high' sensitivity should decay faster: {conf_fast:.4f} vs {conf_baseline:.4f}"
+        )
+
+    def test_low_sensitivity_decays_slower_than_none(self) -> None:
+        """temporal_sensitivity='low' increases the effective half-life (×4.0).
+
+        After 30 days a 'context' entry with low sensitivity should have a
+        higher confidence than one with sensitivity=None.
+        """
+        config = DecayConfig()
+        now = datetime.now(tz=UTC)
+        baseline = self._aged_entry(tier=MemoryTier.context, temporal_sensitivity=None)
+        slow = self._aged_entry(tier=MemoryTier.context, temporal_sensitivity="low")
+
+        conf_baseline = calculate_decayed_confidence(baseline, config, now=now)
+        conf_slow = calculate_decayed_confidence(slow, config, now=now)
+
+        assert conf_slow > conf_baseline, (
+            f"'low' sensitivity should decay slower: {conf_slow:.4f} vs {conf_baseline:.4f}"
+        )
+
+    def test_none_sensitivity_unchanged(self) -> None:
+        """temporal_sensitivity=None is a no-op; result equals medium (×1.0)."""
+        config = DecayConfig()
+        now = datetime.now(tz=UTC)
+        entry_none = self._aged_entry(tier=MemoryTier.pattern, temporal_sensitivity=None)
+        entry_medium = self._aged_entry(tier=MemoryTier.pattern, temporal_sensitivity="medium")
+
+        conf_none = calculate_decayed_confidence(entry_none, config, now=now)
+        conf_medium = calculate_decayed_confidence(entry_medium, config, now=now)
+
+        assert math.isclose(conf_none, conf_medium, rel_tol=1e-9), (
+            f"None and 'medium' should give identical results: {conf_none} vs {conf_medium}"
+        )
+
+    def test_unknown_temporal_sensitivity_raises_validation_error(self) -> None:
+        """MemoryEntry rejects unknown temporal_sensitivity values."""
+        with pytest.raises(ValidationError, match="temporal_sensitivity"):
+            MemoryEntry(
+                key="test-key",
+                value="some test value for temporal sensitivity validation",
+                temporal_sensitivity="ultra-fast",  # type: ignore[arg-type]
+            )

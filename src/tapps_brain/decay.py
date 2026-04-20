@@ -25,6 +25,18 @@ logger = structlog.get_logger(__name__)
 # Default threshold below which a memory is considered stale.
 _DEFAULT_STALE_THRESHOLD = 0.3
 
+# TAP-735: Half-life multipliers for per-entry temporal sensitivity.
+# "high"   -> x0.25 -- fact changes quickly; decays 4x faster than the tier baseline.
+# "medium" -> x1.0  -- no change (explicit or absent).
+# "low"    -> x4.0  -- fact is stable; decays 4x slower than the tier baseline.
+# None     -> x1.0  -- backward-compatible default; no behaviour change for existing entries.
+_TEMPORAL_SENSITIVITY_MULTIPLIERS: dict[str | None, float] = {
+    "high": 0.25,
+    "medium": 1.0,
+    "low": 4.0,
+    None: 1.0,
+}
+
 # Seconds per day for time calculations.
 _SECONDS_PER_DAY = 86400.0
 
@@ -378,6 +390,11 @@ def calculate_decayed_confidence(
 
     # GitHub #28: if entry has a non-zero stability, use it as effective half-life
     effective_hl = entry.stability if entry.stability > 0.0 else float(half_life)
+
+    # TAP-735: temporal_sensitivity multiplies the effective half-life before all
+    # other adjustments.  Applied here so that importance-tag boosts still stack on
+    # top of the velocity hint (consistent ordering: velocity x importance x model).
+    effective_hl *= _TEMPORAL_SENSITIVITY_MULTIPLIERS.get(entry.temporal_sensitivity, 1.0)
 
     # EPIC-010: Importance tags — boost effective half-life
     importance_tags = config.layer_importance_tags.get(tier_str, {})

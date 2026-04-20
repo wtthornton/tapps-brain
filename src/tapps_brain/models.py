@@ -245,6 +245,26 @@ class MemoryEntry(BaseModel):
         description="Tally of negative feedback signals applied to this entry.",
     )
 
+    # TAP-735: per-entry decay velocity override (Temporal KG-inspired half-life scaling).
+    temporal_sensitivity: Literal["high", "medium", "low"] | None = Field(
+        default=None,
+        description=(
+            "Optional decay velocity hint: 'high' decays 4x faster (x0.25 half-life), "
+            "'low' decays 4x slower (x4.0 half-life), 'medium' or None is no change."
+        ),
+    )
+
+    @field_validator("temporal_sensitivity", mode="before")
+    @classmethod
+    def _validate_temporal_sensitivity(cls, v: object) -> Literal["high", "medium", "low"] | None:
+        """Reject unknown temporal_sensitivity strings; allow None."""
+        if v is None:
+            return None
+        if v not in {"high", "medium", "low"}:
+            msg = f"temporal_sensitivity must be 'high', 'medium', 'low', or None; got {v!r}"
+            raise ValueError(msg)
+        return v  # type: ignore[return-value]
+
     @field_validator("tier", mode="before")
     @classmethod
     def _normalize_tier(cls, v: object) -> MemoryTier | str:
