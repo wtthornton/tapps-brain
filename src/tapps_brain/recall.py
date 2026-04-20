@@ -268,7 +268,7 @@ class RecallOrchestrator:
         namespaces = ["universal", self._hive_agent_profile]
         try:
             extra_groups = self._hive_store.get_agent_groups(self._hive_agent_id)
-        except Exception:
+        except Exception:  # noqa: BLE001 — Hive group lookup is best-effort; failure degrades to universal namespace only
             logger.warning("hive_recall_agent_groups_failed", exc_info=True)
             extra_groups = []
         for g in extra_groups:
@@ -281,7 +281,7 @@ class RecallOrchestrator:
                 min_confidence=self._config.min_confidence,
                 limit=20,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — Hive search must never raise; heterogeneous psycopg/network errors; returns empty result
             logger.warning("hive_recall_search_failed", exc_info=True)
             return [], 0
 

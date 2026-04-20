@@ -285,7 +285,7 @@ def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
         from opentelemetry import trace  # lazy — API is a core dep but guard anyway
 
         return trace.get_tracer(cfg.service_name)
-    except Exception:  # OTel import / init errors must not crash callers
+    except Exception:  # noqa: BLE001 — OTel import/init errors must not crash callers; returns None tracer
         return None  # pragma: no cover
 
 
@@ -519,7 +519,7 @@ def create_allowed_attribute_views() -> list[Any]:
                 attribute_keys=set(ALLOWED_METRIC_DIMENSIONS),
             )
         ]
-    except Exception:  # OTel SDK internal changes should not crash callers
+    except Exception:  # noqa: BLE001 — OTel SDK internal changes must not crash callers; returns empty view list
         return []
 
 

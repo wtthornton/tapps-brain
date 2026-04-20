@@ -63,6 +63,6 @@ def profile_switch(store: Any, project_id: str, agent_id: str, *, name: str) -> 
             "message": f"No built-in profile '{name}'.",
             "available": list_builtin_profiles(),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — service boundary catch; profile switch must not crash MCP callers; returns error dict
         logger.exception("profile_switch_error", profile=name)
         return {"error": "profile_switch_error", "message": str(exc)}

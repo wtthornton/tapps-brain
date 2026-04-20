@@ -33,7 +33,7 @@ def tapps_brain_health(
             store=store,
         )
         return report.model_dump(mode="json")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — service boundary catch; health check must never crash MCP callers; returns error dict
         return {
             "status": "error",
             "errors": [str(exc)],

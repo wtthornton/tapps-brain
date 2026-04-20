@@ -285,7 +285,7 @@ def inject_memories(  # noqa: PLR0915
             until=until,
             time_field=time_field,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 — retrieval raises heterogeneous psycopg/embedding errors; returns empty injection
         logger.warning(
             "memory_injection_search_failed",
             question=question[:80],
@@ -294,7 +294,7 @@ def inject_memories(  # noqa: PLR0915
         vis_err: int | None = None
         try:
             vis_err = _visible_entry_count(store, memory_group)
-        except Exception:
+        except Exception:  # noqa: BLE001 — visible-entry probe is best-effort; failure yields None
             vis_err = None
         return _injection_empty(
             empty_reason=RECALL_EMPTY_SEARCH_FAILED,

@@ -867,7 +867,7 @@ class MemoryDocValidator:
         try:
             result = await self._lookup.lookup(library, topic)
             content = result.content if result.success else None
-        except Exception:
+        except Exception:  # noqa: BLE001 — doc lookup raises heterogeneous HTTP/network errors; failure returns None (skip validation)
             logger.warning(
                 "doc_validation_lookup_failed", library=library, topic=topic, exc_info=True
             )

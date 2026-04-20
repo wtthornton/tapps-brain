@@ -306,7 +306,7 @@ class ProjectRegistry:
             return True
         except VerifyMismatchError:
             return False
-        except Exception:  # VerificationError, InvalidHashError, or other argon2 error
+        except Exception:  # noqa: BLE001 — argon2-cffi raises VerificationError, InvalidHashError, and others; all mean invalid token
             return False
 
     # ------------------------------------------------------------------

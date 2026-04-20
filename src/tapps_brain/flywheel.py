@@ -638,8 +638,8 @@ def generate_report(
         try:
             if sec.should_include(rd):
                 parts.append(sec.render(rd))
-        except Exception:
-            logger.debug("report.section_failed", section=sec.name, exc_info=True)
+        except Exception:  # noqa: BLE001 — individual report sections must not abort the full report
+            logger.warning("report.section_failed", section=sec.name, exc_info=True)
 
     text = "\n".join(parts).strip() + "\n"
     qr = QualityReport(

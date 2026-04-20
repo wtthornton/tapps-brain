@@ -141,7 +141,7 @@ class AgentBrain:
         if _hive_dsn:
             try:
                 self._hive = create_hive_backend(_hive_dsn, encryption_key=encryption_key)
-            except Exception:
+            except Exception:  # noqa: BLE001 — Hive init raises heterogeneous psycopg/config errors; degrades gracefully
                 logger.warning("agent_brain.hive_init_failed", exc_info=True)
 
         # STORY-066.8: Auto-migrate private schema if TAPPS_BRAIN_AUTO_MIGRATE=1.
@@ -153,7 +153,7 @@ class AgentBrain:
                 from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
                 maybe_auto_migrate_private(_auto_migrate_dsn)
-            except Exception:
+            except Exception:  # noqa: BLE001 — MigrationDowngradeError and ImportError propagate; other transient errors deferred to store
                 # MigrationDowngradeError and ImportError propagate; other
                 # transient errors are logged and deferred to the store.
                 raise
@@ -178,7 +178,7 @@ class AgentBrain:
             else:
                 _project_id = derive_project_id(self._project_dir)
             _private_backend = resolve_private_backend_from_env(_project_id, _effective_agent_id)
-        except Exception:
+        except Exception:  # noqa: BLE001 — backend init raises heterogeneous DSN/registry errors; MemoryStore will raise ValueError if None
             logger.warning("agent_brain.private_backend_init_failed", exc_info=True)
             _private_backend = None
 
