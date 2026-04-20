@@ -79,7 +79,7 @@ def generate_consolidated_key(entries: list[MemoryEntry]) -> str:
     # Create deterministic hash from sorted source keys
     sorted_keys = sorted(keys)
     hash_input = "-".join(sorted_keys)
-    hash_suffix = hashlib.md5(hash_input.encode()).hexdigest()[:8]
+    hash_suffix = hashlib.md5(hash_input.encode(), usedforsecurity=False).hexdigest()[:8]
 
     # Clean prefix to match key format
     clean_prefix = re.sub(r"[^a-z0-9]", "-", common_prefix.lower())

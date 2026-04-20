@@ -84,8 +84,8 @@ class BloomFilter:
 
     def _get_hashes(self, item: str) -> list[int]:
         """Generate k hash positions using double hashing."""
-        h1 = int(hashlib.md5(item.encode()).hexdigest(), 16)
-        h2 = int(hashlib.sha1(item.encode()).hexdigest(), 16)
+        h1 = int(hashlib.md5(item.encode(), usedforsecurity=False).hexdigest(), 16)
+        h2 = int(hashlib.sha1(item.encode(), usedforsecurity=False).hexdigest(), 16)
         return [(h1 + i * h2) % self._size for i in range(self._hash_count)]
 
     def add(self, item: str) -> None:
