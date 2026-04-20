@@ -91,6 +91,7 @@ def _get_schema_status(
     """Read current version from *version_table* and compute pending migrations."""
     try:
         import psycopg
+        from psycopg import sql as pg_sql
     except ImportError:
         raise ImportError(
             "psycopg is required for PostgreSQL migrations.\n"
@@ -109,7 +110,11 @@ def _get_schema_status(
         exists = _row[0] if _row else False
 
         if exists:
-            cur.execute(f"SELECT version FROM {version_table} ORDER BY version")
+            cur.execute(
+                pg_sql.SQL("SELECT version FROM {} ORDER BY version").format(
+                    pg_sql.Identifier(version_table)
+                )
+            )
             status.applied_versions = [row[0] for row in cur.fetchall()]
             if status.applied_versions:
                 status.current_version = max(status.applied_versions)
@@ -152,6 +157,7 @@ def _apply_migrations(
     """Apply pending migrations. Returns list of applied version numbers."""
     try:
         import psycopg
+        from psycopg import sql as pg_sql
     except ImportError:
         raise ImportError(
             "psycopg is required for PostgreSQL migrations.\n"
@@ -171,7 +177,11 @@ def _apply_migrations(
 
         applied_set: set[int] = set()
         if table_exists:
-            cur.execute(f"SELECT version FROM {version_table}")
+            cur.execute(
+                pg_sql.SQL("SELECT version FROM {}").format(
+                    pg_sql.Identifier(version_table)
+                )
+            )
             applied_set = {row[0] for row in cur.fetchall()}
 
         pending = [(v, fname, sql) for v, fname, sql in migrations if v not in applied_set]
