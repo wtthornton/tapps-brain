@@ -119,7 +119,7 @@ class StoreHealthReport(BaseModel):
     integrity_tampered_keys: list[str] = Field(default_factory=list)
     # Rate limiter anomaly counts (H6c)
     rate_limit_minute_anomalies: int = 0
-    rate_limit_session_anomalies: int = 0
+    rate_limit_lifetime_anomalies: int = 0
     rate_limit_total_writes: int = 0
     rate_limit_exempt_writes: int = 0
     # Relation graph (M3)

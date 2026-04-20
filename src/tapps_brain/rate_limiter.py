@@ -2,7 +2,7 @@
 
 Provides warn-only rate limiting to detect anomalous write bursts
 without blocking legitimate operations. Configurable per-minute and
-per-session limits with batch context exemptions.
+per-process-lifetime limits with batch context exemptions.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ logger = structlog.get_logger(__name__)
 
 # Default limits
 _DEFAULT_WRITES_PER_MINUTE = 20
-_DEFAULT_WRITES_PER_SESSION = 100
+_DEFAULT_LIFETIME_WRITE_WARN_AT = 100
 
 # Batch contexts exempt from rate limiting (H6b)
 BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
@@ -37,14 +37,22 @@ class RateLimiterConfig:
     """Configuration for the sliding window rate limiter."""
 
     writes_per_minute: int = _DEFAULT_WRITES_PER_MINUTE
-    writes_per_session: int = _DEFAULT_WRITES_PER_SESSION
+    lifetime_write_warn_at: int = _DEFAULT_LIFETIME_WRITE_WARN_AT
+    """Total writes since process start at which the lifetime warning fires.
+
+    This counter is per-process-lifetime (never resets while the limiter is
+    alive). It is NOT per-session. Use it as a coarse "something is writing
+    a lot over time" signal, not as a per-request or per-session gate.
+    """
     enabled: bool = True
 
     def __post_init__(self) -> None:
         if self.writes_per_minute < 1:
             raise ValueError(f"writes_per_minute must be >= 1, got {self.writes_per_minute}")
-        if self.writes_per_session < 1:
-            raise ValueError(f"writes_per_session must be >= 1, got {self.writes_per_session}")
+        if self.lifetime_write_warn_at < 1:
+            raise ValueError(
+                f"lifetime_write_warn_at must be >= 1, got {self.lifetime_write_warn_at}"
+            )
 
 
 @dataclass
@@ -53,9 +61,9 @@ class RateLimitResult:
 
     allowed: bool = True
     minute_exceeded: bool = False
-    session_exceeded: bool = False
+    lifetime_exceeded: bool = False
     current_minute_count: int = 0
-    current_session_count: int = 0
+    current_lifetime_count: int = 0
     message: str = ""
 
 
@@ -64,7 +72,7 @@ class RateLimiterStats:
     """Accumulated anomaly statistics for health reporting."""
 
     minute_anomalies: int = 0
-    session_anomalies: int = 0
+    lifetime_anomalies: int = 0
     total_writes: int = 0
     exempt_writes: int = 0
 
@@ -78,13 +86,17 @@ class SlidingWindowRateLimiter:
 
     In warn-only mode (default), writes are never blocked — the limiter
     logs warnings and tracks anomaly counts for ``memory_health()``.
+
+    ``_lifetime_writes`` counts every non-exempt write since process start.
+    It is NOT per-session — it never resets while this instance is alive
+    (only ``reset()`` clears it, which is intended for tests only).
     """
 
     def __init__(self, config: RateLimiterConfig | None = None) -> None:
         self._config = config or RateLimiterConfig()
         self._lock = threading.Lock()
         self._timestamps: deque[float] = deque()
-        self._session_count: int = 0
+        self._lifetime_writes: int = 0
         self._stats = RateLimiterStats()
 
     @property
@@ -98,7 +110,7 @@ class SlidingWindowRateLimiter:
         with self._lock:
             return RateLimiterStats(
                 minute_anomalies=self._stats.minute_anomalies,
-                session_anomalies=self._stats.session_anomalies,
+                lifetime_anomalies=self._stats.lifetime_anomalies,
                 total_writes=self._stats.total_writes,
                 exempt_writes=self._stats.exempt_writes,
             )
@@ -134,27 +146,27 @@ class SlidingWindowRateLimiter:
 
             # Record this write
             self._timestamps.append(now)
-            self._session_count += 1
+            self._lifetime_writes += 1
             self._stats.total_writes += 1
 
             minute_count = len(self._timestamps)
-            session_count = self._session_count
+            lifetime_writes = self._lifetime_writes
 
             minute_exceeded = minute_count > self._config.writes_per_minute
-            session_exceeded = session_count > self._config.writes_per_session
+            lifetime_exceeded = lifetime_writes > self._config.lifetime_write_warn_at
 
             if minute_exceeded:
                 self._stats.minute_anomalies += 1
-            if session_exceeded:
-                self._stats.session_anomalies += 1
+            if lifetime_exceeded:
+                self._stats.lifetime_anomalies += 1
 
         # Build result
         result = RateLimitResult(
             allowed=True,  # Warn-only: never block
             minute_exceeded=minute_exceeded,
-            session_exceeded=session_exceeded,
+            lifetime_exceeded=lifetime_exceeded,
             current_minute_count=minute_count,
-            current_session_count=session_count,
+            current_lifetime_count=lifetime_writes,
         )
 
         # Log warnings for exceeded limits
@@ -169,19 +181,19 @@ class SlidingWindowRateLimiter:
                 limit=self._config.writes_per_minute,
             )
 
-        if session_exceeded:
+        if lifetime_exceeded:
             msg = (
-                f"Rate limit warning: {session_count} writes this session "
-                f"(limit: {self._config.writes_per_session})"
+                f"Rate limit warning: {lifetime_writes} total writes this process lifetime "
+                f"(warn at: {self._config.lifetime_write_warn_at})"
             )
             if result.message:
                 result.message += f"; {msg}"
             else:
                 result.message = msg
             logger.warning(
-                "rate_limit_session_exceeded",
-                current=session_count,
-                limit=self._config.writes_per_session,
+                "rate_limit_lifetime_exceeded",
+                current=lifetime_writes,
+                limit=self._config.lifetime_write_warn_at,
             )
 
         return result
@@ -190,5 +202,5 @@ class SlidingWindowRateLimiter:
         """Reset all counters and timestamps (useful for testing)."""
         with self._lock:
             self._timestamps.clear()
-            self._session_count = 0
+            self._lifetime_writes = 0
             self._stats = RateLimiterStats()

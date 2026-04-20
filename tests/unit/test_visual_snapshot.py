@@ -433,7 +433,7 @@ def test_scorecard_capacity_fail() -> None:
 
 
 def test_scorecard_rate_limit_anomalies() -> None:
-    report = _make_report(rate_limit_minute_anomalies=2, rate_limit_session_anomalies=1)
+    report = _make_report(rate_limit_minute_anomalies=2, rate_limit_lifetime_anomalies=1)
     checks = _scorecard_ids(
         _build_scorecard(
             report,
