@@ -8,6 +8,7 @@ This page documents the **default** dense embedding stack for built-in vector / 
 | --- | --- |
 | **Hugging Face / ST id** | `BAAI/bge-small-en-v1.5` |
 | **Code default** | `BAAI/bge-small-en-v1.5` (`embeddings._DEFAULT_MODEL`) |
+| **Pinned revision** | `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` (`embeddings._DEFAULT_MODEL_REVISION`) — prevents supply-chain / model-swap risk on cache-cold starts. Pass `revision=None` only in development environments. |
 | **Output dimension** | **384** |
 | **Pooling** | CLS pooling (model-defined) |
 | **Normalization** | **L2-normalized** float vectors (`normalize_embeddings=True` in `SentenceTransformerProvider`) — aligns cosine similarity with dot product on stored vectors. |
@@ -25,10 +26,17 @@ This page documents the **default** dense embedding stack for built-in vector / 
 - Vectors are stored as **float32** in the pgvector `vector(384)` column (`private_memories.embedding`, HNSW cosine index — migration 002).
 - **Int8 spike (STORY-042.2):** `quantize_embedding_int8` / `dequantize_embedding_int8` / `renormalize_embedding_l2` in `embeddings.py` implement symmetric **scale-127** quantization on components clamped to **[-1, 1]** (matches L2-normalized ST outputs). Unit tests document **self-cosine ≥ 0.998** and **pairwise cosine drift under 0.02** on seeded random unit vectors. **Not yet wired into persistence** — changing defaults requires a follow-up design.
 
+## Supply-chain / offline mode
+
+- **Revision pin:** `SentenceTransformerProvider` passes `revision=_DEFAULT_MODEL_REVISION` to `SentenceTransformer()` by default. Every cache-cold container pull loads the exact same weights regardless of upstream re-uploads.
+- **Updating the pin:** confirm the new commit SHA at `https://huggingface.co/BAAI/bge-small-en-v1.5/commits/main`, update `_DEFAULT_MODEL_REVISION` in `embeddings.py` **and** this card, then run the full benchmark suite to verify recall parity before merging.
+- **Offline / airgapped:** set `TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE=1`. This propagates `HF_HUB_OFFLINE=1` before the first Hub contact. If the local cache does not have the pinned revision, sentence-transformers will raise — fail-loud is intentional.
+- **Disable pinning (dev only):** pass `revision=None` to `SentenceTransformerProvider` or `get_embedding_provider`. **Not recommended in production.**
+
 ## Model upgrades and reindexing
 
-- The `private_memories` table stores a nullable **`embedding_model_id`** column; new saves with an embedding provider that exposes **`model_id`** (e.g. `SentenceTransformerProvider`) persist the model name. **NULL** means legacy or unknown — mixed vector spaces are still possible in one store.
-- After changing the default or profile-selected model, plan a **full reindex** (re-save or batch re-embed) and use **`embedding_model_id`** to find rows that still need migration.
+- The `private_memories` table stores a nullable **`embedding_model_id`** column; `SentenceTransformerProvider.model_id` now returns a composite `name@revision` string (e.g. `BAAI/bge-small-en-v1.5@5c38ec7c...`) so row-level revision mismatches can be detected after a pin upgrade. **NULL** means legacy or unknown — mixed vector spaces are still possible in one store.
+- After changing the default or profile-selected model or revision, plan a **full reindex** (re-save or batch re-embed) and use **`embedding_model_id`** to find rows that still need migration.
 
 ## Performance review backlog
 
