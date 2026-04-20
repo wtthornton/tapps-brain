@@ -448,7 +448,7 @@ class TestMemoryStoreRAGSafety:
 
     def test_blocked_content_returns_error(self, store: MemoryStore) -> None:
         # Simulate content that triggers heavy RAG safety flags
-        with patch("tapps_brain.store.check_content_safety") as mock_safety:
+        with patch("tapps_brain.safety.check_content_safety") as mock_safety:
             from tapps_brain.safety import SafetyCheckResult
 
             mock_safety.return_value = SafetyCheckResult(
@@ -462,7 +462,7 @@ class TestMemoryStoreRAGSafety:
 
     def test_sanitized_content_on_flagged_but_not_blocked(self, store: MemoryStore) -> None:
         """Sanitize path: ``check_content_safety`` returns safe=True with redacted body."""
-        with patch("tapps_brain.store.check_content_safety") as mock_safety:
+        with patch("tapps_brain.safety.check_content_safety") as mock_safety:
             from tapps_brain.safety import SafetyCheckResult
 
             mock_safety.return_value = SafetyCheckResult(
