@@ -4,7 +4,7 @@ Provides a unified, typed client that mirrors the :class:`AgentBrain` method
 signatures and dispatches to one of two transports:
 
 * ``http://`` / ``https://`` — HTTP adapter REST endpoints (STORY-070.3).
-* ``mcp+http://`` — MCP Streamable HTTP transport via ``/mcp`` (STORY-070.1).
+* ``mcp+http://`` — MCP Streamable HTTP transport via ``/mcp/`` (STORY-070.1; TAP-743).
 
 Both transports target the deployed ``docker-tapps-brain-http`` container.
 A single container serves all agents on a box; there is no per-agent subprocess.
@@ -215,7 +215,7 @@ def _post_tool(
     idempotency_key: str | None = None,
     max_retries: int = 2,
 ) -> Any:
-    """POST an MCP ``tools/call`` to the brain's ``/mcp`` endpoint.
+    """POST an MCP ``tools/call`` to the brain's ``/mcp/`` endpoint.
 
     Handles transparent retry on 429/503 (re-using the same idempotency key
     so writes don't duplicate) and maps structured error bodies to the
@@ -225,7 +225,9 @@ def _post_tool(
     The brain exposes tools exclusively over the streamable-HTTP MCP
     transport; the previously specced ``/v1/tools/{name}`` REST route
     was never shipped server-side.  Both ``http://`` and ``mcp+http://``
-    client URLs therefore land on ``/mcp``.
+    client URLs therefore land on ``/mcp/`` (trailing slash required —
+    TAP-743: Starlette ``redirect_slashes=True`` 307-redirects ``/mcp``
+    to ``/mcp/`` and POST bodies are dropped on redirect).
     """
     from tapps_brain.errors import RetryPolicy
 
@@ -234,7 +236,7 @@ def _post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = client.post(f"{base}/mcp", headers=headers, content=body_bytes)
+        resp = client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
@@ -289,7 +291,7 @@ async def _async_post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = await client.post(f"{base}/mcp", headers=headers, content=body_bytes)
+        resp = await client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
@@ -335,7 +337,7 @@ class TappsBrainClient:
     * ``http://`` / ``https://`` — :mod:`httpx` HTTP calls to the HTTP adapter
       REST endpoints.
     * ``mcp+http://`` — MCP Streamable HTTP transport; sends MCP JSON-RPC
-      requests to the ``/mcp`` endpoint of the brain HTTP adapter.
+      requests to the ``/mcp/`` endpoint of the brain HTTP adapter.
 
     Both transports target the deployed ``docker-tapps-brain-http`` container.
     One container serves all agents on a host; no subprocess spawning occurs.
@@ -418,15 +420,15 @@ class TappsBrainClient:
             ikey = str(uuid.uuid4())
 
         # Both http:// and mcp+http:// route through MCP streamable-HTTP.
-        # The deployed brain exposes tools over MCP at /mcp, not at
-        # /v1/tools/{name} — the latter was specced but never shipped
-        # server-side.  Keeping the http:// scheme as a convenience alias.
+        # The deployed brain exposes tools over MCP at /mcp/ (trailing slash
+        # required — TAP-743), not at /v1/tools/{name} — the latter was
+        # specced but never shipped server-side.  http:// is a convenience alias.
         return self._mcp_http_tool(name, kwargs, idempotency_key=ikey)
 
     def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
-        """Send a ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        """Send a ``tools/call`` to ``/mcp/`` with retry + error taxonomy."""
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         return _post_tool(
             self._http_client,
@@ -634,7 +636,7 @@ class AsyncTappsBrainClient:
     async def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
-        """Async ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        """Async ``tools/call`` to ``/mcp/`` with retry + error taxonomy."""
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         return await _async_post_tool(
             self._http_client,
