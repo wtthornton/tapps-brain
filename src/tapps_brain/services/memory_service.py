@@ -204,18 +204,32 @@ def memory_save(
         }
     resolved_agent = source_agent if source_agent else agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
-    result = store.save(
-        key=key,
-        value=value,
-        tier=tier,
-        source=source,
-        tags=tags,
-        scope=scope,
-        confidence=confidence,
-        agent_scope=agent_scope,
-        source_agent=resolved_agent,
-        memory_group=memory_group_arg,
-    )
+
+    from pydantic import ValidationError as _PydanticValidationError
+
+    try:
+        result = store.save(
+            key=key,
+            value=value,
+            tier=tier,
+            source=source,
+            tags=tags,
+            scope=scope,
+            confidence=confidence,
+            agent_scope=agent_scope,
+            source_agent=resolved_agent,
+            memory_group=memory_group_arg,
+        )
+    except _PydanticValidationError as exc:
+        # TAP-747: pydantic slug-key validation raised from MemoryEntry.__init__
+        # inside store.save() was escaping to the handler and producing HTTP 500.
+        # Catch it here so that both single-item and batch routes see a structured
+        # error dict ({"error": "bad_request", "detail": "<message>"}) and can
+        # surface a 400 to the caller without any code change in the handlers.
+        errors = exc.errors()
+        detail = errors[0].get("msg", str(exc)) if errors else str(exc)
+        return {"error": "bad_request", "detail": detail}
+
     if isinstance(result, dict):
         return result
     return {
