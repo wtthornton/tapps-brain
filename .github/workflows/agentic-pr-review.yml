@@ -28,10 +28,18 @@ jobs:
 
       - name: Install tools
         run: |
-          pip install tapps-mcp ruff mypy bandit radon vulture
+          # tapps-mcp is an operator-local tool, not on public PyPI (see
+          # tapps-quality.yml comment). Install is best-effort; when
+          # unavailable the analysis step below no-ops.
+          pip install tapps-mcp || echo "tapps-mcp not available on this runner; review will skip"
+          pip install ruff mypy bandit radon vulture
 
       - name: Run quality analysis on changed files
         env:
           TAPPS_MCP_PROJECT_ROOT: ${{ github.workspace }}
         run: |
-          tapps-mcp validate-changed --preset strict
+          if command -v tapps-mcp >/dev/null 2>&1; then
+            tapps-mcp validate-changed --preset strict
+          else
+            echo "::notice::tapps-mcp binary not installed; skipping agentic review (see install step)"
+          fi
