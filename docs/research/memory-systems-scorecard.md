@@ -48,7 +48,7 @@ Sorted by overall score desc. 16 systems scored. Raw totals to one decimal.
 
 | Rank | System | Overall | Top 3 strengths | Top 3 weaknesses |
 |---|---|---|---|---|
-| 1 | **tapps-brain** | **80.6** | Power-law per-tier decay (FSRS-canonical, STORY-SC02 2026-04-17), embedding-cosine consolidation + polarity contradiction detection (STORY-SC03 2026-04-18), DB-layer RLS tenant isolation, 55-tool first-class MCP surface with dual transport (data :8080 + operator :8090), Python + TypeScript SDKs + LangGraph Store adapter (STORY-SC05 2026-04-19), production-ready (OTel, migrations, 127 test files) | No published LoCoMo/LongMemEval benchmark numbers (harness only), no named external adopters, sub-200-star momentum |
+| 1 | **tapps-brain** | **80.6** | DB-layer RLS tenant isolation (only system to score D5=5), 55-tool first-class MCP with dual transport + optional LLM write path (D6a=5, D9=5), power-law FSRS decay + embedding consolidation + Python+TS SDK (STORY-SC02/SC03/SC05) | No published LoCoMo/LongMemEval benchmark numbers (harness only), no named external adopters, sub-200-star momentum |
 | 2 | mem0 | 79.6 | Published LoCoMo 91.6, Python + TS SDK + REST + hosted tier, Apache-2.0 | No DB-layer tenant isolation, LLM required in write path, no first-party MCP server (third-party wrappers only) |
 | 3 | Graphiti (Zep OSS) | 75.8 | Bi-temporal knowledge graph, Apache-2.0, first-class MCP server (mcp-v1.0.2) | Requires Neo4j/FalkorDB backend, graph-build latency, no public recall-quality benchmark on LongMemEval leaderboard |
 | 4 | Supermemory | 73.4 | MIT + self-host + 21.9k stars, MCP shipped, JS/TS + Python SDKs | SaaS-primary, architecture proprietary, "leaderboard" claims externally disputed *(D7 raised from 0 to 3 in 2026-04-17 score audit: MIT license + real self-host confirmed)* |
@@ -78,10 +78,10 @@ weighted sums rounded to one decimal. Sorted by T desc.
 
 | System | D1 (w8) | D2 (w15) | D3 (w8) | D4 (w10) | D5 (w10) | D6a (w6) | D6b (w4) | D7 (w7) | D8 (w12) | D9 (w10) | D10 (w10) | **T** |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **tapps-brain** | **4** | **2** | **5** | **5** | **5** | **5** | **4** | **5** | **5** | **5** | **1** | **80.6** |
 | mem0 | 3 | 5 | 3 | 5 | 3 | 2 | 5 | 5 | 4 | 3 | 5 | **79.6** |
 | Graphiti (Zep OSS) | 2 | 4 | 3 | 5 | 2 | 5 | 4 | 5 | 4 | 3 | 5 | **75.8** |
 | Supermemory | 3 | 4 | 3 | 4 | 3 | 4 | 4 | 3 | 4 | 3 | 5 | **73.4** |
-| **tapps-brain** | **4** | **2** | **5** | **5** | **5** | **5** | **4** | **5** | **5** | **5** | **1** | **80.6** |
 | Memori (MemoriLabs) | 3 | 4 | 3 | 4 | 2 | 4 | 4 | 5 | 4 | 3 | 4 | **72.2** |
 | LangGraph memory | 4 | 2 | 1 | 2 | 3 | 2 | 4 | 5 | 5 | 5 | 5 | **68.6** |
 | Cognee | 2 | 3 | 3 | 4 | 2 | 5 | 3 | 5 | 4 | 3 | 4 | **68.0** |
