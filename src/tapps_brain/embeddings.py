@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import os
 import struct
-from typing import cast
+from typing import Any, cast
 
 import structlog
 
@@ -149,7 +149,7 @@ class SentenceTransformerProvider:
         self._model_name = model_name
         self._revision = revision
 
-        st_kwargs: dict[str, object] = {}
+        st_kwargs: dict[str, Any] = {}
         if revision is not None:
             st_kwargs["revision"] = revision
 
