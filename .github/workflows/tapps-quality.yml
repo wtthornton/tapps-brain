@@ -42,15 +42,24 @@ jobs:
 
       - name: Install TappsMCP and checkers
         run: |
-          pip install tapps-mcp
+          # tapps-mcp is an operator-local tool, not published to public PyPI.
+          # The install is best-effort — if the binary is unavailable the
+          # quality-gate step below no-ops and ruff/mypy are still covered by
+          # the CI `lint` job. Swap to a private index / git URL if a hosted
+          # copy becomes available.
+          pip install tapps-mcp || echo "tapps-mcp not available on this runner; quality gate will skip"
           pip install ruff mypy bandit radon vulture
 
       - name: Run TappsMCP quality gate
         env:
           TAPPS_MCP_PROJECT_ROOT: ${{ github.workspace }}
         run: |
-          tapps-mcp validate-changed \
-            --preset ${{ inputs.preset || 'staging' }}
+          if command -v tapps-mcp >/dev/null 2>&1; then
+            tapps-mcp validate-changed \
+              --preset ${{ inputs.preset || 'staging' }}
+          else
+            echo "::notice::tapps-mcp binary not installed; skipping gate (see install step)"
+          fi
 
       - name: Upload quality report
         if: always()
