@@ -24,12 +24,24 @@ tests — it wraps uvicorn instead of ``http.server.HTTPServer``.
 The ASGI entry point is :data:`app`; run it with
 ``uvicorn tapps_brain.http_adapter:app`` or via the installed
 ``tapps-brain-http`` script.
+
+**Split by concern (TAP-604):**
+
+The original monolithic module has been refactored into a sub-package:
+
+* :mod:`tapps_brain.http.settings`          – ``_Settings``, ``get_settings``
+* :mod:`tapps_brain.http.probe_cache`       – ``_probe_db``, pool helpers
+* :mod:`tapps_brain.http.metrics_collector` – Prometheus text rendering
+* :mod:`tapps_brain.http.profile_resolver`  – singleton ``ProfileResolver``
+* :mod:`tapps_brain.http.auth`              – bearer-token auth dependencies
+* :mod:`tapps_brain.http.middleware`        – ASGI middleware classes
+
+All public names are re-exported from this module for backward compat.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import logging
 import os
@@ -70,953 +82,74 @@ from tapps_brain.errors import (
 from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
 from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
+# ---------------------------------------------------------------------------
+# Sub-package imports — split by concern (TAP-604)
+# Re-exported at module level for backward compatibility with tests and callers
+# that do ``from tapps_brain.http_adapter import <name>``.
+# ---------------------------------------------------------------------------
+
+# settings
+from tapps_brain.http.settings import (
+    _Settings,
+    _filter_snapshot_by_project,
+    _service_version,
+    _settings,
+    get_settings,
+)
+
+# probe cache
+from tapps_brain.http.probe_cache import (
+    _PROBE_CACHE,
+    _PROBE_CACHE_TTL,
+    _get_hive_pool_stats,
+    _probe_db,
+)
+
+# metrics counter state (re-exported so tests can mutate via ``_mod.X``)
+from tapps_brain.http.metrics_collector import (
+    _DISTINCT_AGENTS_PER_PROJECT,
+    _LABELED_REQUEST_COUNTS,
+    _LABELED_REQUEST_COUNTS_LOCK,
+    _MAX_AGENT_ID_CARDINALITY,
+    _collect_metrics,
+    _record_labeled_request,
+)
+
+# profile resolver singleton
+from tapps_brain.http.profile_resolver import (
+    _PROFILE_RESOLVER,
+    _PROFILE_RESOLVER_LOCK,
+    _get_profile_resolver,
+)
+
+# auth dependencies
+from tapps_brain.http.auth import (
+    _extract_bearer,
+    _metrics_request_authenticated,
+    _per_tenant_auth_enabled,
+    _verify_per_tenant_token,
+    require_admin_auth,
+    require_data_plane_auth,
+)
+
+# middleware
+from tapps_brain.http.middleware import (
+    McpTenantMiddleware,
+    OriginAllowlistMiddleware,
+    OtelSpanMiddleware,
+    _ORIGIN_EXEMPT_PATHS,
+)
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants / module state
+# Constants / module-level state kept here for closure + test-patch access
 # ---------------------------------------------------------------------------
 
 _SERVICE_NAME = "tapps-brain"
 _SNAPSHOT_TTL_SECONDS: float = 15.0
 _PROCESS_START_TIME: float = time.time()
 _BEARER_PREFIX = "bearer "
-
-# STORY-070.12: bounded per-(project_id, agent_id) request counters for
-# Prometheus export.  agent_id cardinality is capped at 100 distinct values
-# per project; overflow is bucketed as "other".
-_MAX_AGENT_ID_CARDINALITY = 100
-_LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}
-_LABELED_REQUEST_COUNTS_LOCK = threading.Lock()
-# TAP-599: per-project set of seen agent_ids for O(1) cardinality checks.
-# Maintained in lock-step with _LABELED_REQUEST_COUNTS inside the lock.
-_DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}
-
-# STORY-073.2: process-wide ProfileResolver singleton.  Built once on first
-# /mcp request; guarded by _PROFILE_RESOLVER_LOCK.
-_PROFILE_RESOLVER: Any = None
-_PROFILE_RESOLVER_LOCK = threading.Lock()
-
-
-def _record_labeled_request(project_id: str, agent_id: str) -> None:
-    """Increment the per-(project_id, agent_id) request counter (STORY-070.12).
-
-    TAP-599: Uses a per-project set for O(1) membership/cardinality checks
-    instead of an O(N) set-comprehension over the full _LABELED_REQUEST_COUNTS
-    dict.  Both structures are updated inside the same lock so they stay in
-    sync.
-    """
-    with _LABELED_REQUEST_COUNTS_LOCK:
-        distinct = _DISTINCT_AGENTS_PER_PROJECT.setdefault(project_id, set())
-        if agent_id not in distinct and len(distinct) >= _MAX_AGENT_ID_CARDINALITY:
-            agent_id = "other"
-        key = (project_id, agent_id)
-        _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
-        # Note: when agent_id was remapped to "other" the add below can grow
-        # the set to _MAX_AGENT_ID_CARDINALITY + 1.  This is intentional —
-        # subsequent overflow agents still bucket to "other" via the
-        # `agent_id not in distinct` check, which evaluates False for "other".
-        distinct.add(agent_id)
-
-
-def _get_profile_resolver() -> Any:
-    """Return the process-wide :class:`~tapps_brain.mcp_server.profile_resolver.ProfileResolver`.
-
-    Built lazily on first call; subsequent calls return the cached singleton.
-    Thread-safe via ``_PROFILE_RESOLVER_LOCK``.
-
-    The resolver is initialised with:
-    * The bundled :class:`~tapps_brain.mcp_server.profile_registry.ProfileRegistry`.
-    * An optional agent-profile getter backed by ``TAPPS_BRAIN_HIVE_DSN`` or
-      ``TAPPS_BRAIN_DATABASE_URL`` when a Postgres DSN is configured.
-    * The ``TAPPS_BRAIN_DEFAULT_PROFILE`` env var (default ``"full"``).
-    """
-    global _PROFILE_RESOLVER
-    if _PROFILE_RESOLVER is not None:
-        return _PROFILE_RESOLVER
-    with _PROFILE_RESOLVER_LOCK:
-        if _PROFILE_RESOLVER is not None:
-            return _PROFILE_RESOLVER
-        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
-        from tapps_brain.mcp_server.profile_resolver import ProfileResolver
-
-        registry = ProfileRegistry()
-
-        # Build an agent-profile getter if a Postgres DSN is available.
-        getter = None
-        dsn = get_settings().dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN", "").strip()
-        if dsn and (dsn.startswith("postgres://") or dsn.startswith("postgresql://")):
-            try:
-                from tapps_brain.postgres_connection import PostgresConnectionManager
-                from tapps_brain.postgres_hive import PostgresAgentRegistry
-
-                _cm = PostgresConnectionManager(dsn)
-                _pg_agent_reg = PostgresAgentRegistry(_cm)
-
-                def _pg_getter(project_id: str, agent_id: str) -> str | None:
-                    row = _pg_agent_reg.get(agent_id)
-                    if row is None:
-                        return None
-                    return str(row.get("profile") or "") or None
-
-                getter = _pg_getter
-            except Exception as exc:
-                logger.warning(
-                    "http_adapter.profile_resolver.agent_registry_unavailable",
-                    error=str(exc),
-                    detail=(
-                        "Agent-registry lookup disabled for profile resolution. "
-                        "Profile will fall back to header or server default."
-                    ),
-                )
-
-        _PROFILE_RESOLVER = ProfileResolver(registry, agent_profile_getter=getter)
-        return _PROFILE_RESOLVER
-
-
-# ---------------------------------------------------------------------------
-# OpenAPI spec — generated from FastAPI's route table and enriched with
-# the dual auth schemes, tenant headers, error envelope, and the ASGI-mounted
-# /mcp route by :mod:`tapps_brain.openapi_contract` (TAP-508).  The checked-in
-# snapshot lives under ``docs/contracts/`` and is gated by CI.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers (lifted verbatim from the legacy handler, behavior-identical)
-# ---------------------------------------------------------------------------
-
-
-def _service_version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("tapps-brain")
-    except Exception:
-        return "unknown"
-
-
-def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:
-    """STORY-069.7: filter diagnostics/feedback to a single project_id."""
-    filtered = dict(payload)
-    for key in ("diagnostics_history", "feedback_events"):
-        rows = filtered.get(key) or []
-        filtered[key] = [
-            row for row in rows if isinstance(row, dict) and row.get("project_id") == project_id
-        ]
-    return filtered
-
-
-# TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
-# and Prometheus scrape (every 15 s) don't each open a new standalone Postgres
-# connection.  Key = DSN string; value = (expires_at, result_tuple).
-_PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}
-_PROBE_CACHE_TTL: float = 2.0
-
-
-def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
-    if not dsn:
-        return False, None, "no DSN configured (set TAPPS_BRAIN_DATABASE_URL)"
-    now = time.monotonic()
-    cached = _PROBE_CACHE.get(dsn)
-    if cached is not None and now < cached[0]:
-        return cached[1]
-    try:
-        from tapps_brain.postgres_migrations import get_hive_schema_status
-
-        status_ = get_hive_schema_status(dsn)
-        version = status_.current_version if status_.current_version else None
-        pending = len(status_.pending_migrations)
-        if pending > 0:
-            result: tuple[bool, int | None, str] = (
-                True,
-                version,
-                f"ready (migration_version={version}, pending={pending})",
-            )
-        else:
-            result = (True, version, f"ready (migration_version={version})")
-    except Exception as exc:
-        err_str = str(exc)
-        try:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(dsn)
-            if parsed.hostname:
-                err_str = err_str.replace(parsed.hostname, "[host]")
-            if parsed.port:
-                err_str = err_str.replace(str(parsed.port), "[port]")
-            if parsed.username:
-                err_str = err_str.replace(parsed.username, "[user]")
-            if parsed.password:
-                err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:
-            err_str = "database unreachable"
-        result = (False, None, f"db_error: {err_str}")
-    _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
-    return result
-
-
-def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
-    """Return pool stats dict from a store's hive connection manager, or None."""
-    if store is None:
-        return None
-    try:
-        hive = getattr(store, "_hive_store", None)
-        cm = getattr(hive, "_cm", None)
-        if cm is not None and hasattr(cm, "get_pool_stats"):
-            stats: dict[str, Any] = cm.get_pool_stats()
-            return stats
-    except (AttributeError, TypeError):
-        pass  # hive connection manager unavailable or pool_stats not exposed
-    return None
-
-
-def _collect_metrics(
-    dsn: str | None,
-    store: Any = None,
-    *,
-    redact_tenant_labels: bool = False,
-) -> str:
-    """Render Prometheus exposition text.
-
-    ``redact_tenant_labels`` (TAP-547): when ``True`` the per-tenant labels
-    ``project_id`` and ``agent_id`` are dropped from
-    ``tapps_brain_mcp_requests_total`` and ``tapps_brain_tool_calls_total``
-    and the counters are aggregated across those dimensions.  This is the
-    shape served to anonymous (or unauthenticated) scrapers so reachable-
-    but-unprivileged callers cannot enumerate tenant/agent activity.
-    """
-    lines: list[str] = []
-
-    def gauge(name: str, value: float, help_text: str = "") -> None:
-        if help_text:
-            lines.append(f"# HELP {name} {help_text}")
-        lines.append(f"# TYPE {name} gauge")
-        lines.append(f"{name} {value}")
-
-    gauge(
-        "tapps_brain_process_start_time_seconds",
-        _PROCESS_START_TIME,
-        "Unix timestamp when tapps-brain HTTP adapter was started.",
-    )
-    gauge(
-        "tapps_brain_process_uptime_seconds",
-        time.time() - _PROCESS_START_TIME,
-        "Seconds since tapps-brain HTTP adapter started.",
-    )
-    gauge(
-        "tapps_brain_python_info",
-        1.0,
-        f"Python version info (version={sys.version_info.major}.{sys.version_info.minor}).",
-    )
-
-    is_ready, migration_version, _ = _probe_db(dsn)
-    gauge(
-        "tapps_brain_db_ready",
-        1.0 if is_ready else 0.0,
-        "1 if the configured Postgres database responded to a probe, 0 otherwise.",
-    )
-    if migration_version is not None:
-        gauge(
-            "tapps_brain_db_migration_version",
-            float(migration_version),
-            "Highest applied Hive schema migration version.",
-        )
-
-    # STORY-070.12: per-(project_id, agent_id) request counters.
-    # TAP-547: drop labels entirely when redacting — we still emit the
-    # counter so scrapers have a total-volume signal, just not per-tenant.
-    with _LABELED_REQUEST_COUNTS_LOCK:
-        snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
-    if snapshot_counts:
-        lines.append(
-            "# HELP tapps_brain_mcp_requests_total "
-            "Total MCP requests, labelled by project_id and agent_id."
-        )
-        lines.append("# TYPE tapps_brain_mcp_requests_total counter")
-        if redact_tenant_labels:
-            total = sum(snapshot_counts.values())
-            lines.append(f"tapps_brain_mcp_requests_total {total}")
-        else:
-            for (pid, aid), count in sorted(snapshot_counts.items()):
-                safe_pid = pid.replace('"', '\\"')
-                safe_aid = aid.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
-                    f'agent_id="{safe_aid}"}} {count}'
-                )
-
-    # STORY-070.12: per-(project_id, agent_id, tool, status) tool call counters.
-    # TAP-547: when redacting, aggregate over (project_id, agent_id) but
-    # keep (tool, status) — those are not tenant-identifying and remain
-    # useful for ops / alerting on anonymous scrapes.
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
-
-        tool_counts = get_tool_call_counts_snapshot()
-        if tool_counts:
-            lines.append(
-                "# HELP tapps_brain_tool_calls_total "
-                "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
-            )
-            lines.append("# TYPE tapps_brain_tool_calls_total counter")
-            if redact_tenant_labels:
-                aggregated: dict[tuple[str, str], int] = {}
-                for (_pid, _aid, tool, status), count in tool_counts.items():
-                    key = (tool, status)
-                    aggregated[key] = aggregated.get(key, 0) + count
-                for (tool, status), count in sorted(aggregated.items()):
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
-            else:
-                for (pid, aid, tool, status), count in sorted(tool_counts.items()):
-                    safe_pid = pid.replace('"', '\\"')
-                    safe_aid = aid.replace('"', '\\"')
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
-                        f'agent_id="{safe_aid}",tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
-
-    # TAP-549: in-memory session-state cardinality gauge.  Alertable
-    # signal for the "client rotates session_id every call" failure mode
-    # — the gauge should stay well below _SESSION_STATE_HARD_CAP (10_000)
-    # on a healthy adapter; sustained growth means the sweep / eviction
-    # isn't keeping up.  Always emit (even when None/0) so dashboards
-    # have a stable series.
-    if store is not None and hasattr(store, "active_session_count"):
-        with suppress(Exception):
-            # Best-effort gauge — a broken store must never crash /metrics.
-            gauge(
-                "tapps_brain_store_active_sessions",
-                float(store.active_session_count()),
-                "Distinct session_ids tracked in MemoryStore in-memory "
-                "implicit-feedback helper dicts.",
-            )
-
-    # STORY-066.7: live pool stats from the hive connection manager.
-    _pool_stats = _get_hive_pool_stats(store)
-    if _pool_stats:
-        gauge(
-            "tapps_brain_pool_size",
-            float(_pool_stats.get("pool_size", 0)),
-            "Current number of open connections in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_available",
-            float(_pool_stats.get("pool_available", 0)),
-            "Number of idle connections available in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_saturation",
-            float(_pool_stats.get("pool_saturation", 0.0)),
-            "Fraction of Hive pool max_size currently in use (0.0-1.0).",
-        )
-
-    # TAP-655: per-project counter for missing HNSW indexes detected at startup.
-    # Non-zero means migration 002 was not applied on that project's DB.
-    # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.postgres_private import get_missing_index_counts_snapshot
-
-        missing_idx_counts = get_missing_index_counts_snapshot()
-        if missing_idx_counts:
-            lines.append(
-                "# HELP tapps_brain_private_missing_indexes_total "
-                "Number of startup checks that found idx_priv_embedding_hnsw absent "
-                "(migration 002 not applied). Non-zero means vector recall falls back "
-                "to a sequential scan."
-            )
-            lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
-            if redact_tenant_labels:
-                total = sum(missing_idx_counts.values())
-                lines.append(f"tapps_brain_private_missing_indexes_total {total}")
-            else:
-                for project_id, count in sorted(missing_idx_counts.items()):
-                    safe_pid = project_id.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
-                    )
-
-    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
-
-        _filter_snap = get_profile_filter_metrics_snapshot()
-
-        # mcp_tools_list_total{profile}
-        list_total = _filter_snap.get("list_total", {})
-        if list_total:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_list_total Total tools/list calls per MCP profile."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_list_total counter")
-            for _profile, _count in sorted(list_total.items()):
-                _sp = _profile.replace('"', '\\"')
-                lines.append(f'tapps_brain_mcp_tools_list_total{{profile="{_sp}"}} {_count}')
-
-        # mcp_tools_list_visible_tools{profile} — gauge
-        list_visible = _filter_snap.get("list_visible", {})
-        if list_visible:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_list_visible_tools "
-                "Last observed visible tool count per MCP profile after filtering."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_list_visible_tools gauge")
-            for _profile, _vis in sorted(list_visible.items()):
-                _sp = _profile.replace('"', '\\"')
-                lines.append(f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}')
-
-        # mcp_tools_call_total{profile, tool, outcome}
-        call_total = _filter_snap.get("call_total", {})
-        if call_total:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_call_total "
-                "Total tools/call attempts, labelled by profile, tool, and outcome."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_call_total counter")
-            for (_profile, _tool, _outcome), _count in sorted(call_total.items()):
-                _sp = _profile.replace('"', '\\"')
-                _st = _tool.replace('"', '\\"')
-                _so = _outcome.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_tools_call_total{{profile="{_sp}",'
-                    f'tool="{_st}",outcome="{_so}"}} {_count}'
-                )
-
-    # STORY-073.4: profile resolver resolution-source + cache metrics.
-    # suppress(Exception): any runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        _resolver = _PROFILE_RESOLVER
-        if _resolver is not None:
-            _res_stats = _resolver.resolution_stats()
-            if _res_stats:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_resolution_source_total "
-                    "Profile resolution source per MCP request."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
-                for _src, _count in sorted(_res_stats.items()):
-                    _ss = _src.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_mcp_profile_resolution_source_total{{source="{_ss}"}} {_count}'
-                    )
-
-            _cache = _resolver.cache_stats()
-            # Only emit if at least one cache event has occurred.
-            if _cache.get("hits", 0) + _cache.get("misses", 0) + _cache.get("invalidated", 0) > 0:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_cache_events_total "
-                    "Profile resolver cache events (hit/miss/invalidated)."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
-                # Map result label → cache_stats() key; extend here when new event types land.
-                _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
-                for _result, _key in _result_to_key.items():
-                    _count = _cache.get(_key, 0)
-                    if _count:
-                        lines.append(
-                            f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
-                        )
-
-    lines.append("")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Settings resolved from environment
-# ---------------------------------------------------------------------------
-
-
-class _Settings:
-    """Process-wide configuration resolved from env at app startup."""
-
-    def __init__(self) -> None:
-        self.dsn = self._resolve_dsn()
-        self.auth_token = self._resolve_auth_token()
-        self.admin_token = self._resolve_admin_token()
-        # TAP-547: optional bearer token gating /metrics.  When set, the
-        # endpoint serves the full per-(project_id, agent_id) counter
-        # surface only to callers presenting the correct token; anonymous
-        # callers receive a redacted (tenant-label-stripped) body.  When
-        # unset, we still serve the redacted body so anonymous scrapes
-        # can't enumerate tenants.
-        self.metrics_token = self._resolve_metrics_token()
-        self.allowed_origins = self._resolve_allowed_origins()
-        self.version = _service_version()
-        # Optional store injected by the CLI entry point / tests.
-        self.store: MemoryStore | None = None
-        # Snapshot cache
-        self.snapshot_lock = threading.Lock()
-        self.snapshot_cache: Any = None
-        self.snapshot_cache_at: float = 0.0
-        # TAP-548: process-wide ``IdempotencyStore`` singleton, built in
-        # the FastAPI lifespan startup hook when
-        # ``TAPPS_BRAIN_IDEMPOTENCY=1`` and a DSN is configured, and
-        # closed on shutdown.  Re-using one store reuses one
-        # ``PostgresConnectionManager`` pool instead of opening a fresh
-        # psycopg connection per write — the previous per-request
-        # construction bypassed the hardened pool and raced
-        # ``max_connections`` under load.
-        self.idempotency_store: Any = None
-
-    @staticmethod
-    def _resolve_dsn() -> str | None:
-        dsn = (
-            os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-            or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-            or ""
-        ).strip()
-        return dsn or None
-
-    @staticmethod
-    def _read_secret(env_name: str, file_env_name: str) -> str | None:
-        tok = os.environ.get(env_name, "").strip()
-        if tok:
-            return tok
-        file_ = os.environ.get(file_env_name, "").strip()
-        if file_:
-            try:
-                return Path(file_).read_text().strip() or None
-            except OSError:
-                return None
-        return None
-
-    @classmethod
-    def _resolve_auth_token(cls) -> str | None:
-        # STORY-070.3: accept either new (TAPPS_BRAIN_AUTH_TOKEN) or legacy
-        # (TAPPS_BRAIN_HTTP_AUTH_TOKEN) name for the data-plane token.
-        return cls._read_secret(
-            "TAPPS_BRAIN_AUTH_TOKEN", "TAPPS_BRAIN_AUTH_TOKEN_FILE"
-        ) or cls._read_secret("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
-
-    @classmethod
-    def _resolve_admin_token(cls) -> str | None:
-        return cls._read_secret("TAPPS_BRAIN_ADMIN_TOKEN", "TAPPS_BRAIN_ADMIN_TOKEN_FILE")
-
-    @classmethod
-    def _resolve_metrics_token(cls) -> str | None:
-        return cls._read_secret("TAPPS_BRAIN_METRICS_TOKEN", "TAPPS_BRAIN_METRICS_TOKEN_FILE")
-
-    @staticmethod
-    def _resolve_allowed_origins() -> list[str]:
-        raw = (os.environ.get("TAPPS_BRAIN_ALLOWED_ORIGINS") or "").strip()
-        if not raw:
-            return []
-        return [o.strip() for o in raw.split(",") if o.strip()]
-
-
-_settings = _Settings()
-
-
-def get_settings() -> _Settings:
-    return _settings
-
-
-# ---------------------------------------------------------------------------
-# Auth dependencies
-# ---------------------------------------------------------------------------
-
-
-def _extract_bearer(request: Request) -> str | None:
-    header = request.headers.get("authorization") or ""
-    if not header:
-        return None
-    if not header.lower().startswith(_BEARER_PREFIX):
-        return ""
-    return header[len(_BEARER_PREFIX) :].strip()
-
-
-def _per_tenant_auth_enabled() -> bool:
-    """Return ``True`` when ``TAPPS_BRAIN_PER_TENANT_AUTH=1`` is set."""
-    return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
-
-
-def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:
-    """Check *token* against the project's stored argon2id hash.
-
-    Returns:
-        ``True``  — token verified against per-tenant hash.
-        ``False`` — project has a token but *token* doesn't match.
-        ``None``  — project has no per-tenant token; caller falls back to
-                    the global ``TAPPS_BRAIN_AUTH_TOKEN`` check.
-    """
-    from tapps_brain.postgres_connection import PostgresConnectionManager
-    from tapps_brain.project_registry import ProjectRegistry
-
-    cm = PostgresConnectionManager(dsn)
-    try:
-        return ProjectRegistry(cm).verify_token(project_id, token)
-    finally:
-        cm.close()
-
-
-def require_data_plane_auth(request: Request) -> None:
-    """Dependency: data-plane bearer-token check.
-
-    When ``TAPPS_BRAIN_PER_TENANT_AUTH=1``:
-      * ``X-Project-Id`` header is **required** — 400 when missing or empty.
-      * If no DSN is configured alongside the flag, fails closed with 500
-        (misconfiguration) rather than falling through to the global token.
-      * Verifies the bearer token against the project's argon2id hash in
-        ``project_profiles.hashed_token``.
-      * If the project has **no** per-tenant token configured, falls back to
-        the global ``TAPPS_BRAIN_AUTH_TOKEN`` check so deployments that have
-        not yet issued per-tenant tokens continue to work unchanged.
-      * The global token is NOT accepted as a substitute when
-        ``X-Project-Id`` is absent — that would defeat per-tenant isolation
-        (TAP-626).
-
-    When the flag is unset (default), behaves exactly as before: checks
-    the global ``TAPPS_BRAIN_AUTH_TOKEN`` only.
-
-    When the global token is also unset, requests pass through
-    (not-for-production).
-    """
-    cfg = get_settings()
-    tok = _extract_bearer(request)
-
-    # ---- per-tenant path (STORY-070.8) ----
-    if _per_tenant_auth_enabled():
-        # TAP-626: flag on but no DSN is a server misconfiguration — fail closed
-        # rather than silently falling through to the global-token check (which
-        # would reproduce the supertoken bypass this fix is meant to close).
-        if not cfg.dsn:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": "server_misconfiguration",
-                    "detail": (
-                        "TAPPS_BRAIN_PER_TENANT_AUTH is enabled but no database DSN is configured."
-                    ),
-                },
-            )
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        # TAP-626: reject instead of falling through to the global-token check.
-        # Allowing the global token when X-Project-Id is absent makes it a
-        # supertoken that bypasses per-tenant isolation entirely.
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "bad_request",
-                    "detail": ("X-Project-Id header is required when per-tenant auth is enabled."),
-                },
-            )
-        # project_id is now guaranteed non-empty (rejected above if empty)
-        if tok is None:
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "unauthorized",
-                    "detail": "Authorization header required (Bearer token).",
-                },
-            )
-        if tok == "":
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "unauthorized",
-                    "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
-                },
-            )
-        result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
-        if result is True:
-            return  # authenticated by per-tenant token
-        if result is False:
-            # Project has a token — wrong credential → 403
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden", "detail": "Invalid token."},
-            )
-        # result is None → project has no per-tenant token, fall through to global check
-
-    # ---- global token fallback ----
-    if not cfg.auth_token:
-        return
-    if tok is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Authorization header required (Bearer token).",
-            },
-        )
-    if tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
-            },
-        )
-    # TAP-544: constant-time comparison to avoid byte-by-byte timing recovery.
-    if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid token."},
-        )
-
-
-def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:
-    """TAP-547: gate for the Prometheus ``/metrics`` endpoint.
-
-    Return value semantics:
-
-    * ``True``  — caller presented a valid ``TAPPS_BRAIN_METRICS_TOKEN``
-      bearer; serve the full per-(project_id, agent_id) label surface.
-    * ``False`` — no metrics token is configured on the server.  The
-      endpoint still responds 200 but with tenant labels stripped (see
-      ``_collect_metrics(redact_tenant_labels=True)``) so reachable-but-
-      unprivileged callers cannot enumerate tenants.
-
-    Raises ``HTTPException`` with:
-
-    * 401 when a token IS configured and the bearer header is missing or
-      malformed.
-    * 403 when a token IS configured and the bearer does not match.
-    """
-    token = getattr(cfg, "metrics_token", None)
-    if not token:
-        return False
-    tok = _extract_bearer(request)
-    if tok is None or tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Bearer token required for /metrics.",
-            },
-        )
-    # TAP-544-style constant-time comparison: the metrics token grants
-    # cross-tenant label visibility, so we avoid byte-by-byte timing
-    # recovery here too.
-    if not hmac.compare_digest(tok.encode("utf-8"), token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid metrics token."},
-        )
-    return True
-
-
-def require_admin_auth(request: Request) -> None:
-    """Dependency: ``TAPPS_BRAIN_ADMIN_TOKEN`` check for ``/admin/*``.
-
-    When the admin token is unset, the route returns 503 — admin without a
-    token would bypass the trust model (EPIC-069).
-    """
-    cfg = get_settings()
-    if not cfg.admin_token:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "admin_disabled",
-                "detail": "Admin routes require TAPPS_BRAIN_ADMIN_TOKEN to be set.",
-            },
-        )
-    tok = _extract_bearer(request)
-    if tok is None or tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={"error": "unauthorized", "detail": "Bearer token required for admin routes."},
-        )
-    # TAP-544: constant-time comparison protects TAPPS_BRAIN_ADMIN_TOKEN from
-    # statistical timing recovery — admin routes grant cross-tenant power.
-    if not hmac.compare_digest(tok.encode("utf-8"), cfg.admin_token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid admin token."},
-        )
-
-
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
-
-
-class OtelSpanMiddleware(BaseHTTPMiddleware):
-    """Wrap each request in an OTel server span with W3C traceparent extraction."""
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        carrier: dict[str, str] = {}
-        tp = request.headers.get("traceparent")
-        if tp:
-            carrier["traceparent"] = tp
-        ts = request.headers.get("tracestate")
-        if ts:
-            carrier["tracestate"] = ts
-        trace_ctx = extract_trace_context(carrier) if carrier else None
-        method = request.method
-        path = request.url.path
-        project_id = request.headers.get("x-project-id", "")
-        # STORY-070.7: tag spans with per-call agent identity so observability
-        # can filter by tenant × agent without inspecting headers downstream.
-        agent_id_header = request.headers.get("x-tapps-agent") or request.headers.get(
-            "x-agent-id", ""
-        )
-        with start_span(
-            f"{method} {path}",
-            {
-                "http.method": method,
-                "http.route": path,
-                "tapps.project_id": project_id,
-                "tapps.agent_id": agent_id_header,
-            },
-            kind=SPAN_KIND_SERVER,
-            context=trace_ctx,
-        ):
-            return await call_next(request)  # type: ignore[no-any-return]
-
-
-# Paths that are intentionally unauthenticated and Origin-agnostic (TAP-627).
-# These are probe / scrape endpoints that must remain reachable from any origin
-# (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
-# bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})
-
-
-class OriginAllowlistMiddleware(BaseHTTPMiddleware):
-    """DNS-rebinding guard applied to every bearer-authenticated route (TAP-627).
-
-    When ``TAPPS_BRAIN_ALLOWED_ORIGINS`` is set, any browser-originated request
-    (``Origin`` header present) whose origin is not in the allowlist receives a
-    ``403 Forbidden`` response before the handler is reached.
-
-    Intentionally exempt (unauthenticated probe / scrape endpoints that are
-    Origin-agnostic by design):
-
-    * ``/`` — root liveness check
-    * ``/health`` — liveness probe
-    * ``/ready`` — readiness probe
-    * ``/metrics`` — Prometheus scrape endpoint
-
-    Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
-    protection to all bearer-authenticated routes (``/v1/*``, ``/admin/*``,
-    ``/mcp``, ``/info``, etc.) so that DNS-rebinding attacks against REST
-    endpoints are also blocked.
-    """
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        cfg = get_settings()
-        if cfg.allowed_origins and request.url.path not in _ORIGIN_EXEMPT_PATHS:
-            origin = request.headers.get("origin", "")
-            if origin and origin not in cfg.allowed_origins:
-                return JSONResponse(
-                    status_code=403,
-                    content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
-                )
-        return await call_next(request)  # type: ignore[no-any-return]
-
-
-class McpTenantMiddleware(BaseHTTPMiddleware):
-    """Enforce the MCP wire envelope for ``/mcp``:
-
-    * ``X-Project-Id`` required (400 on miss).
-    * ``X-Agent-Id`` optional (defaults to ``"unknown"``).
-    * ``Authorization: Bearer <TAPPS_BRAIN_AUTH_TOKEN>``.
-    * Sets contextvars consumed by :mod:`tapps_brain.mcp_server`.
-    """
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        if not request.url.path.startswith("/mcp"):
-            return await call_next(request)  # type: ignore[no-any-return]
-
-        cfg = get_settings()
-
-        # Auth
-        if cfg.auth_token:
-            tok = _extract_bearer(request)
-            if tok is None or tok == "":
-                return JSONResponse(
-                    status_code=401,
-                    content={"error": "unauthorized", "detail": "Bearer token required for /mcp."},
-                )
-            # TAP-544: constant-time comparison for the /mcp bearer-token check.
-            if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
-                return JSONResponse(
-                    status_code=403,
-                    content={"error": "forbidden", "detail": "Invalid token."},
-                )
-
-        # Tenant headers
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "bad_request",
-                    "detail": "X-Project-Id header is required for /mcp requests.",
-                },
-            )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
-        # STORY-070.7: ``X-Tapps-Agent`` is the canonical per-call identity
-        # header; it takes precedence over the legacy ``X-Agent-Id`` so a
-        # pooled MCP connection can multiplex many agents without reconnect.
-        tapps_agent = (request.headers.get("x-tapps-agent") or "").strip()
-        if tapps_agent:
-            agent_id = tapps_agent
-        scope = (request.headers.get("x-tapps-scope") or "").strip() or None
-        group = (request.headers.get("x-tapps-group") or "").strip() or None
-
-        # STORY-073.2: Per-request profile resolution.
-        # Precedence: X-Brain-Profile header → agent_registry → server default.
-        # Validate the header value against the profile registry before trusting it.
-        from tapps_brain.mcp_server.profile_registry import UnknownProfileError
-
-        header_profile = (request.headers.get("x-brain-profile") or "").strip() or None
-        if header_profile is not None:
-            try:
-                resolver = _get_profile_resolver()
-                resolver._registry.get(header_profile)
-            except UnknownProfileError as exc:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "bad_request",
-                        "detail": f"Unknown MCP profile {header_profile!r}.",
-                        "available": exc.available,
-                    },
-                )
-        resolved_profile = _get_profile_resolver().resolve(
-            project_id=project_id,
-            agent_id=agent_id,
-            header_profile=header_profile,
-        )
-
-        # Bridge into tapps_brain.mcp_server contextvars so the service layer
-        # sees the per-request tenant regardless of whether the JSON-RPC
-        # envelope also carries ``_meta.project_id``.
-        from tapps_brain import mcp_server as _mcp_mod
-
-        token_pid = _mcp_mod.REQUEST_PROJECT_ID.set(project_id)
-        token_agent = _mcp_mod.REQUEST_AGENT_ID.set(agent_id)
-        token_scope = _mcp_mod.REQUEST_SCOPE.set(scope)
-        token_group = _mcp_mod.REQUEST_GROUP.set(group)
-        token_profile = _mcp_mod.REQUEST_PROFILE.set(resolved_profile)
-        # Also mirror into request.state for handlers / observability.
-        request.state.project_id = project_id
-        request.state.agent_id = agent_id
-        request.state.scope = scope
-        request.state.group = group
-        request.state.brain_profile = resolved_profile
-        # STORY-070.12: track per-(project_id, agent_id) request counts.
-        _record_labeled_request(project_id, agent_id)
-        try:
-            return await call_next(request)  # type: ignore[no-any-return]
-        finally:
-            _mcp_mod.REQUEST_PROJECT_ID.reset(token_pid)
-            _mcp_mod.REQUEST_AGENT_ID.reset(token_agent)
-            _mcp_mod.REQUEST_SCOPE.reset(token_scope)
-            _mcp_mod.REQUEST_GROUP.reset(token_group)
-            _mcp_mod.REQUEST_PROFILE.reset(token_profile)
 
 
 # ---------------------------------------------------------------------------
@@ -1272,7 +405,7 @@ def create_app(
     app.add_middleware(OriginAllowlistMiddleware)
     app.add_middleware(McpTenantMiddleware)
 
-    # -------- data-plane routes --------
+    # -------- ops routes --------
 
     @app.get("/", include_in_schema=False)
     async def _root() -> JSONResponse:
@@ -1318,6 +451,7 @@ def create_app(
             content=_collect_metrics(
                 cfg.dsn,
                 store=cfg.store,
+                process_start_time=_PROCESS_START_TIME,
                 redact_tenant_labels=not authenticated,
             ),
             status_code=200,
