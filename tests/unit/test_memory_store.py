@@ -1589,3 +1589,114 @@ class TestAdaptiveStabilityStore:
             assert s.get("k").stability > 0.0
         finally:
             s.close()
+
+
+class TestSaveFailureRollback:
+    """TAP-644: save() failure path — bloom filter, _entries, and relations must
+    all be consistent after a backend persist error."""
+
+    def test_persist_failure_rolls_back_bloom_for_new_key(self, tmp_path: Path) -> None:
+        """Bloom filter must NOT contain a new key after backend.save raises."""
+        from tapps_brain.bloom import normalize_for_dedup
+
+        s = MemoryStore(tmp_path)
+        try:
+            original_save = s._persistence.save
+
+            def _fail(entry: MemoryEntry) -> None:
+                raise OSError("simulated persist failure")
+
+            s._persistence.save = _fail  # type: ignore[method-assign]
+            with pytest.raises(OSError):
+                s.save(key="never-persisted", value="unique content abc123", dedup=True)
+
+            assert not s._bloom.might_contain(normalize_for_dedup("unique content abc123"))
+            assert s.get("never-persisted") is None
+        finally:
+            s._persistence.save = original_save  # type: ignore[method-assign]
+            s.close()
+
+    def test_persist_failure_preserves_existing_entry_and_bloom(self, tmp_path: Path) -> None:
+        """When an update fails, _entries reverts and bloom reflects only the
+        original value (not the failed update)."""
+        from tapps_brain.bloom import normalize_for_dedup
+
+        s = MemoryStore(tmp_path)
+        try:
+            # Seed an entry successfully so bloom contains "original value xyz"
+            s.save(key="existing-key", value="original value xyz", dedup=True)
+            assert s.get("existing-key") is not None
+
+            original_save = s._persistence.save
+
+            def _fail(entry: MemoryEntry) -> None:
+                raise OSError("simulated persist failure")
+
+            s._persistence.save = _fail  # type: ignore[method-assign]
+            with pytest.raises(OSError):
+                s.save(key="existing-key", value="updated value xyz", dedup=True)
+
+            # Restore save before calling get() — get() also persists the
+            # updated access-count, so we must not leave the stub in place.
+            s._persistence.save = original_save  # type: ignore[method-assign]
+
+            # _entries must still hold the original
+            entry = s.get("existing-key")
+            assert entry is not None
+            assert entry.value == "original value xyz"
+
+            # Bloom must NOT contain the failed update value
+            assert not s._bloom.might_contain(normalize_for_dedup("updated value xyz"))
+            # Bloom MUST still contain the original (it was seeded before the failure)
+            assert s._bloom.might_contain(normalize_for_dedup("original value xyz"))
+        finally:
+            s.close()
+
+    def test_persist_failure_leaves_relations_untouched(self, tmp_path: Path) -> None:
+        """Relations index must not be populated for a key whose persist failed.
+        (Relations are extracted and saved only after a successful persist.)"""
+        s = MemoryStore(tmp_path)
+        try:
+            original_save = s._persistence.save
+
+            def _fail(entry: MemoryEntry) -> None:
+                raise OSError("simulated persist failure")
+
+            s._persistence.save = _fail  # type: ignore[method-assign]
+            with pytest.raises(OSError):
+                s.save(
+                    key="rel-never-saved",
+                    value="relates-to:rel-other for some reason",
+                    dedup=True,
+                )
+
+            assert s._relations.get("rel-never-saved") is None
+        finally:
+            s._persistence.save = original_save  # type: ignore[method-assign]
+            s.close()
+
+    def test_hive_propagation_failure_leaves_private_entry_intact(self, tmp_path: Path) -> None:
+        """Hive propagation failure must NOT roll back the private save.
+        Private memory is already persisted before hive propagation is attempted."""
+        from tapps_brain.bloom import normalize_for_dedup
+
+        hive_mock = MagicMock()
+        hive_mock.save.side_effect = RuntimeError("hive down")
+
+        s = MemoryStore(tmp_path, hive_store=hive_mock)
+        try:
+            result = s.save(
+                key="hive-fail-key",
+                value="stored locally even if hive fails",
+                dedup=True,
+                agent_scope="hive",
+            )
+            # Private save must succeed despite hive failure
+            assert isinstance(result, MemoryEntry)
+            assert s.get("hive-fail-key") is not None
+            # Bloom filter must contain the value (private save committed)
+            assert s._bloom.might_contain(
+                normalize_for_dedup("stored locally even if hive fails")
+            )
+        finally:
+            s.close()
