@@ -137,7 +137,7 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
         if entry_status != MemoryStatus.active:
             continue
         if entry.key.startswith(prefix):
-            return entry.key
+            return str(entry.key)
     return None
 
 
