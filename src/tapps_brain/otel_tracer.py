@@ -333,7 +333,7 @@ def start_span(
         try:
             yield span
             span.set_status(StatusCode.OK)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — span context manager re-raises; broad catch needed to record the exception before re-raising
             if record_exception:
                 span.record_exception(exc)
                 span.set_status(StatusCode.ERROR, str(exc))
@@ -434,7 +434,7 @@ def start_mcp_tool_span(
         ) as span:
             try:
                 yield span
-            except Exception:
+            except Exception:  # noqa: BLE001 — tool-call span must track failure regardless of exception type; re-raises after marking success=False
                 _success = False
                 raise
     finally:
@@ -470,7 +470,7 @@ def extract_trace_context(carrier: dict[str, str]) -> Any:  # noqa: ANN401
         return None
     try:
         return _otel_propagate.extract(carrier)
-    except Exception:
+    except Exception:  # noqa: BLE001 — OTel propagation errors must not propagate to callers
         return None
 
 

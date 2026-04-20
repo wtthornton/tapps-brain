@@ -386,7 +386,7 @@ def run_diagnostics(
     for d in dims:
         try:
             scores[d.name] = d.check(store)
-        except Exception:
+        except Exception:  # noqa: BLE001 — individual dimension failures must not abort the whole diagnostics run
             logger.warning("diagnostics_dimension_failed", dimension=d.name, exc_info=True)
             scores[d.name] = DimensionScore(name=d.name, score=0.5, raw_details={"error": True})
     composite = sum(weights.get(n, 0) * scores[n].score for n in scores)
@@ -395,7 +395,7 @@ def run_diagnostics(
     gaps = 0
     try:
         gaps = len(store.query_feedback(event_type="gap_reported", limit=5000))
-    except Exception:
+    except Exception:  # noqa: BLE001 — gap count is best-effort; failure yields zero count
         logger.warning("diagnostics_gap_count_failed", exc_info=True)
     recs: list[str] = []
     gap_line: str | None = None
@@ -405,7 +405,7 @@ def run_diagnostics(
         gap_line = knowledge_gap_summary_for_diagnostics(store)
     except ImportError:
         gap_line = None  # flywheel optional — diagnostics runs without it
-    except Exception:
+    except Exception:  # noqa: BLE001 — gap summary is best-effort; failure yields no recommendation
         logger.warning("diagnostics_gap_summary_failed", exc_info=True)
         gap_line = None
     if gap_line:
@@ -777,14 +777,14 @@ def maybe_remediate(
             )
             breaker._last_remediation_mono["consolidate"] = now_mono
             actions.append("consolidate")
-        except Exception:
+        except Exception:  # noqa: BLE001 — remediation actions are best-effort; failure must not abort the circuit breaker
             logger.warning("remediation_consolidate_failed", exc_info=True)
     if st and st.score < 0.5 and _cool_ok("gc"):
         try:
             store.gc(dry_run=False)
             breaker._last_remediation_mono["gc"] = now_mono
             actions.append("gc")
-        except Exception:
+        except Exception:  # noqa: BLE001 — remediation actions are best-effort; failure must not abort the circuit breaker
             logger.warning("remediation_gc_failed", exc_info=True)
     if inte and inte.score < 0.8 and _cool_ok("integrity_alert"):
         breaker._last_remediation_mono["integrity_alert"] = now_mono
