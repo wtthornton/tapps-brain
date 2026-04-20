@@ -87,6 +87,9 @@ _BEARER_PREFIX = "bearer "
 _MAX_AGENT_ID_CARDINALITY = 100
 _LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}
 _LABELED_REQUEST_COUNTS_LOCK = threading.Lock()
+# TAP-599: per-project set of seen agent_ids for O(1) cardinality checks.
+# Maintained in lock-step with _LABELED_REQUEST_COUNTS inside the lock.
+_DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}
 
 # STORY-073.2: process-wide ProfileResolver singleton.  Built once on first
 # /mcp request; guarded by _PROFILE_RESOLVER_LOCK.
@@ -95,14 +98,24 @@ _PROFILE_RESOLVER_LOCK = threading.Lock()
 
 
 def _record_labeled_request(project_id: str, agent_id: str) -> None:
-    """Increment the per-(project_id, agent_id) request counter (STORY-070.12)."""
-    # Clamp agent_id to bounded cardinality per project.
+    """Increment the per-(project_id, agent_id) request counter (STORY-070.12).
+
+    TAP-599: Uses a per-project set for O(1) membership/cardinality checks
+    instead of an O(N) set-comprehension over the full _LABELED_REQUEST_COUNTS
+    dict.  Both structures are updated inside the same lock so they stay in
+    sync.
+    """
     with _LABELED_REQUEST_COUNTS_LOCK:
-        distinct_agents = {k[1] for k in _LABELED_REQUEST_COUNTS if k[0] == project_id}
-        if agent_id not in distinct_agents and len(distinct_agents) >= _MAX_AGENT_ID_CARDINALITY:
+        distinct = _DISTINCT_AGENTS_PER_PROJECT.setdefault(project_id, set())
+        if agent_id not in distinct and len(distinct) >= _MAX_AGENT_ID_CARDINALITY:
             agent_id = "other"
         key = (project_id, agent_id)
         _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
+        # Note: when agent_id was remapped to "other" the add below can grow
+        # the set to _MAX_AGENT_ID_CARDINALITY + 1.  This is intentional —
+        # subsequent overflow agents still bucket to "other" via the
+        # `agent_id not in distinct` check, which evaluates False for "other".
+        distinct.add(agent_id)
 
 
 def _get_profile_resolver() -> Any:

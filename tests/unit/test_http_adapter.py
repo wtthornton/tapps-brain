@@ -413,18 +413,26 @@ def _seeded_request_counts(pairs: list[tuple[str, str, int]]):
     """Seed ``_LABELED_REQUEST_COUNTS`` with ``(project_id, agent_id, count)``.
 
     Restores the prior state on exit so test ordering is stable.
+
+    TAP-599: also rebuilds ``_DISTINCT_AGENTS_PER_PROJECT`` from the seeded
+    pairs so the two structures stay in sync.
     """
     with _mod._LABELED_REQUEST_COUNTS_LOCK:
-        prior = dict(_mod._LABELED_REQUEST_COUNTS)
+        prior_counts = dict(_mod._LABELED_REQUEST_COUNTS)
+        prior_distinct = {k: set(v) for k, v in _mod._DISTINCT_AGENTS_PER_PROJECT.items()}
         _mod._LABELED_REQUEST_COUNTS.clear()
+        _mod._DISTINCT_AGENTS_PER_PROJECT.clear()
         for pid, aid, count in pairs:
             _mod._LABELED_REQUEST_COUNTS[(pid, aid)] = count
+            _mod._DISTINCT_AGENTS_PER_PROJECT.setdefault(pid, set()).add(aid)
     try:
         yield
     finally:
         with _mod._LABELED_REQUEST_COUNTS_LOCK:
             _mod._LABELED_REQUEST_COUNTS.clear()
-            _mod._LABELED_REQUEST_COUNTS.update(prior)
+            _mod._LABELED_REQUEST_COUNTS.update(prior_counts)
+            _mod._DISTINCT_AGENTS_PER_PROJECT.clear()
+            _mod._DISTINCT_AGENTS_PER_PROJECT.update(prior_distinct)
 
 
 @contextmanager
