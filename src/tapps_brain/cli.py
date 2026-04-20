@@ -3557,9 +3557,13 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
         )
 
     # ---- Security: warn when binding to all interfaces without auth ------
+    # Mirror _Settings._resolve_auth_token so _FILE variants (Docker Secrets)
+    # are also recognised as "auth configured".
     _auth_configured = bool(
         os.environ.get("TAPPS_BRAIN_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH") == "1"
     )
     if host == "0.0.0.0" and not _auth_configured:
@@ -3568,8 +3572,9 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
             host=host,
             port=port,
             advice=(
-                "Set TAPPS_BRAIN_AUTH_TOKEN or TAPPS_BRAIN_PER_TENANT_AUTH=1 "
-                "when binding to 0.0.0.0, or restrict to 127.0.0.1."
+                "Set TAPPS_BRAIN_AUTH_TOKEN (or TAPPS_BRAIN_AUTH_TOKEN_FILE) "
+                "or TAPPS_BRAIN_PER_TENANT_AUTH=1 when binding to 0.0.0.0, "
+                "or restrict to 127.0.0.1."
             ),
         )
     if mcp_port > 0 and mcp_host == "0.0.0.0" and not _auth_configured:
@@ -3578,7 +3583,9 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
             mcp_host=mcp_host,
             mcp_port=mcp_port,
             advice=(
-                "Set TAPPS_BRAIN_AUTH_TOKEN or restrict --mcp-host to 127.0.0.1."
+                "Set TAPPS_BRAIN_AUTH_TOKEN (or TAPPS_BRAIN_AUTH_TOKEN_FILE) "
+                "or TAPPS_BRAIN_PER_TENANT_AUTH=1 when binding to 0.0.0.0, "
+                "or restrict --mcp-host to 127.0.0.1."
             ),
         )
 

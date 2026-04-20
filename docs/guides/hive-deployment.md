@@ -273,7 +273,8 @@ tapps-brain serve --host 0.0.0.0
 export TAPPS_BRAIN_HTTP_HOST=0.0.0.0
 ```
 
-When `--host 0.0.0.0` is used **without** `TAPPS_BRAIN_AUTH_TOKEN` or
+When `--host 0.0.0.0` is used **without** `TAPPS_BRAIN_AUTH_TOKEN`,
+`TAPPS_BRAIN_AUTH_TOKEN_FILE`, `TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE`, or
 `TAPPS_BRAIN_PER_TENANT_AUTH=1`, a structured warning
 `http_adapter.bind_all_interfaces_unauthenticated` is logged at startup.
 

@@ -2326,9 +2326,14 @@ def main() -> None:
     logging.basicConfig(level=args.log_level.upper())
 
     # Security: warn when binding to all interfaces without auth configured.
+    # Mirror _Settings._resolve_auth_token so _FILE variants (Docker Secrets)
+    # are also recognised as "auth configured".
+    # Note: tapps-brain-http has no --mcp-host; only --host is checked here.
     _auth_configured = bool(
         os.environ.get("TAPPS_BRAIN_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN")
+        or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH") == "1"
     )
     if args.host == "0.0.0.0" and not _auth_configured:
@@ -2337,8 +2342,9 @@ def main() -> None:
             host=args.host,
             port=args.port,
             advice=(
-                "Set TAPPS_BRAIN_AUTH_TOKEN or TAPPS_BRAIN_PER_TENANT_AUTH=1 "
-                "when binding to 0.0.0.0, or restrict to 127.0.0.1."
+                "Set TAPPS_BRAIN_AUTH_TOKEN (or TAPPS_BRAIN_AUTH_TOKEN_FILE) "
+                "or TAPPS_BRAIN_PER_TENANT_AUTH=1 when binding to 0.0.0.0, "
+                "or restrict to 127.0.0.1."
             ),
         )
 
