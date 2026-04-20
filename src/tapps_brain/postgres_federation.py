@@ -158,17 +158,19 @@ class PostgresFederationBackend:
         sql_limit = limit * 3 if tags else limit
         params.append(sql_limit)
 
-        where = " AND ".join(clauses)
+        from psycopg import sql as pgsql
+
+        where = pgsql.SQL(" AND ").join(pgsql.SQL(c) for c in clauses)
+        stmt = pgsql.SQL(
+            "SELECT *, ts_rank(search_vector, plainto_tsquery('english', {})) AS rank "
+            "FROM federated_memories "
+            "WHERE {} "
+            "ORDER BY rank DESC "
+            "LIMIT {}"
+        ).format(pgsql.Placeholder(), where, pgsql.Placeholder())
 
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                f"SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank "
-                f"FROM federated_memories "
-                f"WHERE {where} "
-                f"ORDER BY rank DESC "
-                f"LIMIT %s",
-                [query, *params],
-            )
+            cur.execute(stmt, [query, *params])
             rows = cur.fetchall()
             col_names = [desc[0] for desc in cur.description]
 

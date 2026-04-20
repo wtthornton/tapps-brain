@@ -501,21 +501,27 @@ class PostgresHiveBackend:
         entry_key: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        clauses: list[str] = []
+        from psycopg import sql as pgsql
+
+        conditions: list[pgsql.Composable] = []
         params: list[Any] = []
         if namespace is not None:
-            clauses.append("namespace = %s")
+            conditions.append(pgsql.SQL("namespace = {}").format(pgsql.Placeholder()))
             params.append(namespace)
         if entry_key is not None:
-            clauses.append("entry_key = %s")
+            conditions.append(pgsql.SQL("entry_key = {}").format(pgsql.Placeholder()))
             params.append(entry_key)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        where = (
+            pgsql.SQL("WHERE {}").format(pgsql.SQL(" AND ").join(conditions))
+            if conditions
+            else pgsql.SQL("")
+        )
+        stmt = pgsql.SQL(
+            "SELECT * FROM hive_feedback_events {} ORDER BY timestamp DESC LIMIT {}"
+        ).format(where, pgsql.Placeholder())
         params.append(limit)
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                f"SELECT * FROM hive_feedback_events {where} ORDER BY timestamp DESC LIMIT %s",
-                params,
-            )
+            cur.execute(stmt, params)
             rows = cur.fetchall()
             col_names = [desc[0] for desc in cur.description]
             results = []
