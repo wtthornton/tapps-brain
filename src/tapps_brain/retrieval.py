@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from pydantic import BaseModel, Field
 
-from tapps_brain.bm25 import BM25Scorer
+from tapps_brain.bm25 import BM25Scorer, preprocess
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource
@@ -81,7 +81,8 @@ class ScoredMemory(BaseModel):
 _W_RELEVANCE = 0.40
 _W_CONFIDENCE = 0.30
 _W_RECENCY = 0.15
-_W_FREQUENCY = 0.15
+_W_FREQUENCY = 0.10
+_W_GRAPH = 0.05  # graph centrality (TAP-734); weights sum to 1.0
 
 _FREQUENCY_CAP = 20.0
 
@@ -211,7 +212,7 @@ class MemoryRetriever:
             self._w_confidence = _W_CONFIDENCE
             self._w_recency = _W_RECENCY
             self._w_frequency = _W_FREQUENCY
-            self._w_graph = 0.0
+            self._w_graph = _W_GRAPH
             self._w_provenance = 0.0
             self._frequency_cap = _FREQUENCY_CAP
             self._source_trust = dict(_DEFAULT_SOURCE_TRUST)
@@ -336,14 +337,21 @@ class MemoryRetriever:
             rmin = min(rels)
             rmax = max(rels)
 
+        # Graph centrality: read entity index from store (TAP-734).
+        # Snapshot outside the loop — O(1) attribute access, not per-entry.
+        _entity_index: dict[str, set[str]] = getattr(store, "_entity_index", {})
+        _entity_total: int = len(getattr(store, "_entries", {}))
+
         scored: list[ScoredMemory] = []
         for entry, relevance_raw, eff_conf, stale_flag, temporally_valid in pending:
             relevance_norm = self._normalize_relevance(relevance_raw, rmin=rmin, rmax=rmax)
             recency = self._recency_score(entry, now)
             frequency = self._frequency_score(entry)
 
-            # Graph centrality: placeholder 0.0 until relationship graph (#33) is implemented
-            graph_centrality = 0.0
+            # Graph centrality: degree centrality via entity co-occurrence (TAP-734).
+            graph_centrality = self._compute_graph_centrality(
+                entry, _entity_index, _entity_total
+            ) if self._w_graph > 0.0 else 0.0
 
             # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
             source_key_pt = (
@@ -939,3 +947,37 @@ class MemoryRetriever:
         """
         cap = max(self._frequency_cap, 1.0)
         return min(1.0, entry.access_count / cap)
+
+    @staticmethod
+    def _compute_graph_centrality(
+        entry: MemoryEntry,
+        entity_index: dict[str, set[str]],
+        total_entries: int,
+    ) -> float:
+        """Compute degree centrality for *entry* via entity co-occurrence (TAP-734).
+
+        Extracts BM25 tokens from the entry value, counts how many distinct memory
+        keys share at least one entity token, then normalises by *total_entries*.
+
+        The computation is O(|tokens|) per entry because each token maps to a
+        pre-built set of keys; the union is built in a single pass.
+
+        Returns 0.0 when the entity index is empty, *total_entries* is 0, or the
+        entry shares no tokens with any other entry.
+        """
+        if not entity_index or total_entries == 0:
+            return 0.0
+
+        tokens = [t for t in preprocess(entry.value) if len(t) >= 3]
+        if not tokens:
+            return 0.0
+
+        # Union of all keys that share at least one entity token with this entry.
+        shared_keys: set[str] = set()
+        for token in tokens:
+            shared_keys.update(entity_index.get(token, set()))
+
+        # Exclude the entry itself — centrality is about *other* entries.
+        shared_keys.discard(entry.key)
+
+        return min(1.0, len(shared_keys) / total_entries)

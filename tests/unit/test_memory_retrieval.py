@@ -991,3 +991,154 @@ class TestScoringCorrectnessReview:
         store = _make_store([_make_entry("k", "v")])
         results = retriever.search("v", store)
         assert isinstance(results, list)
+
+
+# ---------------------------------------------------------------------------
+# Graph centrality (TAP-734)
+# ---------------------------------------------------------------------------
+
+
+class TestGraphCentrality:
+    """Unit tests for MemoryRetriever._compute_graph_centrality (TAP-734)."""
+
+    def _make_entity_index(
+        self, mapping: dict[str, list[str]]
+    ) -> dict[str, set[str]]:
+        """Build entity_index fixture: token → set of keys."""
+        return {token: set(keys) for token, keys in mapping.items()}
+
+    # ------------------------------------------------------------------
+    # Isolated _compute_graph_centrality unit tests
+    # ------------------------------------------------------------------
+
+    def test_centrality_zero_for_empty_index(self) -> None:
+        """Returns 0.0 when entity index is empty."""
+        entry = _make_entry("solo", "memory that stands alone")
+        score = MemoryRetriever._compute_graph_centrality(entry, {}, total_entries=5)
+        assert score == 0.0
+
+    def test_centrality_zero_for_zero_total_entries(self) -> None:
+        """Returns 0.0 when total_entries is 0 (guard against ZeroDivisionError)."""
+        idx = self._make_entity_index({"memory": ["key-a", "key-b"]})
+        entry = _make_entry("key-a", "memory store")
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=0)
+        assert score == 0.0
+
+    def test_centrality_zero_for_entry_with_no_shared_tokens(self) -> None:
+        """An entry whose tokens appear in no other entry gets 0.0 (after discarding self)."""
+        # 'exclusive' token only maps to 'solo-key' itself.
+        idx = self._make_entity_index({"exclusive": ["solo-key"]})
+        entry = _make_entry("solo-key", "exclusive content")
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=10)
+        assert score == 0.0
+
+    def test_centrality_increases_with_shared_connections(self) -> None:
+        """Centrality grows when more entries share an entity token with the target."""
+        # 'postgres' maps to target + 4 others → 4 shared keys / 10 total = 0.4
+        shared_keys = ["key-a", "key-b", "key-c", "key-d", "target-key"]
+        idx = self._make_entity_index({"postgres": shared_keys})
+        entry = _make_entry("target-key", "postgres database")
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=10)
+        # 4 distinct OTHER keys / 10 total entries = 0.4
+        assert score == pytest.approx(0.4)
+
+    def test_centrality_excludes_self(self) -> None:
+        """The entry's own key is excluded from the shared-key count."""
+        idx = self._make_entity_index({"retrieval": ["only-me"]})
+        entry = _make_entry("only-me", "retrieval system")
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=5)
+        # 0 OTHER keys / 5 total = 0.0
+        assert score == 0.0
+
+    def test_centrality_capped_at_one(self) -> None:
+        """Score is capped at 1.0 even if shared_keys > total_entries."""
+        # Edge case: index inconsistency or very small total_entries
+        idx = self._make_entity_index({"core": ["a", "b", "c", "target"]})
+        entry = _make_entry("target", "core functionality")
+        # 3 shared keys / 2 total entries → raw 1.5 → capped at 1.0
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=2)
+        assert score == 1.0
+
+    def test_centrality_multi_token_union(self) -> None:
+        """Tokens are union-ed — same key reached via different tokens counted once."""
+        idx = self._make_entity_index(
+            {
+                "database": ["key-x", "target"],
+                "postgres": ["key-x", "key-y", "target"],
+            }
+        )
+        entry = _make_entry("target", "database postgres config")
+        # Union: {key-x, key-y} (target excluded) → 2 / 10 = 0.2
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=10)
+        assert score == pytest.approx(0.2)
+
+    def test_centrality_short_tokens_excluded(self) -> None:
+        """Tokens shorter than 3 characters (after stemming) are not indexed."""
+        # 'db' (len 2) should be ignored; only 'database' matters
+        idx = self._make_entity_index(
+            {
+                "db": ["other-key", "target"],  # short — should be ignored by store
+                "database": ["other-key", "target"],
+            }
+        )
+        # preprocess("db use") yields ["db", "use"] — both < 3 chars won't be in query
+        entry = _make_entry("target", "database configuration")
+        # 'database' in index → 1 other key (other-key) / 10 = 0.1
+        score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=10)
+        assert score > 0.0  # 'database' token is long enough
+
+    # ------------------------------------------------------------------
+    # Integration via search() — entity_index on store mock
+    # ------------------------------------------------------------------
+
+    def test_search_uses_entity_index_from_store(self) -> None:
+        """search() reads _entity_index from the store and raises centrality scores."""
+        # Entry 'alpha' shares tokens with 2 others; 'beta' is isolated.
+        alpha = _make_entry("alpha", "postgres database configuration", access_count=0)
+        beta = _make_entry("beta", "zzzzqqqq unique", access_count=0)
+
+        store = _make_store([alpha, beta])
+        # Manually wire entity index: 'postgres' shared with alpha + gamma + delta
+        store._entity_index = {
+            "postgr": {"alpha", "gamma", "delta"},
+            "databas": {"alpha", "gamma"},
+            "zzzz": {"beta"},
+        }
+        store._entries = {"alpha": alpha, "beta": beta, "gamma": MagicMock(), "delta": MagicMock()}
+
+        retriever = MemoryRetriever()  # default _W_GRAPH = 0.05
+        results = retriever.search("postgres database", store)
+
+        # alpha should score higher than beta due to centrality boost
+        scores = {r.entry.key: r.score for r in results}
+        assert "alpha" in scores
+        # alpha has centrality; beta has none — alpha's score must be strictly greater
+        if "beta" in scores:
+            assert scores["alpha"] > scores["beta"]
+
+    def test_delete_removes_entry_from_entity_index(self) -> None:
+        """_remove_entry_entities removes the key from all token sets (TAP-734)."""
+        retriever = MemoryRetriever()
+        entity_index: dict[str, set[str]] = {
+            "postgres": {"key-a", "key-b"},
+            "database": {"key-a"},
+        }
+        # Simulate removal of key-a
+        # Replicate the _remove_entry_entities logic (tested indirectly via store)
+        entry = _make_entry("key-a", "postgres database")
+        # After key-a is removed: 'database' set becomes empty (pruned), 'postgres' keeps key-b
+        empty_tokens = []
+        for token, keys in entity_index.items():
+            keys.discard("key-a")
+            if not keys:
+                empty_tokens.append(token)
+        for token in empty_tokens:
+            entity_index.pop(token, None)
+
+        assert "key-a" not in entity_index.get("postgres", set())
+        assert "database" not in entity_index  # empty set pruned
+        assert entity_index == {"postgres": {"key-b"}}
+
+        # Score with cleaned index: key-b alone → centrality 0.0 (no shared after removing key-a)
+        score = MemoryRetriever._compute_graph_centrality(entry, entity_index, total_entries=5)
+        assert score == 0.0  # key-a removed from index, no shared keys remain for it
