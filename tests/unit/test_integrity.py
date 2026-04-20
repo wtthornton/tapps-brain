@@ -237,45 +237,40 @@ class TestComputeIntegrityHash:
         assert h_v2 != h_v1
 
     def test_collision_eliminated_by_v2(self) -> None:
-        """TAP-710: v1 collision case does NOT produce the same hash under v2.
+        """TAP-710: a real v1 collision does NOT occur under v2.
 
-        The v1 canonical form ``key|value|tier|source`` is vulnerable when value
-        ends in ``|<tier>|<source>``.  For example:
-            compute_integrity_hash_v1("k", "x|pattern|agent", "pattern", "agent")
-        produces the same canonical bytes as:
-            compute_integrity_hash_v1("k", "x", "pattern", "agent")
-        ... only if the value happens to absorb the separator.  The v2 form
-        (JSON) eliminates this because the pipe characters inside the value are
-        JSON-escaped within the string literal.
+        The v1 canonical form ``key|value|tier|source`` is a flat byte string.
+        Two structurally different (key, value, tier, source) tuples produce
+        identical bytes when a field value contains the pipe separator.
+
+        Real collision under v1
+        -----------------------
+        Tuple A: key="k", value="v|x", tier="y", source="z"
+                 → b"k|v|x|y|z"   (pipe inside value shifts the boundary)
+        Tuple B: key="k", value="v", tier="x|y", source="z"
+                 → b"k|v|x|y|z"   (same bytes, different field split)
+        ✗ h_A == h_B under v1
+
+        Under v2 (JSON array), each field is delimited by ``"…"`` so pipe
+        characters inside field values cannot cross a boundary:
+        Tuple A → ``["k","v|x","y","z"]``
+        Tuple B → ``["k","v","x|y","z"]``
+        ✓ h_A != h_B under v2
         """
         sk = secrets.token_bytes(_KEY_LENGTH)
 
-        # Two (key, value, tier, source) tuples that collide under v1.
-        # "crafted" value ends with "|pattern|agent", so the canonical byte
-        # sequence of (k, crafted_val, "pattern", "agent") matches
-        # (k, "x", "pattern|agent", ...) — but only in v1.
-        crafted_value = "x|pattern|agent"
-        normal_value = "x"
+        # Verify the true v1 collision:
+        # f"k|v|x|y|z" == f"k|v|x|y|z" despite different field splits.
+        h_v1_a = compute_integrity_hash_v1("k", "v|x", "y", "z", signing_key=sk)
+        h_v1_b = compute_integrity_hash_v1("k", "v", "x|y", "z", signing_key=sk)
+        assert h_v1_a == h_v1_b, (
+            "Expected v1 collision: both tuples should produce b'k|v|x|y|z'"
+        )
 
-        h_v1_crafted = compute_integrity_hash_v1(
-            "k", crafted_value, "pattern", "agent", signing_key=sk
-        )
-        h_v1_normal = compute_integrity_hash_v1(
-            "k", normal_value, "pattern|agent", "pattern", signing_key=sk
-        )
-        # The two v1 hashes are NOT necessarily equal in this exact parameterisation
-        # (the split happens differently), but the key point is that v2 hashes are
-        # always different from each other for structurally different inputs.
-        h_v2_crafted = compute_integrity_hash(
-            "k", crafted_value, "pattern", "agent", signing_key=sk
-        )
-        h_v2_normal = compute_integrity_hash(
-            "k", normal_value, "pattern", "agent", signing_key=sk
-        )
-        # Different values → different v2 hashes (no collision).
-        assert h_v2_crafted != h_v2_normal
-        # v2 hashes differ from v1 hashes.
-        assert h_v2_crafted != h_v1_crafted
+        # Under v2, the same tuples produce distinct hashes — collision eliminated.
+        h_v2_a = compute_integrity_hash("k", "v|x", "y", "z", signing_key=sk)
+        h_v2_b = compute_integrity_hash("k", "v", "x|y", "z", signing_key=sk)
+        assert h_v2_a != h_v2_b, "v2 must not collide for structurally different tuples"
 
     def test_value_with_pipe_characters_is_unambiguous_in_v2(self) -> None:
         """Values containing pipe characters still produce distinct v2 hashes."""
