@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import time
 import uuid
 from typing import Any, Protocol, runtime_checkable
@@ -253,8 +254,9 @@ def _post_tool(
                 RetryPolicy.RETRY_SAFE_ONCE,
             )
             if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-                retry_after = float(body.get("retry_after") or 2**attempt)
-                time.sleep(retry_after)
+                _hint = float(body.get("retry_after") or 0.0)
+                base = _hint if _hint > 0.0 else min(2.0 ** attempt, 30.0)
+                time.sleep(base * random.uniform(0.8, 1.2))
                 last_exc = exc
                 continue
             raise exc
@@ -306,8 +308,9 @@ async def _async_post_tool(
                 RetryPolicy.RETRY_SAFE_ONCE,
             )
             if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-                retry_after = float(body.get("retry_after") or 2**attempt)
-                await asyncio.sleep(retry_after)
+                _hint = float(body.get("retry_after") or 0.0)
+                base = _hint if _hint > 0.0 else min(2.0 ** attempt, 30.0)
+                await asyncio.sleep(base * random.uniform(0.8, 1.2))
                 last_exc = exc
                 continue
             raise exc

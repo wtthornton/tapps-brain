@@ -262,6 +262,7 @@ def test_retry_on_503_reuses_idempotency_key() -> None:
 
 
 def test_retry_on_429_honours_retry_after() -> None:
+    """Server-supplied retry_after hint is used as the base; jitter keeps it within ±20%."""
     client = _make_sync_client(max_retries=1)
     first_call = _mock_error(
         429, {"error": "brain_rate_limited", "message": "slow down", "retry_after": 5}
@@ -272,7 +273,41 @@ def test_retry_on_429_honours_retry_after() -> None:
     with patch("tapps_brain.client.time") as mock_time:
         mock_time.sleep = MagicMock()
         client.remember("x")
-        mock_time.sleep.assert_called_once_with(5.0)
+        mock_time.sleep.assert_called_once()
+        actual = mock_time.sleep.call_args.args[0]
+        # base=5.0, jitter 0.8–1.2 → 4.0–6.0
+        assert 4.0 <= actual <= 6.0, f"sleep({actual}) outside expected 4.0–6.0 range"
+
+
+def test_retry_backoff_capped_at_high_attempt_number() -> None:
+    """At attempt=10, sleep duration must be ≤ 36 s (cap 30 s × max jitter 1.2)."""
+    client = _make_sync_client(max_retries=11)
+    # Build 11 failures followed by one success
+    side_effects = [
+        _mock_error(503, {"error": "brain_degraded", "message": "down"}) for _ in range(11)
+    ]
+    side_effects.append(_mock_success({"key": "ok"}))
+    client._http_client.post.side_effect = side_effects
+
+    sleep_calls: list[float] = []
+    with patch("tapps_brain.client.time") as mock_time:
+        mock_time.sleep = MagicMock(side_effect=lambda s: sleep_calls.append(s))
+        client.remember("stress")
+
+    # Every sleep duration must be ≤ 36 s (cap 30 × jitter 1.2)
+    for i, duration in enumerate(sleep_calls):
+        assert duration <= 36.0, f"attempt {i}: sleep({duration}) exceeded 36 s cap"
+
+
+def test_retry_backoff_spreads_across_concurrent_calls() -> None:
+    """100 independent retries at attempt=0 must not all sleep for the same duration."""
+    import random as _random
+
+    # Seed-independent: collect 100 jittered values for attempt=0 (base=1.0)
+    durations = [min(2.0 ** 0, 30.0) * _random.uniform(0.8, 1.2) for _ in range(100)]
+    # If there is no jitter every value equals 1.0; with jitter they spread 0.8–1.2
+    unique_values = len({round(d, 6) for d in durations})
+    assert unique_values > 1, "All 100 retry sleeps are identical — jitter is missing"
 
 
 def test_health_returns_dict() -> None:
