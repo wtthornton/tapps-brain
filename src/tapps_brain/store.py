@@ -1167,7 +1167,9 @@ class MemoryStore:
                     temporal_sensitivity=temporal_sensitivity
                     if temporal_sensitivity is not None
                     else (existing.temporal_sensitivity if existing else None),
-                    failed_approaches=failed_approaches if failed_approaches is not None else [],
+                    failed_approaches=failed_approaches
+                    if failed_approaches is not None
+                    else (existing.failed_approaches if existing else []),
                 )
 
                 # Compute integrity hash (H4a)
