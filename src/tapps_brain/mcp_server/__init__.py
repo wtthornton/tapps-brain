@@ -255,7 +255,7 @@ def _safe_close_store(store: Any) -> None:
         return
     try:
         close()
-    except Exception:  # noqa: BLE001 — best-effort close; failure logged
+    except Exception:
         logger.debug("store_cache.close_failed", exc_info=True)
 
 
@@ -334,7 +334,7 @@ def _current_request_project_id() -> str | None:
         return str(pid).strip() or None
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001 — optional dependency detection
+    except Exception:
         request_ctx = None  # type: ignore[assignment]
     if request_ctx is not None:
         try:
@@ -373,7 +373,7 @@ def _current_request_agent_id() -> str | None:
     # clients can multiplex agents without a header layer.
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001 — optional dependency detection
+    except Exception:
         return None
     try:
         rc = request_ctx.get()
@@ -448,7 +448,7 @@ def _current_request_idempotency_key() -> str | None:
     """
     try:
         from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # noqa: BLE001 — optional dependency detection
+    except Exception:
         return None
     try:
         rc = request_ctx.get()
@@ -512,7 +512,7 @@ class _StoreProxy:
                 enable_hive=self._enable_hive,
                 agent_id=self._agent_id,
             )
-        except Exception as exc:  # noqa: BLE001 — MCP handler must not propagate to client
+        except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
 
             if isinstance(exc, ProjectNotRegisteredError):
@@ -533,7 +533,7 @@ class _StoreProxy:
         try:
             resolved_class: type = self._resolve().__class__
             return resolved_class
-        except Exception:  # noqa: BLE001 — MCP handler must not propagate to client
+        except Exception:
             return _StoreProxy
 
 
@@ -569,7 +569,7 @@ def create_server(  # noqa: PLR0915
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     try:
         default_store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
-    except Exception as exc:  # noqa: BLE001 — MCP handler must not propagate to client
+    except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
 
         if isinstance(exc, ProjectNotRegisteredError):
@@ -623,7 +623,7 @@ def create_server(  # noqa: PLR0915
                 agent_id=_server_agent_id,
                 call_agent_id=eff,
             )
-        except Exception as exc:  # noqa: BLE001 — catch-to-classify pattern: re-raises all non-ProjectNotRegisteredError as-is
+        except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
 
             if isinstance(exc, ProjectNotRegisteredError):

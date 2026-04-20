@@ -229,6 +229,7 @@ class TestDetectPairwiseContradictions:
         ]
         hits1 = detect_pairwise_contradictions(entries)
         hits2 = detect_pairwise_contradictions(entries)
+
         # Compare deterministic fields; detected_at timestamps may differ between calls.
         def _key_fields(h: PolarityContradiction) -> tuple[str, str, str]:
             return (h.entry_a_key, h.entry_b_key, h.contradiction_type)

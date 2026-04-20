@@ -258,9 +258,7 @@ class TestBackupHivePasswordSecurity:
             assert result.exit_code == 0
             cmd = mock_run.call_args[0][0]
             # Password must NOT appear in any argv element
-            assert all(self.SECRET not in arg for arg in cmd), (
-                f"Password leaked into argv: {cmd}"
-            )
+            assert all(self.SECRET not in arg for arg in cmd), f"Password leaked into argv: {cmd}"
 
     @pytest.mark.requires_cli
     def test_backup_hive_pgpassword_in_env(self) -> None:
@@ -316,9 +314,7 @@ class TestBackupHivePasswordSecurity:
                 ],
             )
             assert result.exit_code != 0
-            assert self.SECRET not in result.output, (
-                "Password leaked into error output"
-            )
+            assert self.SECRET not in result.output, "Password leaked into error output"
 
     @pytest.mark.requires_cli
     def test_restore_hive_password_not_in_argv(self) -> None:
@@ -342,9 +338,7 @@ class TestBackupHivePasswordSecurity:
             )
             assert result.exit_code == 0
             cmd = mock_run.call_args[0][0]
-            assert all(self.SECRET not in arg for arg in cmd), (
-                f"Password leaked into argv: {cmd}"
-            )
+            assert all(self.SECRET not in arg for arg in cmd), f"Password leaked into argv: {cmd}"
 
     @pytest.mark.requires_cli
     def test_restore_hive_pgpassword_in_env(self) -> None:
@@ -398,6 +392,4 @@ class TestBackupHivePasswordSecurity:
                 ],
             )
             assert result.exit_code != 0
-            assert self.SECRET not in result.output, (
-                "Password leaked into error output"
-            )
+            assert self.SECRET not in result.output, "Password leaked into error output"

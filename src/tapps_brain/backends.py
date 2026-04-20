@@ -443,7 +443,7 @@ def push_memory_entries_to_hive(
                 dry_run=dry_run,
                 memory_group=entry.memory_group,
             )
-        except Exception as exc:  # noqa: BLE001 — Hive push raises heterogeneous psycopg/network errors; per-entry failure logged and skipped
+        except Exception as exc:
             logger.warning(
                 "hive.push_entry_failed",
                 key=entry.key,

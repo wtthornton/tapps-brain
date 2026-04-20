@@ -156,10 +156,10 @@ def _get_profile_resolver() -> Any:
                     row = _pg_agent_reg.get(agent_id)
                     if row is None:
                         return None
-                    return str(row.get("profile") or "")  or None
+                    return str(row.get("profile") or "") or None
 
                 getter = _pg_getter
-            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
+            except Exception as exc:
                 logger.warning(
                     "http_adapter.profile_resolver.agent_registry_unavailable",
                     error=str(exc),
@@ -191,7 +191,7 @@ def _service_version() -> str:
         from importlib.metadata import version
 
         return version("tapps-brain")
-    except Exception:  # noqa: BLE001 — optional dependency detection
+    except Exception:
         return "unknown"
 
 
@@ -234,7 +234,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
             )
         else:
             result = (True, version, f"ready (migration_version={version})")
-    except Exception as exc:  # noqa: BLE001 — best-effort probe; failure returns degraded status
+    except Exception as exc:
         err_str = str(exc)
         try:
             from urllib.parse import urlparse
@@ -248,7 +248,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 err_str = err_str.replace(parsed.username, "[user]")
             if parsed.password:
                 err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:  # noqa: BLE001 — DSN parse sanitization is best-effort; fall back to generic message
+        except Exception:
             err_str = "database unreachable"
         result = (False, None, f"db_error: {err_str}")
     _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
@@ -456,15 +456,12 @@ def _collect_metrics(
         list_total = _filter_snap.get("list_total", {})
         if list_total:
             lines.append(
-                "# HELP tapps_brain_mcp_tools_list_total "
-                "Total tools/list calls per MCP profile."
+                "# HELP tapps_brain_mcp_tools_list_total Total tools/list calls per MCP profile."
             )
             lines.append("# TYPE tapps_brain_mcp_tools_list_total counter")
             for _profile, _count in sorted(list_total.items()):
                 _sp = _profile.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_tools_list_total{{profile="{_sp}"}} {_count}'
-                )
+                lines.append(f'tapps_brain_mcp_tools_list_total{{profile="{_sp}"}} {_count}')
 
         # mcp_tools_list_visible_tools{profile} — gauge
         list_visible = _filter_snap.get("list_visible", {})
@@ -476,9 +473,7 @@ def _collect_metrics(
             lines.append("# TYPE tapps_brain_mcp_tools_list_visible_tools gauge")
             for _profile, _vis in sorted(list_visible.items()):
                 _sp = _profile.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}'
-                )
+                lines.append(f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}')
 
         # mcp_tools_call_total{profile, tool, outcome}
         call_total = _filter_snap.get("call_total", {})
@@ -713,9 +708,7 @@ def require_data_plane_auth(request: Request) -> None:
                 status_code=400,
                 detail={
                     "error": "bad_request",
-                    "detail": (
-                        "X-Project-Id header is required when per-tenant auth is enabled."
-                    ),
+                    "detail": ("X-Project-Id header is required when per-tenant auth is enabled."),
                 },
             )
         # project_id is now guaranteed non-empty (rejected above if empty)
@@ -1176,7 +1169,7 @@ def create_app(
             if is_idempotency_enabled():
                 try:
                     cfg.idempotency_store = IdempotencyStore(cfg.dsn)
-                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
+                except Exception as exc:
                     logger.warning(
                         "http_adapter.idempotency_store_init_failed",
                         error=str(exc),
@@ -1188,7 +1181,7 @@ def create_app(
             try:
                 mcp = _build_mcp_server()
                 mcp_holder["mcp"] = mcp
-            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
+            except Exception as exc:
                 logger.error("http_adapter.mcp_build_failed", error=str(exc))
                 mcp = None
 
@@ -1217,7 +1210,7 @@ def create_app(
                 try:
                     session_cm = sm.run()
                     await session_cm.__aenter__()
-                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
+                except Exception as exc:
                     logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
         try:
@@ -1226,7 +1219,7 @@ def create_app(
             if session_cm is not None:
                 try:
                     await session_cm.__aexit__(None, None, None)
-                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
+                except Exception:
                     logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
             # TAP-548: release the pooled Postgres connections the
             # ``IdempotencyStore`` singleton is holding.  Set back to
@@ -1235,7 +1228,7 @@ def create_app(
             if getattr(cfg, "idempotency_store", None) is not None:
                 try:
                     cfg.idempotency_store.close()
-                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
+                except Exception:
                     logger.debug(
                         "http_adapter.idempotency_store_close_failed",
                         exc_info=True,
@@ -1530,7 +1523,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+            except Exception:
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1557,7 +1550,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             mem_key = (body.get("key") or "").strip()
@@ -1650,7 +1646,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+            except Exception:
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1677,7 +1673,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             mem_key = (body.get("key") or "").strip()
@@ -1740,7 +1739,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+        except Exception:
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1808,7 +1807,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+        except Exception:
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1876,7 +1875,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+        except Exception:
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1962,7 +1961,7 @@ def create_app(
     async def _admin_projects_register(request: Request) -> JSONResponse:
         try:
             raw = await request.body()
-        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+        except Exception:
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -2012,7 +2011,7 @@ def create_app(
 
             validate_project_id(project_id)
             profile = MemoryProfile.model_validate(profile_json)
-        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
+        except Exception:
             logger.exception("http_adapter.profile_validation_failed")
             raise HTTPException(
                 status_code=400,

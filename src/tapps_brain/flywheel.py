@@ -236,7 +236,7 @@ class GapTracker:
         # (query, ts, weight, desc_parts)
         try:
             evs = store.query_feedback(event_type="gap_reported", limit=10_000)
-        except Exception:  # noqa: BLE001  # nosec B110 — gap analysis is best-effort; query failure yields empty gap list
+        except Exception:  # nosec B110 — gap analysis is best-effort; query failure yields empty gap list
             evs = []
         for ev in evs:
             if since is not None and ev.timestamp < since:
@@ -389,7 +389,7 @@ def _parse_iso(ts: str) -> datetime:
 def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:
     try:
         hits = store.search(query)[:3]
-    except Exception:  # noqa: BLE001  # nosec B110 — tier-weight estimation is best-effort; search failure returns default weight
+    except Exception:  # nosec B110 — tier-weight estimation is best-effort; search failure returns default weight
         hits = []
     if not hits:
         return 1.0
@@ -407,7 +407,7 @@ def knowledge_gap_summary_for_diagnostics(store: MemoryStore) -> str | None:
         return None
     try:
         n = len(store.query_feedback(event_type="gap_reported", limit=5000))
-    except Exception:  # noqa: BLE001 — gap count is best-effort; failure yields zero
+    except Exception:
         n = 0
     top = gaps[0]
     return (
@@ -575,7 +575,7 @@ class _RecommendationsSection:
 def _feedback_summary_counts(store: MemoryStore) -> dict[str, int]:
     try:
         events = store.query_feedback(limit=5000)
-    except Exception:  # noqa: BLE001 — feedback query is best-effort; failure returns empty counts
+    except Exception:
         return {}
     counts: dict[str, int] = defaultdict(int)
     for e in events:
@@ -638,7 +638,7 @@ def generate_report(
         try:
             if sec.should_include(rd):
                 parts.append(sec.render(rd))
-        except Exception:  # noqa: BLE001 — individual report sections must not abort the full report
+        except Exception:
             logger.warning("report.section_failed", section=sec.name, exc_info=True)
 
     text = "\n".join(parts).strip() + "\n"

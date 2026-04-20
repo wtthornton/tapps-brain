@@ -313,7 +313,7 @@ def run_health_check(  # noqa: PLR0915
     except FileNotFoundError:
         store_health.status = "warn"
         warnings.append("Store database not found (may be first run)")
-    except Exception as exc:  # noqa: BLE001 — health check probes must never raise; captures all store errors as error status
+    except Exception as exc:
         store_health.status = "error"
         errors.append(f"Store error: {exc}")
 
@@ -390,7 +390,7 @@ def run_health_check(  # noqa: PLR0915
                     if _owns_hive and hasattr(hive, "close"):
                         hive.close()
                 hive_health.status = "ok"
-        except Exception as exc:  # noqa: BLE001 — hive health probe must never raise; captures all connection errors as warn status
+        except Exception as exc:
             hive_health.status = "warn"
             hive_health.connected = False
             warnings.append(f"Hive unavailable: {exc}")
@@ -447,7 +447,7 @@ def run_health_check(  # noqa: PLR0915
             [e for e in errors if "integrity" in e.lower() or "corrupted" in e.lower()],
             [w for w in warnings if "integrity" in w.lower() or "orphaned" in w.lower()],
         )
-    except Exception as exc:  # noqa: BLE001 — integrity health probe must never raise; captures all check errors as warn status
+    except Exception as exc:
         integrity_health.status = "warn"
         warnings.append(f"Integrity check failed: {exc}")
 

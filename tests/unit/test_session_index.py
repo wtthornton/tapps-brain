@@ -266,7 +266,7 @@ def test_concurrent_index_and_search_no_error(tmp_path: Path) -> None:
                     [f"content {i} keyword"],
                     _max_in_memory=cap,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(exc)
 
     def reader() -> None:
@@ -274,7 +274,7 @@ def test_concurrent_index_and_search_no_error(tmp_path: Path) -> None:
             for _ in range(50):
                 search_session_index(tmp_path, "keyword", limit=10)
                 time.sleep(0)  # yield
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=writer, args=(30,)) for _ in range(4)]

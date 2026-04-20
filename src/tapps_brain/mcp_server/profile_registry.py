@@ -42,10 +42,7 @@ class UnknownProfileError(KeyError):
     def __init__(self, name: str, available: list[str]) -> None:
         self.name = name
         self.available = sorted(available)
-        super().__init__(
-            f"Unknown MCP profile {name!r}. "
-            f"Available profiles: {self.available}"
-        )
+        super().__init__(f"Unknown MCP profile {name!r}. Available profiles: {self.available}")
 
 
 class ProfileRegistry:
@@ -77,9 +74,7 @@ class ProfileRegistry:
         """Return YAML text from *config_path* or the bundled package default."""
         if config_path is not None:
             return Path(config_path).read_text(encoding="utf-8")
-        resource = (
-            importlib.resources.files("tapps_brain.mcp_server") / "mcp_profiles.yaml"
-        )
+        resource = importlib.resources.files("tapps_brain.mcp_server") / "mcp_profiles.yaml"
         return resource.read_text(encoding="utf-8")
 
     # ------------------------------------------------------------------
@@ -130,11 +125,9 @@ class ProfileRegistry:
             unknown = tools - known_tools
             if unknown:
                 errors.append(
-                    f"  profile {profile_name!r} references unknown tool(s): "
-                    f"{sorted(unknown)}"
+                    f"  profile {profile_name!r} references unknown tool(s): {sorted(unknown)}"
                 )
         if errors:
             raise ValueError(
-                "MCP profile drift detected — update mcp_profiles.yaml:\n"
-                + "\n".join(errors)
+                "MCP profile drift detected — update mcp_profiles.yaml:\n" + "\n".join(errors)
             )

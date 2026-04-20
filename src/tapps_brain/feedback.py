@@ -355,7 +355,7 @@ class FeedbackStore:
                         project_id=self._project_id,
                     )
                 )
-            except Exception:  # noqa: BLE001 — individual feedback rows may have malformed JSON/timestamps; skip bad rows
+            except Exception:
                 logger.warning("feedback.query_row_skipped", row_id=row[0])
         return results
 

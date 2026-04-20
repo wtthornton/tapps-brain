@@ -178,9 +178,7 @@ def _apply_migrations(
         applied_set: set[int] = set()
         if table_exists:
             cur.execute(
-                pg_sql.SQL("SELECT version FROM {}").format(
-                    pg_sql.Identifier(version_table)
-                )
+                pg_sql.SQL("SELECT version FROM {}").format(pg_sql.Identifier(version_table))
             )
             applied_set = {row[0] for row in cur.fetchall()}
 

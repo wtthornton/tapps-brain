@@ -497,7 +497,7 @@ class MemoryStore:
             try:
                 self._hive_store.create_group(group_name)
                 self._hive_store.add_group_member(group_name, self._agent_id)
-            except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+            except Exception:
                 logger.warning(
                     "group_auto_join_failed",
                     group_name=group_name,
@@ -596,7 +596,7 @@ class MemoryStore:
             from tapps_brain.profile import resolve_profile as _resolve
 
             return _resolve(project_root)
-        except Exception:  # noqa: BLE001 — profile resolution is best-effort; fall back to defaults
+        except Exception:
             return None
 
     @staticmethod
@@ -629,7 +629,7 @@ class MemoryStore:
             return registry.resolve(project_id)
         except ProjectNotRegisteredError:
             raise
-        except Exception:  # noqa: BLE001 — registry transport failures fall back to legacy resolution
+        except Exception:
             # Any transport-level hiccup falls back to legacy resolution;
             # strict mode still surfaces the structured error above.
             return None
@@ -663,15 +663,9 @@ class MemoryStore:
             _wp_cfg = getattr(self._profile, "write_policy", None)
             if _wp_cfg is not None:
                 profile_mode = getattr(_wp_cfg, "mode", "deterministic").strip().lower()
-                profile_judge_model = getattr(
-                    _wp_cfg, "llm_judge_model", profile_judge_model
-                )
-                profile_rate_limit = getattr(
-                    _wp_cfg, "rate_limit_per_minute", profile_rate_limit
-                )
-                profile_candidates = getattr(
-                    _wp_cfg, "candidates_limit", profile_candidates
-                )
+                profile_judge_model = getattr(_wp_cfg, "llm_judge_model", profile_judge_model)
+                profile_rate_limit = getattr(_wp_cfg, "rate_limit_per_minute", profile_rate_limit)
+                profile_candidates = getattr(_wp_cfg, "candidates_limit", profile_candidates)
 
         mode = env_mode or profile_mode
         if not mode or mode == "deterministic":
@@ -716,7 +710,7 @@ class MemoryStore:
             return AnthropicJudge(model=model)
         except ImportError:
             pass  # anthropic optional dependency not installed
-        except Exception:  # noqa: BLE001 — optional LLM judge init must not break store construction
+        except Exception:
             logger.warning("anthropic_judge_init_failed", exc_info=True)
         try:
             from tapps_brain.evaluation import OpenAIJudge
@@ -724,7 +718,7 @@ class MemoryStore:
             return OpenAIJudge()
         except ImportError:
             pass  # openai optional dependency not installed
-        except Exception:  # noqa: BLE001 — optional LLM judge init must not break store construction
+        except Exception:
             logger.warning("openai_judge_init_failed", exc_info=True)
         return None
 
@@ -740,7 +734,7 @@ class MemoryStore:
                 from tapps_brain.decay import decay_config_from_profile
 
                 return decay_config_from_profile(self._profile)
-            except Exception:  # noqa: BLE001 — profile-derived decay config is best-effort; fall back to defaults
+            except Exception:
                 logger.warning("decay_config_from_profile_failed", exc_info=True)
         from tapps_brain.decay import DecayConfig
 
@@ -1078,7 +1072,7 @@ class MemoryStore:
                         if _invalidated is not None:
                             try:
                                 self._persistence.save(_invalidated)
-                            except Exception:  # noqa: BLE001 — conflict invalidation persistence is best-effort; in-memory state already updated
+                            except Exception:
                                 logger.warning(
                                     "conflict_invalidate_persist_failed",
                                     conflict_key=_conflict_entry.key,
@@ -1214,7 +1208,7 @@ class MemoryStore:
                             if current is not None and current.key == entry.key:
                                 entry = current.model_copy(update=_embed_update)
                             self._entries[key] = entry
-                    except Exception:  # noqa: BLE001 — embedding providers (sentence-transformers, openai, etc.) raise heterogeneous errors; save must proceed
+                    except Exception:
                         logger.warning("embedding_compute_failed", key=key, exc_info=True)
 
             # Persist to Postgres — rollback in-memory cache on failure to
@@ -1222,7 +1216,7 @@ class MemoryStore:
             try:
                 with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
                     self._persistence.save(entry)
-            except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+            except Exception:
                 with self._serialized():
                     if existing is not None:
                         self._entries[key] = existing
@@ -1283,7 +1277,7 @@ class MemoryStore:
                                 source_agent=entry.source_agent,
                                 tags=entry.tags,
                             )
-                        except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+                        except Exception:
                             logger.warning(
                                 "group_save_propagation_failed",
                                 group=_gn,
@@ -1304,7 +1298,7 @@ class MemoryStore:
                             source_agent=entry.source_agent,
                             tags=entry.tags,
                         )
-                    except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+                    except Exception:
                         logger.warning(
                             "group_save_propagation_failed",
                             group=_target_group,
@@ -1339,7 +1333,7 @@ class MemoryStore:
                         source_agent=entry.source_agent,
                         tags=all_tags,
                     )
-                except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+                except Exception:
                     logger.warning(
                         "expert_auto_publish_failed",
                         key=entry.key,
@@ -1444,7 +1438,7 @@ class MemoryStore:
                     else None,
                     source_keys=result.source_keys,
                 )
-        except Exception:  # noqa: BLE001 — auto-consolidation is best-effort; must not break save path
+        except Exception:
             logger.warning("auto_consolidation_check_failed", exc_info=True)
         finally:
             self._consolidation_in_progress = False
@@ -1519,7 +1513,7 @@ class MemoryStore:
                     private_tiers=private,
                     memory_group=entry.memory_group,
                 )
-        except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+        except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
 
     def get(
@@ -1561,7 +1555,7 @@ class MemoryStore:
             # Persist access metadata — rollback on failure.
             try:
                 self._persistence.save(updated)
-            except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+            except Exception:
                 with self._serialized():
                     self._entries[updated.key] = entry
                 raise
@@ -1622,7 +1616,7 @@ class MemoryStore:
             # maintain write-through consistency.
             try:
                 self._persistence.delete(key)
-            except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+            except Exception:
                 with self._serialized():
                     self._entries[key] = removed
                 raise
@@ -1770,14 +1764,14 @@ class MemoryStore:
                                         agent_scope=f"group:{_gn}",
                                     )
                                     results.append(_ge)
-                                except Exception:  # noqa: BLE001 — MemoryEntry construction from Hive row is best-effort; skip bad rows
+                                except Exception:
                                     logger.warning(
                                         "group_search_entry_convert_failed",
                                         group=_gn,
                                         key=_gk,
                                         exc_info=True,
                                     )
-                    except Exception:  # noqa: BLE001 — Hive group search must never raise; return local results
+                    except Exception:
                         logger.warning(
                             "group_search_failed",
                             group=_gn,
@@ -1812,7 +1806,7 @@ class MemoryStore:
         # Persist — rollback in-memory cache on failure.
         try:
             self._persistence.save(updated)
-        except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+        except Exception:
             with self._serialized():
                 self._entries[key] = entry
             raise
@@ -1916,7 +1910,7 @@ class MemoryStore:
                             new_stab, new_diff = update_stability(entry, decay_cfg, True)
                             updates["stability"] = new_stab
                             updates["difficulty"] = new_diff
-                        except Exception:  # noqa: BLE001 — adaptive stability update is best-effort; reinforcement proceeds
+                        except Exception:
                             logger.warning(
                                 "reinforce_stability_update_failed", key=key, exc_info=True
                             )
@@ -1928,7 +1922,7 @@ class MemoryStore:
             # maintain write-through consistency (matches get() / update_fields()).
             try:
                 self._persistence.save(updated)
-            except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+            except Exception:
                 with self._serialized():
                     self._entries[key] = entry
                 raise
@@ -1966,7 +1960,7 @@ class MemoryStore:
                             to_tier=target_tier,
                         )
                         final = promoted
-                except Exception:  # noqa: BLE001 — promotion check is best-effort; reinforcement already persisted
+                except Exception:
                     logger.warning("promotion_check_failed", key=key, exc_info=True)
 
             # EPIC-029 story 029.3: implicit positive feedback
@@ -2025,7 +2019,7 @@ class MemoryStore:
                         new_stab, new_diff = update_stability(entry, decay_cfg, was_useful)
                         updates["stability"] = new_stab
                         updates["difficulty"] = new_diff
-                    except Exception:  # noqa: BLE001 — adaptive stability update is best-effort; record_access proceeds
+                    except Exception:
                         logger.warning(
                             "record_access_stability_update_failed", key=key, exc_info=True
                         )
@@ -2037,7 +2031,7 @@ class MemoryStore:
         # maintain write-through consistency (matches get() / update_fields()).
         try:
             self._persistence.save(updated)
-        except Exception:  # noqa: BLE001 — psycopg+network errors are heterogeneous; rollback in-memory cache then re-raise
+        except Exception:
             with self._serialized():
                 self._entries[key] = entry
             raise
@@ -2120,7 +2114,7 @@ class MemoryStore:
 
         try:
             return _index_session(self._project_root, session_id, chunks)
-        except Exception:  # noqa: BLE001 — session indexing is best-effort; failure returns 0 chunks
+        except Exception:
             logger.warning("session_index_failed", session_id=session_id, exc_info=True)
             return 0
 
@@ -2133,7 +2127,7 @@ class MemoryStore:
 
         try:
             return search_session_index(self._project_root, query, limit=limit)
-        except Exception:  # noqa: BLE001 — session search is best-effort; failure returns empty results
+        except Exception:
             logger.warning("session_search_failed", query=query, exc_info=True)
             return []
 
@@ -2147,7 +2141,7 @@ class MemoryStore:
             from tapps_brain.session_index import delete_expired_sessions
 
             return delete_expired_sessions(self._project_root, ttl_days)
-        except Exception:  # noqa: BLE001 — session cleanup is best-effort maintenance; failure returns 0
+        except Exception:
             logger.warning("session_cleanup_failed", exc_info=True)
             return 0
 
@@ -2936,7 +2930,7 @@ class MemoryStore:
                     "circuit_state": st.value,
                 },
             )
-        except Exception:  # noqa: BLE001 — audit append is best-effort; diagnostics report already generated
+        except Exception:
             logger.warning("diagnostics_audit_failed", exc_info=True)
         self._metrics.increment("store.diagnostics")
         return report
@@ -3406,7 +3400,7 @@ class MemoryStore:
                 timestamp=event.timestamp,
                 source_project=str(self._project_root.resolve()),
             )
-        except Exception:  # noqa: BLE001 — Hive propagation must never raise; degrades gracefully
+        except Exception:
             logger.warning(
                 "hive_feedback_propagate_failed",
                 entry_key=ek,
@@ -3707,7 +3701,7 @@ class MemoryStore:
             self._get_feedback_store().record(event)
             self._metrics.increment(f"store.feedback.{event_type}")
             self._propagate_feedback_to_hive(event, session_id)
-        except Exception:  # noqa: BLE001 — implicit feedback emission is best-effort; must not break caller
+        except Exception:
             logger.warning(
                 "implicit_feedback_emit_failed",
                 event_type=event_type,

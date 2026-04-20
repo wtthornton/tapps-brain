@@ -620,9 +620,7 @@ def load_profile(path: Path) -> MemoryProfile:
         raise ValueError(msg)
 
     if "profile" not in data:
-        msg = (
-            f"Profile YAML must have a top-level 'profile:' key, got keys: {list(data)}"
-        )
+        msg = f"Profile YAML must have a top-level 'profile:' key, got keys: {list(data)}"
         raise ValueError(msg)
     return MemoryProfile.model_validate(data["profile"])
 

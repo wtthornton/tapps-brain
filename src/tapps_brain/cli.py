@@ -1801,18 +1801,14 @@ def _strip_dsn_password(dsn: str) -> tuple[str, str | None]:
         if parsed.port:
             host_part = f"{host_part}:{parsed.port}"
         netloc = f"{parsed.username}@{host_part}" if parsed.username else host_part
-        safe_dsn = urlunsplit(
-            (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
-        )
+        safe_dsn = urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
         return safe_dsn, password
 
     # Keyword=value format: handle both password='...' and password=word
     match = re.search(r"\bpassword\s*=\s*'([^']*)'|\bpassword\s*=\s*(\S+)", dsn)
     if match:
         password = match.group(1) if match.group(1) is not None else match.group(2)
-        safe_dsn = re.sub(
-            r"\s*\bpassword\s*=\s*'[^']*'|\s*\bpassword\s*=\s*\S+", "", dsn
-        ).strip()
+        safe_dsn = re.sub(r"\s*\bpassword\s*=\s*'[^']*'|\s*\bpassword\s*=\s*\S+", "", dsn).strip()
         return safe_dsn, password
 
     return dsn, None
