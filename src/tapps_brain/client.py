@@ -166,6 +166,74 @@ def _build_headers(
     return headers
 
 
+def _do_initialize(http_client: Any, base: str) -> str | None:
+    """Perform the MCP ``initialize`` handshake against ``base/mcp``.
+
+    Returns the ``Mcp-Session-Id`` header value from the server's response, or
+    ``None`` when the server runs in stateless mode (no session header issued).
+    Raises ``httpx.HTTPStatusError`` if the handshake itself fails.
+    """
+    payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
+            },
+        }
+    ).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    resp = http_client.post(f"{base}/mcp", headers=headers, content=payload)
+    resp.raise_for_status()
+    return resp.headers.get("mcp-session-id")
+
+
+async def _async_do_initialize(http_client: Any, base: str) -> str | None:
+    """Async version of :func:`_do_initialize`."""
+    payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
+            },
+        }
+    ).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    resp = await http_client.post(f"{base}/mcp", headers=headers, content=payload)
+    resp.raise_for_status()
+    return resp.headers.get("mcp-session-id")
+
+
+def _is_missing_session_error(exc: BaseException) -> bool:
+    """Return True when *exc* is a 400 HTTP error caused by a missing/expired MCP session.
+
+    FastMCP 3.10.0 rejects requests without a valid ``Mcp-Session-Id`` with
+    ``HTTP 400`` and a body that contains ``"Missing session ID"``.
+    """
+    try:
+        import httpx
+
+        _http_400 = 400
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == _http_400:
+            return "missing session id" in exc.response.text.lower()
+    except ImportError:
+        pass
+    return False
+
+
 def _mcp_envelope(
     tool_name: str,
     arguments: dict[str, Any],
@@ -214,6 +282,7 @@ def _post_tool(
     *,
     idempotency_key: str | None = None,
     max_retries: int = 2,
+    extra_headers: dict[str, str] | None = None,
 ) -> Any:
     """POST an MCP ``tools/call`` to the brain's ``/mcp`` endpoint.
 
@@ -226,10 +295,15 @@ def _post_tool(
     transport; the previously specced ``/v1/tools/{name}`` REST route
     was never shipped server-side.  Both ``http://`` and ``mcp+http://``
     client URLs therefore land on ``/mcp``.
+
+    *extra_headers* are merged into the request headers after the standard
+    header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
     from tapps_brain.errors import RetryPolicy
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
+    if extra_headers:
+        headers.update(extra_headers)
     body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
@@ -280,11 +354,18 @@ async def _async_post_tool(
     *,
     idempotency_key: str | None = None,
     max_retries: int = 2,
+    extra_headers: dict[str, str] | None = None,
 ) -> Any:
-    """Async version of :func:`_post_tool`."""
+    """Async version of :func:`_post_tool`.
+
+    *extra_headers* are merged into the request headers after the standard
+    header set; used to inject ``Mcp-Session-Id`` for stateful servers.
+    """
     from tapps_brain.errors import RetryPolicy
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
+    if extra_headers:
+        headers.update(extra_headers)
     body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
@@ -394,6 +475,10 @@ class TappsBrainClient:
         self._max_retries = max_retries
         self._http_client: Any = None
         self._closed = False
+        # MCP session state — set by _ensure_session() before first tools/call.
+        # None until initialized; stays None when the server is stateless.
+        self._mcp_session_id: str | None = None
+        self._initialized: bool = False
 
         if self._scheme in ("http", "mcp+http"):
             self._init_http()
@@ -426,19 +511,55 @@ class TappsBrainClient:
     def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
-        """Send a ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        """Send a ``tools/call`` to ``/mcp`` with retry + error taxonomy.
+
+        Performs the MCP ``initialize`` handshake on first call so the client
+        works against both stateless (``TAPPS_BRAIN_STATELESS_HTTP=1``) and
+        stateful (default since FastMCP 3.10.0) servers.  For stateful servers
+        the ``Mcp-Session-Id`` returned by initialize is attached to every
+        subsequent request.  If the session expires mid-use the client
+        reinitialises automatically and retries the failed call once.
+        """
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
-        return _post_tool(
-            self._http_client,
-            base,
-            name,
-            arguments,
-            self._project_id,
-            self._agent_id,
-            self._auth_token,
-            idempotency_key=idempotency_key,
-            max_retries=self._max_retries,
+        if not self._initialized:
+            self._mcp_session_id = _do_initialize(self._http_client, base)
+            self._initialized = True
+        extra_headers: dict[str, str] | None = (
+            {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
         )
+        try:
+            return _post_tool(
+                self._http_client,
+                base,
+                name,
+                arguments,
+                self._project_id,
+                self._agent_id,
+                self._auth_token,
+                idempotency_key=idempotency_key,
+                max_retries=self._max_retries,
+                extra_headers=extra_headers,
+            )
+        except Exception as exc:
+            if _is_missing_session_error(exc):
+                # Session expired — reinitialize and retry once.
+                self._mcp_session_id = _do_initialize(self._http_client, base)
+                extra_headers = (
+                    {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
+                )
+                return _post_tool(
+                    self._http_client,
+                    base,
+                    name,
+                    arguments,
+                    self._project_id,
+                    self._agent_id,
+                    self._auth_token,
+                    idempotency_key=idempotency_key,
+                    max_retries=self._max_retries,
+                    extra_headers=extra_headers,
+                )
+            raise
 
     # --- Context manager ---
 
@@ -605,6 +726,9 @@ class AsyncTappsBrainClient:
         self._max_retries = max_retries
         self._http_client: Any = None
         self._closed = False
+        # MCP session state — see TappsBrainClient for rationale.
+        self._mcp_session_id: str | None = None
+        self._initialized: bool = False
 
     async def _ensure_client(self) -> None:
         """Lazily initialise the httpx.AsyncClient."""
@@ -634,19 +758,51 @@ class AsyncTappsBrainClient:
     async def _mcp_http_tool(
         self, name: str, arguments: dict[str, Any], *, idempotency_key: str | None = None
     ) -> Any:
-        """Async ``tools/call`` to ``/mcp`` with retry + error taxonomy."""
+        """Async ``tools/call`` to ``/mcp`` with retry + error taxonomy.
+
+        Mirrors the session-management logic of the sync
+        :meth:`TappsBrainClient._mcp_http_tool`; see its docstring for details.
+        """
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
-        return await _async_post_tool(
-            self._http_client,
-            base,
-            name,
-            arguments,
-            self._project_id,
-            self._agent_id,
-            self._auth_token,
-            idempotency_key=idempotency_key,
-            max_retries=self._max_retries,
+        if not self._initialized:
+            self._mcp_session_id = await _async_do_initialize(self._http_client, base)
+            self._initialized = True
+        extra_headers: dict[str, str] | None = (
+            {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
         )
+        try:
+            return await _async_post_tool(
+                self._http_client,
+                base,
+                name,
+                arguments,
+                self._project_id,
+                self._agent_id,
+                self._auth_token,
+                idempotency_key=idempotency_key,
+                max_retries=self._max_retries,
+                extra_headers=extra_headers,
+            )
+        except Exception as exc:
+            if _is_missing_session_error(exc):
+                # Session expired — reinitialize and retry once.
+                self._mcp_session_id = await _async_do_initialize(self._http_client, base)
+                extra_headers = (
+                    {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
+                )
+                return await _async_post_tool(
+                    self._http_client,
+                    base,
+                    name,
+                    arguments,
+                    self._project_id,
+                    self._agent_id,
+                    self._auth_token,
+                    idempotency_key=idempotency_key,
+                    max_retries=self._max_retries,
+                    extra_headers=extra_headers,
+                )
+            raise
 
     # --- Context manager ---
 

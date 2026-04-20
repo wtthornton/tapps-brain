@@ -136,11 +136,16 @@ def test_brain_client_protocol_structural() -> None:
 
 
 def _make_sync_client(**kwargs: Any) -> TappsBrainClient:
-    """Return a sync client whose httpx.Client is replaced with a MagicMock."""
+    """Return a sync client whose httpx.Client is replaced with a MagicMock.
+
+    ``_initialized`` is pre-set to ``True`` so the MCP initialize handshake is
+    skipped — tests that exercise session management do this themselves.
+    """
     with patch("tapps_brain.client.TappsBrainClient._init_http"):
         client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", **kwargs)
     mock_http = MagicMock()
     client._http_client = mock_http
+    client._initialized = True  # skip session init in unit tests
     return client
 
 
@@ -399,9 +404,15 @@ def test_mcp_http_tool_embeds_idempotency_key_in_meta() -> None:
 
 
 def _make_async_client(**kwargs: Any) -> AsyncTappsBrainClient:
+    """Return an async client with a mocked HTTP backend.
+
+    ``_initialized`` is pre-set to ``True`` so the MCP initialize handshake is
+    skipped — tests that exercise session management do this themselves.
+    """
     client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", **kwargs)
     mock_http = AsyncMock()
     client._http_client = mock_http
+    client._initialized = True  # skip session init in unit tests
     return client
 
 
@@ -511,3 +522,213 @@ def test_top_level_exports() -> None:
     assert "TappsBrainClient" in tapps_brain.__all__
     assert "AsyncTappsBrainClient" in tapps_brain.__all__
     assert "BrainClientProtocol" in tapps_brain.__all__
+
+
+# ---------------------------------------------------------------------------
+# Session management (TAP-744) — stateful FastMCP 3.10.0 compatibility
+# ---------------------------------------------------------------------------
+
+
+def _mock_init_response(session_id: str | None) -> MagicMock:
+    """Build a mock httpx response for the MCP initialize handshake."""
+    resp = MagicMock()
+    resp.is_success = True
+    resp.raise_for_status = MagicMock()
+    headers: dict[str, str] = {}
+    if session_id is not None:
+        headers["mcp-session-id"] = session_id
+    resp.headers = headers
+    resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {"protocolVersion": "2025-06-18", "capabilities": {}},
+    }
+    return resp
+
+
+def _make_uninitialised_sync_client(**kwargs: Any) -> TappsBrainClient:
+    """Return a sync client that has NOT yet performed the initialize handshake."""
+    with patch("tapps_brain.client.TappsBrainClient._init_http"):
+        client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", **kwargs)
+    mock_http = MagicMock()
+    client._http_client = mock_http
+    # _initialized stays False — the client must do the handshake itself.
+    return client
+
+
+def test_sync_performs_initialize_before_first_tool_call() -> None:
+    """Sync client must POST initialize to /mcp before the first tools/call."""
+    client = _make_uninitialised_sync_client()
+    init_resp = _mock_init_response("test-session-abc")
+    tool_resp = _mock_success({"key": "k1"})
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("query")
+
+    assert client._http_client.post.call_count == 2
+    init_call = client._http_client.post.call_args_list[0]
+    assert "/mcp" in init_call.args[0]
+    payload = json.loads(init_call.kwargs["content"])
+    assert payload["method"] == "initialize"
+
+
+def test_sync_attaches_session_id_header_after_initialize() -> None:
+    """After initialize, Mcp-Session-Id must appear on every tools/call."""
+    client = _make_uninitialised_sync_client()
+    init_resp = _mock_init_response("my-sid-xyz")
+    tool_resp = _mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("query")
+
+    assert client._mcp_session_id == "my-sid-xyz"
+    tool_call = client._http_client.post.call_args_list[1]
+    headers: dict[str, str] = tool_call.kwargs["headers"]
+    assert headers.get("Mcp-Session-Id") == "my-sid-xyz"
+
+
+def test_sync_stateless_server_no_session_header() -> None:
+    """For a stateless server (no Mcp-Session-Id), no session header is sent."""
+    client = _make_uninitialised_sync_client()
+    init_resp = _mock_init_response(None)  # stateless: no session ID returned
+    tool_resp = _mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("query")
+
+    assert client._mcp_session_id is None
+    tool_call = client._http_client.post.call_args_list[1]
+    headers: dict[str, str] = tool_call.kwargs["headers"]
+    assert "Mcp-Session-Id" not in headers
+
+
+def test_sync_reinitializes_on_missing_session_error() -> None:
+    """When the server returns 400 'Missing session ID', the client reinitialises."""
+    import httpx
+
+    client = _make_uninitialised_sync_client(max_retries=0)
+    init_resp_1 = _mock_init_response("sid-first")
+    # tools/call fails with 'Missing session ID'
+    missing_session_resp = MagicMock()
+    missing_session_resp.status_code = 400
+    missing_session_resp.text = '{"detail": "Missing session ID"}'
+    missing_session_resp.is_success = False
+    missing_session_resp.json.return_value = {"detail": "Missing session ID"}
+    missing_session_resp.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "400", request=MagicMock(), response=missing_session_resp
+        )
+    )
+    # After reinit
+    init_resp_2 = _mock_init_response("sid-second")
+    tool_success = _mock_success({"key": "ok"})
+
+    client._http_client.post.side_effect = [
+        init_resp_1,
+        missing_session_resp,
+        init_resp_2,
+        tool_success,
+    ]
+
+    result = client.recall("query")
+    assert result == []  # _mock_success({"key": "ok"}) → list fallback
+    assert client._mcp_session_id == "sid-second"
+
+
+def test_sync_initialize_skipped_on_subsequent_calls() -> None:
+    """Initialize should only be called once per client lifetime."""
+    client = _make_uninitialised_sync_client()
+    init_resp = _mock_init_response("sid-123")
+    tool_resp_1 = _mock_success([{"key": "k1"}])
+    tool_resp_2 = _mock_success([{"key": "k2"}])
+    client._http_client.post.side_effect = [init_resp, tool_resp_1, tool_resp_2]
+
+    client.recall("first")
+    client.recall("second")
+
+    # init (1) + tool (1) + tool (1) = 3 calls total
+    assert client._http_client.post.call_count == 3
+    # First call is initialize
+    assert json.loads(client._http_client.post.call_args_list[0].kwargs["content"])["method"] == "initialize"
+    # Remaining two are tools/call
+    assert json.loads(client._http_client.post.call_args_list[1].kwargs["content"])["method"] == "tools/call"
+    assert json.loads(client._http_client.post.call_args_list[2].kwargs["content"])["method"] == "tools/call"
+
+
+# ---------------------------------------------------------------------------
+# Async session management (TAP-744)
+# ---------------------------------------------------------------------------
+
+
+def _async_mock_init_response(session_id: str | None) -> AsyncMock:
+    resp = AsyncMock()
+    resp.is_success = True
+    resp.raise_for_status = MagicMock()
+    headers: dict[str, str] = {}
+    if session_id is not None:
+        headers["mcp-session-id"] = session_id
+    resp.headers = headers
+    resp.json = MagicMock(
+        return_value={
+            "jsonrpc": "2.0",
+            "id": 0,
+            "result": {"protocolVersion": "2025-06-18", "capabilities": {}},
+        }
+    )
+    return resp
+
+
+def _make_uninitialised_async_client(**kwargs: Any) -> AsyncTappsBrainClient:
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", **kwargs)
+    mock_http = AsyncMock()
+    client._http_client = mock_http
+    # _initialized stays False
+    return client
+
+
+@pytest.mark.asyncio
+async def test_async_performs_initialize_before_first_tool_call() -> None:
+    """Async client must POST initialize to /mcp before the first tools/call."""
+    client = _make_uninitialised_async_client()
+    init_resp = _async_mock_init_response("async-sid")
+    tool_resp = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    await client.recall("q")
+
+    assert client._http_client.post.call_count == 2
+    init_call = client._http_client.post.call_args_list[0]
+    payload = json.loads(init_call.kwargs["content"])
+    assert payload["method"] == "initialize"
+
+
+@pytest.mark.asyncio
+async def test_async_attaches_session_id_header_after_initialize() -> None:
+    """Async: after initialize, Mcp-Session-Id must appear on every tools/call."""
+    client = _make_uninitialised_async_client()
+    init_resp = _async_mock_init_response("async-sid-xyz")
+    tool_resp = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    await client.recall("q")
+
+    assert client._mcp_session_id == "async-sid-xyz"
+    tool_call = client._http_client.post.call_args_list[1]
+    headers: dict[str, str] = tool_call.kwargs["headers"]
+    assert headers.get("Mcp-Session-Id") == "async-sid-xyz"
+
+
+@pytest.mark.asyncio
+async def test_async_stateless_server_no_session_header() -> None:
+    """Async: stateless server — no Mcp-Session-Id header on tool calls."""
+    client = _make_uninitialised_async_client()
+    init_resp = _async_mock_init_response(None)
+    tool_resp = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    await client.recall("q")
+
+    assert client._mcp_session_id is None
+    tool_call = client._http_client.post.call_args_list[1]
+    headers: dict[str, str] = tool_call.kwargs["headers"]
+    assert "Mcp-Session-Id" not in headers
