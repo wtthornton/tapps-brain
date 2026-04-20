@@ -36,12 +36,18 @@ _MAX_CHARS_DEFAULT = 500
 # ---------------------------------------------------------------------------
 # Module-level in-memory index (unit-test / no-Postgres path)
 # ---------------------------------------------------------------------------
-# Keyed by str(project_root).  Each value is a list of chunk dicts with keys:
-# session_id, chunk_index, content, created_at.
+# Keyed by str(project_root).  Each value is a dict mapping
+# (session_id, chunk_index) → chunk record, allowing O(1) upsert.
 # Production code paths (with a real Postgres connection) use SessionIndex
 # directly and never touch this dict.
+#
+# TAP-640: replaced list[dict] bucket with dict[(session_id, chunk_index), dict]
+# to fix O(N) upsert, O(N) full-list copy under lock, and unbounded growth.
 
-_in_memory_index: dict[str, list[dict[str, Any]]] = {}
+# Maximum chunks stored per project-root bucket before oldest-first eviction.
+_MAX_IN_MEMORY_CHUNKS_PER_KEY: int = 10_000
+
+_in_memory_index: dict[str, dict[tuple[str, int], dict[str, Any]]] = {}
 _in_memory_lock = threading.Lock()
 
 
@@ -52,6 +58,7 @@ def index_session(
     *,
     max_chunks: int = _MAX_CHUNKS_DEFAULT,
     max_chars_per_chunk: int = _MAX_CHARS_DEFAULT,
+    _max_in_memory: int = _MAX_IN_MEMORY_CHUNKS_PER_KEY,
 ) -> int:
     """Index session chunks for later search (in-memory fallback).
 
@@ -59,12 +66,17 @@ def index_session(
     connection.  This function is provided for environments where Postgres is
     unavailable (e.g. unit tests).
 
+    Upsert is O(1) via a ``(session_id, chunk_index)`` keyed dict.  When the
+    bucket exceeds *_max_in_memory* entries the oldest chunk (by ``created_at``)
+    is evicted.  Lock is held only for dict mutations — no O(N) list scan.
+
     Args:
         project_root: Project root path — used as the isolation key.
         session_id: Session identifier.
         chunks: Text chunks to index.
-        max_chunks: Maximum number of chunks to store.
+        max_chunks: Maximum number of chunks to store per call.
         max_chars_per_chunk: Maximum characters per chunk.
+        _max_in_memory: Per-bucket size cap (internal / testing use).
 
     Returns:
         Number of chunks actually stored.
@@ -78,27 +90,25 @@ def index_session(
     key = str(project_root)
     now = datetime.now(UTC).isoformat()
     with _in_memory_lock:
-        bucket = _in_memory_index.setdefault(key, [])
+        bucket: dict[tuple[str, int], dict[str, Any]] = _in_memory_index.setdefault(key, {})
         for idx, content in enumerate(trimmed):
-            # Upsert: replace existing (session_id, chunk_index) pair.
-            existing = next(
-                (
-                    i
-                    for i, r in enumerate(bucket)
-                    if r["session_id"] == session_id and r["chunk_index"] == idx
-                ),
-                None,
-            )
-            record: dict[str, Any] = {
+            chunk_key = (session_id, idx)
+            is_new = chunk_key not in bucket
+            bucket[chunk_key] = {
                 "session_id": session_id,
                 "chunk_index": idx,
                 "content": content,
                 "created_at": now,
             }
-            if existing is not None:
-                bucket[existing] = record
-            else:
-                bucket.append(record)
+            # Evict the oldest entry only when a new key pushes the bucket over cap.
+            # Note: all chunks in the same call share the same `now` timestamp, so
+            # when multiple new entries arrive in one batch and eviction fires, the
+            # choice among same-timestamp entries is deterministic but arbitrary (min
+            # falls back to tuple key order).  This is acceptable for the fallback
+            # index — true FIFO within a batch is not guaranteed.
+            if is_new and len(bucket) > _max_in_memory:
+                oldest = min(bucket, key=lambda k: bucket[k]["created_at"])
+                del bucket[oldest]
     return len(trimmed)
 
 
@@ -112,23 +122,32 @@ def search_session_index(
 
     Returns dicts with ``session_id``, ``chunk_index``, ``content``,
     ``created_at`` keys, sorted by a simple relevance heuristic.
+
+    Scoring is performed inside the lock to avoid an O(N) ``list()`` copy;
+    only matched records are shallow-copied before the lock is released.
+
+    Trade-off: holding the lock for the full iteration serialises concurrent
+    searches against each other and against writers.  For the in-memory fallback
+    (unit tests / non-Postgres installs) this is acceptable; do not add
+    expensive I/O or blocking calls inside the lock.
     """
     if not query or not query.strip():
         return []
     q_words = set(query.lower().split())
     key = str(project_root)
+    scored: list[tuple[int, dict[str, Any]]] = []
     with _in_memory_lock:
-        bucket = list(_in_memory_index.get(key, []))
+        # Iterate dict values directly — no full-bucket copy.
+        for record in _in_memory_index.get(key, {}).values():
+            content_words = set(record["content"].lower().split())
+            overlap = len(q_words & content_words)
+            if overlap > 0:
+                # Shallow-copy only matched records to avoid retaining a reference
+                # to the mutable bucket entry after the lock is released.
+                scored.append((overlap, dict(record)))
 
-    results: list[tuple[int, dict[str, Any]]] = []
-    for record in bucket:
-        content_words = set(record["content"].lower().split())
-        overlap = len(q_words & content_words)
-        if overlap > 0:
-            results.append((overlap, record))
-
-    results.sort(key=lambda t: t[0], reverse=True)
-    return [r for _, r in results[:limit]]
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [r for _, r in scored[:limit]]
 
 
 def delete_expired_sessions(project_root: Path, ttl_days: int) -> int:
@@ -143,10 +162,17 @@ def delete_expired_sessions(project_root: Path, ttl_days: int) -> int:
     cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
     key = str(project_root)
     with _in_memory_lock:
-        bucket = _in_memory_index.get(key, [])
-        before = len(bucket)
-        _in_memory_index[key] = [r for r in bucket if r.get("created_at", "") >= cutoff]
-        return before - len(_in_memory_index[key])
+        bucket = _in_memory_index.get(key)
+        if not bucket:
+            return 0
+        expired = [k for k, r in bucket.items() if r.get("created_at", "") < cutoff]
+        for k in expired:
+            del bucket[k]
+        # Remove the project-root key entirely when the bucket is emptied so
+        # _in_memory_index does not accumulate empty dicts over a long lifetime.
+        if not bucket:
+            del _in_memory_index[key]
+        return len(expired)
 
 
 class SessionIndex:
