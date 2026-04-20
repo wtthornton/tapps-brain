@@ -32,6 +32,7 @@ def brain_remember(
     share: bool = False,
     share_with: str = "",
     temporal_sensitivity: str | None = None,
+    failed_approaches: list[str] | None = None,
 ) -> dict[str, Any]:
     from tapps_brain.agent_brain import _content_key
     from tapps_brain.otel_tracer import start_mcp_tool_span
@@ -51,6 +52,7 @@ def brain_remember(
             tier=tier,
             agent_scope=agent_scope,
             temporal_sensitivity=temporal_sensitivity,
+            failed_approaches=failed_approaches,
         )
         if isinstance(result, dict) and "error" in result:
             return result
@@ -69,15 +71,17 @@ def brain_recall(
             if isinstance(entry, dict):
                 results.append(entry)
             else:
-                results.append(
-                    {
-                        "key": entry.key,
-                        "value": entry.value,
-                        "tier": str(entry.tier),
-                        "confidence": entry.confidence,
-                        "tags": list(entry.tags) if entry.tags else [],
-                    }
-                )
+                item: dict[str, Any] = {
+                    "key": entry.key,
+                    "value": entry.value,
+                    "tier": str(entry.tier),
+                    "confidence": entry.confidence,
+                    "tags": list(entry.tags) if entry.tags else [],
+                }
+                failed = getattr(entry, "failed_approaches", None)
+                if failed:
+                    item["failed_approaches"] = list(failed)
+                results.append(item)
         return results
 
 

@@ -254,6 +254,16 @@ class MemoryEntry(BaseModel):
         ),
     )
 
+    # TAP-731: Dead-end investigation history to prevent re-investigating failed approaches.
+    failed_approaches: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        description=(
+            "Approaches tried and ruled out. Prevents re-investigation of dead ends. "
+            "Surfaced in brain_recall responses when non-empty. Max 5 items."
+        ),
+    )
+
     @field_validator("temporal_sensitivity", mode="before")
     @classmethod
     def _validate_temporal_sensitivity(cls, v: object) -> Literal["high", "medium", "low"] | None:

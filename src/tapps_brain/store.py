@@ -800,6 +800,7 @@ class MemoryStore:
         triggered_by: str = "",
         memory_group: str | None | object = MEMORY_GROUP_UNSET,
         temporal_sensitivity: Literal["high", "medium", "low"] | None = None,
+        failed_approaches: list[str] | None = None,
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
@@ -1166,6 +1167,9 @@ class MemoryStore:
                     temporal_sensitivity=temporal_sensitivity
                     if temporal_sensitivity is not None
                     else (existing.temporal_sensitivity if existing else None),
+                    failed_approaches=failed_approaches
+                    if failed_approaches is not None
+                    else (existing.failed_approaches if existing else []),
                 )
 
                 # Compute integrity hash (H4a)
