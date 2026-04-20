@@ -299,6 +299,32 @@ docker compose -f docker/docker-compose.hive.yaml ps
 tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_HIVE_DSN"
 ```
 
+### HNSW Index Startup Check (TAP-655)
+
+At startup, `MemoryStore` calls `PostgresPrivateBackend.verify_expected_indexes()` which
+queries `pg_indexes` to confirm `idx_priv_embedding_hnsw` (created by migration 002) is
+present.  If the index is missing:
+
+* A structured `WARNING` log is emitted: `event="private.indexes.missing"` with a `hint`
+  pointing to migration 002.
+* The Prometheus counter `tapps_brain_private_missing_indexes_total{project_id="..."}` is
+  incremented so dashboards can alert on it.
+
+**Alert rule (recommended):**
+```
+tapps_brain_private_missing_indexes_total > 0
+```
+
+**Resolution:** apply migration 002 against the private DB:
+```bash
+tapps-brain maintenance migrate --private
+# or manually:
+psql "$TAPPS_BRAIN_DATABASE_URL" -f src/tapps_brain/migrations/private/002_hnsw_upgrade.sql
+```
+
+Without this index, vector recall (`knn_search`) falls back to a sequential scan and is
+significantly slower at scale.
+
 ### Common Issues
 
 | Symptom | Likely Cause | Fix |
@@ -306,6 +332,7 @@ tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_HIVE_DSN"
 | `connection refused` | DB not running or wrong port | Check `docker ps` and `TAPPS_HIVE_PORT` |
 | `password authentication failed` | Mismatched secret vs env var | Ensure `TAPPS_HIVE_PASSWORD` matches `docker/secrets/tapps_hive_password.txt` |
 | `extension "vector" does not exist` | Wrong Postgres image | Use `pgvector/pgvector:pg17` |
+| Slow vector recall + `private.indexes.missing` warning | Migration 002 not applied | Run `002_hnsw_upgrade.sql` — see HNSW index startup check above |
 
 ---
 

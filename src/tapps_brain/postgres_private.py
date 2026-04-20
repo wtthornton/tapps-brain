@@ -22,6 +22,33 @@ if TYPE_CHECKING:
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level missing-index counter (TAP-655)
+# ---------------------------------------------------------------------------
+
+# Thread-safe counter: project_id → number of startup checks that found
+# idx_priv_embedding_hnsw absent.  Incremented once per
+# PostgresPrivateBackend.verify_expected_indexes() call that detects a gap;
+# reset only on process restart.  Consumed by http_adapter._collect_metrics()
+# to emit ``tapps_brain_private_missing_indexes_total``.
+_MISSING_INDEX_COUNTS: dict[str, int] = {}
+_MISSING_INDEX_COUNTS_LOCK = threading.Lock()
+
+#: Index names that must exist on ``private_memories`` after migration 002.
+_EXPECTED_PRIVATE_INDEXES: frozenset[str] = frozenset({"idx_priv_embedding_hnsw"})
+
+
+def get_missing_index_counts_snapshot() -> dict[str, int]:
+    """Return a frozen copy of the per-project missing-index counter.
+
+    Called by :func:`tapps_brain.http_adapter._collect_metrics` to render
+    ``tapps_brain_private_missing_indexes_total`` in Prometheus exposition
+    format.  Safe to call from any thread.
+    """
+    with _MISSING_INDEX_COUNTS_LOCK:
+        return dict(_MISSING_INDEX_COUNTS)
+
+
 # DDL for the private_relations auxiliary table.  Created on first use.
 _RELATIONS_DDL = """\
 CREATE TABLE IF NOT EXISTS private_relations (
@@ -420,6 +447,67 @@ class PostgresPrivateBackend:
             )
             row = cur.fetchone()
         return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------------
+    # Startup index sanity check (TAP-655)
+    # ------------------------------------------------------------------
+
+    def verify_expected_indexes(self) -> list[str]:
+        """Check that all expected indexes on ``private_memories`` are present.
+
+        Queries ``pg_indexes`` for the table and compares against
+        :data:`_EXPECTED_PRIVATE_INDEXES`.  When any index is absent:
+
+        * A ``WARNING`` structured log is emitted (key
+          ``"private.indexes.missing"``).
+        * The per-project counter in :data:`_MISSING_INDEX_COUNTS` is
+          incremented so the HTTP adapter can expose
+          ``tapps_brain_private_missing_indexes_total`` to Prometheus
+          scrapers.
+
+        Returns the list of missing index names (empty when all present).
+
+        This is a best-effort check — any DB error is caught, logged at
+        DEBUG level, and treated as "no missing indexes" so a transient
+        connection hiccup at startup does not abort the store.
+
+        Likely cause of a non-empty result: migration 002 (HNSW upgrade) was
+        never applied.  The embedding recall path still works but falls back
+        to a sequential scan, degrading latency.
+
+        .. note::
+            Call once at ``MemoryStore.__init__`` after :meth:`load_all`.
+            Calling repeatedly is harmless but redundant.
+        """
+        try:
+            with self._scoped_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT indexname FROM pg_indexes WHERE tablename = 'private_memories'"
+                )
+                present = {str(row[0]) for row in cur.fetchall()}
+        except Exception:
+            logger.debug(
+                "postgres_private.verify_expected_indexes.db_error",
+                exc_info=True,
+            )
+            return []
+
+        missing = sorted(_EXPECTED_PRIVATE_INDEXES - present)
+        if missing:
+            logger.warning(
+                "private.indexes.missing",
+                missing=missing,
+                project_id=self._project_id,
+                hint=(
+                    "Apply migration 002 (002_hnsw_upgrade.sql) to create the HNSW index. "
+                    "Until then, vector recall falls back to a sequential scan."
+                ),
+            )
+            with _MISSING_INDEX_COUNTS_LOCK:
+                _MISSING_INDEX_COUNTS[self._project_id] = (
+                    _MISSING_INDEX_COUNTS.get(self._project_id, 0) + 1
+                )
+        return missing
 
     # ------------------------------------------------------------------
     # Relations

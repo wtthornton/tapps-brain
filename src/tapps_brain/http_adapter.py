@@ -404,6 +404,28 @@ def _collect_metrics(
             "Fraction of Hive pool max_size currently in use (0.0-1.0).",
         )
 
+    # TAP-655: per-project counter for missing HNSW indexes detected at startup.
+    # Non-zero means migration 002 was not applied on that project's DB.
+    try:
+        from tapps_brain.postgres_private import get_missing_index_counts_snapshot
+
+        missing_idx_counts = get_missing_index_counts_snapshot()
+        if missing_idx_counts:
+            lines.append(
+                "# HELP tapps_brain_private_missing_indexes_total "
+                "Number of startup checks that found idx_priv_embedding_hnsw absent "
+                "(migration 002 not applied). Non-zero means vector recall falls back "
+                "to a sequential scan."
+            )
+            lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
+            for project_id, count in sorted(missing_idx_counts.items()):
+                safe_pid = project_id.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
+                )
+    except Exception:  # pragma: no cover — import error must not crash /metrics
+        pass
+
     lines.append("")
     return "\n".join(lines)
 

@@ -369,6 +369,11 @@ class MemoryStore:
         for entry in self._persistence.load_all():
             self._entries[entry.key] = entry
 
+        # TAP-655: startup sanity check — warn if expected HNSW index is absent.
+        _verify = getattr(self._persistence, "verify_expected_indexes", None)
+        if callable(_verify):
+            _verify()
+
         # Bloom filter for write-path deduplication (GitHub #31)
         self._bloom = BloomFilter()
         for _entry in self._entries.values():
