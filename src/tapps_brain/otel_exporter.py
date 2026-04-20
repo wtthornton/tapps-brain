@@ -439,7 +439,7 @@ class MemoryBodyRedactionFilter(logging.Filter):
         """Redact inline forbidden-key patterns in the formatted message."""
         try:
             msg = record.getMessage()
-        except Exception:
+        except Exception:  # noqa: BLE001 — log record getMessage() can raise; silently skip redaction
             return
 
         def _replace(m: re.Match[str]) -> str:
