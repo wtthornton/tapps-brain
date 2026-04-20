@@ -1698,3 +1698,113 @@ class TestSaveFailureRollback:
             assert s._bloom.might_contain(normalize_for_dedup("stored locally even if hive fails"))
         finally:
             s.close()
+
+
+class TestBuildLlmJudge:
+    """TAP-601: _build_llm_judge must distinguish ImportError from init failures."""
+
+    def test_init_failure_produces_warning_log_not_silent_swallow(self) -> None:
+        """A judge whose __init__ raises RuntimeError must emit a WARNING log."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        class _BrokenJudge:
+            def __init__(self, model: str) -> None:
+                raise RuntimeError("bad API key")
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with (
+                patch.dict(
+                    "sys.modules",
+                    {"tapps_brain.evaluation": _make_eval_module(_BrokenJudge, None)},
+                ),
+                capture_logs() as events,
+            ):
+                result = MemoryStore._build_llm_judge("claude-3-haiku-20240307")
+
+            assert result is None
+            warning_events = [e for e in events if e.get("log_level") == "warning"]
+            assert any(
+                "anthropic_init_failed" in e.get("event", "") for e in warning_events
+            ), f"Expected warning log for init failure; got {events}"
+        finally:
+            structlog.configure(**saved)
+
+    def test_import_error_is_silent(self) -> None:
+        """ImportError (extra not installed) must NOT produce a warning log."""
+        import sys
+
+        import structlog
+        from structlog.testing import capture_logs
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        # Remove evaluation module so imports raise ImportError
+        saved_modules = {
+            k: v
+            for k, v in sys.modules.items()
+            if k.startswith("tapps_brain.evaluation")
+        }
+        for k in list(saved_modules):
+            sys.modules.pop(k, None)
+        try:
+            with (
+                patch.dict(
+                    "sys.modules",
+                    {"tapps_brain.evaluation": None},  # type: ignore[dict-item]
+                ),
+                capture_logs() as events,
+            ):
+                result = MemoryStore._build_llm_judge("claude-3-haiku-20240307")
+
+            assert result is None
+            warning_events = [e for e in events if e.get("log_level") == "warning"]
+            assert not warning_events, (
+                f"ImportError must not produce a warning; got {warning_events}"
+            )
+        finally:
+            for k, v in saved_modules.items():
+                sys.modules[k] = v
+            structlog.configure(**saved)
+
+    def test_warning_includes_model_field(self) -> None:
+        """Warning log for init failure must include the model name as a structured field."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        class _BrokenJudge:
+            def __init__(self, model: str) -> None:
+                raise RuntimeError("auth error")
+
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with (
+                patch.dict(
+                    "sys.modules",
+                    {"tapps_brain.evaluation": _make_eval_module(_BrokenJudge, None)},
+                ),
+                capture_logs() as events,
+            ):
+                MemoryStore._build_llm_judge("test-model-xyz")
+
+            warning_events = [e for e in events if e.get("log_level") == "warning"]
+            assert any(
+                e.get("model") == "test-model-xyz" for e in warning_events
+            ), f"Expected model field in warning; got {warning_events}"
+        finally:
+            structlog.configure(**saved)
+
+
+def _make_eval_module(anthropic_judge_cls: type | None, openai_judge_cls: type | None) -> object:
+    """Build a minimal fake tapps_brain.evaluation module for patching."""
+    import types
+
+    mod = types.ModuleType("tapps_brain.evaluation")
+    if anthropic_judge_cls is not None:
+        mod.AnthropicJudge = anthropic_judge_cls  # type: ignore[attr-defined]
+    if openai_judge_cls is not None:
+        mod.OpenAIJudge = openai_judge_cls  # type: ignore[attr-defined]
+    return mod
