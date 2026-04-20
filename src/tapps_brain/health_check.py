@@ -238,6 +238,13 @@ def run_health_check(  # noqa: PLR0915
     errors: list[str] = []
     warnings: list[str] = []
 
+    # Evaluated before any slice so the integrity slice can avoid a second MemoryStore.__init__
+    # when the caller has already supplied one (TAP-721 regression fix).
+    reuse = store is not None
+    # ``_shared_store`` is the caller's MemoryStore when ``store=`` was passed; the integrity
+    # slice reuses it instead of opening a second (cold) MemoryStore.  None when store is absent.
+    _shared_store: object | None = store
+
     # ------------------------------------------------------------------
     # Store health
     # ------------------------------------------------------------------
@@ -246,7 +253,6 @@ def run_health_check(  # noqa: PLR0915
         from tapps_brain.store import MemoryStore
 
         root = project_root or Path.cwd()
-        reuse = store is not None
         ms: MemoryStore = store if reuse else MemoryStore(project_root=root)  # type: ignore[assignment]
         if reuse:
             root = Path(getattr(ms, "_project_root", root))
@@ -403,18 +409,24 @@ def run_health_check(  # noqa: PLR0915
         from tapps_brain.store import MemoryStore
 
         root = project_root or Path.cwd()
-        store = MemoryStore(project_root=root)
+        # Reuse the caller's store when available (avoids opening a second MemoryStore
+        # that pays full __init__ cost — Postgres pool + load_all + bloom rebuild).
+        # Otherwise open a short-lived temporary store and close it in the finally.
+        _integrity_owns_store = _shared_store is None
+        ms_integrity: MemoryStore = (
+            MemoryStore(project_root=root) if _integrity_owns_store else _shared_store  # type: ignore[assignment]
+        )
         try:
-            integrity = store.verify_integrity()
+            integrity = ms_integrity.verify_integrity()
             corrupted = len(integrity.get("tampered_keys", []))
             integrity_health.corrupted_entries = corrupted
 
             # Orphaned relations: relations pointing to missing keys
-            with store._lock:
-                all_keys = set(store._entries.keys())
+            with ms_integrity._lock:
+                all_keys = set(ms_integrity._entries.keys())
             orphaned = 0
             try:
-                all_relations = store._persistence.list_relations()
+                all_relations = ms_integrity._persistence.list_relations()
                 for rel in all_relations:
                     for src_key in rel.get("source_entry_keys", []):
                         if src_key not in all_keys:
@@ -426,8 +438,8 @@ def run_health_check(  # noqa: PLR0915
             # Expired entries (past valid_at)
             now_iso = datetime.now(tz=UTC).isoformat()
             expired = 0
-            with store._lock:
-                for entry in store._entries.values():
+            with ms_integrity._lock:
+                for entry in ms_integrity._entries.values():
                     valid_at = getattr(entry, "valid_at", None)
                     if valid_at and valid_at < now_iso:
                         expired += 1
@@ -442,7 +454,8 @@ def run_health_check(  # noqa: PLR0915
                     f"{expired} entry/entries past valid_at — consider running maintenance"
                 )
         finally:
-            store.close()
+            if _integrity_owns_store:
+                ms_integrity.close()
         integrity_health.status = _severity(
             [e for e in errors if "integrity" in e.lower() or "corrupted" in e.lower()],
             [w for w in warnings if "integrity" in w.lower() or "orphaned" in w.lower()],
