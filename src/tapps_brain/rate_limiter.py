@@ -28,6 +28,7 @@ BATCH_EXEMPT_CONTEXTS: frozenset[str] = frozenset(
         "seed",
         "federation_sync",
         "consolidate",
+        "sync_from_markdown",
     }
 )
 

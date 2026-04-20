@@ -253,6 +253,44 @@ class TestBatchExemptContexts:
         assert "seed" in BATCH_EXEMPT_CONTEXTS
         assert "federation_sync" in BATCH_EXEMPT_CONTEXTS
         assert "consolidate" in BATCH_EXEMPT_CONTEXTS
+        assert "sync_from_markdown" in BATCH_EXEMPT_CONTEXTS
 
     def test_is_frozenset(self) -> None:
         assert isinstance(BATCH_EXEMPT_CONTEXTS, frozenset)
+
+    def test_all_source_batch_context_literals_are_exempt_or_known_non_batch(self) -> None:
+        """Drift guard: every batch_context="..." literal in src/ must be either
+        in BATCH_EXEMPT_CONTEXTS (batch loop → should bypass rate limiting) or in
+        the declared non-batch set (single writes that are intentionally rate-limited).
+
+        If this test fails, either add the new context to BATCH_EXEMPT_CONTEXTS
+        (if it's a bulk-import loop) or to KNOWN_NON_BATCH_CONTEXTS below
+        (if it's a single write that should remain rate-limited).
+        """
+        import re
+        from pathlib import Path
+
+        # Single-write contexts that are intentionally rate-limited (not batch loops).
+        # Update this set when adding new single-write call sites.
+        KNOWN_NON_BATCH_CONTEXTS: frozenset[str] = frozenset(
+            {
+                "session_summary",  # one write per session index, not a bulk loop
+            }
+        )
+
+        src_root = Path(__file__).parent.parent.parent / "src" / "tapps_brain"
+        literal_pattern = re.compile(r'batch_context\s*=\s*"([^"]+)"')
+
+        found: set[str] = set()
+        for py_file in src_root.rglob("*.py"):
+            text = py_file.read_text(encoding="utf-8")
+            for match in literal_pattern.finditer(text):
+                found.add(match.group(1))
+
+        all_known = BATCH_EXEMPT_CONTEXTS | KNOWN_NON_BATCH_CONTEXTS
+        unknown = found - all_known
+        assert not unknown, (
+            f"Unknown batch_context literal(s) found in src/tapps_brain/: {sorted(unknown)}. "
+            "Add to BATCH_EXEMPT_CONTEXTS (bulk-import loop) or KNOWN_NON_BATCH_CONTEXTS "
+            "(intentionally rate-limited single write)."
+        )
