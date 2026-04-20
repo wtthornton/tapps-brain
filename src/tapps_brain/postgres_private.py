@@ -206,7 +206,7 @@ class PostgresPrivateBackend:
                     source_session_id, source_channel, source_message_id, triggered_by,
                     stability, difficulty,
                     positive_feedback_count, negative_feedback_count,
-                    integrity_hash, embedding_model_id,
+                    integrity_hash, integrity_hash_v, embedding_model_id,
                     temporal_sensitivity,
                     failed_approaches
                 ) VALUES (
@@ -222,7 +222,7 @@ class PostgresPrivateBackend:
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s,
-                    %s, %s,
+                    %s, %s, %s,
                     %s,
                     %s::jsonb
                 )
@@ -261,6 +261,7 @@ class PostgresPrivateBackend:
                     positive_feedback_count  = EXCLUDED.positive_feedback_count,
                     negative_feedback_count  = EXCLUDED.negative_feedback_count,
                     integrity_hash           = EXCLUDED.integrity_hash,
+                    integrity_hash_v         = EXCLUDED.integrity_hash_v,
                     embedding_model_id       = EXCLUDED.embedding_model_id,
                     temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
                     failed_approaches        = EXCLUDED.failed_approaches
@@ -304,6 +305,7 @@ class PostgresPrivateBackend:
                     entry.positive_feedback_count,
                     entry.negative_feedback_count,
                     entry.integrity_hash,
+                    entry.integrity_hash_v,
                     entry.embedding_model_id,
                     entry.temporal_sensitivity,
                     json.dumps(entry.failed_approaches, ensure_ascii=False),
@@ -1068,6 +1070,7 @@ class PostgresPrivateBackend:
             positive_feedback_count=float(row.get("positive_feedback_count", 0.0)),
             negative_feedback_count=float(row.get("negative_feedback_count", 0.0)),
             integrity_hash=_str_or_none(row.get("integrity_hash")),
+            integrity_hash_v=int(row.get("integrity_hash_v") or 1),
             embedding_model_id=_str_or_none(row.get("embedding_model_id")),
             temporal_sensitivity=cast(
                 "Literal['high', 'medium', 'low'] | None",

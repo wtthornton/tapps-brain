@@ -1166,15 +1166,20 @@ class MemoryStore:
                     else (existing.failed_approaches if existing else []),
                 )
 
-                # Compute integrity hash (H4a)
-                from tapps_brain.integrity import compute_integrity_hash as _compute_hash
+                # Compute integrity hash (H4a) — always v2 (JSON encoding, TAP-710)
+                from tapps_brain.integrity import (
+                    INTEGRITY_HASH_VERSION as _HASH_V,
+                    compute_integrity_hash as _compute_hash,
+                )
 
                 _tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
                 _source_str = (
                     entry.source.value if hasattr(entry.source, "value") else str(entry.source)
                 )
                 _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
-                entry = entry.model_copy(update={"integrity_hash": _hash})
+                entry = entry.model_copy(
+                    update={"integrity_hash": _hash, "integrity_hash_v": _HASH_V}
+                )
 
                 # Per-group then global max entry enforcement (EPIC-044 STORY-044.7)
                 self._enforce_entry_caps_before_assign(
@@ -3218,7 +3223,11 @@ class MemoryStore:
             Dict with ``total``, ``verified``, ``tampered``, ``no_hash``,
             ``tampered_keys``, ``missing_hash_keys``, ``tampered_details``.
         """
-        from tapps_brain.integrity import compute_integrity_hash, verify_integrity_hash
+        from tapps_brain.integrity import (
+            compute_integrity_hash,
+            compute_integrity_hash_v1,
+            verify_integrity_hash,
+        )
 
         self._metrics.increment("store.verify_integrity")
 
@@ -3239,23 +3248,41 @@ class MemoryStore:
 
             tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
             source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            if verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
-                verified += 1
+            hash_version = getattr(entry, "integrity_hash_v", 1)
+
+            # Use the version-appropriate verifier so legacy v1 rows don't
+            # spuriously show as tampered when the process uses the v2 scheme.
+            if hash_version == 1:
+                # v1: legacy pipe-joined canonical form
+                v1_expected = compute_integrity_hash_v1(
+                    entry.key, entry.value, tier_str, source_str
+                )
+                import hmac as _hmac
+
+                if _hmac.compare_digest(v1_expected, stored_hash):
+                    verified += 1
+                    continue
             else:
-                tampered.append(entry.key)
-                expected = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
-                tampered_details.append(
-                    {
-                        "key": entry.key,
-                        "stored_hash": stored_hash,
-                        "expected_hash": expected,
-                    }
-                )
-                logger.warning(
-                    "integrity_verification_failed",
-                    key=entry.key,
-                    tier=tier_str,
-                )
+                if verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
+                    verified += 1
+                    continue
+
+            tampered.append(entry.key)
+            expected = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
+            tampered_details.append(
+                {
+                    "key": entry.key,
+                    "stored_hash": stored_hash,
+                    "expected_hash": expected,
+                    "hash_version": str(hash_version),
+                }
+            )
+            logger.warning(
+                "integrity_verification_failed",
+                key=entry.key,
+                tier=tier_str,
+                hash_version=hash_version,
+            )
 
         return {
             "total": total,
@@ -3265,6 +3292,109 @@ class MemoryStore:
             "tampered_keys": tampered,
             "missing_hash_keys": missing_hash_keys,
             "tampered_details": tampered_details,
+        }
+
+    def rehash_integrity_v1(self) -> dict[str, int]:
+        """Recompute integrity hashes for legacy v1 (pipe-joined) entries.
+
+        Scans all in-memory entries whose ``integrity_hash_v == 1`` (written
+        before TAP-710 was fixed), verifies each against the old v1 canonical
+        form, and — if the stored hash is still valid — replaces it with a
+        fresh v2 (JSON) hash.  Entries whose v1 hash no longer matches (i.e.
+        already tampered) are left unchanged and counted in ``tampered``.
+        Entries with no hash are skipped and counted in ``skipped_no_hash``.
+
+        This method is the application-layer migration shim for upgrading from
+        ``integrity_hash_v = 1`` to ``integrity_hash_v = 2``.  After running
+        it, :meth:`verify_integrity` will validate all entries under the v2
+        scheme.  The shim is safe to run multiple times — v2 entries are a
+        no-op.
+
+        Returns:
+            Dict with ``upgraded``, ``tampered``, ``skipped_no_hash``,
+            ``already_v2`` counts.
+        """
+        from tapps_brain.integrity import (
+            INTEGRITY_HASH_VERSION as _HASH_V,
+            compute_integrity_hash,
+            compute_integrity_hash_v1,
+        )
+
+        import hmac as _hmac
+
+        upgraded = 0
+        tampered = 0
+        skipped_no_hash = 0
+        already_v2 = 0
+
+        with self._serialized():
+            keys = list(self._entries.keys())
+
+        for key in keys:
+            with self._serialized():
+                entry = self._entries.get(key)
+            if entry is None:
+                continue
+
+            stored_hash = getattr(entry, "integrity_hash", None)
+            if not stored_hash:
+                skipped_no_hash += 1
+                continue
+
+            hash_version = getattr(entry, "integrity_hash_v", 1)
+            if hash_version >= 2:
+                already_v2 += 1
+                continue
+
+            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+
+            # Verify that the stored v1 hash is still intact before upgrading.
+            v1_expected = compute_integrity_hash_v1(entry.key, entry.value, tier_str, source_str)
+            if not _hmac.compare_digest(v1_expected, stored_hash):
+                tampered += 1
+                logger.warning(
+                    "rehash_integrity_v1.tampered_skipped",
+                    key=key,
+                    hint="v1 hash mismatch — entry may be tampered; not upgraded",
+                )
+                continue
+
+            # v1 hash is intact — upgrade to v2.
+            new_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
+            upgraded_entry = entry.model_copy(
+                update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
+            )
+            with self._lock:
+                self._entries[key] = upgraded_entry
+
+            if self._hive_store is not None:
+                try:
+                    self._hive_store.save(upgraded_entry)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if self._backend is not None:
+                try:
+                    self._backend.save(upgraded_entry)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            upgraded += 1
+            logger.debug("rehash_integrity_v1.upgraded", key=key)
+
+        logger.info(
+            "rehash_integrity_v1.complete",
+            upgraded=upgraded,
+            tampered=tampered,
+            skipped_no_hash=skipped_no_hash,
+            already_v2=already_v2,
+        )
+        return {
+            "upgraded": upgraded,
+            "tampered": tampered,
+            "skipped_no_hash": skipped_no_hash,
+            "already_v2": already_v2,
         }
 
     # ------------------------------------------------------------------
