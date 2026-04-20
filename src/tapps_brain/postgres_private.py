@@ -450,7 +450,7 @@ class PostgresPrivateBackend:
                 cur.execute(sql, (vec_str, self._project_id, self._agent_id, k))
                 rows = cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.knn_search_failed", exc_info=True)
             return []
 
@@ -503,7 +503,7 @@ class PostgresPrivateBackend:
                     "WHERE tablename = 'private_memories' AND schemaname = 'public'"
                 )
                 present = {str(row[0]) for row in cur.fetchall()}
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning(
                 "postgres_private.verify_expected_indexes.db_error",
                 exc_info=True,
@@ -660,7 +660,7 @@ class PostgresPrivateBackend:
                     ),
                 )
                 return cur.rowcount or 0
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning(
                 "postgres_private.delete_relations_failed",
                 key=key,
@@ -679,7 +679,7 @@ class PostgresPrivateBackend:
                 cur.execute("SELECT MAX(version) FROM private_schema_version")
                 row = cur.fetchone()
             return int(row[0]) if row and row[0] is not None else _PRIVATE_SCHEMA_VERSION
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.get_schema_version_failed", exc_info=True)
             return _PRIVATE_SCHEMA_VERSION
 
@@ -714,7 +714,7 @@ class PostgresPrivateBackend:
                         json.dumps(extra or {}, default=str),
                     ),
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning(
                 "postgres_private.audit_append_failed",
                 action=action,
@@ -763,7 +763,7 @@ class PostgresPrivateBackend:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(stmt, params)
                 rows = cur.fetchall()
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.audit_query_failed", exc_info=True)
             return []
 
@@ -810,7 +810,7 @@ class PostgresPrivateBackend:
                 )
                 row = cur.fetchone()
                 return str(row[0]) if row else None
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.flywheel_meta_get_failed", key=key, exc_info=True)
             return None
 
@@ -831,7 +831,7 @@ class PostgresPrivateBackend:
                     """,
                     (self._project_id, self._agent_id, key, value),
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.flywheel_meta_set_failed", key=key, exc_info=True)
 
     # ------------------------------------------------------------------
@@ -869,7 +869,7 @@ class PostgresPrivateBackend:
                     ),
                 )
             return byte_count
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning(
                 "postgres_private.gc_archive_entry_failed",
                 key=entry.key,
@@ -892,7 +892,7 @@ class PostgresPrivateBackend:
                     (self._project_id, self._agent_id, limit),
                 )
                 rows = cur.fetchall()
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.gc_archive_list_failed", exc_info=True)
             return []
 
@@ -926,7 +926,7 @@ class PostgresPrivateBackend:
                 )
                 row = cur.fetchone()
             return int(row[0]) if row else 0
-        except Exception:
+        except Exception:  # noqa: BLE001 — psycopg errors are heterogeneous; fallback to default
             logger.warning("postgres_private.gc_archive_total_bytes_failed", exc_info=True)
             return 0
 
@@ -938,7 +938,7 @@ class PostgresPrivateBackend:
         """Close the underlying connection pool."""
         try:
             self._cm.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 — best-effort close; errors must not propagate
             logger.debug("postgres_private.close_failed", exc_info=True)  # nosec B110 — best-effort close; errors must not propagate
 
     # ------------------------------------------------------------------

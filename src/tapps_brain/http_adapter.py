@@ -146,7 +146,7 @@ def _get_profile_resolver() -> Any:
                     return str(row.get("profile") or "")  or None
 
                 getter = _pg_getter
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                 logger.warning(
                     "http_adapter.profile_resolver.agent_registry_unavailable",
                     error=str(exc),
@@ -178,7 +178,7 @@ def _service_version() -> str:
         from importlib.metadata import version
 
         return version("tapps-brain")
-    except Exception:
+    except Exception:  # noqa: BLE001 — optional dependency detection
         return "unknown"
 
 
@@ -221,7 +221,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
             )
         else:
             result = (True, version, f"ready (migration_version={version})")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort probe; failure returns degraded status
         err_str = str(exc)
         try:
             from urllib.parse import urlparse
@@ -235,7 +235,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 err_str = err_str.replace(parsed.username, "[user]")
             if parsed.password:
                 err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:
+        except Exception:  # noqa: BLE001 — DSN parse sanitization is best-effort; fall back to generic message
             err_str = "database unreachable"
         result = (False, None, f"db_error: {err_str}")
     _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
@@ -1163,7 +1163,7 @@ def create_app(
             if is_idempotency_enabled():
                 try:
                     cfg.idempotency_store = IdempotencyStore(cfg.dsn)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                     logger.warning(
                         "http_adapter.idempotency_store_init_failed",
                         error=str(exc),
@@ -1175,7 +1175,7 @@ def create_app(
             try:
                 mcp = _build_mcp_server()
                 mcp_holder["mcp"] = mcp
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                 logger.error("http_adapter.mcp_build_failed", error=str(exc))
                 mcp = None
 
@@ -1204,7 +1204,7 @@ def create_app(
                 try:
                     session_cm = sm.run()
                     await session_cm.__aenter__()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — defensive catch; failure logged and degrades gracefully
                     logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
         try:
@@ -1213,7 +1213,7 @@ def create_app(
             if session_cm is not None:
                 try:
                     await session_cm.__aexit__(None, None, None)
-                except Exception:
+                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
                     logger.debug("http_adapter.session_manager_stop_failed", exc_info=True)
             # TAP-548: release the pooled Postgres connections the
             # ``IdempotencyStore`` singleton is holding.  Set back to
@@ -1222,7 +1222,7 @@ def create_app(
             if getattr(cfg, "idempotency_store", None) is not None:
                 try:
                     cfg.idempotency_store.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 — shutdown path must not raise; failure logged
                     logger.debug(
                         "http_adapter.idempotency_store_close_failed",
                         exc_info=True,
@@ -1517,7 +1517,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:
+            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1637,7 +1637,7 @@ def create_app(
 
             try:
                 raw = await request.body()
-            except Exception:
+            except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
                 logger.exception("http_adapter.read_body_failed")
                 raise HTTPException(
                     status_code=400,
@@ -1727,7 +1727,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1795,7 +1795,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1863,7 +1863,7 @@ def create_app(
 
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1949,7 +1949,7 @@ def create_app(
     async def _admin_projects_register(request: Request) -> JSONResponse:
         try:
             raw = await request.body()
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.read_body_failed")
             raise HTTPException(
                 status_code=400,
@@ -1999,7 +1999,7 @@ def create_app(
 
             validate_project_id(project_id)
             profile = MemoryProfile.model_validate(profile_json)
-        except Exception:
+        except Exception:  # noqa: BLE001 — HTTP handler must not propagate to client
             logger.exception("http_adapter.profile_validation_failed")
             raise HTTPException(
                 status_code=400,
