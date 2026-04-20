@@ -371,13 +371,13 @@ def _import_memory_md_sync(
     memory_md_path = workspace_dir / "MEMORY.md"
     if not memory_md_path.is_file():
         logger.info("markdown_sync.no_memory_md", workspace=str(workspace_dir))
-        return 0, 0
+        return 0, 0, 0
 
     try:
         text = memory_md_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         logger.warning("markdown_sync.encoding_error", path=str(memory_md_path))
-        return 0, 0
+        return 0, 0, 0
 
     sections = _parse_memory_md_sections(text)
     imported = 0
