@@ -88,11 +88,22 @@ _BEARER_PREFIX = "bearer "
 _MAX_AGENT_ID_CARDINALITY = 100
 # TAP-600: bounded project cardinality — evict least-recently-used projects
 # when the project count exceeds this limit.  Default 10 000; override via
-# TAPPS_BRAIN_MAX_PROJECT_CARDINALITY.  Zero or negative disables the cap.
-_MAX_PROJECT_CARDINALITY: int = max(
-    1,
-    int(os.environ.get("TAPPS_BRAIN_MAX_PROJECT_CARDINALITY", "10000") or "10000"),
-)
+# TAPPS_BRAIN_MAX_PROJECT_CARDINALITY.  Zero or negative disables the cap
+# (unbounded growth — use only in testing or single-tenant deployments).
+def _parse_max_project_cardinality() -> int:
+    raw = os.environ.get("TAPPS_BRAIN_MAX_PROJECT_CARDINALITY", "10000") or "10000"
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "http_adapter.max_project_cardinality.invalid",
+            raw=raw,
+            fallback=10000,
+        )
+        return 10000
+
+
+_MAX_PROJECT_CARDINALITY: int = _parse_max_project_cardinality()
 _LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}
 _LABELED_REQUEST_COUNTS_LOCK = threading.Lock()
 # TAP-599: per-project set of seen agent_ids for O(1) cardinality checks.
@@ -128,20 +139,23 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
     global _TENANT_LABELS_EVICTED_TOTAL
     with _LABELED_REQUEST_COUNTS_LOCK:
         # --- TAP-600: LRU bookkeeping -----------------------------------
-        if project_id in _PROJECT_LRU:
-            # Move to "most recently used" position (end of OrderedDict).
-            _PROJECT_LRU.move_to_end(project_id)
-        else:
-            # New project — evict LRU if at cap.
-            if len(_PROJECT_LRU) >= _MAX_PROJECT_CARDINALITY:
-                lru_project, _ = _PROJECT_LRU.popitem(last=False)
-                # Remove all counter entries for the evicted project.
-                evict_keys = [k for k in _LABELED_REQUEST_COUNTS if k[0] == lru_project]
-                for k in evict_keys:
-                    del _LABELED_REQUEST_COUNTS[k]
-                _DISTINCT_AGENTS_PER_PROJECT.pop(lru_project, None)
-                _TENANT_LABELS_EVICTED_TOTAL += 1
-            _PROJECT_LRU[project_id] = None
+        # When _MAX_PROJECT_CARDINALITY <= 0 the LRU is disabled and
+        # projects accumulate unboundedly (single-tenant / test use only).
+        if _MAX_PROJECT_CARDINALITY > 0:
+            if project_id in _PROJECT_LRU:
+                # Move to "most recently used" position (end of OrderedDict).
+                _PROJECT_LRU.move_to_end(project_id)
+            else:
+                # New project — evict LRU if at cap.
+                if len(_PROJECT_LRU) >= _MAX_PROJECT_CARDINALITY:
+                    lru_project, _ = _PROJECT_LRU.popitem(last=False)
+                    # Remove all counter entries for the evicted project.
+                    evict_keys = [k for k in _LABELED_REQUEST_COUNTS if k[0] == lru_project]
+                    for k in evict_keys:
+                        del _LABELED_REQUEST_COUNTS[k]
+                    _DISTINCT_AGENTS_PER_PROJECT.pop(lru_project, None)
+                    _TENANT_LABELS_EVICTED_TOTAL += 1
+                _PROJECT_LRU[project_id] = None
         # --- agent cardinality cap (unchanged from TAP-599) -------------
         distinct = _DISTINCT_AGENTS_PER_PROJECT.setdefault(project_id, set())
         if agent_id not in distinct and len(distinct) >= _MAX_AGENT_ID_CARDINALITY:
@@ -359,8 +373,14 @@ def _collect_metrics(
             "Highest applied Hive schema migration version.",
         )
 
-    # TAP-600: project-label eviction counter — always emit so operators can
-    # alert on high project-churn (non-zero means the LRU cap is being hit).
+    # TAP-600: snapshot both the eviction counter and the request counts inside
+    # the same lock acquisition so they are consistent with each other.
+    # Always emit tapps_brain_tenant_labels_evicted_total (even at zero) so
+    # operators have a stable Prometheus series they can alert on.
+    with _LABELED_REQUEST_COUNTS_LOCK:
+        snapshot_evicted = _TENANT_LABELS_EVICTED_TOTAL
+        snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
+
     lines.append(
         "# HELP tapps_brain_tenant_labels_evicted_total "
         "Cumulative number of project_id entries evicted from the in-memory "
@@ -369,13 +389,11 @@ def _collect_metrics(
         "TAPPS_BRAIN_MAX_PROJECT_CARDINALITY."
     )
     lines.append("# TYPE tapps_brain_tenant_labels_evicted_total counter")
-    lines.append(f"tapps_brain_tenant_labels_evicted_total {_TENANT_LABELS_EVICTED_TOTAL}")
+    lines.append(f"tapps_brain_tenant_labels_evicted_total {snapshot_evicted}")
 
     # STORY-070.12: per-(project_id, agent_id) request counters.
     # TAP-547: drop labels entirely when redacting — we still emit the
     # counter so scrapers have a total-volume signal, just not per-tenant.
-    with _LABELED_REQUEST_COUNTS_LOCK:
-        snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
     if snapshot_counts:
         lines.append(
             "# HELP tapps_brain_mcp_requests_total "
