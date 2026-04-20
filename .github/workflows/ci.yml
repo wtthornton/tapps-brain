@@ -121,7 +121,7 @@ jobs:
         run: uv run python scripts/apply_all_migrations.py
       # Coverage threshold is 88% (lowered from 95% in EPIC-071; EPIC-066.4 will restore to 95%
       # by adding Postgres-mode integration test coverage for hive/relay/federation services).
-      - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=88
+      - run: uv run pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=88
 
   # Weekly cross-platform sanity check (macOS + Windows).
   # Runs on schedule and can be triggered manually; not required for PRs.
@@ -140,7 +140,7 @@ jobs:
           version: "latest"
           enable-cache: true
       - run: uv sync --group dev --python ${{ matrix.python-version }}
-      - run: uv run pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=88
+      - run: uv run pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=88
 
   # Retrieval regression gate: runs the lexical golden eval suite on every PR
   # and uploads the JSON report as a build artifact for dashboard tracking.
