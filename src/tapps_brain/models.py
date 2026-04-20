@@ -88,7 +88,7 @@ class MemoryEntry(BaseModel):
 
     key: str = Field(description="Unique slug identifier (max 128 chars).")
     value: str = Field(description="Memory content (max 4096 chars).")
-    tier: MemoryTier = Field(default=MemoryTier.pattern, description="Decay classification.")
+    tier: MemoryTier | str = Field(default=MemoryTier.pattern, description="Decay classification.")
     confidence: float = Field(
         default=-1.0,
         ge=-1.0,
@@ -229,16 +229,27 @@ class MemoryEntry(BaseModel):
 
     @field_validator("tier", mode="before")
     @classmethod
-    def _normalize_tier(cls, v: object) -> MemoryTier:
-        """Coerce string tier values to MemoryTier; reject unknown values."""
+    def _normalize_tier(cls, v: object) -> MemoryTier | str:
+        """Coerce tier to MemoryTier when the string matches a known value.
+
+        Profile-defined layer names (EPIC-010) are valid tier values and are
+        stored as plain strings — they are intentionally allowed through.
+        Non-string, non-MemoryTier inputs and empty strings are rejected.
+        """
         if isinstance(v, MemoryTier):
             return v
+        if not isinstance(v, str):
+            msg = f"tier must be a MemoryTier or non-empty string, got {type(v).__name__!r}"
+            raise ValueError(msg)
+        if not v.strip():
+            msg = "tier must not be empty or whitespace-only"
+            raise ValueError(msg)
+        # Coerce strings that match a standard tier to the enum for type consistency;
+        # pass through unrecognised strings (they may be EPIC-010 profile layer names).
         try:
             return MemoryTier(v)
-        except ValueError as exc:
-            valid = [t.value for t in MemoryTier]
-            msg = f"tier must be one of {valid}, got {v!r}"
-            raise ValueError(msg) from exc
+        except ValueError:
+            return v
 
     @field_validator("key")
     @classmethod
