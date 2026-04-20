@@ -296,26 +296,50 @@ class AgentBrain:
         max_results: int = 5,
         scope: str = "all",
     ) -> list[dict[str, Any]]:
-        """Recall memories matching *query*.  Returns list of result dicts."""
+        """Recall memories matching *query*.  Returns list of result dicts.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum number of results to return.
+            scope: Filter by agent scope.  One of ``"all"`` (default, no
+                filtering), ``"private"`` (only this agent's memories),
+                ``"domain"`` (domain-shared memories), ``"hive"`` (hive-wide
+                shared memories), or a group name (``"group:<name>"``).
+        """
         if max_results <= 0:
             raise BrainValidationError("max_results must be a positive integer")
         entries = self._store.search(query)
 
-        # Convert MemoryEntry objects to dicts and limit results
+        # Filter by agent_scope when the caller requests a specific scope.
+        # ``"all"`` is the opt-out sentinel — no filtering applied.
+        # Normalise the scope value so ``"Hive"`` / ``"Private"`` match stored
+        # entries whose agent_scope is always lowercase-normalised.
+        if scope != "all":
+            from tapps_brain.agent_scope import normalize_agent_scope
+
+            try:
+                _normalised_scope = normalize_agent_scope(scope)
+            except ValueError as exc:
+                raise BrainValidationError(
+                    f"Invalid scope {scope!r}: {exc}"
+                ) from exc
+            entries = [e for e in entries if e.agent_scope == _normalised_scope]
+
+        # Convert MemoryEntry objects to dicts and limit results.
+        # MemoryStore.search() always returns list[MemoryEntry], so no dict
+        # branch is needed here.
         results: list[dict[str, Any]] = []
         for entry in entries[:max_results]:
-            if isinstance(entry, dict):
-                results.append(entry)
-            else:
-                results.append(
-                    {
-                        "key": entry.key,
-                        "value": entry.value,
-                        "tier": str(entry.tier),
-                        "confidence": entry.confidence,
-                        "tags": list(entry.tags) if entry.tags else [],
-                    }
-                )
+            results.append(
+                {
+                    "key": entry.key,
+                    "value": entry.value,
+                    "tier": str(entry.tier),
+                    "confidence": entry.confidence,
+                    "tags": list(entry.tags) if entry.tags else [],
+                    "agent_scope": entry.agent_scope,
+                }
+            )
 
         # Track for learn_from_success
         self._last_recalled_keys = [r.get("key", "") for r in results]

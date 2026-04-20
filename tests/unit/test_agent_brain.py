@@ -158,6 +158,95 @@ class TestRecall:
             brain.recall("styling")
             assert len(brain._last_recalled_keys) >= 1
 
+    def test_recall_includes_agent_scope_in_result(self, tmp_path: Path) -> None:
+        """Returned dicts expose agent_scope so callers can inspect provenance."""
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Agent scope visibility test")
+            results = brain.recall("scope visibility")
+            assert len(results) >= 1
+            assert "agent_scope" in results[0]
+
+    def test_recall_scope_private_filters_correctly(self, tmp_path: Path) -> None:
+        """scope='private' returns only entries with agent_scope == 'private'."""
+        with _make_brain(tmp_path) as brain:
+            # remember() defaults to private scope
+            brain.remember("Private memory about authentication flow")
+            # Manually save a hive-scoped entry via the store
+            from tapps_brain.models import MemoryEntry
+
+            hive_entry = MemoryEntry(
+                key="hive-scoped-key",
+                value="Hive memory about authentication flow",
+                tier="pattern",
+                agent_scope="hive",
+            )
+            brain.store.save(
+                key=hive_entry.key,
+                value=hive_entry.value,
+                tier="pattern",
+                agent_scope="hive",
+            )
+
+            private_results = brain.recall("authentication flow", scope="private")
+            # All returned entries must have agent_scope == "private"
+            for r in private_results:
+                assert r.get("agent_scope") == "private", (
+                    f"Expected agent_scope='private', got {r.get('agent_scope')!r}"
+                )
+
+    def test_recall_scope_hive_filters_correctly(self, tmp_path: Path) -> None:
+        """scope='hive' returns only entries with agent_scope == 'hive'."""
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Private fact about styling")
+            brain.store.save(
+                key="hive-styling-key",
+                value="Hive fact about styling components",
+                tier="pattern",
+                agent_scope="hive",
+            )
+
+            hive_results = brain.recall("styling", scope="hive")
+            for r in hive_results:
+                assert r.get("agent_scope") == "hive", (
+                    f"Expected agent_scope='hive', got {r.get('agent_scope')!r}"
+                )
+
+    def test_recall_scope_all_returns_all_entries(self, tmp_path: Path) -> None:
+        """scope='all' (default) returns entries regardless of agent_scope."""
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Private deployment fact")
+            brain.store.save(
+                key="hive-deploy-key",
+                value="Hive deployment fact",
+                tier="pattern",
+                agent_scope="hive",
+            )
+            all_results = brain.recall("deployment fact", scope="all")
+            scopes = {r.get("agent_scope") for r in all_results}
+            # Both private and hive entries should appear
+            assert len(all_results) >= 2
+            assert "private" in scopes
+            assert "hive" in scopes
+
+    def test_recall_scope_case_insensitive(self, tmp_path: Path) -> None:
+        """scope values are normalised so 'Private' matches 'private' entries."""
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Private cache invalidation fact")
+            # "Private" (title-case) should be normalised to "private"
+            results = brain.recall("cache invalidation", scope="Private")
+            assert len(results) >= 1
+            for r in results:
+                assert r.get("agent_scope") == "private"
+
+    def test_recall_scope_invalid_raises(self, tmp_path: Path) -> None:
+        """An unrecognised scope value raises BrainValidationError."""
+        from tapps_brain.agent_brain import BrainValidationError
+
+        with _make_brain(tmp_path) as brain:
+            brain.remember("Some fact")
+            with pytest.raises(BrainValidationError, match="Invalid scope"):
+                brain.recall("fact", scope="bogus-scope")
+
 
 class TestRememberValidation:
     """TAP-632: remember() enforces BrainValidationError contract for share_with."""
