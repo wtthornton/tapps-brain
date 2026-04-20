@@ -4989,10 +4989,10 @@
       const ib = el("integrity-body");
       if (ib) {
         const parts = [
-          "Rate-limit anomalies (min/session): " +
+          "Rate-limit anomalies (min/lifetime): " +
             (health.rate_limit_minute_anomalies != null ? health.rate_limit_minute_anomalies : "—") +
             " / " +
-            (health.rate_limit_session_anomalies != null ? health.rate_limit_session_anomalies : "—"),
+            (health.rate_limit_lifetime_anomalies != null ? health.rate_limit_lifetime_anomalies : "—"),
           "GC candidates: " + (health.gc_candidates != null ? health.gc_candidates : "—"),
           "Consolidation candidates: " +
             (health.consolidation_candidates != null ? health.consolidation_candidates : "—"),
