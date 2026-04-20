@@ -252,6 +252,32 @@ this file to version control.
 - In Kubernetes, use a `ClusterIP` service (no `NodePort` / `LoadBalancer`)
   for the database and restrict access with `NetworkPolicy`.
 
+### HTTP + MCP bind address — loopback by default (TAP-597)
+
+`tapps-brain serve` and `tapps-brain-http` now default to binding on `127.0.0.1`
+instead of `0.0.0.0`. This prevents accidental public exposure when running
+outside a container network.
+
+**Docker Compose is unaffected** — `docker/docker-compose.hive.yaml` already sets
+`TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"` and `TAPPS_BRAIN_MCP_HOST: "0.0.0.0"` explicitly.
+
+**Migration note (v3.9.x → v3.10+):** If you run `tapps-brain serve` or
+`tapps-brain-http` directly on a multi-interface host and need remote access,
+set the bind address explicitly:
+
+```bash
+# CLI
+tapps-brain serve --host 0.0.0.0
+
+# Environment (affects both CLI and tapps-brain-http)
+export TAPPS_BRAIN_HTTP_HOST=0.0.0.0
+```
+
+When `--host 0.0.0.0` is used **without** `TAPPS_BRAIN_AUTH_TOKEN`,
+`TAPPS_BRAIN_AUTH_TOKEN_FILE`, `TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE`, or
+`TAPPS_BRAIN_PER_TENANT_AUTH=1`, a structured warning
+`http_adapter.bind_all_interfaces_unauthenticated` is logged at startup.
+
 ### Operator MCP Port (8090) — loopback-only by default (TAP-551)
 
 `docker-compose.hive.yaml` binds the operator MCP port to `127.0.0.1` by
