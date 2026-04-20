@@ -406,6 +406,7 @@ def _collect_metrics(
 
     # TAP-655: per-project counter for missing HNSW indexes detected at startup.
     # Non-zero means migration 002 was not applied on that project's DB.
+    # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
     try:
         from tapps_brain.postgres_private import get_missing_index_counts_snapshot
 
@@ -418,11 +419,15 @@ def _collect_metrics(
                 "to a sequential scan."
             )
             lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
-            for project_id, count in sorted(missing_idx_counts.items()):
-                safe_pid = project_id.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
-                )
+            if redact_tenant_labels:
+                total = sum(missing_idx_counts.values())
+                lines.append(f"tapps_brain_private_missing_indexes_total {total}")
+            else:
+                for project_id, count in sorted(missing_idx_counts.items()):
+                    safe_pid = project_id.replace('"', '\\"')
+                    lines.append(
+                        f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
+                    )
     except Exception:  # pragma: no cover — import error must not crash /metrics
         pass
 

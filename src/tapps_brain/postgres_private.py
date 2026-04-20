@@ -482,7 +482,8 @@ class PostgresPrivateBackend:
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
-                    "SELECT indexname FROM pg_indexes WHERE tablename = 'private_memories'"
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE tablename = 'private_memories' AND schemaname = 'public'"
                 )
                 present = {str(row[0]) for row in cur.fetchall()}
         except Exception:
