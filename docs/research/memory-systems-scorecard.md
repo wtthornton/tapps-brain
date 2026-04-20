@@ -78,6 +78,7 @@ weighted sums rounded to one decimal. Sorted by T desc.
 
 | System | D1 (w8) | D2 (w15) | D3 (w8) | D4 (w10) | D5 (w10) | D6a (w6) | D6b (w4) | D7 (w7) | D8 (w12) | D9 (w10) | D10 (w10) | **T** |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **tapps-brain** | **4** | **2** | **5** | **5** | **5** | **5** | **4** | **5** | **5** | **5** | **1** | **80.6** |
 | mem0 | 3 | 5 | 3 | 5 | 3 | 2 | 5 | 5 | 4 | 3 | 5 | **79.6** |
 | Graphiti (Zep OSS) | 2 | 4 | 3 | 5 | 2 | 5 | 4 | 5 | 4 | 3 | 5 | **75.8** |
 | Supermemory | 3 | 4 | 3 | 4 | 3 | 4 | 4 | 3 | 4 | 3 | 5 | **73.4** |
@@ -159,7 +160,7 @@ Rubric applied honestly; unverified claims scored conservatively.
 | D9 Write-path design | 5 | **User-choosable**: deterministic (default, zero LLM cost) OR LLM-assisted (opt-in via `TAPPS_BRAIN_WRITE_POLICY=llm`). Both modes documented with cost/quality trade table. LLM mode implements ADD/UPDATE/DELETE/NOOP state machine via pluggable `WritePolicy` protocol; safety filter runs before LLM call; rate-limited per agent. Single env-var flip, no code change required. | `src/tapps_brain/write_policy.py`; `src/tapps_brain/_protocols.py` `WritePolicy`; `docs/guides/write-path-tradeoff.md`; TAP-560/STORY-SC04 |
 | D10 Momentum | 1 | Single-maintainer repo (`wtthornton/tapps-brain`), no named external adopters, <200 stars class. Honest score given the rubric. **Path to D10=3:** 3 named external production adopters publicly listed (with permission) + case studies at `docs/case-studies/`. STORY-SC06 (TAP-562) tracks this. | `pyproject.toml` Homepage `github.com/wtthornton/tapps-brain`; `docs/case-studies/` (scaffolded STORY-SC06 2026-04-18) |
 
-**Overall: 80.6/100.** (D3: 3 → 5 via STORY-SC02 +3.2 pts 2026-04-17; D4: 4 → 5 via STORY-SC03 +2.0 pts 2026-04-18; D9: 4 → 5 via STORY-SC04 +2.0 pts 2026-04-18; D6b: 3 → 4 via STORY-SC05 +0.8 pts 2026-04-18.)
+**Overall: 80.6/100.** (From original 72.6: D3 moved 3 → 5 on 2026-04-17 via STORY-SC02 +3.2 pts; D4 moved 4 → 5 on 2026-04-18 via STORY-SC03 +2.0 pts; D9 moved 4 → 5 on 2026-04-18 via TAP-560/STORY-SC04 +2.0 pts; D6b moved 3 → 4 on 2026-04-18 via TAP-561/STORY-SC05 +0.8 pts. Total lift: +8.0.)
 
 ### mem0
 
