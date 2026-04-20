@@ -490,7 +490,7 @@ class MemoryStore:
                 self._hive_store.create_group(group_name)
                 self._hive_store.add_group_member(group_name, self._agent_id)
             except Exception:
-                logger.debug(
+                logger.warning(
                     "group_auto_join_failed",
                     group_name=group_name,
                     agent_id=self._agent_id,
@@ -709,7 +709,7 @@ class MemoryStore:
         except ImportError:
             pass  # anthropic optional dependency not installed
         except Exception:
-            logger.debug("anthropic_judge_init_failed", exc_info=True)
+            logger.warning("anthropic_judge_init_failed", exc_info=True)
         try:
             from tapps_brain.evaluation import OpenAIJudge
 
@@ -717,7 +717,7 @@ class MemoryStore:
         except ImportError:
             pass  # openai optional dependency not installed
         except Exception:
-            logger.debug("openai_judge_init_failed", exc_info=True)
+            logger.warning("openai_judge_init_failed", exc_info=True)
         return None
 
     @property
@@ -733,7 +733,7 @@ class MemoryStore:
 
                 return decay_config_from_profile(self._profile)
             except Exception:
-                logger.debug("decay_config_from_profile_failed", exc_info=True)
+                logger.warning("decay_config_from_profile_failed", exc_info=True)
         from tapps_brain.decay import DecayConfig
 
         return DecayConfig()
@@ -1069,7 +1069,7 @@ class MemoryStore:
                             try:
                                 self._persistence.save(_invalidated)
                             except Exception:
-                                logger.debug(
+                                logger.warning(
                                     "conflict_invalidate_persist_failed",
                                     conflict_key=_conflict_entry.key,
                                     exc_info=True,
@@ -1255,7 +1255,7 @@ class MemoryStore:
                                 tags=entry.tags,
                             )
                         except Exception:
-                            logger.debug(
+                            logger.warning(
                                 "group_save_propagation_failed",
                                 group=_gn,
                                 key=entry.key,
@@ -1276,7 +1276,7 @@ class MemoryStore:
                             tags=entry.tags,
                         )
                     except Exception:
-                        logger.debug(
+                        logger.warning(
                             "group_save_propagation_failed",
                             group=_target_group,
                             key=entry.key,
@@ -1311,7 +1311,7 @@ class MemoryStore:
                         tags=all_tags,
                     )
                 except Exception:
-                    logger.debug(
+                    logger.warning(
                         "expert_auto_publish_failed",
                         key=entry.key,
                         exc_info=True,
@@ -1714,14 +1714,14 @@ class MemoryStore:
                                     )
                                     results.append(_ge)
                                 except Exception:
-                                    logger.debug(
+                                    logger.warning(
                                         "group_search_entry_convert_failed",
                                         group=_gn,
                                         key=_gk,
                                         exc_info=True,
                                     )
                     except Exception:
-                        logger.debug(
+                        logger.warning(
                             "group_search_failed",
                             group=_gn,
                             exc_info=True,
@@ -1860,7 +1860,7 @@ class MemoryStore:
                             updates["stability"] = new_stab
                             updates["difficulty"] = new_diff
                         except Exception:
-                            logger.debug(
+                            logger.warning(
                                 "reinforce_stability_update_failed", key=key, exc_info=True
                             )
 
@@ -1910,7 +1910,7 @@ class MemoryStore:
                         )
                         final = promoted
                 except Exception:
-                    logger.debug("promotion_check_failed", key=key, exc_info=True)
+                    logger.warning("promotion_check_failed", key=key, exc_info=True)
 
             # EPIC-029 story 029.3: implicit positive feedback
             if session_id is not None:
@@ -1969,7 +1969,7 @@ class MemoryStore:
                         updates["stability"] = new_stab
                         updates["difficulty"] = new_diff
                     except Exception:
-                        logger.debug(
+                        logger.warning(
                             "record_access_stability_update_failed", key=key, exc_info=True
                         )
 
@@ -2064,7 +2064,7 @@ class MemoryStore:
         try:
             return _index_session(self._project_root, session_id, chunks)
         except Exception:
-            logger.debug("session_index_failed", session_id=session_id, exc_info=True)
+            logger.warning("session_index_failed", session_id=session_id, exc_info=True)
             return 0
 
     def search_sessions(self, query: str, *, limit: int = 10) -> list[dict[str, Any]]:
@@ -2077,7 +2077,7 @@ class MemoryStore:
         try:
             return search_session_index(self._project_root, query, limit=limit)
         except Exception:
-            logger.debug("session_search_failed", query=query, exc_info=True)
+            logger.warning("session_search_failed", query=query, exc_info=True)
             return []
 
     def cleanup_sessions(self, *, ttl_days: int = 90) -> int:
@@ -2091,7 +2091,7 @@ class MemoryStore:
 
             return delete_expired_sessions(self._project_root, ttl_days)
         except Exception:
-            logger.debug("session_cleanup_failed", exc_info=True)
+            logger.warning("session_cleanup_failed", exc_info=True)
             return 0
 
     # ------------------------------------------------------------------
@@ -2880,7 +2880,7 @@ class MemoryStore:
                 },
             )
         except Exception:
-            logger.debug("diagnostics_audit_failed", exc_info=True)
+            logger.warning("diagnostics_audit_failed", exc_info=True)
         self._metrics.increment("store.diagnostics")
         return report
 
@@ -3350,7 +3350,7 @@ class MemoryStore:
                 source_project=str(self._project_root.resolve()),
             )
         except Exception:
-            logger.debug(
+            logger.warning(
                 "hive_feedback_propagate_failed",
                 entry_key=ek,
                 namespace=ns,
@@ -3651,7 +3651,7 @@ class MemoryStore:
             self._metrics.increment(f"store.feedback.{event_type}")
             self._propagate_feedback_to_hive(event, session_id)
         except Exception:
-            logger.debug(
+            logger.warning(
                 "implicit_feedback_emit_failed",
                 event_type=event_type,
                 entry_key=entry_key,

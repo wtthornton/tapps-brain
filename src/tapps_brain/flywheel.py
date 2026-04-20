@@ -236,7 +236,7 @@ class GapTracker:
         # (query, ts, weight, desc_parts)
         try:
             evs = store.query_feedback(event_type="gap_reported", limit=10_000)
-        except Exception:
+        except Exception:  # nosec B110 — gap analysis is best-effort; query failure yields empty gap list
             evs = []
         for ev in evs:
             if since is not None and ev.timestamp < since:
@@ -389,7 +389,7 @@ def _parse_iso(ts: str) -> datetime:
 def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:
     try:
         hits = store.search(query)[:3]
-    except Exception:
+    except Exception:  # nosec B110 — tier-weight estimation is best-effort; search failure returns default weight
         hits = []
     if not hits:
         return 1.0

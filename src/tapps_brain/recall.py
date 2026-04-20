@@ -269,7 +269,7 @@ class RecallOrchestrator:
         try:
             extra_groups = self._hive_store.get_agent_groups(self._hive_agent_id)
         except Exception:
-            logger.debug("hive_recall_agent_groups_failed", exc_info=True)
+            logger.warning("hive_recall_agent_groups_failed", exc_info=True)
             extra_groups = []
         for g in extra_groups:
             if g not in namespaces:
@@ -282,7 +282,7 @@ class RecallOrchestrator:
                 limit=20,
             )
         except Exception:
-            logger.debug("hive_recall_search_failed", exc_info=True)
+            logger.warning("hive_recall_search_failed", exc_info=True)
             return [], 0
 
         hive_memories: list[dict[str, object]] = []

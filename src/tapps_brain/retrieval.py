@@ -550,7 +550,7 @@ class MemoryRetriever:
                 )
                 return expanded_query
         except Exception:
-            logger.debug("relation_expansion_failed", query=query)
+            logger.warning("relation_expansion_failed", query=query, exc_info=True)
 
         return query
 
@@ -615,7 +615,7 @@ class MemoryRetriever:
                 rm_add_bm25_candidates(len(results))
                 return results
         except Exception:
-            logger.debug("fts5_search_failed", query=query)
+            logger.warning("fts5_search_failed", query=query, exc_info=True)
 
         # Fallback: full corpus BM25 scan
         results = self._bm25_full_scan(query, store, memory_group=memory_group)
@@ -827,7 +827,7 @@ class MemoryRetriever:
                     results.append((entry, self._word_overlap_score(query, entry)))
             return results
         except Exception:
-            logger.debug("bm25_scoring_failed_using_word_overlap", query=query)
+            logger.warning("bm25_scoring_failed_using_word_overlap", query=query, exc_info=True)
             return [(entry, self._word_overlap_score(query, entry)) for entry in entries]
 
     def _bm25_full_scan(
@@ -854,7 +854,7 @@ class MemoryRetriever:
                 if score > 0
             ]
         except Exception:
-            logger.debug("bm25_full_scan_failed_using_word_overlap", query=query)
+            logger.warning("bm25_full_scan_failed_using_word_overlap", query=query, exc_info=True)
             return self._like_search(query, store, memory_group=memory_group)
 
     def _like_search(
