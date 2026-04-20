@@ -789,11 +789,28 @@ def create_server(  # noqa: PLR0915
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_recall(query: str, max_results: int = 5, agent_id: str = "") -> str:
+    def brain_recall(
+        query: str,
+        max_results: int = 5,
+        agent_id: str = "",
+        filter_tier: str = "",
+        filter_tags: list[str] | None = None,
+        filter_tags_any: list[str] | None = None,
+        filter_memory_class: str = "",
+    ) -> str:
         """Recall memories matching a query.
 
         Pass ``agent_id`` to override the server-level default for this call
         (STORY-070.7).
+
+        TAP-733 structured pre-filters (all optional — omit for unfiltered recall):
+
+        * ``filter_tier``: restrict to a specific tier (e.g. ``"architectural"``,
+          ``"pattern"``, ``"procedural"``, ``"context"``).
+        * ``filter_tags``: ALL tags must be present (AND semantics).
+        * ``filter_tags_any``: ANY tag must be present (OR semantics).
+        * ``filter_memory_class``: restrict to a semantic class —
+          ``"incident"``, ``"guidance"``, ``"decision"``, or ``"convention"``.
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
@@ -804,6 +821,10 @@ def create_server(  # noqa: PLR0915
                 eff_aid,
                 query=query,
                 max_results=max_results,
+                filter_tier=filter_tier or None,
+                filter_tags=filter_tags or None,
+                filter_tags_any=filter_tags_any or None,
+                filter_memory_class=filter_memory_class or None,
             ),
             default=str,
         )

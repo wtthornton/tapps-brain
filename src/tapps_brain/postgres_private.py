@@ -208,7 +208,8 @@ class PostgresPrivateBackend:
                     positive_feedback_count, negative_feedback_count,
                     integrity_hash, embedding_model_id,
                     temporal_sensitivity,
-                    failed_approaches
+                    failed_approaches,
+                    memory_class
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -224,7 +225,8 @@ class PostgresPrivateBackend:
                     %s, %s,
                     %s, %s,
                     %s,
-                    %s::jsonb
+                    %s::jsonb,
+                    %s
                 )
                 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
                     value                    = EXCLUDED.value,
@@ -263,7 +265,8 @@ class PostgresPrivateBackend:
                     integrity_hash           = EXCLUDED.integrity_hash,
                     embedding_model_id       = EXCLUDED.embedding_model_id,
                     temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
-                    failed_approaches        = EXCLUDED.failed_approaches
+                    failed_approaches        = EXCLUDED.failed_approaches,
+                    memory_class             = EXCLUDED.memory_class
                 """,
                 (
                     self._project_id,
@@ -307,6 +310,7 @@ class PostgresPrivateBackend:
                     entry.embedding_model_id,
                     entry.temporal_sensitivity,
                     json.dumps(entry.failed_approaches, ensure_ascii=False),
+                    getattr(entry, "memory_class", None),
                 ),
             )
 
@@ -376,6 +380,7 @@ class PostgresPrivateBackend:
         until: str | None = None,
         time_field: str = "created_at",
         as_of: str | None = None,
+        memory_class: str | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -397,6 +402,8 @@ class PostgresPrivateBackend:
                 placeholder — never string-concatenated (SQL injection safe).
                 Corresponds to the ``valid_at``/``invalid_at`` columns from
                 migration 001 (``migrations/private/001_initial.sql``).
+            memory_class: TAP-733 — when set, restrict results to entries with this
+                semantic class value.  Pushed into SQL WHERE for DB-level filtering.
         """
         if time_field not in _VALID_TIME_FIELDS:
             msg = f"time_field must be one of {sorted(_VALID_TIME_FIELDS)}, got {time_field!r}"
@@ -422,6 +429,11 @@ class PostgresPrivateBackend:
         if until is not None:
             sql += f" AND {time_field} < %s"
             params.append(until)
+
+        # TAP-733: memory_class SQL pushdown — cheap equality check at DB level.
+        if memory_class is not None:
+            sql += " AND memory_class = %s"
+            params.append(memory_class)
 
         # Bi-temporal as_of filter (STORY-066.2).
         # NULL valid_at / invalid_at means "unbounded" — always visible.
@@ -1074,5 +1086,9 @@ class PostgresPrivateBackend:
                 _str_or_none(row.get("temporal_sensitivity")),
             ),
             failed_approaches=_parse_jsonb_list(row.get("failed_approaches")),
+            memory_class=cast(
+                "Literal['incident', 'guidance', 'decision', 'convention'] | None",
+                _str_or_none(row.get("memory_class")),
+            ),
             # embedding is not loaded from DB (large binary; on-demand via knn_search)
         )

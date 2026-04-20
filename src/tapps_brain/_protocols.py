@@ -372,6 +372,7 @@ class PrivateBackend(Protocol):
         until: str | None = None,
         time_field: str = "created_at",
         as_of: str | None = None,
+        memory_class: str | None = None,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -394,6 +395,9 @@ class PrivateBackend(Protocol):
                 temporal bounds are always visible.  When ``as_of`` is ``None``
                 the backend returns all FTS-matching rows; the store layer applies
                 its own in-memory ``is_temporally_valid`` filter.
+            memory_class: TAP-733 — when set, restrict results to entries with this
+                semantic class (``"incident"``, ``"guidance"``, ``"decision"``,
+                ``"convention"``).  Pushed into SQL WHERE for efficient pre-filtering.
         """
         ...
 

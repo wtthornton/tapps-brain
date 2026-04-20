@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -37,7 +38,7 @@ from pydantic import BaseModel, Field
 from tapps_brain.bm25 import BM25Scorer, preprocess
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
-from tapps_brain.models import MemoryEntry, MemorySource
+from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier, tier_str
 from tapps_brain.otel_tracer import (
     rm_add_bm25_candidates,
     rm_add_vector_candidates,
@@ -72,6 +73,37 @@ class ScoredMemory(BaseModel):
     effective_confidence: float = Field(ge=0.0, le=1.0, description="Time-decayed confidence.")
     bm25_relevance: float = Field(ge=0.0, description="Normalized text relevance.")
     stale: bool = Field(default=False, description="Whether the memory is stale.")
+
+
+# ---------------------------------------------------------------------------
+# TAP-733: Structured pre-filters (applied before BM25/vector scoring)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MemoryFilter:
+    """Hard pre-filters applied to the candidate pool *before* BM25/vector scoring.
+
+    All active filter conditions are AND-combined — each narrows the pool further.
+    An empty / all-None ``MemoryFilter`` is a no-op (preserves current behaviour).
+
+    Attributes:
+        tier: Restrict to entries whose ``tier`` matches this value (string or
+            :class:`~tapps_brain.models.MemoryTier` enum).
+        memory_class: Restrict to entries with this ``memory_class`` value
+            (``"incident"`` | ``"guidance"`` | ``"decision"`` | ``"convention"``).
+        tags: ALL of these tags must appear on every matching entry (AND).
+        tags_any: ANY one of these tags must appear (OR).
+        memory_group: Restrict to a project-local group.
+        min_confidence: Exclude entries whose ``confidence`` is below this floor.
+    """
+
+    tier: MemoryTier | str | None = None
+    memory_class: str | None = None
+    tags: list[str] = field(default_factory=list)
+    tags_any: list[str] = field(default_factory=list)
+    memory_group: str | None = None
+    min_confidence: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +270,7 @@ class MemoryRetriever:
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
+        memory_filter: MemoryFilter | None = None,
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
@@ -262,6 +295,11 @@ class MemoryRetriever:
                 (marked with ``stale=True`` and a 0.5x relevance penalty).
             include_historical: Alias for ``include_superseded`` (GitHub #29, task 040.3).
                 When True, include expired/superseded entries in results.
+            memory_filter: Optional structured pre-filter applied before BM25/vector scoring
+                (TAP-733).  When ``None`` or all fields are unset, no pre-filtering is done
+                (preserves existing behaviour).  Filters are applied as hard AND conditions
+                over the full candidate pool *before* IDF / vector scoring — cheaper fields
+                (tier, memory_class, tags) narrow the pool first.
 
         Returns:
             Scored memories sorted by composite score (descending).
@@ -274,6 +312,11 @@ class MemoryRetriever:
 
         limit = max(1, min(limit, _MAX_RESULTS))
         now = datetime.now(tz=UTC)
+
+        # Resolve effective memory_group: memory_filter.memory_group takes precedence when set
+        effective_group = memory_group
+        if memory_filter is not None and memory_filter.memory_group is not None:
+            effective_group = memory_filter.memory_group
 
         # Epic 65.13: expand query via relations when enabled
         effective_query = query
@@ -291,12 +334,21 @@ class MemoryRetriever:
 
         if self._semantic_enabled:
             candidates = self._get_hybrid_candidates(
-                effective_query, store, memory_group=memory_group, **_temporal_kw
+                effective_query, store, memory_group=effective_group, **_temporal_kw
             )
         else:
             candidates = self._get_candidates(
-                effective_query, store, memory_group=memory_group, **_temporal_kw
+                effective_query, store, memory_group=effective_group, **_temporal_kw
             )
+
+        # TAP-733: Apply structured pre-filters before BM25/vector scoring.
+        # This narrows the candidate pool using cheap equality checks on structured
+        # fields (tier, memory_class, tags, min_confidence) so that IDF and vector
+        # scoring only run over the relevant subset.
+        if memory_filter is not None:
+            filtered_entries = self._apply_filters([e for e, _ in candidates], memory_filter)
+            filtered_keys = {e.key for e in filtered_entries}
+            candidates = [(e, s) for e, s in candidates if e.key in filtered_keys]
 
         # Score and filter (two phases: collect candidates, then min-max normalize)
         pending: list[
@@ -565,6 +617,41 @@ class MemoryRetriever:
             logger.warning("relation_expansion_failed", query=query, exc_info=True)
 
         return query
+
+    # -----------------------------------------------------------------------
+    # TAP-733: Structured pre-filter
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_filters(entries: list[MemoryEntry], f: MemoryFilter) -> list[MemoryEntry]:
+        """Apply hard pre-filters to narrow the candidate pool (TAP-733).
+
+        Each active filter condition is applied as a strict AND — multiple
+        conditions narrow the pool further.  An all-None / empty filter is a
+        no-op and returns the original list unchanged.
+
+        Args:
+            entries: Candidate memory entries to filter.
+            f: Pre-filter specification.  ``None`` fields / empty lists are ignored.
+
+        Returns:
+            Filtered list (may be shorter than *entries*; never longer).
+        """
+        result = entries
+        if f.tier is not None:
+            target = tier_str(f.tier)
+            result = [e for e in result if tier_str(e.tier) == target]
+        if f.memory_class is not None:
+            result = [e for e in result if getattr(e, "memory_class", None) == f.memory_class]
+        if f.tags:
+            result = [e for e in result if all(t in e.tags for t in f.tags)]
+        if f.tags_any:
+            result = [e for e in result if any(t in e.tags for t in f.tags_any)]
+        if f.memory_group is not None:
+            result = [e for e in result if e.memory_group == f.memory_group]
+        if f.min_confidence is not None:
+            result = [e for e in result if e.confidence >= f.min_confidence]
+        return result
 
     # -----------------------------------------------------------------------
     # BM25 index management

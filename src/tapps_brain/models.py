@@ -264,6 +264,16 @@ class MemoryEntry(BaseModel):
         ),
     )
 
+    # TAP-733: Semantic type classification for pre-filter recall.
+    memory_class: Literal["incident", "guidance", "decision", "convention"] | None = Field(
+        default=None,
+        description=(
+            "Semantic type: incident=fixed bug, guidance=best practice, "
+            "decision=arch choice, convention=team norm. "
+            "Used as a hard pre-filter in MemoryRetriever when set."
+        ),
+    )
+
     @field_validator("temporal_sensitivity", mode="before")
     @classmethod
     def _validate_temporal_sensitivity(cls, v: object) -> Literal["high", "medium", "low"] | None:

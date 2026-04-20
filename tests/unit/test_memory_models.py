@@ -388,3 +388,41 @@ class TestTemporalFields:
             invalid_at="2099-01-01T00:00:00Z",
         )
         assert future.is_superseded is False
+
+
+# ---------------------------------------------------------------------------
+# TAP-733: memory_class field tests
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryClassField:
+    """Tests for the memory_class field on MemoryEntry (TAP-733)."""
+
+    def test_memory_class_defaults_to_none(self) -> None:
+        e = MemoryEntry(key="test", value="test value")
+        assert e.memory_class is None
+
+    def test_memory_class_valid_values(self) -> None:
+        for cls in ("incident", "guidance", "decision", "convention"):
+            e = MemoryEntry(key="test", value="test value", memory_class=cls)  # type: ignore[arg-type]
+            assert e.memory_class == cls
+
+    def test_memory_class_none_accepted(self) -> None:
+        e = MemoryEntry(key="test", value="test value", memory_class=None)
+        assert e.memory_class is None
+
+    def test_memory_class_invalid_value_raises(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            MemoryEntry(key="test", value="test value", memory_class="unknown")  # type: ignore[arg-type]
+
+    def test_memory_class_serializes_to_json(self) -> None:
+        e = MemoryEntry(key="test", value="test value", memory_class="incident")
+        d = e.model_dump()
+        assert d["memory_class"] == "incident"
+
+    def test_memory_class_round_trips(self) -> None:
+        e = MemoryEntry(key="test", value="test value", memory_class="decision")
+        e2 = MemoryEntry.model_validate(e.model_dump())
+        assert e2.memory_class == "decision"

@@ -60,12 +60,43 @@ def brain_remember(
 
 
 def brain_recall(
-    store: Any, project_id: str, agent_id: str, *, query: str, max_results: int = 5
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    query: str,
+    max_results: int = 5,
+    filter_tier: str | None = None,
+    filter_tags: list[str] | None = None,
+    filter_tags_any: list[str] | None = None,
+    filter_memory_class: str | None = None,
 ) -> list[Any]:
+    """Recall memories matching a query with optional structured pre-filters (TAP-733).
+
+    Args:
+        store: MemoryStore instance.
+        project_id: Project identifier.
+        agent_id: Agent identifier.
+        query: Search query string.
+        max_results: Maximum number of results to return.
+        filter_tier: Restrict to entries with this tier (e.g. ``"architectural"``).
+        filter_tags: ALL tags must be present on each matching entry.
+        filter_tags_any: ANY one of these tags must be present.
+        filter_memory_class: Restrict to entries with this semantic class
+            (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
+    """
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
     with start_mcp_tool_span("brain_recall"):
-        entries = store.search(query)
+        entries = store.search(
+            query,
+            tier=filter_tier,
+            tags=filter_tags_any or None,  # store.search tags= is OR (any)
+            memory_class=filter_memory_class,
+        )
+        # Apply ALL-tags filter in Python (store.search tags= uses OR semantics)
+        if filter_tags:
+            entries = [e for e in entries if all(t in e.tags for t in filter_tags)]
         results: list[Any] = []
         for entry in entries[:max_results]:
             if isinstance(entry, dict):
@@ -78,6 +109,8 @@ def brain_recall(
                     "confidence": entry.confidence,
                     "tags": list(entry.tags) if entry.tags else [],
                 }
+                if getattr(entry, "memory_class", None) is not None:
+                    item["memory_class"] = entry.memory_class
                 failed = getattr(entry, "failed_approaches", None)
                 if failed:
                     item["failed_approaches"] = list(failed)
