@@ -66,6 +66,10 @@ class BrainClientProtocol(Protocol):
 _SCHEME_HTTP = ("http://", "https://")
 _SCHEME_MCP_HTTP = "mcp+http://"
 
+#: MCP protocol version sent in the ``initialize`` handshake.
+#: Update if the upstream MCP SDK changes the negotiated version.
+_MCP_PROTOCOL_VERSION = "2025-06-18"
+
 
 def _detect_scheme(url: str) -> str:
     if url.startswith(_SCHEME_MCP_HTTP):
@@ -179,7 +183,7 @@ def _do_initialize(http_client: Any, base: str) -> str | None:
             "id": 0,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
             },
@@ -202,7 +206,7 @@ async def _async_do_initialize(http_client: Any, base: str) -> str | None:
             "id": 0,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
             },

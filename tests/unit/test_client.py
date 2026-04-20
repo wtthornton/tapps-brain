@@ -372,6 +372,7 @@ def test_mcp_http_tool_uses_mcp_endpoint() -> None:
     resp.json.return_value = {"result": {"content": [{"text": '{"key": "k1"}'}]}}
     mock_http.post.return_value = resp
     client._http_client = mock_http
+    client._initialized = True  # skip initialize handshake in this unit test
 
     result = client._mcp_http_tool("brain_remember", {"fact": "x"})
     assert result == {"key": "k1"}
@@ -389,6 +390,7 @@ def test_mcp_http_tool_embeds_idempotency_key_in_meta() -> None:
     resp.json.return_value = {"result": {"content": [{"text": "{}"}]}}
     mock_http.post.return_value = resp
     client._http_client = mock_http
+    client._initialized = True  # skip initialize handshake in this unit test
 
     ikey = str(uuid.uuid4())
     client._mcp_http_tool("brain_remember", {"fact": "x"}, idempotency_key=ikey)
