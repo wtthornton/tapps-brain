@@ -407,7 +407,7 @@ def knowledge_gap_summary_for_diagnostics(store: MemoryStore) -> str | None:
         return None
     try:
         n = len(store.query_feedback(event_type="gap_reported", limit=5000))
-    except Exception:
+    except Exception:  # noqa: BLE001 — gap count is best-effort; failure yields zero
         n = 0
     top = gaps[0]
     return (
@@ -575,7 +575,7 @@ class _RecommendationsSection:
 def _feedback_summary_counts(store: MemoryStore) -> dict[str, int]:
     try:
         events = store.query_feedback(limit=5000)
-    except Exception:
+    except Exception:  # noqa: BLE001 — feedback query is best-effort; failure returns empty counts
         return {}
     counts: dict[str, int] = defaultdict(int)
     for e in events:
