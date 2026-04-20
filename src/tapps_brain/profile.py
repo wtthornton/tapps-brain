@@ -112,6 +112,9 @@ class ScoringConfig(BaseModel):
     not part of that sum.
 
     Defaults match historical product behavior (40/30/15/15).
+    When ``graph_centrality`` is enabled via YAML profile, lower ``frequency``
+    by the same amount to keep weights summing to 1.0 (e.g. frequency=0.10,
+    graph_centrality=0.05 — matching the TAP-734 module-level constants).
     """
 
     relevance: float = Field(default=0.40, ge=0.0, le=1.0)
@@ -123,8 +126,10 @@ class ScoringConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description=(
-            "Weight for graph centrality signal (placeholder; populated when "
-            "relationship graph #33 is implemented). Defaults to 0.0 (disabled)."
+            "Weight for graph centrality signal (TAP-734 entity co-occurrence "
+            "index). Defaults to 0.0 (disabled at profile level); set alongside "
+            "a reduced ``frequency`` to activate (e.g. frequency=0.10, "
+            "graph_centrality=0.05)."
         ),
     )
     provenance_trust: float = Field(

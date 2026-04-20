@@ -1434,10 +1434,9 @@ class MemoryStore:
         """Add *key* to the entity index for all BM25 tokens in *value* (TAP-734).
 
         Tokens shorter than 3 characters are excluded (post-stemming length).
-        Must be called without holding the store lock — it accesses only the
-        entity index, not ``_entries``.  Thread safety relies on CPython's GIL
-        for dict mutations; callers that need strict consistency should operate
-        under ``_serialized()``.
+        May be called with or without the store lock held; callers that need
+        strict consistency should operate under ``_serialized()``.  Thread
+        safety relies on CPython's GIL for dict mutations.
         """
         tokens = [t for t in _bm25_preprocess(value) if len(t) >= 3]
         for token in tokens:
