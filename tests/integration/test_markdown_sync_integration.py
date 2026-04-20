@@ -485,6 +485,80 @@ class TestParseMemoryMdSections:
 # ---------------------------------------------------------------------------
 
 
+class TestAtomicWrite:
+    """TAP-715: sync_to_markdown and _save_sync_state must write atomically."""
+
+    def test_no_tmp_file_left_after_successful_sync(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """After a successful export, no .tmp artefact should remain."""
+        tmp_store.save("key1", "value1", tier="pattern")
+        sync_to_markdown(tmp_store, workspace)
+
+        memory_md = workspace / "MEMORY.md"
+        tmp_md = workspace / "MEMORY.md.tmp"
+        assert memory_md.exists(), "MEMORY.md should be created"
+        assert not tmp_md.exists(), "MEMORY.md.tmp should be cleaned up after rename"
+
+    def test_no_state_tmp_file_left_after_successful_sync(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """After a successful export, no sync_state.json.tmp artefact should remain."""
+        tmp_store.save("key1", "value1", tier="pattern")
+        sync_to_markdown(tmp_store, workspace)
+
+        state_dir = workspace / ".tapps-brain"
+        state_path = state_dir / "sync_state.json"
+        tmp_state_path = state_dir / "sync_state.json.tmp"
+        assert state_path.exists(), "sync_state.json should be created"
+        assert not tmp_state_path.exists(), "sync_state.json.tmp should be cleaned up after rename"
+
+    def test_original_memory_md_intact_when_tmp_left_by_crashed_previous_run(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Simulate a previous crash: a stale .tmp file exists from an aborted sync.
+
+        The stale tmp file must NOT be treated as the canonical MEMORY.md.
+        On the next successful sync the original is still replaced atomically.
+        """
+        # First sync establishes a known-good MEMORY.md
+        tmp_store.save("original-key", "original-value", tier="pattern")
+        sync_to_markdown(tmp_store, workspace)
+
+        memory_md = workspace / "MEMORY.md"
+        original_content = memory_md.read_text(encoding="utf-8")
+        assert "original-key" in original_content
+
+        # Simulate a stale .tmp left by a crashed previous run
+        stale_tmp = workspace / "MEMORY.md.tmp"
+        stale_tmp.write_text("CORRUPTED PARTIAL WRITE", encoding="utf-8")
+
+        # The original MEMORY.md is untouched by the stale tmp
+        assert memory_md.read_text(encoding="utf-8") == original_content, (
+            "A stale .tmp file must not modify the canonical MEMORY.md"
+        )
+
+        # A subsequent successful sync cleans up and produces the correct output
+        tmp_store.save("new-key", "new-value", tier="architectural")
+        sync_to_markdown(tmp_store, workspace)
+
+        updated_content = memory_md.read_text(encoding="utf-8")
+        assert "new-key" in updated_content
+        assert not stale_tmp.exists(), "Successful sync should replace and consume the .tmp file"
+
+    def test_atomic_write_memory_md_content_is_correct(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Atomic rename must not corrupt the final MEMORY.md content."""
+        tmp_store.save("alpha", "alpha-value", tier="architectural")
+        tmp_store.save("beta", "beta-value", tier="pattern")
+        sync_to_markdown(tmp_store, workspace)
+
+        content = (workspace / "MEMORY.md").read_text(encoding="utf-8")
+        assert "alpha" in content
+        assert "beta" in content
+
+
 class TestGetSyncState:
     def test_returns_default_when_no_state_file(self, workspace: Path) -> None:
         state = get_sync_state(workspace)

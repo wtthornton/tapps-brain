@@ -16,6 +16,7 @@ Part of EPIC-026 (OpenClaw memory replacement, story-026.4).
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -133,7 +134,9 @@ def _save_sync_state(workspace_dir: Path, state: dict[str, Any]) -> None:
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / _SYNC_STATE_FILENAME
-        state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        tmp_state_path = state_path.with_name(state_path.name + ".tmp")
+        tmp_state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        os.replace(tmp_state_path, state_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
     except OSError:
         logger.warning("markdown_sync.state_save_error", workspace=str(workspace_dir))
 
@@ -269,7 +272,9 @@ def sync_to_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any]:
             exported += 1
 
     memory_md_path = workspace_dir / "MEMORY.md"
-    memory_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp_md_path = memory_md_path.with_name(memory_md_path.name + ".tmp")
+    tmp_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.replace(tmp_md_path, memory_md_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
 
     state = _load_sync_state(workspace_dir)
     state["last_sync_to"] = datetime.now(tz=UTC).isoformat()
