@@ -306,14 +306,17 @@ def sync_from_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any
 
         - ``imported`` (int) — total new entries saved.
         - ``skipped`` (int) — total entries that already existed.
+        - ``truncated`` (int) — entries whose value exceeded ``MAX_VALUE_LENGTH``
+          and were silently cut; callers should warn users when this is > 0.
         - ``memory_md`` (int) — new entries from ``MEMORY.md``.
         - ``daily_notes`` (int) — new entries from daily note files.
     """
-    md_imported, md_skipped = _import_memory_md_sync(workspace_dir, store)
-    daily_imported, daily_skipped = _import_daily_notes_sync(workspace_dir, store)
+    md_imported, md_skipped, md_truncated = _import_memory_md_sync(workspace_dir, store)
+    daily_imported, daily_skipped, daily_truncated = _import_daily_notes_sync(workspace_dir, store)
 
     total_imported = md_imported + daily_imported
     total_skipped = md_skipped + daily_skipped
+    total_truncated = md_truncated + daily_truncated
 
     state = _load_sync_state(workspace_dir)
     state["last_sync_from"] = datetime.now(tz=UTC).isoformat()
@@ -324,10 +327,12 @@ def sync_from_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any
         workspace=str(workspace_dir),
         imported=total_imported,
         skipped=total_skipped,
+        truncated=total_truncated,
     )
     return {
         "imported": total_imported,
         "skipped": total_skipped,
+        "truncated": total_truncated,
         "memory_md": md_imported,
         "daily_notes": daily_imported,
     }
@@ -357,11 +362,11 @@ def get_sync_state(workspace_dir: Path) -> dict[str, Any]:
 def _import_memory_md_sync(
     workspace_dir: Path,
     store: MemoryStore,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Parse ``MEMORY.md`` and save entries not already in the store.
 
     Returns:
-        ``(imported, skipped)`` counts.
+        ``(imported, skipped, truncated)`` counts.
     """
     memory_md_path = workspace_dir / "MEMORY.md"
     if not memory_md_path.is_file():
@@ -377,6 +382,7 @@ def _import_memory_md_sync(
     sections = _parse_memory_md_sections(text)
     imported = 0
     skipped = 0
+    truncated = 0
 
     for key, value, tier_str in sections:
         if store.get(key) is not None:
@@ -385,7 +391,14 @@ def _import_memory_md_sync(
             continue
 
         if len(value) > MAX_VALUE_LENGTH:
+            logger.warning(
+                "markdown_sync.value_truncated",
+                key=key,
+                original_length=len(value),
+                truncated_to=MAX_VALUE_LENGTH,
+            )
             value = value[:MAX_VALUE_LENGTH]
+            truncated += 1
 
         store.save(
             key=key,
@@ -397,13 +410,13 @@ def _import_memory_md_sync(
         imported += 1
         logger.debug("markdown_sync.imported", key=key, tier=tier_str)
 
-    return imported, skipped
+    return imported, skipped, truncated
 
 
 def _import_daily_notes_sync(
     workspace_dir: Path,
     store: MemoryStore,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Import daily notes from ``memory/YYYY-MM-DD.md`` (tapps-brain wins).
 
     Each note is imported as a ``context``-tier entry with key
@@ -411,14 +424,15 @@ def _import_daily_notes_sync(
     skipped.
 
     Returns:
-        ``(imported, skipped)`` counts.
+        ``(imported, skipped, truncated)`` counts.
     """
     memory_dir = workspace_dir / "memory"
     if not memory_dir.is_dir():
-        return 0, 0
+        return 0, 0, 0
 
     imported = 0
     skipped = 0
+    truncated = 0
 
     for note_path in sorted(memory_dir.iterdir()):
         if not note_path.is_file():
@@ -448,6 +462,14 @@ def _import_daily_notes_sync(
             skipped += 1
             continue
 
+        if len(text) > MAX_VALUE_LENGTH:
+            logger.warning(
+                "markdown_sync.value_truncated",
+                key=key,
+                original_length=len(text),
+                truncated_to=MAX_VALUE_LENGTH,
+            )
+            truncated += 1
         value = text[:MAX_VALUE_LENGTH]
         store.save(
             key=key,
@@ -459,4 +481,4 @@ def _import_daily_notes_sync(
         imported += 1
         logger.debug("markdown_sync.imported_daily", key=key, date=date_str)
 
-    return imported, skipped
+    return imported, skipped, truncated
