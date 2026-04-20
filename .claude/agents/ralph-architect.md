@@ -11,9 +11,10 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent(ralph-explorer, ralph-tester, ralph-reviewer)
+  - Task
   - TodoWrite
   - WebFetch
+  - mcp__docs-mcp__*
 disallowedTools:
   - Bash(git clean *)
   - Bash(git rm *)
