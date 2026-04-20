@@ -754,6 +754,7 @@ def create_server(  # noqa: PLR0915
         share: bool = False,
         share_with: str = "",
         agent_id: str = "",
+        temporal_sensitivity: str = "",
     ) -> str:
         """Save a memory to the agent's brain.
 
@@ -761,6 +762,10 @@ def create_server(  # noqa: PLR0915
         'procedural' for how-to knowledge. Set share=True to share with all groups,
         or share_with='hive' for org-wide.  Pass ``agent_id`` to override the
         server-level default for this call (STORY-070.7).
+
+        Pass ``temporal_sensitivity='high'`` for facts that change quickly (decays
+        4x faster), ``'low'`` for stable facts (decays 4x slower), or omit for the
+        tier default.
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
@@ -773,6 +778,7 @@ def create_server(  # noqa: PLR0915
                 tier=tier,
                 share=share,
                 share_with=share_with,
+                temporal_sensitivity=temporal_sensitivity or None,
             )
         )
 

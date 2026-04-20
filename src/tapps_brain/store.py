@@ -14,7 +14,7 @@ import time
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
@@ -787,6 +787,7 @@ class MemoryStore:
         source_message_id: str = "",
         triggered_by: str = "",
         memory_group: str | None | object = MEMORY_GROUP_UNSET,
+        temporal_sensitivity: Literal["high", "medium", "low"] | None = None,
         *,
         skip_consolidation: bool = False,
         batch_context: str | None = None,
@@ -1143,6 +1144,11 @@ class MemoryStore:
                     source_message_id=source_message_id,
                     triggered_by=triggered_by,
                     memory_group=mg_for_entry,
+                    # TAP-735: per-entry decay velocity override; caller-supplied wins
+                    # over existing value so that an explicit None clears the setting.
+                    temporal_sensitivity=temporal_sensitivity
+                    if temporal_sensitivity is not None
+                    else (existing.temporal_sensitivity if existing else None),
                 )
 
                 # Compute integrity hash (H4a)
