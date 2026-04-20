@@ -754,7 +754,7 @@ def create_server(  # noqa: PLR0915
         share: bool = False,
         share_with: str = "",
         agent_id: str = "",
-        temporal_sensitivity: str = "",
+        temporal_sensitivity: str | None = None,
     ) -> str:
         """Save a memory to the agent's brain.
 
@@ -778,7 +778,7 @@ def create_server(  # noqa: PLR0915
                 tier=tier,
                 share=share,
                 share_with=share_with,
-                temporal_sensitivity=temporal_sensitivity or None,
+                temporal_sensitivity=temporal_sensitivity,
             )
         )
 

@@ -1144,8 +1144,13 @@ class MemoryStore:
                     source_message_id=source_message_id,
                     triggered_by=triggered_by,
                     memory_group=mg_for_entry,
-                    # TAP-735: per-entry decay velocity override; caller-supplied wins
-                    # over existing value so that an explicit None clears the setting.
+                    # TAP-735: per-entry decay velocity override.
+                    # When the caller passes None (the default), the existing value is
+                    # preserved on update.  Passing an explicit "high"/"medium"/"low"
+                    # replaces the stored value.  The MCP tool uses "" as the absent
+                    # sentinel and converts it to None before calling save(), so there
+                    # is currently no public API path to clear an existing setting back
+                    # to None — that can be added when needed via a dedicated clear param.
                     temporal_sensitivity=temporal_sensitivity
                     if temporal_sensitivity is not None
                     else (existing.temporal_sensitivity if existing else None),

@@ -50,7 +50,7 @@ def brain_remember(
             value=fact,
             tier=tier,
             agent_scope=agent_scope,
-            temporal_sensitivity=temporal_sensitivity or None,
+            temporal_sensitivity=temporal_sensitivity,
         )
         if isinstance(result, dict) and "error" in result:
             return result

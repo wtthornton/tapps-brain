@@ -394,9 +394,7 @@ def calculate_decayed_confidence(
     # TAP-735: temporal_sensitivity multiplies the effective half-life before all
     # other adjustments.  Applied here so that importance-tag boosts still stack on
     # top of the velocity hint (consistent ordering: velocity x importance x model).
-    effective_hl *= _TEMPORAL_SENSITIVITY_MULTIPLIERS.get(
-        getattr(entry, "temporal_sensitivity", None), 1.0
-    )
+    effective_hl *= _TEMPORAL_SENSITIVITY_MULTIPLIERS.get(entry.temporal_sensitivity, 1.0)
 
     # EPIC-010: Importance tags — boost effective half-life
     importance_tags = config.layer_importance_tags.get(tier_str, {})
