@@ -755,6 +755,7 @@ def create_server(  # noqa: PLR0915
         share_with: str = "",
         agent_id: str = "",
         temporal_sensitivity: str | None = None,
+        failed_approaches: list[str] | None = None,
     ) -> str:
         """Save a memory to the agent's brain.
 
@@ -766,6 +767,10 @@ def create_server(  # noqa: PLR0915
         Pass ``temporal_sensitivity='high'`` for facts that change quickly (decays
         4x faster), ``'low'`` for stable facts (decays 4x slower), or omit for the
         tier default.
+
+        Pass ``failed_approaches`` to record dead-end investigation paths so future
+        agents don't repeat them (max 5 items).  These are surfaced in brain_recall
+        responses when non-empty.
         """
         eff_aid = _resolve_per_call_agent_id(agent_id, default=_server_agent_id)
         s = _resolve_store_for_call(agent_id)
@@ -779,6 +784,7 @@ def create_server(  # noqa: PLR0915
                 share=share,
                 share_with=share_with,
                 temporal_sensitivity=temporal_sensitivity,
+                failed_approaches=failed_approaches,
             )
         )
 

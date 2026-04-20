@@ -38,6 +38,24 @@ _MISSING_INDEX_COUNTS_LOCK = threading.Lock()
 _EXPECTED_PRIVATE_INDEXES: frozenset[str] = frozenset({"idx_priv_embedding_hnsw"})
 
 
+def _parse_jsonb_list(raw: Any) -> list[str]:
+    """Parse a JSONB column value into a ``list[str]``.
+
+    Handles the three forms psycopg may return: already-a-list (JSONB
+    parsed by the driver), a JSON string (TEXT column fallback), or
+    ``None`` / anything else (returns empty list).
+    """
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return [str(item) for item in parsed] if isinstance(parsed, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    return []
+
+
 def get_missing_index_counts_snapshot() -> dict[str, int]:
     """Return a frozen copy of the per-project missing-index counter.
 
@@ -189,7 +207,8 @@ class PostgresPrivateBackend:
                     stability, difficulty,
                     positive_feedback_count, negative_feedback_count,
                     integrity_hash, embedding_model_id,
-                    temporal_sensitivity
+                    temporal_sensitivity,
+                    failed_approaches
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -204,7 +223,8 @@ class PostgresPrivateBackend:
                     %s, %s,
                     %s, %s,
                     %s, %s,
-                    %s
+                    %s,
+                    %s::jsonb
                 )
                 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
                     value                    = EXCLUDED.value,
@@ -242,7 +262,8 @@ class PostgresPrivateBackend:
                     negative_feedback_count  = EXCLUDED.negative_feedback_count,
                     integrity_hash           = EXCLUDED.integrity_hash,
                     embedding_model_id       = EXCLUDED.embedding_model_id,
-                    temporal_sensitivity     = EXCLUDED.temporal_sensitivity
+                    temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
+                    failed_approaches        = EXCLUDED.failed_approaches
                 """,
                 (
                     self._project_id,
@@ -285,6 +306,7 @@ class PostgresPrivateBackend:
                     entry.integrity_hash,
                     entry.embedding_model_id,
                     entry.temporal_sensitivity,
+                    json.dumps(entry.failed_approaches, ensure_ascii=False),
                 ),
             )
 
@@ -1051,5 +1073,6 @@ class PostgresPrivateBackend:
                 "Literal['high', 'medium', 'low'] | None",
                 _str_or_none(row.get("temporal_sensitivity")),
             ),
+            failed_approaches=_parse_jsonb_list(row.get("failed_approaches")),
             # embedding is not loaded from DB (large binary; on-demand via knn_search)
         )
