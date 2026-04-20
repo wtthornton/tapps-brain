@@ -12,18 +12,46 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-04-20
+
+Security batch (TAP-626–TAP-655) + memory reliability fixes + graph centrality + temporal decay velocity.
+
 ### Security
-- `tapps-brain serve` and `tapps-brain-http` now default to binding on `127.0.0.1` instead of `0.0.0.0` (TAP-597). Both entry points previously bound all interfaces by default, silently exposing the data-plane, metrics, and admin routes on every interface. Docker Compose deployments are unaffected — `docker-compose.hive.yaml` sets `TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"` and `TAPPS_BRAIN_MCP_HOST: "0.0.0.0"` explicitly. Operators running the binary outside Docker who need remote access must now set `--host 0.0.0.0` or the `TAPPS_BRAIN_HTTP_HOST` env var. A structured warning (`http_adapter.bind_all_interfaces_unauthenticated`) is logged at startup when `0.0.0.0` is used without `TAPPS_BRAIN_AUTH_TOKEN` or `TAPPS_BRAIN_PER_TENANT_AUTH=1`.
+- Per-tenant auth bypass closed (TAP-626). Requests with `TAPPS_BRAIN_PER_TENANT_AUTH=1` that omit `X-Project-Id` previously fell through to the global bearer token, allowing cross-tenant access. Missing header now returns 401; missing DSN (can't look up per-tenant token) fails closed with 503.
+- `OriginAllowlistMiddleware` extended to all bearer-auth routes (TAP-627). Previously only `/mcp` paths were protected; all `Authorization: Bearer` routes now enforce the origin allowlist when `TAPPS_BRAIN_ALLOWED_ORIGINS` is set.
+- SQL injection via f-string SQL composition eliminated (TAP-653, TAP-654). Hive, federation, and private query helpers that interpolated table/column identifiers directly into SQL strings converted to `psycopg.sql.Identifier` / `psycopg.sql.SQL` composition. `postgres_migrations.py` `version_table` parameter likewise converted.
+- `hashlib` MD5/SHA1 calls marked `usedforsecurity=False` (TAP-648). Bloom filter and consolidation similarity hashes are structural, not cryptographic. Removes FIPS-mode `ValueError` and resolves bandit B324.
+- `tapps-brain serve` and `tapps-brain-http` now default to binding on `127.0.0.1` instead of `0.0.0.0` (TAP-597). Docker Compose deployments are unaffected — `docker-compose.hive.yaml` sets `TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"` and `TAPPS_BRAIN_MCP_HOST: "0.0.0.0"` explicitly. Operators running the binary outside Docker who need remote access must now set `--host 0.0.0.0` or the `TAPPS_BRAIN_HTTP_HOST` env var.
 
 ### Added
-- End-to-end QA benchmark adapters for LoCoMo (arXiv:2402.17753) and LongMemEval (arXiv:2410.10813) under `src/tapps_brain/benchmarks/` (TAP-557 / STORY-SC01). New package ships `AnswerModel` / `AnswerJudge` Protocols, dataset loaders (`load_locomo`, `load_longmemeval`), a store-agnostic runner (`run_benchmark`) with per-category aggregation, and deterministic stand-ins (`DeterministicAnswerModel`, `DeterministicAnswerJudge`) so smoke runs need no API keys. Optional Anthropic + OpenAI answer/judge wrappers live in `scripts/run_benchmark.py`. Reports serialise as `BenchmarkReport` JSON with overall accuracy, per-category accuracy, per-item results, wall time, and run metadata. Closes the first (and largest) lever in EPIC TAP-556 — moves scorecard D2 from a pure `[unverified]` claim to "harness landed, run pending." Full run numbers will be filled into `docs/benchmarks/locomo.md` + `docs/benchmarks/longmemeval.md` once executed with a judge LLM.
-- `scripts/run_benchmark.py` CLI reproducer with `--answer-model {deterministic,anthropic,openai}`, `--judge {deterministic,anthropic,openai}`, `--store {in-memory,live}`, `--limit` for smoke runs, `--k` retrieval cutoff, and `--output` JSON report path. Live store path opens a fresh `AgentBrain` per item so LoCoMo / LongMemEval histories don't bleed across questions.
-- `benchmark-smoke` CI job exercises the CLI end-to-end against committed fixtures under `tests/benchmarks/fixtures/` using deterministic answer/judge — no API credentials required, < 5 min runtime. Runs after the main `test` job and uploads both report JSONs as build artifacts.
-- `docs/benchmarks/` — methodology docs for LoCoMo, LongMemEval, and an index README covering the library, CLI, cost envelope, and reproducibility notes. Numbers tables are placeholders until the first full run lands.
+- `temporal_sensitivity` field on `MemoryEntry` — per-entry decay velocity override (`high` / `medium` / `low`) independent of tier classification (TAP-735). Schema migration 013 adds `temporal_sensitivity VARCHAR(6) DEFAULT NULL` to `private_memories` (`ADD COLUMN IF NOT EXISTS`; fully backward-compatible). Deployments with `TAPPS_BRAIN_AUTO_MIGRATE=1` apply it automatically at startup.
+- Graph centrality scoring activated via lightweight entity co-occurrence index (TAP-734). `ScoringConfig.graph_centrality` weight (default 0.0, profile-tunable) blends a PageRank-style centrality signal into composite retrieval scores. Zero weight = existing behavior unchanged.
+- HNSW index startup sanity check — on first `MemoryStore` open, confirms the HNSW index exists and logs `postgres_private.hnsw_index_ok` / `hnsw_index_missing`; missing index increments `tapps_brain_hnsw_index_missing_total` Prometheus counter (TAP-655).
+- Prometheus observability for MCP profile filter — `tapps_brain_profile_filter_allowed_total` and `tapps_brain_profile_filter_blocked_total` counters labelled by `profile` and `tool` (TAP-567).
+- EPIC-073 profile-filter contract tests and rollout plan under `tests/compat/` (TAP-569).
+- End-to-end QA benchmark adapters for LoCoMo (arXiv:2402.17753) and LongMemEval (arXiv:2410.10813) under `src/tapps_brain/benchmarks/` (TAP-557 / STORY-SC01). Ships `AnswerModel` / `AnswerJudge` Protocols, deterministic stand-ins, and `scripts/run_benchmark.py` CLI reproducer. `benchmark-smoke` CI job runs against committed fixtures with no API credentials.
+- TypeScript SDK (`@tapps-brain/sdk` v1.0.0) + LangGraph `BaseStore` adapter (`@tapps-brain/langgraph` v1.0.0) under `packages/` (TAP-561 / STORY-SC05). Full `brain_*` + `memory_*` MCP surface over Streamable HTTP. Scorecard D6b 3 → 4.
+- `docs/guides/fleet-topology.md` — "N FastAPI containers + 1 brain sidecar" deployment pattern reference (TAP-571).
+- `docs/case-studies/` — adopter case-study directory and submission template (TAP-562 / STORY-SC06).
+- `docs/benchmarks/` — LoCoMo, LongMemEval methodology docs; numbers tables pending first full run.
+
+### Fixed
+- Idempotency check-then-save race condition eliminated (TAP-629). Concurrent requests that passed the check simultaneously could both proceed. Per-key `asyncio.Lock` ensures only one writer proceeds; the second receives the cached result.
+- `LLMWritePolicy` rate-limit state guarded with `threading.Lock` (TAP-637). Timestamp list was mutated concurrently across threads, causing dropped or duplicate rate-limit events.
+- ISO timestamp comparison in `MemoryEntry.is_temporally_valid` normalised to UTC `datetime` before comparison (TAP-639). Raw string comparison gave wrong ordering for UTC-offset timestamps.
+- `session_index` in-memory fallback replaced with O(1) upsert and bounded bucket size (TAP-640). Previous `append`-on-every-call pattern caused unbounded list growth on long-lived stores; each bucket is now capped and old entries evicted.
+- `PostgresPrivateBackend.load_all()` streams results via `fetchmany` instead of `fetchall` (TAP-642). Eliminates peak RSS spike proportional to store size on cold start.
+- Bloom filter rolled back on `persist()` failure in `MemoryStore.save()` (TAP-644). A failed write previously left the in-memory bloom filter ahead of the DB, causing false-positive duplicate suppression.
+- Per-session query-log lists capped to prevent unbounded memory growth (TAP-645). Lists are trimmed to the last N entries on each append.
+- `TappsBrainClient` retry backoff capped at 30 s with ±20% jitter (TAP-647). Unbounded exponential backoff could delay retries indefinitely on persistent errors.
+- `MemoryEntry.tier` field validates on assignment — coerces known tier strings, rejects unknown values with `ValueError` instead of silently storing invalid tiers (TAP-650).
+- `load_profile` requires an explicit `profile:` wrapper key — rejects silently-passing bare YAML dicts that bypassed schema validation (TAP-652).
+- `redact_tenant_labels` respected in HNSW index check; `pg_indexes` query scoped to `public` schema to avoid permission errors on restricted roles (TAP-655).
+- `BM25Scorer._score_doc` guards against divide-by-zero on empty corpus or all-zero IDF weights (TAP-634).
+- `MemoryRetriever._frequency_score` guards against divide-by-zero when `cap <= 0` (TAP-635).
 
 ### Documentation
-- `docs/guides/fleet-topology.md` — new reference guide for the "N FastAPI containers + 1 brain sidecar" deployment pattern. Covers the topology diagram, what the brain vs each project container owns, the `X-Project-Id` / bearer-token wire contract, deployment checklist, `tapps-brain project` token-lifecycle runbook, and a "What NOT to try" section. Attribution correction: FORCE RLS + non-privileged-role startup assertion (`postgres.role_check_ok`) shipped in **3.8.0** (TAP-512), not 3.9.0 as previously reported in some external summaries. Cross-linked from `README.md` (Documentation table) and `docs/guides/agentforge-integration.md` (Related Guides). (TAP-571)
-- `docs/case-studies/` — adopter case-study directory: `README.md` (submission guide, five-section structure, scorecard-impact note) and `TEMPLATE.md` (adopter-facing fill-in template). Infrastructure for STORY-SC06 (TAP-562); case studies published here once external adopters confirm. (TAP-562)
+- Scorecard updated: D6b 3 → 4 via STORY-SC05 TypeScript SDK; overall 79.8 → 80.6 (TAP-556).
 
 ## [3.9.0] - 2026-04-16
 
