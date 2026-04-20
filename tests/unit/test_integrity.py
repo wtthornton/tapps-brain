@@ -108,6 +108,40 @@ class TestEnsureKey:
         mode = stat.S_IMODE(key_path.stat().st_mode)
         assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not meaningful on Windows")
+    def test_key_directory_has_restricted_permissions(self, tmp_path: Path) -> None:
+        """The parent directory is created with mode 0o700 (not world-readable)."""
+        key_path = tmp_path / "nested-dir" / "integrity.key"
+        get_signing_key(key_path=key_path)
+
+        dir_mode = stat.S_IMODE(key_path.parent.stat().st_mode)
+        assert dir_mode == 0o700, f"Expected directory mode 0o700, got {oct(dir_mode)}"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not meaningful on Windows")
+    def test_no_world_readable_window_during_write(self, tmp_path: Path) -> None:
+        """Atomic write via temp-file-rename: key file is never visible with loose mode."""
+        import threading
+
+        key_path = tmp_path / "atomic" / "integrity.key"
+        observed_modes: list[int] = []
+
+        original_replace = os.replace
+
+        def patched_replace(src: str, dst: str) -> None:
+            # Just before rename, check the temp file's mode.
+            observed_modes.append(stat.S_IMODE(Path(src).stat().st_mode))
+            original_replace(src, dst)
+
+        import unittest.mock as mock
+
+        with mock.patch("tapps_brain.integrity.os.replace", side_effect=patched_replace):
+            get_signing_key(key_path=key_path)
+
+        assert observed_modes, "os.replace was never called"
+        assert all(m == 0o600 for m in observed_modes), (
+            f"Temp file had loose mode before rename: {[oct(m) for m in observed_modes]}"
+        )
+
 
 class TestGetSigningKeyCache:
     """Tests for the module-level key cache."""

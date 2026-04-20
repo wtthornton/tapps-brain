@@ -27,6 +27,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 import structlog
@@ -108,15 +109,38 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
         )
 
     # Generate a new key (first-boot or operator-forced regeneration).
-    path.parent.mkdir(parents=True, exist_ok=True)
-    key = secrets.token_bytes(_KEY_LENGTH)
-    path.write_bytes(key)
-    # Restrict permissions so only the owner can read the signing key.
-    # This is a best-effort operation — on Windows the chmod call is a no-op.
+    #
+    # Directory: create with mode=0o700 then explicitly chmod to override umask.
+    # Without the explicit chmod, mkdir with mode=0o700 still applies the
+    # caller's umask (e.g. umask 022 → 0o755, world-readable).
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        path.chmod(0o600)
+        path.parent.chmod(0o700)
     except OSError:
-        logger.warning("integrity_key_chmod_failed", path=str(path))
+        logger.warning("integrity_key_dir_chmod_failed", path=str(path.parent))
+
+    key = secrets.token_bytes(_KEY_LENGTH)
+
+    # Write atomically via a temp file in the same directory.
+    # This eliminates the chmod-after-write race: the file is created with
+    # restricted permissions from the outset, and os.replace() makes the key
+    # visible to readers only once the write is complete.
+    # On POSIX, os.fchmod bypasses umask to set the exact mode on the fd before
+    # any data is written.  On Windows, ACL enforcement is the storage layer's
+    # responsibility (use a secrets vault or encrypted volume).
+    tmp_fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".integrity-")
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(tmp_fd, 0o600)
+        os.write(tmp_fd, key)
+    finally:
+        os.close(tmp_fd)
+    try:
+        os.replace(tmp_name, str(path))
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
     logger.info("integrity_key_generated", path=str(path))
     return key
 
