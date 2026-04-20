@@ -4,12 +4,28 @@ Provides tamper detection for stored memory content. A per-installation
 HMAC key is stored at ``~/.tapps-brain/integrity.key`` and used to sign
 canonical entry data on save. Verification compares the stored hash
 against a freshly computed one.
+
+Key-file safety
+---------------
+If the key file exists but is corrupt or truncated, :func:`_ensure_key`
+**raises** :class:`IntegrityKeyError` rather than silently regenerating the
+key.  Silent regeneration destroys the tamper-audit trail and lets an
+attacker truncate the file to force key rotation.
+
+To intentionally regenerate the key (e.g. after a documented key-rotation
+procedure), set the environment variable::
+
+    TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE=1
+
+This escape hatch emits a structured ERROR log and invalidates all existing
+integrity hashes — use it only with explicit operator intent.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 from pathlib import Path
 
@@ -24,13 +40,33 @@ _DEFAULT_KEY_PATH = _DEFAULT_KEY_DIR / "integrity.key"
 # Key length in bytes (256-bit).
 _KEY_LENGTH = 32
 
+#: Environment variable that opts in to forced key regeneration when the key
+#: file exists but is truncated or corrupt.  Set to ``"1"`` to enable.
+INTEGRITY_KEY_REGENERATE_ENV = "TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE"
+
+
+class IntegrityKeyError(RuntimeError):
+    """Raised when the HMAC signing key file is corrupt, truncated, or missing.
+
+    This error requires explicit operator intervention.  Do not catch and
+    suppress it silently — it indicates potential tampering or disk corruption.
+    To force regeneration (which invalidates all existing hashes), set the
+    environment variable ``TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE=1``.
+    """
+
 
 def _ensure_key(key_path: Path | None = None) -> bytes:
     """Load or generate the HMAC signing key.
 
-    If the key file does not exist, a cryptographically random 32-byte key
-    is generated and persisted. The directory is created with restricted
-    permissions where possible.
+    If the key file does not exist (first boot), a cryptographically random
+    32-byte key is generated and persisted.  The directory is created with
+    restricted permissions where possible.
+
+    If the key file **exists but is too short** (truncated or corrupt), this
+    function raises :class:`IntegrityKeyError` instead of silently overwriting
+    the file.  Set ``TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE=1`` in the
+    environment to override this and force regeneration (emits a structured
+    ERROR log and invalidates all existing integrity hashes).
 
     Args:
         key_path: Override path for the key file. Defaults to
@@ -38,6 +74,10 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
 
     Returns:
         The raw HMAC key bytes.
+
+    Raises:
+        IntegrityKeyError: If the key file is present but corrupt/truncated
+            and ``TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE`` is not set to ``"1"``.
     """
     path = key_path or _DEFAULT_KEY_PATH
 
@@ -45,10 +85,29 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
         raw = path.read_bytes()
         if len(raw) >= _KEY_LENGTH:
             return raw[:_KEY_LENGTH]
-        # Key file is too short - regenerate
-        logger.warning("integrity_key_too_short", path=str(path), length=len(raw))
 
-    # Generate a new key
+        # Key file exists but is too short — truncated or corrupt.
+        allow_regen = os.environ.get(INTEGRITY_KEY_REGENERATE_ENV, "0") == "1"
+        if not allow_regen:
+            raise IntegrityKeyError(
+                f"Integrity key file is corrupt or truncated "
+                f"(expected {_KEY_LENGTH} bytes, got {len(raw)}): {path}. "
+                f"This may indicate tampering or disk corruption. "
+                f"All existing integrity hashes would be invalidated by regeneration. "
+                f"To force regeneration, set {INTEGRITY_KEY_REGENERATE_ENV}=1 "
+                f"(this is a destructive, operator-gated action)."
+            )
+
+        # Forced regeneration — operator opted in explicitly.
+        logger.error(
+            "integrity_key_too_short_regenerating",
+            path=str(path),
+            length=len(raw),
+            warning="all_existing_integrity_hashes_invalidated",
+            hint=f"unset {INTEGRITY_KEY_REGENERATE_ENV} after key rotation is complete",
+        )
+
+    # Generate a new key (first-boot or operator-forced regeneration).
     path.parent.mkdir(parents=True, exist_ok=True)
     key = secrets.token_bytes(_KEY_LENGTH)
     path.write_bytes(key)

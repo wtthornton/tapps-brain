@@ -16,6 +16,8 @@ import pytest
 
 from tapps_brain.integrity import (
     _KEY_LENGTH,
+    INTEGRITY_KEY_REGENERATE_ENV,
+    IntegrityKeyError,
     compute_integrity_hash,
     get_signing_key,
     reset_key_cache,
@@ -57,9 +59,28 @@ class TestEnsureKey:
         assert key == long_key[:_KEY_LENGTH]
         assert len(key) == _KEY_LENGTH
 
-    def test_regenerates_too_short_key(self, tmp_path: Path) -> None:
+    def test_raises_on_too_short_key_by_default(self, tmp_path: Path) -> None:
+        """A truncated key file raises IntegrityKeyError without the env override."""
         key_path = tmp_path / "test.key"
-        # Write a key that is too short
+        key_path.write_bytes(b"short")
+
+        with pytest.raises(IntegrityKeyError, match="corrupt or truncated"):
+            get_signing_key(key_path=key_path)
+
+    def test_raises_on_zero_byte_key_file(self, tmp_path: Path) -> None:
+        """A 0-byte key file (common truncation pattern) raises IntegrityKeyError."""
+        key_path = tmp_path / "test.key"
+        key_path.write_bytes(b"")
+
+        with pytest.raises(IntegrityKeyError, match=INTEGRITY_KEY_REGENERATE_ENV):
+            get_signing_key(key_path=key_path)
+
+    def test_regenerates_too_short_key_with_env_override(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE=1, a short key is regenerated."""
+        monkeypatch.setenv(INTEGRITY_KEY_REGENERATE_ENV, "1")
+        key_path = tmp_path / "test.key"
         key_path.write_bytes(b"short")
 
         key = get_signing_key(key_path=key_path)
@@ -67,6 +88,17 @@ class TestEnsureKey:
         assert len(key) == _KEY_LENGTH
         # The stored key should now be the regenerated one
         assert key_path.read_bytes() == key
+
+    def test_env_override_not_1_still_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only the exact value '1' enables regeneration; 'true', 'yes', etc. do not."""
+        monkeypatch.setenv(INTEGRITY_KEY_REGENERATE_ENV, "true")
+        key_path = tmp_path / "test.key"
+        key_path.write_bytes(b"short")
+
+        with pytest.raises(IntegrityKeyError):
+            get_signing_key(key_path=key_path)
 
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not meaningful on Windows")
     def test_key_file_has_restricted_permissions(self, tmp_path: Path) -> None:
