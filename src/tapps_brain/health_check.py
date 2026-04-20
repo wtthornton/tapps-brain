@@ -241,9 +241,6 @@ def run_health_check(  # noqa: PLR0915
     # Evaluated before any slice so the integrity slice can avoid a second MemoryStore.__init__
     # when the caller has already supplied one (TAP-721 regression fix).
     reuse = store is not None
-    # ``_shared_store`` is the caller's MemoryStore when ``store=`` was passed; the integrity
-    # slice reuses it instead of opening a second (cold) MemoryStore.  None when store is absent.
-    _shared_store: object | None = store
 
     # ------------------------------------------------------------------
     # Store health
@@ -412,9 +409,9 @@ def run_health_check(  # noqa: PLR0915
         # Reuse the caller's store when available (avoids opening a second MemoryStore
         # that pays full __init__ cost — Postgres pool + load_all + bloom rebuild).
         # Otherwise open a short-lived temporary store and close it in the finally.
-        _integrity_owns_store = _shared_store is None
+        _integrity_owns_store = not reuse
         ms_integrity: MemoryStore = (
-            MemoryStore(project_root=root) if _integrity_owns_store else _shared_store  # type: ignore[assignment]
+            MemoryStore(project_root=root) if _integrity_owns_store else store  # type: ignore[assignment]
         )
         try:
             integrity = ms_integrity.verify_integrity()
