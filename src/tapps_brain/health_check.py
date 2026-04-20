@@ -424,13 +424,26 @@ def run_health_check(  # noqa: PLR0915
             integrity_health.orphaned_relations = orphaned
 
             # Expired entries (past valid_at)
-            now_iso = datetime.now(tz=UTC).isoformat()
+            # Use datetime comparison instead of ISO-string lexicographic compare.
+            # Lexicographic compare is wrong when valid_at lacks a timezone suffix
+            # (e.g. "2026-04-19T21:46:11") vs the tz-aware "..+00:00" form — the
+            # tz-naive form sorts before +00:00 strings, causing false positives.
+            # (Same bug class as TAP-639 in models.py.)
+            now_dt = datetime.now(tz=UTC)
             expired = 0
             with store._lock:
                 for entry in store._entries.values():
                     valid_at = getattr(entry, "valid_at", None)
-                    if valid_at and valid_at < now_iso:
-                        expired += 1
+                    if valid_at:
+                        try:
+                            valid_at_dt = datetime.fromisoformat(valid_at)
+                            if valid_at_dt.tzinfo is None:
+                                # Treat tz-naive timestamps as UTC (legacy entries).
+                                valid_at_dt = valid_at_dt.replace(tzinfo=UTC)
+                            if valid_at_dt < now_dt:
+                                expired += 1
+                        except (ValueError, TypeError):
+                            pass  # malformed valid_at — skip rather than crash
             integrity_health.expired_entries = expired
 
             if corrupted > 0:
