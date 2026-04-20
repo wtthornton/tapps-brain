@@ -1779,6 +1779,45 @@ def maintenance_hive_schema_status(
 # ---------------------------------------------------------------------------
 
 
+def _strip_dsn_password(dsn: str) -> tuple[str, str | None]:
+    """Parse a Postgres DSN and extract the password for safe subprocess use.
+
+    Returns ``(safe_dsn, password_or_None)`` where *safe_dsn* has the password
+    component removed so it is safe to pass on the command line (visible via
+    ``ps``).  The caller should set ``PGPASSWORD`` in the subprocess environment
+    when *password_or_None* is not ``None``.
+
+    Supports both URL format (``postgres://user:pass@host/db``) and
+    keyword=value format (``host=h user=u password=p dbname=db``).
+    """
+    import re
+    from urllib.parse import urlsplit, urlunsplit
+
+    parsed = urlsplit(dsn)
+    if parsed.scheme in ("postgres", "postgresql") and parsed.password:
+        password = parsed.password
+        # Reconstruct netloc without the password component.
+        host_part = parsed.hostname or ""
+        if parsed.port:
+            host_part = f"{host_part}:{parsed.port}"
+        netloc = f"{parsed.username}@{host_part}" if parsed.username else host_part
+        safe_dsn = urlunsplit(
+            (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
+        )
+        return safe_dsn, password
+
+    # Keyword=value format: handle both password='...' and password=word
+    match = re.search(r"\bpassword\s*=\s*'([^']*)'|\bpassword\s*=\s*(\S+)", dsn)
+    if match:
+        password = match.group(1) if match.group(1) is not None else match.group(2)
+        safe_dsn = re.sub(
+            r"\s*\bpassword\s*=\s*'[^']*'|\s*\bpassword\s*=\s*\S+", "", dsn
+        ).strip()
+        return safe_dsn, password
+
+    return dsn, None
+
+
 @maintenance_app.command("backup-hive")
 def maintenance_backup_hive(
     output: Annotated[str | None, typer.Option(help="Output file path.")] = None,
@@ -1799,14 +1838,22 @@ def maintenance_backup_hive(
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%S")
         output = f"hive-backup-{ts}.sql"
 
+    safe_dsn, pgpassword = _strip_dsn_password(effective_dsn)
+    proc_env = os.environ.copy()
+    if pgpassword:
+        proc_env["PGPASSWORD"] = pgpassword
+
     fmt_flag = "--format=custom" if format == "custom" else "--format=plain"
-    cmd = ["pg_dump", effective_dsn, fmt_flag, f"--file={output}"]
+    cmd = ["pg_dump", safe_dsn, fmt_flag, f"--file={output}"]  # nosec B603 — password passed via PGPASSWORD env var, not argv
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, env=proc_env)  # nosec B603
         typer.echo(f"Backup written to {output}")
     except subprocess.CalledProcessError as e:
-        typer.echo(f"Error: {e.stderr}", err=True)
+        stderr = e.stderr or ""
+        if pgpassword:
+            stderr = stderr.replace(pgpassword, "***")
+        typer.echo(f"Error: {stderr}", err=True)
         raise typer.Exit(1) from e
     except FileNotFoundError as e:
         typer.echo("Error: pg_dump not found. Install PostgreSQL client tools.", err=True)
@@ -1827,17 +1874,25 @@ def maintenance_restore_hive(
         typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_DSN required.", err=True)
         raise typer.Exit(1)
 
+    safe_dsn, pgpassword = _strip_dsn_password(effective_dsn)
+    proc_env = os.environ.copy()
+    if pgpassword:
+        proc_env["PGPASSWORD"] = pgpassword
+
     # Detect format
     if input.endswith(".sql"):
-        cmd = ["psql", effective_dsn, "-f", input]
+        cmd = ["psql", safe_dsn, "-f", input]  # nosec B603 — password passed via PGPASSWORD env var, not argv
     else:
-        cmd = ["pg_restore", "--dbname", effective_dsn, "--clean", "--if-exists", input]
+        cmd = ["pg_restore", "--dbname", safe_dsn, "--clean", "--if-exists", input]  # nosec B603
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, env=proc_env)  # nosec B603
         typer.echo(f"Restored from {input}")
     except subprocess.CalledProcessError as e:
-        typer.echo(f"Error: {e.stderr}", err=True)
+        stderr = e.stderr or ""
+        if pgpassword:
+            stderr = stderr.replace(pgpassword, "***")
+        typer.echo(f"Error: {stderr}", err=True)
         raise typer.Exit(1) from e
 
 
