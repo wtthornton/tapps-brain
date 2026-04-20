@@ -58,7 +58,7 @@ http = [
     "mcp>=1.25.0,<2",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
-    "starlette>=0.40,<1",
+    "starlette>=0.40,<2",
     # STORY-070.8: argon2id hashing for per-tenant bearer tokens
     "argon2-cffi>=23.1.0,<25",
 ]
@@ -90,7 +90,7 @@ dev = [
     "mcp>=1.25.0,<2",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
-    "starlette>=0.40,<1",
+    "starlette>=0.40,<2",
     "httpx>=0.27,<1",
     "typer>=0.15.0,<1",
 ]
