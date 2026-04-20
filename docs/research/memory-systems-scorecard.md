@@ -130,7 +130,8 @@ throughput.
 - Isolation: `(project_id, agent_id)` composite key enforced at the DB layer
   by Postgres RLS with `FORCE ROW LEVEL SECURITY` (migration 012).
 - Transport/SDK: MCP Streamable HTTP on :8080 (data + MCP), operator MCP on
-  :8090, dashboard on :8088; Python SDK only.
+  :8090, dashboard on :8088; Python SDK + TypeScript SDK (`@tapps-brain/sdk`) +
+  LangGraph `BaseStore` adapter (`@tapps-brain/langgraph`).
 - Notable: dual-token auth split (data vs operator) + versioned OpenAPI
   snapshot gate in CI.
 
@@ -152,7 +153,7 @@ Rubric applied honestly; unverified claims scored conservatively.
 | D4 Consolidation | 5 | Embedding-cosine merge (primary, 0.7 weight) with Jaccard+TF-cosine fallback when no stored vectors; pairwise `contradictions.py` polarity + numeric-divergence detection; provenance via `source`+`audit` with `merge_rule` + `similarity_score`; `maintenance consolidation-diff <key>` for merge inspection. **STORY-SC03 (TAP-559) 2026-04-18.** | `src/tapps_brain/auto_consolidation.py`, `consolidation.py`, `contradictions.py`, `similarity.py` |
 | D5 Multi-tenancy | 5 | `(project_id, agent_id)` composite key enforced via Postgres RLS with `FORCE ROW LEVEL SECURITY` (migration 012) and role-bypass guards. This is the DB-layer 5-rubric. | `src/tapps_brain/migrations/private/012_rls_force.sql`; CHANGELOG 3.8.0 TAP-512, TAP-514; ADR-010 |
 | D6a MCP depth | 5 | 55 MCP tools, dual transport (data plane on :8080 + operator on :8090), Streamable HTTP. | `src/tapps_brain/mcp_server/`; CHANGELOG 3.7.0–3.9.0 |
-| D6b Language/SDK reach | 4 | Python SDK (`tapps_brain`) + TypeScript SDK (`@tapps-brain/sdk`) + LangGraph `BaseStore` adapter (`@tapps-brain/langgraph`) + REST/OpenAPI; 2 stable SDKs + REST meets rubric-4. **STORY-SC05 (TAP-561) 2026-04-18.** | `packages/sdk/`, `packages/langgraph/`; `docs/guides/typescript-sdk.md`, `docs/guides/langgraph-adapter.md`; CHANGELOG [Unreleased] |
+| D6b Language/SDK reach | 4 | Python SDK + TypeScript SDK (`@tapps-brain/sdk` v1.0.0, MCP Streamable HTTP transport, full `brain_*` + `memory_*` surface) + LangGraph `BaseStore` adapter (`@tapps-brain/langgraph` v1.0.0) + REST/OpenAPI. Rubric 4 = "2 stable SDKs (typically Python + TS) + REST" ✓. **STORY-SC05 (TAP-561) 2026-04-18.** | `packages/sdk/`, `packages/langgraph/`; `docs/guides/typescript-sdk.md`; `docs/guides/langgraph-adapter.md`; `.github/workflows/ts-sdk.yml` |
 | D7 License | 5 | MIT, real self-host; no hosted tier to compete with. | `LICENSE`; `pyproject.toml` L9 |
 | D8 Production readiness | 5 | OTel exporters, migrations system, 127 test files, versioned OpenAPI with CI-gated snapshot, releases every 1–3 days in April 2026 (3.7.0 → 3.9.0 in 48h). | `src/tapps_brain/otel_*.py`; `src/tapps_brain/postgres_migrations.py`; CHANGELOG §3.7.0–3.9.0 |
 | D9 Write-path design | 5 | **User-choosable**: deterministic (default, zero LLM cost) OR LLM-assisted (opt-in via `TAPPS_BRAIN_WRITE_POLICY=llm`). Both modes documented with cost/quality trade table. LLM mode implements ADD/UPDATE/DELETE/NOOP state machine via pluggable `WritePolicy` protocol; safety filter runs before LLM call; rate-limited per agent. Single env-var flip, no code change required. | `src/tapps_brain/write_policy.py`; `src/tapps_brain/_protocols.py` `WritePolicy`; `docs/guides/write-path-tradeoff.md`; TAP-560/STORY-SC04 |

@@ -1,0 +1,16 @@
+{
+  "name": "tapps-brain-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/sdk",
+    "packages/langgraph"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}
