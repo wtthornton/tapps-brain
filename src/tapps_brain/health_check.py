@@ -17,7 +17,10 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import structlog
 from pydantic import BaseModel, Field
+
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Result models
@@ -336,9 +339,10 @@ def run_health_check(  # noqa: PLR0915
     except FileNotFoundError:
         store_health.status = "warn"
         warnings.append("Store database not found (may be first run)")
-    except Exception as exc:
+    except Exception:
+        logger.exception("health_check.store_error")
         store_health.status = "error"
-        errors.append(f"Store error: {exc}")
+        errors.append("Store error: internal error (see logs).")
 
     # ------------------------------------------------------------------
     # Hive health
@@ -413,10 +417,11 @@ def run_health_check(  # noqa: PLR0915
                     if _owns_hive and hasattr(hive, "close"):
                         hive.close()
                 hive_health.status = "ok"
-        except Exception as exc:
+        except Exception:
+            logger.exception("health_check.hive_unavailable")
             hive_health.status = "warn"
             hive_health.connected = False
-            warnings.append(f"Hive unavailable: {exc}")
+            warnings.append("Hive unavailable: internal error (see logs).")
 
     # ------------------------------------------------------------------
     # Integrity health
@@ -461,9 +466,10 @@ def run_health_check(  # noqa: PLR0915
             [e for e in errors if "integrity" in e.lower() or "corrupted" in e.lower()],
             [w for w in warnings if "integrity" in w.lower() or "orphaned" in w.lower()],
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("health_check.integrity_check_failed")
         integrity_health.status = "warn"
-        warnings.append(f"Integrity check failed: {exc}")
+        warnings.append("Integrity check failed: internal error (see logs).")
 
     # ------------------------------------------------------------------
     # Roll up overall status
