@@ -972,9 +972,10 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         from tapps_brain.mcp_server.profile_registry import UnknownProfileError
 
         header_profile = (request.headers.get("x-brain-profile") or "").strip() or None
+        resolver = _get_profile_resolver()
         if header_profile is not None:
             try:
-                _get_profile_resolver().validate_profile_name(header_profile)
+                resolver.validate_profile_name(header_profile)
             except UnknownProfileError as exc:
                 return JSONResponse(
                     status_code=400,
@@ -984,7 +985,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
                         "available": exc.available,
                     },
                 )
-        resolved_profile = _get_profile_resolver().resolve(
+        resolved_profile = resolver.resolve(
             project_id=project_id,
             agent_id=agent_id,
             header_profile=header_profile,
