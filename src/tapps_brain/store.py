@@ -3038,30 +3038,26 @@ class MemoryStore:
     def count_orphaned_relations(self) -> int:
         """Count relation records that reference keys no longer in the store.
 
-        Performs the join between the full relations list and the current
-        entry key set so the snapshot is consistent (TAP-722 — replaces
-        direct ``_persistence`` / ``_lock`` / ``_entries`` access in
-        ``health_check.py``).
+        Uses the in-memory ``_relations`` cache (kept in sync with the
+        persistence layer by :meth:`save_relations` / :meth:`load_relations`)
+        to avoid a Postgres round-trip and to eliminate the TOCTOU window
+        that would arise from fetching relations outside ``_lock`` and then
+        snapshotting entry keys inside it (TAP-722).
 
         Returns:
-            Number of ``source_entry_keys`` in any relation that have no
-            corresponding entry in the in-memory store.  Returns 0 when
-            the persistence backend does not support ``list_relations``.
+            Number of ``source_entry_keys`` references in any cached relation
+            that have no corresponding entry in the in-memory store.  Relations
+            are indexed by ``source_entry_key`` in the cache, so a relation
+            with two missing source keys contributes 2 to the count — matching
+            the semantics of the original per-reference count.
         """
-        try:
-            all_relations = self._persistence.list_relations()
-        except (AttributeError, TypeError):
-            return 0
-
         with self._serialized():
-            all_keys = set(self._entries.keys())
-
-        orphaned = 0
-        for rel in all_relations:
-            for src_key in rel.get("source_entry_keys", []):
-                if src_key not in all_keys:
-                    orphaned += 1
-        return orphaned
+            entry_keys = set(self._entries.keys())
+            return sum(
+                len(rels)
+                for src_key, rels in self._relations.items()
+                if src_key not in entry_keys
+            )
 
     def count_expired_entries(self, now: datetime | None = None) -> int:
         """Count entries whose ``valid_at`` timestamp lies in the past.
