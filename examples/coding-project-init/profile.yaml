@@ -8,9 +8,10 @@
 #   - `layers[].name` is the tier name — valid values are:
 #     architectural | pattern | procedural | context
 #   - `layers[].half_life_days` is required; all other layer fields have defaults.
-#   - The top-level `extends` field is NOT supported by the /admin/projects API
-#     (it is only resolved by the local profile loader). Include all layer
-#     definitions inline when registering via the API.
+#   - The top-level `extends` field is resolved by the local profile loader but
+#     NOT by the /admin/projects API (the API does not call _resolve_inheritance
+#     server-side). Flatten all layer definitions inline when registering via
+#     the API, as done in this file.
 #
 # Register against a deployed hub once EPIC-069 ships the CLI:
 #   tapps-brain project register <your-project-id> --profile ./profile.yaml
