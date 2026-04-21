@@ -582,12 +582,26 @@ class PostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     def _ensure_relations_table(self) -> None:
-        """Create ``private_relations`` if it does not yet exist (idempotent)."""
+        """Create ``private_relations`` if it does not yet exist (idempotent).
+
+        Probes ``pg_class`` first so a non-DDL role (``tapps_runtime``) that
+        has only USAGE on ``public`` but not CREATE can still pass this
+        check when the table was pre-created by the migrate sidecar —
+        Postgres evaluates schema-CREATE before the ``IF NOT EXISTS``
+        short-circuit, so the bare CREATE fails even when the table exists.
+        """
         with self._lock:
             if self._relations_ensured:
                 return
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(_RELATIONS_DDL)
+                cur.execute(
+                    "SELECT 1 FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'public' AND c.relname = 'private_relations' "
+                    "LIMIT 1"
+                )
+                if cur.fetchone() is None:
+                    cur.execute(_RELATIONS_DDL)
             self._relations_ensured = True
 
     def list_relations(self) -> list[dict[str, Any]]:

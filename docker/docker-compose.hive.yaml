@@ -44,8 +44,14 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # One-shot migration sidecar — applies private + Hive schema to the single
-  # unified DSN before the HTTP adapter starts. Exits on completion.
+  # One-shot bootstrap sidecar — connects as the DB owner (tapps) and does:
+  #   1. applies Hive schema migrations
+  #   2. applies private + federation schema migrations (via the brain's
+  #      auto-migrate path, triggered once)
+  #   3. creates the DML-only tapps_runtime role
+  #   4. sets TAPPS_BRAIN_RUNTIME_PASSWORD on that role
+  # After exit the brain container connects as tapps_runtime (non-privileged),
+  # so TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE is no longer needed on the brain.
   tapps-brain-migrate:
     image: docker-tapps-brain-migrate:latest
     container_name: tapps-brain-migrate
@@ -54,14 +60,10 @@ services:
       dockerfile: docker/Dockerfile.migrate
     environment:
       TAPPS_BRAIN_DATABASE_URL: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+      TAPPS_BRAIN_RUNTIME_PASSWORD: ${TAPPS_BRAIN_RUNTIME_PASSWORD:?set TAPPS_BRAIN_RUNTIME_PASSWORD in docker/.env}
     depends_on:
       tapps-brain-db:
         condition: service_healthy
-    command:
-      - "maintenance"
-      - "migrate-hive"
-      - "--dsn"
-      - "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
     restart: "no"
 
   # The unified brain: HTTP data plane + /mcp/ + admin API on :8080, operator
@@ -75,9 +77,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.http
     environment:
-      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
-      TAPPS_BRAIN_AUTO_MIGRATE: "1"
-      TAPPS_BRAIN_HIVE_AUTO_MIGRATE: "1"
+      # Brain connects as the DML-only tapps_runtime role. The owner role
+      # (tapps) only runs during the one-shot migrate sidecar — by the time
+      # the brain starts, tapps_runtime exists with its password set, and
+      # RLS applies because this role is not BYPASSRLS and owns no tables.
+      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps_runtime:${TAPPS_BRAIN_RUNTIME_PASSWORD}@tapps-brain-db:5432/tapps_brain"
       TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_PORT: "8080"
       TAPPS_BRAIN_MCP_HTTP_PORT: "${TAPPS_OPERATOR_MCP_PORT:-8090}"
@@ -86,12 +90,6 @@ services:
       TAPPS_BRAIN_ADMIN_TOKEN: ${TAPPS_BRAIN_ADMIN_TOKEN:?set TAPPS_BRAIN_ADMIN_TOKEN in docker/.env}
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
       TAPPS_BRAIN_STRICT: "1"
-      # Single-container / single-host deployments connect as the DB owner.
-      # Production multi-tenant deployments should instead create the
-      # tapps_runtime role (see src/tapps_brain/migrations/roles/001_db_roles.sql)
-      # and point TAPPS_BRAIN_DATABASE_URL at it. For this unified dev/prod-on-
-      # one-host pattern, the privileged-role override is the documented path.
-      TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
     ports:
       - "${TAPPS_HTTP_PORT:-8080}:8080"
       # Operator MCP bound to loopback by default (TAP-551).

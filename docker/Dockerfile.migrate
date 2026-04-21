@@ -1,4 +1,22 @@
 FROM python:3.13-slim
+
+# psql needed for role creation + password ALTER (step 3–4 of the entrypoint).
+# postgresql-client is slim (~8MB).
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY dist/tapps_brain-*.whl /tmp/
-RUN whl=$(ls /tmp/tapps_brain-*.whl) && pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]"
-ENTRYPOINT ["tapps-brain"]
+RUN whl=$(ls /tmp/tapps_brain-*.whl) && \
+    pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]" && \
+    rm /tmp/tapps_brain-*.whl
+
+# Bake the roles migration into the image so the entrypoint can `psql -f` it
+# without relying on a bind mount at runtime.
+COPY src/tapps_brain/migrations/roles/001_db_roles.sql \
+     /opt/tapps-brain/migrations/roles/001_db_roles.sql
+
+COPY docker/migrate-entrypoint.sh /usr/local/bin/migrate-entrypoint.sh
+RUN chmod +x /usr/local/bin/migrate-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/migrate-entrypoint.sh"]
