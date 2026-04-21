@@ -3748,7 +3748,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
 
     stop_event = threading.Event()
 
-    def _handle_signal(signum: int, frame: object) -> None:
+    def _handle_signal(_signum: int, _frame: object) -> None:
         stop_event.set()
 
     signal.signal(signal.SIGINT, _handle_signal)
