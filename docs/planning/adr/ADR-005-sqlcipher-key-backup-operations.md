@@ -1,6 +1,6 @@
 # ADR-005: SQLCipher operations — passphrase runbook + backup verification (defer KMS product integration)
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-007](./ADR-007-postgres-only-no-sqlite.md) (2026-04-11) — SQLCipher and the `[encryption]` extra were removed along with SQLite. At-rest encryption is now handled at the storage layer via Percona `pg_tde`. See [`postgres-tde.md`](../../guides/postgres-tde.md).  
 **Date:** 2026-04-03  
 **Owner:** @wtthornton  
 **Epic / story:** [EPIC-051](../epics/EPIC-051.md) — STORY-051.5  

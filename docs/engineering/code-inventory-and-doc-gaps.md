@@ -89,6 +89,10 @@ All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers
 - `client.py` — `TappsBrainClient` (sync), `AsyncTappsBrainClient` (async); retry backoff capped at 30s (TAP-647); MCP session-initialize handshake (TAP-744)
 - `openapi_contract.py` — OpenAPI contract builder with dual auth schemes and tenant headers
 
+### TypeScript packages (`packages/`)
+- `packages/sdk/` — `@tapps-brain/sdk` v1.0.0 (TAP-561 / STORY-SC05): TypeScript client exposing the full `brain_*` + `memory_*` MCP surface over Streamable HTTP. Mirrors `client.py`. Guide: [`typescript-sdk.md`](../guides/typescript-sdk.md).
+- `packages/langgraph/` — `@tapps-brain/langgraph` v1.0.0 (TAP-561 / STORY-SC05): LangGraph `BaseStore` adapter backed by tapps-brain. Guide: [`langgraph-adapter.md`](../guides/langgraph-adapter.md).
+
 ### Utilities & helpers
 - `errors.py` — stable error taxonomy for public APIs
 - `_feature_flags.py` — minimal feature flags for optional dependencies

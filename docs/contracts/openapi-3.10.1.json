@@ -1,0 +1,1096 @@
+{
+  "components": {
+    "parameters": {
+      "XAgentId": {
+        "description": "Per-call agent identity.  Defaults to ``\"unknown\"`` when omitted.  Threaded into RLS as ``app.agent_id``.",
+        "in": "header",
+        "name": "X-Agent-Id",
+        "required": false,
+        "schema": {
+          "default": "unknown",
+          "type": "string"
+        }
+      },
+      "XIdempotencyKey": {
+        "description": "Idempotency key (UUID).  When ``TAPPS_BRAIN_IDEMPOTENCY=1`` a duplicate key within 24 h replays the original response with header ``Idempotency-Replayed: true``.",
+        "in": "header",
+        "name": "X-Idempotency-Key",
+        "required": false,
+        "schema": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "XProjectId": {
+        "description": "Tenant identity (ADR-010).  Required on every data-plane and MCP request; the brain isolates state by ``(project_id, agent_id)``.",
+        "in": "header",
+        "name": "X-Project-Id",
+        "required": true,
+        "schema": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "XTappsAgent": {
+        "description": "Optional agent fingerprint string used for telemetry labelling.  Distinct from ``X-Agent-Id``.",
+        "in": "header",
+        "name": "X-Tapps-Agent",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "properties": {
+          "detail": {
+            "description": "Human-readable explanation; not machine-stable.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Taxonomy code (see ``tapps_brain.errors``).  Stable wire identifier \u2014 clients map this to retry policy.",
+            "examples": [
+              "bad_request",
+              "unauthorized",
+              "forbidden",
+              "payload_too_large",
+              "store_unavailable",
+              "admin_disabled"
+            ],
+            "type": "string"
+          },
+          "retry_after": {
+            "description": "Seconds to wait before retry, present on rate-limited responses.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Info": {
+        "properties": {
+          "auth_enabled": {
+            "type": "boolean"
+          },
+          "build": {
+            "description": "Build identifier from ``TAPPS_BRAIN_BUILD`` env var; ``\"unknown\"`` outside of a built image.",
+            "type": "string"
+          },
+          "dsn_configured": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "python": {
+            "type": "string"
+          },
+          "schema_version": {
+            "description": "Bundled private-schema migration version.",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "type": "number"
+          },
+          "version": {
+            "description": "Brain code version (PEP 440).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "version",
+          "schema_version",
+          "build"
+        ],
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "adminBearerAuth": {
+        "description": "Admin bearer token for ``/admin/*`` routes.  Set ``TAPPS_BRAIN_ADMIN_TOKEN``; when unset, ``/admin/*`` returns 503.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "bearerAuth": {
+        "description": "Data-plane bearer token.  Set ``TAPPS_BRAIN_AUTH_TOKEN`` (or per-tenant token via ``TAPPS_BRAIN_PER_TENANT_AUTH=1``) to enable.  When unset, protected routes are open (not-for-production).",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
+    "title": "tapps-brain HTTP API",
+    "version": "3.10.1",
+    "x-schema-version": 15
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/projects": {
+      "get": {
+        "operationId": "_admin_projects_list_admin_projects_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Projects List"
+      },
+      "post": {
+        "operationId": "_admin_projects_register_admin_projects_post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Projects Register"
+      }
+    },
+    "/admin/projects/{project_id}": {
+      "delete": {
+        "operationId": "_admin_project_delete_admin_projects__project_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Project Delete"
+      },
+      "get": {
+        "operationId": "_admin_project_show_admin_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Project Show"
+      }
+    },
+    "/admin/projects/{project_id}/approve": {
+      "post": {
+        "operationId": "_admin_project_approve_admin_projects__project_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Project Approve"
+      }
+    },
+    "/admin/projects/{project_id}/rotate-token": {
+      "post": {
+        "description": "Issue/replace the per-tenant bearer token for *project_id*.\n\nReturns the **plaintext token once** \u2014 store it immediately.",
+        "operationId": "_admin_project_rotate_token_admin_projects__project_id__rotate_token_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Project Rotate Token"
+      }
+    },
+    "/admin/projects/{project_id}/token": {
+      "delete": {
+        "description": "Revoke (clear) the per-tenant token for *project_id*.",
+        "operationId": "_admin_project_revoke_token_admin_projects__project_id__token_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "adminBearerAuth": []
+          }
+        ],
+        "summary": " Admin Project Revoke Token"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "_health_health_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": " Health"
+      }
+    },
+    "/info": {
+      "get": {
+        "operationId": "_info_info_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " Info"
+      }
+    },
+    "/mcp": {
+      "post": {
+        "description": "Single endpoint for the MCP Streamable-HTTP transport (MCP spec 2025-03-26).  Tools are advertised via the ``tools/list`` JSON-RPC method; invoke them with ``tools/call``.  See the FastMCP client or ``tapps_brain.client`` for typed wrappers.\n\nMounted as an ASGI sub-app so this path is not visible in the route table; the contract is documented here explicitly to lock the public path.",
+        "operationId": "mcpStreamableHttp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "description": "MCP JSON-RPC envelope.",
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "MCP JSON-RPC response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed bearer or X-Project-Id."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden Origin or invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "MCP Streamable-HTTP transport"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "_metrics_metrics_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": " Metrics"
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "_ready_ready_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Degraded \u2014 store unavailable (snapshot) or DB unreachable (ready)."
+          }
+        },
+        "summary": " Ready"
+      }
+    },
+    "/snapshot": {
+      "get": {
+        "operationId": "_snapshot_snapshot_get",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Degraded \u2014 store unavailable (snapshot) or DB unreachable (ready)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " Snapshot"
+      }
+    },
+    "/v1/recall:batch": {
+      "post": {
+        "description": "Recall against multiple queries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"queries\": [str | {\"message\": str, \"group\"?: str}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"query_count\": int }``",
+        "operationId": "_v1_recall_batch_v1_recall_batch_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Recall Batch"
+      }
+    },
+    "/v1/reinforce": {
+      "post": {
+        "description": "Reinforce an existing memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"confidence_boost\"?: float }``",
+        "operationId": "_v1_reinforce_v1_reinforce_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Reinforce"
+      }
+    },
+    "/v1/reinforce:batch": {
+      "post": {
+        "description": "Reinforce multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"confidence_boost\"?: float}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"reinforced_count\": int, \"error_count\": int }``",
+        "operationId": "_v1_reinforce_batch_v1_reinforce_batch_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Reinforce Batch"
+      }
+    },
+    "/v1/remember": {
+      "post": {
+        "description": "Save a memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"value\": str, \"tier\"?: str, \"source\"?: str,\n      \"tags\"?: list[str], \"scope\"?: str, \"confidence\"?: float,\n      \"agent_scope\"?: str, \"group\"?: str }``",
+        "operationId": "_v1_remember_v1_remember_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Remember"
+      }
+    },
+    "/v1/remember:batch": {
+      "post": {
+        "description": "Save multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"value\": str, ...}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"saved_count\": int, \"error_count\": int }``",
+        "operationId": "_v1_remember_batch_v1_remember_batch_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Remember Batch"
+      }
+    }
+  }
+}

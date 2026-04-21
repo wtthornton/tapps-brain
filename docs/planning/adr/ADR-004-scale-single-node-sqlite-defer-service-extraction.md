@@ -1,6 +1,6 @@
 # ADR-004: Scale — single-node SQLite posture (defer published QPS SLO and service extraction)
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-007](./ADR-007-postgres-only-no-sqlite.md) (2026-04-11) — Postgres-backed private memory delivered in STORY-059.4–059.6; SQLite is no longer a build or runtime dependency.  
 **Date:** 2026-04-03  
 **Owner:** @wtthornton  
 **Epic / story:** [EPIC-051](../epics/EPIC-051.md) — STORY-051.4  
