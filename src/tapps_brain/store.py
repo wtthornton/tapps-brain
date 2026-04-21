@@ -1230,15 +1230,16 @@ class MemoryStore:
                         self._entries[key] = existing
                     else:
                         self._entries.pop(key, None)
-                    # TAP-644: The bloom filter was mutated before the persist
-                    # attempt and does not support item removal.  Rebuild it
-                    # from the now-rolled-back _entries so might_contain()
-                    # returns accurate results.  This is O(N) but persist
+                    # TAP-644 / TAP-726: The bloom filter was mutated before
+                    # the persist attempt.  Rebuild it from the now-rolled-back
+                    # _entries so might_contain() returns accurate results and
+                    # stale bits are cleared.  This is O(k*N) but persist
                     # failures are exceptional.
                     if dedup:
-                        self._bloom = BloomFilter()
-                        for _e in self._entries.values():
-                            self._bloom.add(normalize_for_dedup(_e.value))
+                        self._bloom.rebuild(
+                            normalize_for_dedup(_e.value)
+                            for _e in self._entries.values()
+                        )
                 raise
 
             # Audit (best-effort — append_audit swallows its own exceptions).
@@ -2650,6 +2651,7 @@ class MemoryStore:
             gc_archive_bytes_total=self._persistence.total_archive_bytes(),
             # TAP-549: session-state cardinality for /metrics alerting.
             active_session_count=self.active_session_count(),
+            bloom_saturation=self._bloom.approximate_false_positive_rate(),
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
@@ -2729,6 +2731,19 @@ class MemoryStore:
         # returned earlier) because it only drops process-local state —
         # there's nothing to preview.
         self._sweep_stale_sessions()
+
+        # TAP-726: rebuild the Bloom filter from the surviving entries so
+        # stale bits from archived items are removed.  Without this, the
+        # filter accumulates bits for every entry that ever existed and
+        # eventually saturates (FP rate → 1.0), making the dedup fast-path
+        # useless.  O(k*n) where k = hash_count and n = surviving entries.
+        # The lock is held for the entire rebuild so concurrent save() threads
+        # cannot race on _bloom._bits / _count during the clear+re-add cycle.
+        with self._serialized():
+            surviving_values = [
+                normalize_for_dedup(e.value) for e in self._entries.values()
+            ]
+            self._bloom.rebuild(surviving_values)
 
         return GCResult(
             archived_count=len(candidate_keys),

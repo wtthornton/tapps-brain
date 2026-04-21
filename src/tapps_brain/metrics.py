@@ -167,6 +167,17 @@ class StoreHealthReport(BaseModel):
             "GC-driven stale-session sweep (TAP-549)."
         ),
     )
+    # TAP-726: Bloom filter saturation (approximate FP rate at current count).
+    # Exposed so operators can alert when the filter degrades past a threshold
+    # (e.g. > 0.10 = dedup fast-path is providing little benefit).
+    bloom_saturation: float = Field(
+        default=0.0,
+        description=(
+            "Approximate false-positive rate of the write-path Bloom filter "
+            "at its current insertion count (TAP-726).  Near 0.01 at design "
+            "load; approaches 1.0 when the filter is saturated."
+        ),
+    )
     # Hive Postgres health (EPIC-058 STORY-058.3)
     hive_connected: bool = False
     hive_schema_version: int = 0
