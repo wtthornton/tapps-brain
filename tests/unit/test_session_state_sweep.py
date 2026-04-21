@@ -321,7 +321,7 @@ class TestPerSessionLogCap:
         entry = MemoryEntry(
             key=key,
             value="test value",
-            tier=MemoryTier.CONTEXT,
+            tier=MemoryTier.context,
         )
         with store._serialized():
             store._entries[key] = entry

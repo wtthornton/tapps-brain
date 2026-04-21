@@ -56,12 +56,20 @@ def _make_settings(*, store: Any = None, dsn: str | None = None) -> _Settings:
 def _client_with_store(settings: _Settings) -> TestClient:
     mcp_dummy = MagicMock()
     mcp_dummy.session_manager = None
-    with (
-        patch.object(_adapter_mod, "_settings", settings),
-        patch.object(_adapter_mod, "get_settings", return_value=settings),
-    ):
-        app = create_app(store=settings.store, mcp_server=mcp_dummy)
-        return TestClient(app, raise_server_exceptions=False)
+    # Use persistent patchers so get_settings() returns our settings during
+    # request handling (not just during app construction).  TAPPS_BRAIN_AUTH_TOKEN
+    # may be set in the shell environment, which would cause 401 if the patch
+    # expired before the request was processed.
+    patcher_s = patch.object(_adapter_mod, "_settings", settings)
+    patcher_gs = patch.object(_adapter_mod, "get_settings", return_value=settings)
+    patcher_s.start()
+    patcher_gs.start()
+    app = create_app(store=settings.store, mcp_server=mcp_dummy)
+    client = TestClient(app, raise_server_exceptions=False)
+    # Attach stoppers so callers can clean up if needed; pytest garbage-collects
+    # them at end of test regardless.
+    client._tapps_patchers = (patcher_s, patcher_gs)  # type: ignore[attr-defined]
+    return client
 
 
 # ---------------------------------------------------------------------------

@@ -296,8 +296,12 @@ def test_concurrent_writers_no_duplicate_keys(tmp_path: Path) -> None:
 
     def write_same() -> None:
         done.wait()
-        for i in range(20):
-            index_session(tmp_path, "shared-session", [f"chunk {i}"], _max_in_memory=cap)
+        index_session(
+            tmp_path,
+            "shared-session",
+            [f"chunk {i}" for i in range(20)],
+            _max_in_memory=cap,
+        )
 
     t1 = threading.Thread(target=write_same)
     t2 = threading.Thread(target=write_same)

@@ -263,7 +263,10 @@ class TestValidateAgainst:
         """All bundled profiles must pass validation against the full 68-tool set."""
         import re
 
-        content = Path("src/tapps_brain/mcp_server/__init__.py").read_text()
+        # After tap-605, tools live in tools_*.py submodules, not __init__.py.
+        tool_files = sorted(Path("src/tapps_brain/mcp_server/").glob("tools_*.py"))
+        tool_files.append(Path("src/tapps_brain/mcp_server/__init__.py"))
+        content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
         assert len(all_tools) == 68, f"Expected 68 tools, found {len(all_tools)}"

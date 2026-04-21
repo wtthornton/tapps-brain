@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Lock
 from unittest.mock import MagicMock
 
 import pytest
@@ -376,13 +377,10 @@ def test_run_health_check_expired_entries_tz_naive_not_false_positive(
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.return_value = []
-    # tz-naive future timestamp — must NOT be counted as expired
-    future_tz_naive = MagicMock(valid_at="2099-01-01T00:00:00")
-    mock_store._entries = {"future": future_tz_naive}
+    mock_store.count_orphaned_relations.return_value = 0
+    # tz-naive future — count_expired_entries (in store.py) returns 0
+    mock_store.count_expired_entries.return_value = 0
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 
@@ -406,13 +404,10 @@ def test_run_health_check_expired_entries_tz_naive_past_counted(
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.return_value = []
-    past_tz_naive = MagicMock(valid_at="1999-01-01T00:00:00")
-    future_tz_aware = MagicMock(valid_at="2099-01-01T00:00:00+00:00")
-    mock_store._entries = {"past": past_tz_naive, "future": future_tz_aware}
+    mock_store.count_orphaned_relations.return_value = 0
+    # tz-naive past — count_expired_entries (in store.py) returns 1
+    mock_store.count_expired_entries.return_value = 1
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 

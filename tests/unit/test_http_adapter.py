@@ -708,6 +708,8 @@ _TEST_TOKEN = "test-secret-token-abc123"
 
 class TestAuthTokenEnvResolution:
     def test_resolves_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN_FILE", raising=False)
         monkeypatch.setenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "env-token-xyz")
         token = _Settings._resolve_auth_token()
         assert token == "env-token-xyz"

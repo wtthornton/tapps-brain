@@ -196,7 +196,7 @@ class _MockStore:
     def __init__(self, entries: list[MemoryEntry]) -> None:
         self._entries_map = {e.key: e for e in entries}
 
-    def search(self, query: str) -> list[MemoryEntry]:
+    def search(self, query: str, **_kwargs: Any) -> list[MemoryEntry]:
         return list(self._entries_map.values())
 
     def list_all(self) -> list[MemoryEntry]:

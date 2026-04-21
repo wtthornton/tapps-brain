@@ -227,7 +227,7 @@ class TestServePortDefaults:
         from tapps_brain.cli import cmd_serve
 
         sig = inspect.signature(cmd_serve)
-        assert sig.parameters["mcp_host"].default == "0.0.0.0"
+        assert sig.parameters["mcp_host"].default == "127.0.0.1"
 
 
 # ---------------------------------------------------------------------------

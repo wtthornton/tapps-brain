@@ -1,6 +1,6 @@
 ---
 name: tapps-brain-memory
-version: "3.9.0"
+version: "3.10.1"
 displayName: "tapps-brain — Persistent Memory"
 description: >
   Persistent cross-session memory for OpenClaw agents. BM25 ranking,

@@ -181,8 +181,8 @@
   "info": {
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
-    "version": "3.9.0",
-    "x-schema-version": 12
+    "version": "3.10.0",
+    "x-schema-version": 15
   },
   "openapi": "3.1.0",
   "paths": {

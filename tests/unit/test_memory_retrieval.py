@@ -1032,9 +1032,9 @@ class TestGraphCentrality:
 
     def test_centrality_increases_with_shared_connections(self) -> None:
         """Centrality grows when more entries share an entity token with the target."""
-        # 'postgres' maps to target + 4 others → 4 shared keys / 10 total = 0.4
+        # 'postgres' stems to 'postgre'; maps to target + 4 others → 4/10 = 0.4
         shared_keys = ["key-a", "key-b", "key-c", "key-d", "target-key"]
-        idx = self._make_entity_index({"postgres": shared_keys})
+        idx = self._make_entity_index({"postgre": shared_keys})
         entry = _make_entry("target-key", "postgres database")
         score = MemoryRetriever._compute_graph_centrality(entry, idx, total_entries=10)
         # 4 distinct OTHER keys / 10 total entries = 0.4
@@ -1061,8 +1061,8 @@ class TestGraphCentrality:
         """Tokens are union-ed — same key reached via different tokens counted once."""
         idx = self._make_entity_index(
             {
-                "database": ["key-x", "target"],
-                "postgres": ["key-x", "key-y", "target"],
+                "databas": ["key-x", "target"],   # "database" stems to "databas"
+                "postgre": ["key-x", "key-y", "target"],  # "postgres" stems to "postgre"
             }
         )
         entry = _make_entry("target", "database postgres config")

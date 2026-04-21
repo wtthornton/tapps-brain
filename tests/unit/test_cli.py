@@ -12,6 +12,10 @@ pytestmark = pytest.mark.requires_cli
 
 from typer.testing import CliRunner
 
+import tapps_brain.cli as cli_mod
+import tapps_brain.cli.diagnostics as cli_diagnostics_mod
+import tapps_brain.cli.memory as cli_memory_mod
+
 from tapps_brain.cli import app
 from tapps_brain.store import MemoryStore
 
@@ -403,6 +407,7 @@ class TestMemoryCommands:
 
         monkeypatch.setattr(real, "save", _blocked_save)
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: real)
+        monkeypatch.setattr(cli_memory_mod, "_get_store", lambda _pd=None: real)
         try:
             r = runner.invoke(
                 app,
@@ -456,6 +461,7 @@ class TestMemoryCommands:
         mock_store.get.return_value = fake
         mock_store.close = MagicMock()
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        monkeypatch.setattr(cli_memory_mod, "_get_store", lambda _pd=None: mock_store)
         r = runner.invoke(
             app,
             ["memory", "show", "rich-cli", "--project-dir", project_dir],
@@ -506,6 +512,7 @@ class TestMemoryCommands:
         mock_store.history.return_value = [e_old, e_new]
         mock_store.close = MagicMock()
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        monkeypatch.setattr(cli_memory_mod, "_get_store", lambda _pd=None: mock_store)
         r = runner.invoke(
             app,
             ["memory", "history", "hist-t", "--project-dir", project_dir],
@@ -1010,6 +1017,7 @@ class TestFlywheelCli:
         }
         mock_store.knowledge_gaps.return_value = [gap]
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        monkeypatch.setattr(cli_diagnostics_mod, "_get_store", lambda _pd=None: mock_store)
         r = runner.invoke(app, ["flywheel", "gaps", "--project-dir", project_dir])
         assert r.exit_code == 0
         assert "how to test gaps" in r.stdout
@@ -2245,6 +2253,7 @@ class TestDiagnosticsCommands:
         mock_store.diagnostics.return_value = rep
         mock_store.close = MagicMock()
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
+        monkeypatch.setattr(cli_diagnostics_mod, "_get_store", lambda _pd=None: mock_store)
         r = runner.invoke(app, ["diagnostics", "report", "--project-dir", project_dir])
         assert r.exit_code == 0
         assert "Hive composite" in r.stdout

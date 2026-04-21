@@ -192,7 +192,8 @@ def create_server(
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     try:
-        default_store = _get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
+        import tapps_brain.mcp_server as _ms_pkg
+        default_store = _ms_pkg._get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
     except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
 
@@ -535,7 +536,9 @@ def main() -> None:
     try:
         # STORY-070.9: standard server — operator tools are NEVER enabled.
         # TAPPS_BRAIN_OPERATOR_TOOLS is intentionally not read here.
-        server = create_server(
+        # Use package-level create_server so tests can monkeypatch ms.create_server.
+        import tapps_brain.mcp_server as _ms_pkg
+        server = _ms_pkg.create_server(
             project_dir,
             enable_hive=args.enable_hive,
             agent_id=effective_agent_id,

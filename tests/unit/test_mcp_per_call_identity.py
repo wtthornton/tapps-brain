@@ -236,9 +236,17 @@ def test_backward_compat_brain_remember_accepts_no_agent_id_param() -> None:
     """Tools must keep their pre-STORY-070.7 callable shape (agent_id optional)."""
     import inspect
 
+    import tapps_brain.mcp_server.tools_brain as _tb
+    import tapps_brain.mcp_server.tools_memory as _tm
+
     # Re-read the module source to check tool signatures without booting
     # a full FastMCP server (which would touch Hive / Postgres).
-    src = inspect.getsource(mcp_mod)
+    # After tap-605, tools live in submodules rather than __init__.py.
+    src = "\n".join([
+        inspect.getsource(mcp_mod),
+        inspect.getsource(_tb),
+        inspect.getsource(_tm),
+    ])
     # These tools gained the optional ``agent_id=""`` kwarg in STORY-070.7.
     expected_defaults = (
         "def brain_remember(",

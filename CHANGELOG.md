@@ -10,10 +10,7 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
-## [Unreleased]
-
-> **Pending merge for next release** — branches below are ready but not yet on `main`.
-> Merge order: hotfixes (TAP-743/744/747) → security batch (TAP-709–729) → refactors (TAP-605/607/748) → features (TAP-732/733 → v3.11.0).
+## [3.10.1] — 2026-04-20
 
 ### Security
 - `integrity.py` key-write path: eliminate TOCTOU race and world-readable key directory (TAP-709). Signing-key file now written atomically (`O_CREAT|O_EXCL`) to a `0o700` directory; removed dangling `os` import in test.

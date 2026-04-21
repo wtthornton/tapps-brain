@@ -444,11 +444,11 @@ def run_health_check(  # noqa: PLR0915
             integrity_health.corrupted_entries = corrupted
 
             # Orphaned relations: relations pointing to missing keys (TAP-722)
-            orphaned = store.count_orphaned_relations()
+            orphaned = ms_integrity.count_orphaned_relations()
             integrity_health.orphaned_relations = orphaned
 
             # Expired entries (past valid_at) — datetime-correct comparison (TAP-722/723)
-            expired = store.count_expired_entries()
+            expired = ms_integrity.count_expired_entries()
             integrity_health.expired_entries = expired
 
             if corrupted > 0:

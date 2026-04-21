@@ -158,9 +158,9 @@ def _get_store_for_project(
     pooled MCP connections can multiplex many agents without bleeding
     Hive / propagation identity across tool calls.
     """
-    # Import here to avoid circular: server.py imports from context.py, and
-    # _get_store lives in server.py.
-    from tapps_brain.mcp_server.server import _get_store
+    # Import via package level so monkeypatch on tapps_brain.mcp_server._get_store works.
+    # (Lazy import avoids circular: server.py imports from context.py.)
+    import tapps_brain.mcp_server as _ms_pkg
 
     effective_agent_id = call_agent_id if call_agent_id else agent_id
     per_call_differs = bool(call_agent_id and call_agent_id != agent_id)
@@ -185,7 +185,7 @@ def _get_store_for_project(
             os.environ["TAPPS_BRAIN_PROJECT"] = project_id
         try:
             target_dir = _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
-            return _get_store(
+            return _ms_pkg._get_store(
                 target_dir,
                 enable_hive=enable_hive,
                 agent_id=effective_agent_id,
@@ -385,7 +385,8 @@ class _StoreProxy:
         object.__setattr__(self, "_agent_id", agent_id)
 
     def _resolve(self) -> Any:
-        pid = _current_request_project_id()
+        import tapps_brain.mcp_server as _ms_pkg
+        pid = _ms_pkg._current_request_project_id()
         try:
             return _get_store_for_project(
                 pid,

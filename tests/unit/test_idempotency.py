@@ -37,6 +37,21 @@ from tapps_brain.idempotency import (
 )
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear auth token so tests using _make_settings(auth_token=None)
+    don't get 401 from the real _settings singleton at request time.
+    Clears both the env var and the already-resolved singleton value."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN_FILE", raising=False)
+    monkeypatch.setattr(_adapter_mod._settings, "auth_token", None)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

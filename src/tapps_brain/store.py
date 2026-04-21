@@ -907,6 +907,7 @@ class MemoryStore:
         stale_reason: str | None = None,
         stale_date: str | None = None,
         superseded_by: str | None = None,
+        valid_at: str | None = None,
         *,
         skip_consolidation: bool = False,
         session_id: str | None = None,
@@ -1040,7 +1041,7 @@ class MemoryStore:
                 mg_explicit=mg_explicit,
                 temporal_sensitivity=temporal_sensitivity,
                 failed_approaches=failed_approaches,
-                conflict_valid_at=conflict_valid_at,
+                conflict_valid_at=valid_at or conflict_valid_at,
                 status=status,
                 stale_reason=stale_reason,
                 stale_date=stale_date,
@@ -1438,7 +1439,7 @@ class MemoryStore:
             entry.source.value if hasattr(entry.source, "value") else str(entry.source)
         )
         h = _compute_hash(entry.key, entry.value, tier_str, source_str)
-        return entry.model_copy(update={"integrity_hash": h})
+        return entry.model_copy(update={"integrity_hash": h, "integrity_hash_v": 2})
 
     def _embed_entry(self, key: str, value: str, entry: MemoryEntry) -> MemoryEntry:
         """Compute + attach the embedding when a provider is configured (Epic 65.7)."""

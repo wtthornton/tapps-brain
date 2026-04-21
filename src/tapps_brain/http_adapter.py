@@ -42,6 +42,7 @@ All public names are re-exported from this module for backward compat.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -396,6 +397,7 @@ def _collect_metrics(
     store: Any = None,
     *,
     redact_tenant_labels: bool = False,
+    process_start_time: float | None = None,
 ) -> str:
     """Render Prometheus exposition text.
 
@@ -406,6 +408,7 @@ def _collect_metrics(
     shape served to anonymous (or unauthenticated) scrapers so reachable-
     but-unprivileged callers cannot enumerate tenant/agent activity.
     """
+    _start = process_start_time if process_start_time is not None else _PROCESS_START_TIME
     lines: list[str] = []
 
     def gauge(name: str, value: float, help_text: str = "") -> None:
@@ -416,12 +419,12 @@ def _collect_metrics(
 
     gauge(
         "tapps_brain_process_start_time_seconds",
-        _PROCESS_START_TIME,
+        _start,
         "Unix timestamp when tapps-brain HTTP adapter was started.",
     )
     gauge(
         "tapps_brain_process_uptime_seconds",
-        time.time() - _PROCESS_START_TIME,
+        time.time() - _start,
         "Seconds since tapps-brain HTTP adapter started.",
     )
     gauge(
@@ -1412,11 +1415,12 @@ def create_app(
             app.mount("/mcp", asgi_sub)
             mcp_holder["asgi_sub"] = asgi_sub
 
-    # Register middlewares.  Order matters — starlette runs them
-    # outside-in for the request path, inside-out for the response.
+    # Register middlewares.  add_middleware order is reversed: last-added = outermost
+    # = first to process requests.  Origin allowlist must run before MCP tenant auth
+    # so a bad Origin returns 403 before the auth check can return 401/403 (TAP-627).
     app.add_middleware(OtelSpanMiddleware)
-    app.add_middleware(OriginAllowlistMiddleware)
     app.add_middleware(McpTenantMiddleware)
+    app.add_middleware(OriginAllowlistMiddleware)
 
     # -------- ops routes --------
 
