@@ -1,6 +1,6 @@
 # Open Issues Roadmap
 
-Last updated: 2026-04-09 — **v3.2.0** — EPIC-048 complete (all 6 stories); default embedding → `BAAI/bge-small-en-v1.5`; FlashRank local reranker; FTS5 porter unicode61; schema reset to v1; Docker base → python:3.13-slim; docs synced
+Last updated: 2026-04-20 — **v3.10.0** — Security batch (TAP-626–655) + graph centrality + temporal decay + failed_approaches on MemoryEntry + mcp_server split (TAP-605). Critical hotfixes pending: TAP-743/744/747 (shipped client breakage). Next target: **v3.10.1** (security batch TAP-709–729 + hotfixes) or **v3.11.0** (+ features TAP-732/733).
 Owner: @wtthornton
 
 ## Purpose

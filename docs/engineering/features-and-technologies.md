@@ -20,6 +20,10 @@
 | **Re-ranking (local cross-encoder)** | **FlashRank** (`[reranker]` extra) | `reranker.py`; used in injection pipeline when installed; falls back to noop. Runs entirely on-device, no API key needed. |
 | **Token-budgeted context** | Fixed caps + estimates | `injection.py`: `InjectionConfig.injection_max_tokens` (default 2000), per-tier max inject counts, `_MIN_SCORE` floor before inject. |
 | **Stale / decayed relevance** | **Exponential decay** + optional **FSRS-like fields** | `decay.py` lazy decay on read; `models.py` carries `stability` / `difficulty`; hybrid model + recall vs reinforce updates in [`memory-decay-and-fsrs.md`](../guides/memory-decay-and-fsrs.md). **Checklist 10.2:** lazy decay + operator GC — no mandatory wall-clock TTL jobs in core; [`ADR-002`](../planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md). |
+| **Per-entry decay velocity** | `temporal_sensitivity` field | `models.py` `temporal_sensitivity` (`high`/`medium`/`low`) overrides tier-level decay rate per entry. Migration 013 (`ADD COLUMN IF NOT EXISTS`). (TAP-735) |
+| **Graph centrality** | Lightweight co-occurrence index | `relations.py` entity co-occurrence graph; `ScoringConfig.graph_centrality` weight (default 0.0) blends PageRank-style centrality into composite scores. Zero weight = existing behavior unchanged. (TAP-734) |
+| **Pre-retrieval filters** | `MemoryFilter` structured pre-filter | `retrieval.py` `MemoryFilter` — tier, tag, date-range, `memory_class` coarse-categorization applied before scoring. (TAP-733) |
+| **Entry lifecycle status** | `MemoryStatus` enum | `models.py` `MemoryStatus` (`active`/`stale`/`superseded`); GC-protection contract: `superseded` entries protected until successor confirmed stable. Migration adds `status` + `stale_reason` columns. (TAP-732) |
 
 **Explicit boundaries:** Core retrieval does **not** call an LLM to score documents. “Relevance” is BM25 ± pgvector ± fixed formulas. **Maintainer decision (checklist item 10.1 / EPIC-051):** shipped stack is BM25 + built-in pgvector hybrid; **learned sparse**, **ColBERT-style** late interaction, and **managed external vector DB** as first-class backends are **out of scope for core** until revisited — see [`ADR-001`](../planning/adr/ADR-001-retrieval-stack.md).
 
@@ -29,7 +33,7 @@
 
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
-| **Private agent store** | **PostgreSQL** `private_memories` table | `postgres_private.py` (`PostgresPrivateBackend`); rows keyed by `(project_id, agent_id, key)`. No cross-agent contention — row-level isolation. Schema managed by `migrations/private/` (001–006). `TAPPS_BRAIN_DATABASE_URL`. (EPIC-053) |
+| **Private agent store** | **PostgreSQL** `private_memories` table | `postgres_private.py` (`PostgresPrivateBackend`); rows keyed by `(project_id, agent_id, key)`. No cross-agent contention — row-level isolation. Schema managed by `migrations/private/` (001–014). `TAPPS_BRAIN_DATABASE_URL`. (EPIC-053) |
 | **Shared store (Hive)** | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `postgres_hive.py` (`PostgresHiveBackend`) with `pgvector`, `tsvector`, `LISTEN/NOTIFY`, connection pooling. Backend selected by `create_hive_backend(dsn)` — requires `postgres://` DSN. (EPIC-054/055) |
 | **Shared store (Federation)** | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `postgres_federation.py` (`PostgresFederationBackend`). Factory: `create_federation_backend(dsn)`. Requires `postgres://` DSN. (EPIC-054/055) |
 | **Backend abstraction** | **Protocol** + **factory** pattern | `_protocols.py` defines `PrivateBackend`, `HiveBackend`, `FederationBackend`, `AgentRegistryBackend`. `backends.py` provides factory functions. Callers never import a concrete backend. (EPIC-054) |
@@ -40,6 +44,7 @@
 | **Structured logging** | **structlog** | Used across store, retrieval, MCP, CLI. |
 | **Encryption at rest** | **pg_tde** (storage layer) | Postgres-level TDE via Percona `pg_tde` 2.1.2+. Application code does not handle keys. Operator runbook: [`postgres-tde.md`](../guides/postgres-tde.md). |
 | **Append-only audit** | Postgres `audit_log` table | `postgres_private.py` `append_audit` — migration 005; indexed on `(project_id, agent_id, timestamp DESC)`. |
+| **Idempotency** | Per-key `asyncio.Lock` + Postgres store | `idempotency.py` (`IdempotencyStore`); per-key lock ensures only one writer proceeds on concurrent identical requests; second caller gets the cached result (TAP-629). |
 
 ---
 
@@ -76,7 +81,7 @@
 | Industry feature | What we use | How (implementation) |
 |------------------|-------------|-------------------------|
 | **AgentBrain facade** | `AgentBrain` class (EPIC-057) | `agent_brain.py` — 5 methods: `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`. Configured via env vars (`TAPPS_BRAIN_AGENT_ID`, `TAPPS_BRAIN_HIVE_DSN`, `TAPPS_BRAIN_GROUPS`, `TAPPS_BRAIN_EXPERT_DOMAINS`) or constructor. Context manager. Agents never import `MemoryStore` directly. Guides: [`agent-integration.md`](../guides/agent-integration.md), [`llm-brain-guide.md`](../guides/llm-brain-guide.md). |
-| **MCP server** | **`mcp`** SDK (`[mcp]` extra) | `mcp_server.py` — tool/resource/prompt surface; simplified `brain_*` MCP tools matching `AgentBrain` vocabulary; `--agent-id` passthrough; manifest: `docs/generated/mcp-tools-manifest.json`. |
+| **MCP server** | **`mcp`** SDK (`[mcp]` extra) | `mcp_server/` package (7 submodules in TAP-605: `tools_brain`, `tools_memory`, `tools_feedback`, `tools_hive`, `tools_maintenance`, `tools_agents`, `tools_resources`) — `brain_*` MCP tools matching `AgentBrain` vocabulary; `--agent-id` passthrough; manifest: `docs/generated/mcp-tools-manifest.json`. |
 | **CLI** | **Typer** (`[cli]` extra) | `cli.py` — `tapps-brain` entry point; `--agent-id` for per-agent ops; agent-friendly aliases; store helper attaches embedding provider + configured Hive backend. |
 | **Docker deployment** | `docker-compose.hive.yaml` (EPIC-058) | Postgres container (pgvector/pgvector:pg17), auto-schema init, health checks, backup/restore. Reference compose for agent containers. See [`hive-deployment.md`](../guides/hive-deployment.md), [`agentforge-integration.md`](../guides/agentforge-integration.md). |
 | **Portable interchange** | **YAML** + **JSON** | Agent registry YAML; relay JSON (`memory_relay.py`); profile YAML under `profiles/`. |
@@ -152,6 +157,7 @@ Use this list when comparing to industry alternatives:
 
 ## Change log
 
+- **2026-04-20:** Sections 1, 2, 5 — reflect v3.10.0: added `temporal_sensitivity` (TAP-735), graph centrality (TAP-734), `MemoryFilter` pre-filters (TAP-733), `MemoryStatus` lifecycle enum (TAP-732), idempotency row (TAP-629); updated `mcp_server/` package (TAP-605); migration range 001–014.
 - **2026-04-11:** Sections 1, 2, 4, 6, 8, 9, 10 — reflect ADR-007 (Postgres-only, no SQLite). Replaced FTS5/sqlite-vec with tsvector/pgvector; per-agent store now Postgres `private_memories`; removed SQLCipher row, added pg_tde. Checklist items 1, 4, 5 updated.
 - **2026-04-09:** Sections 2, 4, 5, 8, 9, 10 — reflect EPIC-053–058 (per-agent Postgres private, Postgres Hive/Federation, backend abstraction, AgentBrain API, Docker deployment, group membership).
 - **2026-04-03:** Section 10 item 6 + section 6 health row — save-path observability ([`ADR-006`](../planning/adr/ADR-006-save-path-observability.md)); phase histograms + metrics + health summary maintained; defer deeper metrics unless trigger **(a)**; OTel remains optional.

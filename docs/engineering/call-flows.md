@@ -10,7 +10,7 @@ This document maps the dominant runtime call paths as implemented now.
 
 ### MCP entry
 
-- `memory_save` tool in `mcp_server.py` -> `store.save`
+- `memory_save` tool in `mcp_server/` (TAP-605) -> `store.save`
 
 ### Store pipeline (simplified)
 
@@ -32,7 +32,7 @@ This document maps the dominant runtime call paths as implemented now.
 
 ### MCP entry
 
-- `memory_recall` tool in `mcp_server.py` -> `store.recall`
+- `memory_recall` tool in `mcp_server/` (TAP-605) -> `store.recall`
 
 ### Recall pipeline (simplified)
 
