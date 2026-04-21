@@ -50,8 +50,10 @@ from tapps_brain.gc import MemoryGarbageCollector as MemoryGarbageCollector
 from tapps_brain.injection import InjectionConfig as InjectionConfig
 from tapps_brain.injection import inject_memories as inject_memories
 
-# Integrity (H4a)
+# Integrity (H4a, TAP-710)
+from tapps_brain.integrity import INTEGRITY_HASH_VERSION as INTEGRITY_HASH_VERSION
 from tapps_brain.integrity import compute_integrity_hash as compute_integrity_hash
+from tapps_brain.integrity import compute_integrity_hash_v1 as compute_integrity_hash_v1
 from tapps_brain.integrity import verify_integrity_hash as verify_integrity_hash
 
 # I/O
@@ -203,7 +205,9 @@ __all__ = [
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
+    "INTEGRITY_HASH_VERSION",
     "compute_integrity_hash",
+    "compute_integrity_hash_v1",
     "compute_similarity",
     "consolidate",
     "create_federation_backend",

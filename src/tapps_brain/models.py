@@ -198,7 +198,18 @@ class MemoryEntry(BaseModel):
     # Integrity hash for tamper detection (H4a)
     integrity_hash: str | None = Field(
         default=None,
-        description="HMAC-SHA256 hex digest computed over key|value|tier|source.",
+        description=(
+            "HMAC-SHA256 hex digest computed over the canonical entry fields. "
+            "See integrity_hash_v for the encoding scheme used."
+        ),
+    )
+    integrity_hash_v: int = Field(
+        default=1,
+        description=(
+            "Canonical encoding version for integrity_hash. "
+            "1 = legacy pipe-joined (key|value|tier|source); "
+            "2 = JSON array [key, value, tier, source] (TAP-710 fix, collision-free)."
+        ),
     )
 
     # Provenance metadata (GitHub #38): track WHERE each memory came from.

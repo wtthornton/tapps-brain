@@ -19,12 +19,30 @@ procedure), set the environment variable::
 
 This escape hatch emits a structured ERROR log and invalidates all existing
 integrity hashes — use it only with explicit operator intent.
+
+Hash versioning
+---------------
+:data:`INTEGRITY_HASH_VERSION` tracks the canonical encoding scheme:
+
+* **v1** (legacy) — ``key|value|tier|source`` UTF-8 pipe-joined string.
+  Vulnerable to collision when ``value`` contains a literal ``|`` followed by
+  a valid ``tier|source`` suffix.  Present in entries written before
+  TAP-710 was addressed.
+* **v2** (current) — ``json.dumps([key, value, tier, source], ...)`` UTF-8.
+  JSON encoding is unambiguous: no field can produce a false boundary
+  because JSON string escaping prevents literal ``"`` characters from being
+  confused with delimiters.
+
+Use :func:`compute_integrity_hash` (v2) for all new writes.  Use
+:func:`compute_integrity_hash_v1` only inside the migration shim that
+upgrades existing rows from v1 → v2.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import tempfile
@@ -44,6 +62,10 @@ _KEY_LENGTH = 32
 #: Environment variable that opts in to forced key regeneration when the key
 #: file exists but is truncated or corrupt.  Set to ``"1"`` to enable.
 INTEGRITY_KEY_REGENERATE_ENV = "TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE"
+
+#: Current canonical encoding version used by :func:`compute_integrity_hash`.
+#: v1 = legacy pipe-joined (TAP-710); v2 = JSON array (current).
+INTEGRITY_HASH_VERSION: int = 2
 
 
 class IntegrityKeyError(RuntimeError):
@@ -185,17 +207,17 @@ def compute_integrity_hash(
     *,
     signing_key: bytes | None = None,
 ) -> str:
-    """Compute HMAC-SHA256 over the canonical entry fields.
+    """Compute HMAC-SHA256 over the canonical entry fields (v2 — JSON encoding).
 
-    The canonical form is ``key|value|tier|source`` encoded as UTF-8.
-    The pipe separator works because keys are validated slugs (no pipes),
-    and ``tier``/``source`` are constrained enum strings (no pipes).
-    **Known limitation**: if ``value`` contains a literal ``|`` followed by
-    a valid ``tier|source`` suffix the hash would be identical to an entry
-    with that suffix split across fields.  In practice this is not
-    exploitable because ``tier`` and ``source`` take only a small set of
-    fixed enum values that are unlikely to appear verbatim at the end of a
-    prose memory value.
+    The canonical form is a JSON array ``[key, value, tier, source]`` serialised
+    as a UTF-8 byte string with no trailing whitespace.  JSON encoding eliminates
+    the field-boundary collision present in the legacy pipe-joined form (TAP-710):
+    because JSON string values are always ``"``-delimited and internally escaped,
+    no combination of field contents can produce a false field boundary.
+
+    This function always produces v2 hashes.  Use :func:`compute_integrity_hash_v1`
+    only inside the one-time migration shim that identifies rows still carrying
+    legacy v1 hashes.
 
     Args:
         key: Memory entry key.
@@ -207,6 +229,46 @@ def compute_integrity_hash(
 
     Returns:
         Hex-encoded HMAC-SHA256 digest.
+    """
+    hmac_key = signing_key if signing_key is not None else get_signing_key()
+    canonical = json.dumps(
+        [key, value, tier, source],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=False,
+    ).encode("utf-8")
+    return hmac.new(hmac_key, canonical, hashlib.sha256).hexdigest()
+
+
+def compute_integrity_hash_v1(
+    key: str,
+    value: str,
+    tier: str,
+    source: str,
+    *,
+    signing_key: bytes | None = None,
+) -> str:
+    """Compute a **legacy v1** HMAC-SHA256 hash using the pipe-joined canonical form.
+
+    .. deprecated::
+        This function exists *only* to support the v1 → v2 migration shim.
+        Do **not** use it for new writes.  Call :func:`compute_integrity_hash`
+        (v2) instead.
+
+    The v1 canonical form is ``key|value|tier|source`` encoded as UTF-8.
+    It is vulnerable to collision when ``value`` contains a literal ``|``
+    followed by a valid ``tier|source`` suffix (TAP-710).
+
+    Args:
+        key: Memory entry key.
+        value: Memory entry value.
+        tier: Memory tier string.
+        source: Memory source string.
+        signing_key: Override HMAC key bytes. If ``None``, uses the
+            default key from ``get_signing_key()``.
+
+    Returns:
+        Hex-encoded HMAC-SHA256 digest computed with the v1 scheme.
     """
     hmac_key = signing_key if signing_key is not None else get_signing_key()
     canonical = f"{key}|{value}|{tier}|{source}".encode()

@@ -1,9 +1,10 @@
-"""Direct unit tests for the integrity module (story-017.8)."""
+"""Direct unit tests for the integrity module (story-017.8, TAP-710)."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import stat
@@ -17,9 +18,11 @@ import pytest
 
 from tapps_brain.integrity import (
     _KEY_LENGTH,
+    INTEGRITY_HASH_VERSION,
     INTEGRITY_KEY_REGENERATE_ENV,
     IntegrityKeyError,
     compute_integrity_hash,
+    compute_integrity_hash_v1,
     get_signing_key,
     reset_key_cache,
     verify_integrity_hash,
@@ -245,12 +248,102 @@ class TestComputeIntegrityHash:
         assert h1 != h2
 
     def test_matches_manual_hmac(self) -> None:
-        """Hash output matches a manually computed HMAC-SHA256."""
+        """Hash output matches a manually computed HMAC-SHA256 using JSON encoding (v2)."""
         sk = b"a" * _KEY_LENGTH
-        canonical = b"my-key|my-value|pattern|agent"
+        canonical = json.dumps(
+            ["my-key", "my-value", "pattern", "agent"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=False,
+        ).encode("utf-8")
         expected = hmac.new(sk, canonical, hashlib.sha256).hexdigest()
         result = compute_integrity_hash("my-key", "my-value", "pattern", "agent", signing_key=sk)
         assert result == expected
+
+    def test_version_constant_is_2(self) -> None:
+        """The current hash version is 2 (JSON encoding)."""
+        assert INTEGRITY_HASH_VERSION == 2
+
+    def test_v2_differs_from_v1_for_same_inputs(self) -> None:
+        """v2 (JSON) hash is different from v1 (pipe) hash for the same inputs."""
+        sk = secrets.token_bytes(_KEY_LENGTH)
+        h_v2 = compute_integrity_hash("k", "v", "pattern", "agent", signing_key=sk)
+        h_v1 = compute_integrity_hash_v1("k", "v", "pattern", "agent", signing_key=sk)
+        assert h_v2 != h_v1
+
+    def test_collision_eliminated_by_v2(self) -> None:
+        """TAP-710: a real v1 collision does NOT occur under v2.
+
+        The v1 canonical form ``key|value|tier|source`` is a flat byte string.
+        Two structurally different (key, value, tier, source) tuples produce
+        identical bytes when a field value contains the pipe separator.
+
+        Real collision under v1
+        -----------------------
+        Tuple A: key="k", value="v|x", tier="y", source="z"
+                 → b"k|v|x|y|z"   (pipe inside value shifts the boundary)
+        Tuple B: key="k", value="v", tier="x|y", source="z"
+                 → b"k|v|x|y|z"   (same bytes, different field split)
+        ✗ h_A == h_B under v1
+
+        Under v2 (JSON array), each field is delimited by ``"…"`` so pipe
+        characters inside field values cannot cross a boundary:
+        Tuple A → ``["k","v|x","y","z"]``
+        Tuple B → ``["k","v","x|y","z"]``
+        ✓ h_A != h_B under v2
+        """
+        sk = secrets.token_bytes(_KEY_LENGTH)
+
+        # Verify the true v1 collision:
+        # f"k|v|x|y|z" == f"k|v|x|y|z" despite different field splits.
+        h_v1_a = compute_integrity_hash_v1("k", "v|x", "y", "z", signing_key=sk)
+        h_v1_b = compute_integrity_hash_v1("k", "v", "x|y", "z", signing_key=sk)
+        assert h_v1_a == h_v1_b, (
+            "Expected v1 collision: both tuples should produce b'k|v|x|y|z'"
+        )
+
+        # Under v2, the same tuples produce distinct hashes — collision eliminated.
+        h_v2_a = compute_integrity_hash("k", "v|x", "y", "z", signing_key=sk)
+        h_v2_b = compute_integrity_hash("k", "v", "x|y", "z", signing_key=sk)
+        assert h_v2_a != h_v2_b, "v2 must not collide for structurally different tuples"
+
+    def test_value_with_pipe_characters_is_unambiguous_in_v2(self) -> None:
+        """Values containing pipe characters still produce distinct v2 hashes."""
+        sk = secrets.token_bytes(_KEY_LENGTH)
+        # Value that exactly mimics the pipe-delimited boundary in v1.
+        h1 = compute_integrity_hash("k", "a|pattern|agent", "context", "human", signing_key=sk)
+        h2 = compute_integrity_hash("k", "a", "pattern|context", "human", signing_key=sk)
+        h3 = compute_integrity_hash("k", "a|pattern|agent|context|human", "", "", signing_key=sk)
+        # All structurally different tuples → all different hashes.
+        assert h1 != h2
+        assert h1 != h3
+        assert h2 != h3
+
+
+class TestComputeIntegrityHashV1:
+    """Tests for the legacy v1 compute function (migration shim only)."""
+
+    def test_v1_uses_pipe_canonical_form(self) -> None:
+        """v1 hash matches manual HMAC over pipe-joined bytes."""
+        sk = b"b" * _KEY_LENGTH
+        canonical = b"my-key|my-value|pattern|agent"
+        expected = hmac.new(sk, canonical, hashlib.sha256).hexdigest()
+        result = compute_integrity_hash_v1(
+            "my-key", "my-value", "pattern", "agent", signing_key=sk
+        )
+        assert result == expected
+
+    def test_v1_deterministic(self) -> None:
+        sk = secrets.token_bytes(_KEY_LENGTH)
+        h1 = compute_integrity_hash_v1("k", "v", "pattern", "agent", signing_key=sk)
+        h2 = compute_integrity_hash_v1("k", "v", "pattern", "agent", signing_key=sk)
+        assert h1 == h2
+
+    def test_v1_different_values_differ(self) -> None:
+        sk = secrets.token_bytes(_KEY_LENGTH)
+        h1 = compute_integrity_hash_v1("k", "a", "pattern", "agent", signing_key=sk)
+        h2 = compute_integrity_hash_v1("k", "b", "pattern", "agent", signing_key=sk)
+        assert h1 != h2
 
 
 class TestVerifyIntegrityHash:
