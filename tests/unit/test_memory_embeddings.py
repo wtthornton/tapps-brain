@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tapps_brain.embeddings import (
+    _DEFAULT_MODEL_REVISION,
     SentenceTransformerProvider,
     dequantize_embedding_int8,
     embedding_cosine_similarity,
@@ -168,9 +169,59 @@ class TestSentenceTransformerProvider:
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 384
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
-            provider = SentenceTransformerProvider(model_name="test-model")
+            provider = SentenceTransformerProvider(model_name="test-model", revision=None)
         assert provider.dimension == 384
         assert provider.model_id == "test-model"
+
+    def test_init_with_revision_composite_model_id(self) -> None:
+        """model_id returns 'name@revision' when revision is set."""
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+        with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
+            provider = SentenceTransformerProvider(
+                model_name="test-model", revision="abc123"
+            )
+        assert provider.model_id == "test-model@abc123"
+        assert provider.model_revision == "abc123"
+
+    def test_default_model_uses_pinned_revision(self) -> None:
+        """Default constructor uses _DEFAULT_MODEL_REVISION and composite model_id."""
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformer", return_value=mock_model
+        ) as mock_st:
+            provider = SentenceTransformerProvider()
+        # revision kwarg must be passed to SentenceTransformer
+        call_kwargs = mock_st.call_args[1]
+        assert call_kwargs.get("revision") == _DEFAULT_MODEL_REVISION
+        assert provider.model_revision == _DEFAULT_MODEL_REVISION
+        assert _DEFAULT_MODEL_REVISION in provider.model_id
+
+    def test_revision_none_skips_revision_kwarg(self) -> None:
+        """When revision=None, SentenceTransformer is called without revision kwarg."""
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformer", return_value=mock_model
+        ) as mock_st:
+            provider = SentenceTransformerProvider(model_name="my-model", revision=None)
+        call_kwargs = mock_st.call_args[1]
+        assert "revision" not in call_kwargs
+        assert provider.model_id == "my-model"
+        assert provider.model_revision is None
+
+    def test_offline_mode_sets_hf_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE=1 propagates HF_HUB_OFFLINE=1."""
+        monkeypatch.setenv("TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE", "1")
+        monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+        import os
+
+        with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
+            SentenceTransformerProvider(model_name="test-model", revision=None)
+        assert os.environ.get("HF_HUB_OFFLINE") == "1"
 
     def test_init_falls_back_to_384_when_dimension_none(self) -> None:
         """When get_sentence_embedding_dimension() returns None, fall back to 384."""
@@ -282,13 +333,13 @@ class TestSentenceTransformerProviderReal:
         pytest.importorskip("sentence_transformers")
 
     def test_embed_returns_correct_dimensions(self) -> None:
-        provider = SentenceTransformerProvider()
+        provider = SentenceTransformerProvider(revision=None)
         result = provider.embed("hello world")
         assert len(result) == provider.dimension
         assert all(isinstance(x, float) for x in result)
 
     def test_embed_batch_consistency(self) -> None:
-        provider = SentenceTransformerProvider()
+        provider = SentenceTransformerProvider(revision=None)
         single_a = provider.embed("test sentence A")
         single_b = provider.embed("test sentence B")
         batch = provider.embed_batch(["test sentence A", "test sentence B"])
@@ -297,7 +348,7 @@ class TestSentenceTransformerProviderReal:
         assert batch[1] == pytest.approx(single_b, abs=1e-5)
 
     def test_embed_deterministic(self) -> None:
-        provider = SentenceTransformerProvider()
+        provider = SentenceTransformerProvider(revision=None)
         result1 = provider.embed("deterministic test")
         result2 = provider.embed("deterministic test")
         assert result1 == pytest.approx(result2, abs=1e-6)

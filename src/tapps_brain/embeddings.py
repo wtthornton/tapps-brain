@@ -13,8 +13,9 @@ Operator-facing defaults (model id, dimension, license, upgrade notes):
 from __future__ import annotations
 
 import math
+import os
 import struct
-from typing import cast
+from typing import Any, cast
 
 import structlog
 
@@ -27,6 +28,12 @@ except ImportError:  # pragma: no cover — should not happen with correct insta
     SentenceTransformer = None  # type: ignore[assignment, misc]
 
 _DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
+
+# Pinned git revision (commit SHA) for BAAI/bge-small-en-v1.5 on HuggingFace Hub.
+# Prevents silent supply-chain / model-swap risk on cache-cold container starts.
+# To update: verify the new SHA at https://huggingface.co/BAAI/bge-small-en-v1.5/commits/main
+# then run the benchmark suite to confirm recall parity before committing the change.
+_DEFAULT_MODEL_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
 
 # Symmetric int8 scale for components in [-1, 1] (L2-normalized sentence embeddings).
 _INT8_QUANT_SCALE = 127.0
@@ -101,24 +108,70 @@ def embedding_cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 class SentenceTransformerProvider:
-    """Embedding provider backed by sentence-transformers (core dependency)."""
+    """Embedding provider backed by sentence-transformers (core dependency).
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
+    Args:
+        model_name: HuggingFace model identifier (default: ``BAAI/bge-small-en-v1.5``).
+        revision: Exact git revision (commit SHA or tag) to load from the Hub.
+            Defaults to :data:`_DEFAULT_MODEL_REVISION` so that every fresh container
+            pull loads the same weights.  Pass ``None`` to disable pinning (not
+            recommended in production — you lose supply-chain guarantees).
+
+    Environment:
+        ``TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE=1`` — sets ``HF_HUB_OFFLINE=1`` before
+        any Hub contact so the model is loaded entirely from the local cache.  If the
+        cached model is absent or does not match *revision*, sentence-transformers will
+        raise an error (fail-loud, no silent fallback).
+    """
+
+    def __init__(
+        self,
+        model_name: str = _DEFAULT_MODEL,
+        *,
+        revision: str | None = _DEFAULT_MODEL_REVISION,
+    ) -> None:
         if SentenceTransformer is None:
             msg = (
                 "sentence-transformers is required but not installed. "
                 "Install with: pip install 'tapps-brain[all]'"
             )
             raise ImportError(msg)
+
+        # Honour offline-mode flag *before* any Hub contact attempt.
+        if os.environ.get("TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE", "0") == "1":
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            logger.info(
+                "embedding_offline_mode_active",
+                model_name=model_name,
+                revision=revision,
+            )
+
         self._model_name = model_name
-        self._model = SentenceTransformer(model_name)
+        self._revision = revision
+
+        st_kwargs: dict[str, Any] = {}
+        if revision is not None:
+            st_kwargs["revision"] = revision
+
+        self._model = SentenceTransformer(model_name, **st_kwargs)
         raw_dim = self._model.get_sentence_embedding_dimension()
         self._dim: int = int(raw_dim) if raw_dim is not None else 384
 
     @property
     def model_id(self) -> str:
-        """Sentence-transformers model name (stored with embeddings for reindex planning)."""
+        """Composite model identity string (``name@revision`` or just ``name``).
+
+        Stored alongside embeddings in ``embedding_model_id`` so a revision mismatch
+        on cold-start can be detected and a re-index triggered.
+        """
+        if self._revision:
+            return f"{self._model_name}@{self._revision}"
         return self._model_name
+
+    @property
+    def model_revision(self) -> str | None:
+        """Pinned revision SHA, or ``None`` when pinning is disabled."""
+        return self._revision
 
     @property
     def dimension(self) -> int:
@@ -139,8 +192,15 @@ class SentenceTransformerProvider:
 
 def get_embedding_provider(
     model: str = _DEFAULT_MODEL,
+    *,
+    revision: str | None = _DEFAULT_MODEL_REVISION,
 ) -> SentenceTransformerProvider | None:
     """Return a ``SentenceTransformerProvider``, or None if unavailable.
+
+    Args:
+        model: HuggingFace model identifier.
+        revision: Pinned git revision forwarded to :class:`SentenceTransformerProvider`.
+            Defaults to :data:`_DEFAULT_MODEL_REVISION` for supply-chain safety.
 
     Returns None (with a warning) when sentence-transformers is not installed
     or the model fails to load — e.g. in test environments.
@@ -151,7 +211,7 @@ def get_embedding_provider(
     requiring DEBUG logging.
     """
     try:
-        return SentenceTransformerProvider(model_name=model)
+        return SentenceTransformerProvider(model_name=model, revision=revision)
     except ImportError:
         logger.warning(
             "embedding_provider_unavailable",
