@@ -18,8 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
-from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normalize_agent_scope
-from tapps_brain.memory_group import MEMORY_GROUP_UNSET, normalize_memory_group
+from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import (
     MemoryEntry,
     MemoryScope,
@@ -40,6 +39,19 @@ if TYPE_CHECKING:
     from tapps_brain.feedback import FeedbackEvent, FeedbackStore, InMemoryFeedbackStore
     from tapps_brain.write_policy import DeterministicWritePolicy, LLMWritePolicy
 
+from tapps_brain._save_conflict import (
+    ConflictPlan,
+    plan_conflicts,
+    resolve_similarity_threshold,
+)
+from tapps_brain._save_pipeline import (
+    apply_safety_check,
+    validate_scope_and_group,
+)
+from tapps_brain._save_propagation import (
+    propagate_group_save,
+    publish_to_experts,
+)
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.bm25 import preprocess as _bm25_preprocess
 from tapps_brain.metrics import (
@@ -67,7 +79,6 @@ from tapps_brain.otel_tracer import (
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
-from tapps_brain.safety import check_content_safety
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
@@ -213,6 +224,49 @@ def _token_overlap_ratio(a: str, b: str) -> float:
         return 0.0
     intersection = len(tokens_a & tokens_b)
     return intersection / min(len(tokens_a), len(tokens_b))
+
+
+def _preserved_fields_for_update(
+    existing: MemoryEntry | None,
+    now: str,
+) -> dict[str, Any]:
+    """Return the ``MemoryEntry`` fields that must be preserved on update.
+
+    Extracted from ``_construct_memory_entry`` (TAP-602) so the entry builder
+    stays linear.  When ``existing`` is ``None`` (a fresh insert) every field
+    returns its insert-time default; otherwise we carry the stored value
+    forward so reinforcement / contradiction / temporal state is not clobbered
+    by a routine save().
+    """
+    if existing is None:
+        return {
+            "created_at": now,
+            "access_count": 1,
+            "last_reinforced": None,
+            "reinforce_count": 0,
+            "contradicted": False,
+            "contradiction_reason": None,
+            "seeded_from": None,
+            "valid_at": None,
+            "invalid_at": None,
+            "superseded_by": None,
+            "temporal_sensitivity": None,
+            "failed_approaches": [],
+        }
+    return {
+        "created_at": existing.created_at,
+        "access_count": existing.access_count,
+        "last_reinforced": existing.last_reinforced,
+        "reinforce_count": existing.reinforce_count,
+        "contradicted": existing.contradicted,
+        "contradiction_reason": existing.contradiction_reason,
+        "seeded_from": existing.seeded_from,
+        "valid_at": existing.valid_at,
+        "invalid_at": existing.invalid_at,
+        "superseded_by": existing.superseded_by,
+        "temporal_sensitivity": existing.temporal_sensitivity,
+        "failed_approaches": existing.failed_approaches,
+    }
 
 
 @dataclass
@@ -808,7 +862,7 @@ class MemoryStore:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(  # noqa: PLR0911
+    def save(  # noqa: PLR0911, PLR0913
         self,
         key: str,
         value: str,
@@ -842,6 +896,11 @@ class MemoryStore:
         Rate-limit exemption is granted by wrapping trusted internal bulk
         operations with :func:`~tapps_brain.rate_limiter.batch_exempt_scope`.
         Never accept a caller-supplied exemption string from HTTP/MCP/CLI.
+        The save path is decomposed across helper modules
+        (:mod:`tapps_brain._save_pipeline`, :mod:`tapps_brain._save_conflict`,
+        :mod:`tapps_brain._save_propagation`) and focused private methods
+        below (TAP-602).  Public behaviour, error dict shapes, and metric /
+        log names are unchanged.
 
         Args:
             key: Unique identifier for the memory.
@@ -875,244 +934,54 @@ class MemoryStore:
         """
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
-        try:
-            agent_scope = normalize_agent_scope(agent_scope)
-        except ValueError as exc:
-            return {
-                "error": "invalid_agent_scope",
-                "message": str(exc),
-                "valid_values": agent_scope_valid_values_for_errors(),
-            }
 
-        # STORY-056.3: Validate group membership for group-scoped saves
-        if agent_scope.startswith("group:") and agent_scope != "group":
-            group_name = agent_scope[6:]
-            if group_name not in self._groups:
-                return {
-                    "error": "invalid_agent_scope",
-                    "message": f"Agent not a member of group '{group_name}'",
-                }
+        # Phase 1 — scope + memory_group validation (pure).
+        scope_result = validate_scope_and_group(
+            agent_scope=agent_scope,
+            memory_group=memory_group,
+            groups=self._groups,
+        )
+        if isinstance(scope_result, dict):
+            return scope_result
+        agent_scope = scope_result.agent_scope
+        mg_explicit = scope_result.mg_explicit
 
         # Auto-fill source_agent from store identity (STORY-053.2)
         if source_agent == "unknown" and self._agent_id is not None:
             source_agent = self._agent_id
-
         tier = normalize_save_tier(tier, self._profile)
 
-        _mg_explicit: str | None | object = MEMORY_GROUP_UNSET
-        if memory_group is not MEMORY_GROUP_UNSET:
-            if memory_group is None:
-                _mg_explicit = None
-            else:
-                try:
-                    _mg_explicit = normalize_memory_group(str(memory_group))
-                except ValueError as exc:
-                    return {"error": "invalid_memory_group", "message": str(exc)}
-
-        # Write rules validation (Epic 65.17)
+        # Phase 2 — write-rules + rate limiter + safety.
         wr_error = _validate_write_rules(key, value, self._write_rules)
         if wr_error is not None:
-            return {
-                "error": "write_rules_violation",
-                "message": wr_error,
-            }
+            return {"error": "write_rules_violation", "message": wr_error}
 
-        # Rate limit check (H6a) — warn-only, never blocks.
-        # Exemption is read from the batch_exempt_scope() contextvar only.
-        rate_result = self._rate_limiter.check()
-        if rate_result.minute_exceeded or rate_result.lifetime_exceeded:
-            logger.warning(
-                "memory_save_rate_warning",
-                key=key,
-                minute_count=rate_result.current_minute_count,
-                lifetime_count=rate_result.current_lifetime_count,
-            )
+        self._check_rate_limit(key)
 
-        # RAG safety check on value (ruleset + metrics: EPIC-044 STORY-044.1)
-        _rs_ver: str | None = None
-        if self._profile is not None:
-            _safety_cfg = getattr(self._profile, "safety", None)
-            if _safety_cfg is not None:
-                _rs_ver = getattr(_safety_cfg, "ruleset_version", None)
-        safety = check_content_safety(
-            value,
-            ruleset_version=_rs_ver,
+        safety_outcome = apply_safety_check(
+            key=key,
+            value=value,
+            profile=self._profile,
             metrics=self._metrics,
         )
-        if not safety.safe:
-            logger.warning(
-                "memory_save_blocked",
-                key=key,
-                match_count=safety.match_count,
-                patterns=safety.flagged_patterns,
-                ruleset_version=safety.ruleset_version,
-            )
-            self._metrics.increment("store.save.errors")
-            self._metrics.increment("store.save.errors.content_blocked")
-            return {
-                "error": "content_blocked",
-                "message": "Memory value blocked by RAG safety filter.",
-                "flagged_patterns": safety.flagged_patterns,
-            }
+        if isinstance(safety_outcome, dict):
+            return safety_outcome
+        value = safety_outcome.value
 
-        if safety.sanitised_content is not None:
-            value = safety.sanitised_content
+        # Phase 3 — optional write-policy gate (may short-circuit).
+        wp_short = self._apply_write_policy(key, value)
+        if wp_short is not None:
+            return wp_short
 
-        # Write-path policy decision (TAP-560/STORY-SC04).
-        # Called after safety check so the policy always receives sanitised content.
-        # DeterministicWritePolicy returns ADD unconditionally (zero overhead).
-        # LLMWritePolicy consults an LLM and may return NOOP, DELETE, or UPDATE.
-        if self._write_policy is not None:
-            from tapps_brain.write_policy import WriteDecision
+        # Phase 4 — dedup fast-path.
+        dedup_short = self._handle_dedup(key, value, dedup)
+        if dedup_short is not None:
+            return dedup_short
 
-            with self._serialized():
-                _wp_candidates = list(self._entries.values())
-            _wp_result = self._write_policy.decide(key, value, _wp_candidates)
-            if _wp_result.decision == WriteDecision.NOOP:
-                # The policy determined this entry is already captured.
-                self._metrics.increment("store.save.write_policy.noop")
-                logger.info(
-                    "memory_save_write_policy_noop",
-                    key=key,
-                    reasoning=_wp_result.reasoning,
-                )
-                with self._serialized():
-                    _existing_noop = self._entries.get(key)
-                if _existing_noop is not None:
-                    return _existing_noop
-                return {"write_policy": "noop", "key": key, "reasoning": _wp_result.reasoning}
-            elif _wp_result.decision == WriteDecision.DELETE and _wp_result.target_key:
-                # The policy wants to remove an existing entry and discard the new one.
-                self._metrics.increment("store.save.write_policy.delete")
-                logger.info(
-                    "memory_save_write_policy_delete",
-                    key=key,
-                    target_key=_wp_result.target_key,
-                    reasoning=_wp_result.reasoning,
-                )
-                self.delete(_wp_result.target_key)
-                return {
-                    "write_policy": "delete",
-                    "deleted_key": _wp_result.target_key,
-                    "reasoning": _wp_result.reasoning,
-                }
-            # WriteDecision.ADD and WriteDecision.UPDATE fall through to the
-            # standard save path.  For UPDATE with a different target_key, the
-            # caller may redirect; for now we save the incoming entry as-is.
-            if _wp_result.decision != WriteDecision.ADD:
-                logger.debug(
-                    "memory_save_write_policy_passthrough",
-                    key=key,
-                    decision=_wp_result.decision.value,
-                )
+        # Phase 5 — conflict detection (opt-in) marks superseded entries.
+        conflict_valid_at = self._handle_conflicts(key, value, tier, conflict_check)
 
-        # Bloom filter dedup fast-path (GitHub #31)
-        if dedup:
-            normalized = normalize_for_dedup(value)
-            if self._bloom.might_contain(normalized):
-                _dup_key: str | None = None
-                with self._serialized():
-                    for _existing in self._entries.values():
-                        if normalize_for_dedup(_existing.value) == normalized:
-                            _dup_key = _existing.key
-                            break
-                if _dup_key is not None:
-                    logger.debug(
-                        "memory_dedup_bloom_hit",
-                        key=key,
-                        existing_key=_dup_key,
-                    )
-                    self._metrics.increment("store.save.dedup_skip")
-                    try:
-                        return self.reinforce(_dup_key)
-                    except KeyError:
-                        pass  # Entry was deleted between check and reinforce; proceed with save
-            self._bloom.add(normalized)
-
-        # Conflict detection (GitHub #44, task 040.16) — opt-in only.
-        _conflict_valid_at: str | None = None
-        if conflict_check:
-            from tapps_brain.contradictions import (
-                detect_save_conflicts,
-                format_save_conflict_reason,
-            )
-
-            with self._serialized():
-                _all_entries = list(self._entries.values())
-            _cc = (
-                getattr(self._profile, "conflict_check", None)
-                if self._profile is not None
-                else None
-            )
-            if _cc is not None:
-                _sim_threshold = _cc.effective_similarity_threshold()
-            else:
-                from tapps_brain.profile import ConflictCheckConfig
-
-                _sim_threshold = ConflictCheckConfig().effective_similarity_threshold()
-            _conflicts = detect_save_conflicts(
-                value,
-                tier,
-                _all_entries,
-                _sim_threshold,
-                exclude_key=key,
-            )
-            if _conflicts:
-                _conflict_keys = [h.entry.key for h in _conflicts]
-                _tier_display = tier
-                _conflict_audit = [
-                    {
-                        "key": h.entry.key,
-                        "similarity": round(h.similarity, 4),
-                        "tier": (
-                            h.entry.tier.value
-                            if hasattr(h.entry.tier, "value")
-                            else str(h.entry.tier)
-                        ),
-                    }
-                    for h in _conflicts
-                ]
-                logger.warning(
-                    "memory_save_conflicts_detected",
-                    key=key,
-                    conflicting_keys=_conflict_keys,
-                    similarity_threshold=_sim_threshold,
-                    conflicts=_conflict_audit,
-                )
-                # Mark conflicting entries as superseded (set invalid_at = now)
-                _now_conflict = _utc_now_iso()
-                _conflict_valid_at = _now_conflict
-                for _hit in _conflicts:
-                    _conflict_entry = _hit.entry
-                    if _conflict_entry.invalid_at is None:
-                        _invalidated: MemoryEntry | None = None
-                        _reason = format_save_conflict_reason(
-                            incoming_key=key,
-                            tier=_tier_display,
-                            similarity=_hit.similarity,
-                        )
-                        with self._serialized():
-                            _current = self._entries.get(_conflict_entry.key)
-                            if _current is not None and _current.invalid_at is None:
-                                _invalidated = _current.model_copy(
-                                    update={
-                                        "invalid_at": _now_conflict,
-                                        "updated_at": _now_conflict,
-                                        "contradicted": True,
-                                        "contradiction_reason": _reason,
-                                    }
-                                )
-                                self._entries[_conflict_entry.key] = _invalidated
-                        if _invalidated is not None:
-                            try:
-                                self._persistence.save(_invalidated)
-                            except Exception:
-                                logger.warning(
-                                    "conflict_invalidate_persist_failed",
-                                    conflict_key=_conflict_entry.key,
-                                    exc_info=True,
-                                )
-
+        # Phase 6 — build, persist, propagate under span + timer.
         self._metrics.increment("store.save")
         with (
             start_span(
@@ -1126,298 +995,54 @@ class MemoryStore:
             ),
             MetricsTimer(self._metrics, "store.save_ms"),
         ):
-            now = _utc_now_iso()
-            with (
-                MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
-                self._serialized(),
-            ):
-                existing = self._entries.get(key)
-
-                if memory_group is MEMORY_GROUP_UNSET:
-                    mg_for_entry: str | None = (
-                        existing.memory_group if existing is not None else None
-                    )
-                else:
-                    mg_for_entry = cast("str | None", _mg_explicit)
-
-                # EPIC-010: Accept profile layer names as tier values.
-                # Try MemoryTier enum first; if it fails, accept the raw
-                # string when the active profile defines a layer with that name.
-                try:
-                    tier_val: MemoryTier | str = MemoryTier(tier)
-                except ValueError:
-                    if self._profile is not None and tier in self._profile.layer_names:
-                        tier_val = tier
-                    else:
-                        tier_val = MemoryTier(tier)  # Raise original error
-
-                entry = MemoryEntry(
-                    key=key,
-                    value=value,
-                    tier=tier_val,
-                    confidence=confidence,
-                    source=MemorySource(source),
-                    source_agent=source_agent,
-                    scope=MemoryScope(scope),
-                    agent_scope=agent_scope,
-                    tags=tags or [],
-                    created_at=existing.created_at if existing else now,
-                    updated_at=now,
-                    last_accessed=now,
-                    access_count=existing.access_count if existing else 1,
-                    branch=branch,
-                    # Preserve reserved fields on update
-                    last_reinforced=existing.last_reinforced if existing else None,
-                    reinforce_count=existing.reinforce_count if existing else 0,
-                    contradicted=existing.contradicted if existing else False,
-                    contradiction_reason=(existing.contradiction_reason if existing else None),
-                    seeded_from=existing.seeded_from if existing else None,
-                    # Preserve temporal fields on update (EPIC-004);
-                    # override valid_at when conflicts were resolved (040.16)
-                    valid_at=_conflict_valid_at
-                    if _conflict_valid_at
-                    else (existing.valid_at if existing else None),
-                    invalid_at=existing.invalid_at if existing else None,
-                    superseded_by=existing.superseded_by if existing else None,
-                    # Provenance metadata (GitHub #38)
-                    source_session_id=source_session_id,
-                    source_channel=source_channel,
-                    source_message_id=source_message_id,
-                    triggered_by=triggered_by,
-                    memory_group=mg_for_entry,
-                    # TAP-735: per-entry decay velocity override.
-                    # When the caller passes None (the default), the existing value is
-                    # preserved on update.  Passing an explicit "high"/"medium"/"low"
-                    # replaces the stored value.  The MCP tool uses "" as the absent
-                    # sentinel and converts it to None before calling save(), so there
-                    # is currently no public API path to clear an existing setting back
-                    # to None — that can be added when needed via a dedicated clear param.
-                    temporal_sensitivity=temporal_sensitivity
-                    if temporal_sensitivity is not None
-                    else (existing.temporal_sensitivity if existing else None),
-                    failed_approaches=failed_approaches
-                    if failed_approaches is not None
-                    else (existing.failed_approaches if existing else []),
-                )
-
-                # Compute integrity hash (H4a) — always v2 (JSON encoding, TAP-710)
-                from tapps_brain.integrity import (
-                    INTEGRITY_HASH_VERSION as _HASH_V,
-                    compute_integrity_hash as _compute_hash,
-                )
-
-                _tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                _source_str = (
-                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-                )
-                _hash = _compute_hash(entry.key, entry.value, _tier_str, _source_str)
-                entry = entry.model_copy(
-                    update={"integrity_hash": _hash, "integrity_hash_v": _HASH_V}
-                )
-
-                # Per-group then global max entry enforcement (EPIC-044 STORY-044.7)
-                self._enforce_entry_caps_before_assign(
-                    key=key,
-                    new_group=entry.memory_group,
-                    existing=existing,
-                )
-
-                self._entries[key] = entry
-
-            # Compute embedding when semantic search is enabled (Epic 65.7)
-            if self._embedding_provider is not None:
-                with MetricsTimer(self._metrics, "store.save.phase.embed_ms"):
-                    try:
-                        emb = self._embedding_provider.embed(value)
-                        _mid_raw = getattr(self._embedding_provider, "model_id", None)
-                        _mid: str | None = (
-                            _mid_raw.strip()
-                            if isinstance(_mid_raw, str) and _mid_raw.strip()
-                            else None
-                        )
-                        _embed_update: dict[str, object] = {
-                            "embedding": emb,
-                            "embedding_model_id": _mid,
-                        }
-                        entry = entry.model_copy(update=_embed_update)
-                        with self._serialized():
-                            # Re-read current entry to avoid overwriting concurrent
-                            # updates (e.g. another save/update_fields in between).
-                            current = self._entries.get(key)
-                            if current is not None and current.key == entry.key:
-                                entry = current.model_copy(update=_embed_update)
-                            self._entries[key] = entry
-                    except Exception:
-                        logger.warning("embedding_compute_failed", key=key, exc_info=True)
-
-            # Persist to Postgres — rollback in-memory cache on failure to
-            # maintain write-through consistency.
-            try:
-                with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
-                    self._persistence.save(entry)
-            except Exception:
-                with self._serialized():
-                    if existing is not None:
-                        self._entries[key] = existing
-                    else:
-                        self._entries.pop(key, None)
-                    # TAP-644 / TAP-726: The bloom filter was mutated before
-                    # the persist attempt.  Rebuild it from the now-rolled-back
-                    # _entries so might_contain() returns accurate results and
-                    # stale bits are cleared.  This is O(k*N) but persist
-                    # failures are exceptional.
-                    if dedup:
-                        self._bloom.rebuild(
-                            normalize_for_dedup(_e.value)
-                            for _e in self._entries.values()
-                        )
-                raise
-
-            # Audit (best-effort — append_audit swallows its own exceptions).
-            self._persistence.append_audit(
-                action="save",
+            entry, existing = self._build_and_assign_entry(
                 key=key,
-                extra={
-                    "tier": str(entry.tier),
-                    "value_len": len(entry.value),
-                    "is_update": existing is not None,
-                },
+                value=value,
+                tier=tier,
+                source=source,
+                source_agent=source_agent,
+                scope=scope,
+                tags=tags,
+                branch=branch,
+                confidence=confidence,
+                agent_scope=agent_scope,
+                source_session_id=source_session_id,
+                source_channel=source_channel,
+                source_message_id=source_message_id,
+                triggered_by=triggered_by,
+                memory_group=memory_group,
+                mg_explicit=mg_explicit,
+                temporal_sensitivity=temporal_sensitivity,
+                failed_approaches=failed_approaches,
+                conflict_valid_at=conflict_valid_at,
             )
 
-            # Entity index update for graph centrality (TAP-734).
-            # Remove old tokens first (for updates), then add new ones.
-            if existing is not None:
-                self._remove_entry_entities(key)
-            self._index_entry_entities(key, entry.value)
+            entry = self._embed_entry(key, value, entry)
+            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
+            self._emit_save_audit(key, entry, existing=existing)
+            self._refresh_entity_index(key, entry, existing_present=existing is not None)
 
-            # Hive propagation (EPIC-011)
+            # Hive + group + expert fan-out (best-effort).
             if self._hive_store is not None:
                 with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
                     self._propagate_to_hive(entry)
+            propagate_group_save(
+                entry=entry,
+                agent_scope=agent_scope,
+                groups=self._groups,
+                hive_store=self._hive_store,
+            )
+            publish_to_experts(
+                entry=entry,
+                tier=tier,
+                agent_scope=agent_scope,
+                expert_domains=self._expert_domains,
+                hive_store=self._hive_store,
+                auto_publish=auto_publish,
+            )
 
-            # STORY-056.3: Group-scoped save routing
-            if self._hive_store is not None and self._groups:
-                _tier_str_056 = (
-                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                )
-                _source_str_056 = (
-                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-                )
-                if agent_scope == "group" and self._groups:
-                    # Propagate to ALL declared groups
-                    for _gn in self._groups:
-                        try:
-                            self._hive_store.save(
-                                namespace=f"group:{_gn}",
-                                key=entry.key,
-                                value=entry.value,
-                                tier=_tier_str_056,
-                                confidence=entry.confidence,
-                                source=_source_str_056,
-                                source_agent=entry.source_agent,
-                                tags=entry.tags,
-                            )
-                        except Exception:
-                            logger.warning(
-                                "group_save_propagation_failed",
-                                group=_gn,
-                                key=entry.key,
-                                exc_info=True,
-                            )
-                elif agent_scope.startswith("group:"):
-                    # Propagate to specific group (already validated above)
-                    _target_group = agent_scope[6:]
-                    try:
-                        self._hive_store.save(
-                            namespace=f"group:{_target_group}",
-                            key=entry.key,
-                            value=entry.value,
-                            tier=_tier_str_056,
-                            confidence=entry.confidence,
-                            source=_source_str_056,
-                            source_agent=entry.source_agent,
-                            tags=entry.tags,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "group_save_propagation_failed",
-                            group=_target_group,
-                            key=entry.key,
-                            exc_info=True,
-                        )
+            self._persist_relations(key, value)
 
-            # STORY-056.2: Expert domain auto-publishing
-            if (
-                auto_publish
-                and self._expert_domains
-                and self._hive_store is not None
-                and tier in ("architectural", "pattern")
-                and agent_scope == "private"
-            ):
-                _tier_str_exp = (
-                    entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                )
-                _source_str_exp = (
-                    entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-                )
-                expert_tags = [f"expert:{d}" for d in self._expert_domains]
-                all_tags = list(entry.tags or []) + expert_tags
-                try:
-                    self._hive_store.save(
-                        namespace="universal",
-                        key=entry.key,
-                        value=entry.value,
-                        tier=_tier_str_exp,
-                        confidence=entry.confidence,
-                        source=_source_str_exp,
-                        source_agent=entry.source_agent,
-                        tags=all_tags,
-                    )
-                except Exception:
-                    logger.warning(
-                        "expert_auto_publish_failed",
-                        key=entry.key,
-                        exc_info=True,
-                    )
-
-            # Extract and persist relations (EPIC-006)
-            with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
-                relations = extract_relations(key, value)
-                if relations:
-                    from tapps_brain.relations import (
-                        RelationEntry,
-                        detect_relation_cycles,
-                    )
-
-                    # Warn on detected cycles (self-loops / direct reversals).
-                    cycles = detect_relation_cycles(relations)
-                    if cycles:
-                        logger.warning(
-                            "relations.cycles_detected",
-                            entry_key=key,
-                            cycle_count=len(cycles),
-                            cycles=[
-                                {"subject": s, "predicate": p, "object": o} for s, p, o in cycles
-                            ],
-                        )
-
-                    # Cap total edges per key to MAX_EDGES_PER_KEY.
-                    existing_count = len(self._relations.get(key, []))
-                    budget = RelationEntry.MAX_EDGES_PER_KEY - existing_count
-                    if budget <= 0:
-                        logger.debug(
-                            "relations.max_edges_reached",
-                            entry_key=key,
-                            limit=RelationEntry.MAX_EDGES_PER_KEY,
-                        )
-                    else:
-                        relations_to_save = relations[:budget]
-                        self._persistence.save_relations(key, relations_to_save)
-                        # Reload from persistence to keep timestamps consistent
-                        with self._serialized():
-                            self._relations[key] = self._persistence.load_relations(key)
-
-            # Auto-consolidation check (Epic 58)
             if (
                 self._consolidation_config.enabled
                 and not skip_consolidation
@@ -1426,26 +1051,483 @@ class MemoryStore:
                 with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
                     self._maybe_consolidate(entry)
 
-        # EPIC-029 story 029-4b: recall-then-store correction detection.
-        # If this save follows a recent recall (within the feedback window) and the
-        # saved value has > 40% token overlap with a recalled entry's value, it is
-        # treated as a correction: emit implicit_correction (utility_score=-0.3) for
-        # those recalled entries.
+        # Phase 7 — recall-then-store correction detection (outside the span).
         if session_id is not None:
-            _correction_targets: list[tuple[str, float]] = []
-            _now_corr = time.monotonic()
-            with self._serialized():
-                _correction_targets = self._detect_correction(session_id, entry.value, _now_corr)
-            for _ck, _overlap in _correction_targets:
-                self._emit_implicit_feedback(
-                    "implicit_correction",
-                    _ck,
-                    session_id,
-                    -0.3,
-                    details={"type": "correction", "token_overlap": round(_overlap, 4)},
-                )
+            self._emit_correction_feedback(session_id, entry.value)
 
         return entry
+
+    # ------------------------------------------------------------------
+    # save() helpers — see TAP-602 decomposition for design rationale.
+    # ------------------------------------------------------------------
+
+    def _check_rate_limit(self, key: str) -> None:
+        """Emit a warn-only rate-limit log; never blocks the save (H6a)."""
+        rate_result = self._rate_limiter.check()
+        if rate_result.minute_exceeded or rate_result.lifetime_exceeded:
+            logger.warning(
+                "memory_save_rate_warning",
+                key=key,
+                minute_count=rate_result.current_minute_count,
+                lifetime_count=rate_result.current_lifetime_count,
+            )
+
+    def _apply_write_policy(
+        self,
+        key: str,
+        value: str,
+    ) -> MemoryEntry | dict[str, Any] | None:
+        """Consult ``self._write_policy`` (TAP-560/STORY-SC04).
+
+        Returns ``None`` when the caller should continue with the normal save
+        path (the default DeterministicWritePolicy result, or ADD/UPDATE from
+        an LLM policy).  Returns a ``MemoryEntry`` or error dict when the
+        policy short-circuits with NOOP or DELETE.
+        """
+        if self._write_policy is None:
+            return None
+
+        from tapps_brain.write_policy import WriteDecision
+
+        with self._serialized():
+            candidates = list(self._entries.values())
+        result = self._write_policy.decide(key, value, candidates)
+
+        if result.decision == WriteDecision.NOOP:
+            self._metrics.increment("store.save.write_policy.noop")
+            logger.info(
+                "memory_save_write_policy_noop",
+                key=key,
+                reasoning=result.reasoning,
+            )
+            with self._serialized():
+                existing_noop = self._entries.get(key)
+            if existing_noop is not None:
+                return existing_noop
+            return {"write_policy": "noop", "key": key, "reasoning": result.reasoning}
+
+        if result.decision == WriteDecision.DELETE and result.target_key:
+            self._metrics.increment("store.save.write_policy.delete")
+            logger.info(
+                "memory_save_write_policy_delete",
+                key=key,
+                target_key=result.target_key,
+                reasoning=result.reasoning,
+            )
+            self.delete(result.target_key)
+            return {
+                "write_policy": "delete",
+                "deleted_key": result.target_key,
+                "reasoning": result.reasoning,
+            }
+
+        # ADD / UPDATE / unexpected → fall through.
+        if result.decision != WriteDecision.ADD:
+            logger.debug(
+                "memory_save_write_policy_passthrough",
+                key=key,
+                decision=result.decision.value,
+            )
+        return None
+
+    def _handle_dedup(
+        self,
+        key: str,
+        value: str,
+        dedup: bool,
+    ) -> MemoryEntry | None:
+        """Bloom-filter dedup fast-path (GitHub #31).
+
+        Returns the reinforced existing entry when a duplicate is found;
+        ``None`` otherwise.  The bloom filter is always updated so later
+        saves see this value.
+        """
+        if not dedup:
+            return None
+        normalized = normalize_for_dedup(value)
+        if self._bloom.might_contain(normalized):
+            dup_key: str | None = None
+            with self._serialized():
+                for existing in self._entries.values():
+                    if normalize_for_dedup(existing.value) == normalized:
+                        dup_key = existing.key
+                        break
+            if dup_key is not None:
+                logger.debug("memory_dedup_bloom_hit", key=key, existing_key=dup_key)
+                self._metrics.increment("store.save.dedup_skip")
+                try:
+                    return self.reinforce(dup_key)
+                except KeyError:
+                    pass  # Entry was deleted between check and reinforce; proceed with save.
+        self._bloom.add(normalized)
+        return None
+
+    def _handle_conflicts(
+        self,
+        key: str,
+        value: str,
+        tier: str,
+        conflict_check: bool,
+    ) -> str | None:
+        """Detect and invalidate conflicting entries; return shared valid_at.
+
+        Wraps :func:`tapps_brain._save_conflict.plan_conflicts`.  The returned
+        timestamp should be used as ``valid_at`` on the new entry to keep the
+        temporal chain (EPIC-004) coherent.
+        """
+        if not conflict_check:
+            return None
+
+        with self._serialized():
+            entries_snapshot = list(self._entries.values())
+        similarity_threshold = resolve_similarity_threshold(self._profile)
+        plan: ConflictPlan | None = plan_conflicts(
+            key=key,
+            value=value,
+            tier=tier,
+            entries_snapshot=entries_snapshot,
+            similarity_threshold=similarity_threshold,
+            now=_utc_now_iso(),
+        )
+        if plan is None:
+            return None
+
+        logger.warning(
+            "memory_save_conflicts_detected",
+            key=key,
+            conflicting_keys=plan.conflict_keys,
+            similarity_threshold=plan.similarity_threshold,
+            conflicts=plan.audit,
+        )
+
+        for conflict_key, reason in plan.invalidations:
+            invalidated: MemoryEntry | None = None
+            with self._serialized():
+                current = self._entries.get(conflict_key)
+                if current is not None and current.invalid_at is None:
+                    invalidated = current.model_copy(
+                        update={
+                            "invalid_at": plan.now,
+                            "updated_at": plan.now,
+                            "contradicted": True,
+                            "contradiction_reason": reason,
+                        }
+                    )
+                    self._entries[conflict_key] = invalidated
+            if invalidated is not None:
+                try:
+                    self._persistence.save(invalidated)
+                except Exception:  # noqa: BLE001 — best-effort, logged
+                    logger.warning(
+                        "conflict_invalidate_persist_failed",
+                        conflict_key=conflict_key,
+                        exc_info=True,
+                    )
+
+        return plan.now
+
+    def _build_and_assign_entry(  # noqa: PLR0913 — faithful to the pre-refactor signature
+        self,
+        *,
+        key: str,
+        value: str,
+        tier: str,
+        source: str,
+        source_agent: str,
+        scope: str,
+        tags: list[str] | None,
+        branch: str | None,
+        confidence: float,
+        agent_scope: str,
+        source_session_id: str,
+        source_channel: str,
+        source_message_id: str,
+        triggered_by: str,
+        memory_group: str | None | object,
+        mg_explicit: str | None | object,
+        temporal_sensitivity: Literal["high", "medium", "low"] | None,
+        failed_approaches: list[str] | None,
+        conflict_valid_at: str | None,
+    ) -> tuple[MemoryEntry, MemoryEntry | None]:
+        """Build the new :class:`MemoryEntry` and atomically assign it.
+
+        Runs under the store lock with the ``store.save.phase.lock_build_ms``
+        timer.  Returns ``(new_entry, existing_entry_or_None)`` so the caller
+        can still distinguish inserts from updates for audit + propagation.
+        """
+        with (
+            MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
+            self._serialized(),
+        ):
+            existing = self._entries.get(key)
+
+            if memory_group is MEMORY_GROUP_UNSET:
+                mg_for_entry: str | None = (
+                    existing.memory_group if existing is not None else None
+                )
+            else:
+                mg_for_entry = cast("str | None", mg_explicit)
+
+            tier_val = self._resolve_tier_value(tier)
+            now = _utc_now_iso()
+            entry = self._construct_memory_entry(
+                key=key,
+                value=value,
+                tier_val=tier_val,
+                source=source,
+                source_agent=source_agent,
+                scope=scope,
+                tags=tags,
+                branch=branch,
+                confidence=confidence,
+                agent_scope=agent_scope,
+                source_session_id=source_session_id,
+                source_channel=source_channel,
+                source_message_id=source_message_id,
+                triggered_by=triggered_by,
+                mg_for_entry=mg_for_entry,
+                temporal_sensitivity=temporal_sensitivity,
+                failed_approaches=failed_approaches,
+                conflict_valid_at=conflict_valid_at,
+                existing=existing,
+                now=now,
+            )
+            entry = self._stamp_integrity_hash(entry)
+            self._enforce_entry_caps_before_assign(
+                key=key,
+                new_group=entry.memory_group,
+                existing=existing,
+            )
+            self._entries[key] = entry
+        return entry, existing
+
+    def _resolve_tier_value(self, tier: str) -> MemoryTier | str:
+        """Resolve ``tier`` to a :class:`MemoryTier` or profile layer name (EPIC-010)."""
+        try:
+            return MemoryTier(tier)
+        except ValueError:
+            if self._profile is not None and tier in self._profile.layer_names:
+                return tier
+            raise
+
+    def _construct_memory_entry(  # noqa: PLR0913 — faithful carry-through
+        self,
+        *,
+        key: str,
+        value: str,
+        tier_val: MemoryTier | str,
+        source: str,
+        source_agent: str,
+        scope: str,
+        tags: list[str] | None,
+        branch: str | None,
+        confidence: float,
+        agent_scope: str,
+        source_session_id: str,
+        source_channel: str,
+        source_message_id: str,
+        triggered_by: str,
+        mg_for_entry: str | None,
+        temporal_sensitivity: Literal["high", "medium", "low"] | None,
+        failed_approaches: list[str] | None,
+        conflict_valid_at: str | None,
+        existing: MemoryEntry | None,
+        now: str,
+    ) -> MemoryEntry:
+        """Allocate a new :class:`MemoryEntry`, preserving reserved fields on update."""
+        preserved = _preserved_fields_for_update(existing, now)
+        effective_valid_at = conflict_valid_at or preserved["valid_at"]
+        effective_temporal = (
+            temporal_sensitivity
+            if temporal_sensitivity is not None
+            else preserved["temporal_sensitivity"]
+        )
+        effective_failed = (
+            failed_approaches if failed_approaches is not None else preserved["failed_approaches"]
+        )
+        return MemoryEntry(
+            key=key,
+            value=value,
+            tier=tier_val,
+            confidence=confidence,
+            source=MemorySource(source),
+            source_agent=source_agent,
+            scope=MemoryScope(scope),
+            agent_scope=agent_scope,
+            tags=tags or [],
+            created_at=preserved["created_at"],
+            updated_at=now,
+            last_accessed=now,
+            access_count=preserved["access_count"],
+            branch=branch,
+            last_reinforced=preserved["last_reinforced"],
+            reinforce_count=preserved["reinforce_count"],
+            contradicted=preserved["contradicted"],
+            contradiction_reason=preserved["contradiction_reason"],
+            seeded_from=preserved["seeded_from"],
+            valid_at=effective_valid_at,
+            invalid_at=preserved["invalid_at"],
+            superseded_by=preserved["superseded_by"],
+            source_session_id=source_session_id,
+            source_channel=source_channel,
+            source_message_id=source_message_id,
+            triggered_by=triggered_by,
+            memory_group=mg_for_entry,
+            temporal_sensitivity=effective_temporal,
+            failed_approaches=effective_failed,
+        )
+
+    @staticmethod
+    def _stamp_integrity_hash(entry: MemoryEntry) -> MemoryEntry:
+        """Compute + attach the H4a integrity hash on ``entry``."""
+        from tapps_brain.integrity import compute_integrity_hash as _compute_hash
+
+        tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        source_str = (
+            entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+        )
+        h = _compute_hash(entry.key, entry.value, tier_str, source_str)
+        return entry.model_copy(update={"integrity_hash": h})
+
+    def _embed_entry(self, key: str, value: str, entry: MemoryEntry) -> MemoryEntry:
+        """Compute + attach the embedding when a provider is configured (Epic 65.7)."""
+        if self._embedding_provider is None:
+            return entry
+        with MetricsTimer(self._metrics, "store.save.phase.embed_ms"):
+            try:
+                emb = self._embedding_provider.embed(value)
+                mid_raw = getattr(self._embedding_provider, "model_id", None)
+                mid: str | None = (
+                    mid_raw.strip()
+                    if isinstance(mid_raw, str) and mid_raw.strip()
+                    else None
+                )
+                embed_update: dict[str, object] = {
+                    "embedding": emb,
+                    "embedding_model_id": mid,
+                }
+                entry = entry.model_copy(update=embed_update)
+                with self._serialized():
+                    # Re-read to avoid overwriting concurrent update_fields.
+                    current = self._entries.get(key)
+                    if current is not None and current.key == entry.key:
+                        entry = current.model_copy(update=embed_update)
+                    self._entries[key] = entry
+            except Exception:  # noqa: BLE001 — logged, best-effort
+                logger.warning("embedding_compute_failed", key=key, exc_info=True)
+        return entry
+
+    def _persist_entry_or_rollback(
+        self,
+        key: str,
+        entry: MemoryEntry,
+        *,
+        existing: MemoryEntry | None,
+        dedup: bool,
+    ) -> None:
+        """Persist the entry and roll the cache back on failure.
+
+        Maintains write-through consistency: if the Postgres write raises,
+        the in-memory ``_entries`` is restored and (when dedup was used) the
+        bloom filter is rebuilt from the current cache — the filter has no
+        item-remove operation (TAP-644).
+        """
+        try:
+            with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
+                self._persistence.save(entry)
+        except Exception:
+            with self._serialized():
+                if existing is not None:
+                    self._entries[key] = existing
+                else:
+                    self._entries.pop(key, None)
+                if dedup:
+                    self._bloom = BloomFilter()
+                    for _e in self._entries.values():
+                        self._bloom.add(normalize_for_dedup(_e.value))
+            raise
+
+    def _emit_save_audit(
+        self,
+        key: str,
+        entry: MemoryEntry,
+        *,
+        existing: MemoryEntry | None,
+    ) -> None:
+        """Append the save to the audit log (best-effort)."""
+        self._persistence.append_audit(
+            action="save",
+            key=key,
+            extra={
+                "tier": str(entry.tier),
+                "value_len": len(entry.value),
+                "is_update": existing is not None,
+            },
+        )
+
+    def _refresh_entity_index(
+        self,
+        key: str,
+        entry: MemoryEntry,
+        *,
+        existing_present: bool,
+    ) -> None:
+        """Refresh the entity index for graph centrality (TAP-734)."""
+        if existing_present:
+            self._remove_entry_entities(key)
+        self._index_entry_entities(key, entry.value)
+
+    def _persist_relations(self, key: str, value: str) -> None:
+        """Extract + persist relations and warn on simple cycles (EPIC-006)."""
+        with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
+            relations = extract_relations(key, value)
+            if not relations:
+                return
+
+            from tapps_brain.relations import RelationEntry, detect_relation_cycles
+
+            cycles = detect_relation_cycles(relations)
+            if cycles:
+                logger.warning(
+                    "relations.cycles_detected",
+                    entry_key=key,
+                    cycle_count=len(cycles),
+                    cycles=[{"subject": s, "predicate": p, "object": o} for s, p, o in cycles],
+                )
+
+            existing_count = len(self._relations.get(key, []))
+            budget = RelationEntry.MAX_EDGES_PER_KEY - existing_count
+            if budget <= 0:
+                logger.debug(
+                    "relations.max_edges_reached",
+                    entry_key=key,
+                    limit=RelationEntry.MAX_EDGES_PER_KEY,
+                )
+                return
+
+            relations_to_save = relations[:budget]
+            self._persistence.save_relations(key, relations_to_save)
+            with self._serialized():
+                self._relations[key] = self._persistence.load_relations(key)
+
+    def _emit_correction_feedback(self, session_id: str, entry_value: str) -> None:
+        """Emit ``implicit_correction`` events when a save corrects recent recalls.
+
+        EPIC-029 story 029-4b.  >40% token overlap between the save value and
+        a recent recalled entry's value within the feedback window triggers
+        the event with ``utility_score=-0.3``.
+        """
+        now = time.monotonic()
+        with self._serialized():
+            targets = self._detect_correction(session_id, entry_value, now)
+        for ck, overlap in targets:
+            self._emit_implicit_feedback(
+                "implicit_correction",
+                ck,
+                session_id,
+                -0.3,
+                details={"type": "correction", "token_overlap": round(overlap, 4)},
+            )
 
     def _maybe_consolidate(self, entry: MemoryEntry) -> None:
         """Check if the saved entry should trigger consolidation.
