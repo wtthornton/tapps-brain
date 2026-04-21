@@ -98,7 +98,7 @@ The sliding-window rate limiter (`src/tapps_brain/rate_limiter.py`) monitors wri
 | Limit | Default | Description |
 |---|---|---|
 | `writes_per_minute` | 20 | Per-minute sliding window. |
-| `writes_per_session` | 100 | Cumulative session-lifetime cap. |
+| `lifetime_write_warn_at` | 100 | Cumulative per-process-lifetime write threshold (not per-session). |
 
 ### Batch exemptions
 
@@ -114,9 +114,9 @@ The following `batch_context` values are exempt from rate limiting:
 
 When a limit is exceeded the limiter:
 
-1. Logs a `rate_limit_minute_exceeded` or `rate_limit_session_exceeded` structured warning via structlog.
-2. Increments `RateLimiterStats.minute_anomalies` / `session_anomalies` counters (surfaced in `memory_health()`).
-3. Returns a `RateLimitResult` with `minute_exceeded=True` or `session_exceeded=True` and a human-readable `message`.
+1. Logs a `rate_limit_minute_exceeded` or `rate_limit_lifetime_exceeded` structured warning via structlog.
+2. Increments `RateLimiterStats.minute_anomalies` / `lifetime_anomalies` counters (surfaced in `memory_health()`).
+3. Returns a `RateLimitResult` with `minute_exceeded=True` or `lifetime_exceeded=True` and a human-readable `message`.
 4. The `allowed` field is always `True` (warn-only; writes proceed).
 
 ### 429-style error payload

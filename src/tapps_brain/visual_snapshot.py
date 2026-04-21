@@ -685,14 +685,14 @@ def _build_scorecard(
         )
 
     rma = int(getattr(report, "rate_limit_minute_anomalies", 0) or 0)
-    rsa = int(getattr(report, "rate_limit_session_anomalies", 0) or 0)
-    if rma == 0 and rsa == 0:
+    rla = int(getattr(report, "rate_limit_lifetime_anomalies", 0) or 0)
+    if rma == 0 and rla == 0:
         checks.append(
             ScorecardCheck(
                 id="rate_limits",
                 title="Rate limit anomalies",
                 status="ok",
-                detail="No minute/session rate-limit anomalies recorded.",
+                detail="No minute/lifetime rate-limit anomalies recorded.",
                 ticket_hint="",
             )
         )
@@ -702,7 +702,7 @@ def _build_scorecard(
                 id="rate_limits",
                 title="Rate limit anomalies",
                 status="warn",
-                detail=f"Minute anomalies: {rma}; session anomalies: {rsa}.",
+                detail=f"Minute anomalies: {rma}; lifetime anomalies: {rla}.",
                 ticket_hint="Review burst writes and profile rate_limit settings.",
             )
         )

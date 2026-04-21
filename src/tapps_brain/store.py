@@ -886,12 +886,12 @@ class MemoryStore:
 
         # Rate limit check (H6a) — warn-only, never blocks
         rate_result = self._rate_limiter.check(batch_context=batch_context)
-        if rate_result.minute_exceeded or rate_result.session_exceeded:
+        if rate_result.minute_exceeded or rate_result.lifetime_exceeded:
             logger.warning(
                 "memory_save_rate_warning",
                 key=key,
                 minute_count=rate_result.current_minute_count,
-                session_count=rate_result.current_session_count,
+                lifetime_count=rate_result.current_lifetime_count,
             )
 
         # RAG safety check on value (ruleset + metrics: EPIC-044 STORY-044.1)
@@ -2632,7 +2632,7 @@ class MemoryStore:
             integrity_no_hash=integrity["no_hash"],
             integrity_tampered_keys=integrity["tampered_keys"][:20],
             rate_limit_minute_anomalies=rl_stats.minute_anomalies,
-            rate_limit_session_anomalies=rl_stats.session_anomalies,
+            rate_limit_lifetime_anomalies=rl_stats.lifetime_anomalies,
             rate_limit_total_writes=rl_stats.total_writes,
             rate_limit_exempt_writes=rl_stats.exempt_writes,
             relation_count=self.count_relations(),

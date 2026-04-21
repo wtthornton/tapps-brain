@@ -22,13 +22,13 @@ class TestRateLimiterConfig:
     def test_defaults(self) -> None:
         cfg = RateLimiterConfig()
         assert cfg.writes_per_minute == 20
-        assert cfg.writes_per_session == 100
+        assert cfg.lifetime_write_warn_at == 100
         assert cfg.enabled is True
 
     def test_custom_config(self) -> None:
-        cfg = RateLimiterConfig(writes_per_minute=5, writes_per_session=50, enabled=False)
+        cfg = RateLimiterConfig(writes_per_minute=5, lifetime_write_warn_at=50, enabled=False)
         assert cfg.writes_per_minute == 5
-        assert cfg.writes_per_session == 50
+        assert cfg.lifetime_write_warn_at == 50
         assert cfg.enabled is False
 
     def test_invalid_writes_per_minute_raises(self) -> None:
@@ -38,12 +38,12 @@ class TestRateLimiterConfig:
         with pytest.raises(ValueError, match="writes_per_minute"):
             RateLimiterConfig(writes_per_minute=-5)
 
-    def test_invalid_writes_per_session_raises(self) -> None:
-        """writes_per_session < 1 must raise ValueError."""
-        with pytest.raises(ValueError, match="writes_per_session"):
-            RateLimiterConfig(writes_per_session=0)
-        with pytest.raises(ValueError, match="writes_per_session"):
-            RateLimiterConfig(writes_per_session=-1)
+    def test_invalid_lifetime_write_warn_at_raises(self) -> None:
+        """lifetime_write_warn_at < 1 must raise ValueError."""
+        with pytest.raises(ValueError, match="lifetime_write_warn_at"):
+            RateLimiterConfig(lifetime_write_warn_at=0)
+        with pytest.raises(ValueError, match="lifetime_write_warn_at"):
+            RateLimiterConfig(lifetime_write_warn_at=-1)
 
 
 class TestRateLimitResult:
@@ -53,9 +53,9 @@ class TestRateLimitResult:
         result = RateLimitResult()
         assert result.allowed is True
         assert result.minute_exceeded is False
-        assert result.session_exceeded is False
+        assert result.lifetime_exceeded is False
         assert result.current_minute_count == 0
-        assert result.current_session_count == 0
+        assert result.current_lifetime_count == 0
         assert result.message == ""
 
 
@@ -73,7 +73,7 @@ class TestSlidingWindowRateLimiter:
     def test_over_minute_limit_warns(self) -> None:
         """Exceeding per-minute limit should warn but still allow."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=3, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=3, lifetime_write_warn_at=100)
         )
         # First 3 writes are fine
         for _ in range(3):
@@ -87,33 +87,33 @@ class TestSlidingWindowRateLimiter:
         assert result.current_minute_count == 4
         assert "Rate limit warning" in result.message
 
-    def test_over_session_limit_warns(self) -> None:
-        """Exceeding per-session limit should warn but still allow."""
+    def test_over_lifetime_limit_warns(self) -> None:
+        """Exceeding per-process-lifetime write threshold should warn but still allow."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1000, writes_per_session=5)
+            RateLimiterConfig(writes_per_minute=1000, lifetime_write_warn_at=5)
         )
         for _ in range(5):
             result = limiter.check()
-            assert result.session_exceeded is False
+            assert result.lifetime_exceeded is False
 
         result = limiter.check()
         assert result.allowed is True
-        assert result.session_exceeded is True
-        assert result.current_session_count == 6
-        assert "session" in result.message
+        assert result.lifetime_exceeded is True
+        assert result.current_lifetime_count == 6
+        assert "lifetime" in result.message
 
     def test_both_limits_exceeded(self) -> None:
         """Both limits exceeded at once should produce combined message."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=2, writes_per_session=2)
+            RateLimiterConfig(writes_per_minute=2, lifetime_write_warn_at=2)
         )
         limiter.check()
         limiter.check()
         result = limiter.check()
         assert result.minute_exceeded is True
-        assert result.session_exceeded is True
+        assert result.lifetime_exceeded is True
         assert "minute" in result.message
-        assert "session" in result.message
+        assert "lifetime" in result.message
 
     def test_disabled_limiter(self) -> None:
         """Disabled limiter should always return default result."""
@@ -122,12 +122,12 @@ class TestSlidingWindowRateLimiter:
             result = limiter.check()
             assert result.allowed is True
             assert result.minute_exceeded is False
-            assert result.session_exceeded is False
+            assert result.lifetime_exceeded is False
 
     def test_sliding_window_expiry(self) -> None:
         """Old timestamps should be pruned from the sliding window."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=3, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=3, lifetime_write_warn_at=100)
         )
         # Simulate timestamps from 2 minutes ago by patching time.monotonic
         old_time = time.monotonic() - 120.0  # 2 minutes ago
@@ -141,13 +141,13 @@ class TestSlidingWindowRateLimiter:
         result = limiter.check()
         assert result.minute_exceeded is False
         assert result.current_minute_count == 1
-        # Session count still accumulates
-        assert result.current_session_count == 4
+        # Lifetime count still accumulates across window expirations
+        assert result.current_lifetime_count == 4
 
     def test_batch_context_exempt(self) -> None:
         """Batch context exemptions bypass rate limiting."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1, writes_per_session=1)
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=1)
         )
         # Use up the limit
         limiter.check()
@@ -157,12 +157,12 @@ class TestSlidingWindowRateLimiter:
             result = limiter.check(batch_context=ctx)
             assert result.allowed is True
             assert result.minute_exceeded is False
-            assert result.session_exceeded is False
+            assert result.lifetime_exceeded is False
 
     def test_batch_context_non_exempt(self) -> None:
         """Non-exempt batch contexts are rate limited normally."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=100)
         )
         limiter.check()  # Use the limit
 
@@ -172,7 +172,7 @@ class TestSlidingWindowRateLimiter:
     def test_stats_tracking(self) -> None:
         """Stats should accumulate correctly."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=2, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=2, lifetime_write_warn_at=100)
         )
         limiter.check()
         limiter.check()
@@ -181,7 +181,7 @@ class TestSlidingWindowRateLimiter:
         stats = limiter.stats
         assert stats.total_writes == 3
         assert stats.minute_anomalies == 1
-        assert stats.session_anomalies == 0
+        assert stats.lifetime_anomalies == 0
         assert stats.exempt_writes == 0
 
     def test_stats_exempt_tracking(self) -> None:
@@ -197,7 +197,7 @@ class TestSlidingWindowRateLimiter:
     def test_reset(self) -> None:
         """Reset should clear all state."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1, writes_per_session=1)
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=1)
         )
         limiter.check()
         limiter.check()
@@ -207,12 +207,12 @@ class TestSlidingWindowRateLimiter:
         stats = limiter.stats
         assert stats.total_writes == 0
         assert stats.minute_anomalies == 0
-        assert stats.session_anomalies == 0
+        assert stats.lifetime_anomalies == 0
 
         result = limiter.check()
         assert result.minute_exceeded is False
-        assert result.session_exceeded is False
-        assert result.current_session_count == 1
+        assert result.lifetime_exceeded is False
+        assert result.current_lifetime_count == 1
 
     def test_config_property(self) -> None:
         """Config property should return the active config."""
@@ -230,18 +230,41 @@ class TestSlidingWindowRateLimiter:
     def test_sliding_window_prunes_only_expired(self) -> None:
         """Pruning should only remove entries older than 60 s, not newer ones."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=10, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=10, lifetime_write_warn_at=100)
         )
         now = time.monotonic()
         # Inject one old and one recent timestamp directly
         limiter._timestamps.append(now - 120.0)  # 2 minutes ago — will be pruned
         limiter._timestamps.append(now - 30.0)  # 30 s ago — kept
-        limiter._session_count += 2
+        limiter._lifetime_writes += 2
 
         result = limiter.check()
         # Old entry pruned; recent entry + this write = 2 in window
         assert result.current_minute_count == 2
         assert result.minute_exceeded is False
+
+    def test_lifetime_counter_never_resets_across_minute_windows(self) -> None:
+        """lifetime_write_warn_at is a process-lifetime counter, NOT per-session or per-minute.
+
+        It must keep accumulating even after the per-minute window rolls over, so that
+        the warning threshold reflects total non-exempt writes since process start.
+        """
+        limiter = SlidingWindowRateLimiter(
+            RateLimiterConfig(writes_per_minute=100, lifetime_write_warn_at=200)
+        )
+        old_time = time.monotonic() - 120.0  # 2 minutes ago
+
+        # Write 150 times in the "past" (outside the current minute window)
+        with patch("tapps_brain.rate_limiter.time.monotonic", return_value=old_time):
+            for _ in range(150):
+                limiter.check()
+
+        # Minute window has rolled over — per-minute count resets to 0 effectively
+        # But lifetime counter must still be at 150
+        result = limiter.check()
+        assert result.current_minute_count == 1  # only the current write in window
+        assert result.current_lifetime_count == 151  # all 150 old + 1 current
+        assert result.lifetime_exceeded is False  # 151 <= 200
 
 
 class TestBatchExemptContexts:
