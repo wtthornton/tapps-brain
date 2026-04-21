@@ -17,7 +17,8 @@
       "headers": {
         "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
         "X-Project-Id": "tapps-brain",
-        "X-Agent-Id": "claude-code-wtthornton"
+        "X-Agent-Id": "claude-code-wtthornton",
+        "X-Brain-Profile": "repo-brain"
       },
       "instructions": "Persistent cross-session memory served by the DEPLOYED tapps-brain HTTP adapter (container tapps-brain-http on agentforge_agentforge-net). Tenant: project_id=tapps-brain (registered via `tapps-brain project register` on 2026-04-17, repo-brain profile). Tools: memory_save/memory_search/memory_recall/memory_consolidate/memory_delete + hive sharing via agent_scope. agent_id=claude-code-wtthornton."
     }

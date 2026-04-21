@@ -72,18 +72,42 @@ sys.stdout.write("\n".join(lines) if lines else data)
 '
 }
 
-# Stateful Streamable-HTTP flow: POST /mcp/ initialize, capture mcp-session-id,
-# send notifications/initialized, then drive further requests with that sid.
+# MCP initialize — works with both stateful and stateless servers.
+# Emits: "<session-id>" for stateful, or "STATELESS" when the server returns a
+# valid initialize result but no Mcp-Session-Id header (TAPPS_BRAIN_STATELESS_HTTP=1).
+# Emits empty string on failure.
 mcp_initialize() {
-    curl -sS -D - -o /dev/null -X POST "$MCP_URL" \
+    local tmp_headers tmp_body sid init_ok
+    tmp_headers="$(mktemp)"
+    tmp_body="$(mktemp)"
+    curl -sS -D "$tmp_headers" -o "$tmp_body" -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
         -H "X-Project-Id: ${PROJECT_ID}" \
         -H "X-Agent-Id: ${AGENT_ID}" \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
         --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"brain-healthcheck","version":"1.0"}}}' \
-        2>/dev/null \
-        | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\r\n'
+        2>/dev/null
+    sid="$(awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' "$tmp_headers" | tr -d '\r\n')"
+    if [[ -n "$sid" ]]; then
+        rm -f "$tmp_headers" "$tmp_body"
+        printf '%s' "$sid"
+        return
+    fi
+    # No session ID — check whether the body is a valid initialize result
+    # (stateless mode: server responds 200 JSON with no session header).
+    init_ok="$(python3 -c '
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+    print("ok" if "result" in d and "protocolVersion" in d.get("result", {}) else "")
+except Exception:
+    print("")
+' "$tmp_body" 2>/dev/null)"
+    rm -f "$tmp_headers" "$tmp_body"
+    if [[ "$init_ok" == "ok" ]]; then
+        printf 'STATELESS'
+    fi
 }
 
 mcp_notify_initialized() {
@@ -225,10 +249,15 @@ if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" || -z "$MCP_URL" || -z "$PROJECT_ID" || -
 else
     SID="$(mcp_initialize)"
     if [[ -z "$SID" ]]; then
-        fail "MCP initialize did not return mcp-session-id (stateful Streamable HTTP expected)"
+        fail "MCP initialize failed — no valid response (check auth token and server logs)"
     else
-        pass "MCP initialize → session ${SID:0:8}…"
-        mcp_notify_initialized "$SID"
+        if [[ "$SID" == "STATELESS" ]]; then
+            pass "MCP initialize → stateless mode (no session ID, per TAPPS_BRAIN_STATELESS_HTTP=1)"
+            SID=""
+        else
+            pass "MCP initialize → session ${SID:0:8}…"
+            mcp_notify_initialized "$SID"
+        fi
 
         tl_body="$(mcp_call "$SID" '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}')"
         tool_count="$(printf '%s' "$tl_body" | python3 -c '
