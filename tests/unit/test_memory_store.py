@@ -1119,6 +1119,87 @@ class TestRelationsWiring:
         s2.close()
 
 
+class TestHealthCheckHelpers:
+    """Tests for iter_active_entries, count_orphaned_relations, count_expired_entries (TAP-722)."""
+
+    def test_iter_active_entries_yields_all_entries(self, store: MemoryStore) -> None:
+        """iter_active_entries() yields every entry currently in the store."""
+        store.save(key="a", value="alpha")
+        store.save(key="b", value="beta")
+        keys = {e.key for e in store.iter_active_entries()}
+        assert "a" in keys
+        assert "b" in keys
+
+    def test_iter_active_entries_empty_store(self, store: MemoryStore) -> None:
+        """iter_active_entries() returns an empty iterator on an empty store."""
+        assert list(store.iter_active_entries()) == []
+
+    def test_count_orphaned_relations_no_orphans(self, store: MemoryStore) -> None:
+        """count_orphaned_relations() returns 0 when all relation keys are present."""
+        from tapps_brain.relations import RelationEntry
+
+        store.save(key="present", value="here")
+        store.save_relations(
+            "present",
+            [
+                RelationEntry(
+                    subject="S",
+                    predicate="p",
+                    object_entity="O",
+                    source_entry_keys=["present"],
+                    confidence=0.9,
+                )
+            ],
+        )
+        assert store.count_orphaned_relations() == 0
+
+    def test_count_expired_entries_none_expired(self, store: MemoryStore) -> None:
+        """count_expired_entries() returns 0 when no entries have valid_at set."""
+        store.save(key="timeless", value="no expiry")
+        assert store.count_expired_entries() == 0
+
+    def test_count_expired_entries_with_past_valid_at(self, store: MemoryStore) -> None:
+        """count_expired_entries() counts entries whose valid_at is in the past."""
+        from datetime import UTC, datetime, timedelta
+
+        store.save(
+            key="past",
+            value="old entry",
+            valid_at=(datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        )
+        store.save(key="present", value="no valid_at")
+        assert store.count_expired_entries() == 1
+
+    def test_count_expired_entries_future_valid_at_not_counted(
+        self, store: MemoryStore
+    ) -> None:
+        """count_expired_entries() does not count entries with future valid_at."""
+        from datetime import UTC, datetime, timedelta
+
+        store.save(
+            key="future",
+            value="upcoming entry",
+            valid_at=(datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        )
+        assert store.count_expired_entries() == 0
+
+    def test_count_expired_entries_custom_now(self, store: MemoryStore) -> None:
+        """count_expired_entries(now=...) uses the provided reference time."""
+        from datetime import UTC, datetime
+
+        store.save(
+            key="entry",
+            value="v",
+            valid_at="2020-01-01T00:00:00+00:00",
+        )
+        # Before the valid_at — should not be counted as expired
+        far_past = datetime(2000, 1, 1, tzinfo=UTC)
+        assert store.count_expired_entries(now=far_past) == 0
+        # After the valid_at — should be counted
+        far_future = datetime(2030, 1, 1, tzinfo=UTC)
+        assert store.count_expired_entries(now=far_future) == 1
+
+
 class TestFindRelated:
     """Tests for find_related() BFS graph traversal (EPIC-006, story 006.3)."""
 
