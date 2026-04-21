@@ -67,7 +67,7 @@ def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | 
 
     import tapps_brain.http_adapter as _http_mod
 
-    tok = _http_mod._extract_bearer(request)
+    tok = _http_mod._extract_bearer(request)  # type: ignore[attr-defined]
     if tok is None or tok == "":
         return JSONResponse(
             status_code=401,
@@ -125,9 +125,9 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
         # Lazy imports keep http_adapter patchable in tests.
         import tapps_brain.http_adapter as _http_mod
 
-        start_span = _http_mod.start_span
-        extract_trace_context = _http_mod.extract_trace_context
-        SPAN_KIND_SERVER = _http_mod.SPAN_KIND_SERVER  # noqa: N806
+        start_span = _http_mod.start_span  # type: ignore[attr-defined]
+        extract_trace_context = _http_mod.extract_trace_context  # type: ignore[attr-defined]
+        SPAN_KIND_SERVER = _http_mod.SPAN_KIND_SERVER  # type: ignore[attr-defined]  # noqa: N806
 
         carrier: dict[str, str] = {}
         tp = request.headers.get("traceparent")

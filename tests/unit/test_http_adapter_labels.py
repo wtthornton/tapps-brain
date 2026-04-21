@@ -254,8 +254,8 @@ class TestProjectLRUBound:
         cap = 2
         with _clean_state():
             with patch.object(_mod, "_MAX_PROJECT_CARDINALITY", cap):
-                _record_labeled_request("proj-old", "agent-1")   # LRU
-                _record_labeled_request("proj-new", "agent-1")   # MRU
+                _record_labeled_request("proj-old", "agent-1")  # LRU
+                _record_labeled_request("proj-new", "agent-1")  # MRU
 
                 # Re-touch proj-old to make it MRU; proj-new becomes LRU.
                 _record_labeled_request("proj-old", "agent-2")

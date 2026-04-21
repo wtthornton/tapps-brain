@@ -466,7 +466,9 @@ class TestCorruptTimestampDecay:
         """Entry with unparseable last_reinforced must return confidence floor."""
         config = self._default_config()
         floor = config.confidence_floor
-        entry = _make_entry(confidence=0.85, last_reinforced="not-a-date", updated_at="also-garbage")
+        entry = _make_entry(
+            confidence=0.85, last_reinforced="not-a-date", updated_at="also-garbage"
+        )
         result = calculate_decayed_confidence(entry, config)
         assert result == pytest.approx(floor)
 

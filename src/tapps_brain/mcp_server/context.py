@@ -188,7 +188,7 @@ def _get_store_for_project(
             os.environ["TAPPS_BRAIN_PROJECT"] = project_id
         try:
             target_dir = _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
-            return _ms_pkg._get_store(
+            return _ms_pkg._get_store(  # type: ignore[attr-defined]
                 target_dir,
                 enable_hive=enable_hive,
                 agent_id=effective_agent_id,
@@ -390,7 +390,7 @@ class _StoreProxy:
     def _resolve(self) -> Any:  # noqa: ANN401
         import tapps_brain.mcp_server as _ms_pkg
 
-        pid = _ms_pkg._current_request_project_id()
+        pid = _ms_pkg._current_request_project_id()  # type: ignore[attr-defined]
         try:
             return _get_store_for_project(
                 pid,

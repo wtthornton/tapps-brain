@@ -178,9 +178,7 @@ class TestSentenceTransformerProvider:
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 384
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
-            provider = SentenceTransformerProvider(
-                model_name="test-model", revision="abc123"
-            )
+            provider = SentenceTransformerProvider(model_name="test-model", revision="abc123")
         assert provider.model_id == "test-model@abc123"
         assert provider.model_revision == "abc123"
 

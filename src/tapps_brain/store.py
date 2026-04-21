@@ -3630,11 +3630,11 @@ class MemoryStore:
 
             if self._hive_store is not None:
                 with contextlib.suppress(Exception):
-                    self._hive_store.save(upgraded_entry)
+                    self._hive_store.save(upgraded_entry)  # type: ignore[call-arg,arg-type,misc]
 
-            if self._backend is not None:
+            if self._backend is not None:  # type: ignore[attr-defined]
                 with contextlib.suppress(Exception):
-                    self._backend.save(upgraded_entry)
+                    self._backend.save(upgraded_entry)  # type: ignore[attr-defined]
 
             upgraded += 1
             logger.debug("rehash_integrity_v1.upgraded", key=key)

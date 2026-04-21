@@ -153,7 +153,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("project-type"),
             confidence=confidence,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, "project-type")
@@ -175,7 +174,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("language"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -197,7 +195,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("framework"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -219,7 +216,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("test-framework"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -241,7 +237,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("package-manager"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -263,7 +258,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("ci-system"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -282,7 +276,6 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("docker"),
             confidence=_DEFAULT_CONFIDENCE,
-
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, "has-docker")

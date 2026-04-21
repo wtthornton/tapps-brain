@@ -223,6 +223,7 @@ class TestPostgresConnectionManager:
 
     def test_get_pool_stats_logs_debug_when_get_stats_raises(self) -> None:
         """TAP-729: exceptions from get_stats() must be logged at DEBUG, not swallowed."""
+        import structlog
         import structlog.testing
 
         from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -233,8 +234,13 @@ class TestPostgresConnectionManager:
         cm = PostgresConnectionManager("postgres://localhost/test")
         cm._pool = mock_pool
 
-        with structlog.testing.capture_logs() as cap_logs:
-            stats = cm.get_pool_stats()
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with structlog.testing.capture_logs() as cap_logs:
+                stats = cm.get_pool_stats()
+        finally:
+            structlog.configure(**saved)
 
         assert stats["pool_stats_available"] is False
         assert stats["pool_size"] == 0

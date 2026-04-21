@@ -38,13 +38,19 @@ points live in :mod:`tapps_brain.mcp_server.server`.  Public imports from
 from __future__ import annotations
 
 from tapps_brain.mcp_server.context import (
+    _STORE_CACHE,  # noqa: F401
     REQUEST_AGENT_ID,
     REQUEST_GROUP,
     REQUEST_PROFILE,
     REQUEST_PROJECT_ID,
     REQUEST_SCOPE,
     ToolContext,
+    _current_request_group,  # noqa: F401
+    _current_request_project_id,  # noqa: F401
+    _current_request_scope,  # noqa: F401
+    _resolve_per_call_agent_id,  # noqa: F401
     _StoreCache,  # noqa: F401
+    _StoreProxy,  # noqa: F401
 )
 from tapps_brain.mcp_server.server import (
     _build_transport_security,  # noqa: F401

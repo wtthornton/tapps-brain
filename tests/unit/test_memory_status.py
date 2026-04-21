@@ -175,7 +175,9 @@ class TestGCSkipsStale:
         active_old = _old_entry(key="active-old2")
         stale_old = _stale_entry(key="stale-old2")
         superseded_old = make_entry(
-            key="superseded-old2", confidence=0.05, updated_at=old_ts,
+            key="superseded-old2",
+            confidence=0.05,
+            updated_at=old_ts,
             status=MemoryStatus.superseded,
         )
         candidates = self.gc.identify_candidates([active_old, stale_old, superseded_old])

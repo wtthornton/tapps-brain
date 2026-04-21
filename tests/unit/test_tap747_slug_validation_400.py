@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
+from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _adapter_mod
 from tapps_brain.http_adapter import (
@@ -25,8 +25,6 @@ from tapps_brain.http_adapter import (
     _Settings,
     create_app,
 )
-from starlette.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers — mirrored from test_bulk_operations.py
@@ -90,7 +88,6 @@ class TestMemorySaveSlugValidation:
 
     def test_invalid_key_returns_bad_request_dict(self) -> None:
         """TAP-747: store.save raising ValidationError is caught; returns error dict."""
-        from pydantic import ValidationError
 
         from tapps_brain.services.memory_service import memory_save
 

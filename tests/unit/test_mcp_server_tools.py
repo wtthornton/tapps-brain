@@ -204,9 +204,7 @@ def test_flywheel_evaluate_requires_operator(mcp: Any, fake_ctx: ToolContext) ->
         tool.fn(suite_path="/tmp/suite", k=5)
 
 
-def test_flywheel_evaluate_runs_when_operator_enabled(
-    mcp: Any, fake_ctx: ToolContext
-) -> None:
+def test_flywheel_evaluate_runs_when_operator_enabled(mcp: Any, fake_ctx: ToolContext) -> None:
     fake_ctx.require_operator_enabled = lambda: None  # type: ignore[method-assign]
     from tapps_brain.mcp_server.tools_feedback import register_feedback_tools
 

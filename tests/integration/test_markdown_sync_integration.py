@@ -303,9 +303,12 @@ class TestSyncFromMarkdown:
         assert result["truncated"] == 0
 
     def test_truncated_memory_md_logs_warning_and_counts(
-        self, tmp_store: MemoryStore, workspace: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_store: MemoryStore, workspace: Path
     ) -> None:
         """Values over MAX_VALUE_LENGTH are truncated with a WARNING log."""
+        import structlog
+        from structlog.testing import capture_logs
+
         from tapps_brain.models import MAX_VALUE_LENGTH
 
         oversized_value = "x" * (MAX_VALUE_LENGTH + 100)
@@ -314,10 +317,13 @@ class TestSyncFromMarkdown:
             encoding="utf-8",
         )
 
-        import logging
-
-        with caplog.at_level(logging.WARNING):
-            result = sync_from_markdown(tmp_store, workspace)
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with capture_logs() as cap_logs:
+                result = sync_from_markdown(tmp_store, workspace)
+        finally:
+            structlog.configure(**saved)
 
         assert result["truncated"] == 1
         assert result["imported"] == 1
@@ -328,12 +334,15 @@ class TestSyncFromMarkdown:
         assert len(entry.value) == MAX_VALUE_LENGTH
 
         # Warning was emitted
-        assert any("value_truncated" in r.message for r in caplog.records)
+        assert any("value_truncated" in e.get("event", "") for e in cap_logs)
 
     def test_truncated_daily_note_logs_warning_and_counts(
-        self, tmp_store: MemoryStore, workspace: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_store: MemoryStore, workspace: Path
     ) -> None:
         """Oversized daily notes are truncated with a WARNING log."""
+        import structlog
+        from structlog.testing import capture_logs
+
         from tapps_brain.models import MAX_VALUE_LENGTH
 
         memory_dir = workspace / "memory"
@@ -341,10 +350,13 @@ class TestSyncFromMarkdown:
         oversized = "y" * (MAX_VALUE_LENGTH + 50)
         (memory_dir / "2026-04-01.md").write_text(oversized, encoding="utf-8")
 
-        import logging
-
-        with caplog.at_level(logging.WARNING):
-            result = sync_from_markdown(tmp_store, workspace)
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with capture_logs() as cap_logs:
+                result = sync_from_markdown(tmp_store, workspace)
+        finally:
+            structlog.configure(**saved)
 
         assert result["truncated"] == 1
         assert result["daily_notes"] == 1
@@ -353,7 +365,7 @@ class TestSyncFromMarkdown:
         assert entry is not None
         assert len(entry.value) == MAX_VALUE_LENGTH
 
-        assert any("value_truncated" in r.message for r in caplog.records)
+        assert any("value_truncated" in e.get("event", "") for e in cap_logs)
 
 
 # ---------------------------------------------------------------------------
@@ -594,9 +606,7 @@ class TestSlugCollision:
         text = "## Foo Bar\n\nFirst section body.\n\n## foo-bar\n\nSecond section body.\n"
         sections = _parse_memory_md_sections(text)
         values = {k: v for k, v, _ in sections}
-        assert "First section body." in next(
-            v for k, v in values.items() if k == "foo-bar"
-        )
+        assert "First section body." in next(v for k, v in values.items() if k == "foo-bar")
         second_key = self._expected_disambiguated_key("foo-bar", "foo-bar")
         assert "Second section body." in values[second_key]
 
@@ -631,19 +641,14 @@ class TestSlugCollision:
             with capture_logs() as log_entries:
                 _parse_memory_md_sections(text)
             assert not any(
-                entry.get("event") == "markdown_sync.slug_collision"
-                for entry in log_entries
+                entry.get("event") == "markdown_sync.slug_collision" for entry in log_entries
             ), f"Unexpected slug_collision warning: {log_entries!r}"
         finally:
             structlog.configure(**saved)
 
     def test_three_way_collision_all_survive(self) -> None:
         """Three headings colliding on the same slug all produce distinct keys."""
-        text = (
-            "## Foo Bar\n\nBody 1.\n\n"
-            "## foo-bar\n\nBody 2.\n\n"
-            "## FOO BAR\n\nBody 3.\n"
-        )
+        text = "## Foo Bar\n\nBody 1.\n\n## foo-bar\n\nBody 2.\n\n## FOO BAR\n\nBody 3.\n"
         sections = _parse_memory_md_sections(text)
         assert len(sections) == 3, "All three colliding sections must survive."
         keys = [s[0] for s in sections]
@@ -710,7 +715,7 @@ class TestSlugCollisionRoundTrip:
         assert "First entry body." in first.value
 
         # The second heading gets a deterministic suffix
-        suffix = hashlib.sha256("foo-bar".encode()).hexdigest()[:6]
+        suffix = hashlib.sha256(b"foo-bar").hexdigest()[:6]
         second_key = f"foo-bar-{suffix}"
         second = tmp_store.get(second_key)
         assert second is not None, f"Second collision entry must be importable as '{second_key}'."

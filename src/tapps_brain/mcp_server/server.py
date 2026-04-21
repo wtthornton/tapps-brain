@@ -194,7 +194,7 @@ def create_server(  # noqa: PLR0915
     try:
         import tapps_brain.mcp_server as _ms_pkg
 
-        default_store = _ms_pkg._get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
+        default_store = _ms_pkg._get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)  # type: ignore[attr-defined]
     except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
 

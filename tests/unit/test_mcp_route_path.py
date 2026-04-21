@@ -36,6 +36,7 @@ def _clear_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
     monkeypatch.setattr(_adapter_mod._settings, "auth_token", None)
 
+
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:  # pragma: no cover — mcp extras not installed in lint job

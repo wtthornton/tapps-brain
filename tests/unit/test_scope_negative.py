@@ -360,6 +360,8 @@ class TestCrossTenantWriteIsolation:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = []
+        mock_cursor.fetchmany.return_value = []
+        mock_cursor.description = []
 
         mock_cm.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_cm.get_connection.return_value.__exit__ = MagicMock(return_value=False)

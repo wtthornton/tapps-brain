@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Lock
 from unittest.mock import MagicMock
 
 import pytest
@@ -573,7 +572,9 @@ def test_store_error_does_not_leak_exception_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Store errors must not include psycopg/db internals in the client-visible error list."""
-    sensitive_msg = "connection to server at 'prod-db.internal' failed: password authentication failed"
+    sensitive_msg = (
+        "connection to server at 'prod-db.internal' failed: password authentication failed"
+    )
     monkeypatch.setattr(
         "tapps_brain.store.MemoryStore",
         MagicMock(side_effect=RuntimeError(sensitive_msg)),
@@ -592,7 +593,9 @@ def test_hive_unavailable_does_not_leak_exception_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Hive errors must not include connection string or db internals in warnings."""
-    sensitive_msg = "connection to server at 'hive-db.internal' failed: password authentication failed"
+    sensitive_msg = (
+        "connection to server at 'hive-db.internal' failed: password authentication failed"
+    )
 
     mock_store = _make_mock_store(tmp_path, entry_count=1)
     mock_store._persistence._cm = None

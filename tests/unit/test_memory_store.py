@@ -1170,9 +1170,7 @@ class TestHealthCheckHelpers:
         store.save(key="present", value="no valid_at")
         assert store.count_expired_entries() == 1
 
-    def test_count_expired_entries_future_valid_at_not_counted(
-        self, store: MemoryStore
-    ) -> None:
+    def test_count_expired_entries_future_valid_at_not_counted(self, store: MemoryStore) -> None:
         """count_expired_entries() does not count entries with future valid_at."""
         from datetime import UTC, datetime, timedelta
 
@@ -1807,9 +1805,9 @@ class TestBuildLlmJudge:
 
             assert result is None
             warning_events = [e for e in events if e.get("log_level") == "warning"]
-            assert any(
-                "anthropic_init_failed" in e.get("event", "") for e in warning_events
-            ), f"Expected warning log for init failure; got {events}"
+            assert any("anthropic_init_failed" in e.get("event", "") for e in warning_events), (
+                f"Expected warning log for init failure; got {events}"
+            )
         finally:
             structlog.configure(**saved)
 
@@ -1824,9 +1822,7 @@ class TestBuildLlmJudge:
         structlog.reset_defaults()
         # Remove evaluation module so imports raise ImportError
         saved_modules = {
-            k: v
-            for k, v in sys.modules.items()
-            if k.startswith("tapps_brain.evaluation")
+            k: v for k, v in sys.modules.items() if k.startswith("tapps_brain.evaluation")
         }
         for k in list(saved_modules):
             sys.modules.pop(k, None)
@@ -1872,9 +1868,9 @@ class TestBuildLlmJudge:
                 MemoryStore._build_llm_judge("test-model-xyz")
 
             warning_events = [e for e in events if e.get("log_level") == "warning"]
-            assert any(
-                e.get("model") == "test-model-xyz" for e in warning_events
-            ), f"Expected model field in warning; got {warning_events}"
+            assert any(e.get("model") == "test-model-xyz" for e in warning_events), (
+                f"Expected model field in warning; got {warning_events}"
+            )
         finally:
             structlog.configure(**saved)
 

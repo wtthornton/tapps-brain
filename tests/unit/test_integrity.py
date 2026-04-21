@@ -9,8 +9,6 @@ import os
 import secrets
 import stat
 import sys
-from typing import TYPE_CHECKING
-
 from pathlib import Path
 
 import pytest
@@ -123,7 +121,6 @@ class TestEnsureKey:
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not meaningful on Windows")
     def test_no_world_readable_window_during_write(self, tmp_path: Path) -> None:
         """Atomic write via temp-file-rename: key file is never visible with loose mode."""
-        import threading
 
         key_path = tmp_path / "atomic" / "integrity.key"
         observed_modes: list[int] = []
@@ -297,9 +294,7 @@ class TestComputeIntegrityHash:
         # f"k|v|x|y|z" == f"k|v|x|y|z" despite different field splits.
         h_v1_a = compute_integrity_hash_v1("k", "v|x", "y", "z", signing_key=sk)
         h_v1_b = compute_integrity_hash_v1("k", "v", "x|y", "z", signing_key=sk)
-        assert h_v1_a == h_v1_b, (
-            "Expected v1 collision: both tuples should produce b'k|v|x|y|z'"
-        )
+        assert h_v1_a == h_v1_b, "Expected v1 collision: both tuples should produce b'k|v|x|y|z'"
 
         # Under v2, the same tuples produce distinct hashes — collision eliminated.
         h_v2_a = compute_integrity_hash("k", "v|x", "y", "z", signing_key=sk)
@@ -327,9 +322,7 @@ class TestComputeIntegrityHashV1:
         sk = b"b" * _KEY_LENGTH
         canonical = b"my-key|my-value|pattern|agent"
         expected = hmac.new(sk, canonical, hashlib.sha256).hexdigest()
-        result = compute_integrity_hash_v1(
-            "my-key", "my-value", "pattern", "agent", signing_key=sk
-        )
+        result = compute_integrity_hash_v1("my-key", "my-value", "pattern", "agent", signing_key=sk)
         assert result == expected
 
     def test_v1_deterministic(self) -> None:

@@ -155,6 +155,7 @@ from tapps_brain.store import MemoryStoreLockTimeout as MemoryStoreLockTimeout
 __all__ = [
     "DEFAULT_PROJECT_ID",
     "DEFAULT_SAFETY_RULESET_VERSION",
+    "INTEGRITY_HASH_VERSION",
     "VALID_AGENT_SCOPES",
     "AgentBrain",
     "AgentRegistryBackend",
@@ -205,7 +206,6 @@ __all__ = [
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
-    "INTEGRITY_HASH_VERSION",
     "compute_integrity_hash",
     "compute_integrity_hash_v1",
     "compute_similarity",

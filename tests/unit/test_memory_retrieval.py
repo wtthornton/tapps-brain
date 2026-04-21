@@ -1061,7 +1061,7 @@ class TestGraphCentrality:
         """Tokens are union-ed — same key reached via different tokens counted once."""
         idx = self._make_entity_index(
             {
-                "databas": ["key-x", "target"],   # "database" stems to "databas"
+                "databas": ["key-x", "target"],  # "database" stems to "databas"
                 "postgre": ["key-x", "key-y", "target"],  # "postgres" stems to "postgre"
             }
         )
@@ -1204,7 +1204,9 @@ class TestMemoryFilter:
         arch = _make_entry("arch-entry", tier=MemoryTier.architectural)
         pattern = _make_entry("pattern-entry", tier=MemoryTier.pattern)
         entries = [arch, pattern]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier=MemoryTier.architectural))
+        result = MemoryRetriever._apply_filters(
+            entries, MemoryFilter(tier=MemoryTier.architectural)
+        )
         assert [e.key for e in result] == ["arch-entry"]
 
     def test_filter_by_tier_string(self) -> None:
@@ -1234,9 +1236,7 @@ class TestMemoryFilter:
         e2 = _make_entry("e2", tags=["pgvector"])  # missing hnsw
         e3 = _make_entry("e3", tags=["hnsw"])  # missing pgvector
         entries = [e1, e2, e3]
-        result = MemoryRetriever._apply_filters(
-            entries, MemoryFilter(tags=["pgvector", "hnsw"])
-        )
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tags=["pgvector", "hnsw"]))
         assert [e.key for e in result] == ["e1"]
 
     def test_filter_by_tags_single(self) -> None:
@@ -1331,9 +1331,7 @@ class TestMemoryFilter:
         e1 = self._make_entry_with_class("e1", memory_group="team-a")
         e2 = self._make_entry_with_class("e2", memory_group="team-b")
         e3 = self._make_entry_with_class("e3", memory_group=None)
-        result = MemoryRetriever._apply_filters(
-            [e1, e2, e3], MemoryFilter(memory_group="team-a")
-        )
+        result = MemoryRetriever._apply_filters([e1, e2, e3], MemoryFilter(memory_group="team-a"))
         assert [e.key for e in result] == ["e1"]
 
     # ------------------------------------------------------------------

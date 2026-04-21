@@ -1854,7 +1854,6 @@ class TestBatchContextBypassPrevented:
         agent_scope, group).  Any additional field — including
         ``batch_context`` — is silently dropped.
         """
-        import inspect
         from unittest.mock import MagicMock, patch
 
         from tapps_brain.services import memory_service as ms
@@ -1866,8 +1865,13 @@ class TestBatchContextBypassPrevented:
 
         def _capture_save(store: Any, project_id: str, agent_id: str, **kwargs: Any) -> dict:
             saved_calls.append(kwargs)
-            return {"status": "saved", "key": kwargs.get("key", "k"), "tier": "pattern",
-                    "confidence": 0.8, "memory_group": None}
+            return {
+                "status": "saved",
+                "key": kwargs.get("key", "k"),
+                "tier": "pattern",
+                "confidence": 0.8,
+                "memory_group": None,
+            }
 
         with (
             patch.object(ms, "memory_save", side_effect=_capture_save),

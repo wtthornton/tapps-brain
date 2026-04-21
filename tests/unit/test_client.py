@@ -623,9 +623,7 @@ def test_sync_reinitializes_on_missing_session_error() -> None:
     missing_session_resp.is_success = False
     missing_session_resp.json.return_value = {"detail": "Missing session ID"}
     missing_session_resp.raise_for_status = MagicMock(
-        side_effect=httpx.HTTPStatusError(
-            "400", request=MagicMock(), response=missing_session_resp
-        )
+        side_effect=httpx.HTTPStatusError("400", request=MagicMock(), response=missing_session_resp)
     )
     # After reinit
     init_resp_2 = _mock_init_response("sid-second")
@@ -657,10 +655,19 @@ def test_sync_initialize_skipped_on_subsequent_calls() -> None:
     # init (1) + tool (1) + tool (1) = 3 calls total
     assert client._http_client.post.call_count == 3
     # First call is initialize
-    assert json.loads(client._http_client.post.call_args_list[0].kwargs["content"])["method"] == "initialize"
+    assert (
+        json.loads(client._http_client.post.call_args_list[0].kwargs["content"])["method"]
+        == "initialize"
+    )
     # Remaining two are tools/call
-    assert json.loads(client._http_client.post.call_args_list[1].kwargs["content"])["method"] == "tools/call"
-    assert json.loads(client._http_client.post.call_args_list[2].kwargs["content"])["method"] == "tools/call"
+    assert (
+        json.loads(client._http_client.post.call_args_list[1].kwargs["content"])["method"]
+        == "tools/call"
+    )
+    assert (
+        json.loads(client._http_client.post.call_args_list[2].kwargs["content"])["method"]
+        == "tools/call"
+    )
 
 
 # ---------------------------------------------------------------------------

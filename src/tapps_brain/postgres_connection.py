@@ -333,7 +333,7 @@ class PostgresConnectionManager:
                     "pool_stats_available": True,
                 }
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # get_stats() can raise if the pool is in a transient bad state or
             # if the psycopg_pool API has changed (e.g. renamed method).  Log
             # at DEBUG so operators can detect the observability gap without

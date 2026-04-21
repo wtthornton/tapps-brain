@@ -37,7 +37,7 @@ def _extract_bearer(request: Request) -> str | None:
         return None
     if not header.lower().startswith(_BEARER_PREFIX):
         return ""
-    return header[len(_BEARER_PREFIX):].strip()
+    return header[len(_BEARER_PREFIX) :].strip()
 
 
 def _per_tenant_auth_enabled() -> bool:

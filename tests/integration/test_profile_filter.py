@@ -37,9 +37,10 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "profile_tool_sets"
-_MCP_INIT = (
-    Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server" / "__init__.py"
+_MCP_SERVER_DIR = (
+    Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server"
 )
+_MCP_INIT = _MCP_SERVER_DIR / "__init__.py"
 
 # Profiles exposed on the standard server (no operator tools).
 _STANDARD_PROFILES = ["coder", "full", "reviewer", "seeder"]
@@ -59,10 +60,17 @@ def _load_golden(profile: str) -> frozenset[str]:
 
 
 def _all_registered_tools() -> frozenset[str]:
-    """Return every tool name decorated with ``@mcp.tool()`` in __init__.py."""
-    content = _MCP_INIT.read_text()
+    """Return every tool name decorated with ``@mcp.tool()`` in the mcp_server package.
+
+    TAP-605: tool bodies were moved from __init__.py to tools_*.py submodules.
+    Scan __init__.py + all tools_*.py files to find @mcp.tool() registrations.
+    """
     pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
-    return frozenset(re.findall(pattern, content))
+    source_files = [_MCP_INIT, *sorted(_MCP_SERVER_DIR.glob("tools_*.py"))]
+    names: set[str] = set()
+    for path in source_files:
+        names.update(re.findall(pattern, path.read_text()))
+    return frozenset(names)
 
 
 def _make_tool(name: str) -> MagicMock:

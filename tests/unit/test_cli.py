@@ -15,7 +15,6 @@ from typer.testing import CliRunner
 import tapps_brain.cli as cli_mod
 import tapps_brain.cli.diagnostics as cli_diagnostics_mod
 import tapps_brain.cli.memory as cli_memory_mod
-
 from tapps_brain.cli import app
 from tapps_brain.store import MemoryStore
 
@@ -398,7 +397,6 @@ class TestMemoryCommands:
     def test_memory_save_store_returns_error_dict(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from tapps_brain import cli as cli_mod
 
         real = MemoryStore(tmp_path)
 
@@ -441,7 +439,6 @@ class TestMemoryCommands:
     def test_show_human_optional_temporal_and_contradiction_fields(
         self, project_dir, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from tapps_brain import cli as cli_mod
         from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 
         fake = MemoryEntry(
@@ -487,7 +484,6 @@ class TestMemoryCommands:
     def test_history_human_shows_valid_invalid_when_present(
         self, project_dir, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from tapps_brain import cli as cli_mod
         from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 
         e_old = MemoryEntry(
@@ -1005,7 +1001,6 @@ class TestFlywheelCli:
     def test_flywheel_gaps_human_mocked_rows(
         self, project_dir: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from tapps_brain import cli as cli_mod
 
         mock_store = MagicMock()
         mock_store.close = MagicMock()
@@ -2235,7 +2230,6 @@ class TestDiagnosticsCommands:
     def test_diagnostics_report_human_rich_extras(self, project_dir, monkeypatch):
         from datetime import UTC, datetime
 
-        from tapps_brain import cli as cli_mod
         from tapps_brain.diagnostics import DiagnosticsReport, DimensionScore
 
         rep = DiagnosticsReport(
