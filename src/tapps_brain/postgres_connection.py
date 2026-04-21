@@ -204,7 +204,11 @@ class PostgresConnectionManager:
         startup proceeds.
         """
         allow_override = os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1"
-        assert self._pool is not None  # guard for mypy; caller just created it
+        # TAP-783: assert is stripped by Python -O; use an explicit guard.
+        if self._pool is None:  # pragma: no cover
+            raise RuntimeError(
+                "_assert_non_privileged_role called before connection pool was created"
+            )
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT current_user, rolsuper, rolbypassrls "
@@ -245,14 +249,18 @@ class PostgresConnectionManager:
             return
 
         if allow_override:
-            logger.warning(
-                "postgres.privileged_role_override",
+            # TAP-783: emit a prominent audit record so operators can detect
+            # accidental production use of the override flag.  Level is ERROR
+            # (not WARNING) so log aggregators can alert on it.
+            logger.error(
+                "postgres.privileged_role_audit_override",
                 current_user=current_user,
                 violations=violations,
+                allow_privileged_role_env="TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1",
                 detail=(
                     "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 is set; tenant "
                     "isolation is NOT enforced for this connection.  "
-                    "Acceptable in CI/dev only."
+                    "Acceptable in CI/dev only — must not appear in production logs."
                 ),
             )
             return

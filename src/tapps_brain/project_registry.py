@@ -282,7 +282,10 @@ class ProjectRegistry:
         """
         try:
             from argon2 import PasswordHasher
-            from argon2.exceptions import VerifyMismatchError  # type: ignore[import-not-found]
+            from argon2.exceptions import (  # type: ignore[import-not-found]
+                VerifyInvalidError,
+                VerifyMismatchError,
+            )
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "argon2-cffi is required for per-tenant auth.\n"
@@ -306,8 +309,24 @@ class ProjectRegistry:
             return True
         except VerifyMismatchError:
             return False
-        except Exception:
+        except VerifyInvalidError:
+            # Hash is malformed (corrupt DB row) — treat as no-match, but log
+            # so operators can detect data corruption before it silently passes.
+            logger.warning(
+                "registry.token_hash_invalid",
+                project_id=project_id,
+                detail="stored token hash is malformed; treating as mismatch",
+            )
             return False
+        except Exception:
+            # TAP-782: re-raise unexpected argon2 / system errors so the caller
+            # (auth.py) can handle them explicitly (fail closed with 503) rather
+            # than silently swallowing them.
+            logger.error(
+                "registry.verify_token_unexpected_error",
+                project_id=project_id,
+            )
+            raise
 
     # ------------------------------------------------------------------
     # Resolution

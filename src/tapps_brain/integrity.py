@@ -40,6 +40,7 @@ upgrades existing rows from v1 → v2.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -63,6 +64,21 @@ _KEY_LENGTH = 32
 #: file exists but is truncated or corrupt.  Set to ``"1"`` to enable.
 INTEGRITY_KEY_REGENERATE_ENV = "TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE"
 
+#: TAP-784: environment variable for injecting the HMAC key without writing
+#: it to disk.  Accepts a base64-encoded or hex-encoded 32-byte key.  When
+#: set, ``_ensure_key`` returns the decoded value and skips all file I/O so
+#: the key never touches disk.  Suitable for Vault, k8s Secret env injection,
+#: or any secrets manager that can surface secrets as environment variables.
+#:
+#: Generate a key::
+#:
+#:     python -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+INTEGRITY_KEY_ENV = "TAPPS_BRAIN_INTEGRITY_KEY"
+
+
+class IntegrityKeyEnvError(RuntimeError):
+    """Raised when ``TAPPS_BRAIN_INTEGRITY_KEY`` is set but cannot be decoded."""
+
 #: Current canonical encoding version used by :func:`compute_integrity_hash`.
 #: v1 = legacy pipe-joined (TAP-710); v2 = JSON array (current).
 INTEGRITY_HASH_VERSION: int = 2
@@ -76,6 +92,47 @@ class IntegrityKeyError(RuntimeError):
     To force regeneration (which invalidates all existing hashes), set the
     environment variable ``TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE=1``.
     """
+
+
+def _decode_env_key(value: str) -> bytes:
+    """Decode a base64 or hex-encoded key from ``TAPPS_BRAIN_INTEGRITY_KEY``.
+
+    Detection order:
+    1. Hex — exactly 64 lowercase/uppercase hex characters (32 bytes).
+    2. Base64 (standard or URL-safe) — all other values.
+
+    Hex is detected first because hex chars are a valid subset of the base64
+    alphabet, so base64 decoding would silently produce wrong bytes.
+
+    Raises:
+        IntegrityKeyEnvError: when the value cannot be decoded or decodes to
+            fewer than ``_KEY_LENGTH`` bytes.
+    """
+    # 1. Hex: 64-char string consisting solely of hex digits encodes 32 bytes.
+    stripped = value.strip()
+    if len(stripped) == _KEY_LENGTH * 2 and all(c in "0123456789abcdefABCDEF" for c in stripped):
+        try:
+            raw = bytes.fromhex(stripped)
+            if len(raw) >= _KEY_LENGTH:
+                return raw[:_KEY_LENGTH]
+        except Exception:
+            pass
+
+    # 2. Base64 (standard then URL-safe).
+    for decode in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            raw = decode(stripped + "==")  # pad defensively
+            if len(raw) >= _KEY_LENGTH:
+                return raw[:_KEY_LENGTH]
+        except Exception:
+            pass
+
+    raise IntegrityKeyEnvError(
+        f"{INTEGRITY_KEY_ENV} is set but could not be decoded as base64 or hex, "
+        f"or decoded to fewer than {_KEY_LENGTH} bytes. "
+        "Generate a key with: python -c \"import secrets,base64; "
+        "print(base64.b64encode(secrets.token_bytes(32)).decode())\""
+    )
 
 
 def _ensure_key(key_path: Path | None = None) -> bytes:
@@ -101,7 +158,18 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
     Raises:
         IntegrityKeyError: If the key file is present but corrupt/truncated
             and ``TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE`` is not set to ``"1"``.
+        IntegrityKeyEnvError: If ``TAPPS_BRAIN_INTEGRITY_KEY`` is set but
+            cannot be decoded as base64 or hex.
     """
+    # TAP-784: env var injection takes priority over disk — the key never
+    # touches the filesystem, which is required when using external secrets
+    # managers (Vault, k8s Secrets, AWS Secrets Manager, etc.).
+    env_key = os.environ.get(INTEGRITY_KEY_ENV, "")
+    if env_key:
+        raw = _decode_env_key(env_key)
+        logger.info("integrity_key_loaded_from_env")
+        return raw
+
     path = key_path or _DEFAULT_KEY_PATH
 
     if path.exists():
@@ -163,7 +231,9 @@ def _ensure_key(key_path: Path | None = None) -> bytes:
         Path(tmp_name).unlink(missing_ok=True)
         raise
 
-    logger.info("integrity_key_generated", path=str(path))
+    # TAP-784: WARNING (not INFO) so operators can detect unexpected key
+    # generation in production — a new key invalidates all existing hashes.
+    logger.warning("integrity_key_generated", path=str(path))
     return key
 
 

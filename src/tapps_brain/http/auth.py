@@ -10,8 +10,13 @@ without modification.
 
 from __future__ import annotations
 
+import collections
 import hmac
 import os
+import threading
+import time
+
+import structlog
 
 try:
     from fastapi import HTTPException, Request
@@ -21,7 +26,36 @@ except ImportError as exc:  # pragma: no cover
         "Install it with:  uv sync --extra http  (or --extra all)."
     ) from exc
 
+logger = structlog.get_logger(__name__)
+
 _BEARER_PREFIX = "bearer "
+
+# TAP-780: in-process sliding-window rate limiter for /admin/* endpoints.
+# Configurable via env: TAPPS_BRAIN_ADMIN_RATE_LIMIT (requests, default 10)
+# and TAPPS_BRAIN_ADMIN_RATE_WINDOW (seconds, default 60).
+_ADMIN_RATE_LIMIT = int(os.environ.get("TAPPS_BRAIN_ADMIN_RATE_LIMIT", "10"))
+_ADMIN_RATE_WINDOW = int(os.environ.get("TAPPS_BRAIN_ADMIN_RATE_WINDOW", "60"))
+_admin_rate_lock = threading.Lock()
+_admin_rate_buckets: dict[str, collections.deque[float]] = {}
+
+
+def _check_admin_rate_limit(remote_addr: str) -> bool:
+    """Sliding-window rate check for /admin/* brute-force protection (TAP-780).
+
+    Returns ``True`` when the request is within the limit, ``False`` when the
+    caller has exceeded ``TAPPS_BRAIN_ADMIN_RATE_LIMIT`` attempts in the last
+    ``TAPPS_BRAIN_ADMIN_RATE_WINDOW`` seconds.
+    """
+    now = time.monotonic()
+    cutoff = now - _ADMIN_RATE_WINDOW
+    with _admin_rate_lock:
+        dq = _admin_rate_buckets.setdefault(remote_addr, collections.deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= _ADMIN_RATE_LIMIT:
+            return False
+        dq.append(now)
+        return True
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -136,7 +170,25 @@ def require_data_plane_auth(request: Request) -> None:
                     "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
                 },
             )
-        result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
+        # TAP-781: catch any DB / registry error and fail closed.  Without this
+        # guard an unhandled exception would propagate as FastAPI 500 or, if
+        # a future caller added a broad except, could silently fall through to
+        # the global-token check and bypass per-tenant isolation entirely.
+        try:
+            result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
+        except Exception as exc:
+            logger.error(
+                "auth.per_tenant_verify_error",
+                project_id=project_id,
+                detail="token verification failed due to backend error; failing closed",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "service_unavailable",
+                    "detail": "Token verification temporarily unavailable.",
+                },
+            ) from exc
         if result is True:
             return  # authenticated by per-tenant token
         if result is False:
@@ -220,11 +272,26 @@ def require_admin_auth(request: Request) -> None:
 
     When the admin token is unset, the route returns 503 — admin without a
     token would bypass the trust model (EPIC-069).
+
+    TAP-780: applies a sliding-window rate limit per remote IP to prevent
+    brute-force token guessing.  Limit defaults to 10 attempts / 60 s and is
+    configurable via ``TAPPS_BRAIN_ADMIN_RATE_LIMIT`` /
+    ``TAPPS_BRAIN_ADMIN_RATE_WINDOW``.
     """
     # Lazy import so unit tests can patch tapps_brain.http_adapter.get_settings.
     import tapps_brain.http_adapter as _http_mod
 
     cfg = _http_mod.get_settings()
+
+    # TAP-780: rate-limit before touching token bytes to avoid timing oracle.
+    remote_addr = (request.client.host if request.client else "unknown") or "unknown"
+    if not _check_admin_rate_limit(remote_addr):
+        logger.warning("auth.admin_rate_limited", remote_addr=remote_addr)
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "detail": "Too many admin requests."},
+        )
+
     if not cfg.admin_token:
         raise HTTPException(
             status_code=503,
