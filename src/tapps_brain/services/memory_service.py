@@ -33,8 +33,19 @@ def brain_remember(
     share_with: str = "",
     temporal_sensitivity: str | None = None,
     failed_approaches: list[str] | None = None,
+    supersedes: str | None = None,
 ) -> dict[str, Any]:
+    """Save a memory and optionally supersede an existing entry.
+
+    When *supersedes* is a key of an existing entry, that entry is marked
+    ``status=superseded`` with ``superseded_by`` pointing to the new key.
+
+    When *supersedes* is not provided but an existing active entry shares
+    the word-prefix of the new key, a ``supersession_candidate`` key is
+    returned in the response so the caller can confirm with a follow-up call.
+    """
     from tapps_brain.agent_brain import _content_key
+    from tapps_brain.models import MemoryStatus
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
@@ -46,6 +57,25 @@ def brain_remember(
             agent_scope = "hive"
         elif share_with:
             agent_scope = f"group:{share_with}"
+
+        # -------------------------------------------------------
+        # Supersession: mark the old entry before saving new one.
+        # -------------------------------------------------------
+        if supersedes:
+            old_entry = store.get(supersedes)
+            if old_entry is not None:
+                store.save(
+                    key=old_entry.key,
+                    value=old_entry.value,
+                    tier=str(old_entry.tier),
+                    agent_scope=old_entry.agent_scope,
+                    status=MemoryStatus.superseded.value,
+                    superseded_by=key,
+                    skip_consolidation=True,
+                    conflict_check=False,
+                    dedup=False,
+                )
+
         result = store.save(
             key=key,
             value=fact,
@@ -53,24 +83,98 @@ def brain_remember(
             agent_scope=agent_scope,
             temporal_sensitivity=temporal_sensitivity,
             failed_approaches=failed_approaches,
+            status=MemoryStatus.active.value,
         )
         if isinstance(result, dict) and "error" in result:
             return result
-        return {"saved": True, "key": key}
+
+        response: dict[str, Any] = {"saved": True, "key": key}
+
+        if supersedes:
+            response["superseded"] = supersedes
+            return response
+
+        # -------------------------------------------------------
+        # Supersession candidate detection: check whether any active
+        # entry shares the word-prefix portion of the new key.
+        # -------------------------------------------------------
+        candidate = _find_supersession_candidate(store, key)
+        if candidate:
+            response["supersession_candidate"] = candidate
+
+        return response
+
+
+def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
+    """Return the key of an active entry that shares the word-prefix with *new_key*.
+
+    ``_content_key`` produces keys of the form ``{word-slug}-{16hexchars}``.
+    We extract the word-slug prefix and look for existing active entries whose
+    key begins with that same prefix (and differs from *new_key*).
+
+    Returns the first matching key, or ``None``.
+    """
+    import re
+
+    from tapps_brain.models import MemoryStatus
+
+    # Extract word-prefix: strip the trailing "-{16hexchars}" hash suffix.
+    _hash_suffix = re.compile(r"-[0-9a-f]{16}$")
+    prefix = _hash_suffix.sub("", new_key)
+    if prefix == new_key:
+        # Key has no recognisable hash suffix — skip detection.
+        return None
+
+    try:
+        all_entries = store.list_all()
+    except Exception:
+        return None
+
+    for entry in all_entries:
+        if entry.key == new_key:
+            continue
+        entry_status = getattr(entry, "status", MemoryStatus.active)
+        if entry_status != MemoryStatus.active:
+            continue
+        if entry.key.startswith(prefix):
+            return str(entry.key)
+    return None
 
 
 def brain_recall(
-    store: Any, project_id: str, agent_id: str, *, query: str, max_results: int = 5
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    query: str,
+    max_results: int = 5,
+    include_stale: bool = False,
 ) -> list[Any]:
+    """Recall memories matching *query*.
+
+    By default, entries with ``status=stale`` or ``status=superseded`` are
+    excluded.  Pass ``include_stale=True`` to include them (useful for
+    diagnostic or audit queries).
+    """
+    from tapps_brain.models import MemoryStatus
     from tapps_brain.otel_tracer import start_mcp_tool_span
+
+    _excluded_statuses = {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
 
     with start_mcp_tool_span("brain_recall"):
         entries = store.search(query)
         results: list[Any] = []
-        for entry in entries[:max_results]:
+        for entry in entries:
+            if len(results) >= max_results:
+                break
             if isinstance(entry, dict):
+                # Plain-dict path (legacy): no status field available; include by default.
                 results.append(entry)
             else:
+                if not include_stale:
+                    entry_status = getattr(entry, "status", MemoryStatus.active)
+                    if entry_status in _excluded_statuses:
+                        continue
                 item: dict[str, Any] = {
                     "key": entry.key,
                     "value": entry.value,
@@ -81,6 +185,14 @@ def brain_recall(
                 failed = getattr(entry, "failed_approaches", None)
                 if failed:
                     item["failed_approaches"] = list(failed)
+                # Surface stale/superseded status when include_stale=True so
+                # diagnostic callers can see why an entry was normally filtered out.
+                entry_status = getattr(entry, "status", MemoryStatus.active)
+                if entry_status != MemoryStatus.active:
+                    item["status"] = str(entry_status)
+                    stale_reason = getattr(entry, "stale_reason", None)
+                    if stale_reason:
+                        item["stale_reason"] = stale_reason
                 results.append(item)
         return results
 

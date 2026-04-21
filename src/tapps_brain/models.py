@@ -70,6 +70,15 @@ class MemoryScope(StrEnum):
     shared = "shared"  # eligible for cross-project federation
 
 
+class MemoryStatus(StrEnum):
+    """Lifecycle status of a memory entry (TAP-732)."""
+
+    active = "active"  # normal, actively used
+    stale = "stale"  # known to be wrong/outdated; replacement not yet written
+    superseded = "superseded"  # replaced by another entry (superseded_by points to it)
+    archived = "archived"  # GC-archived
+
+
 # ---------------------------------------------------------------------------
 # Source-based confidence defaults
 # ---------------------------------------------------------------------------
@@ -273,6 +282,21 @@ class MemoryEntry(BaseModel):
             "Approaches tried and ruled out. Prevents re-investigation of dead ends. "
             "Surfaced in brain_recall responses when non-empty. Max 5 items."
         ),
+    )
+
+    # TAP-732: Lifecycle status — stale/superseded entries survive GC but are
+    # excluded from brain_recall by default.
+    status: MemoryStatus = Field(
+        default=MemoryStatus.active,
+        description="Lifecycle status: active | stale | superseded | archived.",
+    )
+    stale_reason: str | None = Field(
+        default=None,
+        description="Why this entry was marked stale (human- or agent-written note).",
+    )
+    stale_date: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp when status was set to 'stale'.",
     )
 
     @field_validator("temporal_sensitivity", mode="before")

@@ -13,6 +13,7 @@ from tapps_brain.models import (
     MemoryEntry,
     MemoryScope,
     MemorySource,
+    MemoryStatus,
     MemoryTier,
 )
 
@@ -43,6 +44,9 @@ def make_entry(
     stability: float | None = None,
     difficulty: float | None = None,
     memory_group: str | None = None,
+    status: MemoryStatus = MemoryStatus.active,
+    stale_reason: str | None = None,
+    stale_date: str | None = None,
 ) -> MemoryEntry:
     """Create a ``MemoryEntry`` with sensible test defaults.
 
@@ -85,5 +89,8 @@ def make_entry(
     if difficulty is not None:
         kwargs["difficulty"] = difficulty
     kwargs["memory_group"] = memory_group
+    kwargs["status"] = status
+    kwargs["stale_reason"] = stale_reason
+    kwargs["stale_date"] = stale_date
 
     return MemoryEntry(**kwargs)

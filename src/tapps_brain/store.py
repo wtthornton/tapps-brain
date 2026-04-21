@@ -24,6 +24,7 @@ from tapps_brain.models import (
     MemoryScope,
     MemorySnapshot,
     MemorySource,
+    MemoryStatus,
     MemoryTier,
     _utc_now_iso,
 )
@@ -88,6 +89,27 @@ logger = structlog.get_logger(__name__)
 # YAML profile (``limits.max_entries``) still wins when set.  Precedence:
 # YAML > env > default.
 _MAX_ENTRIES_DEFAULT = 5000
+
+
+def _resolve_status(
+    explicit: str | None,
+    existing: MemoryEntry | None,
+) -> MemoryStatus:
+    """Return the status to write on a save() call.
+
+    Priority:
+    1. Caller-provided non-empty string → coerce to MemoryStatus (fallback active).
+    2. Existing entry's status → preserve on update.
+    3. Default active.
+    """
+    if explicit is not None and explicit != "":
+        try:
+            return MemoryStatus(explicit)
+        except ValueError:
+            return MemoryStatus.active
+    if existing is not None:
+        return existing.status
+    return MemoryStatus.active
 
 
 def _max_entries_from_env() -> int:
@@ -881,6 +903,10 @@ class MemoryStore:
         memory_group: str | None | object = MEMORY_GROUP_UNSET,
         temporal_sensitivity: Literal["high", "medium", "low"] | None = None,
         failed_approaches: list[str] | None = None,
+        status: str | None = None,
+        stale_reason: str | None = None,
+        stale_date: str | None = None,
+        superseded_by: str | None = None,
         *,
         skip_consolidation: bool = False,
         session_id: str | None = None,
@@ -1015,6 +1041,10 @@ class MemoryStore:
                 temporal_sensitivity=temporal_sensitivity,
                 failed_approaches=failed_approaches,
                 conflict_valid_at=conflict_valid_at,
+                status=status,
+                stale_reason=stale_reason,
+                stale_date=stale_date,
+                superseded_by=superseded_by,
             )
 
             entry = self._embed_entry(key, value, entry)
@@ -1248,6 +1278,10 @@ class MemoryStore:
         temporal_sensitivity: Literal["high", "medium", "low"] | None,
         failed_approaches: list[str] | None,
         conflict_valid_at: str | None,
+        status: str | None = None,
+        stale_reason: str | None = None,
+        stale_date: str | None = None,
+        superseded_by: str | None = None,
     ) -> tuple[MemoryEntry, MemoryEntry | None]:
         """Build the new :class:`MemoryEntry` and atomically assign it.
 
@@ -1289,6 +1323,10 @@ class MemoryStore:
                 temporal_sensitivity=temporal_sensitivity,
                 failed_approaches=failed_approaches,
                 conflict_valid_at=conflict_valid_at,
+                status=status,
+                stale_reason=stale_reason,
+                stale_date=stale_date,
+                superseded_by=superseded_by,
                 existing=existing,
                 now=now,
             )
@@ -1331,6 +1369,10 @@ class MemoryStore:
         temporal_sensitivity: Literal["high", "medium", "low"] | None,
         failed_approaches: list[str] | None,
         conflict_valid_at: str | None,
+        status: str | None,
+        stale_reason: str | None,
+        stale_date: str | None,
+        superseded_by: str | None,
         existing: MemoryEntry | None,
         now: str,
     ) -> MemoryEntry:
@@ -1367,7 +1409,9 @@ class MemoryStore:
             seeded_from=preserved["seeded_from"],
             valid_at=effective_valid_at,
             invalid_at=preserved["invalid_at"],
-            superseded_by=preserved["superseded_by"],
+            superseded_by=superseded_by
+            if superseded_by is not None
+            else preserved["superseded_by"],
             source_session_id=source_session_id,
             source_channel=source_channel,
             source_message_id=source_message_id,
@@ -1375,6 +1419,13 @@ class MemoryStore:
             memory_group=mg_for_entry,
             temporal_sensitivity=effective_temporal,
             failed_approaches=effective_failed,
+            status=_resolve_status(status, existing),
+            stale_reason=stale_reason
+            if stale_reason is not None
+            else (existing.stale_reason if existing else None),
+            stale_date=stale_date
+            if stale_date is not None
+            else (existing.stale_date if existing else None),
         )
 
     @staticmethod
