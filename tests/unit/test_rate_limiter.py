@@ -281,9 +281,41 @@ class TestBatchExemptContexts:
         assert "seed" in BATCH_EXEMPT_CONTEXTS
         assert "federation_sync" in BATCH_EXEMPT_CONTEXTS
         assert "consolidate" in BATCH_EXEMPT_CONTEXTS
+        assert "sync_from_markdown" in BATCH_EXEMPT_CONTEXTS
 
     def test_is_frozenset(self) -> None:
         assert isinstance(BATCH_EXEMPT_CONTEXTS, frozenset)
+
+    def test_all_source_batch_context_literals_are_exempt_or_known_non_batch(self) -> None:
+        """Drift guard: every batch_context="..." literal in src/ must be either
+        in BATCH_EXEMPT_CONTEXTS (batch loop → should bypass rate limiting) or in
+        the declared non-batch set (single writes that are intentionally rate-limited).
+        """
+        import re
+        from pathlib import Path
+
+        KNOWN_NON_BATCH_CONTEXTS: frozenset[str] = frozenset(
+            {
+                "session_summary",  # one write per session index, not a bulk loop
+            }
+        )
+
+        src_root = Path(__file__).parent.parent.parent / "src" / "tapps_brain"
+        literal_pattern = re.compile(r'batch_context\s*=\s*"([^"]+)"')
+
+        found: set[str] = set()
+        for py_file in src_root.rglob("*.py"):
+            text = py_file.read_text(encoding="utf-8")
+            for match in literal_pattern.finditer(text):
+                found.add(match.group(1))
+
+        all_known = BATCH_EXEMPT_CONTEXTS | KNOWN_NON_BATCH_CONTEXTS
+        unknown = found - all_known
+        assert not unknown, (
+            f"Unknown batch_context literal(s) found in src/tapps_brain/: {sorted(unknown)}. "
+            "Add to BATCH_EXEMPT_CONTEXTS (bulk-import loop) or KNOWN_NON_BATCH_CONTEXTS "
+            "(intentionally rate-limited single write)."
+        )
 
 
 class TestBatchExemptScope:
@@ -293,22 +325,14 @@ class TestBatchExemptScope:
         """batch_exempt_scope with an unknown context raises ValueError."""
         with pytest.raises(ValueError, match="Unknown batch context"):
             with batch_exempt_scope("federation_sync_evil"):
-                pass  # should not reach here
+                pass
 
     def test_magic_string_outside_scope_not_exempt(self) -> None:
-        """Passing a magic string without batch_exempt_scope does NOT grant exemption.
-
-        This is the core security test for TAP-714: a caller cannot bypass
-        rate limiting by simply calling check() outside of batch_exempt_scope(),
-        even if they know the exempt context names.
-        """
+        """Passing a magic string without batch_exempt_scope does NOT grant exemption."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=100)
         )
         limiter.check()  # Use up the per-minute limit
-
-        # check() has no batch_context parameter — external callers cannot
-        # inject the exemption string without using batch_exempt_scope().
         result = limiter.check()
         assert result.minute_exceeded is True, (
             "A caller without batch_exempt_scope must not bypass rate limiting"
@@ -317,14 +341,12 @@ class TestBatchExemptScope:
     def test_scope_restores_after_exit(self) -> None:
         """batch_exempt_scope resets the contextvar on exit — no exemption leaks."""
         limiter = SlidingWindowRateLimiter(
-            RateLimiterConfig(writes_per_minute=1, writes_per_session=100)
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=100)
         )
         limiter.check()  # use up limit
-
         with batch_exempt_scope("seed"):
             inside = limiter.check()
-        outside = limiter.check()  # after exiting the scope
-
+        outside = limiter.check()
         assert inside.minute_exceeded is False, "Should be exempt inside scope"
         assert outside.minute_exceeded is True, "Should NOT be exempt outside scope"
 
@@ -335,11 +357,9 @@ class TestBatchExemptScope:
         from tapps_brain.rate_limiter import _batch_ctx_var
 
         assert isinstance(_batch_ctx_var, contextvars.ContextVar)
-        # Before entering a scope, the contextvar has no value
         assert _batch_ctx_var.get() is None
         with batch_exempt_scope("seed"):
             assert _batch_ctx_var.get() == "seed"
-        # After exiting the scope, the contextvar is reset
         assert _batch_ctx_var.get() is None
 
     def test_scope_validates_against_known_set(self) -> None:
