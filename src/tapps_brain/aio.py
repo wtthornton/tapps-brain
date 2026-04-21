@@ -250,7 +250,11 @@ class AsyncMemoryStore:
         try:
             cache: dict[str, Any] = object.__getattribute__(self, "_wrapper_cache")
         except AttributeError:
+            # Pre-__init__ access (e.g. subclass calls __getattr__ before
+            # super().__init__).  Seed the cache slot so subsequent accesses
+            # benefit from caching too.
             cache = {}
+            object.__setattr__(self, "_wrapper_cache", cache)
 
         if name in cache:
             return cache[name]

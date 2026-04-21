@@ -212,6 +212,8 @@ class TestAsyncGetattr:
         assert result is not None
         assert "b" in result.tags
 
+    # These two tests are intentionally *sync* — __getattr__ is a synchronous
+    # method and the caching assertion doesn't require an event loop.
     def test_getattr_wrapper_is_cached(self, astore: AsyncMemoryStore) -> None:
         """Repeated attribute access must return the same function object (TAP-727)."""
         m1 = astore.update_fields  # type: ignore[attr-defined]
