@@ -91,6 +91,36 @@ def test_run_health_check_save_phase_summary_with_reused_store(tmp_path: Path) -
         ms.close()
 
 
+def test_health_check_reuses_caller_store_for_integrity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When store= is passed, run_health_check must not open a second MemoryStore.
+
+    Regression test for TAP-721: the integrity slice was shadowing the ``store``
+    parameter with a fresh ``MemoryStore.__init__()`` call, doubling setup cost on
+    every /health hit (Postgres pool + load_all + bloom rebuild).
+    """
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._project_root = tmp_path
+
+    init_calls: list[int] = []
+
+    def _no_ctor(*a: object, **k: object) -> object:  # pragma: no cover
+        init_calls.append(1)
+        raise AssertionError("MemoryStore() must not be called when store= is supplied")
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", _no_ctor)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False, store=mock_store)
+
+    assert init_calls == [], (
+        f"MemoryStore() was instantiated {len(init_calls)} extra time(s) despite store= being supplied"
+    )
+    assert report.store.status == "ok"
+    # Caller owns the store lifecycle — close must never be called inside run_health_check.
+    mock_store.close.assert_not_called()
+
+
 def test_run_health_check_store_file_not_found(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
