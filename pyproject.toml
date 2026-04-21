@@ -227,3 +227,4 @@ ignore = [
 "src/tapps_brain/postgres_private.py" = ["ANN401"]
 "src/tapps_brain/auto_consolidation.py" = ["ANN401"]
 "src/tapps_brain/cli.py" = ["B904", "B008"]  # typer.Option() in defaults is idiomatic typer
+"src/tapps_brain/cli/*.py" = ["B904", "B008"]  # typer.Option() in defaults is idiomatic typer
