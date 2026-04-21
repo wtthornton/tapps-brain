@@ -1,6 +1,6 @@
 {
   "name": "tapps-brain-memory",
-  "version": "3.10.1",
+  "version": "3.10.2",
   "description": "OpenClaw ContextEngine plugin for tapps-brain persistent memory",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

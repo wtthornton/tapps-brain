@@ -10,6 +10,26 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.10.2] — 2026-04-21
+
+### Added
+- `/mcp` auth-failure bodies now include `auth_model`, `expected_env`, and best-effort `tool` and `project_id` diagnostics. `McpTenantMiddleware` peeks the JSON-RPC body on rejection to surface the intended tool (e.g. `hive_status`) and emits structured `mcp_auth.missing_bearer` / `mcp_auth.bearer_mismatch` log events so asymmetric-auth reports arrive pre-diagnosed. Shape:
+
+  ```json
+  {
+    "error": "forbidden",
+    "detail": "Invalid token.",
+    "auth_model": "global_bearer",
+    "expected_env": "TAPPS_BRAIN_AUTH_TOKEN",
+    "tool": "hive_status",
+    "project_id": "tapps-brain"
+  }
+  ```
+
+  Status codes and the top-level `error` field are unchanged — purely additive metadata for clients like tapps-mcp's `auth_probe` / `tapps_doctor`.
+
+---
+
 ## [3.10.1] — 2026-04-20
 
 ### Security
