@@ -12,6 +12,45 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+> **Pending merge for next release** — branches below are ready but not yet on `main`.
+> Merge order: hotfixes (TAP-743/744/747) → security batch (TAP-709–729) → refactors (TAP-605/607/748) → features (TAP-732/733 → v3.11.0).
+
+### Security
+- `integrity.py` key-write path: eliminate TOCTOU race and world-readable key directory (TAP-709). Signing-key file now written atomically (`O_CREAT|O_EXCL`) to a `0o700` directory; removed dangling `os` import in test.
+- `compute_integrity_hash`: replace pipe-joined canonical form with JSON encoding to close field-boundary collision attack (TAP-710). Hash inputs now serialized via `json.dumps` — pipe separators allowed forged hashes by injecting `|` into field values.
+- `SentenceTransformerProvider`: pin `revision=` to a specific commit SHA on first load to prevent supply-chain substitution via model-hub push (TAP-720).
+- Rate-limit `batch_exempt_contexts` bypass closed: replace string-based `batch_context` with `contextvar` `batch_exempt_scope`; callers outside the scope can no longer forge exemptions (TAP-714).
+- `/health` endpoint no longer leaks exception text into warning/error strings in response body (TAP-724).
+
+### Fixed
+- `TappsBrainClient`: POST to `/mcp/` (trailing slash) to avoid Starlette 307 redirect that drops the request body, breaking all tool calls against a 3.10.0 server (TAP-743). **Critical — shipped client cannot call any tool without this fix.**
+- `TappsBrainClient`: add MCP session-initialize handshake for FastMCP 3.10.0 compatibility; `stateless_http=False` default now correctly initializes the session (TAP-744). **Critical — client returns empty responses without this fix.**
+- `/v1/remember`: catch `pydantic.ValidationError` on invalid slug keys and return HTTP 400 with `message` key instead of HTTP 500 (TAP-747).
+- `_sanitise_content`: sanitize against original content to preserve caller's Unicode rather than normalizing twice (TAP-712).
+- `SlidingWindowRateLimiter._session_count` renamed to `_lifetime_writes`; `writes_per_session` → `lifetime_write_warn_at` — the counter was session-scoped in name only (TAP-713).
+- `sync_to_markdown`: write `memory.md` atomically via temp-file + rename to prevent mid-write corruption (TAP-715).
+- `markdown_sync`: replace deprecated `batch_context(sync_from_markdown)` call path (TAP-716).
+- `markdown_sync`: truncation guard on values over 4096 chars is now explicit and logged (TAP-717).
+- `_parse_memory_md_sections`: slug collision detection — duplicate keys now raise instead of silently overwriting (TAP-718).
+- `embeddings.get_embedding_provider`: log `unavailable` at `warning` instead of `debug` so operators see missing providers (TAP-719).
+- `run_health_check`: replaced second `MemoryStore` open with direct `PrivateBackend` call to avoid double-lock contention (TAP-721).
+- `run_health_check`: no longer reaches into `MemoryStore._lock` / `_entries` internals (TAP-722).
+- `run_health_check.expired_entries`: ISO comparison uses UTC-normalized `datetime` not string comparison (TAP-723).
+- `decay.decay_days_since`: swallowed `ValueError` on malformed ISO timestamps now surfaces as `DecayError` (TAP-725).
+- `BloomFilter`: add `clear()` / `remove()` and resize on growth beyond load factor (TAP-726).
+- `AsyncMemoryStore.__getattr__`: fixed wrapper creation — was creating a new `AsyncMemoryStore` instance per attribute access (TAP-727).
+- `MCPTenantMiddleware.dispatch`: no longer reaches into FastMCP internals for tenant extraction (TAP-728).
+- `PostgresConnectionManager.get_pool_stats`: swallowed exceptions now re-raised so pool exhaustion is observable (TAP-729).
+- Example `coding-project/init/profile.yaml`: synced with `MemoryProfile` schema (TAP-748). Added comment that `extends:` is resolved client-side.
+
+### Changed
+- `mcp_server/__init__.py` (2388 lines) split into 7 focused submodules: `context.py`, `server.py`, `tools_brain.py`, `tools_memory.py`, `tools_feedback.py`, `tools_resources.py`, `tools_maintenance.py`, `tools_hive.py`, `tools_agents.py` (TAP-605). All public symbols remain importable from `tapps_brain.mcp_server`. No wire-affecting change.
+- `_handle_signal(signum, frame)` in `cli.py` renamed params to `_signum`/`_frame` (TAP-607). Zero behavior change; silences vulture false positives.
+
+### Added
+- `MemoryStatus` lifecycle enum (`active` / `stale` / `superseded`) on `MemoryEntry` with GC-protection contract: `superseded` entries are protected from GC until their successor is confirmed stable (TAP-732). Schema migration adds `status` + `stale_reason` columns.
+- `MemoryFilter` structured pre-filters on `MemoryRetriever` — tier, tag, date-range, `memory_class` field for coarse categorization before scoring (TAP-733).
+
 ## [3.10.0] - 2026-04-20
 
 Security batch (TAP-626–TAP-655) + memory reliability fixes + graph centrality + temporal decay velocity.

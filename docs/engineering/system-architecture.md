@@ -48,7 +48,7 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
 - **AgentBrain API**: `agent_brain.py` — primary interface for agents (EPIC-057). 5 methods: `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`. Configured via env vars or constructor.
 - **Library API**: `MemoryStore` in `store.py` — lower-level API with full control over save, search, maintenance, diagnostics.
 - **CLI**: `tapps-brain` in `cli.py` — accepts `--agent-id` for per-agent operations.
-- **MCP server**: `tapps-brain-mcp` in `mcp_server.py` — passes `--agent-id` through to `MemoryStore`.
+- **MCP server**: `tapps-brain-mcp` in `mcp_server/` package (7 focused submodules, TAP-605) — passes `--agent-id` through to `MemoryStore`.
 
 ## Primary components
 
@@ -58,7 +58,7 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
   - Save/update/delete, search, recall orchestration, maintenance, feedback, diagnostics, flywheel
   - Per-agent isolation via `agent_id` parameter (EPIC-053)
 - **Persistence layer**: `postgres_private.py`
-  - `PostgresPrivateBackend` — private-memory Postgres backend; schema migrations in `src/tapps_brain/migrations/private/` (001–006)
+  - `PostgresPrivateBackend` — private-memory Postgres backend; schema migrations in `src/tapps_brain/migrations/private/` (001–014)
 - **Backend abstraction**: `_protocols.py`, `backends.py`
   - `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols
   - `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories

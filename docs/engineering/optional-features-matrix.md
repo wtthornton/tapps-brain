@@ -6,7 +6,7 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 
 | Area | Dependency / Extra | Enabled path | Fallback behavior |
 |---|---|---|---|
-| MCP server | `mcp` extra | MCP runtime in `mcp_server.py` | Startup error with install hint |
+| MCP server | `mcp` extra | MCP runtime in `mcp_server/` package (7 submodules, TAP-605) | Startup error with install hint |
 | Vector embeddings | `vector` extra (`sentence-transformers`) | Hybrid retrieval and embedding writes | Falls back to non-vector retrieval |
 | Reranker | `reranker` extra (`flashrank`) | Local cross-encoder re-ranking in injection pipeline | No-op reranker path |
 | OTel exporter | `otel` extra | exporter creation path | exporter disabled (`None`) |

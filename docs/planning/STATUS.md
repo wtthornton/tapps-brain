@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-14 (America/Chicago) — **v3.5.1** — EPIC-069 / ADR-010: multi-tenant `project_id` on the wire + Postgres project registry + RLS on private tenanted tables (done); ADR-007: PostgreSQL-only (SQLite removed); EPIC-067: `AsyncMemoryStore` (`aio.py`); EPIC-066: async public-API wrapper; **next-session handoff:** [`next-session-prompt.md`](next-session-prompt.md)
+**Last updated:** 2026-04-20 (America/Los_Angeles) — **v3.10.0** — Security batch (TAP-626–655): per-tenant auth bypass, origin allowlist, SQL injection via f-string, MD5/SHA1 FIPS, default bind 127.0.0.1; graph centrality scoring (TAP-734); temporal_sensitivity field (TAP-735); failed_approaches on MemoryEntry (TAP-731); TAP-605 mcp_server/__init__.py split into 7 submodules. Postgres-only (ADR-007). **next release:** v3.10.1 — critical client hotfixes (TAP-743/744/747) + security batch (TAP-709–729) + refactors (TAP-605/607).
 
-**Package version (`pyproject.toml`):** **3.5.1**
+**Package version (`pyproject.toml`):** **3.10.0**
 
 Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
 
@@ -18,7 +18,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 | Check | Target | Notes |
 |--------|--------|--------|
-| Tests | ~2300+ collected (`pytest tests/`) | Benchmarks excluded in CI-style runs via `-m "not benchmark"` |
+| Tests | ~2940+ collected (`pytest tests/`) | Benchmarks excluded in CI-style runs via `-m "not benchmark"` |
 | Coverage | ≥ 95% | `tapps_brain` package (`--cov-fail-under=95`) |
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
@@ -27,7 +27,7 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 
 ## Storage / schema
 
-All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schema managed by versioned migrations in `src/tapps_brain/migrations/private/` (001–006) and `src/tapps_brain/migrations/` (Hive/Federation).
+All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schema managed by versioned migrations in `src/tapps_brain/migrations/private/` and `src/tapps_brain/migrations/` (Hive/Federation).
 
 - **Migration 001:** initial private schema (`private_memories`, `archived_memories`, `session_chunks`).
 - **Migration 002:** pgvector HNSW index (`m=16, ef_construction=200`, cosine ops).
@@ -35,6 +35,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
+- **Migrations 007–014:** flywheel meta, project profiles, project RLS, idempotency keys, per-tenant auth, RLS force, temporal sensitivity (TAP-735), failed_approaches (TAP-731). All `ADD COLUMN IF NOT EXISTS`; backward-compatible. Current max: **014**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
