@@ -221,11 +221,9 @@ class TestPostgresConnectionManager:
         # TAP-729: pool_stats_available is False when get_stats() raises.
         assert stats["pool_stats_available"] is False
 
-    def test_get_pool_stats_logs_debug_when_get_stats_raises(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_get_pool_stats_logs_debug_when_get_stats_raises(self) -> None:
         """TAP-729: exceptions from get_stats() must be logged at DEBUG, not swallowed."""
-        import logging
+        import structlog.testing
 
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
@@ -235,14 +233,17 @@ class TestPostgresConnectionManager:
         cm = PostgresConnectionManager("postgres://localhost/test")
         cm._pool = mock_pool
 
-        with caplog.at_level(logging.DEBUG, logger="tapps_brain.postgres_connection"):
+        with structlog.testing.capture_logs() as cap_logs:
             stats = cm.get_pool_stats()
 
         assert stats["pool_stats_available"] is False
-        # Verify the debug log was emitted (structlog may not use caplog, so
-        # check the underlying record or just ensure no exception propagated).
-        # The important invariant is: no exception raised.
         assert stats["pool_size"] == 0
+        # Verify the structured debug event was actually emitted.
+        matching = [
+            e for e in cap_logs if e.get("event") == "postgres_connection.pool_stats_unavailable"
+        ]
+        assert matching, f"Expected debug log not found; got: {cap_logs}"
+        assert matching[0]["error"] == "AttributeError"
 
     # -- New canonical env vars (TAPPS_BRAIN_PG_POOL_*) -----------------------
 
