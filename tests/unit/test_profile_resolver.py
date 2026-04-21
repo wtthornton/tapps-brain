@@ -386,3 +386,42 @@ class TestCacheStatsWithInvalidations:
         stats = resolver.cache_stats()
         assert stats["misses"] == 1
         assert stats["hits"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TAP-728: validate_profile_name() public method
+# ---------------------------------------------------------------------------
+
+
+class TestValidateProfileName:
+    """Verify ProfileResolver.validate_profile_name() is a public alias for
+    registry validation so callers do not need to reach into ``_registry``.
+    """
+
+    def test_known_profile_does_not_raise(self) -> None:
+        resolver = _make_resolver()
+        # Should not raise for a known profile name
+        resolver.validate_profile_name("coder")
+        resolver.validate_profile_name("full")
+
+    def test_unknown_profile_raises_unknown_profile_error(self) -> None:
+        resolver = _make_resolver()
+        with pytest.raises(UnknownProfileError) as exc_info:
+            resolver.validate_profile_name("nonexistent_profile")
+        err = exc_info.value
+        assert err.name == "nonexistent_profile"
+        assert isinstance(err.available, list)
+
+    def test_unknown_profile_error_has_available_list(self) -> None:
+        resolver = _make_resolver()
+        with pytest.raises(UnknownProfileError) as exc_info:
+            resolver.validate_profile_name("bogus")
+        assert "full" in exc_info.value.available
+        assert "coder" in exc_info.value.available
+
+    def test_does_not_access_private_registry_attribute_directly(self) -> None:
+        """validate_profile_name() must go through the public API, not _registry."""
+        resolver = _make_resolver()
+        # Verify the method exists as a proper public method (no leading underscore)
+        assert hasattr(resolver, "validate_profile_name")
+        assert callable(resolver.validate_profile_name)

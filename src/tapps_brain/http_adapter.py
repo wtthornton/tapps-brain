@@ -974,8 +974,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         header_profile = (request.headers.get("x-brain-profile") or "").strip() or None
         if header_profile is not None:
             try:
-                resolver = _get_profile_resolver()
-                resolver._registry.get(header_profile)
+                _get_profile_resolver().validate_profile_name(header_profile)
             except UnknownProfileError as exc:
                 return JSONResponse(
                     status_code=400,
