@@ -167,6 +167,8 @@ class TestPostgresConnectionManager:
         assert stats["pool_available"] == 0
         assert stats["pool_saturation"] == 0.0
         assert stats["idle_timeout"] == 300.0
+        # TAP-729: pool_stats_available is False when pool is not yet open.
+        assert stats["pool_stats_available"] is False
 
     def test_get_pool_stats_with_mock_pool(self) -> None:
         from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -186,6 +188,8 @@ class TestPostgresConnectionManager:
         assert stats["pool_available"] == 4
         # (6 - 4) / 10 = 0.2
         assert stats["pool_saturation"] == pytest.approx(0.2, abs=1e-4)
+        # TAP-729: pool_stats_available is True when get_stats() succeeds.
+        assert stats["pool_stats_available"] is True
 
     def test_get_pool_stats_saturation_clamped_to_one(self) -> None:
         """Pool stats should never report saturation > 1.0 even with bad data."""
@@ -214,6 +218,32 @@ class TestPostgresConnectionManager:
         stats = cm.get_pool_stats()
         assert stats["pool_saturation"] == 0.0
         assert stats["pool_size"] == 0
+        # TAP-729: pool_stats_available is False when get_stats() raises.
+        assert stats["pool_stats_available"] is False
+
+    def test_get_pool_stats_logs_debug_when_get_stats_raises(self) -> None:
+        """TAP-729: exceptions from get_stats() must be logged at DEBUG, not swallowed."""
+        import structlog.testing
+
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        mock_pool = MagicMock()
+        mock_pool.get_stats.side_effect = AttributeError("renamed_method")
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        cm._pool = mock_pool
+
+        with structlog.testing.capture_logs() as cap_logs:
+            stats = cm.get_pool_stats()
+
+        assert stats["pool_stats_available"] is False
+        assert stats["pool_size"] == 0
+        # Verify the structured debug event was actually emitted.
+        matching = [
+            e for e in cap_logs if e.get("event") == "postgres_connection.pool_stats_unavailable"
+        ]
+        assert matching, f"Expected debug log not found; got: {cap_logs}"
+        assert matching[0]["error"] == "AttributeError"
 
     # -- New canonical env vars (TAPPS_BRAIN_PG_POOL_*) -----------------------
 
