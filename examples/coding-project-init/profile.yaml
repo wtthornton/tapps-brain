@@ -1,38 +1,128 @@
-# Example per-project memory profile. Rename/edit for your domain, then register
-# against the deployed hub once EPIC-069 ships the registration wire format:
+# Per-project memory profile for coding-project-init.
 #
+# RECOMMENDED: Most projects should just use the built-in "repo-brain" profile
+# unchanged — it is what every registered tapps-brain tenant currently uses.
+# Copy-paste this file, set your project name, and you're done.
+#
+# Schema notes (MemoryProfile / LayerDefinition):
+#   - `layers[].name` is the tier name — valid values are:
+#     architectural | pattern | procedural | context
+#   - `layers[].half_life_days` is required; all other layer fields have defaults.
+#   - The top-level `extends` field is resolved by the local profile loader but
+#     NOT by the /admin/projects API (the API does not call _resolve_inheritance
+#     server-side). Flatten all layer definitions inline when registering via
+#     the API, as done in this file.
+#
+# Register against a deployed hub once EPIC-069 ships the CLI:
 #   tapps-brain project register <your-project-id> --profile ./profile.yaml
-#
-# Until then, this file is loaded by in-process AgentBrain when placed at the
-# project root (profile discovery). See docs/guides/profiles.md.
+# Until then, place the file at <project-root>/.tapps-brain/profile.yaml for
+# in-process discovery, or POST it directly:
+#   curl -X POST http://localhost:8080/admin/projects \
+#     -H "Authorization: Bearer $ADMIN_TOKEN" \
+#     -H "Content-Type: application/json" \
+#     -d "$(yq -o=json . profile.yaml | jq '{project_id:"my-project",profile:.profile,approved:true,source:"admin"}')"
 
 profile:
   name: "example-project"
   version: "1.0"
   description: "Memory profile for an example consuming project."
 
-  # Layers define the semantic categories of memory. The first layer is the
-  # most durable; the last is the most ephemeral. Recall ranks across layers.
+  # Layer names must exactly match the tier enum: architectural | pattern | procedural | context.
+  # half_life_days controls how fast a memory decays to 50 % retention (required).
   layers:
-    - name: "decisions"
-      description: "Architectural and API contract decisions. Long-lived."
-      tier: "architectural"
-    - name: "patterns"
-      description: "Reusable patterns, conventions, and recipes."
-      tier: "pattern"
+    - name: "architectural"
+      description: "System decisions, tech-stack choices, infrastructure contracts."
+      half_life_days: 180
+      decay_model: "power_law"
+      decay_exponent: 3.29
+      confidence_floor: 0.10
+      importance_tags:
+        critical: 2.0
+        security: 1.5
+      promotion_to: null
+      demotion_to: "pattern"
+
+    - name: "pattern"
+      description: "Reusable coding conventions, API patterns, and design recipes."
+      half_life_days: 60
+      decay_model: "power_law"
+      decay_exponent: 3.29
+      confidence_floor: 0.10
+      importance_tags:
+        critical: 1.5
+      promotion_to: "architectural"
+      promotion_threshold:
+        min_access_count: 10
+        min_age_days: 30
+        min_confidence: 0.7
+      demotion_to: "context"
+
+    - name: "procedural"
+      description: "Workflows, deployment steps, build commands, runbooks."
+      half_life_days: 30
+      decay_model: "power_law"
+      decay_exponent: 3.29
+      confidence_floor: 0.10
+      promotion_to: "pattern"
+      promotion_threshold:
+        min_access_count: 5
+        min_age_days: 14
+        min_confidence: 0.6
+      demotion_to: "context"
+
     - name: "context"
-      description: "Working context — current task state, recent findings."
-      tier: "context"
-    - name: "scratch"
-      description: "Throwaway notes. Decays fastest."
-      tier: "scratch"
+      description: "Working context — current task state and recent findings."
+      half_life_days: 14
+      decay_model: "power_law"
+      decay_exponent: 3.29
+      confidence_floor: 0.05
+      promotion_to: "procedural"
+      promotion_threshold:
+        min_access_count: 3
+        min_age_days: 7
+        min_confidence: 0.5
+      demotion_to: null
 
-  # Decay curve across layers — exponential is a sensible default.
-  decay:
-    curve: "exponential"
+  # Composite retrieval blend — relevance + confidence + recency + frequency must
+  # sum to ~1.0 (0.95–1.05). Tune after you have real traffic.
+  scoring:
+    relevance: 0.40
+    confidence: 0.30
+    recency: 0.15
+    frequency: 0.15
+    frequency_cap: 20
+    source_trust:
+      human: 1.0
+      system: 0.9
+      agent: 0.7
+      inferred: 0.5
 
-  # Recall ranking weights. Tune these after you have real traffic.
-  ranking:
-    recency_weight: 0.25
-    relevance_weight: 0.50
-    tier_weight: 0.25
+  source_confidence:
+    human: 0.95
+    agent: 0.60
+    inferred: 0.40
+    system: 0.90
+
+  source_ceilings:
+    human: 0.95
+    agent: 0.85
+    inferred: 0.70
+    system: 0.95
+
+  gc:
+    floor_retention_days: 30
+    session_expiry_days: 7
+    contradicted_threshold: 0.2
+    stale_threshold: 0.3
+
+  recall:
+    default_token_budget: 3000
+    default_engagement: "high"
+    min_score: 0.3
+    min_confidence: 0.1
+
+  limits:
+    max_entries: 5000
+    max_key_length: 128
+    max_value_length: 4096
+    max_tags: 10
