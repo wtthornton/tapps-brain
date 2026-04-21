@@ -108,6 +108,8 @@ from tapps_brain.http.middleware import (
     McpTenantMiddleware,
     OriginAllowlistMiddleware,
     OtelSpanMiddleware,
+    _mcp_auth_error_body,
+    _peek_mcp_tool_name,
 )
 
 # probe cache
@@ -1084,16 +1086,40 @@ class McpTenantMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa
         # Auth
         if cfg.auth_token:
             tok = _extract_bearer(request)
+            header_project_id = (request.headers.get("x-project-id") or "").strip() or None
             if tok is None or tok == "":
+                tool = _peek_mcp_tool_name(await request.body())
+                logger.warning(
+                    "mcp_auth.missing_bearer",
+                    project_id=header_project_id,
+                    tool=tool,
+                    has_authorization_header=request.headers.get("authorization") is not None,
+                )
                 return JSONResponse(
                     status_code=401,
-                    content={"error": "unauthorized", "detail": "Bearer token required for /mcp."},
+                    content=_mcp_auth_error_body(
+                        "Bearer token required for /mcp.",
+                        error="unauthorized",
+                        project_id=header_project_id,
+                        tool=tool,
+                    ),
                 )
             # TAP-544: constant-time comparison for the /mcp bearer-token check.
             if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
+                tool = _peek_mcp_tool_name(await request.body())
+                logger.warning(
+                    "mcp_auth.bearer_mismatch",
+                    project_id=header_project_id,
+                    tool=tool,
+                )
                 return JSONResponse(
                     status_code=403,
-                    content={"error": "forbidden", "detail": "Invalid token."},
+                    content=_mcp_auth_error_body(
+                        "Invalid token.",
+                        error="forbidden",
+                        project_id=header_project_id,
+                        tool=tool,
+                    ),
                 )
 
         # Tenant headers

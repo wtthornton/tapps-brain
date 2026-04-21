@@ -14,7 +14,10 @@ that unit tests patching ``tapps_brain.http_adapter.get_settings`` and
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+import structlog
 
 try:
     from fastapi import Request, Response  # noqa: TC002
@@ -27,6 +30,61 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from tapps_brain.http.metrics_collector import _record_labeled_request
+
+logger = structlog.get_logger(__name__)
+
+MCP_AUTH_MODEL = "global_bearer"
+MCP_AUTH_EXPECTED_ENV = "TAPPS_BRAIN_AUTH_TOKEN"
+
+
+def _peek_mcp_tool_name(body_bytes: bytes) -> str | None:
+    """Return ``params.name`` from a JSON-RPC ``tools/call`` body, else ``None``.
+
+    Best-effort and side-effect-free — any parse error, batch body, or
+    non-tool-call method yields ``None``.  Used only on auth-rejection paths
+    to enrich the error envelope, so callers don't need to replay the body.
+    """
+    if not body_bytes:
+        return None
+    try:
+        payload: Any = json.loads(body_bytes)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("method") != "tools/call":
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    name = params.get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def _mcp_auth_error_body(
+    detail: str,
+    *,
+    error: str,
+    project_id: str | None,
+    tool: str | None,
+) -> dict[str, Any]:
+    """Build the enriched JSON body for an /mcp auth failure.
+
+    Always includes ``auth_model`` and ``expected_env`` so clients (e.g.
+    tapps-mcp ``auth_probe`` / ``tapps_doctor``) can surface the real
+    remediation instead of a bare HTTP status line.  ``tool`` and
+    ``project_id`` are best-effort diagnostics and omitted when unknown.
+    """
+    body: dict[str, Any] = {
+        "error": error,
+        "detail": detail,
+        "auth_model": MCP_AUTH_MODEL,
+        "expected_env": MCP_AUTH_EXPECTED_ENV,
+    }
+    if tool is not None:
+        body["tool"] = tool
+    if project_id is not None:
+        body["project_id"] = project_id
+    return body
+
 
 # Paths that are intentionally unauthenticated and Origin-agnostic (TAP-627).
 # These are probe / scrape endpoints that must remain reachable from any origin
@@ -54,11 +112,14 @@ def _resolve_tenant_headers(request: Request) -> tuple[str, str, str | None, str
     return project_id, agent_id, scope, group
 
 
-def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | None:
+async def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | None:
     """Verify the bearer token for ``/mcp`` requests.
 
     Returns a ``JSONResponse`` error when auth fails, or ``None`` when the
-    check passes (token matches or auth is not configured).
+    check passes (token matches or auth is not configured).  Rejection
+    bodies include ``auth_model``/``expected_env`` and — best-effort —
+    ``tool`` and ``project_id`` so clients can self-diagnose without a
+    round-trip to the server logs.
     """
     if not auth_token:
         return None
@@ -68,16 +129,40 @@ def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | 
     import tapps_brain.http_adapter as _http_mod
 
     tok = _http_mod._extract_bearer(request)  # type: ignore[attr-defined]
+    project_id = (request.headers.get("x-project-id") or "").strip() or None
     if tok is None or tok == "":
+        tool = _peek_mcp_tool_name(await request.body())
+        logger.warning(
+            "mcp_auth.missing_bearer",
+            project_id=project_id,
+            tool=tool,
+            has_authorization_header=request.headers.get("authorization") is not None,
+        )
         return JSONResponse(
             status_code=401,
-            content={"error": "unauthorized", "detail": "Bearer token required for /mcp."},
+            content=_mcp_auth_error_body(
+                "Bearer token required for /mcp.",
+                error="unauthorized",
+                project_id=project_id,
+                tool=tool,
+            ),
         )
     # TAP-544: constant-time comparison for the /mcp bearer-token check.
     if not hmac.compare_digest(tok.encode("utf-8"), auth_token.encode("utf-8")):
+        tool = _peek_mcp_tool_name(await request.body())
+        logger.warning(
+            "mcp_auth.bearer_mismatch",
+            project_id=project_id,
+            tool=tool,
+        )
         return JSONResponse(
             status_code=403,
-            content={"error": "forbidden", "detail": "Invalid token."},
+            content=_mcp_auth_error_body(
+                "Invalid token.",
+                error="forbidden",
+                project_id=project_id,
+                tool=tool,
+            ),
         )
     return None
 
@@ -221,7 +306,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
         cfg = _http_mod.get_settings()
 
         # --- Auth ---
-        auth_err = _check_mcp_auth(request, cfg.auth_token)
+        auth_err = await _check_mcp_auth(request, cfg.auth_token)
         if auth_err is not None:
             return auth_err
 
