@@ -19,6 +19,9 @@ ProfileResolver(registry, agent_profile_getter=None, default_profile=None,
     Build a resolver.  *agent_profile_getter* is an optional callable
     ``(project_id, agent_id) -> str | None`` so callers can inject any
     backend without coupling this module to Postgres.
+ProfileResolver.validate_profile_name(name) -> None
+    Raise ``UnknownProfileError`` if *name* is not in the registry.
+    Use this instead of reaching into ``resolver._registry`` directly.
 ProfileResolver.resolve(*, project_id, agent_id, header_profile) -> str
     Return the resolved profile name (never raises).
 ProfileResolver.invalidate(project_id, agent_id) -> None
@@ -89,6 +92,25 @@ class ProfileResolver:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def validate_profile_name(self, name: str) -> None:
+        """Raise :exc:`~tapps_brain.mcp_server.profile_registry.UnknownProfileError` if *name* is not registered.
+
+        This is the public entry-point for header-profile validation — callers
+        should use this method rather than reaching into ``self._registry``
+        directly (TAP-728).
+
+        Parameters
+        ----------
+        name:
+            Profile name to validate, e.g. ``"coder"`` or ``"full"``.
+
+        Raises
+        ------
+        UnknownProfileError
+            If *name* is not in the registry.
+        """
+        self._registry.get(name)
 
     def resolve(
         self,
