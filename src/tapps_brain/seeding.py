@@ -4,7 +4,8 @@ Automatically seeds the memory store with facts detected by
 ``tapps_project_profile`` on first run. Seeded memories are tagged
 with ``auto-seeded`` and ``source=system``.
 
-**Save path:** each seed uses ``MemoryStore.save(..., batch_context="seed")``.
+**Save path:** each seed uses ``MemoryStore.save()`` inside a
+:func:`~tapps_brain.rate_limiter.batch_exempt_scope` context.
 Save-time ``conflict_check`` runs like any other write; first-run seeding only
 fires on an **empty** store, and ``reseed_from_profile`` deletes prior
 ``auto-seeded`` rows first, so collisions are rare. Custom integrators may call
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from tapps_brain.models import MemoryScope, MemorySource, MemoryTier
+from tapps_brain.rate_limiter import batch_exempt_scope
 
 if TYPE_CHECKING:
     from tapps_brain._protocols import ProjectProfileLike
@@ -96,7 +98,9 @@ def seed_from_profile(
         logger.info("memory_seed_skipped", reason="store not empty")
         return _with_seed_version(store, {"seeded_count": 0, "skipped": True})
 
-    return _with_seed_version(store, _do_seed(store, profile))
+    with batch_exempt_scope("seed"):
+        result = _do_seed(store, profile)
+    return _with_seed_version(store, result)
 
 
 def reseed_from_profile(
@@ -124,7 +128,8 @@ def reseed_from_profile(
         store.delete(entry.key)
         deleted += 1
 
-    result = _do_seed(store, profile)
+    with batch_exempt_scope("seed"):
+        result = _do_seed(store, profile)
     result["deleted_old"] = deleted
     return _with_seed_version(store, result)
 
@@ -148,7 +153,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("project-type"),
             confidence=confidence,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, "project-type")
@@ -170,7 +175,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("language"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -192,7 +197,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("framework"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -214,7 +219,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("test-framework"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -236,7 +241,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("package-manager"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -258,7 +263,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("ci-system"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, key)
@@ -277,7 +282,7 @@ def _do_seed(  # noqa: PLR0915
             scope=MemoryScope.project.value,
             tags=_make_seed_tags("docker"),
             confidence=_DEFAULT_CONFIDENCE,
-            batch_context="seed",
+
         )
         if not isinstance(saved, dict):
             _set_seeded_from(store, "has-docker")

@@ -13,6 +13,7 @@ from tapps_brain.rate_limiter import (
     RateLimiterConfig,
     RateLimitResult,
     SlidingWindowRateLimiter,
+    batch_exempt_scope,
 )
 
 
@@ -145,28 +146,30 @@ class TestSlidingWindowRateLimiter:
         assert result.current_lifetime_count == 4
 
     def test_batch_context_exempt(self) -> None:
-        """Batch context exemptions bypass rate limiting."""
+        """batch_exempt_scope() bypasses rate limiting for trusted contexts."""
         limiter = SlidingWindowRateLimiter(
             RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=1)
         )
         # Use up the limit
         limiter.check()
 
-        # Exempt contexts should not trigger warnings
+        # Exempt contexts entered via batch_exempt_scope should not trigger warnings
         for ctx in BATCH_EXEMPT_CONTEXTS:
-            result = limiter.check(batch_context=ctx)
+            with batch_exempt_scope(ctx):
+                result = limiter.check()
             assert result.allowed is True
             assert result.minute_exceeded is False
             assert result.lifetime_exceeded is False
 
     def test_batch_context_non_exempt(self) -> None:
-        """Non-exempt batch contexts are rate limited normally."""
+        """Writes outside batch_exempt_scope are rate limited normally."""
         limiter = SlidingWindowRateLimiter(
             RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=100)
         )
         limiter.check()  # Use the limit
 
-        result = limiter.check(batch_context="not_exempt")
+        # No exemption scope — should be rate limited
+        result = limiter.check()
         assert result.minute_exceeded is True
 
     def test_stats_tracking(self) -> None:
@@ -185,10 +188,12 @@ class TestSlidingWindowRateLimiter:
         assert stats.exempt_writes == 0
 
     def test_stats_exempt_tracking(self) -> None:
-        """Exempt writes should be tracked in stats."""
+        """Exempt writes via batch_exempt_scope should be tracked in stats."""
         limiter = SlidingWindowRateLimiter(RateLimiterConfig())
-        limiter.check(batch_context="seed")
-        limiter.check(batch_context="consolidate")
+        with batch_exempt_scope("seed"):
+            limiter.check()
+        with batch_exempt_scope("consolidate"):
+            limiter.check()
 
         stats = limiter.stats
         assert stats.exempt_writes == 2
@@ -279,3 +284,66 @@ class TestBatchExemptContexts:
 
     def test_is_frozenset(self) -> None:
         assert isinstance(BATCH_EXEMPT_CONTEXTS, frozenset)
+
+
+class TestBatchExemptScope:
+    """Tests for the batch_exempt_scope context manager (TAP-714 security fix)."""
+
+    def test_unknown_context_raises(self) -> None:
+        """batch_exempt_scope with an unknown context raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown batch context"):
+            with batch_exempt_scope("federation_sync_evil"):
+                pass  # should not reach here
+
+    def test_magic_string_outside_scope_not_exempt(self) -> None:
+        """Passing a magic string without batch_exempt_scope does NOT grant exemption.
+
+        This is the core security test for TAP-714: a caller cannot bypass
+        rate limiting by simply calling check() outside of batch_exempt_scope(),
+        even if they know the exempt context names.
+        """
+        limiter = SlidingWindowRateLimiter(
+            RateLimiterConfig(writes_per_minute=1, writes_per_session=100)
+        )
+        limiter.check()  # Use up the per-minute limit
+
+        # check() has no batch_context parameter — external callers cannot
+        # inject the exemption string without using batch_exempt_scope().
+        result = limiter.check()
+        assert result.minute_exceeded is True, (
+            "A caller without batch_exempt_scope must not bypass rate limiting"
+        )
+
+    def test_scope_restores_after_exit(self) -> None:
+        """batch_exempt_scope resets the contextvar on exit — no exemption leaks."""
+        limiter = SlidingWindowRateLimiter(
+            RateLimiterConfig(writes_per_minute=1, writes_per_session=100)
+        )
+        limiter.check()  # use up limit
+
+        with batch_exempt_scope("seed"):
+            inside = limiter.check()
+        outside = limiter.check()  # after exiting the scope
+
+        assert inside.minute_exceeded is False, "Should be exempt inside scope"
+        assert outside.minute_exceeded is True, "Should NOT be exempt outside scope"
+
+    def test_scope_is_context_var_not_global(self) -> None:
+        """batch_exempt_scope does not set a global flag; it uses a ContextVar."""
+        import contextvars
+
+        from tapps_brain.rate_limiter import _batch_ctx_var
+
+        assert isinstance(_batch_ctx_var, contextvars.ContextVar)
+        # Before entering a scope, the contextvar has no value
+        assert _batch_ctx_var.get() is None
+        with batch_exempt_scope("seed"):
+            assert _batch_ctx_var.get() == "seed"
+        # After exiting the scope, the contextvar is reset
+        assert _batch_ctx_var.get() is None
+
+    def test_scope_validates_against_known_set(self) -> None:
+        """Only known context names are accepted — typos are rejected."""
+        with pytest.raises(ValueError, match="federation_sync_extra"):
+            with batch_exempt_scope("federation_sync_extra"):
+                pass
