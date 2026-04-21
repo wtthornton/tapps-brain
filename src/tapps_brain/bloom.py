@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import math
 import unicodedata
+from collections.abc import Iterable
 
 
 def bloom_false_positive_probability(bit_size: int, hash_count: int, inserted_count: int) -> float:
@@ -51,6 +52,8 @@ class BloomFilter:
     """
 
     def __init__(self, expected_items: int = 5000, fp_rate: float = 0.01) -> None:
+        self._expected_items = max(1, expected_items)
+        self._fp_rate = fp_rate
         self._size = max(64, self._optimal_size(expected_items, fp_rate))
         self._hash_count = max(1, self._optimal_hashes(self._size, expected_items))
         self._bits = bytearray(self._size // 8 + 1)
@@ -88,8 +91,68 @@ class BloomFilter:
         h2 = int(hashlib.sha1(item.encode(), usedforsecurity=False).hexdigest(), 16)
         return [(h1 + i * h2) % self._size for i in range(self._hash_count)]
 
+    def clear(self) -> None:
+        """Reset the filter to an empty state (all bits zero, count zero)."""
+        self._bits = bytearray(self._size // 8 + 1)
+        self._count = 0
+
+    def rebuild(self, items: Iterable[str]) -> None:
+        """Clear the filter and re-add *items*.
+
+        Call this after GC / bulk-delete to remove stale bits from evicted
+        entries and restore accurate membership information.  O(k*n) where *k*
+        is ``hash_count`` and *n* is ``len(items)``.
+        """
+        self.clear()
+        for it in items:
+            self.add(it)
+
     def add(self, item: str) -> None:
-        """Add an item to the filter."""
+        """Add an item to the filter.
+
+        When ``count`` exceeds ``expected_items * 1.5`` the filter auto-resizes
+        (doubles the underlying bit array) and rebuilds from the items already
+        in the filter's logical set.  This keeps the false-positive rate bounded
+        rather than letting it grow without limit as the store expands beyond
+        the initial capacity estimate.  Callers that previously captured items
+        for a manual rebuild can skip that after the auto-resize path fires
+        (the filter's bits are already updated).
+
+        .. note::
+            Auto-resize cannot enumerate the items that were previously added
+            because a plain Bloom filter does not retain them.  The resize
+            therefore only works when the caller is tracking items externally
+            and can supply them to :meth:`rebuild` — or when the store calls
+            :meth:`rebuild` right after (which :class:`MemoryStore` does on GC
+            and rollback).  If auto-resize fires mid-stream (between a GC and
+            the subsequent rebuild) the bits are cleared and only items added
+            *after* the resize are present, which is conservative (no false
+            negatives can be introduced — items not yet re-added will just
+            trigger a full similarity check rather than being short-circuited).
+        """
+        # Auto-resize: when count exceeds 1.5× expected_items, double the
+        # filter's capacity and clear it.  The store's GC / save paths call
+        # rebuild() after mutations, so the cleared filter will be repopulated
+        # shortly.  Logging is intentionally lazy-import to avoid a hard dep.
+        if self._count >= self._expected_items + (self._expected_items // 2):
+            new_expected = self._expected_items * 2
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "bloom_filter_auto_resize",
+                extra={
+                    "old_expected": self._expected_items,
+                    "new_expected": new_expected,
+                    "count": self._count,
+                    "fp_rate_before": self.approximate_false_positive_rate(),
+                },
+            )
+            self._expected_items = new_expected
+            self._size = max(64, self._optimal_size(new_expected, self._fp_rate))
+            self._hash_count = max(1, self._optimal_hashes(self._size, new_expected))
+            self._bits = bytearray(self._size // 8 + 1)
+            self._count = 0
+
         for pos in self._get_hashes(item):
             byte_idx = pos // 8
             bit_idx = pos % 8

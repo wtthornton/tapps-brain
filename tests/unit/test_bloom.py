@@ -164,3 +164,94 @@ class TestBloomFilter:
         bf = BloomFilter()
         bf.add("")
         assert bf.might_contain("") is True
+
+
+class TestBloomFilterClearAndRebuild:
+    """TAP-726 — clear(), rebuild(), and auto-resize behaviour."""
+
+    def test_clear_resets_count(self) -> None:
+        bf = BloomFilter(expected_items=100, fp_rate=0.01)
+        for i in range(10):
+            bf.add(f"item-{i}")
+        assert bf.count == 10
+        bf.clear()
+        assert bf.count == 0
+
+    def test_clear_clears_bits(self) -> None:
+        bf = BloomFilter(expected_items=100, fp_rate=0.01)
+        bf.add("hello")
+        assert bf.might_contain("hello") is True
+        bf.clear()
+        # After clear the filter is empty; might_contain should return False
+        # for low-FP-rate filters (not a guarantee in general, but true for
+        # a zeroed bit array).
+        assert all(b == 0 for b in bf._bits)
+
+    def test_clear_preserves_filter_size(self) -> None:
+        bf = BloomFilter(expected_items=100, fp_rate=0.01)
+        original_size = bf.bit_size
+        original_hashes = bf.hash_count
+        bf.add("x")
+        bf.clear()
+        assert bf.bit_size == original_size
+        assert bf.hash_count == original_hashes
+
+    def test_rebuild_restores_membership(self) -> None:
+        bf = BloomFilter(expected_items=200, fp_rate=0.01)
+        items = [f"mem-{i}" for i in range(50)]
+        for it in items:
+            bf.add(it)
+        # Now rebuild from a subset
+        subset = items[:20]
+        bf.rebuild(subset)
+        assert bf.count == 20
+        for it in subset:
+            assert bf.might_contain(it) is True
+
+    def test_rebuild_clears_items_not_in_new_set(self) -> None:
+        bf = BloomFilter(expected_items=1000, fp_rate=0.001)
+        bf.add("old-item")
+        bf.rebuild(["new-item"])
+        # "old-item" was not in the rebuild set; with very low FP rate it
+        # should not appear as present.
+        assert bf.might_contain("old-item") is False
+
+    def test_rebuild_with_empty_iterable(self) -> None:
+        bf = BloomFilter(expected_items=100, fp_rate=0.01)
+        bf.add("something")
+        bf.rebuild([])
+        assert bf.count == 0
+        assert all(b == 0 for b in bf._bits)
+
+    def test_auto_resize_triggers_on_overflow(self) -> None:
+        """add() when count >= expected_items * 1.5 should trigger a resize.
+
+        The guard checks ``self._count >= threshold`` at the *start* of add().
+        The filter reaches count == threshold after ``threshold`` inserts; the
+        resize fires on the *next* (threshold+1-th) call to add().
+        """
+        expected = 10
+        bf = BloomFilter(expected_items=expected, fp_rate=0.01)
+        old_size = bf.bit_size
+        threshold = expected + expected // 2  # 15
+        # Add threshold items so count == threshold, then one more to fire resize.
+        for i in range(threshold + 1):
+            bf.add(f"x-{i}")
+        assert bf._expected_items > expected, "expected_items should have doubled"
+        assert bf.bit_size >= old_size, "bit_size should be >= old size after resize"
+
+    def test_auto_resize_doubles_expected_items(self) -> None:
+        expected = 10
+        bf = BloomFilter(expected_items=expected, fp_rate=0.01)
+        threshold = expected + expected // 2  # resize fires when count reaches threshold
+        for i in range(threshold + 1):  # +1 because resize is checked at start of add
+            bf.add(f"y-{i}")
+        assert bf._expected_items == expected * 2
+
+    def test_approximate_fp_rate_after_rebuild(self) -> None:
+        bf = BloomFilter(expected_items=100, fp_rate=0.01)
+        for i in range(50):
+            bf.add(f"a-{i}")
+        bf.rebuild(["only-this"])
+        # FP rate should be very low after rebuilding with just one item
+        assert bf.approximate_false_positive_rate() < 0.05
