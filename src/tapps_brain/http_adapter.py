@@ -24,12 +24,24 @@ tests — it wraps uvicorn instead of ``http.server.HTTPServer``.
 The ASGI entry point is :data:`app`; run it with
 ``uvicorn tapps_brain.http_adapter:app`` or via the installed
 ``tapps-brain-http`` script.
+
+**Split by concern (TAP-604):**
+
+The original monolithic module has been refactored into a sub-package:
+
+* :mod:`tapps_brain.http.settings`          – ``_Settings``, ``get_settings``
+* :mod:`tapps_brain.http.probe_cache`       – ``_probe_db``, pool helpers
+* :mod:`tapps_brain.http.metrics_collector` – Prometheus text rendering
+* :mod:`tapps_brain.http.profile_resolver`  – singleton ``ProfileResolver``
+* :mod:`tapps_brain.http.auth`              – bearer-token auth dependencies
+* :mod:`tapps_brain.http.middleware`        – ASGI middleware classes
+
+All public names are re-exported from this module for backward compat.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import logging
 import os
@@ -71,10 +83,68 @@ from tapps_brain.errors import (
 from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
 from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
+# ---------------------------------------------------------------------------
+# Sub-package imports — split by concern (TAP-604)
+# Re-exported at module level for backward compatibility with tests and callers
+# that do ``from tapps_brain.http_adapter import <name>``.
+# ---------------------------------------------------------------------------
+
+# settings
+from tapps_brain.http.settings import (
+    _Settings,
+    _filter_snapshot_by_project,
+    _service_version,
+    _settings,
+    get_settings,
+)
+
+# probe cache
+from tapps_brain.http.probe_cache import (
+    _PROBE_CACHE,
+    _PROBE_CACHE_TTL,
+    _get_hive_pool_stats,
+    _probe_db,
+)
+
+# metrics counter state (re-exported so tests can mutate via ``_mod.X``)
+from tapps_brain.http.metrics_collector import (
+    _DISTINCT_AGENTS_PER_PROJECT,
+    _LABELED_REQUEST_COUNTS,
+    _LABELED_REQUEST_COUNTS_LOCK,
+    _MAX_AGENT_ID_CARDINALITY,
+    _collect_metrics,
+    _record_labeled_request,
+)
+
+# profile resolver singleton
+from tapps_brain.http.profile_resolver import (
+    _PROFILE_RESOLVER,
+    _PROFILE_RESOLVER_LOCK,
+    _get_profile_resolver,
+)
+
+# auth dependencies
+from tapps_brain.http.auth import (
+    _extract_bearer,
+    _metrics_request_authenticated,
+    _per_tenant_auth_enabled,
+    _verify_per_tenant_token,
+    require_admin_auth,
+    require_data_plane_auth,
+)
+
+# middleware
+from tapps_brain.http.middleware import (
+    McpTenantMiddleware,
+    OriginAllowlistMiddleware,
+    OtelSpanMiddleware,
+    _ORIGIN_EXEMPT_PATHS,
+)
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants / module state
+# Constants / module-level state kept here for closure + test-patch access
 # ---------------------------------------------------------------------------
 
 _SERVICE_NAME = "tapps-brain"
@@ -1348,7 +1418,7 @@ def create_app(
     app.add_middleware(OriginAllowlistMiddleware)
     app.add_middleware(McpTenantMiddleware)
 
-    # -------- data-plane routes --------
+    # -------- ops routes --------
 
     @app.get("/", include_in_schema=False)
     async def _root() -> JSONResponse:
@@ -1394,6 +1464,7 @@ def create_app(
             content=_collect_metrics(
                 cfg.dsn,
                 store=cfg.store,
+                process_start_time=_PROCESS_START_TIME,
                 redact_tenant_labels=not authenticated,
             ),
             status_code=200,
