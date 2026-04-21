@@ -2729,11 +2729,13 @@ class MemoryStore:
         # filter accumulates bits for every entry that ever existed and
         # eventually saturates (FP rate → 1.0), making the dedup fast-path
         # useless.  O(k*n) where k = hash_count and n = surviving entries.
+        # The lock is held for the entire rebuild so concurrent save() threads
+        # cannot race on _bloom._bits / _count during the clear+re-add cycle.
         with self._serialized():
             surviving_values = [
                 normalize_for_dedup(e.value) for e in self._entries.values()
             ]
-        self._bloom.rebuild(surviving_values)
+            self._bloom.rebuild(surviving_values)
 
         return GCResult(
             archived_count=len(candidate_keys),

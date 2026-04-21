@@ -23,9 +23,12 @@ store cap or traffic grows.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import unicodedata
 from collections.abc import Iterable
+
+_log = logging.getLogger(__name__)
 
 
 def bloom_false_positive_probability(bit_size: int, hash_count: int, inserted_count: int) -> float:
@@ -110,7 +113,8 @@ class BloomFilter:
     def add(self, item: str) -> None:
         """Add an item to the filter.
 
-        When ``count`` exceeds ``expected_items * 1.5`` the filter auto-resizes
+        When ``count`` reaches or exceeds ``expected_items + expected_items // 2``
+        (≥ 1.5× for even values) the filter auto-resizes
         (doubles the underlying bit array) and rebuilds from the items already
         in the filter's logical set.  This keeps the false-positive rate bounded
         rather than letting it grow without limit as the store expands beyond
@@ -130,15 +134,13 @@ class BloomFilter:
             negatives can be introduced — items not yet re-added will just
             trigger a full similarity check rather than being short-circuited).
         """
-        # Auto-resize: when count exceeds 1.5× expected_items, double the
-        # filter's capacity and clear it.  The store's GC / save paths call
-        # rebuild() after mutations, so the cleared filter will be repopulated
-        # shortly.  Logging is intentionally lazy-import to avoid a hard dep.
+        # Auto-resize: when count reaches or exceeds expected_items + expected_items//2
+        # (≥ 1.5× the design capacity for even values), double the filter's capacity
+        # and clear it.  The store's GC / save paths call rebuild() after mutations,
+        # so the cleared filter will be repopulated shortly.
         if self._count >= self._expected_items + (self._expected_items // 2):
             new_expected = self._expected_items * 2
-            import logging
-
-            logging.getLogger(__name__).warning(
+            _log.warning(
                 "bloom_filter_auto_resize",
                 extra={
                     "old_expected": self._expected_items,
