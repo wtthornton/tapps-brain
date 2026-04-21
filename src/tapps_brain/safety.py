@@ -204,9 +204,11 @@ def check_content_safety(
             metrics.increment("rag_safety.blocked")
         return result
 
-    # Low match count - sanitise and warn (sanitise the normalised form so
-    # patterns that were detected after NFKC normalisation are also removed)
-    sanitised = _sanitise_content(normalised, patterns)
+    # Low match count - sanitise and warn.  Run the regexes against the
+    # *original* content so callers receive their exact bytes back with only
+    # the injection substrings replaced.  NFKC normalisation is used solely
+    # for detection; we deliberately do not rewrite the user's Unicode.
+    sanitised = _sanitise_content(content, patterns)
     logger.info(
         "rag_safety_warning",
         match_count=total_matches,
