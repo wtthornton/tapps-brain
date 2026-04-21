@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Lock
 from unittest.mock import MagicMock
 
 import pytest
@@ -166,11 +165,9 @@ def test_run_health_check_near_capacity_warning(
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._entries = {}
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.return_value = []
+    mock_store.count_orphaned_relations.return_value = 0
+    mock_store.count_expired_entries.return_value = 0
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 
@@ -206,11 +203,9 @@ def _make_mock_store(tmp_path: Path, entry_count: int = 0) -> MagicMock:
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._entries = {}
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.return_value = []
+    mock_store.count_orphaned_relations.return_value = 0
+    mock_store.count_expired_entries.return_value = 0
     return mock_store
 
 
@@ -338,11 +333,9 @@ def test_run_health_check_integrity_corrupted(
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._entries = {"a": MagicMock(valid_at=None)}
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": ["bad"]}
-    mock_store._persistence.list_relations.return_value = []
+    mock_store.count_orphaned_relations.return_value = 0
+    mock_store.count_expired_entries.return_value = 0
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 
@@ -358,14 +351,9 @@ def test_run_health_check_integrity_orphaned_and_expired(
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.return_value = [
-        {"source_entry_keys": ["ghost"]},
-    ]
-    expired_ent = MagicMock(valid_at="1999-01-01T00:00:00+00:00")
-    mock_store._entries = {"present": expired_ent}
+    mock_store.count_orphaned_relations.return_value = 1
+    mock_store.count_expired_entries.return_value = 1
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 
@@ -377,16 +365,16 @@ def test_run_health_check_integrity_orphaned_and_expired(
 def test_run_health_check_list_relations_raises_skipped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # count_orphaned_relations() absorbs list_relations errors internally (TAP-722).
+    # When it returns 0, no orphaned-relation warning should appear.
     mock_store = MagicMock()
     mock_store.health.return_value = _store_health_return(entry_count=1, max_entries=5000)
     mock_store.vector_index_enabled = True
     mock_store.vector_row_count = 0
     mock_store.close = MagicMock()
-    mock_store._lock = Lock()
-    mock_store._entries = {}
-    mock_store._persistence = MagicMock()
     mock_store.verify_integrity.return_value = {"tampered_keys": []}
-    mock_store._persistence.list_relations.side_effect = RuntimeError("no relations")
+    mock_store.count_orphaned_relations.return_value = 0
+    mock_store.count_expired_entries.return_value = 0
 
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
 

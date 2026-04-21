@@ -31,6 +31,7 @@ from tapps_brain.models import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
     from pathlib import Path
 
     from tapps_brain._protocols import HiveBackend, PrivateBackend
@@ -3022,6 +3023,85 @@ class MemoryStore:
             Keys with no relations map to an empty list.
         """
         return {key: list(self._relations.get(key, [])) for key in keys}
+
+    # ------------------------------------------------------------------
+    # Health-check helpers (TAP-722)
+    # ------------------------------------------------------------------
+
+    def iter_active_entries(self) -> Iterator[MemoryEntry]:
+        """Yield a thread-safe snapshot of every current entry (TAP-722).
+
+        Acquires the internal lock for the minimum time needed to copy the
+        entry dict, then yields from the snapshot so callers never hold a
+        reference to mutable internal state.
+
+        This is the preferred public alternative to accessing ``_entries``
+        directly from outside the store.
+        """
+        with self._serialized():
+            entries = list(self._entries.values())
+        yield from entries
+
+    def count_orphaned_relations(self) -> int:
+        """Count relation records that reference keys no longer in the store.
+
+        Uses the in-memory ``_relations`` cache (kept in sync with the
+        persistence layer by :meth:`save_relations` / :meth:`load_relations`)
+        to avoid a Postgres round-trip and to eliminate the TOCTOU window
+        that would arise from fetching relations outside ``_lock`` and then
+        snapshotting entry keys inside it (TAP-722).
+
+        Returns:
+            Number of ``source_entry_keys`` references in any cached relation
+            that have no corresponding entry in the in-memory store.  Relations
+            are indexed by ``source_entry_key`` in the cache, so a relation
+            with two missing source keys contributes 2 to the count — matching
+            the semantics of the original per-reference count.
+        """
+        with self._serialized():
+            entry_keys = set(self._entries.keys())
+            return sum(
+                len(rels)
+                for src_key, rels in self._relations.items()
+                if src_key not in entry_keys
+            )
+
+    def count_expired_entries(self, now: datetime | None = None) -> int:
+        """Count entries whose ``valid_at`` timestamp lies in the past.
+
+        Uses a proper :class:`~datetime.datetime` comparison instead of
+        ISO string lexicographic ordering, so the count is correct even
+        for timestamps with varying timezone representations (TAP-722).
+
+        Args:
+            now: Reference timestamp (UTC).  Defaults to
+                ``datetime.now(UTC)`` when *None*.
+
+        Returns:
+            Number of entries whose ``valid_at`` field is non-*None* and
+            falls before *now*.
+        """
+        from datetime import UTC, datetime as _datetime
+
+        _now = now if now is not None else _datetime.now(tz=UTC)
+
+        with self._serialized():
+            entries = list(self._entries.values())
+
+        expired = 0
+        for entry in entries:
+            valid_at_str: str | None = getattr(entry, "valid_at", None)
+            if valid_at_str is None:
+                continue
+            try:
+                valid_at_dt = _datetime.fromisoformat(valid_at_str)
+                if valid_at_dt.tzinfo is None:
+                    valid_at_dt = valid_at_dt.replace(tzinfo=UTC)
+            except (ValueError, TypeError):
+                continue
+            if valid_at_dt < _now:
+                expired += 1
+        return expired
 
     def find_related(
         self,

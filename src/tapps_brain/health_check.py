@@ -438,28 +438,12 @@ def run_health_check(  # noqa: PLR0915
             corrupted = len(integrity.get("tampered_keys", []))
             integrity_health.corrupted_entries = corrupted
 
-            # Orphaned relations: relations pointing to missing keys
-            with ms_integrity._lock:
-                all_keys = set(ms_integrity._entries.keys())
-            orphaned = 0
-            try:
-                all_relations = ms_integrity._persistence.list_relations()
-                for rel in all_relations:
-                    for src_key in rel.get("source_entry_keys", []):
-                        if src_key not in all_keys:
-                            orphaned += 1
-            except (AttributeError, TypeError):
-                pass  # _persistence.list_relations not available; skip orphan check
+            # Orphaned relations: relations pointing to missing keys (TAP-722)
+            orphaned = store.count_orphaned_relations()
             integrity_health.orphaned_relations = orphaned
 
-            # Expired entries (past valid_at)
-            now_iso = datetime.now(tz=UTC).isoformat()
-            expired = 0
-            with ms_integrity._lock:
-                for entry in ms_integrity._entries.values():
-                    valid_at = getattr(entry, "valid_at", None)
-                    if valid_at and valid_at < now_iso:
-                        expired += 1
+            # Expired entries (past valid_at) — datetime-correct comparison (TAP-722)
+            expired = store.count_expired_entries()
             integrity_health.expired_entries = expired
 
             if corrupted > 0:
