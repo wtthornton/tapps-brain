@@ -11,13 +11,15 @@ the pre-split behaviour.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import ToolContext
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
+
 from tapps_brain.services import diagnostics_service, feedback_service, flywheel_service
 
 
-def register_feedback_tools(mcp: Any, ctx: ToolContext) -> None:
+def register_feedback_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
     """Register feedback + diagnostics + flywheel tools on *mcp*."""
     store = ctx.store
     agent_id = ctx.server_agent_id

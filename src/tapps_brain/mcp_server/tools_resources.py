@@ -6,12 +6,13 @@ Extracted from ``tapps_brain.mcp_server.__init__`` (TAP-605).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import ToolContext
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
 
 
-def register_resources_and_prompts(mcp: Any, ctx: ToolContext) -> None:
+def register_resources_and_prompts(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,ANN401
     """Register ``memory://*`` resources and user-invoked prompts."""
     store = ctx.store
 

@@ -26,7 +26,10 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import structlog
 
@@ -83,7 +86,7 @@ class _StoreCache:
     def maxsize(self) -> int:
         return self._maxsize
 
-    def get_or_create(self, project_id: str, factory: Any) -> Any:
+    def get_or_create(self, project_id: str, factory: Any) -> Any:  # noqa: ANN401
         with self._lock:
             if project_id in self._entries:
                 self._entries.move_to_end(project_id)
@@ -126,7 +129,7 @@ class _StoreCache:
             return len(self._entries)
 
 
-def _safe_close_store(store: Any) -> None:
+def _safe_close_store(store: Any) -> None:  # noqa: ANN401
     close = getattr(store, "close", None)
     if close is None:
         return
@@ -146,11 +149,11 @@ def _resolve_project_dir_for_id(project_id: str) -> Path:
 def _get_store_for_project(
     project_id: str | None,
     *,
-    default_store: Any,
+    default_store: Any,  # noqa: ANN401
     enable_hive: bool = True,
     agent_id: str = "unknown",
     call_agent_id: str | None = None,
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Resolve a ``MemoryStore`` for *project_id*, optionally scoped to a per-call agent.
 
     STORY-070.7 — when *call_agent_id* is supplied and differs from the
@@ -179,7 +182,7 @@ def _get_store_for_project(
     if not per_call_differs and default_pid and project_id == default_pid:
         return default_store
 
-    def _factory() -> Any:
+    def _factory() -> Any:  # noqa: ANN401
         prev = os.environ.get("TAPPS_BRAIN_PROJECT")
         if project_id:
             os.environ["TAPPS_BRAIN_PROJECT"] = project_id
@@ -235,7 +238,7 @@ def _current_request_project_id() -> str | None:
     return env_pid or None
 
 
-def _current_request_agent_id() -> str | None:
+def _current_request_agent_id() -> str | None:  # noqa: PLR0911
     """Return the effective per-request agent_id.
 
     Precedence (STORY-070.7):
@@ -375,7 +378,7 @@ class _StoreProxy:
 
     def __init__(
         self,
-        default_store: Any,
+        default_store: Any,  # noqa: ANN401
         *,
         enable_hive: bool,
         agent_id: str,
@@ -384,8 +387,9 @@ class _StoreProxy:
         object.__setattr__(self, "_enable_hive", enable_hive)
         object.__setattr__(self, "_agent_id", agent_id)
 
-    def _resolve(self) -> Any:
+    def _resolve(self) -> Any:  # noqa: ANN401
         import tapps_brain.mcp_server as _ms_pkg
+
         pid = _ms_pkg._current_request_project_id()
         try:
             return _get_store_for_project(
@@ -401,10 +405,10 @@ class _StoreProxy:
                 _raise_project_not_registered(exc.project_id)
             raise
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         return getattr(self._resolve(), name)
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
         if name in self.__slots__:
             object.__setattr__(self, name, value)
         else:

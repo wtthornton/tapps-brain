@@ -23,7 +23,7 @@ _PROFILE_RESOLVER: Any = None
 _PROFILE_RESOLVER_LOCK: threading.Lock = threading.Lock()
 
 
-def _get_profile_resolver() -> Any:
+def _get_profile_resolver() -> Any:  # noqa: ANN401
     """Return the process-wide :class:`~tapps_brain.mcp_server.profile_resolver.ProfileResolver`.
 
     Built lazily on first call; subsequent calls return the cached singleton.

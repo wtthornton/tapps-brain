@@ -7,9 +7,11 @@ tools are **operator-gated** (:func:`ToolContext.require_operator_enabled`).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import ToolContext
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
+
 from tapps_brain.services import (
     diagnostics_service,
     maintenance_service,
@@ -19,7 +21,7 @@ from tapps_brain.services import (
 )
 
 
-def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:
+def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
     """Register maintenance, config, export/import, profile, and session-end tools."""
     store = ctx.store
     agent_id = ctx.server_agent_id

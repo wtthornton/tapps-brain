@@ -15,6 +15,7 @@ Part of EPIC-026 (OpenClaw memory replacement, story-026.4).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -362,10 +363,8 @@ def sync_to_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any]:
         os.replace(tmp_md_path, memory_md_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
     except BaseException:
         # Clean up the partial tmp file so stale artefacts do not accumulate.
-        try:
+        with contextlib.suppress(OSError):
             tmp_md_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise
 
     state = _load_sync_state(workspace_dir)

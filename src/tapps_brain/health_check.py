@@ -313,7 +313,7 @@ def run_health_check(  # noqa: PLR0915
 
             # Embedding provider availability (import check only — no model load).
             try:
-                from sentence_transformers import SentenceTransformer as _ST  # noqa: F401
+                from sentence_transformers import SentenceTransformer as _ST  # noqa: F401,N814
 
                 store_health.embedding_provider_healthy = True
             except ImportError:

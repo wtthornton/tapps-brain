@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    from fastapi import Request, Response
+    from fastapi import Request, Response  # noqa: TC002
     from fastapi.responses import JSONResponse
     from starlette.middleware.base import BaseHTTPMiddleware
 except ImportError as exc:  # pragma: no cover
@@ -121,13 +121,13 @@ def _resolve_mcp_profile(
 class OtelSpanMiddleware(BaseHTTPMiddleware):
     """Wrap each request in an OTel server span with W3C traceparent extraction."""
 
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # noqa: ANN401
         # Lazy imports keep http_adapter patchable in tests.
         import tapps_brain.http_adapter as _http_mod
 
         start_span = _http_mod.start_span
         extract_trace_context = _http_mod.extract_trace_context
-        SPAN_KIND_SERVER = _http_mod.SPAN_KIND_SERVER
+        SPAN_KIND_SERVER = _http_mod.SPAN_KIND_SERVER  # noqa: N806
 
         carrier: dict[str, str] = {}
         tp = request.headers.get("traceparent")
@@ -141,7 +141,7 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         project_id = request.headers.get("x-project-id", "")
         # STORY-070.7: tag spans with per-call agent identity so observability
-        # can filter by tenant × agent without inspecting headers downstream.
+        # can filter by tenant x agent without inspecting headers downstream.
         agent_id_header = request.headers.get("x-tapps-agent") or request.headers.get(
             "x-agent-id", ""
         )
@@ -180,7 +180,7 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
     endpoints are also blocked.
     """
 
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # noqa: ANN401
         # Lazy import so tests can patch tapps_brain.http_adapter.get_settings.
         import tapps_brain.http_adapter as _http_mod
 
@@ -211,7 +211,7 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
     * :func:`_resolve_mcp_profile` — per-request profile resolution.
     """
 
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # noqa: ANN401
         if not request.url.path.startswith("/mcp"):
             return await call_next(request)  # type: ignore[no-any-return]
 

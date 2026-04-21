@@ -94,7 +94,7 @@ class ProfileResolver:
     # ------------------------------------------------------------------
 
     def validate_profile_name(self, name: str) -> None:
-        """Raise :exc:`~tapps_brain.mcp_server.profile_registry.UnknownProfileError` if *name* is not registered.
+        """Validate that *name* is a registered profile, raise ``UnknownProfileError`` if not.
 
         This is the public entry-point for header-profile validation — callers
         should use this method rather than reaching into ``self._registry``

@@ -29,12 +29,12 @@ The ASGI entry point is :data:`app`; run it with
 
 The original monolithic module has been refactored into a sub-package:
 
-* :mod:`tapps_brain.http.settings`          – ``_Settings``, ``get_settings``
-* :mod:`tapps_brain.http.probe_cache`       – ``_probe_db``, pool helpers
-* :mod:`tapps_brain.http.metrics_collector` – Prometheus text rendering
-* :mod:`tapps_brain.http.profile_resolver`  – singleton ``ProfileResolver``
-* :mod:`tapps_brain.http.auth`              – bearer-token auth dependencies
-* :mod:`tapps_brain.http.middleware`        – ASGI middleware classes
+* :mod:`tapps_brain.http.settings`          - ``_Settings``, ``get_settings``
+* :mod:`tapps_brain.http.probe_cache`       - ``_probe_db``, pool helpers
+* :mod:`tapps_brain.http.metrics_collector` - Prometheus text rendering
+* :mod:`tapps_brain.http.profile_resolver`  - singleton ``ProfileResolver``
+* :mod:`tapps_brain.http.auth`              - bearer-token auth dependencies
+* :mod:`tapps_brain.http.middleware`        - ASGI middleware classes
 
 All public names are re-exported from this module for backward compat.
 """
@@ -81,30 +81,15 @@ from tapps_brain.errors import (
 from tapps_brain.errors import (
     TaxonomyError as _TaxonomyError,
 )
-from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
-from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
-# ---------------------------------------------------------------------------
-# Sub-package imports — split by concern (TAP-604)
-# Re-exported at module level for backward compatibility with tests and callers
-# that do ``from tapps_brain.http_adapter import <name>``.
-# ---------------------------------------------------------------------------
-
-# settings
-from tapps_brain.http.settings import (
-    _Settings,
-    _filter_snapshot_by_project,
-    _service_version,
-    _settings,
-    get_settings,
-)
-
-# probe cache
-from tapps_brain.http.probe_cache import (
-    _PROBE_CACHE,
-    _PROBE_CACHE_TTL,
-    _get_hive_pool_stats,
-    _probe_db,
+# auth dependencies
+from tapps_brain.http.auth import (
+    _extract_bearer,
+    _metrics_request_authenticated,
+    _per_tenant_auth_enabled,
+    _verify_per_tenant_token,
+    require_admin_auth,
+    require_data_plane_auth,
 )
 
 # metrics counter state (re-exported so tests can mutate via ``_mod.X``)
@@ -117,6 +102,22 @@ from tapps_brain.http.metrics_collector import (
     _record_labeled_request,
 )
 
+# middleware
+from tapps_brain.http.middleware import (
+    _ORIGIN_EXEMPT_PATHS,
+    McpTenantMiddleware,
+    OriginAllowlistMiddleware,
+    OtelSpanMiddleware,
+)
+
+# probe cache
+from tapps_brain.http.probe_cache import (
+    _PROBE_CACHE,
+    _PROBE_CACHE_TTL,
+    _get_hive_pool_stats,
+    _probe_db,
+)
+
 # profile resolver singleton
 from tapps_brain.http.profile_resolver import (
     _PROFILE_RESOLVER,
@@ -124,23 +125,21 @@ from tapps_brain.http.profile_resolver import (
     _get_profile_resolver,
 )
 
-# auth dependencies
-from tapps_brain.http.auth import (
-    _extract_bearer,
-    _metrics_request_authenticated,
-    _per_tenant_auth_enabled,
-    _verify_per_tenant_token,
-    require_admin_auth,
-    require_data_plane_auth,
+# ---------------------------------------------------------------------------
+# Sub-package imports — split by concern (TAP-604)
+# Re-exported at module level for backward compatibility with tests and callers
+# that do ``from tapps_brain.http_adapter import <name>``.
+# ---------------------------------------------------------------------------
+# settings
+from tapps_brain.http.settings import (
+    _filter_snapshot_by_project,
+    _service_version,
+    _Settings,
+    _settings,
+    get_settings,
 )
-
-# middleware
-from tapps_brain.http.middleware import (
-    McpTenantMiddleware,
-    OriginAllowlistMiddleware,
-    OtelSpanMiddleware,
-    _ORIGIN_EXEMPT_PATHS,
-)
+from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
+from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -156,7 +155,9 @@ _BEARER_PREFIX = "bearer "
 # STORY-070.12: bounded per-(project_id, agent_id) request counters for
 # Prometheus export.  agent_id cardinality is capped at 100 distinct values
 # per project; overflow is bucketed as "other".
-_MAX_AGENT_ID_CARDINALITY = 100
+_MAX_AGENT_ID_CARDINALITY = 100  # noqa: F811
+
+
 # TAP-600: bounded project cardinality — evict least-recently-used projects
 # when the project count exceeds this limit.  Default 10 000; override via
 # TAPPS_BRAIN_MAX_PROJECT_CARDINALITY.  Zero or negative disables the cap
@@ -175,11 +176,11 @@ def _parse_max_project_cardinality() -> int:
 
 
 _MAX_PROJECT_CARDINALITY: int = _parse_max_project_cardinality()
-_LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}
-_LABELED_REQUEST_COUNTS_LOCK = threading.Lock()
+_LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}  # noqa: F811
+_LABELED_REQUEST_COUNTS_LOCK = threading.Lock()  # noqa: F811
 # TAP-599: per-project set of seen agent_ids for O(1) cardinality checks.
 # Maintained in lock-step with _LABELED_REQUEST_COUNTS inside the lock.
-_DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}
+_DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}  # noqa: F811
 # TAP-600: LRU order tracker — OrderedDict preserves insertion/access order.
 # Keys are project_ids; values are None.  The *first* key is the LRU project.
 _PROJECT_LRU: OrderedDict[str, None] = OrderedDict()
@@ -188,11 +189,11 @@ _TENANT_LABELS_EVICTED_TOTAL: int = 0
 
 # STORY-073.2: process-wide ProfileResolver singleton.  Built once on first
 # /mcp request; guarded by _PROFILE_RESOLVER_LOCK.
-_PROFILE_RESOLVER: Any = None
-_PROFILE_RESOLVER_LOCK = threading.Lock()
+_PROFILE_RESOLVER: Any = None  # noqa: F811
+_PROFILE_RESOLVER_LOCK = threading.Lock()  # noqa: F811
 
 
-def _record_labeled_request(project_id: str, agent_id: str) -> None:
+def _record_labeled_request(project_id: str, agent_id: str) -> None:  # noqa: F811
     """Increment the per-(project_id, agent_id) request counter (STORY-070.12).
 
     TAP-599: Uses a per-project set for O(1) membership/cardinality checks
@@ -240,7 +241,7 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
         distinct.add(agent_id)
 
 
-def _get_profile_resolver() -> Any:
+def _get_profile_resolver() -> Any:  # noqa: F811
     """Return the process-wide :class:`~tapps_brain.mcp_server.profile_resolver.ProfileResolver`.
 
     Built lazily on first call; subsequent calls return the cached singleton.
@@ -308,7 +309,7 @@ def _get_profile_resolver() -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _service_version() -> str:
+def _service_version() -> str:  # noqa: F811
     try:
         from importlib.metadata import version
 
@@ -317,7 +318,7 @@ def _service_version() -> str:
         return "unknown"
 
 
-def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:
+def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:  # noqa: F811
     """STORY-069.7: filter diagnostics/feedback to a single project_id."""
     filtered = dict(payload)
     for key in ("diagnostics_history", "feedback_events"):
@@ -331,11 +332,11 @@ def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dic
 # TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
 # and Prometheus scrape (every 15 s) don't each open a new standalone Postgres
 # connection.  Key = DSN string; value = (expires_at, result_tuple).
-_PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}
-_PROBE_CACHE_TTL: float = 2.0
+_PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}  # noqa: F811
+_PROBE_CACHE_TTL: float = 2.0  # noqa: F811
 
 
-def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
+def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:  # noqa: F811
     if not dsn:
         return False, None, "no DSN configured (set TAPPS_BRAIN_DATABASE_URL)"
     now = time.monotonic()
@@ -377,7 +378,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
     return result
 
 
-def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
+def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:  # noqa: F811
     """Return pool stats dict from a store's hive connection manager, or None."""
     if store is None:
         return None
@@ -392,7 +393,7 @@ def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
     return None
 
 
-def _collect_metrics(
+def _collect_metrics(  # noqa: F811
     dsn: str | None,
     store: Any = None,
     *,
@@ -685,7 +686,7 @@ def _collect_metrics(
 # ---------------------------------------------------------------------------
 
 
-class _Settings:
+class _Settings:  # noqa: F811
     """Process-wide configuration resolved from env at app startup."""
 
     def __init__(self) -> None:
@@ -763,10 +764,10 @@ class _Settings:
         return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-_settings = _Settings()
+_settings = _Settings()  # noqa: F811
 
 
-def get_settings() -> _Settings:
+def get_settings() -> _Settings:  # noqa: F811
     return _settings
 
 
@@ -775,7 +776,7 @@ def get_settings() -> _Settings:
 # ---------------------------------------------------------------------------
 
 
-def _extract_bearer(request: Request) -> str | None:
+def _extract_bearer(request: Request) -> str | None:  # noqa: F811
     header = request.headers.get("authorization") or ""
     if not header:
         return None
@@ -784,12 +785,12 @@ def _extract_bearer(request: Request) -> str | None:
     return header[len(_BEARER_PREFIX) :].strip()
 
 
-def _per_tenant_auth_enabled() -> bool:
+def _per_tenant_auth_enabled() -> bool:  # noqa: F811
     """Return ``True`` when ``TAPPS_BRAIN_PER_TENANT_AUTH=1`` is set."""
     return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
 
 
-def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:
+def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:  # noqa: F811
     """Check *token* against the project's stored argon2id hash.
 
     Returns:
@@ -808,7 +809,7 @@ def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | No
         cm.close()
 
 
-def require_data_plane_auth(request: Request) -> None:
+def require_data_plane_auth(request: Request) -> None:  # noqa: F811
     """Dependency: data-plane bearer-token check.
 
     When ``TAPPS_BRAIN_PER_TENANT_AUTH=1``:
@@ -915,7 +916,7 @@ def require_data_plane_auth(request: Request) -> None:
         )
 
 
-def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:
+def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:  # noqa: F811
     """TAP-547: gate for the Prometheus ``/metrics`` endpoint.
 
     Return value semantics:
@@ -956,7 +957,7 @@ def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:
     return True
 
 
-def require_admin_auth(request: Request) -> None:
+def require_admin_auth(request: Request) -> None:  # noqa: F811
     """Dependency: ``TAPPS_BRAIN_ADMIN_TOKEN`` check for ``/admin/*``.
 
     When the admin token is unset, the route returns 503 — admin without a
@@ -991,7 +992,7 @@ def require_admin_auth(request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 
-class OtelSpanMiddleware(BaseHTTPMiddleware):
+class OtelSpanMiddleware(BaseHTTPMiddleware):  # noqa: F811
     """Wrap each request in an OTel server span with W3C traceparent extraction."""
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -1029,10 +1030,10 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):
 # These are probe / scrape endpoints that must remain reachable from any origin
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})
+_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})  # noqa: F811
 
 
-class OriginAllowlistMiddleware(BaseHTTPMiddleware):
+class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # noqa: F811
     """DNS-rebinding guard applied to every bearer-authenticated route (TAP-627).
 
     When ``TAPPS_BRAIN_ALLOWED_ORIGINS`` is set, any browser-originated request
@@ -1065,7 +1066,7 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
         return await call_next(request)  # type: ignore[no-any-return]
 
 
-class McpTenantMiddleware(BaseHTTPMiddleware):
+class McpTenantMiddleware(BaseHTTPMiddleware):  # noqa: F811
     """Enforce the MCP wire envelope for ``/mcp``:
 
     * ``X-Project-Id`` required (400 on miss).

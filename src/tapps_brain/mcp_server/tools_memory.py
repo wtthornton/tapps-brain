@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import (
-    ToolContext,
-    _current_request_idempotency_key,
-)
+from tapps_brain.mcp_server.context import _current_request_idempotency_key
 from tapps_brain.services import memory_service
 
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
 
-def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:
+
+def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,ANN401
     """Register core ``memory_*`` tools + bulk helpers + session tools."""
     _server_aid = ctx.server_agent_id
     _resolve = ctx.resolve_store_for_call
@@ -437,7 +437,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:
         )
 
 
-def register_knowledge_tools(mcp: Any, ctx: ToolContext) -> None:
+def register_knowledge_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
     """Register knowledge-graph, audit trail, and tag-management tools (EPIC-015)."""
     _server_aid = ctx.server_agent_id
     _resolve = ctx.resolve_store_for_call

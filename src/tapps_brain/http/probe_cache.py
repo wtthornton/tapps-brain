@@ -63,7 +63,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
     return result
 
 
-def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:
+def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:  # noqa: ANN401
     """Return pool stats dict from a store's hive connection manager, or None."""
     if store is None:
         return None

@@ -107,9 +107,9 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _collect_metrics(
+def _collect_metrics(  # noqa: PLR0915
     dsn: str | None,
-    store: Any = None,
+    store: Any = None,  # noqa: ANN401
     *,
     redact_tenant_labels: bool = False,
     process_start_time: float | None = None,
@@ -285,11 +285,10 @@ def _collect_metrics(
             else:
                 for project_id, count in sorted(missing_idx_counts.items()):
                     safe_pid = project_id.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
-                    )
+                    _name = "tapps_brain_private_missing_indexes_total"
+                    lines.append(f'{_name}{{project_id="{safe_pid}"}} {count}')
 
-    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
+    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count x tool count).
     # suppress(Exception): any import or runtime error must not crash /metrics.
     with suppress(Exception):  # pragma: no cover
         from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
@@ -317,9 +316,7 @@ def _collect_metrics(
             lines.append("# TYPE tapps_brain_mcp_tools_list_visible_tools gauge")
             for _profile, _vis in sorted(list_visible.items()):
                 _sp = _profile.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}'
-                )
+                lines.append(f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}')
 
         # mcp_tools_call_total{profile, tool, outcome}
         call_total = _filter_snap.get("call_total", {})
@@ -355,9 +352,8 @@ def _collect_metrics(
                 lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
                 for _src, _count in sorted(_res_stats.items()):
                     _ss = _src.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_mcp_profile_resolution_source_total{{source="{_ss}"}} {_count}'
-                    )
+                    _rn = "tapps_brain_mcp_profile_resolution_source_total"
+                    lines.append(f'{_rn}{{source="{_ss}"}} {_count}')
 
             _cache = _resolver.cache_stats()
             # Only emit if at least one cache event has occurred.
@@ -372,9 +368,8 @@ def _collect_metrics(
                 for _result, _key in _result_to_key.items():
                     _count = _cache.get(_key, 0)
                     if _count:
-                        lines.append(
-                            f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
-                        )
+                        _cn = "tapps_brain_mcp_profile_cache_events_total"
+                        lines.append(f'{_cn}{{result="{_result}"}} {_count}')
 
     lines.append("")
     return "\n".join(lines)

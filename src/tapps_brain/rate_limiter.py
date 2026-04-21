@@ -26,7 +26,10 @@ import time
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Generator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import structlog
 
@@ -76,8 +79,7 @@ def batch_exempt_scope(context: str) -> Generator[None, None, None]:
     """
     if context not in BATCH_EXEMPT_CONTEXTS:
         raise ValueError(
-            f"Unknown batch context {context!r}. "
-            f"Valid contexts: {sorted(BATCH_EXEMPT_CONTEXTS)}"
+            f"Unknown batch context {context!r}. Valid contexts: {sorted(BATCH_EXEMPT_CONTEXTS)}"
         )
     token = _batch_ctx_var.set(context)
     try:

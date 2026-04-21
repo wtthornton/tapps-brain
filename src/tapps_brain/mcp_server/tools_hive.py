@@ -6,13 +6,15 @@ Extracted from ``tapps_brain.mcp_server.__init__`` (TAP-605).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import ToolContext
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
+
 from tapps_brain.services import hive_service
 
 
-def register_hive_tools(mcp: Any, ctx: ToolContext) -> None:
+def register_hive_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
     """Register the six Hive tools on *mcp*."""
     store = ctx.store
     agent_id = ctx.server_agent_id

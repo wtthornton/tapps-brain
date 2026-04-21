@@ -9,8 +9,10 @@ lock themselves.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from tapps_brain.models import MemoryEntry
+if TYPE_CHECKING:
+    from tapps_brain.models import MemoryEntry
 
 
 @dataclass(frozen=True)
@@ -81,9 +83,7 @@ def plan_conflicts(
         {
             "key": h.entry.key,
             "similarity": round(h.similarity, 4),
-            "tier": (
-                h.entry.tier.value if hasattr(h.entry.tier, "value") else str(h.entry.tier)
-            ),
+            "tier": (h.entry.tier.value if hasattr(h.entry.tier, "value") else str(h.entry.tier)),
         }
         for h in hits
     ]

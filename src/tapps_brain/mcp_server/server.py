@@ -30,11 +30,11 @@ import structlog
 
 from tapps_brain.mcp_server.context import (
     ToolContext,
-    _StoreProxy,
     _current_request_project_id,
     _get_store_for_project,
     _raise_project_not_registered,
     _resolve_per_call_agent_id,
+    _StoreProxy,
 )
 
 # Silence structlog for server mode — MCP uses stdin/stdout for protocol.
@@ -45,7 +45,7 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 
-def _lazy_import_mcp() -> Any:
+def _lazy_import_mcp() -> Any:  # noqa: ANN401
     """Import ``mcp`` lazily so the module can be imported without the extra."""
     try:
         from mcp.server.fastmcp import FastMCP
@@ -63,7 +63,7 @@ def _resolve_project_dir(project_dir: str | None) -> Path:
     return Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
 
 
-def _build_transport_security() -> Any:
+def _build_transport_security() -> Any:  # noqa: ANN401
     """Build TransportSecuritySettings from TAPPS_BRAIN_MCP_ALLOWED_HOSTS.
 
     When the env var is set (comma-separated host[:port] entries), DNS-rebinding
@@ -105,7 +105,7 @@ def _get_store(
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Open a MemoryStore for the given project directory.
 
     When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is
@@ -173,13 +173,13 @@ _OPERATOR_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 
-def create_server(
+def create_server(  # noqa: PLR0915
     project_dir: Path | None = None,
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
     enable_operator_tools: bool = False,
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Create and configure a FastMCP server instance.
 
     The server skeleton opens a per-project store, creates the
@@ -193,6 +193,7 @@ def create_server(
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     try:
         import tapps_brain.mcp_server as _ms_pkg
+
         default_store = _ms_pkg._get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
     except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
@@ -256,7 +257,7 @@ def create_server(
     # 200 OK.  Probing /mcp directly requires Accept: text/event-stream per
     # the MCP 2025-03-26 spec and will return 406 from any plain HTTP client.
     @mcp.custom_route("/health", methods=["GET"])  # type: ignore[untyped-decorator]
-    async def _mcp_health(_request: Any) -> Any:
+    async def _mcp_health(_request: Any) -> Any:  # noqa: ANN401
         from starlette.responses import PlainTextResponse
 
         return PlainTextResponse("ok")
@@ -268,7 +269,7 @@ def create_server(
     # itself.
     # ------------------------------------------------------------------
 
-    def _resolve_store_for_call(call_agent_id: str = "") -> Any:
+    def _resolve_store_for_call(call_agent_id: str = "") -> Any:  # noqa: ANN401
         """Return the ``MemoryStore`` appropriate for a per-call agent override.
 
         When the effective agent_id equals the server default, the
@@ -496,7 +497,7 @@ def create_operator_server(
     *,
     enable_hive: bool = True,
     agent_id: str = "unknown",
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Create a FastMCP server with **operator tools always enabled**.
 
     Exposes the full set of maintenance tools (GC, consolidation, import,
@@ -538,6 +539,7 @@ def main() -> None:
         # TAPPS_BRAIN_OPERATOR_TOOLS is intentionally not read here.
         # Use package-level create_server so tests can monkeypatch ms.create_server.
         import tapps_brain.mcp_server as _ms_pkg
+
         server = _ms_pkg.create_server(
             project_dir,
             enable_hive=args.enable_hive,

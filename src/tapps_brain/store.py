@@ -8,6 +8,7 @@ Auto-consolidation triggers on save when enabled (EPIC-058).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
@@ -884,7 +885,7 @@ class MemoryStore:
     # CRUD operations
     # ------------------------------------------------------------------
 
-    def save(  # noqa: PLR0911, PLR0913
+    def save(
         self,
         key: str,
         value: str,
@@ -1248,7 +1249,7 @@ class MemoryStore:
             if invalidated is not None:
                 try:
                     self._persistence.save(invalidated)
-                except Exception:  # noqa: BLE001 — best-effort, logged
+                except Exception:
                     logger.warning(
                         "conflict_invalidate_persist_failed",
                         conflict_key=conflict_key,
@@ -1257,7 +1258,7 @@ class MemoryStore:
 
         return plan.now
 
-    def _build_and_assign_entry(  # noqa: PLR0913 — faithful to the pre-refactor signature
+    def _build_and_assign_entry(
         self,
         *,
         key: str,
@@ -1297,9 +1298,7 @@ class MemoryStore:
             existing = self._entries.get(key)
 
             if memory_group is MEMORY_GROUP_UNSET:
-                mg_for_entry: str | None = (
-                    existing.memory_group if existing is not None else None
-                )
+                mg_for_entry: str | None = existing.memory_group if existing is not None else None
             else:
                 mg_for_entry = cast("str | None", mg_explicit)
 
@@ -1349,7 +1348,7 @@ class MemoryStore:
                 return tier
             raise
 
-    def _construct_memory_entry(  # noqa: PLR0913 — faithful carry-through
+    def _construct_memory_entry(
         self,
         *,
         key: str,
@@ -1435,9 +1434,7 @@ class MemoryStore:
         from tapps_brain.integrity import compute_integrity_hash as _compute_hash
 
         tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-        source_str = (
-            entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-        )
+        source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
         h = _compute_hash(entry.key, entry.value, tier_str, source_str)
         return entry.model_copy(update={"integrity_hash": h, "integrity_hash_v": 2})
 
@@ -1450,9 +1447,7 @@ class MemoryStore:
                 emb = self._embedding_provider.embed(value)
                 mid_raw = getattr(self._embedding_provider, "model_id", None)
                 mid: str | None = (
-                    mid_raw.strip()
-                    if isinstance(mid_raw, str) and mid_raw.strip()
-                    else None
+                    mid_raw.strip() if isinstance(mid_raw, str) and mid_raw.strip() else None
                 )
                 embed_update: dict[str, object] = {
                     "embedding": emb,
@@ -1465,7 +1460,7 @@ class MemoryStore:
                     if current is not None and current.key == entry.key:
                         entry = current.model_copy(update=embed_update)
                     self._entries[key] = entry
-            except Exception:  # noqa: BLE001 — logged, best-effort
+            except Exception:
                 logger.warning("embedding_compute_failed", key=key, exc_info=True)
         return entry
 
@@ -2910,9 +2905,7 @@ class MemoryStore:
         # The lock is held for the entire rebuild so concurrent save() threads
         # cannot race on _bloom._bits / _count during the clear+re-add cycle.
         with self._serialized():
-            surviving_values = [
-                normalize_for_dedup(e.value) for e in self._entries.values()
-            ]
+            surviving_values = [normalize_for_dedup(e.value) for e in self._entries.values()]
             self._bloom.rebuild(surviving_values)
 
         return GCResult(
@@ -3246,9 +3239,7 @@ class MemoryStore:
         with self._serialized():
             entry_keys = set(self._entries.keys())
             return sum(
-                len(rels)
-                for src_key, rels in self._relations.items()
-                if src_key not in entry_keys
+                len(rels) for src_key, rels in self._relations.items() if src_key not in entry_keys
             )
 
     def count_expired_entries(self, now: datetime | None = None) -> int:
@@ -3266,7 +3257,8 @@ class MemoryStore:
             Number of entries whose ``valid_at`` field is non-*None* and
             falls before *now*.
         """
-        from datetime import UTC, datetime as _datetime
+        from datetime import UTC
+        from datetime import datetime as _datetime
 
         _now = now if now is not None else _datetime.now(tz=UTC)
 
@@ -3529,10 +3521,9 @@ class MemoryStore:
                 if _hmac.compare_digest(v1_expected, stored_hash):
                     verified += 1
                     continue
-            else:
-                if verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
-                    verified += 1
-                    continue
+            elif verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
+                verified += 1
+                continue
 
             tampered.append(entry.key)
             expected = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
@@ -3581,13 +3572,15 @@ class MemoryStore:
             Dict with ``upgraded``, ``tampered``, ``skipped_no_hash``,
             ``already_v2`` counts.
         """
+        import hmac as _hmac
+
         from tapps_brain.integrity import (
             INTEGRITY_HASH_VERSION as _HASH_V,
+        )
+        from tapps_brain.integrity import (
             compute_integrity_hash,
             compute_integrity_hash_v1,
         )
-
-        import hmac as _hmac
 
         upgraded = 0
         tampered = 0
@@ -3636,16 +3629,12 @@ class MemoryStore:
                 self._entries[key] = upgraded_entry
 
             if self._hive_store is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._hive_store.save(upgraded_entry)
-                except Exception:  # noqa: BLE001
-                    pass
 
             if self._backend is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._backend.save(upgraded_entry)
-                except Exception:  # noqa: BLE001
-                    pass
 
             upgraded += 1
             logger.debug("rehash_integrity_v1.upgraded", key=key)

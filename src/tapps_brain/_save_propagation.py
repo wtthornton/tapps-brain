@@ -48,11 +48,7 @@ def propagate_group_save(
     tier = _tier_str(entry)
     src = _source_str(entry)
 
-    targets: list[str]
-    if agent_scope == "group":
-        targets = list(groups)
-    else:
-        targets = [agent_scope[6:]]
+    targets: list[str] = list(groups) if agent_scope == "group" else [agent_scope[6:]]
 
     for group_name in targets:
         try:
@@ -66,7 +62,7 @@ def propagate_group_save(
                 source_agent=entry.source_agent,
                 tags=entry.tags,
             )
-        except Exception:  # noqa: BLE001 — best-effort, always logged
+        except Exception:
             logger.warning(
                 "group_save_propagation_failed",
                 group=group_name,
@@ -113,7 +109,7 @@ def publish_to_experts(
             source_agent=entry.source_agent,
             tags=all_tags,
         )
-    except Exception:  # noqa: BLE001 — best-effort, always logged
+    except Exception:
         logger.warning(
             "expert_auto_publish_failed",
             key=entry.key,

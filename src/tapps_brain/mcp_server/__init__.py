@@ -43,29 +43,14 @@ from tapps_brain.mcp_server.context import (
     REQUEST_PROFILE,
     REQUEST_PROJECT_ID,
     REQUEST_SCOPE,
-    _STORE_CACHE,
-    _current_request_agent_id,
-    _current_request_group,
-    _current_request_idempotency_key,
-    _current_request_project_id,
-    _current_request_scope,
-    _get_store_for_project,
-    _raise_project_not_registered,
-    _resolve_per_call_agent_id,
-    _resolve_project_dir_for_id,
-    _safe_close_store,
-    _StoreCache,
-    _StoreProxy,
     ToolContext,
+    _StoreCache,  # noqa: F401
 )
 from tapps_brain.mcp_server.server import (
-    _build_base_parser,
-    _build_transport_security,
-    _get_store,
-    _lazy_import_mcp,
-    _MCP_INSTRUCTIONS,
-    _OPERATOR_TOOL_NAMES,
-    _resolve_project_dir,
+    _build_transport_security,  # noqa: F401
+    _get_store,  # noqa: F401
+    _lazy_import_mcp,  # noqa: F401
+    _resolve_project_dir,  # noqa: F401
     create_operator_server,
     create_server,
     main,
@@ -74,16 +59,16 @@ from tapps_brain.mcp_server.server import (
 from tapps_brain.services._common import parse_details_json as _mcp_parse_details_json  # noqa: F401
 
 __all__ = [
-    "create_server",
-    "create_operator_server",
-    "main",
-    "main_operator",
-    "REQUEST_PROJECT_ID",
     "REQUEST_AGENT_ID",
-    "REQUEST_SCOPE",
     "REQUEST_GROUP",
     "REQUEST_PROFILE",
+    "REQUEST_PROJECT_ID",
+    "REQUEST_SCOPE",
     "ToolContext",
+    "create_operator_server",
+    "create_server",
+    "main",
+    "main_operator",
 ]
 
 

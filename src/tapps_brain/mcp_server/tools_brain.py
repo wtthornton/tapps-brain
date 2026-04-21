@@ -9,13 +9,15 @@ result to JSON.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from tapps_brain.mcp_server.context import ToolContext
+if TYPE_CHECKING:
+    from tapps_brain.mcp_server.context import ToolContext
+
 from tapps_brain.services import memory_service
 
 
-def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:
+def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
     """Register the six Agent Brain tools on *mcp*."""
     _server_aid = ctx.server_agent_id
     _resolve = ctx.resolve_store_for_call
