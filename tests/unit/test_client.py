@@ -336,21 +336,25 @@ def test_close_idempotent() -> None:
 
 
 def test_http_scheme_routes_through_mcp_endpoint() -> None:
-    """Regression: http:// scheme must POST to /mcp.  v3.7.1 unified
-    http:// and mcp+http:// onto the MCP transport; TAP-509 (v3.7.3)
-    collapsed the public path back to a single /mcp by pinning FastMCP's
-    inner streamable_http_path to '/'."""
+    """Regression: http:// scheme must POST to /mcp/ (trailing slash).
+
+    TAP-743 (v3.10.0): Starlette ``redirect_slashes=True`` 307-redirects
+    POST /mcp → /mcp/; httpx drops the body on redirect, breaking every call.
+    Fix: client posts directly to /mcp/ to avoid the redirect entirely.
+
+    TAP-509 (v3.7.3) guard: path must not double to /mcp/mcp/ (FastMCP
+    inner path collapse regression from that era)."""
     client = _make_sync_client()  # constructed with http://brain:8080
     client._http_client.post.return_value = _mock_success({"key": "abc-123"})
 
     client.remember("verify http scheme")
 
     url_called: str = client._http_client.post.call_args.args[0]
-    assert url_called.endswith("/mcp"), (
-        f"Expected POST to end with '/mcp' (TAP-509 — single, not /mcp/mcp), got {url_called!r}"
+    assert url_called.endswith("/mcp/"), (
+        f"Expected POST to end with '/mcp/' (TAP-743 — trailing slash required), got {url_called!r}"
     )
-    assert not url_called.endswith("/mcp/mcp"), (
-        f"TAP-509 regression — public path collapsed to /mcp, got {url_called!r}"
+    assert not url_called.endswith("/mcp/mcp/"), (
+        f"TAP-509 regression — path must not double to /mcp/mcp/, got {url_called!r}"
     )
     payload_bytes: bytes = client._http_client.post.call_args.kwargs["content"]
     payload = json.loads(payload_bytes)
@@ -372,7 +376,9 @@ def test_mcp_http_tool_uses_mcp_endpoint() -> None:
     assert result == {"key": "k1"}
 
     url_called: str = mock_http.post.call_args.args[0]
-    assert url_called.endswith("/mcp")
+    assert url_called.endswith("/mcp/"), (
+        f"Expected POST to end with '/mcp/' (TAP-743), got {url_called!r}"
+    )
 
 
 def test_mcp_http_tool_embeds_idempotency_key_in_meta() -> None:
