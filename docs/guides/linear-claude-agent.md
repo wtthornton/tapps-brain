@@ -175,6 +175,52 @@ If you want an in-session Claude action attributed to Claude Agent
 instead of the operator, invoke the poller's handler directly rather
 than using the plugin — keeps the attribution model simple.
 
+## Ralph and Linear (Path A)
+
+The Ralph autonomous loop is a *third* use case that this guide didn't
+originally cover. Decision (2026-04-18): **Ralph uses Path A** — no
+personal API key, no bot user.
+
+### What that means concretely
+
+- `.ralphrc` in this repo stays on `RALPH_TASK_SOURCE="file"`. The Ralph
+  harness reads task order from `.ralph/fix_plan.md` and never makes
+  direct GraphQL calls to Linear.
+- Inside each Ralph loop, Claude has the interactive `plugin:linear:linear`
+  MCP available and may use it to look up issue context or mark a cited
+  ticket as Done. See the "Linear (OAuth plugin — Path A)" section in
+  `.ralph/PROMPT.md` for the scope.
+- Attribution for any writes Ralph triggers into Linear = the operator
+  (Bill), because that's who the plugin's OAuth session belongs to. This
+  is an accepted tradeoff for v1; once the Path B bot user exists, the
+  poller (not Ralph) will carry automated comments.
+
+### What Ralph loses versus Path B
+
+- Ralph's bash-level exit gate cannot count remaining Linear issues
+  directly. It trusts Claude's `EXIT_SIGNAL: true` + the dual-condition
+  completion check instead. If this proves too optimistic in practice,
+  revisit — but do not switch to Path B solely for this (the attribution
+  gain is worth more than the gate strictness).
+- `ralph --stats` and the Linear-specific fail-loud warnings in the TAP-536
+  codepath are unused. No user-visible regression; Linear count helpers
+  simply aren't invoked in file mode.
+
+### How to switch to Path B later
+
+When the Path B Claude Agent user exists and a key is generated:
+
+1. Drop the key at `~/.config/claude-agent/linear.env` (per "Key storage"
+   above), **not** in any repo `.env`.
+2. In `.ralphrc`, uncomment `RALPH_LINEAR_PROJECT` / `RALPH_LINEAR_TEAM`
+   and set `RALPH_TASK_SOURCE="linear"`.
+3. Export the key in the shell that launches Ralph
+   (`source ~/.config/claude-agent/linear.env`) or wire it into the
+   systemd unit.
+4. Remove the "Linear (OAuth plugin — Path A)" guidance from
+   `.ralph/PROMPT.md` — or narrow it to read-only context lookups so
+   writes consistently go through the Claude Agent key.
+
 ## Open questions (resolve before implementation)
 
 - **Handler dispatch.** How does the poller know *what* to do with a

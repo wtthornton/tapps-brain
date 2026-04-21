@@ -14,7 +14,10 @@ tools:
   - Task
   - TodoWrite
   - WebFetch
+<<<<<<< ours
   - mcp__docs-mcp__*
+=======
+>>>>>>> theirs
 disallowedTools:
   - Bash(git clean *)
   - Bash(git rm *)

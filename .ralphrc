@@ -162,11 +162,26 @@ RALPH_PROMPT_CACHE_ENABLED=true
 # Monthly cost budget in USD (0 = disabled, triggers alert at 80% by default)
 # RALPH_COST_BUDGET_USD=0
 # =============================================================================
+<<<<<<< ours
+=======
+# MODEL ROUTING (Phase 14 — complexity-based cost optimization)
+# =============================================================================
+# Enable dynamic model selection per task complexity.
+#   TRIVIAL/SMALL  -> Haiku 4.5
+#   MEDIUM         -> Sonnet 4.6 (default)
+#   LARGE          -> Opus 4.6
+#   ARCHITECTURAL  -> Opus 4.7
+#   retry escalate: one tier up on failure
+RALPH_MODEL_ROUTING_ENABLED=true
+
+# =============================================================================
+>>>>>>> theirs
 # TASK BACKEND
 # =============================================================================
 
 # Task backend: "file" (default) reads from .ralph/fix_plan.md
 #               "linear" reads from a Linear project via the Linear API
+<<<<<<< ours
 # Switching to "linear" requires LINEAR_API_KEY and RALPH_LINEAR_PROJECT below.
 RALPH_TASK_SOURCE="file"
 
@@ -180,6 +195,20 @@ RALPH_TASK_SOURCE="file"
 # Linear personal API key (can also be set as environment variable)
 # Generate at: https://linear.app/settings/api
 # LINEAR_API_KEY=""
+=======
+# DECISION: Path A (see docs/guides/linear-claude-agent.md) — Ralph harness
+# reads tasks from .ralph/fix_plan.md; Claude uses the interactive Linear MCP
+# plugin (plugin:linear:linear, OAuth-authed as the operator) for any Linear
+# reads/writes during a loop. No personal API key lives on disk for Ralph.
+# Flip to "linear" only if you intentionally move to Path B (bot user + key).
+RALPH_TASK_SOURCE="file"
+
+# Informational — the Linear project Claude should consult inside loops.
+# Not read by the Ralph harness in file mode, but useful context for the agent.
+# RALPH_LINEAR_PROJECT="tapps-brain"
+# RALPH_LINEAR_TEAM="TappsCodingAgents"
+# LINEAR_API_KEY=""  # intentionally unset — Path A uses OAuth via Claude Code plugin
+>>>>>>> theirs
 # =============================================================================
 # MONOREPO SUPPORT (Issue #163)
 # =============================================================================

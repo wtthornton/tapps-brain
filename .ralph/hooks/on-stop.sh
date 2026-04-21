@@ -190,6 +190,7 @@ loop_count=0
 prev_session_cost=0
 prev_session_input=0
 prev_session_output=0
+<<<<<<< ours
 if [[ -f "$RALPH_DIR/status.json" && "$_new_session" == "false" ]]; then
   loop_count=$(jq -r '.loop_count // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
   prev_session_cost=$(jq -r '.session_cost_usd // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
@@ -197,7 +198,13 @@ if [[ -f "$RALPH_DIR/status.json" && "$_new_session" == "false" ]]; then
   prev_session_output=$(jq -r '.session_output_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
 elif [[ -f "$RALPH_DIR/status.json" ]]; then
   # New session — inherit loop_count only; session accumulators start at 0
+=======
+if [[ -f "$RALPH_DIR/status.json" ]]; then
+>>>>>>> theirs
   loop_count=$(jq -r '.loop_count // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_cost=$(jq -r '.session_cost_usd // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_input=$(jq -r '.session_input_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+  prev_session_output=$(jq -r '.session_output_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
 fi
 # Validate loop_count is numeric before arithmetic
 [[ "$loop_count" =~ ^[0-9]+$ ]] || loop_count=0
@@ -235,6 +242,7 @@ if [[ "$loop_cost_usd" == "0" ]]; then
   fi
 fi
 
+<<<<<<< ours
 # Final fallback: scan the live `claude --output-format stream-json` output that ralph_loop.sh
 # captures at $RALPH_DIR/logs/claude_output_<ts>.log. The official transcript at
 # ~/.claude/projects/<proj>/<session>.jsonl does NOT contain `"type":"result"` lines — only
@@ -257,6 +265,8 @@ if [[ "$loop_cost_usd" == "0" ]]; then
   fi
 fi
 
+=======
+>>>>>>> theirs
 # PHASE1: model used this loop (from last assistant message in transcript)
 loop_model=""
 loop_cache_read=0
@@ -286,16 +296,22 @@ if [[ -n "$_transcript" && -f "$_transcript" ]]; then
   [[ -z "$loop_subagents_json" || "$loop_subagents_json" == "null" ]] && loop_subagents_json="{}"
 fi
 
+<<<<<<< ours
 # Merge session sub-agent counts (previous + this loop; zero base on new session)
 prev_subagents_json="{}"
 if [[ "$_new_session" == "false" && -f "$RALPH_DIR/status.json" ]]; then
   prev_subagents_json=$(jq -r '.session_subagents // {}' "$RALPH_DIR/status.json" 2>/dev/null || echo "{}")
 fi
+=======
+# Merge session sub-agent counts (previous + this loop)
+prev_subagents_json=$(jq -r '.session_subagents // {}' "$RALPH_DIR/status.json" 2>/dev/null || echo "{}")
+>>>>>>> theirs
 [[ -z "$prev_subagents_json" || "$prev_subagents_json" == "null" ]] && prev_subagents_json="{}"
 session_subagents_json=$(jq -cn --argjson a "$prev_subagents_json" --argjson b "$loop_subagents_json" \
   '$a as $a | $b as $b | ($a | to_entries) + ($b | to_entries) | group_by(.key) | map({(.[0].key): (map(.value) | add)}) | add // {}' 2>/dev/null || echo "{}")
 [[ -z "$session_subagents_json" || "$session_subagents_json" == "null" ]] && session_subagents_json="{}"
 
+<<<<<<< ours
 # TAP-588 (epic TAP-583): Count mcp__tapps-mcp__* and mcp__docs-mcp__* tool
 # calls this loop. The transcript already lists every tool_use; one jq pass
 # extracts MCP names, sums per-server, and emits a by-tool histogram. Without
@@ -367,6 +383,27 @@ session_cache_create=$((prev_session_cache_create + loop_cache_create))
 [[ "$asking_questions" == "true" ]] || asking_questions="false"
 [[ "$has_permission_denials" == "true" ]] || has_permission_denials="false"
 
+=======
+session_cost_usd=$(awk -v p="$prev_session_cost" -v l="$loop_cost_usd" 'BEGIN{printf "%.6f", p+l}')
+session_input_tokens=$((prev_session_input + loop_input_tokens))
+session_output_tokens=$((prev_session_output + loop_output_tokens))
+
+# Accumulate session cache stats
+prev_session_cache_read=$(jq -r '.session_cache_read_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+prev_session_cache_create=$(jq -r '.session_cache_create_tokens // 0' "$RALPH_DIR/status.json" 2>/dev/null || echo "0")
+[[ "$prev_session_cache_read" =~ ^[0-9]+$ ]] || prev_session_cache_read=0
+[[ "$prev_session_cache_create" =~ ^[0-9]+$ ]] || prev_session_cache_create=0
+session_cache_read=$((prev_session_cache_read + loop_cache_read))
+session_cache_create=$((prev_session_cache_create + loop_cache_create))
+
+# Sanitize all numeric/boolean fields for valid JSON output (MINGW/CRLF safety)
+[[ "$question_count" =~ ^[0-9]+$ ]] || question_count=0
+[[ "$permission_denial_count" =~ ^[0-9]+$ ]] || permission_denial_count=0
+[[ "$files_modified" =~ ^[0-9]+$ ]] || files_modified=0
+[[ "$asking_questions" == "true" ]] || asking_questions="false"
+[[ "$has_permission_denials" == "true" ]] || has_permission_denials="false"
+
+>>>>>>> theirs
 # Write status.json (atomic write via temp file).
 # MERGE-1: Two writers (ralph_loop.sh update_status and this hook) emit different fields.
 # Preserve the loop-writer fields (calls_made_this_hour, max_calls_per_hour, last_action,
@@ -407,10 +444,13 @@ jq -n \
   --argjson scc "$session_cache_create" \
   --argjson lsa "$loop_subagents_json" \
   --argjson ssa "$session_subagents_json" \
+<<<<<<< ours
   --argjson lmc "$loop_mcp_calls_json" \
   --argjson smc "$session_mcp_calls_json" \
   --arg fcm "$fresh_calls_made" \
   --arg rid "$_current_run_id" \
+=======
+>>>>>>> theirs
   '{
     timestamp: $ts, loop_count: $lc, status: $st, exit_signal: $es,
     tasks_completed: $td, files_modified: $fm, work_type: $wt, recommendation: $rec,
@@ -426,6 +466,7 @@ jq -n \
     loop_model: (if $lm == "" then null else $lm end),
     loop_cache_read_tokens: $lcr, loop_cache_create_tokens: $lcc,
     session_cache_read_tokens: $scr, session_cache_create_tokens: $scc,
+<<<<<<< ours
     loop_subagents: $lsa, session_subagents: $ssa,
     loop_mcp_calls: $lmc, session_mcp_calls: $smc,
     ralph_run_id: (if $rid == "" then null else $rid end)
@@ -445,6 +486,17 @@ else
   jq 'if .linear_issue != null then .last_linear_issue = .linear_issue else . end' \
     "$local_tmp.hook" > "$local_tmp" 2>/dev/null \
     || cp "$local_tmp.hook" "$local_tmp"
+=======
+    loop_subagents: $lsa, session_subagents: $ssa
+  }' > "$local_tmp.hook" 2>/dev/null
+
+if [[ -f "$RALPH_DIR/status.json" ]] && jq -e 'type == "object"' "$RALPH_DIR/status.json" >/dev/null 2>&1; then
+  # Merge: existing status.json + hook fields (hook wins on overlap).
+  jq -s '.[0] * .[1]' "$RALPH_DIR/status.json" "$local_tmp.hook" > "$local_tmp" 2>/dev/null \
+    || cp "$local_tmp.hook" "$local_tmp"
+else
+  cp "$local_tmp.hook" "$local_tmp"
+>>>>>>> theirs
 fi
 rm -f "$local_tmp.hook" 2>/dev/null
 
