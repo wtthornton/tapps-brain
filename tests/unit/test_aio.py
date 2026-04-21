@@ -212,6 +212,21 @@ class TestAsyncGetattr:
         assert result is not None
         assert "b" in result.tags
 
+    def test_getattr_wrapper_is_cached(self, astore: AsyncMemoryStore) -> None:
+        """Repeated attribute access must return the same function object (TAP-727)."""
+        m1 = astore.update_fields  # type: ignore[attr-defined]
+        m2 = astore.update_fields  # type: ignore[attr-defined]
+        assert m1 is m2, "wrapper should be cached — identity failed"
+
+    def test_getattr_wrapper_cache_populated(self, astore: AsyncMemoryStore) -> None:
+        """After first access the cache slot must contain the wrapper (TAP-727)."""
+        import inspect
+
+        _ = astore.update_fields  # type: ignore[attr-defined]
+        cache = object.__getattribute__(astore, "_wrapper_cache")
+        assert "update_fields" in cache
+        assert inspect.iscoroutinefunction(cache["update_fields"])
+
 
 class TestAsyncGcRun:
     """gc_run() alias parity (STORY-070.10 AC)."""
