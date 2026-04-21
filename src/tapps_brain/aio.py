@@ -32,10 +32,11 @@ class AsyncMemoryStore:
     :func:`asyncio.to_thread`.
     """
 
-    __slots__ = ("_store",)
+    __slots__ = ("_store", "_wrapper_cache")
 
     def __init__(self, store: MemoryStore) -> None:
         self._store = store
+        self._wrapper_cache: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -235,9 +236,28 @@ class AsyncMemoryStore:
 
         Properties and private attributes are not wrapped — only callable
         public methods produce an async wrapper.
+
+        Generated wrappers are cached on the instance so repeated attribute
+        access returns the same function object (referential stability for
+        mocking) and avoids per-call allocation on hot paths.
         """
         if name.startswith("_"):
             raise AttributeError(name)
+
+        # Return cached wrapper if already built for this name.
+        # Use object.__getattribute__ to avoid recursion via __getattr__
+        # in the unlikely event the slot is accessed before __init__ sets it.
+        try:
+            cache: dict[str, Any] = object.__getattribute__(self, "_wrapper_cache")
+        except AttributeError:
+            # Pre-__init__ access (e.g. subclass calls __getattr__ before
+            # super().__init__).  Seed the cache slot so subsequent accesses
+            # benefit from caching too.
+            cache = {}
+            object.__setattr__(self, "_wrapper_cache", cache)
+
+        if name in cache:
+            return cache[name]
 
         attr = getattr(self._store, name)
         if not callable(attr):
@@ -249,4 +269,5 @@ class AsyncMemoryStore:
         _async_proxy.__name__ = name
         _async_proxy.__qualname__ = f"AsyncMemoryStore.{name}"
         _async_proxy.__doc__ = f"Async version of :meth:`MemoryStore.{name}`."
+        cache[name] = _async_proxy
         return _async_proxy
