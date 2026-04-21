@@ -14,12 +14,14 @@ It lists every variable that the library, CLI, and MCP server read at runtime.
 | `TAPPS_BRAIN_AGENT_ID` | Agent identity string. Scopes private memory rows and Hive propagation. | `claude-code` | — | ✅ | ✅ |
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path — used to derive the stable `project_id` hash. Defaults to `cwd`. | `/home/user/myrepo` | `cwd` | ✅ | ✅ |
 | **Postgres DSNs** | | | | | |
-| `TAPPS_BRAIN_DATABASE_URL` | Unified v3 DSN — private memory + fallback for Hive. `postgres://` or `postgresql://` scheme required. | `postgres://tapps:s3cr3t@db:5432/tapps` | — | ✅ | optional |
-| `TAPPS_BRAIN_HIVE_DSN` | Hive shared-store DSN. Falls back to `TAPPS_BRAIN_DATABASE_URL` when not set in some contexts. | `postgres://tapps:s3cr3t@db:5432/tapps_hive` | — | ✅ | optional |
-| `TAPPS_BRAIN_FEDERATION_DSN` | Cross-project Federation DSN. Used by `create_federation_backend()`. | `postgres://tapps:s3cr3t@db:5432/tapps_fed` | — | if using federation | optional |
+| `TAPPS_BRAIN_DATABASE_URL` | Unified v3 DSN — private memory + (by default) Hive + Federation all share this. In production, use the DML-only `tapps_runtime` role. `postgres://` or `postgresql://` scheme required. | `postgres://tapps_runtime:s3cr3t@db:5432/tapps_brain` | — | ✅ | optional |
+| `TAPPS_BRAIN_HIVE_DSN` | **Optional advanced override.** Put Hive on a physically separate Postgres. Unset → Hive inherits `TAPPS_BRAIN_DATABASE_URL`. | `postgres://tapps_runtime:s3cr3t@hive-db:5432/tapps_brain` | (inherit) | no | no |
+| `TAPPS_BRAIN_FEDERATION_DSN` | **Optional advanced override** — Federation on a separate Postgres. Unset → Federation inherits `TAPPS_BRAIN_DATABASE_URL`. | `postgres://tapps_runtime:s3cr3t@fed-db:5432/tapps_brain` | (inherit) | no | no |
 | **Migrations & strict mode** | | | | | |
-| `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Set `true` to run pending Hive schema migrations on startup. | `true` | `false` | ✅ first deploy | optional |
+| `TAPPS_BRAIN_AUTO_MIGRATE` | Set `1` to apply pending private-schema migrations on `MemoryStore` startup. Not recommended on the containerized brain (which runs as the DML-only `tapps_runtime` role); use the migrate sidecar instead. | `1` | `0` | no — use migrate sidecar | optional |
+| `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Set `true` to run pending Hive schema migrations on startup. Same caveat as `TAPPS_BRAIN_AUTO_MIGRATE` for containerized deployments. | `true` | `false` | no — use migrate sidecar | optional |
 | `TAPPS_BRAIN_STRICT` | When `1`, missing DSN exits with a clear error (stderr + non-zero). **Not setting this is not for production.** | `1` | `0` | ✅ production | no |
+| `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE` | CI/dev-only escape hatch — set `1` to silence the privileged-role audit warning when the brain is connecting as a superuser/BYPASSRLS role. Production deployments MUST leave this unset and connect as `tapps_runtime`. | `1` | `0` | never | optional |
 | **Pool sizing** | | | | | |
 | `TAPPS_BRAIN_PG_POOL_MIN` | Minimum connections kept open in the pool (canonical; takes precedence over legacy `TAPPS_BRAIN_HIVE_POOL_MIN`). | `2` | `2` | no | no |
 | `TAPPS_BRAIN_PG_POOL_MAX` | Maximum simultaneous connections from the pool (canonical; takes precedence over legacy `TAPPS_BRAIN_HIVE_POOL_MAX`). Must be ≥ 1. | `20` | `10` | tune for workload | no |
@@ -47,14 +49,21 @@ postgres://[user[:password]@][host][:port]/[database]
 Examples:
 
 ```bash
-# Local development (no password)
-TAPPS_BRAIN_HIVE_DSN="postgres://localhost/tapps_dev"
+# Local development — the dev docker-compose.yml creates `tapps_brain_dev`
+TAPPS_BRAIN_DATABASE_URL="postgres://tapps:tapps@localhost:5432/tapps_brain_dev"
 
-# Production with credentials
-TAPPS_BRAIN_HIVE_DSN="postgres://tapps_runtime:s3cr3t@db.internal:5432/tapps_hive"
+# Production — connect as the DML-only tapps_runtime role
+TAPPS_BRAIN_DATABASE_URL="postgres://tapps_runtime:s3cr3t@db.internal:5432/tapps_brain"
 
 # Unix socket
-TAPPS_BRAIN_HIVE_DSN="postgres:///tapps_hive"
+TAPPS_BRAIN_DATABASE_URL="postgres:///tapps_brain"
+```
+
+Advanced split-DB (Hive on a separate Postgres — rarely needed):
+
+```bash
+TAPPS_BRAIN_DATABASE_URL="postgres://tapps_runtime:$RT_PW@private-db.internal:5432/tapps_brain"
+TAPPS_BRAIN_HIVE_DSN="postgres://tapps_runtime:$RT_PW@hive-db.internal:5432/tapps_brain"
 ```
 
 > **Malformed DSN:** A URL that does not begin with `postgres://` or

@@ -5,12 +5,12 @@ tapps-brain HTTP adapter via the MCP Streamable HTTP transport.
 
 Run it against a locally deployed brain:
 
-    # 1. Start the hive stack (Postgres + tapps-brain-http on :8080).
-    cd docker && docker compose -f docker-compose.hive.yaml up --build
+    # 1. Start the unified brain stack (Postgres + migrate + brain + dashboard).
+    make hive-deploy       # from the repo root; reads docker/.env
 
-    # 2. In another shell, export the bearer token (the value of
-    #    secrets/tapps_http_auth_token.txt -- same file the container reads).
-    export TAPPS_BRAIN_AUTH_TOKEN="$(cat docker/secrets/tapps_http_auth_token.txt)"
+    # 2. Export the bearer token (same value as docker/.env's
+    #    TAPPS_BRAIN_AUTH_TOKEN — same file the container reads).
+    export TAPPS_BRAIN_AUTH_TOKEN="$(grep ^TAPPS_BRAIN_AUTH_TOKEN= docker/.env | cut -d= -f2)"
 
     # 3. Run this script.
     python examples/agentforge-client.py
@@ -40,7 +40,7 @@ def _headers() -> dict[str, str]:
     if not AUTH_TOKEN:
         print(
             "error: TAPPS_BRAIN_AUTH_TOKEN is empty; set it to the bearer token "
-            "the brain expects (see docker/secrets/tapps_http_auth_token.txt).",
+            "the brain expects (same value as docker/.env's TAPPS_BRAIN_AUTH_TOKEN).",
             file=sys.stderr,
         )
         sys.exit(2)

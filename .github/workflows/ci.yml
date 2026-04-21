@@ -61,17 +61,19 @@ jobs:
         env:
           POSTGRES_USER: tapps
           POSTGRES_PASSWORD: tapps
-          POSTGRES_DB: tapps_dev
+          POSTGRES_DB: tapps_brain_dev
         options: >-
-          --health-cmd "pg_isready -U tapps -d tapps_dev"
+          --health-cmd "pg_isready -U tapps -d tapps_brain_dev"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
           --health-start-period 10s
     env:
-      TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_dev
-      TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_dev
-      TAPPS_BRAIN_HIVE_DSN: postgresql://tapps:tapps@localhost:5432/tapps_dev
+      # Single DSN — Hive + Federation inherit. CI connects as the owner role
+      # because the tests include schema migrations; TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE
+      # is the documented override for CI/dev. Production uses tapps_runtime.
+      TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
+      TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
       TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
       HF_DATASETS_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"

@@ -8,42 +8,38 @@ Quick reference for the Docker deployment of tapps-brain. The stack is a **unifi
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.hive.yaml` | Reference Compose file: Postgres (pgvector) + unified `tapps-brain-http` + migration sidecar + nginx dashboard |
+| `docker-compose.hive.yaml` | Reference Compose file: `tapps-brain-db` (pgvector) + `tapps-brain-migrate` (one-shot bootstrap) + `tapps-brain-http` (unified HTTP + `/mcp/` + operator MCP) + `tapps-visual` (nginx dashboard) |
 | `Dockerfile.http` | Slim image that runs `tapps-brain serve` — HTTP adapter + `/mcp/` on :8080, operator MCP on :8090 |
-| `Dockerfile.migrate` | Slim image that runs `tapps-brain maintenance migrate-hive` (applies Hive schema to whichever DSN you point it at) |
+| `Dockerfile.migrate` | Slim image whose entrypoint (`migrate-entrypoint.sh`) applies private + Hive + Federation schema, creates the DML-only `tapps_runtime` role, and sets its password |
+| `migrate-entrypoint.sh` | 4-step bootstrap run by the migrate sidecar |
 | `Dockerfile.visual` | nginx image serving the brain-visual static frontend |
 | `nginx-visual.conf` | nginx config: static files + `/snapshot` proxy to `tapps-brain-http` |
 | `nginx-visual-tls.conf` | nginx config variant with HTTPS/TLS (see [hive-tls.md](../docs/guides/hive-tls.md)) |
-| `init-hive.sql` | Bootstraps the `vector` extension on first DB start |
-| `secrets/` | Docker secrets directory (`.txt` files are git-ignored; `.example` files are templates) |
+| `init-db.sql` | Bootstraps the `vector` extension on first DB start |
+| `.env.example` | Template for `docker/.env` (the four required vars + optional overrides) |
 
 ## Before You Deploy
 
-> **These steps are required before running `make hive-deploy` in any environment
-> that is not purely local/dev.**
+1. **Copy the env template and fill in strong random values**:
 
-1. **Change the database password**
    ```bash
-   openssl rand -base64 32 > docker/secrets/tapps_hive_password.txt
+   cp docker/.env.example docker/.env
+   # Edit docker/.env — the four required variables have openssl commands inline:
+   #   TAPPS_BRAIN_DB_PASSWORD       (owner role, used by migrate sidecar)
+   #   TAPPS_BRAIN_RUNTIME_PASSWORD  (tapps_runtime DML-only role, used by the brain)
+   #   TAPPS_BRAIN_AUTH_TOKEN        (public bearer token)
+   #   TAPPS_BRAIN_ADMIN_TOKEN       (operator MCP bearer token)
    ```
 
-2. **Set the HTTP adapter auth token**
-   ```bash
-   openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt
-   ```
+2. **Configure TLS** if exposing the dashboard to a network — see [docs/guides/hive-tls.md](../docs/guides/hive-tls.md).
 
-3. **Configure TLS** (if exposing the dashboard to a network)
-   See [docs/guides/hive-tls.md](../docs/guides/hive-tls.md) for nginx SSL and Caddy options.
-
-`make hive-deploy` will abort with a clear error message if either secret still contains
-its default placeholder value.
+`make hive-deploy` aborts with a clear error if `docker/.env` is missing or still contains `REPLACE_ME` placeholder values.
 
 ## Quick Start
 
-The recommended way to build and deploy is through the Makefile targets from the repository root:
+From the repository root:
 
 ```bash
-# Full deploy: build wheel → build images → run migrations → restart services
 make hive-deploy
 ```
 
@@ -51,58 +47,53 @@ Other useful targets:
 
 | Target | What it does |
 |--------|--------------|
-| `make hive-deploy` | Full deploy (safe to rerun on every release) |
+| `make hive-deploy` | Full deploy — check env → build wheel + images → up (migrate runs automatically) |
 | `make hive-build` | Build wheel + Docker images only |
 | `make hive-up` | Start services without rebuilding |
 | `make hive-down` | Stop containers (keeps volumes) |
-| `make hive-logs` | Tail logs from all hive services |
-| `make hive-smoke` | End-to-end smoke test: boots full stack, asserts all endpoints, tears down |
+| `make hive-logs` | Tail logs from all services |
+| `make hive-smoke` | End-to-end smoke test: boots full stack on throwaway ports, asserts all endpoints, tears down |
 
 ### Manual steps (if not using make)
 
 ```bash
-# 1. Create secrets (see "Before You Deploy" above)
-openssl rand -base64 32 > docker/secrets/tapps_hive_password.txt
-openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt
+# 1. Fill in docker/.env — see "Before You Deploy" above.
 
-# 2. Build the wheel
-uv build
+# 2. Build the wheel + images, then bring the whole stack up. The migrate
+#    sidecar runs via depends_on:service_completed_successfully, so you do
+#    NOT need a separate `compose run --rm`.
+docker compose -p tapps-brain -f docker/docker-compose.hive.yaml --env-file docker/.env up -d --build
 
-# 3. Build images, run migrations, start services
-docker compose -f docker/docker-compose.hive.yaml build
-docker compose -f docker/docker-compose.hive.yaml run --rm tapps-hive-migrate
-docker compose -f docker/docker-compose.hive.yaml up -d tapps-brain-http tapps-visual
-
-# 4. Verify
-docker compose -f docker/docker-compose.hive.yaml ps
-curl http://localhost:8080/health   # tapps-brain-http
-curl http://localhost:8088/snapshot # proxied through tapps-visual nginx
+# 3. Verify
+docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
+curl http://localhost:8080/health    # {"status":"ok","service":"tapps-brain",...}
+curl http://localhost:8088/snapshot  # proxied through tapps-visual nginx
 ```
-
-The migration container (`tapps-hive-migrate`) runs once, applies any pending schema
-migrations, and exits. The database and HTTP adapter containers stay running.
 
 ## Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| `tapps-hive-db` | 5432 | PostgreSQL + pgvector |
-| `tapps-brain-http` | 8080 (internal) | HttpAdapter: `/health` `/ready` `/metrics` `/snapshot` |
+| Service | Ports | Purpose |
+|---------|-------|---------|
+| `tapps-brain-db` | 5432 (internal) | PostgreSQL + pgvector, DB `tapps_brain`, owner role `tapps` |
+| `tapps-brain-migrate` | — | One-shot bootstrap (exits 0). Applies all schema migrations, creates `tapps_runtime` role, sets its password. |
+| `tapps-brain-http` | 8080 (host) + 127.0.0.1:8090 | Unified brain: `/health` `/ready` `/metrics` `/snapshot` + `/mcp/` + `/v1/*` + `/admin/*` + operator MCP on :8090 (loopback). Connects as `tapps_runtime`. |
 | `tapps-visual` | 8088 (host) | nginx: dashboard static files + `/snapshot` proxy |
-| `tapps-hive-migrate` | — | One-shot migration runner (exits after completion) |
 
 ## Environment Variables
 
+All values come from `docker/.env` via compose variable substitution.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TAPPS_BRAIN_HIVE_DSN` | (none) | Full Postgres connection string for the HTTP adapter |
-| `TAPPS_HIVE_PORT` | `5432` | Host port mapped to Postgres |
-| `TAPPS_HIVE_PASSWORD` | `tapps` | Postgres password (Compose interpolation — override via secret file) |
-| `TAPPS_BRAIN_DATABASE_URL` | (none) | Private store DSN (optional; enables live MemoryStore in `/snapshot`) |
-| `TAPPS_BRAIN_HTTP_HOST` | `0.0.0.0` | Bind address for the HTTP adapter |
-| `TAPPS_BRAIN_HTTP_PORT` | `8080` | TCP port for the HTTP adapter (internal) |
+| `TAPPS_BRAIN_DB_PASSWORD` | (required, no default — `:?` fail-fast) | Owner role password, used by DB container init + migrate sidecar |
+| `TAPPS_BRAIN_RUNTIME_PASSWORD` | (required) | DML-only `tapps_runtime` role password — brain logs in with this |
+| `TAPPS_BRAIN_AUTH_TOKEN` | (required) | Bearer token for the public data plane on :8080 |
+| `TAPPS_BRAIN_ADMIN_TOKEN` | (required) | Bearer token for the operator MCP on :8090 |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (set in production) |
 | `TAPPS_HTTP_PORT` | `8080` | Host port mapped to the HTTP adapter |
 | `TAPPS_VISUAL_PORT` | `8088` | Host port for the brain-visual frontend |
+| `TAPPS_OPERATOR_MCP_PORT` | `8090` | Operator MCP port (loopback-only by default) |
+| `TAPPS_OPERATOR_MCP_BIND` | `127.0.0.1` | Operator MCP bind address. Set to `0.0.0.0` only behind a reverse proxy with auth. |
 
 ## brain-visual frontend
 
@@ -115,7 +106,7 @@ is not running, `/snapshot` returns a 502 — this is intentional so the failure
 To load a static export offline, mount it as a volume:
 
 ```bash
-docker run -v ./my-export.json:/usr/share/nginx/html/brain-visual.json tapps-visual
+docker run -v ./my-export.json:/usr/share/nginx/html/brain-visual.json docker-tapps-visual:latest
 ```
 
 Generate an export with:

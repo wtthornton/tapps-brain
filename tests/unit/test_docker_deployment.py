@@ -24,30 +24,58 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 class TestDockerArtifacts:
     def test_docker_compose_exists(self):
-        """docker-compose.hive.yaml exists and is valid YAML."""
+        """docker-compose.hive.yaml exists, is valid YAML, and wires the 2026 unified stack."""
         path = _REPO_ROOT / "docker" / "docker-compose.hive.yaml"
         assert path.exists(), f"Missing {path}"
         data = yaml.safe_load(path.read_text())
         assert "services" in data
-        assert "tapps-hive-db" in data["services"]
+        # Unified stack service names (post-2026-04-21 rename):
+        assert "tapps-brain-db" in data["services"]
+        assert "tapps-brain-http" in data["services"]
+        assert "tapps-brain-migrate" in data["services"]
+        # Legacy names removed — regression guard.
+        assert "tapps-hive-db" not in data["services"]
+        assert "tapps-hive-migrate" not in data["services"]
 
-    def test_init_hive_sql_exists(self):
-        path = _REPO_ROOT / "docker" / "init-hive.sql"
+    def test_init_db_sql_exists(self):
+        """docker/init-db.sql (renamed from init-hive.sql) bootstraps the vector extension."""
+        path = _REPO_ROOT / "docker" / "init-db.sql"
         assert path.exists(), f"Missing {path}"
         content = path.read_text()
         assert "CREATE EXTENSION" in content
+        # Legacy filename must not linger.
+        assert not (_REPO_ROOT / "docker" / "init-hive.sql").exists()
 
     def test_dockerfile_migrate_exists(self):
         path = _REPO_ROOT / "docker" / "Dockerfile.migrate"
         assert path.exists(), f"Missing {path}"
         content = path.read_text()
         assert "tapps-brain" in content
+        # Image must ship the migrate entrypoint shell script so the sidecar
+        # can apply schemas + create the tapps_runtime role in one step.
+        assert "migrate-entrypoint.sh" in content
+
+    def test_migrate_entrypoint_exists(self):
+        """docker/migrate-entrypoint.sh drives the bootstrap (EPIC-058 + role split)."""
+        path = _REPO_ROOT / "docker" / "migrate-entrypoint.sh"
+        assert path.exists(), f"Missing {path}"
+        assert os.access(path, os.X_OK), f"{path} must be executable"
+        content = path.read_text()
+        # The four-step bootstrap must cover schema + role + runtime password.
+        assert "migrate-hive" in content
+        assert "tapps_runtime" in content
+        assert "TAPPS_BRAIN_RUNTIME_PASSWORD" in content
 
     def test_env_example_exists(self):
         path = _REPO_ROOT / "docker" / ".env.example"
         assert path.exists(), f"Missing {path}"
         content = path.read_text()
-        assert "TAPPS_BRAIN_HIVE_DSN" in content
+        # The .env template drives compose variable substitution — every
+        # required var the compose file references with `:?` must be listed.
+        assert "TAPPS_BRAIN_DB_PASSWORD" in content
+        assert "TAPPS_BRAIN_RUNTIME_PASSWORD" in content
+        assert "TAPPS_BRAIN_AUTH_TOKEN" in content
+        assert "TAPPS_BRAIN_ADMIN_TOKEN" in content
 
 
 # ===================================================================
@@ -151,7 +179,7 @@ class TestBackupHiveCLI:
                     "maintenance",
                     "backup-hive",
                     "--dsn",
-                    "postgres://tapps:pass@localhost/tapps_hive",
+                    "postgres://tapps:pass@localhost/tapps_brain",
                     "--output",
                     "/tmp/test-backup.sql",
                 ],
@@ -176,7 +204,7 @@ class TestBackupHiveCLI:
                     "maintenance",
                     "restore-hive",
                     "--dsn",
-                    "postgres://tapps:pass@localhost/tapps_hive",
+                    "postgres://tapps:pass@localhost/tapps_brain",
                     "backup.sql",
                 ],
             )
@@ -232,7 +260,7 @@ class TestBackupHivePasswordSecurity:
     """Security tests: DSN password must not appear in pg_dump argv (TAP-606)."""
 
     SECRET = "supersecretpassword"
-    DSN_WITH_SECRET = f"postgres://tapps:{SECRET}@localhost:5432/tapps_hive"
+    DSN_WITH_SECRET = f"postgres://tapps:{SECRET}@localhost:5432/tapps_brain"
 
     @pytest.mark.requires_cli
     def test_backup_hive_password_not_in_argv(self) -> None:

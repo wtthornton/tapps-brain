@@ -182,14 +182,17 @@ parented to upstream callers (STORY-061.3).
 
 ---
 
-## Docker deployment (EPIC-058)
+## Docker deployment (EPIC-058, unified stack)
 
 Reference files in `docker/`:
 
-- `docker-compose.hive.yaml` — Postgres container with pgvector (pgvector/pgvector:pg17)
-- `init-hive.sql` — Schema initialization
-- `Dockerfile.migrate` — Migration runner
-- `README.md` — Deployment guide
+- `docker-compose.hive.yaml` — Unified stack: `tapps-brain-db` (pgvector/pg17) + `tapps-brain-migrate` (one-shot) + `tapps-brain-http` (HTTP + `/mcp/` + operator MCP) + optional `tapps-visual` dashboard.
+- `init-db.sql` — Bootstraps the `vector` extension on first DB start.
+- `Dockerfile.http` — Brain image (serves private memory + Hive + Federation on port 8080/8090).
+- `Dockerfile.migrate` — Migrate-sidecar image. Entrypoint `migrate-entrypoint.sh` applies schemas, creates the DML-only `tapps_runtime` role, sets its password, then exits.
+- `Dockerfile.visual` — nginx dashboard (reads `/snapshot` from the brain).
+- `.env.example` — Template for the single secrets file `docker/.env` (DB password, runtime password, auth/admin tokens).
+- `README.md` — Deployment guide.
 
 See `docs/guides/hive-deployment.md` for full setup, `docs/guides/agentforge-integration.md` for connecting downstream projects.
 

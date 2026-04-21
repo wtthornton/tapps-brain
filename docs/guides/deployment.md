@@ -24,33 +24,34 @@ agent wired via `AGENT.md`.
 ## Quick Start (Docker Compose)
 
 ```bash
-# 1. Create secrets directory and files
-mkdir -p docker/secrets
-echo "your-secure-hive-password"   > docker/secrets/tapps_hive_password.txt
-echo "your-secure-http-auth-token" > docker/secrets/tapps_http_auth_token.txt
-
-# 2. (Optional) copy and edit the env file
+# 1. Copy the env template and fill in strong random values
 cp docker/.env.example docker/.env
-# Edit docker/.env — set TAPPS_BRAIN_DATABASE_URL, TAPPS_BRAIN_AUTH_TOKEN, etc.
+# Edit docker/.env — set the 4 REQUIRED vars (commands inline in the file):
+#   TAPPS_BRAIN_DB_PASSWORD       — Postgres owner-role password (bootstrap only)
+#   TAPPS_BRAIN_RUNTIME_PASSWORD  — tapps_runtime DML-only role password
+#   TAPPS_BRAIN_AUTH_TOKEN        — public bearer token for /mcp/ + /v1/*
+#   TAPPS_BRAIN_ADMIN_TOKEN       — admin bearer token for operator MCP :8090
 
-# 3. Start the stack
-docker compose -f docker/docker-compose.hive.yaml up -d
+# 2. Build + start the unified stack (Postgres + migrate sidecar + brain + dashboard)
+make hive-deploy
+# (equivalent: docker compose -p tapps-brain -f docker/docker-compose.hive.yaml \
+#              --env-file docker/.env up -d --build)
 
-# 4. Verify both transports are healthy
-docker compose -f docker/docker-compose.hive.yaml ps
-# Expected: tapps-brain (healthy), tapps-hive-db (healthy)
+# 3. Verify all containers are healthy
+docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
+# Expected: tapps-brain-http (healthy), tapps-brain-db (healthy),
+#           tapps-brain-migrate (exited 0), tapps-visual (up)
 
-# 5. Smoke-test the HTTP data-plane
+# 4. Smoke-test the HTTP data-plane
 curl http://localhost:8080/health
-# {"status":"ok",...}
+# {"status":"ok","service":"tapps-brain","version":"..."}
 
-# 6. Smoke-test the operator MCP transport
-curl http://localhost:8090/mcp/
-# MCP Streamable-HTTP endpoint ready
+# 5. Smoke-test the operator MCP transport (loopback-only by default)
+curl -H "Authorization: Bearer $TAPPS_BRAIN_ADMIN_TOKEN" http://127.0.0.1:8090/health
+# ok
 ```
 
-The migration sidecar (`tapps-hive-migrate`) runs once, applies all pending
-Hive schema migrations, then exits.  The database container stays running.
+The migrate sidecar (`tapps-brain-migrate`) runs once as the DB owner role, applies schema migrations, creates the least-privilege `tapps_runtime` role with the password from `docker/.env`, and exits. The brain container then starts and connects as `tapps_runtime` — no `ALLOW_PRIVILEGED_ROLE` override, RLS + tenant isolation guards stay on.
 
 ---
 
@@ -201,9 +202,9 @@ For local development or bare-metal deployments:
 # Install with all server extras
 pip install 'tapps-brain[cli,mcp,http]'
 
-# Export required environment variables
-export TAPPS_BRAIN_DATABASE_URL="postgresql://tapps:secret@localhost:5432/tapps_brain"
-export TAPPS_BRAIN_HIVE_DSN="postgresql://tapps:secret@localhost:5432/tapps_hive"
+# Export required environment variables — single DSN (Hive inherits).
+# In production, this DSN should point at the DML-only `tapps_runtime` role.
+export TAPPS_BRAIN_DATABASE_URL="postgresql://tapps_runtime:secret@localhost:5432/tapps_brain"
 export TAPPS_BRAIN_AUTH_TOKEN="my-auth-token"
 export TAPPS_BRAIN_ADMIN_TOKEN="my-admin-token"
 

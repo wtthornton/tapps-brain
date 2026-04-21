@@ -7,61 +7,74 @@
 One Postgres, one brain container, one API. Hive rides along automatically because the brain falls back to `TAPPS_BRAIN_DATABASE_URL` when `TAPPS_BRAIN_HIVE_DSN` is unset.
 
 ```bash
-# 1. Create secrets
-mkdir -p docker/secrets
-echo "your-secure-password" > docker/secrets/tapps_hive_password.txt
-openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt
+# 1. Copy the env template and generate strong random values
+cp docker/.env.example docker/.env
+# Edit docker/.env and fill the four required variables:
+#   TAPPS_BRAIN_DB_PASSWORD       — owner-role password (DDL during bootstrap only)
+#   TAPPS_BRAIN_RUNTIME_PASSWORD  — tapps_runtime role password (brain's live DSN)
+#   TAPPS_BRAIN_AUTH_TOKEN        — public bearer token
+#   TAPPS_BRAIN_ADMIN_TOKEN       — operator MCP bearer token
+# Suggested commands are inline in docker/.env.example.
 
-# 2. Start Postgres + tapps-brain-http + dashboard
-docker compose -f docker/docker-compose.hive.yaml up -d
+# 2. Bring up the unified stack (Postgres + migrate sidecar + brain + dashboard)
+make hive-deploy                        # OR, directly:
+# docker compose -p tapps-brain -f docker/docker-compose.hive.yaml \
+#   --env-file docker/.env up -d --build
 
 # 3. Verify
-docker compose -f docker/docker-compose.hive.yaml ps
+docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
 curl http://localhost:8080/health       # {"status":"ok","service":"tapps-brain",...}
 ```
 
-The migration sidecar (`tapps-hive-migrate`) runs once, applies pending schema migrations, and exits. The `tapps-brain-http` container serves both private memory and Hive from the same DSN; there is no "Hive service" to start separately.
+The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tapps`: applies Hive + private + federation schema, creates the least-privilege `tapps_runtime` role, grants DML on all tables, sets `TAPPS_BRAIN_RUNTIME_PASSWORD` on the role, then exits. The `tapps-brain-http` container then starts and connects as `tapps_runtime` (no superuser, no `BYPASSRLS`, no table ownership) — the privileged-role audit guard stays on.
+
+There is no "Hive service" to start separately; the brain serves private memory + Hive + Federation from the same DSN over the same `/mcp/` + `/v1/*` API.
 
 ## Single-Host Deployment (default: unified DSN)
 
-For a single host (development, small team, or personal use):
+For a single host (development, small team, or personal use), the compose file is already configured — you just fill in `docker/.env` and run `make hive-deploy`. If you need to run the brain outside Docker (CLI, embedded library, tests), point it at the same DB:
 
-1. Run the Docker Compose stack as shown above.
-2. Point tapps-brain at the Postgres instance — **one DSN is enough**:
-
-   ```bash
-   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps:changeme@localhost:5432/tapps_brain"
-   ```
-
-   Private memory, Hive, and Federation will all use this DSN. You do **not** need to set `TAPPS_BRAIN_HIVE_DSN`.
-
-3. Optionally enable auto-migration so the schema stays current when you upgrade:
+1. Run the Docker Compose stack as shown above (Quick Start).
+2. Point the CLI / library at the brain's Postgres — **one DSN is enough**:
 
    ```bash
-   export TAPPS_BRAIN_AUTO_MIGRATE=1        # private schema
-   export TAPPS_BRAIN_HIVE_AUTO_MIGRATE=1   # hive schema (same DB by default)
+   # Connect as tapps_runtime (the DML-only role the migrate sidecar creates).
+   # For admin work that needs DDL (re-run migrations, inspect system views),
+   # connect as the `tapps` owner with TAPPS_BRAIN_DB_PASSWORD instead.
+   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps_runtime:${TAPPS_BRAIN_RUNTIME_PASSWORD}@localhost:5432/tapps_brain"
    ```
 
-4. Run the MCP server or CLI as usual. All writes and reads go through the same `tapps-brain-http` process over `/mcp/` + `/v1/*`. (SQLite Hive was removed in v3; ADR-007.)
+   Private memory, Hive, and Federation all use this DSN. You do **not** need to set `TAPPS_BRAIN_HIVE_DSN`.
+
+3. Run the CLI or embed the Python library as usual. The `tapps-brain-http` container in the compose stack auto-migrates via its migrate sidecar; external processes do not need to set `TAPPS_BRAIN_AUTO_MIGRATE` unless they're running an independent DB. (SQLite Hive was removed in v3; ADR-007.)
 
 ## Advanced: split-DB deployment (optional)
 
 Only use this when you need Hive on a **separate** Postgres from private memory — typical reasons: distinct backup cadence, tenant isolation, capacity separation across teams, or a managed HA Postgres for the shared layer while private stays on local disk.
 
 1. Provision two pgvector databases (or two schemas on the same instance).
-2. Run migrations against **both**:
+2. Run migrations against **both** (both accept the same CLI entrypoints used by the single-DB migrate sidecar):
 
    ```bash
-   tapps-brain maintenance migrate              # private (uses TAPPS_BRAIN_DATABASE_URL)
+   tapps-brain maintenance migrate --project-dir .          # private (uses TAPPS_BRAIN_DATABASE_URL)
    tapps-brain maintenance migrate-hive \
-     --dsn "postgres://tapps:SECRET@hive-host:5432/tapps_hive"
+     --dsn "postgres://tapps:SECRET@hive-host:5432/tapps_brain"
    ```
 
-3. Set both DSNs on the brain container:
+   Then apply the role split on each DB:
 
    ```bash
-   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps:SECRET@private-host:5432/tapps_brain"
-   export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:SECRET@hive-host:5432/tapps_hive"
+   psql "postgres://tapps:SECRET@<host>:5432/tapps_brain" \
+     -f src/tapps_brain/migrations/roles/001_db_roles.sql
+   psql "postgres://tapps:SECRET@<host>:5432/tapps_brain" \
+     -c "ALTER ROLE tapps_runtime WITH LOGIN PASSWORD '$TAPPS_BRAIN_RUNTIME_PASSWORD';"
+   ```
+
+3. Set both DSNs on the brain container, both pointing at `tapps_runtime`:
+
+   ```bash
+   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps_runtime:$RT_PW@private-host:5432/tapps_brain"
+   export TAPPS_BRAIN_HIVE_DSN="postgres://tapps_runtime:$RT_PW@hive-host:5432/tapps_brain"
    ```
 
 4. The API surface does not change — agents still hit the same `/mcp/` + `/v1/*` on the same container. Only the physical database for Hive rows is different.
@@ -75,7 +88,7 @@ For teams, the normal pattern is **one brain deployment, many agent hosts** — 
 
    ```bash
    export TAPPS_BRAIN_BASE_URL="https://brain.internal:8080"
-   export TAPPS_BRAIN_AUTH_TOKEN="<from docker/secrets/tapps_http_auth_token.txt>"
+   export TAPPS_BRAIN_AUTH_TOKEN="<value of TAPPS_BRAIN_AUTH_TOKEN from docker/.env>"
    ```
 
 3. Private rows are isolated per `(project_id, agent_id)`; Hive rows are the shared layer. Both live in the brain's Postgres — clients do not connect to Postgres directly.
@@ -88,31 +101,31 @@ For teams, the normal pattern is **one brain deployment, many agent hosts** — 
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: tapps-hive-db
+  name: tapps-brain-db
 spec:
-  serviceName: tapps-hive-db
+  serviceName: tapps-brain-db
   replicas: 1
   selector:
     matchLabels:
-      app: tapps-hive-db
+      app: tapps-brain-db
   template:
     metadata:
       labels:
-        app: tapps-hive-db
+        app: tapps-brain-db
     spec:
       containers:
         - name: pgvector
           image: pgvector/pgvector:pg17
           env:
             - name: POSTGRES_DB
-              value: tapps_hive
+              value: tapps_brain
             - name: POSTGRES_USER
               value: tapps
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: tapps-hive-secret
-                  key: password
+                  name: tapps-brain-secret
+                  key: db-password
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -130,28 +143,36 @@ spec:
 
 ### Migration: Job
 
+Use the `docker-tapps-brain-migrate` image (built from `docker/Dockerfile.migrate`) — its entrypoint is `docker/migrate-entrypoint.sh`, which applies private + Hive + Federation schema, creates the `tapps_runtime` role, and sets its password.
+
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: tapps-hive-migrate
+  name: tapps-brain-migrate
 spec:
   template:
     spec:
       containers:
         - name: migrate
-          image: your-registry/tapps-brain:latest
-          command: ["tapps-brain", "maintenance", "migrate-hive", "--dsn", "$(TAPPS_BRAIN_HIVE_DSN)"]
+          image: your-registry/tapps-brain-migrate:latest
           env:
-            - name: TAPPS_BRAIN_HIVE_DSN
+            # Owner-role DSN — DDL capable, used by this one-shot job only.
+            - name: TAPPS_BRAIN_DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: tapps-hive-secret
-                  key: dsn
+                  name: tapps-brain-secret
+                  key: owner-dsn
+            # Password the migrate job installs on the DML-only role.
+            - name: TAPPS_BRAIN_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tapps-brain-secret
+                  key: runtime-password
       restartPolicy: Never
 ```
 
-### ConfigMap for Clients
+### ConfigMap for the brain
 
 ```yaml
 apiVersion: v1
@@ -159,18 +180,24 @@ kind: ConfigMap
 metadata:
   name: tapps-brain-config
 data:
-  TAPPS_BRAIN_HIVE_AUTO_MIGRATE: "false"
+  TAPPS_BRAIN_STRICT: "1"
+  # Brain connects as tapps_runtime (see runtime-dsn secret key below); no
+  # auto-migrate needed — the migrate Job handles schema and grants.
 ```
 
 ## Environment Variables Reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TAPPS_BRAIN_HIVE_DSN` | (none) | Full Postgres DSN for the Hive backend |
-| `TAPPS_BRAIN_HIVE_POSTGRES_DSN` | (none) | Alias for `TAPPS_BRAIN_HIVE_DSN` |
-| `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | (none) | Set to `true`, `1`, or `yes` to auto-migrate on startup |
-| `TAPPS_HIVE_PORT` | `5432` | Host port for Compose port mapping |
-| `TAPPS_HIVE_PASSWORD` | `tapps` | Compose default password (override in production) |
+| `TAPPS_BRAIN_DATABASE_URL` | (required) | Postgres DSN. On the brain pod, use the `tapps_runtime` role. On the migrate Job, use the owner (`tapps`) role. Private + Hive + Federation share this DSN by default. |
+| `TAPPS_BRAIN_DB_PASSWORD` | (required) | Owner role password — used only by the migrate Job and the DB container's init. |
+| `TAPPS_BRAIN_RUNTIME_PASSWORD` | (required) | DML-only `tapps_runtime` role password — the brain logs in with this. |
+| `TAPPS_BRAIN_HIVE_DSN` | (fallback: `TAPPS_BRAIN_DATABASE_URL`) | **Optional.** Only set when Hive lives on a different Postgres than private memory. |
+| `TAPPS_BRAIN_FEDERATION_DSN` | (fallback: `TAPPS_BRAIN_DATABASE_URL`) | **Optional.** Same rule for Federation. |
+| `TAPPS_BRAIN_AUTH_TOKEN` | (required) | Bearer token for the public `/mcp/` + `/v1/*` data plane. |
+| `TAPPS_BRAIN_ADMIN_TOKEN` | (required) | Bearer token for the operator MCP transport on `:8090` (loopback by default). |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (set in production). |
+| `TAPPS_BRAIN_AUTO_MIGRATE` / `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | (unset) | Leave unset on the brain — `tapps_runtime` cannot run DDL; migrations run in the migrate Job/sidecar. |
 
 ## Verifying Multi-Tenancy (Cross-Tenant Smoke Test)
 
@@ -248,14 +275,12 @@ for nginx SSL and Caddy reverse-proxy options.
 For database connections, use `sslmode=require` (or `verify-full`) in your DSN:
 
 ```
-postgres://tapps:SECRET@db-host:5432/tapps_hive?sslmode=verify-full&sslrootcert=/path/to/ca.crt
+postgres://tapps_runtime:SECRET@db-host:5432/tapps_brain?sslmode=verify-full&sslrootcert=/path/to/ca.crt
 ```
 
-### Docker Secrets
+### Secrets via docker/.env
 
-The reference Compose file reads the password from
-`docker/secrets/tapps_hive_password.txt` via Docker secrets. Never commit
-this file to version control.
+The reference Compose file reads all secrets (`TAPPS_BRAIN_DB_PASSWORD`, `TAPPS_BRAIN_RUNTIME_PASSWORD`, `TAPPS_BRAIN_AUTH_TOKEN`, `TAPPS_BRAIN_ADMIN_TOKEN`) from `docker/.env` via compose variable substitution. The file is gitignored — never commit it. The template is `docker/.env.example`.
 
 ### Network Isolation
 
@@ -328,13 +353,15 @@ Or to allow a dedicated ops network:
 tapps-brain maintenance health --json
 
 # Docker Compose health
-docker compose -f docker/docker-compose.hive.yaml ps
+docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
 ```
 
 ### Schema Status
 
 ```bash
-tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_HIVE_DSN"
+# Hive schema — accepts any DSN; use TAPPS_BRAIN_DATABASE_URL unless you
+# have a split-DB deployment.
+tapps-brain maintenance hive-schema-status --dsn "$TAPPS_BRAIN_DATABASE_URL"
 ```
 
 ### HNSW Index Startup Check (TAP-655)
@@ -367,8 +394,9 @@ significantly slower at scale.
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| `connection refused` | DB not running or wrong port | Check `docker ps` and `TAPPS_HIVE_PORT` |
-| `password authentication failed` | Mismatched secret vs env var | Ensure `TAPPS_HIVE_PASSWORD` matches `docker/secrets/tapps_hive_password.txt` |
+| `connection refused` | DB not running or wrong port | `docker compose -p tapps-brain ps` and check `TAPPS_HTTP_PORT` in `docker/.env` |
+| `password authentication failed` for `tapps_runtime` | `TAPPS_BRAIN_RUNTIME_PASSWORD` in `docker/.env` doesn't match what the migrate sidecar set on the role | Restart the stack with `make hive-deploy` — the migrate sidecar is idempotent and will re-set the password to the current env value |
+| `permission denied for schema public` on brain startup | Brain connecting as a role without USAGE on public, or migrate sidecar didn't run | Confirm the migrate sidecar exited 0; confirm the brain DSN points at `tapps_runtime` (`docker exec tapps-brain-http printenv TAPPS_BRAIN_DATABASE_URL`) |
 | `extension "vector" does not exist` | Wrong Postgres image | Use `pgvector/pgvector:pg17` |
 | Slow vector recall + `private.indexes.missing` warning | Migration 002 not applied | Run `002_hnsw_upgrade.sql` — see HNSW index startup check above |
 

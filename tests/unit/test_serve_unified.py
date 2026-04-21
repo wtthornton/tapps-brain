@@ -304,11 +304,17 @@ class TestDockerCompose:
         reason="docker-compose.hive.yaml not present",
     )
     def test_tapps_brain_service_present(self) -> None:
+        """The unified brain service ships under the name `tapps-brain-http`
+        (matches the container name that AgentForge + other consumers
+        resolve by DNS). Prior to the 2026-04-21 unified-stack refactor it
+        was `tapps-brain`; the rename is intentional and covered by the
+        regression assertions below.
+        """
         try:
             compose = self._load()
         except Exception:
             pytest.skip("yaml not available or compose file unparseable")
-        assert "tapps-brain" in compose["services"]
+        assert "tapps-brain-http" in compose["services"]
 
     @pytest.mark.skipif(
         not (_REPO_ROOT / "docker" / "docker-compose.hive.yaml").exists(),
@@ -320,12 +326,20 @@ class TestDockerCompose:
         except Exception:
             pytest.skip("yaml not available or compose file unparseable")
         services = compose["services"]
-        assert "tapps-brain-http" not in services, (
-            "tapps-brain-http should be merged into tapps-brain (STORY-070.15)"
-        )
+        # STORY-070.15 — the pre-v3.6 two-container operator-MCP split is
+        # gone; the brain runs as one process.
         assert "tapps-brain-operator-mcp" not in services, (
-            "tapps-brain-operator-mcp should be merged into tapps-brain (STORY-070.15)"
+            "tapps-brain-operator-mcp should be merged into tapps-brain-http (STORY-070.15)"
         )
+        # 2026-04-21 — the legacy `tapps-brain` service name was renamed to
+        # `tapps-brain-http` so service + container + DNS hostname all match.
+        assert "tapps-brain" not in services, (
+            "`tapps-brain` service should be renamed to `tapps-brain-http`"
+        )
+        # Same refactor — the separate hive-* stack was retired because
+        # Hive is a feature of tapps-brain, not a service.
+        assert "tapps-hive-db" not in services
+        assert "tapps-hive-migrate" not in services
 
     @pytest.mark.skipif(
         not (_REPO_ROOT / "docker" / "docker-compose.hive.yaml").exists(),
@@ -336,10 +350,10 @@ class TestDockerCompose:
             compose = self._load()
         except Exception:
             pytest.skip("yaml not available or compose file unparseable")
-        env = compose["services"]["tapps-brain"].get("environment", {})
+        env = compose["services"]["tapps-brain-http"].get("environment", {})
         env_dict = dict(e.split("=", 1) for e in env) if isinstance(env, list) else env
         assert any("TAPPS_BRAIN_MCP_HTTP_PORT" in str(k) for k in env_dict), (
-            "TAPPS_BRAIN_MCP_HTTP_PORT must be set in the tapps-brain service"
+            "TAPPS_BRAIN_MCP_HTTP_PORT must be set in the tapps-brain-http service"
         )
 
     @pytest.mark.skipif(
@@ -354,9 +368,9 @@ class TestDockerCompose:
         visual = compose["services"].get("tapps-visual", {})
         depends = visual.get("depends_on", {})
         if isinstance(depends, list):
-            assert "tapps-brain" in depends
+            assert "tapps-brain-http" in depends
         else:
-            assert "tapps-brain" in depends
+            assert "tapps-brain-http" in depends
 
 
 # ---------------------------------------------------------------------------

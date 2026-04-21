@@ -48,22 +48,23 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 
 ### DSN override
 
-The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_dev`.
+The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_brain_dev` (matches the top-level `docker-compose.yml` quick-start service `tapps-brain-db`).
 Override with:
 
 ```bash
-make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps"
+make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps_brain"
 ```
 
-See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full env-var contract** (all variables, examples, required (prod/dev)). Template: [`.env.example`](.env.example).
+See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full env-var contract** (all variables, examples, required (prod/dev)). Template: [`.env.example`](.env.example); Docker deploy template: [`docker/.env.example`](docker/.env.example).
 
 ### Key environment variables
 
 | Variable | Purpose |
 |---|---|
-| `TAPPS_BRAIN_DATABASE_URL` | Postgres DSN for private memory (required). |
-| `TAPPS_BRAIN_HIVE_DSN` | Postgres DSN for shared Hive (overrides `TAPPS_BRAIN_DATABASE_URL` for Hive). |
-| `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending private schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the DB schema is ahead of bundled migrations. Use a dedicated migration job for multi-host deployments. |
+| `TAPPS_BRAIN_DATABASE_URL` | Single Postgres DSN — private memory + (by default) Hive + Federation. In production, connect as the DML-only `tapps_runtime` role created by the migrate sidecar. |
+| `TAPPS_BRAIN_HIVE_DSN` | **Optional advanced override.** Put Hive on a physically separate Postgres. Unset → inherits `TAPPS_BRAIN_DATABASE_URL`. |
+| `TAPPS_BRAIN_FEDERATION_DSN` | **Optional advanced override.** Same rule for Federation. |
+| `TAPPS_BRAIN_AUTO_MIGRATE` | Set `1` to auto-apply pending private-schema migrations at `MemoryStore` startup. Not recommended on the containerized brain (runs as `tapps_runtime`, no DDL). Use the migrate sidecar. |
 | `TAPPS_BRAIN_AGENT_ID` | Agent identity string. |
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path. |
 | `TAPPS_BRAIN_GROUPS` | CSV group memberships (e.g. `dev-pipeline,frontend-guild`). |
@@ -72,7 +73,7 @@ See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full 
 ### CI
 
 GitHub Actions (`ci.yml`) runs the same `pytest` command against a
-`pgvector/pgvector:pg17` service container (credentials: `tapps/tapps/tapps_dev`)
+`pgvector/pgvector:pg17` service container (credentials: `tapps/tapps/tapps_brain_dev`)
 on every push and PR — no Docker needed locally just for CI. The
 `TAPPS_BRAIN_DATABASE_URL` and `TAPPS_TEST_POSTGRES_DSN` env vars are set
 automatically in CI, and `scripts/apply_all_migrations.py` runs before pytest

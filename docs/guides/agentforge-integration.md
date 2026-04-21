@@ -86,14 +86,12 @@ Set these before starting your agent host process:
 # Required (v3)
 export TAPPS_BRAIN_AGENT_ID="agentforge-main"
 export TAPPS_BRAIN_PROJECT_DIR="/home/user/my-project"
-export TAPPS_BRAIN_DATABASE_URL="postgres://tapps:tapps@localhost:5432/tapps"
-
-# Required if using Hive (cross-agent memory sharing)
-export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:tapps@localhost:5432/tapps_hive"
+# Single DSN — Hive + Federation inherit. In production use the DML-only
+# tapps_runtime role (see docs/guides/hive-deployment.md).
+export TAPPS_BRAIN_DATABASE_URL="postgres://tapps_runtime:$RT_PW@localhost:5432/tapps_brain"
 
 # Recommended for production
 export TAPPS_BRAIN_STRICT=1          # raise BrainConfigError if DSN is missing
-export TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true  # apply pending migrations on startup
 
 # Optional — Hive groups and expert domains
 export TAPPS_BRAIN_GROUPS="security,testing"
@@ -227,20 +225,28 @@ See [Hive guide](hive.md) for the full propagation model.
 
 ---
 
-## Connecting to an existing Hive
+## Connecting to an existing tapps-brain deployment
 
-If you have a separate tapps-brain Hive running (e.g. `docker-tapps-hive-db-1`
-on an external network), bridge the network once and point your DSN at it:
+If there's already a tapps-brain stack running on the host (the default `-p tapps-brain` compose project — `tapps-brain-http` container, `tapps-brain_default` network), AgentForge just needs to join that network and point its clients at the brain's HTTP URL. **Do not** connect to the Postgres directly; all memory goes through `http://tapps-brain-http:8080/mcp/` + `/v1/*`.
 
-```bash
-# If using Docker networks — bridge your container to the Hive network
-docker network connect docker_default my-agentforge-container
+```yaml
+# In AgentForge's compose file — join the brain's network:
+networks:
+  tapps-brain-net:
+    external: true
+    name: ${TAPPS_BRAIN_NETWORK:-tapps-brain_default}
 
-# Then in your .env:
-TAPPS_BRAIN_HIVE_DSN=postgres://tapps:tapps@docker-tapps-hive-db-1:5432/tapps_hive
+services:
+  agentforge-main:
+    networks: [agentforge-net, tapps-brain-net]
+    environment:
+      TAPPS_BRAIN_HTTP_URL: http://tapps-brain-http:8080
+      TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN}
 ```
 
-For full Hive setup, external networks, and troubleshooting see
+`TAPPS_BRAIN_AUTH_TOKEN` comes from `tapps-brain/docker/.env` (the value of the same-named variable) — propagate it to AgentForge's `.env` so the two services agree. `TAPPS_BRAIN_HIVE_DSN` is not needed; Hive is a feature of the brain and reached through the same HTTP surface.
+
+For full brain setup, external networks, and troubleshooting see
 [hive-deployment.md](hive-deployment.md).
 
 ---
