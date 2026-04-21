@@ -37,9 +37,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "profile_tool_sets"
-_MCP_SERVER_DIR = (
-    Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server"
-)
+_MCP_SERVER_DIR = Path(__file__).parent.parent.parent / "src" / "tapps_brain" / "mcp_server"
 _MCP_INIT = _MCP_SERVER_DIR / "__init__.py"
 
 # Profiles exposed on the standard server (no operator tools).
