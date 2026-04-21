@@ -107,7 +107,7 @@ class SentenceTransformerProvider:
         if SentenceTransformer is None:
             msg = (
                 "sentence-transformers is required but not installed. "
-                "Install with: pip install tapps-brain"
+                "Install with: pip install 'tapps-brain[all]'"
             )
             raise ImportError(msg)
         self._model_name = model_name
@@ -144,12 +144,22 @@ def get_embedding_provider(
 
     Returns None (with a warning) when sentence-transformers is not installed
     or the model fails to load — e.g. in test environments.
+
+    A missing dependency is logged at WARNING (not DEBUG) so operators see the
+    degradation at default log levels. Semantic recall silently falls back to
+    BM25-only when this returns None; the WARNING makes that observable without
+    requiring DEBUG logging.
     """
     try:
         return SentenceTransformerProvider(model_name=model)
     except ImportError:
-        logger.debug("embedding_provider_unavailable", reason="sentence-transformers not installed")
+        logger.warning(
+            "embedding_provider_unavailable",
+            reason="sentence-transformers not installed",
+            install_hint="pip install 'tapps-brain[all]'",
+            embedding_degraded=True,
+        )
         return None
     except (OSError, RuntimeError, ValueError) as e:
-        logger.warning("embedding_provider_init_failed", error=str(e))
+        logger.warning("embedding_provider_init_failed", error=str(e), embedding_degraded=True)
         return None
