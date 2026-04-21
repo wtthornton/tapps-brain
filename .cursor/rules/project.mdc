@@ -95,7 +95,7 @@ mypy --strict src/tapps_brain/
 
 Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `docs/planning/PLANNING.md` for format conventions and templates. Reference stories in commits: `feat(story-001.3): description`.
 
-**Shipped product / Cursor (non-Ralph) priority:** `docs/planning/open-issues-roadmap.md` — update this (and GitHub issues) when delivery status changes; do **not** edit `.ralph/` for feature bookkeeping unless explicitly requested. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
+**Shipped product / Cursor (non-Ralph) priority:** canonical queue is the [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — update Linear when priority/status changes and keep epic acceptance criteria in `docs/planning/epics/` current; do **not** edit `.ralph/` for feature bookkeeping unless explicitly requested. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*). The legacy `docs/planning/open-issues-roadmap.md` was retired to a pointer on 2026-04-21.
 
 ## Ralph (Autonomous Dev Loop)
 
@@ -104,7 +104,7 @@ This project is configured for Ralph — an autonomous development loop that dri
 ### Ralph Rules
 
 - **Inside a Ralph loop:** `fix_plan.md` is the single source of truth for *which task to run next* in that loop. PROMPT.md defines *how* to work. PROMPT.md must not override fix_plan task order.
-- **Outside Ralph:** use `open-issues-roadmap.md` for delivery order; do not modify `.ralph/` unless syncing for Ralph.
+- **Outside Ralph:** use the [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) for delivery order; do not modify `.ralph/` unless syncing for Ralph.
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
 
@@ -116,7 +116,7 @@ This project is configured for Ralph — an autonomous development loop that dri
   - `.ralphrc`
   - `CLAUDE.md`
   - `.ralph/AGENT.md`
-- **Cursor or other agents (default):** read `AGENTS.md`, `CLAUDE.md`, and `docs/planning/open-issues-roadmap.md` when picking delivery work; Ralph files are optional unless you are running Ralph.
+- **Cursor or other agents (default):** read `AGENTS.md`, `CLAUDE.md`, and the [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) when picking delivery work (epic specs under `docs/planning/epics/` are the acceptance-criteria source); Ralph files are optional unless you are running Ralph.
 - If any file you depend on changes during the session, re-read the changed file(s) before continuing.
 
 ### Ralph Files

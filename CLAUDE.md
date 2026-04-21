@@ -199,7 +199,7 @@ This project is configured for [Ralph for Claude Code](https://github.com/frankb
 ### Ralph Rules
 
 - **Ralph loop only:** `.ralph/fix_plan.md` is the single source of truth for *which task to run next* in that autonomous loop. PROMPT.md defines *how* to work. PROMPT.md must not override fix_plan task order.
-- **Product delivery (humans, Cursor, PRs):** canonical queue is `docs/planning/open-issues-roadmap.md` — update that and GitHub; `.ralph/` is **not packaged** and should not be edited for feature bookkeeping unless explicitly syncing Ralph. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*).
+- **Product delivery (humans, Cursor, PRs):** canonical queue is the [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (system of record for priority and status as of 2026-04-21). Epic design + acceptance criteria still live in [`docs/planning/epics/`](docs/planning/epics/); each Linear issue links back to its epic file. `.ralph/` is **not packaged** and should not be edited for feature bookkeeping unless explicitly syncing Ralph. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*). The legacy [`docs/planning/open-issues-roadmap.md`](docs/planning/open-issues-roadmap.md) was retired to a pointer on 2026-04-21.
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
 - **Do NOT run pytest, ruff, or mypy mid-epic.** QA is deferred to epic boundaries (when the last `- [ ]` in a `##` section is completed). Set `TESTS_STATUS: DEFERRED` for all mid-epic tasks. This saves 2-5 minutes per loop.

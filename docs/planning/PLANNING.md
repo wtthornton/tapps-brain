@@ -13,18 +13,20 @@ Feature intake and triage policy for agent-created `feat` work lives in:
 
 | Context | Source of truth for *what* to do next | Packaged in PyPI / OpenClaw? |
 |--------|----------------------------------------|-------------------------------|
-| Human or Cursor agent implementing shipped features | `open-issues-roadmap.md` (plus epics / GitHub issues) | N/A — this is how delivery is tracked in-repo |
+| Human or Cursor agent implementing shipped features | [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (priority + status); `epics/` for design | N/A — delivery is tracked in Linear |
 | Ralph autonomous loop (Claude Code CLI) | `.ralph/fix_plan.md` for *that loop’s* next unchecked task | **No** — `.ralph/` is dev automation only, not part of the installable package |
 
 **Fix (avoid drift and wrong edits):**
 
-- Feature PRs and non-Ralph agents should **update `open-issues-roadmap.md`** (and issues) when priorities or status change.
+- Feature PRs and non-Ralph agents should **update Linear** when priorities or status change, and update epic files in [`epics/`](epics/) when acceptance criteria or story scope change.
 - They should **not** edit `.ralph/` for bookkeeping unless the maintainer explicitly wants Ralph’s checklist synced.
-- Ralph is allowed to update `.ralph/fix_plan.md` per `.ralph/PROMPT.md` after its own loops; that does not substitute for updating the roadmap for product tracking.
+- Ralph is allowed to update `.ralph/fix_plan.md` per `.ralph/PROMPT.md` after its own loops; that does not substitute for updating Linear for product tracking.
 
 **Update (ongoing):**
 
-- When starting a Ralph campaign on open-issues work, **copy or reconcile** the OPEN-ISSUES block in `fix_plan.md` from `open-issues-roadmap.md` so Ralph’s queue matches delivery intent.
+- When starting a Ralph campaign on Linear-tracked work, **copy or reconcile** the OPEN-ISSUES block in `fix_plan.md` from the relevant Linear issues so Ralph’s queue matches delivery intent.
+
+> **2026-04-21 change:** [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer after repeated drift against `epics/` frontmatter. Linear is now the system of record for priority and status; [`epics/`](epics/) remains the source of truth for acceptance criteria and story design.
 
 ## Optional backlog gating
 
@@ -51,7 +53,7 @@ If none of (a)–(c) apply, **leave these in the backlog** and pick other roadma
 ```
 docs/planning/
 ├── PLANNING.md              ← This file (conventions & templates)
-├── open-issues-roadmap.md   ← Canonical GitHub delivery queue (humans / Cursor / releases)
+├── open-issues-roadmap.md   ← Retired 2026-04-21 — pointer to Linear; canonical queue is now Linear
 ├── STATUS.md                ← Snapshot: schema version, deps, tests, epic vs code (update with releases)
 ├── adr/                     ← Architecture decision records (e.g. EPIC-051 §10 checklist — ADR-001–006)
 └── epics/

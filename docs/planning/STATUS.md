@@ -157,9 +157,11 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
-**Next (canonical queue: [`open-issues-roadmap.md`](open-issues-roadmap.md)):**
-1. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask).
+**Next (canonical queue: [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — system of record as of 2026-04-21):**
+1. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask). Tracked as [TAP-807](https://linear.app/tappscodingagents/issue/TAP-807).
 2. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
+
+The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer on 2026-04-21; see that file for the seeding table and historical change log.
 
 ## READY-036 release gate (2026-03-24)
 
