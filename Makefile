@@ -10,7 +10,10 @@
 # See docs/guides/postgres-dsn.md for all env-var options.
 
 COMPOSE       := docker compose
-HIVE_COMPOSE  := docker compose -f docker/docker-compose.hive.yaml
+# Full stack (Postgres + unified tapps-brain-http + migrate + dashboard).
+# Project name `tapps-brain` keeps the network name `tapps-brain_default`,
+# which AgentForge and other consumers resolve by DNS.
+HIVE_COMPOSE  := docker compose -p tapps-brain -f docker/docker-compose.hive.yaml
 PYTEST        := uv run pytest
 RUFF          := uv run ruff
 MYPY          := uv run mypy
@@ -18,12 +21,12 @@ MYPY          := uv run mypy
 BRAIN_VERSION ?= $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 BRAIN_IMAGE   ?= docker-tapps-brain-http
 
-# DSN used by brain-test and brain-psql
-TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_dev
+# DSN used by brain-test and brain-psql (dev-only Postgres from docker-compose.yml)
+TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck \
-        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-hive-secrets \
+        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-brain-env \
         publish-brain-image
 
 help:  ## Show available targets
@@ -34,21 +37,21 @@ help:  ## Show available targets
 # Docker / Postgres lifecycle
 # ---------------------------------------------------------------------------
 
-brain-up:  ## Start Postgres+pgvector in the background (docker-compose.yml)
+brain-up:  ## Start dev Postgres+pgvector in the background (docker-compose.yml)
 	$(COMPOSE) up -d
 	@echo "Waiting for Postgres to be ready…"
-	@$(COMPOSE) exec tapps-db sh -c \
-	  'for i in $$(seq 1 30); do pg_isready -U tapps -d tapps_dev && exit 0; sleep 1; done; echo "Postgres did not become ready in time"; exit 1'
+	@$(COMPOSE) exec tapps-brain-db sh -c \
+	  'for i in $$(seq 1 30); do pg_isready -U tapps -d tapps_brain_dev && exit 0; sleep 1; done; echo "Postgres did not become ready in time"; exit 1'
 	@echo "Postgres is ready. DSN: $(TAPPS_DEV_DSN)"
 
-brain-down:  ## Stop containers and remove volumes (destructive)
+brain-down:  ## Stop dev containers and remove volumes (destructive)
 	$(COMPOSE) down -v
 
-brain-restart:  ## Restart the Postgres container (keeps volumes)
-	$(COMPOSE) restart tapps-db
+brain-restart:  ## Restart the dev Postgres container (keeps volumes)
+	$(COMPOSE) restart tapps-brain-db
 
-brain-psql:  ## Open a psql shell in the running tapps-db container
-	$(COMPOSE) exec tapps-db psql -U tapps -d tapps_dev
+brain-psql:  ## Open a psql shell in the running dev Postgres container
+	$(COMPOSE) exec tapps-brain-db psql -U tapps -d tapps_brain_dev
 
 brain-migrate:  ## Apply all pending schema migrations (private, hive, federation)
 	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
@@ -88,52 +91,56 @@ brain-qa:  ## Full QA: lint + type + migrations + tests (mirrors CI)
 	$(MAKE) brain-test
 
 # ---------------------------------------------------------------------------
-# Local tapps-brain (Docker) deployment
+# Unified tapps-brain Docker deployment
 #
-# NOTE: These targets keep the legacy `hive-*` prefix for backward compatibility,
-# but what they deploy is the unified tapps-brain-http container — one container
-# that serves private memory + Hive + Federation on the same /mcp/ + /v1/* API,
-# backed by a single Postgres by default. Hive is a *feature* of tapps-brain,
-# not a separate service. Set TAPPS_BRAIN_HIVE_DSN in your env only if you want
-# Hive on a physically separate Postgres (see docs/guides/hive-deployment.md).
+# The `hive-*` target names are kept as aliases for backward compatibility
+# with user scripts, but what they deploy is the unified tapps-brain stack:
+# one Postgres + one tapps-brain-http container (serves private memory + Hive
+# + Federation on the same /mcp/ + /v1/* API) + an nginx dashboard. Hive is
+# a feature of tapps-brain, not a separate service (ADR-007).
+#
+# Required env in docker/.env (see docker/.env.example):
+#   TAPPS_BRAIN_DB_PASSWORD, TAPPS_BRAIN_AUTH_TOKEN, TAPPS_BRAIN_ADMIN_TOKEN
 # ---------------------------------------------------------------------------
 
-hive-build:  ## Build wheel + Docker images for the unified tapps-brain-http stack
+hive-build:  ## Build wheel + Docker images for the unified tapps-brain stack
 	rm -f dist/*.whl dist/*.tar.gz
 	uv build
 	$(HIVE_COMPOSE) build
 
-check-hive-secrets:  ## Abort if default credentials are still in place
-	@if grep -qxF 'tapps' docker/secrets/tapps_hive_password.txt 2>/dev/null; then \
+check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
+	@if [ ! -f docker/.env ]; then \
 	  echo ""; \
-	  echo "ERROR: docker/secrets/tapps_hive_password.txt contains the default password 'tapps'."; \
-	  echo "       Generate a strong password and write it to that file before deploying."; \
-	  echo "       Example: openssl rand -base64 32 > docker/secrets/tapps_hive_password.txt"; \
+	  echo "ERROR: docker/.env is missing."; \
+	  echo "       Copy the template and fill in strong random values:"; \
+	  echo "         cp docker/.env.example docker/.env"; \
+	  echo "         \$$EDITOR docker/.env"; \
 	  echo ""; \
 	  exit 1; \
 	fi
-	@if grep -qxF 'change-me-before-production' docker/secrets/tapps_http_auth_token.txt 2>/dev/null; then \
+	@if grep -q 'REPLACE_ME' docker/.env; then \
 	  echo ""; \
-	  echo "ERROR: docker/secrets/tapps_http_auth_token.txt contains the default token."; \
-	  echo "       Generate a strong token and write it to that file before deploying."; \
-	  echo "       Example: openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt"; \
+	  echo "ERROR: docker/.env still contains REPLACE_ME placeholder values."; \
+	  echo "       Generate real tokens:"; \
+	  echo "         openssl rand -base64 32   # for TAPPS_BRAIN_DB_PASSWORD"; \
+	  echo "         openssl rand -hex 32      # for TAPPS_BRAIN_AUTH_TOKEN + _ADMIN_TOKEN"; \
 	  echo ""; \
 	  exit 1; \
 	fi
 
-hive-deploy:  ## Full deploy to local Docker: build → migrate → restart (safe to rerun)
-	$(MAKE) check-hive-secrets
+hive-deploy:  ## Full deploy: check env → build → migrate → up. Safe to rerun.
+	$(MAKE) check-brain-env
 	$(MAKE) hive-build
-	$(HIVE_COMPOSE) run --rm tapps-hive-migrate
-	$(HIVE_COMPOSE) up -d tapps-brain-http tapps-visual
+	$(HIVE_COMPOSE) up -d
 
-hive-up:  ## Start hive services without rebuilding
-	$(HIVE_COMPOSE) up -d tapps-hive-db tapps-brain-http tapps-visual
+hive-up:  ## Start the unified brain stack without rebuilding
+	$(MAKE) check-brain-env
+	$(HIVE_COMPOSE) up -d
 
-hive-down:  ## Stop hive containers (keeps volumes)
+hive-down:  ## Stop brain containers (keeps volumes — data preserved)
 	$(HIVE_COMPOSE) down
 
-hive-logs:  ## Tail logs from running hive services
+hive-logs:  ## Tail logs from running brain services
 	$(HIVE_COMPOSE) logs -f
 
 hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints, tears down)

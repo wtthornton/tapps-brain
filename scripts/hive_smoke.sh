@@ -1,38 +1,45 @@
 #!/usr/bin/env bash
-# scripts/hive_smoke.sh — End-to-end smoke test for the Docker hive stack.
+# scripts/hive_smoke.sh — End-to-end smoke test for the unified tapps-brain stack.
 # (EPIC-067 STORY-067.5)
 #
-# Boots the full compose stack using test credentials, waits for health probes,
-# asserts all endpoints return correct responses, then tears the stack down.
+# Boots the full compose stack using temporary .env credentials, waits for
+# health probes, asserts all endpoints return correct responses, then tears
+# the stack down (including volumes).
 #
 # Usage:
 #   bash scripts/hive_smoke.sh     # from repo root
 #   make hive-smoke                # via Makefile target
 #
-# The script temporarily writes non-default values to docker/secrets/ for the
-# duration of the run and restores them on exit. This bypasses the credential
-# guard intentionally — smoke tests are not production deployments.
+# The script writes docker/.env with throwaway values for the duration of the
+# run. If a real docker/.env exists, it is backed up and restored on exit.
 
 set -euo pipefail
 
 COMPOSE_FILE="docker/docker-compose.hive.yaml"
-COMPOSE="docker compose -f ${COMPOSE_FILE}"
+# Use a throwaway project name so this smoke run cannot collide with a live
+# `tapps-brain` deployment on the same host.
+COMPOSE="docker compose -p tapps-brain-smoke -f ${COMPOSE_FILE}"
 
 # Use non-default ports to avoid clashing with a running live stack.
 export TAPPS_VISUAL_PORT="${TAPPS_VISUAL_PORT:-18088}"
-ADAPTER_PORT="${TAPPS_BRAIN_HTTP_PORT:-18080}"
+ADAPTER_PORT="${TAPPS_HTTP_PORT:-18080}"
+export TAPPS_HTTP_PORT="${ADAPTER_PORT}"
+# Keep operator MCP off the host loopback port used in dev (8090) — pick 18090.
+export TAPPS_OPERATOR_MCP_PORT="${TAPPS_OPERATOR_MCP_PORT:-18090}"
 
-# Non-default credentials for this smoke run.
-SMOKE_PASSWORD="smoke-$(openssl rand -hex 8 2>/dev/null || echo testonly)"
-SMOKE_TOKEN="smoke-$(openssl rand -hex 8 2>/dev/null || echo testonly)"
+# Non-default credentials for this smoke run (written to docker/.env below).
+SMOKE_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-password)"
+SMOKE_AUTH_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-auth)"
+SMOKE_ADMIN_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-admin)"
 
 MAX_WAIT=90   # seconds to wait for each health probe
 PASS=0
 FAIL=0
 
-echo "==> tapps-brain hive smoke test"
+echo "==> tapps-brain unified-stack smoke test"
 echo "    Visual port  : ${TAPPS_VISUAL_PORT}"
 echo "    Adapter port : ${ADAPTER_PORT}"
+echo "    Operator MCP : ${TAPPS_OPERATOR_MCP_PORT}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,48 +94,47 @@ assert_json_field_nonempty() {
 }
 
 # ---------------------------------------------------------------------------
-# Secret file management — write smoke credentials, restore on exit
+# docker/.env management — back up the real file, write smoke values, restore
+# on exit.
 # ---------------------------------------------------------------------------
 
-PW_FILE="docker/secrets/tapps_hive_password.txt"
-TOKEN_FILE="docker/secrets/tapps_http_auth_token.txt"
-
-PW_BACKUP=""
-TOKEN_BACKUP=""
-if [[ -f "$PW_FILE" ]]; then
-    PW_BACKUP=$(cat "$PW_FILE")
-fi
-if [[ -f "$TOKEN_FILE" ]]; then
-    TOKEN_BACKUP=$(cat "$TOKEN_FILE")
+ENV_FILE="docker/.env"
+ENV_BACKUP=""
+if [[ -f "$ENV_FILE" ]]; then
+    ENV_BACKUP="${ENV_FILE}.smoke-backup.$$"
+    cp "$ENV_FILE" "$ENV_BACKUP"
 fi
 
-restore_secrets() {
-    if [[ -n "$PW_BACKUP" ]]; then
-        echo "$PW_BACKUP" > "$PW_FILE"
-    fi
-    if [[ -n "$TOKEN_BACKUP" ]]; then
-        echo "$TOKEN_BACKUP" > "$TOKEN_FILE"
+restore_env() {
+    if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
+        mv "$ENV_BACKUP" "$ENV_FILE"
+    else
+        rm -f "$ENV_FILE"
     fi
 }
 
-write_smoke_secrets() {
-    mkdir -p docker/secrets
-    echo "$SMOKE_PASSWORD" > "$PW_FILE"
-    echo "$SMOKE_TOKEN"   > "$TOKEN_FILE"
+write_smoke_env() {
+    cat > "$ENV_FILE" <<EOF
+# Smoke-test throwaway — do NOT commit. Restored on exit.
+TAPPS_BRAIN_DB_PASSWORD=${SMOKE_PASSWORD}
+TAPPS_BRAIN_AUTH_TOKEN=${SMOKE_AUTH_TOKEN}
+TAPPS_BRAIN_ADMIN_TOKEN=${SMOKE_ADMIN_TOKEN}
+TAPPS_HTTP_PORT=${ADAPTER_PORT}
+TAPPS_VISUAL_PORT=${TAPPS_VISUAL_PORT}
+TAPPS_OPERATOR_MCP_PORT=${TAPPS_OPERATOR_MCP_PORT}
+EOF
 }
 
 # ---------------------------------------------------------------------------
-# Cleanup: tear down stack, restore secrets, print results
+# Cleanup: tear down stack, restore .env, print results
 # ---------------------------------------------------------------------------
 
 cleanup() {
     local exit_code=$?
     echo ""
     echo "==> Tearing down stack…"
-    TAPPS_HIVE_PASSWORD="${SMOKE_PASSWORD}" \
-    TAPPS_HTTP_PORT="${ADAPTER_PORT}" \
-        ${COMPOSE} down -v --remove-orphans 2>/dev/null || true
-    restore_secrets
+    ${COMPOSE} down -v --remove-orphans 2>/dev/null || true
+    restore_env
     echo ""
     echo "Results: ${PASS} passed, ${FAIL} failed"
     if [[ $FAIL -gt 0 || $exit_code -ne 0 ]]; then
@@ -142,23 +148,13 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 
 echo ""
-echo "==> Writing smoke credentials…"
-write_smoke_secrets
+echo "==> Writing smoke docker/.env…"
+write_smoke_env
 
-echo "==> Building and starting hive stack…"
-# Boot the DB first, run migrations, then start the HTTP adapter and visual.
-TAPPS_HIVE_PASSWORD="${SMOKE_PASSWORD}" \
-TAPPS_HTTP_PORT="${ADAPTER_PORT}" \
-    ${COMPOSE} up -d tapps-hive-db
-
-echo "==> Running hive migrations…"
-TAPPS_HIVE_PASSWORD="${SMOKE_PASSWORD}" \
-TAPPS_HTTP_PORT="${ADAPTER_PORT}" \
-    ${COMPOSE} run --rm tapps-hive-migrate
-
-TAPPS_HIVE_PASSWORD="${SMOKE_PASSWORD}" \
-TAPPS_HTTP_PORT="${ADAPTER_PORT}" \
-    ${COMPOSE} up -d tapps-brain-http tapps-visual
+echo "==> Building and starting unified brain stack…"
+# `up -d` brings up tapps-brain-db → tapps-brain-migrate (one-shot) →
+# tapps-brain-http → tapps-visual, respecting the depends_on health gates.
+${COMPOSE} up -d --build
 
 # ---------------------------------------------------------------------------
 # Wait

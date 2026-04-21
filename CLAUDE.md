@@ -86,7 +86,7 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 | `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending *private* schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the live DB schema exceeds the max bundled version (downgrade guard). **Not recommended for multi-host deployments** — use a one-shot migration job instead. |
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Auto-run Postgres schema migrations on startup |
 
-**Docker deployment:** `docker/docker-compose.hive.yaml` (pgvector/pgvector:pg17), `docker/init-hive.sql`, `docker/Dockerfile.migrate`. See `docs/guides/hive-deployment.md` and `docs/guides/agentforge-integration.md`.
+**Docker deployment:** `docker/docker-compose.hive.yaml` brings up the unified stack — one `tapps-brain-db` (pgvector/pg17) + one `tapps-brain-http` (serves private memory + Hive + Federation on `/mcp/` + `/v1/*` at :8080) + a one-shot `tapps-brain-migrate` sidecar + optional `tapps-visual` dashboard. Secrets/config live in `docker/.env` (template: `docker/.env.example`). `docker/init-db.sql` bootstraps the `vector` extension on first DB start. Use `make hive-deploy` from repo root. See `docs/guides/hive-deployment.md` and `docs/guides/agentforge-integration.md`.
 
 ### Source layout: `src/tapps_brain/`
 

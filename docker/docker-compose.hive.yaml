@@ -1,72 +1,114 @@
+# tapps-brain — unified Docker deployment (2026 architecture, ADR-007).
+#
+# ONE container (tapps-brain-http) serves private memory + Hive + Federation
+# on the same /mcp/ + /v1/* API, backed by ONE Postgres addressed by
+# TAPPS_BRAIN_DATABASE_URL. Hive is a feature of tapps-brain, not a separate
+# service — there is no separate hive-db, hive-dsn, or hive-migrate. See
+# docs/guides/hive.md and docs/guides/hive-deployment.md.
+#
+# Setup:
+#   1. cp docker/.env.example docker/.env
+#   2. Fill in docker/.env with strong values:
+#        TAPPS_BRAIN_DB_PASSWORD=$(openssl rand -base64 32)
+#        TAPPS_BRAIN_AUTH_TOKEN=$(openssl rand -hex 32)
+#        TAPPS_BRAIN_ADMIN_TOKEN=$(openssl rand -hex 32)
+#   3. From repo root:
+#        docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --build
+#
+# Endpoints after start:
+#   http://localhost:8080   — HTTP data plane + /mcp/ + /admin/*
+#                             (public auth: Bearer TAPPS_BRAIN_AUTH_TOKEN)
+#   http://127.0.0.1:8090   — operator MCP transport (admin-only, loopback)
+#                             (admin auth: Bearer TAPPS_BRAIN_ADMIN_TOKEN)
+#   http://localhost:8088   — nginx dashboard (reads /snapshot on the brain)
+#
+# The file name keeps the legacy `.hive.` suffix for backward compatibility
+# with scripts and docs that reference it; the file's CONTENTS are the 2026
+# unified shape.
+
 services:
-  tapps-hive-db:
+  tapps-brain-db:
     image: pgvector/pgvector:pg17
+    container_name: tapps-brain-db
     environment:
-      POSTGRES_DB: tapps_hive
+      POSTGRES_DB: tapps_brain
       POSTGRES_USER: tapps
-      POSTGRES_PASSWORD_FILE: /run/secrets/tapps_hive_password
+      POSTGRES_PASSWORD: ${TAPPS_BRAIN_DB_PASSWORD:?set TAPPS_BRAIN_DB_PASSWORD in docker/.env}
     volumes:
-      - tapps-hive-pgdata:/var/lib/postgresql/data
-      - ./init-hive.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - tapps-brain-pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_hive"]
+      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_brain"]
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "${TAPPS_HIVE_PORT:-5432}:5432"
-    secrets:
-      - tapps_hive_password
     restart: unless-stopped
 
-  # STORY-070.15: unified service — one container, both transports.
-  # Port 8080: HTTP data-plane + /mcp + /admin/* (FastAPI/Uvicorn).
-  # Port 8090: operator Streamable-HTTP MCP transport (FastMCP).
-  # Both are controlled by `tapps-brain serve`; set TAPPS_BRAIN_MCP_HTTP_PORT=0
-  # to disable the MCP transport and run HTTP-only.
-  tapps-brain:
+  # One-shot migration sidecar — applies private + Hive schema to the single
+  # unified DSN before the HTTP adapter starts. Exits on completion.
+  tapps-brain-migrate:
+    image: docker-tapps-brain-migrate:latest
+    container_name: tapps-brain-migrate
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.migrate
+    environment:
+      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+    depends_on:
+      tapps-brain-db:
+        condition: service_healthy
+    command:
+      - "maintenance"
+      - "migrate-hive"
+      - "--dsn"
+      - "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+    restart: "no"
+
+  # The unified brain: HTTP data plane + /mcp/ + admin API on :8080, operator
+  # MCP transport on :8090 (loopback by default). Private memory, Hive, and
+  # Federation all share one DSN — set TAPPS_BRAIN_HIVE_DSN or
+  # TAPPS_BRAIN_FEDERATION_DSN only for advanced split-DB deployments.
+  tapps-brain-http:
     image: docker-tapps-brain-http:latest
+    container_name: tapps-brain-http
     build:
       context: ..
       dockerfile: docker/Dockerfile.http
     environment:
-      TAPPS_BRAIN_HIVE_DSN: "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"
-      TAPPS_BRAIN_DATABASE_URL: "${TAPPS_BRAIN_DATABASE_URL:-}"
+      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
       TAPPS_BRAIN_AUTO_MIGRATE: "1"
+      TAPPS_BRAIN_HIVE_AUTO_MIGRATE: "1"
       TAPPS_BRAIN_HTTP_HOST: "0.0.0.0"
       TAPPS_BRAIN_HTTP_PORT: "8080"
-      # STORY-070.15: enable operator MCP transport on port 8090.
-      # Requires TAPPS_BRAIN_ADMIN_TOKEN — operator MCP refuses to start without it.
-      # Set to 0 (or remove) to run HTTP-only (no operator MCP).
       TAPPS_BRAIN_MCP_HTTP_PORT: "${TAPPS_OPERATOR_MCP_PORT:-8090}"
       TAPPS_BRAIN_MCP_HOST: "0.0.0.0"
-      TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE: /run/secrets/tapps_http_auth_token
-      # EPIC-070 STORY-070.6: data plane + /mcp + /admin/* all served by the
-      # same FastAPI app on 8080 (previous 8088 admin port collapsed).
-      TAPPS_BRAIN_AUTH_TOKEN: "${TAPPS_BRAIN_AUTH_TOKEN:-}"
-      TAPPS_BRAIN_ADMIN_TOKEN: "${TAPPS_BRAIN_ADMIN_TOKEN:-}"
+      TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
+      TAPPS_BRAIN_ADMIN_TOKEN: ${TAPPS_BRAIN_ADMIN_TOKEN:?set TAPPS_BRAIN_ADMIN_TOKEN in docker/.env}
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
       TAPPS_BRAIN_STRICT: "1"
+      # Single-container / single-host deployments connect as the DB owner.
+      # Production multi-tenant deployments should instead create the
+      # tapps_runtime role (see src/tapps_brain/migrations/roles/001_db_roles.sql)
+      # and point TAPPS_BRAIN_DATABASE_URL at it. For this unified dev/prod-on-
+      # one-host pattern, the privileged-role override is the documented path.
+      TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
     ports:
-      # HTTP data-plane: /mcp, data-plane, and /admin/* share one Uvicorn worker.
       - "${TAPPS_HTTP_PORT:-8080}:8080"
-      # TAP-551: Operator MCP transport bound to loopback by default — not
-      # reachable from the internet without an explicit override.
-      # To expose externally (e.g. behind a reverse proxy), set:
-      #   TAPPS_OPERATOR_MCP_BIND=0.0.0.0
+      # Operator MCP bound to loopback by default (TAP-551).
       - "${TAPPS_OPERATOR_MCP_BIND:-127.0.0.1}:${TAPPS_OPERATOR_MCP_PORT:-8090}:8090"
-    secrets:
-      - tapps_http_auth_token
     depends_on:
-      tapps-hive-db:
+      tapps-brain-db:
         condition: service_healthy
+      tapps-brain-migrate:
+        condition: service_completed_successfully
     healthcheck:
-      # Aggregate: healthy only when BOTH transports respond.
+      # Public HTTP data plane + /mcp/ on :8080 is the only externally-
+      # reachable surface that matters for dependent services. /health on
+      # :8090 now requires admin auth (2026 hardening), so it's not a clean
+      # probe from inside the container.
       test:
         - "CMD-SHELL"
-        - >-
-          python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
-          && python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""
       interval: 10s
       timeout: 5s
       retries: 5
@@ -74,38 +116,22 @@ services:
     restart: unless-stopped
 
   tapps-visual:
+    image: docker-tapps-visual:latest
+    container_name: tapps-visual
     build:
       context: ..
       dockerfile: docker/Dockerfile.visual
+    environment:
+      # Visual entrypoint injects this token into the nginx /snapshot proxy
+      # so the dashboard can call the authed brain endpoint without exposing
+      # the token to the browser. Same token as the public data plane.
+      TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
     ports:
       - "${TAPPS_VISUAL_PORT:-8088}:80"
-    secrets:
-      - tapps_http_auth_token
     depends_on:
-      tapps-brain:
+      tapps-brain-http:
         condition: service_healthy
     restart: unless-stopped
 
-  tapps-hive-migrate:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.migrate
-    environment:
-      TAPPS_BRAIN_HIVE_DSN: "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"
-      # Private store DSN for wiring HttpAdapter /snapshot endpoint (STORY-065.1).
-      # Set this to the private-memory Postgres DSN so the HTTP adapter can inject
-      # a live MemoryStore into GET /snapshot at container startup.
-      TAPPS_BRAIN_DATABASE_URL: "${TAPPS_BRAIN_DATABASE_URL:-}"
-    depends_on:
-      tapps-hive-db:
-        condition: service_healthy
-    command: ["maintenance", "migrate-hive", "--dsn", "postgres://tapps:${TAPPS_HIVE_PASSWORD:-tapps}@tapps-hive-db:5432/tapps_hive"]
-
 volumes:
-  tapps-hive-pgdata:
-
-secrets:
-  tapps_hive_password:
-    file: ./secrets/tapps_hive_password.txt
-  tapps_http_auth_token:
-    file: ./secrets/tapps_http_auth_token.txt
+  tapps-brain-pgdata:

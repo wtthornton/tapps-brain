@@ -12,17 +12,18 @@
 #   make brain-down  # stop and remove containers + volumes
 
 services:
-  tapps-db:
+  tapps-brain-db:
     image: pgvector/pgvector:pg17
+    container_name: tapps-brain-dev-db
     environment:
-      POSTGRES_DB: tapps_dev
+      POSTGRES_DB: tapps_brain_dev
       POSTGRES_USER: tapps
       POSTGRES_PASSWORD: tapps
     volumes:
-      - tapps-pgdata:/var/lib/postgresql/data
-      - ./docker/init-hive.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - tapps-brain-dev-pgdata:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_dev"]
+      test: ["CMD-SHELL", "pg_isready -U tapps -d tapps_brain_dev"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -31,4 +32,4 @@ services:
       - "${TAPPS_DEV_PORT:-5432}:5432"
 
 volumes:
-  tapps-pgdata:
+  tapps-brain-dev-pgdata:
