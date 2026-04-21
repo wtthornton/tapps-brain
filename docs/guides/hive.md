@@ -1,14 +1,14 @@
 # Hive Guide: Cross-Agent Memory Sharing
 
-> **v3 (current):** The Hive backend is **PostgreSQL-only** (ADR-007). Set
-> `TAPPS_BRAIN_HIVE_DSN=postgres://…` to activate it. SQLite Hive support
-> was removed in v3. Sections below that still reference `hive.db` or
-> `HiveStore()` describe v2 behaviour; the underlying concepts (namespaces,
-> propagation, conflict resolution) are unchanged. See
-> [Hive Deployment Guide](hive-deployment.md) and
-> [postgres-dsn.md](postgres-dsn.md) for v3 configuration.
+> **Hive is a feature of tapps-brain, not a separate service.** The `hive_*` tables live in the same Postgres as `private_memories` (ADR-007), are served by the same `tapps-brain-http` container, and are reached through the same `/mcp/` + `/v1/*` API surface as private memory. You don't deploy "a Hive" — you deploy tapps-brain, and Hive is on by default.
+>
+> **Default runtime:** one container, one Postgres DSN (`TAPPS_BRAIN_DATABASE_URL`), one API. Private memory goes into `private_memories`, Hive writes go into `hive_memories` — same database, same connection pool.
+>
+> **Advanced:** set `TAPPS_BRAIN_HIVE_DSN` to put Hive on a *separate* Postgres (same API, different physical database). Use this only when you need distinct backup cadences, tenant isolation, or capacity separation.
+>
+> **v3 (current):** PostgreSQL-only (ADR-007). SQLite Hive support was removed. Sections below that still reference `hive.db`, `HiveStore()`, or `~/.tapps-brain/hive/` describe v2 behaviour for context only — the concepts (namespaces, propagation, conflict resolution) are unchanged. See [Hive Deployment Guide](hive-deployment.md) and [postgres-dsn.md](postgres-dsn.md) for v3 configuration.
 
-The Hive is tapps-brain's multi-agent shared brain. It enables agents to share knowledge through a central PostgreSQL store with namespace isolation, conflict resolution, and configurable propagation.
+The Hive is tapps-brain's cross-agent memory layer. Agents share knowledge through Hive namespaces (`universal`, per-domain, per-group) with conflict resolution and configurable propagation — all within the same brain deployment.
 
 > **Hive vs. Federation**: Federation shares memories across **projects**. The Hive shares memories across **agents** within or across projects. They solve different problems and can be used together. **Decision guide:** [`hive-vs-federation.md`](hive-vs-federation.md).
 
@@ -37,33 +37,44 @@ The Hive is tapps-brain's multi-agent shared brain. It enables agents to share k
 
 ## Overview
 
+Agents hit **one** brain deployment (`tapps-brain-http`, one container per host). Writes land in the same Postgres; routing into `private_memories` vs `hive_memories` (and which Hive namespace) is decided per-write by `agent_scope`.
+
 ```
 ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  Agent A    │  │  Agent B    │  │  Agent C    │
-│  (local     │  │  (local     │  │  (local     │
-│   store)    │  │   store)    │  │   store)    │
+│  Agent A    │  │  Agent B    │  │  Agent C    │     ── all share one /mcp/, one auth token ──
 └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                │                │
-       │   propagate    │   propagate    │   propagate
-       │   (scope:      │   (scope:      │   (scope:
-       │    domain/     │    domain/     │    domain/
-       │    hive)       │    hive)       │    hive)
+       │ save(...,      │ save(...,      │ save(...,
+       │  agent_scope=  │  agent_scope=  │  agent_scope=
+       │   "private")   │   "domain")    │   "hive")
        ▼                ▼                ▼
-┌─────────────────────────────────────────────────┐
-│                   Hive Store                     │
-│            ~/.tapps-brain/hive/hive.db           │
-│                                                  │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │universal │ │ agent-a  │ │ agent-b          │ │
-│  │namespace │ │namespace │ │ namespace        │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              tapps-brain-http  (one container)              │
+│                                                             │
+│  Routing:                                                   │
+│   • "private"     → private_memories (agent's own row)      │
+│   • "domain"      → hive_memories, namespace = profile      │
+│   • "hive"        → hive_memories, namespace = "universal"  │
+│   • "group:<n>"   → hive_memories, namespace = <n>          │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │   Postgres   (one DB by default — TAPPS_BRAIN_       │   │
+│  │               DATABASE_URL; ADR-007)                 │   │
+│  │                                                      │   │
+│  │   private_memories   ← per-(project_id, agent_id)    │   │
+│  │   hive_memories      ← universal / domain / group ns │   │
+│  │   federation_*       ← cross-project layer           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+(Advanced: set TAPPS_BRAIN_HIVE_DSN to put hive_memories on a separate
+ Postgres — same API, different physical database. Default is one DSN.)
 ```
 
 Key properties:
+- **One brain, one API, one DB by default** — Hive is not a separate container or service. The `hive_*` tables share the connection pool with `private_memories`.
 - **PostgreSQL (pgvector + tsvector)** — MVCC concurrent reads/writes, HNSW vector search, GIN full-text search ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md))
 - **Namespace isolation** — each agent writes to its own namespace; cross-namespace search available
-- **Backward compatible core model** — local single-agent behavior remains valid. In practice, whether Hive is attached depends on interface/runtime configuration.
+- **Backward compatible core model** — local single-agent behavior remains valid. Whether Hive rows are *written* depends on `agent_scope` on each save; whether Hive rows are *read into recall* depends on interface/runtime configuration (see below).
 - **Thread-safe** — connection pooling via `psycopg_pool`; Postgres MVCC handles concurrent writes
 
 ### Who attaches `HiveStore`?
@@ -82,7 +93,15 @@ Profile `hive` settings (tiers, conflict policy, `recall_weight`) apply only whe
 
 ### Storage
 
-The Hive uses **PostgreSQL** (`TAPPS_BRAIN_HIVE_DSN`) via `PostgresHiveBackend` with:
+Hive uses the same **PostgreSQL** as private memory via `PostgresHiveBackend`. DSN selection:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `TAPPS_BRAIN_DATABASE_URL` | Primary DSN — private memory + (by default) Hive + Federation | **Required** |
+| `TAPPS_BRAIN_HIVE_DSN` | **Optional** — put Hive on a separate Postgres (e.g. for tenant/backup isolation) | Falls back to `TAPPS_BRAIN_DATABASE_URL` |
+
+Whichever DSN is used, the backend is identical:
+
 - **pgvector HNSW** (`m=16, ef_construction=200`, cosine) for semantic search
 - **tsvector + GIN** for full-text search across namespaces
 - **LISTEN/NOTIFY** for real-time change notification (`hive_write_revision` / `hive_wait_write`)

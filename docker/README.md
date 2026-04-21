@@ -1,14 +1,16 @@
 # Docker Artifacts for tapps-brain
 
-Quick reference for Docker-based Hive deployment.
+Quick reference for the Docker deployment of tapps-brain. The stack is a **unified** tapps-brain-http container (serves private memory, Hive, and Federation on the same `/mcp/` + `/v1/*` API) + Postgres + an optional nginx dashboard.
+
+> **Hive is a feature of tapps-brain, not a separate service.** The filenames and Makefile targets below keep the legacy `hive-*` / `hive.yaml` prefix, but what you're deploying is **the brain** — Hive tables live in the same Postgres as `private_memories` by default. Set `TAPPS_BRAIN_HIVE_DSN` to a different DSN only when you want Hive on a separate physical database (advanced — see [hive-deployment.md](../docs/guides/hive-deployment.md#advanced-split-db-deployment-optional)).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.hive.yaml` | Reference Compose file: pgvector DB + HTTP adapter + migration sidecar + visual frontend |
-| `Dockerfile.http` | Slim image that runs `tapps-brain serve` (HttpAdapter on :8080) |
-| `Dockerfile.migrate` | Slim image that runs `tapps-brain maintenance migrate-hive` |
+| `docker-compose.hive.yaml` | Reference Compose file: Postgres (pgvector) + unified `tapps-brain-http` + migration sidecar + nginx dashboard |
+| `Dockerfile.http` | Slim image that runs `tapps-brain serve` — HTTP adapter + `/mcp/` on :8080, operator MCP on :8090 |
+| `Dockerfile.migrate` | Slim image that runs `tapps-brain maintenance migrate-hive` (applies Hive schema to whichever DSN you point it at) |
 | `Dockerfile.visual` | nginx image serving the brain-visual static frontend |
 | `nginx-visual.conf` | nginx config: static files + `/snapshot` proxy to `tapps-brain-http` |
 | `nginx-visual-tls.conf` | nginx config variant with HTTPS/TLS (see [hive-tls.md](../docs/guides/hive-tls.md)) |

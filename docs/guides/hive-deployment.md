@@ -1,72 +1,84 @@
 # Hive Deployment Guide
 
-This guide covers deploying the tapps-brain Hive (shared Postgres brain) in
-various environments.
+> **Hive is a feature of tapps-brain, not a separate service.** "Deploying Hive" means deploying tapps-brain — the `hive_*` tables live in the same Postgres as `private_memories` and are served by the same `tapps-brain-http` container over the same `/mcp/` + `/v1/*` API. This guide covers the three deployment shapes: **unified** (default), **split-DB** (advanced), and **Kubernetes**.
 
-## Quick Start
+## Quick Start (unified — recommended default)
 
-The fastest path uses Docker Compose with the reference files in `docker/`.
+One Postgres, one brain container, one API. Hive rides along automatically because the brain falls back to `TAPPS_BRAIN_DATABASE_URL` when `TAPPS_BRAIN_HIVE_DSN` is unset.
 
 ```bash
 # 1. Create secrets
 mkdir -p docker/secrets
 echo "your-secure-password" > docker/secrets/tapps_hive_password.txt
+openssl rand -base64 32 > docker/secrets/tapps_http_auth_token.txt
 
-# 2. Configure environment
-cp docker/.env.example docker/.env
-# Edit docker/.env — set TAPPS_HIVE_PASSWORD to match your secret
-
-# 3. Start the stack
+# 2. Start Postgres + tapps-brain-http + dashboard
 docker compose -f docker/docker-compose.hive.yaml up -d
 
-# 4. Verify the DB is healthy
+# 3. Verify
 docker compose -f docker/docker-compose.hive.yaml ps
+curl http://localhost:8080/health       # {"status":"ok","service":"tapps-brain",...}
 ```
 
-The migration sidecar (`tapps-hive-migrate`) runs once, applies pending schema
-migrations, and exits. The database container stays running.
+The migration sidecar (`tapps-hive-migrate`) runs once, applies pending schema migrations, and exits. The `tapps-brain-http` container serves both private memory and Hive from the same DSN; there is no "Hive service" to start separately.
 
-## Single-Host Deployment
+## Single-Host Deployment (default: unified DSN)
 
 For a single host (development, small team, or personal use):
 
 1. Run the Docker Compose stack as shown above.
-2. Point your tapps-brain config at the local Postgres:
+2. Point tapps-brain at the Postgres instance — **one DSN is enough**:
 
    ```bash
-   export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:changeme@localhost:5432/tapps_hive"
+   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps:changeme@localhost:5432/tapps_brain"
    ```
 
-3. Optionally enable auto-migration so the schema stays current when you
-   upgrade tapps-brain:
+   Private memory, Hive, and Federation will all use this DSN. You do **not** need to set `TAPPS_BRAIN_HIVE_DSN`.
+
+3. Optionally enable auto-migration so the schema stays current when you upgrade:
 
    ```bash
-   export TAPPS_BRAIN_HIVE_AUTO_MIGRATE=true
+   export TAPPS_BRAIN_AUTO_MIGRATE=1        # private schema
+   export TAPPS_BRAIN_HIVE_AUTO_MIGRATE=1   # hive schema (same DB by default)
    ```
 
-4. Run the MCP server or CLI as usual. Hive queries will use Postgres
-   (SQLite Hive was removed in v3; ADR-007).
+4. Run the MCP server or CLI as usual. All writes and reads go through the same `tapps-brain-http` process over `/mcp/` + `/v1/*`. (SQLite Hive was removed in v3; ADR-007.)
 
-## Multi-Host Deployment
+## Advanced: split-DB deployment (optional)
 
-For teams sharing a single Hive across multiple machines:
+Only use this when you need Hive on a **separate** Postgres from private memory — typical reasons: distinct backup cadence, tenant isolation, capacity separation across teams, or a managed HA Postgres for the shared layer while private stays on local disk.
 
-1. Deploy pgvector on a reachable host (or managed Postgres with the `vector`
-   extension enabled).
-2. Run the migration container once against the remote DSN:
+1. Provision two pgvector databases (or two schemas on the same instance).
+2. Run migrations against **both**:
 
    ```bash
+   tapps-brain maintenance migrate              # private (uses TAPPS_BRAIN_DATABASE_URL)
    tapps-brain maintenance migrate-hive \
-     --dsn "postgres://tapps:SECRET@db-host:5432/tapps_hive"
+     --dsn "postgres://tapps:SECRET@hive-host:5432/tapps_hive"
    ```
 
-3. On each client machine, set:
+3. Set both DSNs on the brain container:
 
    ```bash
-   export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:SECRET@db-host:5432/tapps_hive"
+   export TAPPS_BRAIN_DATABASE_URL="postgres://tapps:SECRET@private-host:5432/tapps_brain"
+   export TAPPS_BRAIN_HIVE_DSN="postgres://tapps:SECRET@hive-host:5432/tapps_hive"
    ```
 
-4. Each client's local Postgres store remains independent (scoped by `(project_id, agent_id)`); only the shared Hive layer is remote.
+4. The API surface does not change — agents still hit the same `/mcp/` + `/v1/*` on the same container. Only the physical database for Hive rows is different.
+
+## Multi-Host Deployment (teams sharing one brain)
+
+For teams, the normal pattern is **one brain deployment, many agent hosts** — not one Hive DB with many brains. Agents on each workstation/server point their MCP clients at the shared brain URL:
+
+1. Deploy `tapps-brain-http` + Postgres on a reachable host (single-host or split-DB shape above).
+2. On each client, point the MCP client at the shared brain:
+
+   ```bash
+   export TAPPS_BRAIN_BASE_URL="https://brain.internal:8080"
+   export TAPPS_BRAIN_AUTH_TOKEN="<from docker/secrets/tapps_http_auth_token.txt>"
+   ```
+
+3. Private rows are isolated per `(project_id, agent_id)`; Hive rows are the shared layer. Both live in the brain's Postgres — clients do not connect to Postgres directly.
 
 ## Kubernetes Patterns
 

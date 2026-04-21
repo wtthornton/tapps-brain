@@ -72,11 +72,13 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 
 **Key environment variables:**
 
+> **Hive is a feature of tapps-brain, not a separate service.** By default, private memory + Hive + Federation all live in **one** Postgres addressed by `TAPPS_BRAIN_DATABASE_URL`, and are served by the same `tapps-brain-http` container over the same `/mcp/` + `/v1/*` API surface. The `*_DSN` variables below are advanced opt-ins for splitting one of those data planes onto a **separate** Postgres — set them only if you have a concrete reason (e.g. multi-tenant isolation, separate backup cadence). When unset, Hive and Federation fall back to `TAPPS_BRAIN_DATABASE_URL`.
+
 | Variable | Purpose |
 |----------|---------|
-| `TAPPS_BRAIN_DATABASE_URL` | Unified Postgres DSN (used for private memory, fallback for Hive). Required at startup — `MemoryStore.__init__` raises `ValueError` if unset. |
-| `TAPPS_BRAIN_HIVE_DSN` | Postgres DSN for shared Hive (overrides `TAPPS_BRAIN_DATABASE_URL` for Hive only) |
-| `TAPPS_BRAIN_FEDERATION_DSN` | Postgres DSN for Federation |
+| `TAPPS_BRAIN_DATABASE_URL` | Unified Postgres DSN for private memory + (by default) Hive + Federation. Required at startup — `MemoryStore.__init__` raises `ValueError` if unset. |
+| `TAPPS_BRAIN_HIVE_DSN` | **Optional.** Postgres DSN for Hive only, used when you want Hive on a separate database from private memory. Defaults to `TAPPS_BRAIN_DATABASE_URL`. |
+| `TAPPS_BRAIN_FEDERATION_DSN` | **Optional.** Postgres DSN for Federation only. Defaults to `TAPPS_BRAIN_DATABASE_URL`. |
 | `TAPPS_BRAIN_AGENT_ID` | Agent identity string |
 | `TAPPS_BRAIN_PROJECT_DIR` | Project root path |
 | `TAPPS_BRAIN_GROUPS` | CSV group memberships (e.g. `dev-pipeline,frontend-guild`) |

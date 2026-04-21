@@ -88,10 +88,17 @@ brain-qa:  ## Full QA: lint + type + migrations + tests (mirrors CI)
 	$(MAKE) brain-test
 
 # ---------------------------------------------------------------------------
-# Local hive (Docker) deployment
+# Local tapps-brain (Docker) deployment
+#
+# NOTE: These targets keep the legacy `hive-*` prefix for backward compatibility,
+# but what they deploy is the unified tapps-brain-http container — one container
+# that serves private memory + Hive + Federation on the same /mcp/ + /v1/* API,
+# backed by a single Postgres by default. Hive is a *feature* of tapps-brain,
+# not a separate service. Set TAPPS_BRAIN_HIVE_DSN in your env only if you want
+# Hive on a physically separate Postgres (see docs/guides/hive-deployment.md).
 # ---------------------------------------------------------------------------
 
-hive-build:  ## Build wheel + Docker images (cleans dist first to avoid stale wheels)
+hive-build:  ## Build wheel + Docker images for the unified tapps-brain-http stack
 	rm -f dist/*.whl dist/*.tar.gz
 	uv build
 	$(HIVE_COMPOSE) build

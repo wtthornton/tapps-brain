@@ -32,7 +32,9 @@ Cross-agent memory sharing with namespace isolation, 4 conflict resolution polic
 The **brain-visual** dashboard shows your memory store at a glance — tier mix, scorecard health, retrieval stack, Hive status, agent topology, tag cloud, and diagnostics — no code required. It polls the live `/snapshot` endpoint exposed by the tapps-brain HTTP adapter.
 
 ```bash
-# bring up the full hive stack (Postgres + HTTP adapter + nginx dashboard)
+# bring up the brain (Postgres + the unified tapps-brain-http container + nginx dashboard).
+# The HTTP adapter serves private memory, Hive, and Federation on the same
+# /mcp/ + /v1/* API; Hive is a feature of the brain, not a separate service.
 docker compose -f docker/docker-compose.hive.yaml up -d --build
 
 # open the dashboard
@@ -486,24 +488,28 @@ Search results are ranked by four weighted signals (configurable per profile):
 
 ### Hive — multi-agent shared brain
 
-Cross-agent memory sharing via a PostgreSQL store with namespace isolation (ADR-007):
+Hive is a **feature of tapps-brain**, not a separate service. The `hive_*` tables live in the same Postgres as `private_memories` and `federation_*` (ADR-007), are served by the same `tapps-brain-http` container, and are reached through the same `/mcp/` + `/v1/*` API as private memory — writes with `agent_scope="hive"` (or `"domain"` / `"group:<n>"`) land in Hive namespaces; `agent_scope="private"` stays on the agent's row.
 
 ```
 ┌──────────┐  ┌──────────┐  ┌──────────┐
-│ Agent A  │  │ Agent B  │  │ Agent C  │
-│ (local)  │  │ (local)  │  │ (local)  │
+│ Agent A  │  │ Agent B  │  │ Agent C  │     ── same /mcp/, same auth token ──
 └────┬─────┘  └────┬─────┘  └────┬─────┘
      │ scope:      │ scope:      │ scope:
      │ domain      │ domain      │ hive
      ▼             ▼             ▼
-┌────────────────────────────────────────┐
-│             Hive Store                 │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│  │ agent-a │ │ agent-b │ │universal│  │
-│  │namespace│ │namespace│ │namespace│  │
-│  └─────────┘ └─────────┘ └─────────┘  │
-└────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│            tapps-brain-http  (one container)           │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Postgres (one DB by default — ADR-007)          │  │
+│  │   ├─ private_memories     (agent A, B, C rows)   │  │
+│  │   ├─ hive_memories        (agent-a / agent-b /   │  │
+│  │   │                        universal namespaces) │  │
+│  │   └─ federation_*         (cross-project layer)  │  │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
 ```
+
+For advanced deployments you can put Hive on a separate Postgres via `TAPPS_BRAIN_HIVE_DSN` — same API, different physical database. Default is one DSN, one DB.
 
 4 conflict policies: `supersede` · `source_authority` · `confidence_max` · `last_write_wins`
 
