@@ -3,7 +3,7 @@
   "name": "io.github.wtthornton/tapps-brain",
   "title": "tapps-brain",
   "description": "Persistent cross-session memory system for AI coding assistants with BM25 ranking and exponential decay",
-  "version": "3.10.2",
+  "version": "3.10.3",
   "websiteUrl": "https://github.com/wtthornton/tapps-brain",
   "repository": {
     "url": "https://github.com/wtthornton/tapps-brain",

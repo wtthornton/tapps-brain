@@ -10,6 +10,16 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.10.3] — 2026-04-21
+
+### Fixed
+- `TappsBrainClient` / `AsyncTappsBrainClient` MCP `initialize` handshake (TAP-747): send the same auth + tenant headers (`Authorization: Bearer …`, `X-Project-Id`, `X-Tapps-Agent`) as regular `tools/call` requests, POST to the canonical `/mcp/` URL (trailing slash), and treat any non-2xx response — including 3xx redirects — as a hard error. Before this patch the client posted a bare `Content-Type` + `Accept` pair to `/mcp`; against an auth-gated FastMCP deployment the request 307-redirected to `/mcp/`, the redirect hop had no auth and returned 401, and `raise_for_status()` (which doesn't raise on 3xx) silently returned `None` for the session id. Stateless tool calls continued to work only because `_post_tool` reattaches auth on each call. Any consumer that rewrites `/mcp` → `/mcp/` upfront to avoid the redirect (e.g. AgentForge's TAP-742 workaround) immediately tripped the 401. Consumers can drop that path-rewrite workaround after pulling v3.10.3.
+
+### Compatibility
+- Client-only patch. No server, API, schema, or wire-format changes. `openapi.json` version bumped for manifest consistency only.
+
+---
+
 ## [3.10.2] — 2026-04-21
 
 ### Added

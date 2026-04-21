@@ -170,54 +170,78 @@ def _build_headers(
     return headers
 
 
-def _do_initialize(http_client: Any, base: str) -> str | None:
-    """Perform the MCP ``initialize`` handshake against ``base/mcp``.
+_INITIALIZE_PAYLOAD: dict[str, Any] = {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": _MCP_PROTOCOL_VERSION,
+        "capabilities": {},
+        "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
+    },
+}
+
+
+def _initialize_headers(project_id: str, agent_id: str, auth_token: str | None) -> dict[str, str]:
+    # MCP streamable-HTTP requires both JSON and SSE in Accept; auth headers
+    # must be present so the handshake itself passes the server's tenant gate
+    # (see TAP-743 / TAP-747 follow-up: bare-header initialize was 307→401).
+    headers = _build_headers(project_id, agent_id, auth_token)
+    headers["Accept"] = "application/json, text/event-stream"
+    return headers
+
+
+_HTTP_OK_MIN = 200
+_HTTP_OK_MAX = 300
+
+
+def _raise_for_initialize_status(resp: Any) -> None:
+    # Redirects (3xx) are not raised by raise_for_status — which silently
+    # turned a /mcp → /mcp/ 307 into "no session" before. Fail loudly.
+    status = resp.status_code
+    if _HTTP_OK_MIN <= status < _HTTP_OK_MAX:
+        return
+    snippet = (resp.text or "")[:200]
+    raise RuntimeError(f"MCP initialize failed: HTTP {status} from {resp.request.url} — {snippet}")
+
+
+def _do_initialize(
+    http_client: Any,
+    base: str,
+    project_id: str,
+    agent_id: str,
+    auth_token: str | None,
+) -> str | None:
+    """Perform the MCP ``initialize`` handshake against ``base/mcp/``.
+
+    Sends the same tenant + auth headers as regular tools/call requests so
+    that auth-gated FastMCP deployments admit the handshake (TAP-747). Uses
+    the canonical trailing-slash URL (``/mcp/``) to avoid Starlette's 307
+    redirect dropping the POST body.
 
     Returns the ``Mcp-Session-Id`` header value from the server's response, or
     ``None`` when the server runs in stateless mode (no session header issued).
-    Raises ``httpx.HTTPStatusError`` if the handshake itself fails.
+    Raises ``RuntimeError`` on any non-2xx response, including 3xx redirects.
     """
-    payload = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": _MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
-            },
-        }
-    ).encode()
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-    }
-    resp = http_client.post(f"{base}/mcp", headers=headers, content=payload)
-    resp.raise_for_status()
+    payload = json.dumps(_INITIALIZE_PAYLOAD).encode()
+    headers = _initialize_headers(project_id, agent_id, auth_token)
+    resp = http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    _raise_for_initialize_status(resp)
     return resp.headers.get("mcp-session-id")
 
 
-async def _async_do_initialize(http_client: Any, base: str) -> str | None:
+async def _async_do_initialize(
+    http_client: Any,
+    base: str,
+    project_id: str,
+    agent_id: str,
+    auth_token: str | None,
+) -> str | None:
     """Async version of :func:`_do_initialize`."""
-    payload = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": _MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "tapps-brain-client", "version": "1.0"},
-            },
-        }
-    ).encode()
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-    }
-    resp = await http_client.post(f"{base}/mcp", headers=headers, content=payload)
-    resp.raise_for_status()
+    payload = json.dumps(_INITIALIZE_PAYLOAD).encode()
+    headers = _initialize_headers(project_id, agent_id, auth_token)
+    resp = await http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    _raise_for_initialize_status(resp)
     return resp.headers.get("mcp-session-id")
 
 
@@ -528,7 +552,13 @@ class TappsBrainClient:
         """
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         if not self._initialized:
-            self._mcp_session_id = _do_initialize(self._http_client, base)
+            self._mcp_session_id = _do_initialize(
+                self._http_client,
+                base,
+                self._project_id,
+                self._agent_id,
+                self._auth_token,
+            )
             self._initialized = True
         extra_headers: dict[str, str] | None = (
             {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
@@ -549,7 +579,13 @@ class TappsBrainClient:
         except Exception as exc:
             if _is_missing_session_error(exc):
                 # Session expired — reinitialize and retry once.
-                self._mcp_session_id = _do_initialize(self._http_client, base)
+                self._mcp_session_id = _do_initialize(
+                    self._http_client,
+                    base,
+                    self._project_id,
+                    self._agent_id,
+                    self._auth_token,
+                )
                 extra_headers = (
                     {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
                 )
@@ -771,7 +807,13 @@ class AsyncTappsBrainClient:
         """
         base = _http_base(self._url.replace("mcp+http://", "http://", 1))
         if not self._initialized:
-            self._mcp_session_id = await _async_do_initialize(self._http_client, base)
+            self._mcp_session_id = await _async_do_initialize(
+                self._http_client,
+                base,
+                self._project_id,
+                self._agent_id,
+                self._auth_token,
+            )
             self._initialized = True
         extra_headers: dict[str, str] | None = (
             {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
@@ -792,7 +834,13 @@ class AsyncTappsBrainClient:
         except Exception as exc:
             if _is_missing_session_error(exc):
                 # Session expired — reinitialize and retry once.
-                self._mcp_session_id = await _async_do_initialize(self._http_client, base)
+                self._mcp_session_id = await _async_do_initialize(
+                    self._http_client,
+                    base,
+                    self._project_id,
+                    self._agent_id,
+                    self._auth_token,
+                )
                 extra_headers = (
                     {"Mcp-Session-Id": self._mcp_session_id} if self._mcp_session_id else None
                 )

@@ -541,6 +541,8 @@ def _mock_init_response(session_id: str | None) -> MagicMock:
     """Build a mock httpx response for the MCP initialize handshake."""
     resp = MagicMock()
     resp.is_success = True
+    resp.status_code = 200
+    resp.text = "{}"
     resp.raise_for_status = MagicMock()
     headers: dict[str, str] = {}
     if session_id is not None:
@@ -678,6 +680,8 @@ def test_sync_initialize_skipped_on_subsequent_calls() -> None:
 def _async_mock_init_response(session_id: str | None) -> AsyncMock:
     resp = AsyncMock()
     resp.is_success = True
+    resp.status_code = 200
+    resp.text = "{}"
     resp.raise_for_status = MagicMock()
     headers: dict[str, str] = {}
     if session_id is not None:
@@ -747,3 +751,131 @@ async def test_async_stateless_server_no_session_header() -> None:
     tool_call = client._http_client.post.call_args_list[1]
     headers: dict[str, str] = tool_call.kwargs["headers"]
     assert "Mcp-Session-Id" not in headers
+
+
+# ---------------------------------------------------------------------------
+# TAP-747 — initialize handshake must carry auth + use /mcp/ + fail loudly
+# ---------------------------------------------------------------------------
+
+
+def test_sync_initialize_attaches_auth_and_tenant_headers() -> None:
+    """Regression: initialize must send Authorization + X-Project-Id + X-Tapps-Agent.
+
+    Before TAP-747, initialize posted a bare Content-Type/Accept pair; against
+    an auth-gated FastMCP the handshake 307-redirected to /mcp/ with no auth
+    and the redirect hop returned 401. _do_initialize silently returned None.
+    """
+    client = _make_uninitialised_sync_client(auth_token="sekret-token")
+    init_resp = _mock_init_response("sid")
+    tool_resp = _mock_success({"key": "k"})
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("q")
+
+    init_headers: dict[str, str] = client._http_client.post.call_args_list[0].kwargs["headers"]
+    assert init_headers.get("Authorization") == "Bearer sekret-token"
+    assert init_headers.get("X-Project-Id") == "p1"
+    assert init_headers.get("X-Tapps-Agent") == "a1"
+    assert "application/json" in init_headers.get("Accept", "")
+    assert "text/event-stream" in init_headers.get("Accept", "")
+
+
+def test_sync_initialize_posts_to_trailing_slash() -> None:
+    """Regression: initialize must POST to /mcp/ (trailing slash — TAP-743/747)."""
+    client = _make_uninitialised_sync_client()
+    init_resp = _mock_init_response("sid")
+    tool_resp = _mock_success({"key": "k"})
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("q")
+
+    init_url = client._http_client.post.call_args_list[0].args[0]
+    assert init_url.endswith("/mcp/"), (
+        f"Expected initialize POST to end with '/mcp/' (TAP-747), got {init_url!r}"
+    )
+    assert not init_url.endswith("/mcp/mcp/"), (
+        f"TAP-509 regression — path must not double to /mcp/mcp/, got {init_url!r}"
+    )
+
+
+def test_sync_initialize_raises_on_non_2xx() -> None:
+    """Regression: non-2xx (incl. 3xx redirects) on initialize must raise loudly.
+
+    Before TAP-747, httpx's raise_for_status() did NOT raise on 3xx, so a
+    307 redirect to /mcp/ (without auth) returned None for the session id
+    and masked the underlying 401 from the redirect hop.
+    """
+    client = _make_uninitialised_sync_client()
+    bad_resp = MagicMock()
+    bad_resp.status_code = 307
+    bad_resp.text = "Temporary Redirect"
+    bad_resp.headers = {}
+    bad_resp.request = MagicMock(url="http://brain:8080/mcp")
+    client._http_client.post.side_effect = [bad_resp]
+
+    with pytest.raises(RuntimeError, match="MCP initialize failed: HTTP 307"):
+        client.recall("q")
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_attaches_auth_and_tenant_headers() -> None:
+    """Async regression: same auth/tenant header requirement as sync (TAP-747)."""
+    client = _make_uninitialised_async_client(auth_token="async-tok")
+    init_resp = _async_mock_init_response("sid")
+    tool_resp = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    await client.recall("q")
+
+    init_headers: dict[str, str] = client._http_client.post.call_args_list[0].kwargs["headers"]
+    assert init_headers.get("Authorization") == "Bearer async-tok"
+    assert init_headers.get("X-Project-Id") == "p1"
+    assert init_headers.get("X-Tapps-Agent") == "a1"
+    assert "text/event-stream" in init_headers.get("Accept", "")
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_posts_to_trailing_slash() -> None:
+    """Async regression: initialize must POST to /mcp/ (TAP-747)."""
+    client = _make_uninitialised_async_client()
+    init_resp = _async_mock_init_response("sid")
+    tool_resp = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    await client.recall("q")
+
+    init_url = client._http_client.post.call_args_list[0].args[0]
+    assert init_url.endswith("/mcp/")
+    assert not init_url.endswith("/mcp/mcp/")
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_raises_on_non_2xx() -> None:
+    """Async regression: non-2xx on initialize must raise (TAP-747)."""
+    client = _make_uninitialised_async_client()
+    bad_resp = AsyncMock()
+    bad_resp.status_code = 401
+    bad_resp.text = '{"error":"forbidden"}'
+    bad_resp.headers = {}
+    bad_resp.request = MagicMock(url="http://brain:8080/mcp/")
+    client._http_client.post.side_effect = [bad_resp]
+
+    with pytest.raises(RuntimeError, match="MCP initialize failed: HTTP 401"):
+        await client.recall("q")
+
+
+def test_sync_initialize_without_auth_token_omits_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When no auth_token is configured, initialize must not send Authorization."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    client = _make_uninitialised_sync_client()  # no auth_token
+    init_resp = _mock_init_response("sid")
+    tool_resp = _mock_success({"key": "k"})
+    client._http_client.post.side_effect = [init_resp, tool_resp]
+
+    client.recall("q")
+
+    init_headers: dict[str, str] = client._http_client.post.call_args_list[0].kwargs["headers"]
+    assert "Authorization" not in init_headers
+    assert init_headers.get("X-Project-Id") == "p1"  # tenant headers still present
