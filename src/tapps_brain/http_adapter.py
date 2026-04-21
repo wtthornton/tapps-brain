@@ -418,6 +418,15 @@ def _collect_metrics(
             float(_pool_stats.get("pool_saturation", 0.0)),
             "Fraction of Hive pool max_size currently in use (0.0-1.0).",
         )
+        # TAP-729: expose whether live pool stats were successfully read.
+        # 0.0 means the pool is not open or get_stats() raised — operators
+        # can alert on this to detect observability gaps.
+        gauge(
+            "tapps_brain_pool_stats_available",
+            1.0 if _pool_stats.get("pool_stats_available") else 0.0,
+            "1 if pool stats were successfully read from psycopg_pool; "
+            "0 if the pool is not open or get_stats() raised.",
+        )
 
     # TAP-655: per-project counter for missing HNSW indexes detected at startup.
     # Non-zero means migration 002 was not applied on that project's DB.

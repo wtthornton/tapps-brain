@@ -298,10 +298,14 @@ class PostgresConnectionManager:
         - ``pool_available`` — idle connections ready to serve requests
         - ``pool_saturation`` — fraction of max_size in use (0.0 - 1.0)
         - ``idle_timeout`` — configured idle eviction timeout in seconds
+        - ``pool_stats_available`` — ``True`` when live stats were successfully
+          read from the pool; ``False`` when the pool is not yet open or when
+          ``get_stats()`` raised.  Operators can use this flag to distinguish
+          "healthy idle pool" from "observability gap".
 
         When the pool has not been opened yet (e.g. lazy init not triggered)
-        ``pool_size`` and ``pool_available`` will be 0 and ``pool_saturation``
-        will be 0.0.
+        ``pool_size`` and ``pool_available`` will be 0, ``pool_saturation``
+        will be 0.0, and ``pool_stats_available`` will be ``False``.
         """
         base: dict[str, Any] = {
             "pool_min": self._min_size,
@@ -312,6 +316,7 @@ class PostgresConnectionManager:
             "idle_timeout": self._idle_timeout,
             "max_waiting": self._max_waiting,
             "max_lifetime": self._max_lifetime,
+            "pool_stats_available": False,
         }
         if self._pool is None:
             return base
@@ -325,10 +330,20 @@ class PostgresConnectionManager:
                     "pool_size": size,
                     "pool_available": available,
                     "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
+                    "pool_stats_available": True,
                 }
             )
-        except (AttributeError, TypeError, ValueError, KeyError, ZeroDivisionError):
-            pass  # pool stats unavailable; return defaults
+        except Exception as exc:  # noqa: BLE001
+            # get_stats() can raise if the pool is in a transient bad state or
+            # if the psycopg_pool API has changed (e.g. renamed method).  Log
+            # at DEBUG so operators can detect the observability gap without
+            # noisy ERROR-level alerts on a non-critical path.
+            logger.debug(
+                "postgres_connection.pool_stats_unavailable",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            # pool_stats_available stays False; size/saturation stay at 0.
         return base
 
     @contextmanager
