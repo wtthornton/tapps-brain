@@ -704,23 +704,54 @@ class MemoryStore:
 
     @staticmethod
     def _build_llm_judge(model: str) -> Any:  # noqa: ANN401
-        """Instantiate the best available LLM judge (lazy, no hard dependency)."""
+        """Instantiate the best available LLM judge (lazy, no hard dependency).
+
+        Distinguishes between two failure modes:
+        - ``ImportError``: the optional dependency (anthropic/openai) is not installed
+          — silent graceful degradation.
+        - Any other exception (e.g. bad API key, network error): a real configuration
+          problem — logged at WARNING so operators can act on it.
+        """
+        anthropic_available = False
+        openai_available = False
+
         try:
             from tapps_brain.evaluation import AnthropicJudge
-
-            return AnthropicJudge(model=model)
         except ImportError:
             pass  # anthropic optional dependency not installed
-        except Exception:
-            logger.warning("anthropic_judge_init_failed", exc_info=True)
+        else:
+            anthropic_available = True
+            try:
+                return AnthropicJudge(model=model)
+            except Exception as exc:
+                logger.warning(
+                    "store.llm_judge.anthropic_init_failed",
+                    error=str(exc),
+                    model=model,
+                    exc_info=True,
+                )
+
         try:
             from tapps_brain.evaluation import OpenAIJudge
-
-            return OpenAIJudge()
         except ImportError:
             pass  # openai optional dependency not installed
-        except Exception:
-            logger.warning("openai_judge_init_failed", exc_info=True)
+        else:
+            openai_available = True
+            try:
+                return OpenAIJudge()
+            except Exception as exc:
+                logger.warning(
+                    "store.llm_judge.openai_init_failed",
+                    error=str(exc),
+                    exc_info=True,
+                )
+
+        if not (anthropic_available or openai_available):
+            logger.info(
+                "store.llm_judge.extras_not_installed",
+                hint="Install the 'anthropic' or 'openai' extra to enable LLM flywheel scoring.",
+            )
+
         return None
 
     @property
