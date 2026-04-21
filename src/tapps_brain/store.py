@@ -1845,6 +1845,7 @@ class MemoryStore:
         time_field: str = "created_at",
         include_group_memories: bool = False,
         max_group_results: int = 20,
+        memory_class: str | None = None,
     ) -> list[MemoryEntry]:
         """Search via FTS5, with optional post-filters.
 
@@ -1868,6 +1869,9 @@ class MemoryStore:
             include_group_memories: When True and the store has declared groups,
                 also search group namespaces in the Hive (STORY-056.5).
             max_group_results: Maximum results per group namespace (STORY-056.5).
+            memory_class: TAP-733 — when set, restrict to entries with this semantic
+                class (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
+                Pushed into the SQL WHERE clause for DB-level pre-filtering.
         """
         self._metrics.increment("store.search")
         rm_increment_recall_total()
@@ -1888,6 +1892,7 @@ class MemoryStore:
                 until=until,
                 time_field=time_field,
                 as_of=as_of,
+                memory_class=memory_class,
             )
 
             if tier is not None:

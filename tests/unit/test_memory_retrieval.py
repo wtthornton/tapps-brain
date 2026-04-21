@@ -1140,3 +1140,250 @@ class TestGraphCentrality:
         # Score with cleaned index: key-b alone → centrality 0.0 (no shared after removing key-a)
         score = MemoryRetriever._compute_graph_centrality(entry, entity_index, total_entries=5)
         assert score == 0.0  # key-a removed from index, no shared keys remain for it
+
+
+# ---------------------------------------------------------------------------
+# TAP-733: MemoryFilter pre-filter tests
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryFilter:
+    """Unit tests for MemoryFilter dataclass and _apply_filters (TAP-733)."""
+
+    def _make_entry_with_class(
+        self,
+        key: str,
+        value: str = "test value",
+        *,
+        tier: MemoryTier = MemoryTier.pattern,
+        tags: list[str] | None = None,
+        memory_class: str | None = None,
+        memory_group: str | None = None,
+        confidence: float = 0.8,
+    ) -> MemoryEntry:
+        e = _make_entry(key, value, tier=tier, tags=tags or [], confidence=confidence)
+        # Use model_copy to set memory_class (it's a Pydantic model field)
+        return e.model_copy(update={"memory_class": memory_class, "memory_group": memory_group})
+
+    # ------------------------------------------------------------------
+    # Import tests
+    # ------------------------------------------------------------------
+
+    def test_memory_filter_importable(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter  # noqa: F401
+
+    def test_memory_filter_defaults(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter
+
+        f = MemoryFilter()
+        assert f.tier is None
+        assert f.memory_class is None
+        assert f.tags == []
+        assert f.tags_any == []
+        assert f.memory_group is None
+        assert f.min_confidence is None
+
+    # ------------------------------------------------------------------
+    # _apply_filters: no-op
+    # ------------------------------------------------------------------
+
+    def test_empty_filter_is_noop(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        entries = [_make_entry("a"), _make_entry("b"), _make_entry("c")]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter())
+        assert result == entries
+
+    # ------------------------------------------------------------------
+    # _apply_filters: tier
+    # ------------------------------------------------------------------
+
+    def test_filter_by_tier_keeps_matching(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        arch = _make_entry("arch-entry", tier=MemoryTier.architectural)
+        pattern = _make_entry("pattern-entry", tier=MemoryTier.pattern)
+        entries = [arch, pattern]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier=MemoryTier.architectural))
+        assert [e.key for e in result] == ["arch-entry"]
+
+    def test_filter_by_tier_string(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        arch = _make_entry("arch-entry", tier=MemoryTier.architectural)
+        pattern = _make_entry("pattern-entry", tier=MemoryTier.pattern)
+        entries = [arch, pattern]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier="architectural"))
+        assert [e.key for e in result] == ["arch-entry"]
+
+    def test_filter_by_tier_no_match_returns_empty(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        entries = [_make_entry("a", tier=MemoryTier.pattern)]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier=MemoryTier.context))
+        assert result == []
+
+    # ------------------------------------------------------------------
+    # _apply_filters: tags (AND)
+    # ------------------------------------------------------------------
+
+    def test_filter_by_tags_and(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e1 = _make_entry("e1", tags=["pgvector", "hnsw", "critical"])
+        e2 = _make_entry("e2", tags=["pgvector"])  # missing hnsw
+        e3 = _make_entry("e3", tags=["hnsw"])  # missing pgvector
+        entries = [e1, e2, e3]
+        result = MemoryRetriever._apply_filters(
+            entries, MemoryFilter(tags=["pgvector", "hnsw"])
+        )
+        assert [e.key for e in result] == ["e1"]
+
+    def test_filter_by_tags_single(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e1 = _make_entry("e1", tags=["pgvector"])
+        e2 = _make_entry("e2", tags=["other"])
+        result = MemoryRetriever._apply_filters([e1, e2], MemoryFilter(tags=["pgvector"]))
+        assert [e.key for e in result] == ["e1"]
+
+    # ------------------------------------------------------------------
+    # _apply_filters: tags_any (OR)
+    # ------------------------------------------------------------------
+
+    def test_filter_by_tags_any(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e1 = _make_entry("e1", tags=["pgvector"])
+        e2 = _make_entry("e2", tags=["hnsw"])
+        e3 = _make_entry("e3", tags=["other"])
+        result = MemoryRetriever._apply_filters(
+            [e1, e2, e3], MemoryFilter(tags_any=["pgvector", "hnsw"])
+        )
+        assert {e.key for e in result} == {"e1", "e2"}
+
+    def test_filter_tags_and_plus_tags_any_combined(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        # tags (AND) AND tags_any (OR) must BOTH be satisfied
+        e1 = _make_entry("e1", tags=["critical", "pgvector", "hnsw"])
+        e2 = _make_entry("e2", tags=["critical", "pgvector"])  # missing hnsw, has pgvector
+        e3 = _make_entry("e3", tags=["hnsw"])  # missing critical
+        result = MemoryRetriever._apply_filters(
+            [e1, e2, e3],
+            MemoryFilter(tags=["critical"], tags_any=["hnsw"]),
+        )
+        # Only e1 has both 'critical' AND any of ['hnsw']
+        assert [e.key for e in result] == ["e1"]
+
+    # ------------------------------------------------------------------
+    # _apply_filters: memory_class
+    # ------------------------------------------------------------------
+
+    def test_filter_by_memory_class(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        incident = self._make_entry_with_class("inc1", memory_class="incident")
+        guidance = self._make_entry_with_class("gui1", memory_class="guidance")
+        unclassified = self._make_entry_with_class("unc1", memory_class=None)
+        entries = [incident, guidance, unclassified]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(memory_class="incident"))
+        assert [e.key for e in result] == ["inc1"]
+
+    def test_filter_by_memory_class_decision(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        decision = self._make_entry_with_class("dec1", memory_class="decision")
+        guidance = self._make_entry_with_class("gui1", memory_class="guidance")
+        result = MemoryRetriever._apply_filters(
+            [decision, guidance], MemoryFilter(memory_class="decision")
+        )
+        assert [e.key for e in result] == ["dec1"]
+
+    # ------------------------------------------------------------------
+    # _apply_filters: min_confidence
+    # ------------------------------------------------------------------
+
+    def test_filter_by_min_confidence(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        high = _make_entry("high", confidence=0.9)
+        low = _make_entry("low", confidence=0.3)
+        entries = [high, low]
+        result = MemoryRetriever._apply_filters(entries, MemoryFilter(min_confidence=0.7))
+        assert [e.key for e in result] == ["high"]
+
+    def test_filter_min_confidence_boundary(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e = _make_entry("exact", confidence=0.7)
+        # At boundary — should be included (>=)
+        result = MemoryRetriever._apply_filters([e], MemoryFilter(min_confidence=0.7))
+        assert [x.key for x in result] == ["exact"]
+
+    # ------------------------------------------------------------------
+    # _apply_filters: memory_group
+    # ------------------------------------------------------------------
+
+    def test_filter_by_memory_group(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e1 = self._make_entry_with_class("e1", memory_group="team-a")
+        e2 = self._make_entry_with_class("e2", memory_group="team-b")
+        e3 = self._make_entry_with_class("e3", memory_group=None)
+        result = MemoryRetriever._apply_filters(
+            [e1, e2, e3], MemoryFilter(memory_group="team-a")
+        )
+        assert [e.key for e in result] == ["e1"]
+
+    # ------------------------------------------------------------------
+    # MemoryRetriever.search() honours memory_filter parameter
+    # ------------------------------------------------------------------
+
+    def test_search_with_tier_filter(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        arch = _make_entry("arch-key", "architectural decision", tier=MemoryTier.architectural)
+        pat = _make_entry("pattern-key", "pattern note", tier=MemoryTier.pattern)
+        store = _make_store([arch, pat])
+
+        retriever = MemoryRetriever()
+        results = retriever.search(
+            "architecture",
+            store,
+            memory_filter=MemoryFilter(tier=MemoryTier.architectural),
+        )
+        result_keys = {r.entry.key for r in results}
+        assert "arch-key" in result_keys
+        assert "pattern-key" not in result_keys
+
+    def test_search_with_no_filter_returns_all(self) -> None:
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        e1 = _make_entry("e1", "something about postgres")
+        e2 = _make_entry("e2", "something about redis")
+        store = _make_store([e1, e2])
+
+        retriever = MemoryRetriever()
+        # No filter → both candidates eligible (store.search returns all)
+        results_unfiltered = retriever.search("something", store)
+        results_empty_filter = retriever.search("something", store, memory_filter=MemoryFilter())
+        assert len(results_unfiltered) == len(results_empty_filter)
+
+    def test_search_filter_narrows_pool_before_scoring(self) -> None:
+        """MemoryFilter reduces the candidate pool before BM25 scoring (TAP-733)."""
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        incident = _make_entry("inc", "bug fix postgres", tier=MemoryTier.context)
+        arch = _make_entry("arc", "bug fix architecture", tier=MemoryTier.architectural)
+        store = _make_store([incident, arch])
+
+        retriever = MemoryRetriever()
+        results = retriever.search(
+            "bug fix",
+            store,
+            memory_filter=MemoryFilter(tier=MemoryTier.context),
+        )
+        result_keys = {r.entry.key for r in results}
+        assert "inc" in result_keys
+        assert "arc" not in result_keys

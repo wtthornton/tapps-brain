@@ -298,6 +298,15 @@ class MemoryEntry(BaseModel):
         default=None,
         description="ISO-8601 UTC timestamp when status was set to 'stale'.",
     )
+    # TAP-733: Semantic type classification for pre-filter recall.
+    memory_class: Literal["incident", "guidance", "decision", "convention"] | None = Field(
+        default=None,
+        description=(
+            "Semantic type: incident=fixed bug, guidance=best practice, "
+            "decision=arch choice, convention=team norm. "
+            "Used as a hard pre-filter in MemoryRetriever when set."
+        ),
+    )
 
     @field_validator("temporal_sensitivity", mode="before")
     @classmethod

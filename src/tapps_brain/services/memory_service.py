@@ -149,12 +149,29 @@ def brain_recall(
     query: str,
     max_results: int = 5,
     include_stale: bool = False,
+    filter_tier: str | None = None,
+    filter_tags: list[str] | None = None,
+    filter_tags_any: list[str] | None = None,
+    filter_memory_class: str | None = None,
 ) -> list[Any]:
-    """Recall memories matching *query*.
+    """Recall memories matching a query with optional structured pre-filters (TAP-733).
 
     By default, entries with ``status=stale`` or ``status=superseded`` are
     excluded.  Pass ``include_stale=True`` to include them (useful for
     diagnostic or audit queries).
+
+    Args:
+        store: MemoryStore instance.
+        project_id: Project identifier.
+        agent_id: Agent identifier.
+        query: Search query string.
+        max_results: Maximum number of results to return.
+        include_stale: Include stale/superseded entries in results.
+        filter_tier: Restrict to entries with this tier (e.g. ``"architectural"``).
+        filter_tags: ALL tags must be present on each matching entry.
+        filter_tags_any: ANY one of these tags must be present.
+        filter_memory_class: Restrict to entries with this semantic class
+            (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
     """
     from tapps_brain.models import MemoryStatus
     from tapps_brain.otel_tracer import start_mcp_tool_span
@@ -162,7 +179,15 @@ def brain_recall(
     _excluded_statuses = {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
 
     with start_mcp_tool_span("brain_recall"):
-        entries = store.search(query)
+        entries = store.search(
+            query,
+            tier=filter_tier,
+            tags=filter_tags_any or None,  # store.search tags= is OR (any)
+            memory_class=filter_memory_class,
+        )
+        # Apply ALL-tags filter in Python (store.search tags= uses OR semantics)
+        if filter_tags:
+            entries = [e for e in entries if all(t in e.tags for t in filter_tags)]
         results: list[Any] = []
         for entry in entries:
             if len(results) >= max_results:
@@ -182,6 +207,8 @@ def brain_recall(
                     "confidence": entry.confidence,
                     "tags": list(entry.tags) if entry.tags else [],
                 }
+                if getattr(entry, "memory_class", None) is not None:
+                    item["memory_class"] = entry.memory_class
                 failed = getattr(entry, "failed_approaches", None)
                 if failed:
                     item["failed_approaches"] = list(failed)
