@@ -362,6 +362,66 @@ def test_run_health_check_integrity_orphaned_and_expired(
     assert any("valid_at" in w.lower() or "expired" in w.lower() for w in report.warnings)
 
 
+def test_run_health_check_expired_entries_tz_naive_not_false_positive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """TAP-723: tz-naive valid_at in the future must NOT be counted as expired.
+
+    Before the fix, a tz-naive ISO string (e.g. "2099-01-01T00:00:00") compared
+    lexicographically against the tz-aware now_iso ("...+00:00") would sort as
+    *before* the aware form and be wrongly counted as expired.
+    """
+    mock_store = MagicMock()
+    mock_store.health.return_value = _store_health_return(entry_count=1, max_entries=5000)
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
+    mock_store.close = MagicMock()
+    mock_store._lock = Lock()
+    mock_store._persistence = MagicMock()
+    mock_store.verify_integrity.return_value = {"tampered_keys": []}
+    mock_store._persistence.list_relations.return_value = []
+    # tz-naive future timestamp — must NOT be counted as expired
+    future_tz_naive = MagicMock(valid_at="2099-01-01T00:00:00")
+    mock_store._entries = {"future": future_tz_naive}
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.integrity.expired_entries == 0, (
+        "tz-naive future valid_at must not produce false-positive expired count"
+    )
+    assert not any("valid_at" in w.lower() or "expired" in w.lower() for w in report.warnings)
+
+
+def test_run_health_check_expired_entries_tz_naive_past_counted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """TAP-723: tz-naive valid_at in the past must be counted as expired.
+
+    A tz-naive ISO string in the past (e.g. "1999-01-01T00:00:00") should be
+    treated as UTC and correctly flagged as expired.
+    """
+    mock_store = MagicMock()
+    mock_store.health.return_value = _store_health_return(entry_count=2, max_entries=5000)
+    mock_store.vector_index_enabled = True
+    mock_store.vector_row_count = 0
+    mock_store.close = MagicMock()
+    mock_store._lock = Lock()
+    mock_store._persistence = MagicMock()
+    mock_store.verify_integrity.return_value = {"tampered_keys": []}
+    mock_store._persistence.list_relations.return_value = []
+    past_tz_naive = MagicMock(valid_at="1999-01-01T00:00:00")
+    future_tz_aware = MagicMock(valid_at="2099-01-01T00:00:00+00:00")
+    mock_store._entries = {"past": past_tz_naive, "future": future_tz_aware}
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.integrity.expired_entries == 1, (
+        "only the tz-naive past entry should be expired; future tz-aware entry must not"
+    )
+
+
 def test_run_health_check_list_relations_raises_skipped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
