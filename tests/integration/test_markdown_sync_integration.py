@@ -290,6 +290,70 @@ class TestSyncFromMarkdown:
         # Should not raise; returns zero imports
         assert result["imported"] == 0
 
+    def test_truncated_counter_zero_for_short_values(
+        self, tmp_store: MemoryStore, workspace: Path
+    ) -> None:
+        """Normal (under-limit) imports report truncated=0."""
+        (workspace / "MEMORY.md").write_text(
+            "# Memory\n\n### short-key\n\nShort value.\n",
+            encoding="utf-8",
+        )
+        result = sync_from_markdown(tmp_store, workspace)
+        assert result["truncated"] == 0
+
+    def test_truncated_memory_md_logs_warning_and_counts(
+        self, tmp_store: MemoryStore, workspace: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Values over MAX_VALUE_LENGTH are truncated with a WARNING log."""
+        from tapps_brain.models import MAX_VALUE_LENGTH
+
+        oversized_value = "x" * (MAX_VALUE_LENGTH + 100)
+        (workspace / "MEMORY.md").write_text(
+            f"# Memory\n\n### big-key\n\n{oversized_value}\n",
+            encoding="utf-8",
+        )
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            result = sync_from_markdown(tmp_store, workspace)
+
+        assert result["truncated"] == 1
+        assert result["imported"] == 1
+
+        # Stored value is truncated to limit
+        entry = tmp_store.get("big-key")
+        assert entry is not None
+        assert len(entry.value) == MAX_VALUE_LENGTH
+
+        # Warning was emitted
+        assert any("value_truncated" in r.message for r in caplog.records)
+
+    def test_truncated_daily_note_logs_warning_and_counts(
+        self, tmp_store: MemoryStore, workspace: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Oversized daily notes are truncated with a WARNING log."""
+        from tapps_brain.models import MAX_VALUE_LENGTH
+
+        memory_dir = workspace / "memory"
+        memory_dir.mkdir()
+        oversized = "y" * (MAX_VALUE_LENGTH + 50)
+        (memory_dir / "2026-04-01.md").write_text(oversized, encoding="utf-8")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            result = sync_from_markdown(tmp_store, workspace)
+
+        assert result["truncated"] == 1
+        assert result["daily_notes"] == 1
+
+        entry = tmp_store.get("daily-2026-04-01")
+        assert entry is not None
+        assert len(entry.value) == MAX_VALUE_LENGTH
+
+        assert any("value_truncated" in r.message for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # Round-trip test (the core integration scenario)
