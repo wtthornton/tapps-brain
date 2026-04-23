@@ -9,7 +9,18 @@
       "env": {
         "TAPPS_MCP_PROJECT_ROOT": "."
       },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
+      "instructions": "TRIGGER POINTS \u2014 call these proactively, not reactively: (1) session start \u2192 tapps_session_start; (2) before using an unfamiliar library API \u2192 tapps_lookup_docs(library) to avoid hallucinated calls; (3) after editing any Python file \u2192 tapps_quick_check(file_path) for scoring + quality gate + security scan in one call; (4) before declaring work complete \u2192 tapps_validate_changed(file_paths=...) for the batch gate; (5) before refactor/delete \u2192 tapps_impact_analysis(file_path) for blast radius; (6) final verification \u2192 tapps_checklist(task_type). BENEFIT: deterministic verdicts (no LLM in the tool chain, same input \u2192 same output), quality floors enforced (security \u2265 50/100, overall \u2265 70), and every response includes a next_steps hint so the agent knows what to do next. Replaces manual \"I'll run the linter\" patterns with tool calls the agent invokes itself."
+    },
+    "docs-mcp": {
+      "type": "stdio",
+      "command": "docsmcp",
+      "args": [
+        "serve"
+      ],
+      "env": {
+        "DOCS_MCP_PROJECT_ROOT": "."
+      },
+      "instructions": "TRIGGER POINTS \u2014 call these proactively: (1) session start \u2192 docs_session_start to inventory existing docs + spot gaps; (2) when user asks \"is documentation current?\" \u2192 docs_check_drift (code-vs-docs) + docs_check_freshness (age) + docs_check_links (broken internal refs); (3) before release \u2192 docs_check_completeness + docs_check_style for a release-readiness pass; (4) when creating new docs \u2192 docs_generate_readme / _changelog / _release_notes / _api / _adr / _onboarding / _contributing / _prd / _diagram / _architecture / _epic / _story / _purpose / _doc_index / _llms_txt / _frontmatter; (5) for Linear-issue-as-source-of-truth workflows \u2192 docs_lint_linear_issue / _validate_linear_issue / _linear_triage. BENEFIT: generates docs deterministically from code + git state (not prose-authored), preserves human-written content via smart-merge markers, and catches drift/broken-links before users do. 35 MCP tools, all read- or generate-and-merge \u2014 never destructive."
     },
     "tapps-brain": {
       "type": "http",
