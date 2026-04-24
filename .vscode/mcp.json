@@ -3,7 +3,20 @@
     "tapps-brain": {
       "type": "stdio",
       "command": "tapps-brain-mcp",
-      "args": ["--project-dir", "${workspaceFolder}"]
+      "args": [
+        "--project-dir",
+        "${workspaceFolder}"
+      ]
+    },
+    "tapps-mcp": {
+      "type": "stdio",
+      "command": "tapps-mcp",
+      "args": [
+        "serve"
+      ],
+      "env": {
+        "TAPPS_MCP_PROJECT_ROOT": "${workspaceFolder}"
+      }
     }
   }
 }
