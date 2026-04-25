@@ -59,9 +59,7 @@ class TestAdminRateLimit:
         with auth._admin_rate_lock:
             import collections
 
-            auth._admin_rate_buckets[ip] = collections.deque(
-                [past] * auth._ADMIN_RATE_LIMIT
-            )
+            auth._admin_rate_buckets[ip] = collections.deque([past] * auth._ADMIN_RATE_LIMIT)
         # All entries are stale — next request should be allowed.
         assert auth._check_admin_rate_limit(ip) is True
 
@@ -103,9 +101,10 @@ class TestPerTenantAuthFailClosed:
 
     def _make_request(self, *, project_id: str = "proj-x", token: str = "tok") -> MagicMock:
         req = MagicMock()
-        req.headers.get = lambda k, d=None: (
-            {"authorization": f"Bearer {token}", "x-project-id": project_id}.get(k, d)
-        )
+        req.headers.get = lambda k, d=None: {
+            "authorization": f"Bearer {token}",
+            "x-project-id": project_id,
+        }.get(k, d)
         req.client.host = "127.0.0.1"
         return req
 
@@ -332,9 +331,7 @@ class TestIntegrityKeyEnvVar:
         with pytest.raises(IntegrityKeyEnvError):
             get_signing_key()
 
-    def test_env_key_skips_disk(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-    ) -> None:
+    def test_env_key_skips_disk(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
         """When env var is set, no file I/O occurs — key_path arg is ignored."""
         from tapps_brain.integrity import _KEY_LENGTH, get_signing_key
 

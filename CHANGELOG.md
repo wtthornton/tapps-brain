@@ -10,6 +10,28 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.11.0] — 2026-04-25
+
+### Changed (breaking — deployment shape only; Python API unchanged)
+- **Docker stack unified to single-DSN** (78bae0d): full rewrite of `docker/docker-compose.hive.yaml`. One Postgres (`tapps-brain-db`) + one HTTP service (`tapps-brain-http`) serving private memory + Hive + Federation on the same `/mcp/` + `/v1/*` API at `:8080` (operator MCP on `:8090`). `TAPPS_BRAIN_HIVE_DSN` and `TAPPS_BRAIN_FEDERATION_DSN` are now **optional overrides** that default to `TAPPS_BRAIN_DATABASE_URL` when unset. `hive-` / `tapps-hive-`-prefixed service names are gone; secrets moved from `docker/secrets/*.txt` to `docker/.env` (template: `docker/.env.example`). **Operators upgrading from 3.10.x must rebuild the stack from `docker/.env.example`** — old `hive-*` service names and the parallel `HIVE_DSN` flow are removed.
+- **Brain runs as `tapps_runtime` role by default** (46cb72a): `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1` is no longer set in the shipped compose. The brain connects as the DML-only `tapps_runtime` role so RLS + ownership guards stay on; the privileged role is reserved for the one-shot migrate sidecar (CI / dev override is unchanged). New `docker/migrate-entrypoint.sh` applies Hive + private + federation migrations as the DB owner before the brain starts. Operators who hand-rolled their own compose flow with `ALLOW_PRIVILEGED_ROLE=1` against the brain service should remove it and switch the brain to the `tapps_runtime` DSN.
+
+### Documentation
+- Hive reframed as a **feature of tapps-brain**, not a separate service (9406ef9, 7777aee). `CLAUDE.md`, `docs/guides/hive-deployment.md`, `docs/guides/hive.md`, `docs/guides/postgres-dsn.md`, `docs/guides/deployment.md` updated. `TAPPS_BRAIN_HIVE_DSN` / `_FEDERATION_DSN` documented as optional advanced overrides. Kubernetes examples renamed `tapps-hive-*` → `tapps-brain-*` with owner vs runtime-role secret layout. Troubleshooting adds the `permission denied for schema public` row pointing at the migrate sidecar.
+
+### Tooling
+- Added `docs-mcp` MCP server alongside `tapps-mcp` and `tapps-brain` (963cb5f). MCP server `instructions` strings rewritten as structured trigger + benefit so connecting agents know when and why to call each tool — matches the template rolled out in `tapps-mcp` v3.2.5.
+- `tapps_upgrade 2.4.0 → 3.3.0`: regenerated tapps-* agents (researcher, reviewer, validator, review-fixer), regenerated stop + task-completed hooks, added `agent-scope.md` rule, added `linear-issue` skill that routes through the `tapps_linear_snapshot_*` cache (f7f14ed).
+
+### Compatibility
+- **Python API surface unchanged.** Clients pinned to `tapps-brain==3.10.3` keep working as-is — the breaking change is **deployment-shape only** (compose file, service names, env-var defaults, role).
+- New deployments should follow `docs/guides/hive-deployment.md` and `docker/.env.example`. Existing 3.10.x deployments require a stack rebuild — see Changed section above.
+
+### Release-gate posture
+- Same as 3.10.3: unit suite green (3738/3738 with live Postgres). The 9 pre-existing integration/compat failures (tenant isolation, RLS spike, session-context persistence, embedded compat parity) are unchanged from 3.10.3 and tracked separately per `.github/workflows/ci.yml` (CI gates only `tests/unit/`). None of the failing test files were modified between 3.10.3 and 3.11.0.
+
+---
+
 ## [3.10.3] — 2026-04-21
 
 ### Fixed

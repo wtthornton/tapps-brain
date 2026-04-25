@@ -79,6 +79,7 @@ INTEGRITY_KEY_ENV = "TAPPS_BRAIN_INTEGRITY_KEY"
 class IntegrityKeyEnvError(RuntimeError):
     """Raised when ``TAPPS_BRAIN_INTEGRITY_KEY`` is set but cannot be decoded."""
 
+
 #: Current canonical encoding version used by :func:`compute_integrity_hash`.
 #: v1 = legacy pipe-joined (TAP-710); v2 = JSON array (current).
 INTEGRITY_HASH_VERSION: int = 2
@@ -130,8 +131,8 @@ def _decode_env_key(value: str) -> bytes:
     raise IntegrityKeyEnvError(
         f"{INTEGRITY_KEY_ENV} is set but could not be decoded as base64 or hex, "
         f"or decoded to fewer than {_KEY_LENGTH} bytes. "
-        "Generate a key with: python -c \"import secrets,base64; "
-        "print(base64.b64encode(secrets.token_bytes(32)).decode())\""
+        'Generate a key with: python -c "import secrets,base64; '
+        'print(base64.b64encode(secrets.token_bytes(32)).decode())"'
     )
 
 
