@@ -7,7 +7,10 @@
         "serve"
       ],
       "env": {
-        "TAPPS_MCP_PROJECT_ROOT": "."
+        "TAPPS_MCP_PROJECT_ROOT": ".",
+        "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://127.0.0.1:8080",
+        "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+        "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
       },
       "instructions": "TRIGGER POINTS \u2014 call these proactively, not reactively: (1) session start \u2192 tapps_session_start; (2) before using an unfamiliar library API \u2192 tapps_lookup_docs(library) to avoid hallucinated calls; (3) after editing any Python file \u2192 tapps_quick_check(file_path) for scoring + quality gate + security scan in one call; (4) before declaring work complete \u2192 tapps_validate_changed(file_paths=...) for the batch gate; (5) before refactor/delete \u2192 tapps_impact_analysis(file_path) for blast radius; (6) final verification \u2192 tapps_checklist(task_type). BENEFIT: deterministic verdicts (no LLM in the tool chain, same input \u2192 same output), quality floors enforced (security \u2265 50/100, overall \u2265 70), and every response includes a next_steps hint so the agent knows what to do next. Replaces manual \"I'll run the linter\" patterns with tool calls the agent invokes itself."
     },

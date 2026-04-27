@@ -53,11 +53,20 @@ coverage.json
 .claude/agent-memory/
 .claude/agent-memory-local/
 
+# Locally-installed third-party skills (npm-package-style, not part of this repo)
+.claude/skills/linear/
+.claude/skills/python-patterns/
+
+# Backup files written by tapps_upgrade before overwriting hooks
+.claude/hooks/*.pre-upgrade.*
+
 # Ralph crash diagnostics
 .ralph/.last_crash_code
 .ralph/.total_loop_count
 .ralph/.files_modified_this_loop
 .ralph/STOP
+.ralph/.ralph_run_id
+.ralph/metrics/
 openclaw-plugin/node_modules/
 node_modules/
 
