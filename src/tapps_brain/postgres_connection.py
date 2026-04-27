@@ -2,16 +2,24 @@
 
 EPIC-055 STORY-055.2 — provides a connection pool manager using psycopg + psycopg_pool.
 All psycopg imports are lazy so the rest of the package works without Postgres deps.
+
+STORY-072.1 — also exposes an asyncio-native ``psycopg_pool.AsyncConnectionPool``
+alongside the sync pool.  Both pools share DSN + env-var configuration and the
+non-privileged-role guard, but their lifecycles are independent: callers in a
+sync context use :meth:`get_connection` (sync pool); callers in an asyncio
+event loop use :meth:`get_async_connection` (async pool).  The two pools never
+share connections.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
 import structlog
 
@@ -124,6 +132,13 @@ class PostgresConnectionManager:
                 f"Check TAPPS_BRAIN_PG_POOL_MIN / TAPPS_BRAIN_PG_POOL_MAX."
             )
         self._pool: Any = None
+        # STORY-072.1: async-native pool slot.  Lifecycle is independent from
+        # the sync pool — created lazily on first ``get_async_connection`` /
+        # ``get_async_pool`` call inside an event loop, closed by
+        # ``close_async``.  Operators that never enter the async path never
+        # pay the AsyncConnectionPool import / open cost.
+        self._async_pool: Any = None
+        self._async_init_lock: asyncio.Lock | None = None
 
     # -- Pool lifecycle --------------------------------------------------------
 
@@ -354,6 +369,233 @@ class PostgresConnectionManager:
             # pool_stats_available stays False; size/saturation stay at 0.
         return base
 
+    # -- Async pool (STORY-072.1) ---------------------------------------------
+
+    @staticmethod
+    async def _reset_session_vars_async(conn: Any) -> None:  # noqa: ANN401
+        """Async equivalent of :meth:`_reset_session_vars`.
+
+        psycopg_pool's ``AsyncConnectionPool`` invokes the reset callback as
+        ``await reset(conn)`` when the connection is returned to the pool.
+        Wipes the same session variables as the sync path so the next
+        borrower starts with a clean tenant identity.
+        """
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "RESET app.project_id; "
+                "RESET app.agent_id; "
+                "RESET app.is_admin; "
+                "RESET tapps.current_namespace"
+            )
+
+    async def _ensure_async_pool(self) -> None:
+        """Create the async connection pool on first use (lazy, event-loop-safe).
+
+        psycopg's ``AsyncConnectionPool`` must be opened inside a running
+        event loop, so this method is async — unlike the sync ``_ensure_pool``
+        which can run from any context.  Concurrent first calls are
+        serialised by ``self._async_init_lock`` to avoid double-open.
+        """
+        if self._async_pool is not None:
+            return
+        if self._async_init_lock is None:
+            # Lock is created lazily because creating it requires a running
+            # loop; one manager instance can be reused across loops in tests
+            # so we recreate it if the loop changed.
+            self._async_init_lock = asyncio.Lock()
+        async with self._async_init_lock:
+            if self._async_pool is not None:
+                return
+            try:
+                from psycopg_pool import AsyncConnectionPool
+            except ImportError:
+                raise ImportError(
+                    "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
+                    "Install with: pip install 'psycopg[binary]' psycopg_pool"
+                ) from None
+
+            kwargs: dict[str, Any] = {
+                "min_size": self._min_size,
+                "max_size": self._max_size,
+                "timeout": self._connect_timeout,
+                "max_waiting": self._max_waiting,
+                "reset": self._reset_session_vars_async,
+                # Required by psycopg_pool >= 3.2 — opening implicitly inside
+                # __init__ is deprecated for AsyncConnectionPool because it
+                # would block the event loop on first connect.
+                "open": False,
+            }
+            if self._idle_timeout > 0:
+                kwargs["max_idle"] = self._idle_timeout
+            if self._max_lifetime > 0:
+                kwargs["max_lifetime"] = self._max_lifetime
+            pool = AsyncConnectionPool(self._dsn, **kwargs)
+            await pool.open()
+            self._async_pool = pool
+            logger.info(
+                "postgres.async_pool_created",
+                min_size=self._min_size,
+                max_size=self._max_size,
+                max_waiting=self._max_waiting,
+                max_lifetime=self._max_lifetime,
+            )
+
+            # TAP-512 / TAP-783 parity with sync path — refuse to start as a
+            # privileged role unless TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1.
+            try:
+                await self._assert_non_privileged_role_async()
+            except Exception:
+                await self._async_pool.close()
+                self._async_pool = None
+                raise
+
+    async def _assert_non_privileged_role_async(self) -> None:
+        """Async parity for :meth:`_assert_non_privileged_role`."""
+        allow_override = os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1"
+        if self._async_pool is None:  # pragma: no cover
+            raise RuntimeError(
+                "_assert_non_privileged_role_async called before async pool was created"
+            )
+        async with self._async_pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT current_user, rolsuper, rolbypassrls "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+            row = await cur.fetchone()
+            if row is None:
+                current_user, is_super, bypass_rls = "(unknown)", True, True
+            else:
+                current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
+
+            await cur.execute(
+                "SELECT relname FROM pg_class "
+                "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
+                "WHERE relname IN ('private_memories', 'project_profiles') "
+                "  AND pg_get_userbyid(relowner) = current_user"
+            )
+            owned = sorted(r[0] for r in await cur.fetchall())
+
+        violations: list[str] = []
+        if is_super:
+            violations.append("rolsuper=true (superuser bypasses RLS)")
+        if bypass_rls:
+            violations.append("rolbypassrls=true (BYPASSRLS bypasses RLS)")
+        if owned:
+            violations.append(
+                f"role owns tenanted tables {owned} (table owners bypass RLS unless FORCE is set)"
+            )
+
+        if not violations:
+            logger.info(
+                "postgres.async_role_check_ok",
+                current_user=current_user,
+                tables_force_rls=["private_memories", "project_profiles"],
+            )
+            return
+
+        if allow_override:
+            logger.error(
+                "postgres.privileged_role_audit_override",
+                current_user=current_user,
+                violations=violations,
+                allow_privileged_role_env="TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1",
+                pool="async",
+                detail=(
+                    "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 is set; tenant "
+                    "isolation is NOT enforced for this connection.  "
+                    "Acceptable in CI/dev only — must not appear in production logs."
+                ),
+            )
+            return
+
+        raise RuntimeError(
+            "tapps-brain refuses to start as a privileged Postgres role "
+            f"({current_user}): {'; '.join(violations)}.  Connect as a "
+            "non-owner role with BYPASSRLS=false (see "
+            "migrations/roles/001_db_roles.sql for the recommended "
+            "tapps_runtime role).  To override for CI/dev, set "
+            "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1."
+        )
+
+    async def get_async_pool(self) -> Any:  # noqa: ANN401 — psycopg AsyncConnectionPool
+        """Return the lazily-initialised ``psycopg_pool.AsyncConnectionPool``.
+
+        Most callers should prefer :meth:`get_async_connection` for the
+        context-managed checkout.  Direct pool access is intended for
+        advanced uses (e.g. ``await pool.wait()`` in a FastAPI lifespan
+        handler to pre-warm connections).
+        """
+        await self._ensure_async_pool()
+        return self._async_pool
+
+    @asynccontextmanager
+    async def get_async_connection(self) -> AsyncIterator[Any]:
+        """Yield an async connection from the pool (context-managed).
+
+        Usage::
+
+            async with manager.get_async_connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT 1")
+        """
+        await self._ensure_async_pool()
+        async with self._async_pool.connection() as conn:
+            yield conn
+
+    async def close_async(self) -> None:
+        """Shut down the async pool, releasing all connections.
+
+        Idempotent — calling on a never-opened or already-closed manager
+        is a no-op.  Sync pool (if any) is left untouched; close it
+        separately via :meth:`close`.
+        """
+        if self._async_pool is not None:
+            await self._async_pool.close()
+            self._async_pool = None
+            logger.info("postgres.async_pool_closed")
+
+    def get_async_pool_stats(self) -> dict[str, Any]:
+        """Return current async pool statistics, parallel to :meth:`get_pool_stats`.
+
+        Returns the same keys as the sync version; ``pool_stats_available``
+        flips to ``True`` once the async pool has been opened and live
+        stats can be read.  Safe to call from sync code: it does not touch
+        the event loop, only inspects in-memory pool state.
+        """
+        base: dict[str, Any] = {
+            "pool_min": self._min_size,
+            "pool_max": self._max_size,
+            "pool_size": 0,
+            "pool_available": 0,
+            "pool_saturation": 0.0,
+            "idle_timeout": self._idle_timeout,
+            "max_waiting": self._max_waiting,
+            "max_lifetime": self._max_lifetime,
+            "pool_stats_available": False,
+        }
+        if self._async_pool is None:
+            return base
+        try:
+            raw = self._async_pool.get_stats()
+            size = int(raw.get("pool_size", 0))
+            available = int(raw.get("pool_available", 0))
+            saturation = (size - available) / self._max_size if self._max_size > 0 else 0.0
+            base.update(
+                {
+                    "pool_size": size,
+                    "pool_available": available,
+                    "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
+                    "pool_stats_available": True,
+                }
+            )
+        except Exception as exc:
+            logger.debug(
+                "postgres_connection.async_pool_stats_unavailable",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+        return base
+
     @contextmanager
     def namespace_context(self, namespace: str) -> Iterator[Any]:
         """Yield a connection with ``tapps.current_namespace`` session variable set.
@@ -498,5 +740,10 @@ class PostgresConnectionManager:
 
     @property
     def is_open(self) -> bool:
-        """Return whether the pool has been created and not yet closed."""
+        """Return whether the sync pool has been created and not yet closed."""
         return self._pool is not None
+
+    @property
+    def is_async_open(self) -> bool:
+        """Return whether the async pool has been opened and not yet closed."""
+        return self._async_pool is not None
