@@ -290,6 +290,7 @@ def require_admin_auth(request: Request) -> None:
         raise HTTPException(
             status_code=429,
             detail={"error": "rate_limited", "detail": "Too many admin requests."},
+            headers={"Retry-After": str(_ADMIN_RATE_WINDOW)},
         )
 
     if not cfg.admin_token:

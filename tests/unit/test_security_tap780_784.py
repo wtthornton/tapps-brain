@@ -89,6 +89,8 @@ class TestAdminRateLimit:
                 _auth.require_admin_auth(mock_request)
 
         assert exc_info.value.status_code == 429
+        # TAP-780 AC: Retry-After header points clients at the window length.
+        assert exc_info.value.headers == {"Retry-After": str(_auth._ADMIN_RATE_WINDOW)}
 
 
 # ---------------------------------------------------------------------------
