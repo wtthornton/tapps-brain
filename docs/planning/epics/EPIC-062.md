@@ -1,10 +1,10 @@
 ---
 id: EPIC-062
 title: "Greenfield v3 — MCP-Primary Integration & Environment Contract"
-status: in_progress
+status: done
 priority: high
 created: 2026-04-10
-updated: 2026-04-15
+updated: 2026-04-27
 tags: [greenfield, mcp, ide, v3, configuration]
 depends_on: [EPIC-059, EPIC-060]
 blocks: []
