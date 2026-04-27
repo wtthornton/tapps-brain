@@ -747,3 +747,40 @@ class PostgresConnectionManager:
     def is_async_open(self) -> bool:
         """Return whether the async pool has been opened and not yet closed."""
         return self._async_pool is not None
+
+    # -- Async tenant-scoped contexts (STORY-072.2 — RLS parity) -------------
+
+    @asynccontextmanager
+    async def async_project_context(self, project_id: str) -> AsyncIterator[Any]:
+        """Async parity for :meth:`project_context`.
+
+        Yields an async connection with ``app.project_id`` set so RLS on
+        ``private_memories`` / ``project_profiles`` restricts every read
+        and write to *project_id*.  Uses session-level ``SET`` (not ``SET
+        LOCAL``) so the binding survives multiple transactions inside one
+        borrow; the pool's async reset callback wipes it on connection
+        return so no identity leaks across borrows.
+        """
+        if not project_id or not project_id.strip():
+            raise ValueError(
+                "async_project_context requires a non-empty project_id; "
+                "use async_admin_context() for registry / admin paths."
+            )
+        await self._ensure_async_pool()
+        async with self._async_pool.connection() as conn:
+            async with conn.cursor() as cur:
+                from psycopg import sql as pgsql
+
+                await cur.execute(
+                    pgsql.SQL("SET app.project_id = {}").format(pgsql.Literal(project_id))
+                )
+            yield conn
+
+    @asynccontextmanager
+    async def async_admin_context(self) -> AsyncIterator[Any]:
+        """Async parity for :meth:`admin_context`."""
+        await self._ensure_async_pool()
+        async with self._async_pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SET app.is_admin = 'true'")
+            yield conn
