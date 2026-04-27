@@ -2095,6 +2095,415 @@ def create_app(
         status_code = 400 if "error" in result else 200
         return JSONResponse(status_code=status_code, content=result)
 
+    # -------- agent-brain data-plane routes (TAP-993; AgentForge HTTP-only) --------
+
+    @app.post("/v1/recall", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_recall(request: Request) -> JSONResponse:
+        """Recall memories matching a query.
+
+        REST counterpart of the ``brain_recall`` MCP tool — same retrieval path,
+        same filters. Read-only; no idempotency.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "query": str, "max_results"?: int=5, "include_stale"?: bool=false,
+              "filter_tier"?: str, "filter_tags"?: [str],
+              "filter_tags_any"?: [str], "filter_memory_class"?: str }``
+
+        Response: ``{ "results": [...], "query": str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception:
+            logger.exception("http_adapter.read_body_failed")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.exception("http_adapter.invalid_json")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        query = (body.get("query") or "").strip()
+        if not query:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "query is required."},
+            )
+
+        max_results = int(body.get("max_results", 5))
+        max_results = max(max_results, 1)
+
+        from tapps_brain.services import memory_service as _ms
+
+        results = _ms.brain_recall(
+            store,
+            project_id,
+            agent_id,
+            query=query,
+            max_results=max_results,
+            include_stale=bool(body.get("include_stale", False)),
+            filter_tier=body.get("filter_tier"),
+            filter_tags=body.get("filter_tags"),
+            filter_tags_any=body.get("filter_tags_any"),
+            filter_memory_class=body.get("filter_memory_class"),
+        )
+        return JSONResponse(status_code=200, content={"results": results, "query": query})
+
+    @app.post("/v1/forget", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_forget(request: Request) -> JSONResponse:
+        """Archive a memory by key.
+
+        REST counterpart of the ``brain_forget`` MCP tool. The entry is
+        archived (status flip), not permanently deleted.
+
+        Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
+        A duplicate key within 24 h replays the original response.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
+
+        Request body (JSON): ``{ "key": str }``
+
+        Response: ``{ "forgotten": bool, "key": str, "reason"?: str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        ikey, istore = _get_ikey_and_istore(request)
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
+        try:
+            if ikey and istore is not None:
+                _cached = istore.check(project_id, ikey)
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
+
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
+                )
+            if len(raw) > 65_536:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
+                )
+
+            mem_key = (body.get("key") or "").strip()
+            if not mem_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "key is required."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            result = _ms.brain_forget(store, project_id, agent_id, key=mem_key)
+            status_code = 200
+
+            if ikey and istore is not None:
+                istore.save(project_id, ikey, status_code, result)
+
+            return JSONResponse(status_code=status_code, content=result)
+
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
+
+    @app.post("/v1/learn_success", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learn_success(request: Request) -> JSONResponse:
+        """Record a successful task outcome.
+
+        REST counterpart of the ``brain_learn_success`` MCP tool.
+
+        Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
+
+        Request body (JSON): ``{ "task_description": str, "task_id"?: str }``
+
+        Response: ``{ "learned": true, "key": str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        ikey, istore = _get_ikey_and_istore(request)
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
+        try:
+            if ikey and istore is not None:
+                _cached = istore.check(project_id, ikey)
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
+
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
+                )
+            if len(raw) > 65_536:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
+                )
+
+            task_description = (body.get("task_description") or "").strip()
+            if not task_description:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "task_description is required."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            result = _ms.brain_learn_success(
+                store,
+                project_id,
+                agent_id,
+                task_description=task_description,
+                task_id=str(body.get("task_id") or ""),
+            )
+            status_code = 200
+
+            if ikey and istore is not None:
+                istore.save(project_id, ikey, status_code, result)
+
+            return JSONResponse(status_code=status_code, content=result)
+
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
+
+    @app.post("/v1/learn_failure", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learn_failure(request: Request) -> JSONResponse:
+        """Record a failed task outcome.
+
+        REST counterpart of the ``brain_learn_failure`` MCP tool.
+
+        Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
+
+        Request body (JSON):
+          ``{ "description": str, "task_id"?: str, "error"?: str }``
+
+        Response: ``{ "learned": true, "key": str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        ikey, istore = _get_ikey_and_istore(request)
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
+        try:
+            if ikey and istore is not None:
+                _cached = istore.check(project_id, ikey)
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
+
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
+                )
+            if len(raw) > 65_536:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
+                )
+
+            description = (body.get("description") or "").strip()
+            if not description:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "description is required."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            result = _ms.brain_learn_failure(
+                store,
+                project_id,
+                agent_id,
+                description=description,
+                task_id=str(body.get("task_id") or ""),
+                error=str(body.get("error") or ""),
+            )
+            status_code = 200
+
+            if ikey and istore is not None:
+                istore.save(project_id, ikey, status_code, result)
+
+            return JSONResponse(status_code=status_code, content=result)
+
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:

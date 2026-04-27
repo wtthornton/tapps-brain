@@ -1919,3 +1919,179 @@ class TestBatchContextBypassPrevented:
             "SECURITY REGRESSION (TAP-714): SlidingWindowRateLimiter.check() "
             "still accepts batch_context — external callers can forge exemptions"
         )
+
+
+# ---------------------------------------------------------------------------
+# TAP-993: agent-brain data-plane endpoints (AgentForge HTTP-only migration)
+# ---------------------------------------------------------------------------
+
+
+class TestV1AgentBrainEndpoints:
+    """REST counterparts of brain_recall / brain_forget / brain_learn_*.
+
+    These let HTTP-only callers (AgentForge) drop the vendored tapps_brain
+    Python wheel and reach the same operations over plain REST instead of
+    the MCP JSON-RPC transport.
+    """
+
+    _AUTH = {"Authorization": "Bearer tok", "X-Project-Id": "proj-x"}
+
+    def test_recall_happy_path(self) -> None:
+        from unittest.mock import patch
+
+        store = MagicMock()
+        settings = _make_settings(auth_token="tok", store=store)
+        fake_results = [
+            {"key": "k1", "value": "v1", "tier": "pattern", "confidence": 0.9, "tags": []}
+        ]
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall",
+                return_value=fake_results,
+            ) as mocked:
+                resp = client.post(
+                    "/v1/recall",
+                    json={"query": "auth bug", "max_results": 3},
+                    headers=self._AUTH,
+                )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["query"] == "auth bug"
+        assert body["results"] == fake_results
+        # Confirm the service got the params, including filter passthroughs
+        kwargs = mocked.call_args.kwargs
+        assert kwargs["query"] == "auth bug"
+        assert kwargs["max_results"] == 3
+
+    def test_recall_missing_query(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post("/v1/recall", json={"max_results": 5}, headers=self._AUTH)
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "bad_request"
+
+    def test_recall_missing_project_id(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall",
+                json={"query": "x"},
+                headers={"Authorization": "Bearer tok"},
+            )
+        assert resp.status_code == 400
+
+    def test_recall_invalid_json(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall",
+                content=b"not-json",
+                headers={**self._AUTH, "Content-Type": "application/json"},
+            )
+        assert resp.status_code == 400
+
+    def test_forget_happy_path(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_forget",
+                return_value={"forgotten": True, "key": "k1"},
+            ) as mocked:
+                resp = client.post("/v1/forget", json={"key": "k1"}, headers=self._AUTH)
+        assert resp.status_code == 200
+        assert resp.json() == {"forgotten": True, "key": "k1"}
+        assert mocked.call_args.kwargs["key"] == "k1"
+
+    def test_forget_not_found_still_200(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_forget",
+                return_value={"forgotten": False, "reason": "not_found"},
+            ):
+                resp = client.post("/v1/forget", json={"key": "missing"}, headers=self._AUTH)
+        # not_found is not an error here — the operation completed; reason is informational.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["forgotten"] is False
+        assert body["reason"] == "not_found"
+
+    def test_forget_missing_key(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post("/v1/forget", json={}, headers=self._AUTH)
+        assert resp.status_code == 400
+
+    def test_learn_success_happy_path(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_learn_success",
+                return_value={"learned": True, "key": "success-abc"},
+            ) as mocked:
+                resp = client.post(
+                    "/v1/learn_success",
+                    json={"task_description": "Migrated foo", "task_id": "T-1"},
+                    headers=self._AUTH,
+                )
+        assert resp.status_code == 200
+        assert resp.json() == {"learned": True, "key": "success-abc"}
+        kwargs = mocked.call_args.kwargs
+        assert kwargs["task_description"] == "Migrated foo"
+        assert kwargs["task_id"] == "T-1"
+
+    def test_learn_success_missing_task_description(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post("/v1/learn_success", json={"task_id": "T-1"}, headers=self._AUTH)
+        assert resp.status_code == 400
+
+    def test_learn_failure_happy_path(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_learn_failure",
+                return_value={"learned": True, "key": "failure-xyz"},
+            ) as mocked:
+                resp = client.post(
+                    "/v1/learn_failure",
+                    json={
+                        "description": "Tried X, got 401",
+                        "task_id": "T-2",
+                        "error": "Unauthorized",
+                    },
+                    headers=self._AUTH,
+                )
+        assert resp.status_code == 200
+        kwargs = mocked.call_args.kwargs
+        assert kwargs["description"] == "Tried X, got 401"
+        assert kwargs["task_id"] == "T-2"
+        assert kwargs["error"] == "Unauthorized"
+
+    def test_learn_failure_missing_description(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/learn_failure",
+                json={"task_id": "T-2"},
+                headers=self._AUTH,
+            )
+        assert resp.status_code == 400
+
+    def test_recall_no_auth_token_returns_401(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall",
+                json={"query": "x"},
+                headers={"X-Project-Id": "proj-x"},
+            )
+        assert resp.status_code == 401

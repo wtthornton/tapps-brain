@@ -10,6 +10,20 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.12.0] — 2026-04-25
+
+### Added
+- **`/v1/recall`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure`** — REST counterparts to the `brain_recall` / `brain_forget` / `brain_learn_success` / `brain_learn_failure` MCP tools (TAP-993). Closes the last surface gap that forced HTTP consumers (AgentForge, NLTlabsPE) to either reach in via the MCP `/mcp/` JSON-RPC transport or vendor the `tapps_brain` Python wheel for runtime work. With these in place every `AsyncTappsBrainClient` / `AgentBrain` operation has a one-to-one REST equivalent under `/v1/*` — the wheel can be dropped from any non-MCP consumer.
+  - All four routes share the same shape as `/v1/remember` / `/v1/reinforce`: `Authorization: Bearer …`, `X-Project-Id` (required), `X-Agent-Id` (optional), 64 KiB body cap, flat error envelope (`{"error": "...", "detail": "..."}`).
+  - `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` accept `X-Idempotency-Key` (UUID) when `TAPPS_BRAIN_IDEMPOTENCY=1` and replay within 24 h. `/v1/recall` is read-only and skips idempotency.
+- `docs/guides/http-adapter.md` rewritten as the agent-facing summary of every public route, with body shapes and an explicit MCP-tool ↔ REST-route mapping for migration off the vendored wheel.
+
+### Compatibility
+- **No breaking change.** Existing `/v1/*` routes, MCP tools, wheel APIs (`AsyncTappsBrainClient`, `AgentBrain`) all keep their current shapes. The four new routes are additive; consumers that already work over MCP or the wheel keep working with no edits.
+- The matching MCP tools (`brain_recall`, `brain_forget`, `brain_learn_success`, `brain_learn_failure`) are unchanged — call sites that prefer JSON-RPC over `/mcp/` keep working.
+
+---
+
 ## [3.11.0] — 2026-04-25
 
 ### Changed (breaking — deployment shape only; Python API unchanged)
