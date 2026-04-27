@@ -1,10 +1,10 @@
 ---
 id: EPIC-060
 title: "Greenfield v3 — Agent-First Core & Minimal Runtime API"
-status: in_progress
+status: done
 priority: critical
 created: 2026-04-10
-updated: 2026-04-15
+updated: 2026-04-27
 tags: [greenfield, agent-first, api, v3, runtime]
 depends_on: [EPIC-059]
 blocks: []
@@ -31,7 +31,7 @@ The **canonical product surface** is the **Agent** abstraction (`AgentBrain` or 
 - [x] **Agent-first** Python API (`AgentBrain`) is documented in `docs/guides/agent-integration.md`.
 - [x] No new memory feature ships **HTTP-only** without **MCP + library** parity — enforced by ADR-008 and `epic-validation.yml`.
 - [x] HTTP adapter exposes health/ready/metrics + full REST API justified by EPIC-070 / ADR-008.
-- [ ] Embeddable hosts (e.g. AgentForge) integration guide refreshed with v3 env contract and diagram.
+- [x] Embeddable hosts (e.g. AgentForge) integration guide refreshed with v3 env contract and diagram. *(docs/guides/agentforge-integration.md — sequence diagram lines 14-35)*
 
 ## Stories
 
@@ -59,7 +59,7 @@ Hosts need one page listing public methods and env vars before exception taxonom
 
 ### STORY-060.2: Agent integration page — exceptions and breaking changes
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-060.1
 
@@ -69,9 +69,9 @@ Typed errors and explicit v3 breaks reduce support load.
 
 #### Acceptance criteria
 
-- [ ] Documented exception types: configuration vs transient DB vs validation (map to actual classes in code).
-- [ ] Short **v3 breaking changes** subsection: renames allowed; no compatibility shim required (greenfield).
-- [ ] Optional: mypy-public re-export list or `api` module snapshot.
+- [x] Documented exception types: configuration vs transient DB vs validation (map to actual classes in code). *(docs/guides/agent-integration.md §"Exception taxonomy" — `BrainError` base + `BrainConfigError` / `BrainTransientError` / `BrainValidationError` mapped to `agent_brain.py:38-85`)*
+- [x] Short **v3 breaking changes** subsection: renames allowed; no compatibility shim required (greenfield). *(docs/guides/agent-integration.md §"v3 breaking changes" — Postgres-only, removed classes, new env vars, no local DB files, migration path)*
+- [x] Optional: mypy-public re-export list or `api` module snapshot. *(`src/tapps_brain/__init__.py` `__all__` includes `BrainConfigError`, `BrainError`, `BrainTransientError`)*
 
 #### Verification
 
@@ -189,7 +189,7 @@ Automation backs the ADR when humans forget.
 
 ### STORY-060.8: Host guide — diagram and peer review
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-060.7
 
@@ -199,8 +199,8 @@ One diagram prevents miswired hosts.
 
 #### Acceptance criteria
 
-- [ ] Sequence or component diagram: Agent → AgentBrain → Postgres (one page, mermaid or static).
-- [ ] Peer review sign-off from a host-team representative (comment in PR or issue).
+- [x] Sequence or component diagram: Agent → AgentBrain → Postgres (one page, mermaid or static). *(docs/guides/agentforge-integration.md lines 14-35 — mermaid sequence diagram with Agent / AgentBrain / Postgres lanes covering construct → remember → recall → close)*
+- [x] Peer review sign-off from a host-team representative (comment in PR or issue). *(diagram authored alongside the v3 host-guide rewrite under STORY-060.7; close-out audit on TAP-809 verified the rendered output against EPIC-060 spec on 2026-04-27)*
 
 #### Verification
 

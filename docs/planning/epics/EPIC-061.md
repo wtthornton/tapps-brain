@@ -1,10 +1,10 @@
 ---
 id: EPIC-061
 title: "Greenfield v3 — Observability-First Product (Simple & Complete)"
-status: in_progress
+status: done
 priority: critical
 created: 2026-04-10
-updated: 2026-04-15
+updated: 2026-04-27
 tags: [greenfield, observability, otel, metrics, v3]
 depends_on: [EPIC-059]
 blocks: []
@@ -30,7 +30,7 @@ With Postgres-only and many agents, **operators must see** latency, errors, pool
 - [x] **OTLP** export configurable via env (`OTEL_EXPORTER_OTLP_ENDPOINT`). *(otel_tracer.py + otel_exporter.py)*
 - [x] **Golden signals** for save, recall, hive, pool, migration. *(otel_tracer.py 535 lines; v3.6.0 label enrichment)*
 - [x] Logs never emit raw memory content by default. *(redaction policy in observability.md)*
-- [ ] **Operator runbook** (≤ 2 printed pages with dashboards + alert thresholds). *(docs/operations/ does not yet exist)*
+- [x] **Operator runbook** (≤ 2 printed pages with dashboards + alert thresholds). *(docs/operations/observability-runbook.md — 170 lines covering golden signals, /health and /ready, alert runbook with triage steps, env-var reference, non-normative Prometheus rule examples)*
 
 ## Stories
 
@@ -187,7 +187,7 @@ Policy without code is wishful; OTel Views drop bad labels.
 
 ### STORY-061.8: Operator runbook and example alerts
 
-**Status:** planned  
+**Status:** done  
 **Size:** S  
 **Depends on:** STORY-061.4, STORY-061.5, STORY-061.7
 
@@ -197,8 +197,8 @@ SRE onboarding closes the epic.
 
 #### Acceptance criteria
 
-- [ ] `docs/operations/` runbook ≤ 2 printed pages: key metrics, alert thresholds, triage steps.
-- [ ] Optional: example Prometheus rules or Grafana JSON **as non-normative examples**.
+- [x] `docs/operations/` runbook ≤ 2 printed pages: key metrics, alert thresholds, triage steps. *(docs/operations/observability-runbook.md — golden signals table at line 9, alert runbook with per-alert triage steps at line 43, three named alerts: `TappsBrainHighP99Latency`, `TappsBrainHighErrorRate`, `TappsBrainMigrationLag`, plus a `DB down` flow)*
+- [x] Optional: example Prometheus rules or Grafana JSON **as non-normative examples**. *(observability-runbook.md §"Non-normative Prometheus rule examples" lines 109-160 — ships a `prometheus-rules-example.yaml` block explicitly marked illustrative-only)*
 
 #### Verification
 
