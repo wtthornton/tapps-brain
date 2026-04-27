@@ -30,6 +30,8 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         tier: str = "procedural",
         share: bool = False,
         share_with: str = "",
+        agent_scope: str = "",
+        memory_group: str = "",
         agent_id: str = "",
         temporal_sensitivity: str | None = None,
         failed_approaches: list[str] | None = None,
@@ -37,9 +39,20 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         """Save a memory to the agent's brain.
 
         Use tier='architectural' for lasting decisions, 'pattern' for conventions,
-        'procedural' for how-to knowledge. Set share=True to share with all groups,
-        or share_with='hive' for org-wide.  Pass ``agent_id`` to override the
-        server-level default for this call (STORY-070.7).
+        'procedural' for how-to knowledge.
+
+        Scope (TAP-989): pass ``agent_scope`` directly as one of
+        ``"private"`` / ``"domain"`` / ``"hive"`` / ``"group:<name>"`` for
+        explicit Hive-namespace control. When ``agent_scope`` is empty, the
+        legacy ``share`` / ``share_with`` params are derived for back-compat:
+        ``share=True`` → ``"group"``; ``share_with="hive"`` → ``"hive"``;
+        ``share_with="<x>"`` → ``"group:<x>"``. Explicit ``agent_scope`` wins.
+
+        ``memory_group`` is a project-local partition (orthogonal to the Hive
+        scope axis) — leave empty unless you need group-filtered retrieval.
+
+        Pass ``agent_id`` to override the server-level default for this call
+        (STORY-070.7).
 
         Pass ``temporal_sensitivity='high'`` for facts that change quickly (decays
         4x faster), ``'low'`` for stable facts (decays 4x slower), or omit for the
@@ -60,6 +73,8 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
                 tier=tier,
                 share=share,
                 share_with=share_with,
+                agent_scope=agent_scope,
+                memory_group=memory_group,
                 temporal_sensitivity=temporal_sensitivity,
                 failed_approaches=failed_approaches,
             )

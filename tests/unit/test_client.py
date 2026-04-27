@@ -879,3 +879,126 @@ def test_sync_initialize_without_auth_token_omits_authorization(
     init_headers: dict[str, str] = client._http_client.post.call_args_list[0].kwargs["headers"]
     assert "Authorization" not in init_headers
     assert init_headers.get("X-Project-Id") == "p1"  # tenant headers still present
+
+
+# ---------------------------------------------------------------------------
+# TAP-991 — default Authorization header on httpx Client/AsyncClient
+# ---------------------------------------------------------------------------
+#
+# Defense-in-depth follow-up to TAP-747/TAP-990: the bearer token is now pinned
+# at httpx.Client / httpx.AsyncClient construction time, so any future helper
+# that calls `self._http_client.post(...)` directly inherits auth without
+# routing through `_build_headers`. Closes the regression class that produced
+# TAP-747 (initialize was added later than _build_headers and silently skipped
+# auth, causing 401 on every MCP session init for AgentForge).
+
+
+def test_sync_default_authorization_header_set_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TAP-991: bearer token is pinned on the underlying httpx.Client at construction."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        auth_token="harden-tok",
+    )
+    try:
+        # httpx.Headers.get() is case-insensitive
+        assert client._http_client.headers.get("authorization") == "Bearer harden-tok"
+    finally:
+        client._http_client.close()
+
+
+def test_sync_no_default_authorization_when_no_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TAP-991: no Authorization default header when auth_token is absent."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        assert "authorization" not in client._http_client.headers
+    finally:
+        client._http_client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_default_authorization_header_set_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TAP-991: bearer token is pinned on the underlying httpx.AsyncClient at construction."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    client = AsyncTappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        auth_token="harden-async-tok",
+    )
+    try:
+        await client._ensure_client()
+        assert client._http_client.headers.get("authorization") == "Bearer harden-async-tok"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_no_default_authorization_when_no_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TAP-991: no Authorization default header when auth_token is absent (async)."""
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        await client._ensure_client()
+        assert "authorization" not in client._http_client.headers
+    finally:
+        await client.close()
+
+
+def test_sync_per_call_authorization_overrides_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TAP-991: explicit per-call Authorization header wins over the client default.
+
+    httpx merges request-level `headers=` over client-level defaults, so the
+    existing `_build_headers` path (which sets Authorization on every tools/call)
+    keeps its current behaviour — the default is only the safety net for
+    helpers that forget to pass headers at all.
+    """
+    monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
+    import httpx
+
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        auth_token="default-tok",
+    )
+    captured: dict[str, str] = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured.update(dict(request.headers))
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(_capture)
+    # Reconstruct the client's underlying httpx.Client with our mock transport
+    # so we can observe the actual outgoing request headers. Re-apply the same
+    # default headers we just verified to mimic _init_http() exactly.
+    client._http_client.close()
+    client._http_client = httpx.Client(
+        base_url="http://brain:8080",
+        timeout=client._timeout,
+        headers={"Authorization": "Bearer default-tok"},
+        transport=transport,
+    )
+
+    # Per-call Authorization should override the default.
+    client._http_client.post("/x", headers={"Authorization": "Bearer override-tok"})
+    assert captured.get("authorization") == "Bearer override-tok"
+
+    # No per-call header → default kicks in.
+    captured.clear()
+    client._http_client.post("/y")
+    assert captured.get("authorization") == "Bearer default-tok"
+    client._http_client.close()

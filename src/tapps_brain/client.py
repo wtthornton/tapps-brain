@@ -520,7 +520,17 @@ class TappsBrainClient:
             raise ImportError(
                 "TappsBrainClient requires httpx. Install it with: pip install httpx"
             ) from exc
-        self._http_client = httpx.Client(timeout=self._timeout)
+        # TAP-991: pin the bearer token at httpx.Client construction so any
+        # helper that reaches `self._http_client.post(...)` directly inherits
+        # auth automatically. Per-call `headers=` (via _build_headers) still
+        # wins where set — httpx merges request-level headers over client
+        # defaults — so the explicit auth path is untouched. Closes the
+        # regression class that produced TAP-747 / TAP-990 (initialize was
+        # added later than _build_headers and silently skipped auth).
+        default_headers: dict[str, str] = {}
+        if self._auth_token:
+            default_headers["Authorization"] = f"Bearer {self._auth_token}"
+        self._http_client = httpx.Client(timeout=self._timeout, headers=default_headers)
 
     def _tool(self, name: str, **kwargs: Any) -> Any:
         """Call a tool via the active transport.
@@ -628,15 +638,28 @@ class TappsBrainClient:
         tier: str = "procedural",
         share: bool = False,
         share_with: str = "",
+        agent_scope: str = "",
+        memory_group: str = "",
         agent_id: str = "",
     ) -> str:
-        """Save a memory. Returns the generated key."""
+        """Save a memory. Returns the generated key.
+
+        Scope (TAP-989): pass ``agent_scope`` directly as ``"private"`` /
+        ``"domain"`` / ``"hive"`` / ``"group:<name>"`` for explicit Hive-namespace
+        control. When ``agent_scope`` is empty, the legacy ``share`` /
+        ``share_with`` params are derived for back-compat (explicit wins).
+
+        ``memory_group`` is a project-local partition (orthogonal to the Hive
+        scope axis) — leave empty unless you need group-filtered retrieval.
+        """
         result = self._tool(
             "brain_remember",
             fact=fact,
             tier=tier,
             share=share,
             share_with=share_with,
+            agent_scope=agent_scope,
+            memory_group=memory_group,
             agent_id=agent_id,
         )
         return result.get("key", "") if isinstance(result, dict) else str(result)
@@ -781,7 +804,11 @@ class AsyncTappsBrainClient:
                 raise ImportError(
                     "AsyncTappsBrainClient requires httpx. Install it with: pip install httpx"
                 ) from exc
-            self._http_client = httpx.AsyncClient(timeout=self._timeout)
+            # TAP-991: see TappsBrainClient._init_http() for rationale.
+            default_headers: dict[str, str] = {}
+            if self._auth_token:
+                default_headers["Authorization"] = f"Bearer {self._auth_token}"
+            self._http_client = httpx.AsyncClient(timeout=self._timeout, headers=default_headers)
 
     async def _tool(self, name: str, **kwargs: Any) -> Any:
         """Call a tool via the active transport (async).
@@ -884,15 +911,28 @@ class AsyncTappsBrainClient:
         tier: str = "procedural",
         share: bool = False,
         share_with: str = "",
+        agent_scope: str = "",
+        memory_group: str = "",
         agent_id: str = "",
     ) -> str:
-        """Save a memory. Returns the generated key."""
+        """Save a memory. Returns the generated key.
+
+        Scope (TAP-989): pass ``agent_scope`` directly as ``"private"`` /
+        ``"domain"`` / ``"hive"`` / ``"group:<name>"`` for explicit Hive-namespace
+        control. When ``agent_scope`` is empty, the legacy ``share`` /
+        ``share_with`` params are derived for back-compat (explicit wins).
+
+        ``memory_group`` is a project-local partition (orthogonal to the Hive
+        scope axis) — leave empty unless you need group-filtered retrieval.
+        """
         result = await self._tool(
             "brain_remember",
             fact=fact,
             tier=tier,
             share=share,
             share_with=share_with,
+            agent_scope=agent_scope,
+            memory_group=memory_group,
             agent_id=agent_id,
         )
         return result.get("key", "") if isinstance(result, dict) else str(result)

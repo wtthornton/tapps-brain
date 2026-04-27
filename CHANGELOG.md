@@ -10,6 +10,19 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.13.0] — 2026-04-27
+
+### Added
+- **`agent_scope` and `memory_group` parameters on the `brain_remember` wire** (TAP-989): the MCP tool, `TappsBrainClient.remember`, and `AsyncTappsBrainClient.remember` now accept `agent_scope` (one of `"private"` / `"domain"` / `"hive"` / `"group:<name>"`) and `memory_group` (project-local partition) directly, so HTTP / MCP callers can target Hive namespaces without going through the lossy `share` / `share_with` derivation. Closes the surface gap that made `agent_scope="domain"` unreachable from any `brain_remember` caller.
+  - **Precedence rule:** an explicit `agent_scope` wins over the legacy `share` / `share_with` derivation. When `agent_scope` is empty (the default), the legacy params are derived as before for back-compat (`share=True` → `"group"`, `share_with="hive"` → `"hive"`, `share_with="<x>"` → `"group:<x>"`). Documented on the tool docstring and both client `remember()` docstrings.
+  - **Validation:** an unknown scope value returns the existing `invalid_agent_scope` error envelope (with `valid_values`), matching the CLI / `/v1/remember` REST contract.
+- **TAP-991 — default `Authorization` header pinned at `httpx.Client` / `httpx.AsyncClient` construction**: the bearer token is now set as a default header on the underlying httpx client, so any helper that calls `self._http_client.post(...)` directly inherits auth automatically. Defense-in-depth on top of the per-call `_build_headers` path — closes the regression class that produced TAP-747 (the `_async_do_initialize` helper was added later than `_build_headers` and silently skipped auth, causing 401 on every MCP session init for AgentForge). httpx merges request-level `headers=` over client-level defaults, so existing call sites that pass `Authorization` via `_build_headers` keep their current behaviour — no behaviour change for current callers.
+
+### Compatibility
+- **No breaking change.** Existing `brain_remember` callers that rely on `share` / `share_with` continue to work unchanged. The new kwargs default to empty strings; only callers that pass them explicitly see the new behaviour. Wheel APIs, MCP tools, REST endpoints all keep their current shapes.
+
+---
+
 ## [3.12.0] — 2026-04-25
 
 ### Added

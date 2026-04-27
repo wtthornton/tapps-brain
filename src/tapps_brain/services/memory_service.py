@@ -31,11 +31,21 @@ def brain_remember(
     tier: str = "procedural",
     share: bool = False,
     share_with: str = "",
+    agent_scope: str = "",
+    memory_group: str = "",
     temporal_sensitivity: str | None = None,
     failed_approaches: list[str] | None = None,
     supersedes: str | None = None,
 ) -> dict[str, Any]:
     """Save a memory and optionally supersede an existing entry.
+
+    Scope precedence (TAP-989): an explicit ``agent_scope`` (one of
+    ``"private"`` / ``"domain"`` / ``"hive"`` / ``"group:<name>"``) wins over
+    the legacy ``share`` / ``share_with`` derivation. When ``agent_scope`` is
+    empty, the legacy params are derived as before for back-compat.
+
+    ``memory_group`` is a project-local partition (orthogonal to the Hive
+    scope axis) — defaults to unset.
 
     When *supersedes* is a key of an existing entry, that entry is marked
     ``status=superseded`` with ``superseded_by`` pointing to the new key.
@@ -45,18 +55,36 @@ def brain_remember(
     returned in the response so the caller can confirm with a follow-up call.
     """
     from tapps_brain.agent_brain import _content_key
+    from tapps_brain.agent_scope import (
+        agent_scope_valid_values_for_errors,
+        normalize_agent_scope,
+    )
     from tapps_brain.models import MemoryStatus
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
         key = _content_key(fact)
-        agent_scope = "private"
-        if share:
-            agent_scope = "group"
-        elif share_with == "hive":
-            agent_scope = "hive"
-        elif share_with:
-            agent_scope = f"group:{share_with}"
+
+        # TAP-989: explicit agent_scope wins over legacy share / share_with.
+        # Legacy derivation only kicks in when agent_scope is empty (default).
+        resolved_scope: str
+        if agent_scope:
+            try:
+                resolved_scope = normalize_agent_scope(agent_scope)
+            except ValueError as exc:
+                return {
+                    "error": "invalid_agent_scope",
+                    "message": str(exc),
+                    "valid_values": agent_scope_valid_values_for_errors(),
+                }
+        else:
+            resolved_scope = "private"
+            if share:
+                resolved_scope = "group"
+            elif share_with == "hive":
+                resolved_scope = "hive"
+            elif share_with:
+                resolved_scope = f"group:{share_with}"
 
         # -------------------------------------------------------
         # Supersession: mark the old entry before saving new one.
@@ -76,15 +104,18 @@ def brain_remember(
                     dedup=False,
                 )
 
-        result = store.save(
-            key=key,
-            value=fact,
-            tier=tier,
-            agent_scope=agent_scope,
-            temporal_sensitivity=temporal_sensitivity,
-            failed_approaches=failed_approaches,
-            status=MemoryStatus.active.value,
-        )
+        save_kwargs: dict[str, Any] = {
+            "key": key,
+            "value": fact,
+            "tier": tier,
+            "agent_scope": resolved_scope,
+            "temporal_sensitivity": temporal_sensitivity,
+            "failed_approaches": failed_approaches,
+            "status": MemoryStatus.active.value,
+        }
+        if memory_group:
+            save_kwargs["memory_group"] = memory_group
+        result = store.save(**save_kwargs)
         if isinstance(result, dict) and "error" in result:
             return result
 
