@@ -3,6 +3,11 @@
 EPIC-059 STORY-059.5 — private agent memory wired through Postgres.
 All queries are scoped to the ``(project_id, agent_id)`` pair supplied at
 construction, replacing per-agent SQLite files (``.tapps-brain/agents/<id>/memory.db``).
+
+STORY-072.2 — every SQL string lives in
+:mod:`tapps_brain._postgres_private_sql` so the async backend
+(``AsyncPostgresPrivateBackend``) can share the exact same queries.  Only
+connection / cursor mechanics live here.
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
+
+from tapps_brain import _postgres_private_sql as _sql
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -30,12 +37,10 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 # idx_priv_embedding_hnsw absent.  Incremented once per
 # PostgresPrivateBackend.verify_expected_indexes() call that detects a gap;
 # reset only on process restart.  Consumed by http_adapter._collect_metrics()
-# to emit ``tapps_brain_private_missing_indexes_total``.
+# to emit ``tapps_brain_private_missing_indexes_total``.  Shared between the
+# sync and async backends — both increment into the same dict.
 _MISSING_INDEX_COUNTS: dict[str, int] = {}
 _MISSING_INDEX_COUNTS_LOCK = threading.Lock()
-
-#: Index names that must exist on ``private_memories`` after migration 002.
-_EXPECTED_PRIVATE_INDEXES: frozenset[str] = frozenset({"idx_priv_embedding_hnsw"})
 
 
 def _parse_jsonb_list(raw: Any) -> list[str]:
@@ -67,28 +72,10 @@ def get_missing_index_counts_snapshot() -> dict[str, int]:
         return dict(_MISSING_INDEX_COUNTS)
 
 
-# DDL for the private_relations auxiliary table.  Created on first use.
-_RELATIONS_DDL = """\
-CREATE TABLE IF NOT EXISTS private_relations (
-    project_id          TEXT        NOT NULL,
-    agent_id            TEXT        NOT NULL,
-    subject             TEXT        NOT NULL,
-    predicate           TEXT        NOT NULL,
-    object_entity       TEXT        NOT NULL,
-    source_entry_keys   JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    confidence          REAL        NOT NULL DEFAULT 0.8,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (project_id, agent_id, subject, predicate, object_entity)
-);
-CREATE INDEX IF NOT EXISTS idx_priv_rel_project_agent
-    ON private_relations (project_id, agent_id);
-"""
-
-# Schema version reported by get_schema_version() (mirrors 001_initial.sql).
-_PRIVATE_SCHEMA_VERSION = 1
-
-# Valid time_field values for temporal filtering.
-_VALID_TIME_FIELDS: frozenset[str] = frozenset({"created_at", "updated_at", "last_accessed"})
+def _record_missing_indexes(project_id: str) -> None:
+    """Increment the per-project missing-index counter.  Thread-safe."""
+    with _MISSING_INDEX_COUNTS_LOCK:
+        _MISSING_INDEX_COUNTS[project_id] = _MISSING_INDEX_COUNTS.get(project_id, 0) + 1
 
 
 class PostgresPrivateBackend:
@@ -185,146 +172,13 @@ class PostgresPrivateBackend:
 
     def save(self, entry: MemoryEntry) -> None:
         """Upsert a :class:`MemoryEntry` into ``private_memories``."""
-        tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-        source = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-        scope = entry.scope.value if hasattr(entry.scope, "value") else str(entry.scope)
-        tags_json = json.dumps(entry.tags, ensure_ascii=False)
-
+        params = _sql.build_save_params(
+            entry=entry,
+            project_id=self._project_id,
+            agent_id=self._agent_id,
+        )
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO private_memories (
-                    project_id, agent_id, key, value,
-                    tier, confidence, source, source_agent,
-                    scope, agent_scope, memory_group, tags,
-                    created_at, updated_at, last_accessed,
-                    access_count, useful_access_count, total_access_count,
-                    branch, last_reinforced, reinforce_count,
-                    contradicted, contradiction_reason, seeded_from,
-                    valid_at, invalid_at, superseded_by,
-                    valid_from, valid_until,
-                    source_session_id, source_channel, source_message_id, triggered_by,
-                    stability, difficulty,
-                    positive_feedback_count, negative_feedback_count,
-                    integrity_hash, integrity_hash_v, embedding_model_id,
-                    temporal_sensitivity,
-                    failed_approaches,
-                    status,
-                    stale_reason,
-                    stale_date,
-                    memory_class
-                ) VALUES (
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s::jsonb,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s,
-                    %s, %s,
-                    %s, %s, %s,
-                    %s,
-                    %s::jsonb,
-                    %s, %s, %s,
-                    %s
-                )
-                ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
-                    value                    = EXCLUDED.value,
-                    tier                     = EXCLUDED.tier,
-                    confidence               = EXCLUDED.confidence,
-                    source                   = EXCLUDED.source,
-                    source_agent             = EXCLUDED.source_agent,
-                    scope                    = EXCLUDED.scope,
-                    agent_scope              = EXCLUDED.agent_scope,
-                    memory_group             = EXCLUDED.memory_group,
-                    tags                     = EXCLUDED.tags,
-                    updated_at               = EXCLUDED.updated_at,
-                    last_accessed            = EXCLUDED.last_accessed,
-                    access_count             = EXCLUDED.access_count,
-                    useful_access_count      = EXCLUDED.useful_access_count,
-                    total_access_count       = EXCLUDED.total_access_count,
-                    branch                   = EXCLUDED.branch,
-                    last_reinforced          = EXCLUDED.last_reinforced,
-                    reinforce_count          = EXCLUDED.reinforce_count,
-                    contradicted             = EXCLUDED.contradicted,
-                    contradiction_reason     = EXCLUDED.contradiction_reason,
-                    seeded_from              = EXCLUDED.seeded_from,
-                    valid_at                 = EXCLUDED.valid_at,
-                    invalid_at               = EXCLUDED.invalid_at,
-                    superseded_by            = EXCLUDED.superseded_by,
-                    valid_from               = EXCLUDED.valid_from,
-                    valid_until              = EXCLUDED.valid_until,
-                    source_session_id        = EXCLUDED.source_session_id,
-                    source_channel           = EXCLUDED.source_channel,
-                    source_message_id        = EXCLUDED.source_message_id,
-                    triggered_by             = EXCLUDED.triggered_by,
-                    stability                = EXCLUDED.stability,
-                    difficulty               = EXCLUDED.difficulty,
-                    positive_feedback_count  = EXCLUDED.positive_feedback_count,
-                    negative_feedback_count  = EXCLUDED.negative_feedback_count,
-                    integrity_hash           = EXCLUDED.integrity_hash,
-                    integrity_hash_v         = EXCLUDED.integrity_hash_v,
-                    embedding_model_id       = EXCLUDED.embedding_model_id,
-                    temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
-                    failed_approaches        = EXCLUDED.failed_approaches,
-                    status                   = EXCLUDED.status,
-                    stale_reason             = EXCLUDED.stale_reason,
-                    stale_date               = EXCLUDED.stale_date,
-                    memory_class             = EXCLUDED.memory_class
-                """,
-                (
-                    self._project_id,
-                    self._agent_id,
-                    entry.key,
-                    entry.value,
-                    tier,
-                    entry.confidence,
-                    source,
-                    entry.source_agent,
-                    scope,
-                    entry.agent_scope,
-                    entry.memory_group,
-                    tags_json,
-                    entry.created_at,
-                    entry.updated_at,
-                    entry.last_accessed,
-                    entry.access_count,
-                    entry.useful_access_count,
-                    entry.total_access_count,
-                    entry.branch,
-                    entry.last_reinforced,
-                    entry.reinforce_count,
-                    entry.contradicted,
-                    entry.contradiction_reason,
-                    entry.seeded_from,
-                    entry.valid_at,
-                    entry.invalid_at,
-                    entry.superseded_by,
-                    entry.valid_from,
-                    entry.valid_until,
-                    entry.source_session_id,
-                    entry.source_channel,
-                    entry.source_message_id,
-                    entry.triggered_by,
-                    entry.stability,
-                    entry.difficulty,
-                    entry.positive_feedback_count,
-                    entry.negative_feedback_count,
-                    entry.integrity_hash,
-                    entry.integrity_hash_v,
-                    entry.embedding_model_id,
-                    entry.temporal_sensitivity,
-                    json.dumps(entry.failed_approaches, ensure_ascii=False),
-                    entry.status.value if hasattr(entry.status, "value") else str(entry.status),
-                    entry.stale_reason,
-                    entry.stale_date,
-                    getattr(entry, "memory_class", None),
-                ),
-            )
+            cur.execute(_sql.SAVE_UPSERT_SQL, params)
 
         logger.debug(
             "postgres_private.saved",
@@ -349,12 +203,7 @@ class PostgresPrivateBackend:
         chunk_size = 1000
         results: list[MemoryEntry] = []
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM private_memories"
-                " WHERE project_id = %s AND agent_id = %s"
-                " ORDER BY updated_at DESC",
-                (self._project_id, self._agent_id),
-            )
+            cur.execute(_sql.LOAD_ALL_SQL, (self._project_id, self._agent_id))
             col_names = [desc[0] for desc in cur.description]
             while True:
                 chunk = cur.fetchmany(chunk_size)
@@ -369,10 +218,7 @@ class PostgresPrivateBackend:
     def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s",
-                (self._project_id, self._agent_id, key),
-            )
+            cur.execute(_sql.DELETE_BY_KEY_SQL, (self._project_id, self._agent_id, key))
             deleted = (cur.rowcount or 0) > 0
         if deleted:
             logger.debug(
@@ -417,47 +263,18 @@ class PostgresPrivateBackend:
             memory_class: TAP-733 — when set, restrict results to entries with this
                 semantic class value.  Pushed into SQL WHERE for DB-level filtering.
         """
-        if time_field not in _VALID_TIME_FIELDS:
-            msg = f"time_field must be one of {sorted(_VALID_TIME_FIELDS)}, got {time_field!r}"
-            raise ValueError(msg)
         if not query.strip():
             return []
 
-        # Base query using the tsvector index (idx_priv_search_vector_gin).
-        sql = (
-            "SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS _rank "
-            "FROM private_memories "
-            "WHERE project_id = %s AND agent_id = %s "
-            "  AND search_vector @@ plainto_tsquery('english', %s)"
+        sql, extra_params = _sql.build_search_sql(
+            memory_group=memory_group,
+            since=since,
+            until=until,
+            time_field=time_field,
+            memory_class=memory_class,
+            as_of=as_of,
         )
-        params: list[Any] = [query, self._project_id, self._agent_id, query]
-
-        if memory_group is not None:
-            sql += " AND memory_group = %s"
-            params.append(memory_group)
-        if since is not None:
-            sql += f" AND {time_field} >= %s"
-            params.append(since)
-        if until is not None:
-            sql += f" AND {time_field} < %s"
-            params.append(until)
-
-        # TAP-733: memory_class SQL pushdown — cheap equality check at DB level.
-        if memory_class is not None:
-            sql += " AND memory_class = %s"
-            params.append(memory_class)
-
-        # Bi-temporal as_of filter (STORY-066.2).
-        # NULL valid_at / invalid_at means "unbounded" — always visible.
-        if as_of is not None:
-            sql += (
-                " AND (valid_at IS NULL OR valid_at <= %s::timestamptz)"
-                " AND (invalid_at IS NULL OR invalid_at > %s::timestamptz)"
-            )
-            params.append(as_of)
-            params.append(as_of)
-
-        sql += " ORDER BY _rank DESC LIMIT 100"
+        params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
 
         with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
@@ -488,16 +305,12 @@ class PostgresPrivateBackend:
             return []
 
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-        sql = (
-            "SELECT key, embedding <=> %s::vector AS distance "
-            "FROM private_memories "
-            "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL "
-            "ORDER BY distance "
-            "LIMIT %s"
-        )
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql, (vec_str, self._project_id, self._agent_id, k))
+                cur.execute(
+                    _sql.KNN_SEARCH_SQL,
+                    (vec_str, self._project_id, self._agent_id, k),
+                )
                 rows = cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
@@ -507,11 +320,7 @@ class PostgresPrivateBackend:
     def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM private_memories "
-                "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL",
-                (self._project_id, self._agent_id),
-            )
+            cur.execute(_sql.VECTOR_ROW_COUNT_SQL, (self._project_id, self._agent_id))
             row = cur.fetchone()
         return int(row[0]) if row else 0
 
@@ -548,10 +357,7 @@ class PostgresPrivateBackend:
         """
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT indexname FROM pg_indexes "
-                    "WHERE tablename = 'private_memories' AND schemaname = 'public'"
-                )
+                cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
                 present = {str(row[0]) for row in cur.fetchall()}
         except Exception:
             logger.warning(
@@ -560,7 +366,7 @@ class PostgresPrivateBackend:
             )
             return []
 
-        missing = sorted(_EXPECTED_PRIVATE_INDEXES - present)
+        missing = sorted(_sql.EXPECTED_PRIVATE_INDEXES - present)
         if missing:
             logger.warning(
                 "private.indexes.missing",
@@ -571,10 +377,7 @@ class PostgresPrivateBackend:
                     "Until then, vector recall falls back to a sequential scan."
                 ),
             )
-            with _MISSING_INDEX_COUNTS_LOCK:
-                _MISSING_INDEX_COUNTS[self._project_id] = (
-                    _MISSING_INDEX_COUNTS.get(self._project_id, 0) + 1
-                )
+            _record_missing_indexes(self._project_id)
         return missing
 
     # ------------------------------------------------------------------
@@ -594,27 +397,16 @@ class PostgresPrivateBackend:
             if self._relations_ensured:
                 return
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM pg_class c "
-                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                    "WHERE n.nspname = 'public' AND c.relname = 'private_relations' "
-                    "LIMIT 1"
-                )
+                cur.execute(_sql.PROBE_RELATIONS_TABLE_SQL)
                 if cur.fetchone() is None:
-                    cur.execute(_RELATIONS_DDL)
+                    cur.execute(_sql.RELATIONS_DDL)
             self._relations_ensured = True
 
     def list_relations(self) -> list[dict[str, Any]]:
         """Return all relations for this ``(project_id, agent_id)`` scope."""
         self._ensure_relations_table()
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT subject, predicate, object_entity, "
-                "       source_entry_keys, confidence, created_at "
-                "FROM private_relations "
-                "WHERE project_id = %s AND agent_id = %s",
-                (self._project_id, self._agent_id),
-            )
+            cur.execute(_sql.LIST_RELATIONS_SQL, (self._project_id, self._agent_id))
             rows = cur.fetchall()
         if not rows:
             return []
@@ -651,10 +443,7 @@ class PostgresPrivateBackend:
         """Total relation count for this ``(project_id, agent_id)`` scope."""
         self._ensure_relations_table()
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM private_relations WHERE project_id = %s AND agent_id = %s",
-                (self._project_id, self._agent_id),
-            )
+            cur.execute(_sql.COUNT_RELATIONS_SQL, (self._project_id, self._agent_id))
             row = cur.fetchone()
         return int(row[0]) if row else 0
 
@@ -673,16 +462,7 @@ class PostgresPrivateBackend:
             for rel in relations:
                 source_keys: list[str] = list(dict.fromkeys([*rel.source_entry_keys, key]))
                 cur.execute(
-                    """
-                    INSERT INTO private_relations
-                        (project_id, agent_id, subject, predicate, object_entity,
-                         source_entry_keys, confidence, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s)
-                    ON CONFLICT (project_id, agent_id, subject, predicate, object_entity)
-                    DO UPDATE SET
-                        source_entry_keys = EXCLUDED.source_entry_keys,
-                        confidence        = EXCLUDED.confidence
-                    """,
+                    _sql.SAVE_RELATION_UPSERT_SQL,
                     (
                         self._project_id,
                         self._agent_id,
@@ -711,12 +491,7 @@ class PostgresPrivateBackend:
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
-                    """
-                    DELETE FROM private_relations
-                    WHERE project_id = %s
-                      AND agent_id   = %s
-                      AND source_entry_keys::jsonb @> %s::jsonb
-                    """,
+                    _sql.DELETE_RELATIONS_BY_KEY_SQL,
                     (
                         self._project_id,
                         self._agent_id,
@@ -740,12 +515,12 @@ class PostgresPrivateBackend:
         """Return the private-memory schema version (from ``private_schema_version``)."""
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute("SELECT MAX(version) FROM private_schema_version")
+                cur.execute(_sql.GET_SCHEMA_VERSION_SQL)
                 row = cur.fetchone()
-            return int(row[0]) if row and row[0] is not None else _PRIVATE_SCHEMA_VERSION
+            return int(row[0]) if row and row[0] is not None else _sql.PRIVATE_SCHEMA_VERSION
         except Exception:
             logger.warning("postgres_private.get_schema_version_failed", exc_info=True)
-            return _PRIVATE_SCHEMA_VERSION
+            return _sql.PRIVATE_SCHEMA_VERSION
 
     # ------------------------------------------------------------------
     # Audit
@@ -765,11 +540,7 @@ class PostgresPrivateBackend:
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
-                    """
-                    INSERT INTO audit_log
-                        (project_id, agent_id, event_type, key, details)
-                    VALUES (%s, %s, %s, %s, %s::jsonb)
-                    """,
+                    _sql.APPEND_AUDIT_SQL,
                     (
                         self._project_id,
                         self._agent_id,
@@ -800,29 +571,13 @@ class PostgresPrivateBackend:
         Returns dicts with ``timestamp`` (ISO-8601 string), ``event_type``,
         ``key``, and ``details``.  Ordered oldest-to-newest.
         """
-        conditions: list[str] = ["project_id = %s", "agent_id = %s"]
-        params: list[Any] = [self._project_id, self._agent_id]
-        if key is not None:
-            conditions.append("key = %s")
-            params.append(key)
-        if event_type is not None:
-            conditions.append("event_type = %s")
-            params.append(event_type)
-        if since is not None:
-            conditions.append("timestamp >= %s")
-            params.append(since)
-        if until is not None:
-            conditions.append("timestamp <= %s")
-            params.append(until)
-        from psycopg import sql as pgsql
-
-        where = pgsql.SQL(" AND ").join(pgsql.SQL(c) for c in conditions)
-        stmt = pgsql.SQL(
-            "SELECT timestamp, event_type, key, details "
-            "FROM audit_log WHERE {} "
-            "ORDER BY timestamp ASC, id ASC LIMIT {}"
-        ).format(where, pgsql.Placeholder())
-        params.append(limit)
+        stmt, extra_params = _sql.build_query_audit_sql(
+            key=key,
+            event_type=event_type,
+            since=since,
+            until=until,
+        )
+        params: list[Any] = [self._project_id, self._agent_id, *extra_params, limit]
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(stmt, params)
@@ -867,11 +622,7 @@ class PostgresPrivateBackend:
         """
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT value FROM flywheel_meta "
-                    "WHERE project_id = %s AND agent_id = %s AND key = %s",
-                    (self._project_id, self._agent_id, key),
-                )
+                cur.execute(_sql.FLYWHEEL_META_GET_SQL, (self._project_id, self._agent_id, key))
                 row = cur.fetchone()
                 return str(row[0]) if row else None
         except Exception:
@@ -887,12 +638,7 @@ class PostgresPrivateBackend:
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
-                    """
-                    INSERT INTO flywheel_meta (project_id, agent_id, key, value, updated_at)
-                    VALUES (%s, %s, %s, %s, now())
-                    ON CONFLICT (project_id, agent_id, key)
-                    DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-                    """,
+                    _sql.FLYWHEEL_META_SET_SQL,
                     (self._project_id, self._agent_id, key, value),
                 )
         except Exception:
@@ -918,12 +664,7 @@ class PostgresPrivateBackend:
             byte_count = len(payload_json.encode("utf-8"))
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(
-                    """
-                    INSERT INTO gc_archive
-                        (project_id, agent_id, archived_at, key, payload, byte_count)
-                    VALUES (%s, %s, now(), %s, %s::jsonb, %s)
-                    ON CONFLICT (project_id, agent_id, archived_at, key) DO NOTHING
-                    """,
+                    _sql.ARCHIVE_ENTRY_SQL,
                     (
                         self._project_id,
                         self._agent_id,
@@ -945,16 +686,7 @@ class PostgresPrivateBackend:
         """Return the most recent *limit* rows from ``gc_archive``."""
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT key, archived_at, byte_count, payload
-                    FROM gc_archive
-                    WHERE project_id = %s AND agent_id = %s
-                    ORDER BY archived_at DESC
-                    LIMIT %s
-                    """,
-                    (self._project_id, self._agent_id, limit),
-                )
+                cur.execute(_sql.LIST_ARCHIVE_SQL, (self._project_id, self._agent_id, limit))
                 rows = cur.fetchall()
         except Exception:
             logger.warning("postgres_private.gc_archive_list_failed", exc_info=True)
@@ -980,14 +712,7 @@ class PostgresPrivateBackend:
         """Return ``SUM(byte_count)`` from ``gc_archive`` for this agent scope."""
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COALESCE(SUM(byte_count), 0)
-                    FROM gc_archive
-                    WHERE project_id = %s AND agent_id = %s
-                    """,
-                    (self._project_id, self._agent_id),
-                )
+                cur.execute(_sql.TOTAL_ARCHIVE_BYTES_SQL, (self._project_id, self._agent_id))
                 row = cur.fetchone()
             return int(row[0]) if row else 0
         except Exception:
