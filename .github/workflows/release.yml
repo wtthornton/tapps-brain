@@ -1,0 +1,140 @@
+name: Release
+
+# TAP-992 — automated release flow for tapps-brain.
+#
+# Triggered on `vX.Y.Z` tag push.  Builds wheel + sdist from the tag (NOT main),
+# smoke-installs the wheel in a clean venv, and attaches the artifacts to a
+# GitHub Release.  Consumers (AgentForge, TappsMCP, NLTlabsPE, …) pin against
+# the release URL or the git tag instead of vendoring a wheel locally.
+#
+# Public PyPI is intentionally NOT a target — see TAP-992 ("Out of scope").
+# Switch on the `pypi-publish` job below if/when that decision changes.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"   # pre-releases (e.g. v3.14.0-rc1)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (must already exist, e.g. v3.13.0)"
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # On a tag push GITHUB_REF is refs/tags/vX.Y.Z, so checkout grabs
+          # the tag — this is the explicit guarantee that we never build a
+          # release wheel from main's tip.  See feedback memory
+          # `feedback_release_build_from_tag.md`.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Resolve tag + version
+        id: meta
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          pyver=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$version" != "$pyver" ]; then
+            echo "::error::Tag $tag implies version $version but pyproject.toml has $pyver"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: uv sync --group dev
+
+      # Skip the full pytest run inside release-ready.sh — the CI matrix
+      # already ran tests against this commit on its way to main.  We still
+      # run the OpenClaw doc gate, version-consistency tests, ruff, mypy,
+      # uv build, and the wheel smoke import.
+      - name: Pre-publish gate
+        env:
+          SKIP_FULL_PYTEST: "1"
+        run: bash scripts/release-ready.sh
+
+      - name: Verify build artefacts
+        run: |
+          set -e
+          version="${{ steps.meta.outputs.version }}"
+          test -f "dist/tapps_brain-${version}-py3-none-any.whl"
+          test -f "dist/tapps_brain-${version}.tar.gz"
+          ls -lh dist/
+
+      - name: Smoke install wheel in clean venv
+        run: |
+          set -e
+          python3 -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install --upgrade pip
+          /tmp/smoke-venv/bin/pip install dist/tapps_brain-*.whl
+          /tmp/smoke-venv/bin/python -c "import tapps_brain; assert tapps_brain.__version__ == '${{ steps.meta.outputs.version }}', tapps_brain.__version__"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # gh release create
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          # Pull the section between the heading for this version and the next
+          # `## ` heading.  Falls back to a stub if no entry is found.
+          if [ -f CHANGELOG.md ] && grep -qE "^## (\[)?${version}" CHANGELOG.md; then
+            awk -v v="$version" '
+              $0 ~ "^## (\\[)?"v {flag=1; next}
+              flag && /^## / {exit}
+              flag {print}
+            ' CHANGELOG.md > release-notes.md
+          else
+            printf "Release %s\n\n_No CHANGELOG entry — see commit history._\n" "$version" > release-notes.md
+          fi
+          cat release-notes.md
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="${{ needs.build.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes-file release-notes.md \
+              --verify-tag \
+              dist/*
+          fi

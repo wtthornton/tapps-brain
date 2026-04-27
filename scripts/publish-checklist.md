@@ -1,8 +1,44 @@
-# PyPI Publish Checklist — tapps-brain
+# Release Checklist — tapps-brain
 
-Manual steps to publish a new release of `tapps-brain` to PyPI.
+Distribution channel for `tapps-brain` (TAP-992).  Default path is automated:
+push a `vX.Y.Z` tag; GitHub Actions builds wheel + sdist from the tag and
+attaches them to a GitHub Release.  Public PyPI is intentionally not the
+default — see TAP-992 for the rationale.
 
-## Pre-flight
+## Quickstart — automated GitHub Release
+
+```bash
+# 1. Bump pyproject.toml version + run the version-consistency sweep below
+# 2. Update CHANGELOG.md with a `## X.Y.Z` heading and notes
+# 3. Commit, push to main, wait for CI to go green
+# 4. Tag and push:
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+The [`.github/workflows/release.yml`](../.github/workflows/release.yml)
+workflow then:
+
+1. Checks out the **tag** (never `main` — see [feedback memory on this](../#release-build-from-tag-rule)).
+2. Runs `scripts/release-ready.sh` with `SKIP_FULL_PYTEST=1` (the CI matrix
+   has already exercised tests on this commit).
+3. `uv build` wheel + sdist; smoke-installs the wheel into a clean venv and
+   asserts `tapps_brain.__version__ == X.Y.Z`.
+4. Creates the GitHub Release at `vX.Y.Z`, attaches both artifacts, pulls
+   release notes from the matching `## X.Y.Z` block in `CHANGELOG.md`.
+
+Consumers (AgentForge, TappsMCP, NLTlabsPE) install via:
+
+```toml
+# pyproject.toml of a consumer — replace the vendored wheel with one of:
+tapps-brain = { url = "https://github.com/wtthornton/tapps-brain/releases/download/vX.Y.Z/tapps_brain-X.Y.Z-py3-none-any.whl" }
+# or:
+tapps-brain = { git = "https://github.com/wtthornton/tapps-brain.git", tag = "vX.Y.Z" }
+```
+
+Both forms are hash-pinnable in `uv.lock`; neither requires a `vendor/`
+directory or out-of-band wheel hand-off.
+
+## Pre-tag checklist
 
 **Recommended single gate (same checks as CI `release-ready` job, full pytest locally):**
 
@@ -29,10 +65,18 @@ That script runs, in order: OpenClaw docs consistency (`scripts/check_openclaw_d
     (including `install.pip` lower bound `>=X.Y.Z` in the skill manifest)
   - `openclaw-plugin/src/index.ts` (`ContextEngineInfo.version`)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
-- [ ] CHANGELOG.md updated with release notes (if maintained)
+- [ ] CHANGELOG.md updated with release notes — heading must be `## X.Y.Z`
+      so `release.yml` can extract the section
 - [ ] All changes committed and pushed to `main`
 
-## Build
+## Manual fallback — local build only
+
+If the GitHub Actions workflow is unavailable (network outage, secret
+rotation, etc.) the wheel can still be built locally and attached to a
+GitHub Release by hand.  Public PyPI publishing is intentionally not part
+of this flow — see TAP-992 for context.
+
+### Build
 
 ```bash
 # Clean previous builds
@@ -46,7 +90,7 @@ ls dist/
 # Expected: tapps_brain-X.Y.Z.tar.gz  tapps_brain-X.Y.Z-py3-none-any.whl
 ```
 
-## Verify Install
+### Verify Install
 
 ```bash
 # Create a clean virtual environment
@@ -73,46 +117,29 @@ deactivate
 rm -rf /tmp/tapps-publish-test
 ```
 
-## Publish to Test PyPI (recommended first)
+### Attach to a GitHub Release manually
 
 ```bash
-# Install twine if not already available
+gh release create vX.Y.Z \
+  --title vX.Y.Z \
+  --notes-file <(awk '/^## X.Y.Z/{f=1;next} f && /^## /{exit} f' CHANGELOG.md) \
+  --verify-tag \
+  dist/tapps_brain-X.Y.Z-py3-none-any.whl \
+  dist/tapps_brain-X.Y.Z.tar.gz
+```
+
+### Optional — publish to public PyPI
+
+Out of scope per TAP-992 (open-sourcing decision).  Re-enable by adding a
+`pypi-publish` job to `.github/workflows/release.yml` that uses
+`pypa/gh-action-pypi-publish` with PyPI Trusted Publisher (OIDC).  Manual
+fallback uses `twine`:
+
+```bash
 uv tool install twine
-
-# Upload to Test PyPI
-twine upload --repository testpypi dist/*
-
-# Verify install from Test PyPI
-pip install --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ \
-  tapps-brain
+twine upload --repository testpypi dist/*   # Test PyPI smoke first
+twine upload dist/*                         # production PyPI
 ```
-
-## Publish to PyPI
-
-```bash
-# Upload to production PyPI
-twine upload dist/*
-
-# Verify install from PyPI
-pip install tapps-brain
-tapps-brain --version
-```
-
-## Post-publish
-
-- [ ] Verify package page at https://pypi.org/project/tapps-brain/
-- [ ] Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`
-- [ ] Create GitHub release from the tag (attach wheel and sdist)
-- [ ] Verify install from PyPI in a clean environment
-
-## Authentication
-
-PyPI uploads require authentication. Options:
-
-1. **API token** (recommended): Generate at https://pypi.org/manage/account/token/
-   - Configure in `~/.pypirc` or pass via `TWINE_USERNAME=__token__ TWINE_PASSWORD=<token>`
-2. **Trusted publisher** (CI): Configure in PyPI project settings to allow GitHub Actions OIDC
 
 ## Notes
 
