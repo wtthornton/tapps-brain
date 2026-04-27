@@ -10,6 +10,33 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.0] — 2026-04-27
+
+### Added
+
+- **Async-native PostgreSQL pool on `PostgresConnectionManager`** (EPIC-072 STORY-072.1, TAP-822): adds `get_async_pool()`, `get_async_connection()`, `close_async()`, `get_async_pool_stats()`, and `is_async_open` alongside the existing sync pool. The async pool uses `psycopg_pool.AsyncConnectionPool` with `open=False` + explicit `await pool.open()` so it never blocks the event loop on first connect. Both pools share the same DSN + env-var configuration (`TAPPS_BRAIN_PG_POOL_*`) but their lifecycles are independent — opening one does not open the other. The non-privileged-role guard (`TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE`, TAP-512 / TAP-783) is enforced on the async path identically to the sync path.
+- **`AsyncPostgresPrivateBackend`** (EPIC-072 STORY-072.2, TAP-823): an async-native `PrivateBackend` implementation with the same surface as `PostgresPrivateBackend` but every IO method as `async def`. Exported from `tapps_brain.__init__`. Suitable for callers that want to run private memory IO without `asyncio.to_thread()` thread dispatch (~64-thread executor cap on default CPython).
+- **Async tenant contexts** on `PostgresConnectionManager`: `async_project_context(project_id)` and `async_admin_context()` mirror the sync `project_context` / `admin_context` so RLS on `private_memories` / `project_profiles` is enforced for async callers identically to sync.
+- **`Retry-After` header on `/admin/*` 429 responses** (TAP-780): clients now see the configured rate-limit window (`TAPPS_BRAIN_ADMIN_RATE_WINDOW`, default 60s) instead of having to guess.
+- **Automated release workflow** (TAP-992): `.github/workflows/release.yml` fires on `vX.Y.Z` tag push, builds wheel + sdist from the **tag** (never `main`), smoke-installs into a clean venv, and attaches both artifacts to a GitHub Release with notes auto-extracted from the matching `## X.Y.Z` block in this file. Replaces the manual `twine upload` flow that caused TAP-990's 3-day fix-to-consumer lag. `scripts/publish-checklist.md` rewritten to lead with the automated path; manual `twine` documented as fallback.
+
+### Internal
+
+- **Refactor**: extracted every SQL string from `postgres_private.py` (1 137 → 803 lines, -334) into `tapps_brain._postgres_private_sql` so the sync and async backends import the exact same queries. Two query builders (`build_search_sql`, `build_query_audit_sql`) handle conditional WHERE composition; `build_save_params` keeps the column list and entry-attribute list co-located. A `TestSqlSharedWithSyncBackend` unit-test class asserts the executed SQL IS the same module-level constant in the async backend — drift between sync and async will fail loudly. Zero behavior change; 181 sync-backend unit tests pass unchanged.
+
+### Compatibility
+
+- **No breaking change.** Existing sync `PostgresPrivateBackend`, `MemoryStore`, and `AsyncMemoryStore` (via `asyncio.to_thread`) all keep their current shapes. `AsyncPostgresPrivateBackend` is a new public class; callers that want the async-native path can opt in by constructing it directly. `AsyncMemoryStore` wiring through the new backend is the focus of an upcoming minor (EPIC-072 STORY-072.3 — gated behind `TAPPS_BRAIN_ASYNC_NATIVE` once load benchmarks confirm the speedup).
+
+### Deferred to next minor (EPIC-072 follow-ups)
+
+- STORY-072.3 — `AsyncMemoryStore` natively backed by `AsyncPostgresPrivateBackend` (drop `asyncio.to_thread`).
+- STORY-072.4 — load smoke benchmark (p95 before/after).
+- STORY-072.5 — HTTP / MCP adapter async wiring.
+- STORY-072.6 — feature flag graduation + docs.
+
+---
+
 ## [3.13.0] — 2026-04-27
 
 ### Added

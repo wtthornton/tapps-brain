@@ -2,10 +2,10 @@
   "id": "tapps-brain-memory",
   "name": "tapps-brain — Persistent Memory",
   "description": "ContextEngine plugin for tapps-brain: persistent cross-session memory with BM25 ranking, exponential decay, and multi-agent Hive sharing.",
-  "version": "3.13.0",
+  "version": "3.14.0",
   "kind": "context-engine",
   "install": {
-    "pip": "tapps-brain[mcp]>=3.5.0"
+    "pip": "tapps-brain[mcp]>=3.14.0"
   },
   "mcp": {
     "command": "tapps-brain-mcp",
