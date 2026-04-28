@@ -10,6 +10,46 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.2] — 2026-04-28
+
+### Fixed
+
+- **Production hardening passthrough on the unified Docker stack (TAP-1076).**
+  `docker/docker-compose.hive.yaml`'s `tapps-brain-http` `environment:` block
+  now propagates `TAPPS_BRAIN_METRICS_TOKEN` (or `_TOKEN_FILE`) and `HF_TOKEN`
+  alongside the existing `TAPPS_BRAIN_ALLOWED_ORIGINS`. All three default to
+  empty so the dev stack still boots without them, but a production deploy
+  that leaves any of them unset triggers the matching one-shot startup
+  warning the runtime already emits (`http_adapter.allowed_origins_empty`,
+  `http_adapter.metrics_unauthenticated`, the unauthenticated-HF-Hub
+  warning). Empty `ALLOWED_ORIGINS` accepts every Origin (DNS-rebinding
+  vector); unset `METRICS_TOKEN` leaves `/metrics` callable
+  unauthenticated; unset `HF_TOKEN` rate-limits embedding-model rehydrate
+  paths. The TAP-547 metrics-auth wiring shipped in 2026-04 — TAP-1076 only
+  closes the deployment-side documentation/config gap. `docs/guides/hive-deployment.md`
+  gains a "Production hardening checklist" section that lists all three
+  with example values + the literal warning text. `docker/.env.example`
+  is **not** updated in this release — the local `.claude/settings.json`
+  sandbox denies reads on `.env.*` files, so the file's update is deferred
+  to a follow-up that relaxes that pattern (residual TAP-1076 AC bullet).
+- **HuggingFace Hub 404-probe noise muted during embedding-model load
+  (TAP-1077).** `transformers` / `huggingface_hub` probe a handful of
+  optional config files (`adapter_config.json`, `processor_config.json`,
+  `preprocessor_config.json`, `video_preprocessor_config.json`,
+  `additional_chat_templates`) that `BAAI/bge-small-en-v1.5` doesn't ship,
+  emitting one `INFO HTTP Request: HEAD … 404 Not Found` line each. None
+  are real errors but they obscured real failures during on-call review.
+  `embeddings.SentenceTransformerProvider.__init__` now wraps the
+  `SentenceTransformer(model_name, **kwargs)` call in a tightly-scoped
+  context manager (`_suppress_huggingface_http_chatter`) that bumps the
+  `httpx`, `huggingface_hub`, and `transformers` loggers to `WARNING` for
+  the duration of the load and restores prior levels on exit. Two
+  regression tests in `tests/unit/test_memory_embeddings.py`
+  (`TestSuppressHuggingfaceHttpChatter`) pin the suppression-active and
+  level-restored invariants.
+
+---
+
 ## [3.14.1] — 2026-04-28
 
 ### Fixed

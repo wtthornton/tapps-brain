@@ -283,6 +283,68 @@ class TestSentenceTransformerProvider:
         assert result == []
 
 
+class TestSuppressHuggingfaceHttpChatter:
+    """TAP-1077: scope-suppression of HF / httpx INFO chatter during model load."""
+
+    def test_suppression_active_during_model_init(self) -> None:
+        """Inside SentenceTransformerProvider.__init__, the noisy loggers must
+        be at WARNING (so the 5 INFO-level 404 probe lines are dropped)."""
+        import logging
+
+        observed: dict[str, int] = {}
+
+        def fake_init(*_args: object, **_kwargs: object) -> MagicMock:
+            for name in ("httpx", "huggingface_hub", "transformers"):
+                observed[name] = logging.getLogger(name).level
+            mock = MagicMock()
+            mock.get_embedding_dimension.return_value = 384
+            return mock
+
+        # Stage prior levels at INFO so we can prove they actually moved.
+        prior = {
+            name: logging.getLogger(name).level
+            for name in ("httpx", "huggingface_hub", "transformers")
+        }
+        try:
+            for name in ("httpx", "huggingface_hub", "transformers"):
+                logging.getLogger(name).setLevel(logging.INFO)
+            with patch("tapps_brain.embeddings.SentenceTransformer", side_effect=fake_init):
+                SentenceTransformerProvider(model_name="test-model", revision=None)
+        finally:
+            for name, level in prior.items():
+                logging.getLogger(name).setLevel(level)
+
+        for name in ("httpx", "huggingface_hub", "transformers"):
+            assert observed[name] == logging.WARNING, (
+                f"{name} logger should be WARNING during model init, was {observed[name]}"
+            )
+
+    def test_suppression_restores_prior_levels_on_exit(self) -> None:
+        """After __init__ returns, the prior log levels must be restored —
+        we don't want to globally silence INFO 404s for other callers."""
+        import logging
+
+        prior = {}
+        custom_level = logging.DEBUG  # distinctive non-default value
+        for name in ("httpx", "huggingface_hub", "transformers"):
+            prior[name] = logging.getLogger(name).level
+            logging.getLogger(name).setLevel(custom_level)
+        try:
+            mock_model = MagicMock()
+            mock_model.get_embedding_dimension.return_value = 384
+            with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
+                SentenceTransformerProvider(model_name="test-model", revision=None)
+            # All three should be back at DEBUG, not stuck at WARNING.
+            for name in ("httpx", "huggingface_hub", "transformers"):
+                assert logging.getLogger(name).level == custom_level, (
+                    f"{name} logger should be restored to DEBUG, "
+                    f"was {logging.getLogger(name).level}"
+                )
+        finally:
+            for name, level in prior.items():
+                logging.getLogger(name).setLevel(level)
+
+
 # ---------------------------------------------------------------------------
 # get_embedding_provider — additional factory paths
 # ---------------------------------------------------------------------------

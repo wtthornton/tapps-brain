@@ -90,6 +90,25 @@ services:
       TAPPS_BRAIN_ADMIN_TOKEN: ${TAPPS_BRAIN_ADMIN_TOKEN:?set TAPPS_BRAIN_ADMIN_TOKEN in docker/.env}
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
       TAPPS_BRAIN_STRICT: "1"
+      # TAP-1076 — production-hardening passthroughs.  Default to empty so
+      # the dev stack still boots without these set, but the runtime emits a
+      # one-shot startup warning per unset variable so operators see the gap
+      # in the logs.  See docs/guides/hive-deployment.md "Production
+      # hardening checklist" for the recommended values.
+      #
+      # /metrics token gate (TAP-547 — already wired in the runtime; this
+      # only propagates the operator's value into the container).  When
+      # unset, /metrics is callable unauthenticated and serves a
+      # tenant-label-redacted body.  Set TAPPS_BRAIN_METRICS_TOKEN_FILE
+      # instead to read the token from a file so it never enters the
+      # process environment.
+      TAPPS_BRAIN_METRICS_TOKEN: "${TAPPS_BRAIN_METRICS_TOKEN:-}"
+      TAPPS_BRAIN_METRICS_TOKEN_FILE: "${TAPPS_BRAIN_METRICS_TOKEN_FILE:-}"
+      # HuggingFace Hub token — when unset, model-cache misses (cold container,
+      # cache eviction) hit the unauthenticated rate limit and the embedding
+      # provider stalls until the limit window resets.  Required for any
+      # production deployment with cache-rebuild risk.
+      HF_TOKEN: "${HF_TOKEN:-}"
     ports:
       - "${TAPPS_HTTP_PORT:-8080}:8080"
       # Operator MCP bound to loopback by default (TAP-551).

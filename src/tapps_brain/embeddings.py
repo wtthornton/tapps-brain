@@ -12,14 +12,46 @@ Operator-facing defaults (model id, dimension, license, upgrade notes):
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import math
 import os
 import struct
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 logger = structlog.get_logger(__name__)
+
+
+@contextlib.contextmanager
+def _suppress_huggingface_http_chatter() -> Iterator[None]:
+    """TAP-1077: scope-suppress the 5 INFO-level "HTTP Request: HEAD …
+    /adapter_config.json 404 Not Found" lines that ``transformers`` /
+    ``huggingface_hub`` emit while probing for optional config files
+    ``BAAI/bge-small-en-v1.5`` doesn't ship.  These are not real errors;
+    leaving them in the log obscures real failures during on-call review
+    and trains operators to ignore 404s in our container output.
+
+    Scope is intentionally tight — only the loggers known to emit the noise
+    during ``SentenceTransformer.__init__`` are bumped to ``WARNING``, and
+    only inside this context manager.  Prior log levels are restored on
+    exit so we don't silence other 404s from other callers (e.g. relay
+    HTTP, federation pulls, user-driven outbound httpx).
+    """
+    noisy = ("httpx", "huggingface_hub", "transformers")
+    snapshot = {name: logging.getLogger(name).level for name in noisy}
+    for name in noisy:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    try:
+        yield
+    finally:
+        for name, level in snapshot.items():
+            logging.getLogger(name).setLevel(level)
+
 
 # sentence-transformers is a core dependency.
 try:
@@ -153,7 +185,8 @@ class SentenceTransformerProvider:
         if revision is not None:
             st_kwargs["revision"] = revision
 
-        self._model = SentenceTransformer(model_name, **st_kwargs)
+        with _suppress_huggingface_http_chatter():
+            self._model = SentenceTransformer(model_name, **st_kwargs)
         # Renamed from ``get_sentence_embedding_dimension`` in
         # sentence-transformers 5.4.0; the old name emits a DeprecationWarning
         # and is scheduled for removal in 6.x.  See pyproject.toml for the

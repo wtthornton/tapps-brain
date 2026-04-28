@@ -196,8 +196,36 @@ data:
 | `TAPPS_BRAIN_FEDERATION_DSN` | (fallback: `TAPPS_BRAIN_DATABASE_URL`) | **Optional.** Same rule for Federation. |
 | `TAPPS_BRAIN_AUTH_TOKEN` | (required) | Bearer token for the public `/mcp/` + `/v1/*` data plane. |
 | `TAPPS_BRAIN_ADMIN_TOKEN` | (required) | Bearer token for the operator MCP transport on `:8090` (loopback by default). |
-| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (set in production). |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (**set in production** — empty accepts all Origin headers, which exposes the data plane to DNS-rebinding attacks from any browser tab on the host network). |
+| `TAPPS_BRAIN_METRICS_TOKEN` / `_TOKEN_FILE` | (unset) | Bearer token gating the full per-`(project_id, agent_id)` Prometheus surface on `/metrics` (TAP-547). When unset, `/metrics` serves a label-redacted body to any caller that can reach `:8080`. **Set in production.** Use `_TOKEN_FILE` to read from a file so the secret never enters the process environment. |
+| `HF_TOKEN` | (unset) | HuggingFace Hub token for the embedding-model cache rehydrate path. When unset, model downloads use the unauthenticated rate limit and the embedding provider stalls during a cache-cold deploy until the limit window resets. **Set in production**, especially on hosts with eviction-prone tmpfs caches. |
 | `TAPPS_BRAIN_AUTO_MIGRATE` / `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | (unset) | Leave unset on the brain — `tapps_runtime` cannot run DDL; migrations run in the migrate Job/sidecar. |
+
+## Production hardening checklist
+
+The runtime emits a startup warning for each of the gaps below — `docker logs tapps-brain-http` after a cold start will show the literal warning text. None block startup, so a dev stack still boots without them, but a production deploy that triggers any of them is leaking surface that downstream tenants and reconnaissance tooling can see. See [TAP-1076](https://linear.app/tappscodingagents/issue/TAP-1076) for the original ticket.
+
+| Variable | Why it matters | Example value |
+|----------|---------------|---------------|
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | Empty → DNS-rebinding-class attacks against `:8080` succeed from any browser tab on the host network. | `https://dashboard.example.com,https://ide.example.com` |
+| `TAPPS_BRAIN_METRICS_TOKEN` (or `_TOKEN_FILE`) | Unset → `/metrics` is callable unauthenticated; per-tenant labels are redacted but the request-rate surface still leaks. | `openssl rand -hex 32` |
+| `HF_TOKEN` | Unset → embedding model re-downloads from HuggingFace are rate-limited; if the local cache evicts during a high-churn deploy the brain stops embedding for several minutes. | A read-only token from https://huggingface.co/settings/tokens |
+
+All three are propagated by [`docker/docker-compose.hive.yaml`](../../docker/docker-compose.hive.yaml) — set them in `docker/.env` and they reach the container automatically. For Kubernetes, add them to the brain's ConfigMap (non-sensitive: `TAPPS_BRAIN_ALLOWED_ORIGINS`) or Secret (`TAPPS_BRAIN_METRICS_TOKEN`, `HF_TOKEN`).
+
+```bash
+# docker/.env (production hardening — append below the four required vars)
+TAPPS_BRAIN_ALLOWED_ORIGINS=https://dashboard.example.com,https://ide.example.com
+TAPPS_BRAIN_METRICS_TOKEN=$(openssl rand -hex 32)
+HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+After redeploy, confirm none of the three startup warnings appear:
+
+```bash
+docker logs tapps-brain-http 2>&1 | grep -E "allowed_origins_empty|metrics_unauthenticated|HF_TOKEN"
+# expect: no output
+```
 
 ## Verifying Multi-Tenancy (Cross-Tenant Smoke Test)
 
