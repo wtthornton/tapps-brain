@@ -1690,7 +1690,7 @@ def create_app(
             # Cache check — inside the guard so we observe the result
             # stored by whichever concurrent duplicate ran first.
             if ikey and istore is not None:
-                _cached = istore.check(project_id, ikey)
+                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -1744,7 +1744,11 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            result = _ms.memory_save(
+            # TAP-1099: offload sync DB call to a worker thread so the FastAPI
+            # event loop keeps serving concurrent requests instead of blocking
+            # on a single in-flight psycopg round-trip.
+            result = await asyncio.to_thread(
+                _ms.memory_save,
                 store,
                 project_id,
                 agent_id,
@@ -1766,7 +1770,7 @@ def create_app(
             # Persist idempotency result inside the guard so that waiting
             # duplicates see the stored response when they re-check.
             if ikey and istore is not None:
-                istore.save(project_id, ikey, status_code, result)
+                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -1813,7 +1817,7 @@ def create_app(
         try:
             # Cache check inside the guard.
             if ikey and istore is not None:
-                _cached = istore.check(project_id, ikey)
+                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -1866,7 +1870,9 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            result = _ms.memory_reinforce(
+            # TAP-1099: offload sync DB call to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.memory_reinforce,
                 store,
                 project_id,
                 agent_id,
@@ -1879,7 +1885,7 @@ def create_app(
                 status_code = 200
 
             if ikey and istore is not None:
-                istore.save(project_id, ikey, status_code, result)
+                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -1955,7 +1961,10 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
-        result = _ms.memory_save_many(store, project_id, agent_id, entries=entries)
+        # TAP-1099: offload batch DB work to a worker thread.
+        result = await asyncio.to_thread(
+            _ms.memory_save_many, store, project_id, agent_id, entries=entries
+        )
         status_code = 400 if "error" in result else 200
         return JSONResponse(status_code=status_code, content=result)
 
@@ -2023,7 +2032,10 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
-        result = _ms.memory_recall_many(store, project_id, agent_id, queries=queries)
+        # TAP-1099: offload batch DB work to a worker thread.
+        result = await asyncio.to_thread(
+            _ms.memory_recall_many, store, project_id, agent_id, queries=queries
+        )
         status_code = 400 if "error" in result else 200
         return JSONResponse(status_code=status_code, content=result)
 
@@ -2091,7 +2103,10 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
-        result = _ms.memory_reinforce_many(store, project_id, agent_id, entries=entries)
+        # TAP-1099: offload batch DB work to a worker thread.
+        result = await asyncio.to_thread(
+            _ms.memory_reinforce_many, store, project_id, agent_id, entries=entries
+        )
         status_code = 400 if "error" in result else 200
         return JSONResponse(status_code=status_code, content=result)
 
@@ -2168,7 +2183,11 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
-        results = _ms.brain_recall(
+        # TAP-1099: offload sync recall (BM25 + vector + decay + Hive merge) to
+        # a worker thread so the FastAPI event loop keeps serving concurrent
+        # requests instead of blocking on a single in-flight DB round-trip.
+        results = await asyncio.to_thread(
+            _ms.brain_recall,
             store,
             project_id,
             agent_id,
@@ -2219,7 +2238,7 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = istore.check(project_id, ikey)
+                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2272,11 +2291,14 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            result = _ms.brain_forget(store, project_id, agent_id, key=mem_key)
+            # TAP-1099: offload sync DB call to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.brain_forget, store, project_id, agent_id, key=mem_key
+            )
             status_code = 200
 
             if ikey and istore is not None:
-                istore.save(project_id, ikey, status_code, result)
+                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2321,7 +2343,7 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = istore.check(project_id, ikey)
+                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2374,7 +2396,9 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            result = _ms.brain_learn_success(
+            # TAP-1099: offload sync DB call to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.brain_learn_success,
                 store,
                 project_id,
                 agent_id,
@@ -2384,7 +2408,7 @@ def create_app(
             status_code = 200
 
             if ikey and istore is not None:
-                istore.save(project_id, ikey, status_code, result)
+                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2430,7 +2454,7 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = istore.check(project_id, ikey)
+                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2483,7 +2507,9 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            result = _ms.brain_learn_failure(
+            # TAP-1099: offload sync DB call to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.brain_learn_failure,
                 store,
                 project_id,
                 agent_id,
@@ -2494,7 +2520,7 @@ def create_app(
             status_code = 200
 
             if ikey and istore is not None:
-                istore.save(project_id, ikey, status_code, result)
+                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
 
             return JSONResponse(status_code=status_code, content=result)
 
