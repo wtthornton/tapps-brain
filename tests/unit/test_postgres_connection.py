@@ -592,9 +592,7 @@ class TestAsyncPool:
             asyncio.run(cm.get_async_pool())
         assert cm.is_async_open is True
 
-    def test_async_pool_role_check_refuses_superuser(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_async_pool_role_check_refuses_superuser(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Without delenv, this test passes locally but fails in CI because
         # ci.yml sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 in the job env —
         # the override branch then logs an ERROR and returns instead of
