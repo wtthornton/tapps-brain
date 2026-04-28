@@ -574,7 +574,14 @@ class TestAsyncPool:
         # because psycopg_pool would never await it.
         assert captured["reset"] is cm._reset_session_vars_async
 
-    def test_async_pool_role_check_passes_for_clean_role(self) -> None:
+    def test_async_pool_role_check_passes_for_clean_role(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # CI sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 globally so the
+        # privileged-role check never fails on the test PG role.  This
+        # specific test exercises the *clean*-role branch, so unset the
+        # override flag first to make the assertion meaningful.
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
         cm = PostgresConnectionManager("postgres://localhost/test")
@@ -585,7 +592,14 @@ class TestAsyncPool:
             asyncio.run(cm.get_async_pool())
         assert cm.is_async_open is True
 
-    def test_async_pool_role_check_refuses_superuser(self) -> None:
+    def test_async_pool_role_check_refuses_superuser(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Without delenv, this test passes locally but fails in CI because
+        # ci.yml sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 in the job env —
+        # the override branch then logs an ERROR and returns instead of
+        # raising, and the test sees "DID NOT RAISE".
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
         from tapps_brain.postgres_connection import PostgresConnectionManager
 
         cm = PostgresConnectionManager("postgres://localhost/test")
