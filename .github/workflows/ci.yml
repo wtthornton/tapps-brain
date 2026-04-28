@@ -1,11 +1,11 @@
 name: CI
 
-# Minimal PR gate: lint + unit test only. Everything else — benchmarks,
-# golden eval, packaging, compat parity, openapi snapshot, cross-tenant smoke,
-# cross-platform matrix — is nightly or workflow_dispatch.
+# Minimal PR gate: lint + unit test only.
 #
-# Ruff + mypy is the fast signal. Pytest runs on Postgres with benchmarks and
-# integration/compat suites excluded, matching the developer loop in CLAUDE.md.
+# Cost discipline (2026-04-27): the previous nightly schedule + cross-platform
+# matrix + benchmark / eval jobs were removed.  Re-add a job here only if it
+# catches a class of regression that lint + unit-test cannot.  Ad-hoc runs
+# stay available via `workflow_dispatch`.
 
 on:
   push:
@@ -26,9 +26,6 @@ on:
       - "openclaw-skill/**"
       - "openclaw-plugin/**"
       - "LICENSE"
-  schedule:
-    # Nightly full run: 06:00 UTC. Runs eval-golden + benchmark-smoke.
-    - cron: "0 6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -104,74 +101,11 @@ jobs:
       # compat parity) tracked separately. Reintroduce once they're green.
       - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
 
-  # ---------------------------------------------------------------------------
-  # Nightly-only jobs (schedule or workflow_dispatch) — do NOT block PRs.
-  # ---------------------------------------------------------------------------
-
-  eval-golden:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [test]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: true
-      - run: uv sync --group dev
-      - run: uv run python scripts/run_eval_golden.py --output eval-report.json
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: eval-report
-          path: eval-report.json
-
-  benchmark-smoke:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [test]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: true
-      - run: uv sync --group dev
-      - name: LoCoMo smoke
-        run: |
-          uv run python scripts/run_benchmark.py locomo \
-            --dataset tests/benchmarks/fixtures/locomo_fixture.json \
-            --answer-model deterministic --judge deterministic \
-            --output locomo-smoke.json
-      - name: LongMemEval smoke
-        run: |
-          uv run python scripts/run_benchmark.py longmemeval \
-            --dataset tests/benchmarks/fixtures/longmemeval_fixture.json \
-            --answer-model deterministic --judge deterministic \
-            --output longmemeval-smoke.json
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: benchmark-smoke
-          path: |
-            locomo-smoke.json
-            longmemeval-smoke.json
-
-  test-cross-platform:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest]
-        python-version: ["3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: true
-      - run: uv sync --group dev --python ${{ matrix.python-version }}
-      - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+# Removed in the 2026-04-27 cost-discipline pass:
+#   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)
+#   - test-cross-platform (macos-latest + windows-latest matrix; Mac/Windows
+#     runners cost ~10x ubuntu minutes on private repos)
+# Run them locally when needed:
+#   uv run python scripts/run_eval_golden.py --output eval-report.json
+#   uv run python scripts/run_benchmark.py locomo --dataset tests/benchmarks/fixtures/locomo_fixture.json
+#   uv run pytest tests/unit/ -v --tb=short -m "not benchmark"  # cross-platform smoke
