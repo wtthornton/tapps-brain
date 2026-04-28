@@ -80,12 +80,23 @@ jobs:
           ls -lh dist/
 
       - name: Smoke install wheel in clean venv
+        # TAP-1085 — `--no-deps` keeps the smoke install off the disk-pressure
+        # cliff on `ubuntu-latest`.  The full-deps install pulled torch +
+        # `nvidia-*` CUDA libs (~2.5 GB extracted) and intermittently hit
+        # `[Errno 28] No space left on device` mid-extraction.  Runtime imports
+        # are already covered by `release-ready.sh`'s wheel-smoke-import in the
+        # dev environment + the test matrix on the same commit; this step's
+        # unique job is "does pip install the wheel cleanly and does its
+        # METADATA carry the right version" — `importlib.metadata.version()`
+        # reads METADATA without importing the package, so we don't need any
+        # transitive deps installed at all.
         run: |
           set -e
           python3 -m venv /tmp/smoke-venv
           /tmp/smoke-venv/bin/pip install --upgrade pip
-          /tmp/smoke-venv/bin/pip install dist/tapps_brain-*.whl
-          /tmp/smoke-venv/bin/python -c "import tapps_brain; assert tapps_brain.__version__ == '${{ steps.meta.outputs.version }}', tapps_brain.__version__"
+          /tmp/smoke-venv/bin/pip install --no-deps dist/tapps_brain-*.whl
+          df -h /tmp /
+          /tmp/smoke-venv/bin/python -c "from importlib.metadata import version; v = version('tapps-brain'); assert v == '${{ steps.meta.outputs.version }}', v"
 
       - uses: actions/upload-artifact@v7
         with:
