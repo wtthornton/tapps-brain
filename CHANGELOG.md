@@ -10,6 +10,65 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.3] — 2026-04-28
+
+### Fixed
+
+- **HTTP adapter no longer blocks the event loop on sync DB calls (TAP-1099).**
+  Every `async def` `/v1/*` route in `src/tapps_brain/http_adapter.py` was
+  calling into `services/memory_service.py` (`_ms.*`) and the idempotency
+  store (`istore.check` / `istore.save`) — both of which are sync `def`
+  functions that issue blocking `psycopg` round-trips. Under concurrent load
+  (AgentForge dispatches ~50 simultaneous agent calls during busy windows),
+  every `/v1/remember`, `/v1/recall`, `/v1/forget`, `/v1/reinforce`, batch,
+  and `learn_*` request blocked the FastAPI event loop on a single in-flight
+  DB query — concurrent requests serialized behind it, producing tail-latency
+  cliffs that looked like Postgres slowness but were actually loop saturation.
+
+  Every sync DB call inside an async route is now wrapped in
+  `await asyncio.to_thread(...)` so the loop keeps serving concurrent
+  requests while the worker thread runs the round-trip. Speedup ceiling moves
+  from **1 in-flight call per worker** to **64 (CPython default executor
+  size)**, which exceeds typical AgentForge concurrency without any change
+  to `MemoryStore`.
+
+  Routes touched (9 sync `_ms.*` sites + 5 `istore.check` + 5 `istore.save`,
+  19 wrapping insertions total):
+
+  * `/v1/remember`, `/v1/reinforce`, `/v1/forget`, `/v1/recall`,
+    `/v1/learn_success`, `/v1/learn_failure`
+  * `/v1/remember:batch`, `/v1/recall:batch`, `/v1/reinforce:batch`
+
+  No behavior change to error handling, idempotency replay, response shape,
+  or auth. `_idempotency_save()` (a sync helper that is currently unused) is
+  deliberately left untouched.
+
+  AgentForge architectural review (see TAP-824 thread) found that AgentForge
+  migrated to HTTP transport in TAP-995 and never imports `AsyncMemoryStore`
+  directly, so EPIC-072's framing — "thread-executor saturation in
+  `asyncio.to_thread`" — does not apply to AgentForge's hot path. The
+  immediate user-facing fix lives in this adapter, not in `aio.py`. The
+  full async-native rewrite (TAP-824) stays deferred until TAP-825's
+  benchmark proves the 64-thread ceiling is hit.
+
+### Added
+
+- **Static regression guard** — `tests/unit/test_http_adapter_to_thread.py`
+  AST-walks every `/v1/*` async route and asserts every `_ms.*` and
+  `istore.{check,save}` call is the target of `await asyncio.to_thread(...)`,
+  not a bare invocation. Catches anyone unwrapping a route in a future edit.
+  10 tests, all green locally.
+
+### Changed
+
+- Release plumbing only: `pyproject.toml`, `server.json`, both
+  `openclaw.plugin.json` manifests, `openclaw-plugin/package.json` +
+  `package-lock.json`, `openclaw-skill/SKILL.md`, `llms.txt`,
+  `docs/contracts/openapi.json`, and the `install.pip` lower bound bumped
+  3.14.2 → 3.14.3.
+
+---
+
 ## [3.14.2] — 2026-04-28
 
 ### Fixed
