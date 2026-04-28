@@ -2,20 +2,21 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.3.0
+- Version: 3.14.2
 - License: MIT
 - Repository: https://github.com/wtthornton/tapps-brain
 
 ## Tech stack
 
 - Python >=3.12
-- Pydantic v2, SQLite (WAL + FTS5), optional sqlite-vec / Postgres (Hive)
+- Pydantic v2; PostgreSQL with pgvector HNSW + tsvector FTS (Postgres-only per ADR-007 — SQLite was removed in v3.6 stage 2)
+- psycopg[binary,pool] (sync + async pools), sentence-transformers, structlog, opentelemetry-api
 - uv for development; hatchling build
 
 ## Entry points (console scripts)
 
-- `tapps-brain` → `tapps_brain.cli:app`
-- `tapps-brain-mcp` → `tapps_brain.mcp_server:main`
+- `tapps-brain` → `tapps_brain.cli:app` (CLI: memory ops, profiles, hive admin, project register)
+- `tapps-brain-http` → `tapps_brain.http_adapter:main` (HTTP/MCP server on :8080 — `/v1/*`, `/mcp/`, `/admin/*`, `/metrics`)
 
 ## Where to read first
 
