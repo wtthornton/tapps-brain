@@ -22,6 +22,11 @@ from tapps_brain.agent_brain import BrainValidationError as BrainValidationError
 
 # Async (Issue #66)
 from tapps_brain.aio import AsyncMemoryStore as AsyncMemoryStore
+
+# Async-native private backend (EPIC-072 STORY-072.2)
+from tapps_brain.async_postgres_private import (
+    AsyncPostgresPrivateBackend as AsyncPostgresPrivateBackend,
+)
 from tapps_brain.backends import FileAgentRegistryBackend as FileAgentRegistryBackend
 from tapps_brain.backends import create_federation_backend as create_federation_backend
 from tapps_brain.backends import create_hive_backend as create_hive_backend
@@ -160,6 +165,7 @@ __all__ = [
     "AgentBrain",
     "AgentRegistryBackend",
     "AsyncMemoryStore",
+    "AsyncPostgresPrivateBackend",
     "AsyncTappsBrainClient",
     "BM25Scorer",
     "BrainClientProtocol",

@@ -1,11 +1,13 @@
 """Unit tests for PostgresConnectionManager (mocked — no real PG needed).
 
-EPIC-055 STORY-055.2
+EPIC-055 STORY-055.2 — sync pool tests.
+STORY-072.1 — async pool tests appended at the end of this file.
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -489,3 +491,215 @@ class TestSessionVarResetCallback:
             cm._ensure_pool()
 
         assert captured["reset"] is cm._reset_session_vars
+
+
+# ---------------------------------------------------------------------------
+# STORY-072.1 — async pool tests
+# ---------------------------------------------------------------------------
+
+
+def _async_mock_pool_with_role(
+    *,
+    rolsuper: bool = False,
+    rolbypassrls: bool = False,
+    owned_tables: list[str] | None = None,
+    current_user: str = "tapps_runtime",
+) -> MagicMock:
+    """Async equivalent of :func:`_mock_pool_with_role`.
+
+    All cursor calls (``execute`` / ``fetchone`` / ``fetchall``) are
+    AsyncMocks; ``connection()`` returns an async context manager that
+    yields the mock connection; cursor returns an async context manager.
+    """
+    cur = MagicMock()
+    cur.execute = AsyncMock(return_value=None)
+    cur.fetchone = AsyncMock(return_value=(current_user, rolsuper, rolbypassrls))
+    cur.fetchall = AsyncMock(return_value=[(t,) for t in (owned_tables or [])])
+    cur.__aenter__ = AsyncMock(return_value=cur)
+    cur.__aexit__ = AsyncMock(return_value=False)
+
+    conn = MagicMock()
+    conn.cursor = MagicMock(return_value=cur)
+
+    pool_ctx = MagicMock()
+    pool_ctx.__aenter__ = AsyncMock(return_value=conn)
+    pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    pool = MagicMock()
+    pool.connection = MagicMock(return_value=pool_ctx)
+    pool.open = AsyncMock(return_value=None)
+    pool.close = AsyncMock(return_value=None)
+    return pool
+
+
+class TestAsyncPool:
+    """STORY-072.1 — async-native pool path on PostgresConnectionManager."""
+
+    def test_async_pool_starts_unopened(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._async_pool is None
+        assert cm.is_async_open is False
+
+    def test_close_async_idempotent_on_unopened(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        # No exception, no event loop needed beyond the one asyncio.run gives us.
+        asyncio.run(cm.close_async())
+        assert cm.is_async_open is False
+
+    def test_get_async_pool_lazy_init_and_open(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        captured: dict = {}
+
+        def fake_async_pool_ctor(dsn: str, **kwargs: object) -> MagicMock:
+            captured.update(kwargs)
+            captured["dsn"] = dsn
+            return _async_mock_pool_with_role()
+
+        with patch("psycopg_pool.AsyncConnectionPool", side_effect=fake_async_pool_ctor):
+            asyncio.run(cm.get_async_pool())
+
+        assert cm.is_async_open is True
+        assert captured["dsn"] == "postgres://localhost/test"
+        # Async pool must be opened explicitly (open=False during construction)
+        # so AsyncConnectionPool does not block the event loop on first connect.
+        assert captured["open"] is False
+        # Reset callback must be the *async* variant — wiring the sync reset
+        # would silently leak tenant identity across borrows on every release
+        # because psycopg_pool would never await it.
+        assert captured["reset"] is cm._reset_session_vars_async
+
+    def test_async_pool_role_check_passes_for_clean_role(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # CI sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 globally so the
+        # privileged-role check never fails on the test PG role.  This
+        # specific test exercises the *clean*-role branch, so unset the
+        # override flag first to make the assertion meaningful.
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        with patch(
+            "psycopg_pool.AsyncConnectionPool",
+            side_effect=lambda *a, **kw: _async_mock_pool_with_role(),
+        ):
+            asyncio.run(cm.get_async_pool())
+        assert cm.is_async_open is True
+
+    def test_async_pool_role_check_refuses_superuser(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Without delenv, this test passes locally but fails in CI because
+        # ci.yml sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 in the job env —
+        # the override branch then logs an ERROR and returns instead of
+        # raising, and the test sees "DID NOT RAISE".
+        monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        bad_pool = _async_mock_pool_with_role(rolsuper=True, current_user="postgres")
+        with patch(
+            "psycopg_pool.AsyncConnectionPool",
+            side_effect=lambda *a, **kw: bad_pool,
+        ):
+            with pytest.raises(RuntimeError, match="privileged Postgres role"):
+                asyncio.run(cm.get_async_pool())
+        # Pool was opened then immediately closed; role-check must not leave
+        # an open async pool referenced from cm.
+        assert cm.is_async_open is False
+        bad_pool.close.assert_awaited_once()
+
+    def test_async_pool_role_check_allow_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        monkeypatch.setenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "1")
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        with patch(
+            "psycopg_pool.AsyncConnectionPool",
+            side_effect=lambda *a, **kw: _async_mock_pool_with_role(
+                rolsuper=True, current_user="postgres"
+            ),
+        ):
+            # No exception — override is honoured but should still log at ERROR.
+            asyncio.run(cm.get_async_pool())
+        assert cm.is_async_open is True
+
+    def test_get_async_connection_yields_pool_connection(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        mock_pool = _async_mock_pool_with_role()
+
+        async def _drive() -> object:
+            with patch("psycopg_pool.AsyncConnectionPool", side_effect=lambda *a, **kw: mock_pool):
+                async with cm.get_async_connection() as conn:
+                    return conn
+
+        conn = asyncio.run(_drive())
+        # mock_pool.connection().__aenter__ returns a MagicMock connection.
+        assert conn is mock_pool.connection.return_value.__aenter__.return_value
+        # Pool was opened and reused on a second checkout — no second open.
+        mock_pool.open.assert_awaited_once()
+
+    def test_close_async_after_open_releases_pool(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        mock_pool = _async_mock_pool_with_role()
+
+        async def _drive() -> None:
+            with patch("psycopg_pool.AsyncConnectionPool", side_effect=lambda *a, **kw: mock_pool):
+                await cm.get_async_pool()
+                await cm.close_async()
+
+        asyncio.run(_drive())
+        assert cm.is_async_open is False
+        mock_pool.close.assert_awaited_once()
+
+    def test_get_async_pool_stats_default_unopened(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        stats = cm.get_async_pool_stats()
+        assert stats["pool_stats_available"] is False
+        assert stats["pool_size"] == 0
+        assert stats["pool_max"] == cm._max_size
+
+    def test_async_pool_env_vars_apply(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both pools share the same env-var configuration."""
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MIN", "3")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX", "12")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "30")
+
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        captured: dict = {}
+
+        def fake_async_pool_ctor(dsn: str, **kwargs: object) -> MagicMock:
+            captured.update(kwargs)
+            return _async_mock_pool_with_role()
+
+        with patch("psycopg_pool.AsyncConnectionPool", side_effect=fake_async_pool_ctor):
+            asyncio.run(cm.get_async_pool())
+
+        assert captured["min_size"] == 3
+        assert captured["max_size"] == 12
+        assert captured["max_waiting"] == 30
+
+    def test_sync_and_async_pools_are_independent(self) -> None:
+        """Opening the async pool must not implicitly open the sync pool, and vice versa."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        with patch(
+            "psycopg_pool.AsyncConnectionPool",
+            side_effect=lambda *a, **kw: _async_mock_pool_with_role(),
+        ):
+            asyncio.run(cm.get_async_pool())
+        assert cm.is_async_open is True
+        assert cm.is_open is False  # sync pool untouched
