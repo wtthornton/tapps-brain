@@ -25,7 +25,7 @@ logger = structlog.get_logger(__name__)
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:  # pragma: no cover — should not happen with correct install
-    SentenceTransformer = None  # type: ignore[assignment, misc]
+    SentenceTransformer = None  # type: ignore[misc]
 
 _DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 
@@ -154,7 +154,11 @@ class SentenceTransformerProvider:
             st_kwargs["revision"] = revision
 
         self._model = SentenceTransformer(model_name, **st_kwargs)
-        raw_dim = self._model.get_sentence_embedding_dimension()
+        # Renamed from ``get_sentence_embedding_dimension`` in
+        # sentence-transformers 5.4.0; the old name emits a DeprecationWarning
+        # and is scheduled for removal in 6.x.  See pyproject.toml for the
+        # version floor.
+        raw_dim = self._model.get_embedding_dimension()
         self._dim: int = int(raw_dim) if raw_dim is not None else 384
 
     @property

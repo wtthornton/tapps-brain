@@ -472,6 +472,45 @@ class TestSessionVarResetCallback:
         for var in ("app.project_id", "app.agent_id", "app.is_admin", "tapps.current_namespace"):
             assert f"RESET {var}" in sql_text
 
+    def test_reset_commits_so_pool_recycles_connection(self) -> None:
+        """Regression: without a commit, ``cur.execute`` leaves the connection
+        in INTRANS, psycopg_pool discards it as BAD on every release, and the
+        pool degenerates into per-call connect-and-close."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cur = MagicMock()
+        cur.__enter__ = MagicMock(return_value=cur)
+        cur.__exit__ = MagicMock(return_value=False)
+        conn = MagicMock()
+        conn.cursor = MagicMock(return_value=cur)
+
+        PostgresConnectionManager._reset_session_vars(conn)
+
+        conn.commit.assert_called_once()
+        # Must commit, not rollback — RESET is transactional in Postgres,
+        # so a rollback would silently undo the resets and leak the previous
+        # borrower's session identity into the next borrow.
+        conn.rollback.assert_not_called()
+
+    def test_reset_async_commits_so_pool_recycles_connection(self) -> None:
+        """Async sibling of the regression test above — same invariant."""
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cur = MagicMock()
+        cur.execute = AsyncMock(return_value=None)
+        cur.__aenter__ = AsyncMock(return_value=cur)
+        cur.__aexit__ = AsyncMock(return_value=False)
+        conn = MagicMock()
+        conn.cursor = MagicMock(return_value=cur)
+        conn.commit = AsyncMock(return_value=None)
+        conn.rollback = AsyncMock(return_value=None)
+
+        asyncio.run(PostgresConnectionManager._reset_session_vars_async(conn))
+
+        cur.execute.assert_awaited_once()
+        conn.commit.assert_awaited_once()
+        conn.rollback.assert_not_awaited()
+
     def test_reset_callback_wired_into_pool(self) -> None:
         """ConnectionPool is constructed with reset=cm._reset_session_vars."""
         from tapps_brain.postgres_connection import PostgresConnectionManager

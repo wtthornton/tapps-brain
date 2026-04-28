@@ -167,7 +167,7 @@ class TestSentenceTransformerProvider:
 
     def test_init_stores_dimension(self) -> None:
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_embedding_dimension.return_value = 384
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model", revision=None)
         assert provider.dimension == 384
@@ -176,7 +176,7 @@ class TestSentenceTransformerProvider:
     def test_init_with_revision_composite_model_id(self) -> None:
         """model_id returns 'name@revision' when revision is set."""
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_embedding_dimension.return_value = 384
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model", revision="abc123")
         assert provider.model_id == "test-model@abc123"
@@ -185,7 +185,7 @@ class TestSentenceTransformerProvider:
     def test_default_model_uses_pinned_revision(self) -> None:
         """Default constructor uses _DEFAULT_MODEL_REVISION and composite model_id."""
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_embedding_dimension.return_value = 384
         with patch(
             "tapps_brain.embeddings.SentenceTransformer", return_value=mock_model
         ) as mock_st:
@@ -199,7 +199,7 @@ class TestSentenceTransformerProvider:
     def test_revision_none_skips_revision_kwarg(self) -> None:
         """When revision=None, SentenceTransformer is called without revision kwarg."""
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_embedding_dimension.return_value = 384
         with patch(
             "tapps_brain.embeddings.SentenceTransformer", return_value=mock_model
         ) as mock_st:
@@ -214,7 +214,7 @@ class TestSentenceTransformerProvider:
         monkeypatch.setenv("TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE", "1")
         monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_embedding_dimension.return_value = 384
         import os
 
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
@@ -222,16 +222,27 @@ class TestSentenceTransformerProvider:
         assert os.environ.get("HF_HUB_OFFLINE") == "1"
 
     def test_init_falls_back_to_384_when_dimension_none(self) -> None:
-        """When get_sentence_embedding_dimension() returns None, fall back to 384."""
+        """When get_embedding_dimension() returns None, fall back to 384."""
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = None
+        mock_model.get_embedding_dimension.return_value = None
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model")
         assert provider.dimension == 384
 
+    def test_uses_renamed_get_embedding_dimension_not_deprecated_alias(self) -> None:
+        """TAP-1075: call ``get_embedding_dimension`` (sentence-transformers ≥5.4.0),
+        not the deprecated ``get_sentence_embedding_dimension`` which raises a
+        DeprecationWarning under v5.4 and is slated for removal in v6.x."""
+        mock_model = MagicMock()
+        mock_model.get_embedding_dimension.return_value = 384
+        with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
+            SentenceTransformerProvider(model_name="test-model", revision=None)
+        mock_model.get_embedding_dimension.assert_called_once_with()
+        mock_model.get_sentence_embedding_dimension.assert_not_called()
+
     def test_embed_returns_float_list(self) -> None:
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 4
+        mock_model.get_embedding_dimension.return_value = 4
         # Simulate ndarray-like: encode returns object with __iter__
         mock_vec = MagicMock()
         mock_vec.__iter__ = MagicMock(return_value=iter([0.1, 0.2, 0.3, 0.4]))
@@ -246,7 +257,7 @@ class TestSentenceTransformerProvider:
 
     def test_embed_batch_returns_list_of_lists(self) -> None:
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 3
+        mock_model.get_embedding_dimension.return_value = 3
         # Simulate ndarray rows with .tolist()
         mock_row_a = MagicMock()
         mock_row_a.tolist.return_value = [0.1, 0.2, 0.3]
@@ -265,7 +276,7 @@ class TestSentenceTransformerProvider:
 
     def test_embed_batch_empty_returns_empty(self) -> None:
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 3
+        mock_model.get_embedding_dimension.return_value = 3
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model")
         result = provider.embed_batch([])

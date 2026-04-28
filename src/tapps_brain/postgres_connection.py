@@ -156,6 +156,13 @@ class PostgresConnectionManager:
         Raised exceptions cause psycopg_pool to close the connection
         rather than recycle it — fail-safe.
         """
+        # ``cur.execute`` on a non-autocommit connection opens an implicit
+        # transaction; without an explicit commit the connection goes back
+        # to the pool in INTRANS state, psycopg_pool discards it as BAD,
+        # and we lose the pooling benefit on every release.  Commit (not
+        # rollback) — RESET is transactional in Postgres, so a rollback
+        # would silently undo the RESETs and leak the previous borrower's
+        # session identity into the next borrow.
         with conn.cursor() as cur:
             cur.execute(
                 "RESET app.project_id; "
@@ -163,6 +170,7 @@ class PostgresConnectionManager:
                 "RESET app.is_admin; "
                 "RESET tapps.current_namespace"
             )
+        conn.commit()
 
     def _ensure_pool(self) -> None:
         """Create the connection pool on first use (lazy initialisation)."""
@@ -380,6 +388,10 @@ class PostgresConnectionManager:
         Wipes the same session variables as the sync path so the next
         borrower starts with a clean tenant identity.
         """
+        # See _reset_session_vars for the rationale: commit closes the
+        # implicit transaction so psycopg_pool recycles the connection
+        # instead of discarding it, and a commit (not rollback) is
+        # required to make the RESETs persist past the next borrow.
         async with conn.cursor() as cur:
             await cur.execute(
                 "RESET app.project_id; "
@@ -387,6 +399,7 @@ class PostgresConnectionManager:
                 "RESET app.is_admin; "
                 "RESET tapps.current_namespace"
             )
+        await conn.commit()
 
     async def _ensure_async_pool(self) -> None:
         """Create the async connection pool on first use (lazy, event-loop-safe).

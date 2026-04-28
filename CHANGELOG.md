@@ -10,6 +10,36 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.1] — 2026-04-28
+
+### Fixed
+
+- **Pool reset callback now commits, ending the connection-warning storm.**
+  `PostgresConnectionManager._reset_session_vars` (sync) and
+  `_reset_session_vars_async` issue `RESET app.project_id; RESET app.agent_id;
+  RESET app.is_admin; RESET tapps.current_namespace` via `cur.execute`, which
+  on a non-autocommit connection opens an implicit transaction. Without an
+  explicit commit the connection went back to `psycopg_pool` in `INTRANS`
+  state and the pool **discarded every released connection as BAD**, logging
+  `connection in transaction status INTRANS to the pool. Discarding it.`
+  Both reset callbacks now `commit()` (sync) / `await commit()` (async) at
+  the end so the RESETs persist past the next borrow and the connection is
+  recycled instead of dropped. Confirmed in production: 176 warnings in
+  ~13 h pre-fix, 0 post-fix on the rebuilt container. Two regression tests
+  pin the commit (and confirm we never roll back, which would silently undo
+  the RESETs and leak the previous borrower's session identity into the
+  next borrow).
+- **TAP-1075 — `SentenceTransformerProvider` calls `get_embedding_dimension`,
+  not the deprecated alias.** sentence-transformers 5.4.0 renamed
+  `get_sentence_embedding_dimension` → `get_embedding_dimension`; the old
+  name emits a `DeprecationWarning` and is slated for removal in 6.x.
+  `embeddings.SentenceTransformerProvider.__init__` now uses the new name,
+  and the `sentence-transformers` floor is bumped to `>=5.4.0,<6` so the
+  rename is guaranteed available at runtime. Regression test added in
+  `tests/unit/test_memory_embeddings.py`.
+
+---
+
 ## [3.14.0] — 2026-04-27
 
 ### Added
