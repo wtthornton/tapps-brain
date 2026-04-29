@@ -84,6 +84,7 @@ class CircuitState(StrEnum):
 
 
 def clamp01(x: float) -> float:
+    """Clamp *x* to the closed interval [0.0, 1.0]."""
     return max(0.0, min(1.0, x))
 
 

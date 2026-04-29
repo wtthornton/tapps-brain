@@ -1,32 +1,30 @@
 # tapps-brain — Documentation Index
 
-**266 documents** across **9 categories**
+**237 documents** across **7 categories**
 
 ## Overview
 
 | Category | Count |
 |---|---|
-| API Reference | 6 |
-| Architecture | 17 |
-| Configuration | 1 |
-| Getting Started | 20 |
-| Guides | 47 |
-| Operations | 9 |
-| Other | 11 |
-| Planning | 151 |
-| Release | 4 |
+| API Reference | 7 |
+| Architecture | 15 |
+| Getting Started | 10 |
+| Guides | 46 |
+| Operations | 6 |
+| Other | 4 |
+| Planning | 149 |
 
 ## API Reference
 
-- [TappsMCP - instructions for AI assistants](../AGENTS.md) — <!-- tapps-agents-version: 3.3.0 --> *(updated 2026-04-24)*
-- [— Documentation Index](DOCUMENTATION_INDEX.md) — **266 documents** across **9 categories** *(updated 2026-04-29)*
+- [— Documentation Index](DOCUMENTATION_INDEX.md) — **235 documents** across **7 categories** *(updated 2026-04-29)*
+- [— Documentation Index](INDEX.md) — **236 documents** across **7 categories** *(updated 2026-04-29)*
+- [`src.tapps_brain`](api-reference.md) — tapps-brain: Persistent cross-session memory system for AI coding assistants. *(updated 2026-04-29)*
 - [Code Inventory and Documentation Gaps](engineering/code-inventory-and-doc-gaps.md) — All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers. *(updated 2026-04-21)*
 - [Data Stores and Schema Reference](engineering/data-stores-and-schema.md) — All durable stores use **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). No SQLite fall... *(updated 2026-04-13)*
 - [tapps-brain — Documentation Index](index.md) — **215 documents** across **8 categories** *(updated 2026-04-16)*
 - [Kubernetes Liveness and Readiness Probes](operations/k8s-probes.md) — tapps-brain's HTTP adapter exposes two dedicated probe endpoints that map *(updated 2026-04-11)*
 ## Architecture
 
-- [CLAUDE.md](../CLAUDE.md) — This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. *(updated 2026-04-24)*
 - [Industry features and technologies (implementation map)](engineering/features-and-technologies.md) — **Audience:** Architecture and product review — what capability areas we cover, which libraries/patterns we use, and ... *(updated 2026-04-21)*
 - [System Architecture (Implementation-Aligned)](engineering/system-architecture.md) — tapps-brain is designed for **many concurrent agents** without shared-DB bottlenecks: *(updated 2026-04-21)*
 - [Configurable Memory Profiles — Design Document](planning/DESIGN-CONFIGURABLE-MEMORY-PROFILES.md) *(updated 2026-04-15)*
@@ -42,14 +40,8 @@
 - [ADR-010: Multi-tenant project identification and profile registration over MCP](planning/adr/ADR-010-multi-tenant-project-registration.md) — Proposed (2026-04-14) *(updated 2026-04-14)*
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-04-15)*
 - [Agent memory systems — 2026 knowledge base](research/memory-systems-2026.md) — The agent-memory field in 2025–2026 has split along three axes that were open *(updated 2026-04-17)*
-- [Session prompt — tapps-brain review fixes (TAP-508 → TAP-514)](../prompts/SESSION-tapps-brain-review-fixes.md) — You are working in `/home/wtthornton/code/tapps-brain`. This is a no-LLM Python brain service (uv, pytest, mypy --str... *(updated 2026-04-16)*
-## Configuration
-
-- [Skill](../openclaw-skill/SKILL.md) *(updated 2026-04-29)*
 ## Getting Started
 
-- [tapps-brain](../README.md) — AI agents forget everything between sessions. **tapps-brain** gives them persistent, ranked memory that decays natura... *(updated 2026-04-29)*
-- [Docker Artifacts for tapps-brain](../docker/README.md) — Quick reference for the Docker deployment of tapps-brain. The stack is a **unified** tapps-brain-http container (serv... *(updated 2026-04-21)*
 - [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — <!-- tapps-generated: v3.3.0 --> *(updated 2026-04-28)*
 - [Ralph Setup Guide (Windows + WSL)](RALPH_SETUP_GUIDE.md) — Step-by-step guide for setting up Ralph on a new project. Covers the common pitfalls. *(updated 2026-04-05)*
 - [tapps-brain benchmarks](benchmarks/README.md) — End-to-end QA benchmarks for tapps-brain. These are **answer-based** *(updated 2026-04-17)*
@@ -60,17 +52,8 @@
 - [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-04-14)*
 - [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-04-19)*
 - [Install and upgrade tapps-brain for OpenClaw from GitHub (no PyPI)](guides/openclaw-install-from-git.md) — Use this guide when you want the **Python** package and **`tapps-brain-mcp`** installed or upgraded from the Git repo... *(updated 2026-04-05)*
-- [AgentForge BrainBridge — Reference Port (STORY-070.13)](../examples/agentforge_bridge/README.md) — This directory contains a **documentation artefact** — a reference port of *(updated 2026-04-15)*
-- [Brain visual (live dashboard)](../examples/brain-visual/README.md) — A static HTML/JS dashboard that polls the live tapps-brain `/snapshot` endpoint. There is no file-load or demo fallba... *(updated 2026-04-15)*
-- [Coding project init — connect your project to tapps-brain](../examples/coding-project-init/README.md) — This scaffold wires a new project to a **deployed** tapps-brain hub in two dimensions: *(updated 2026-04-14)*
-- [tapps-brain OpenClaw Plugin](../openclaw-plugin/README.md) — **Plugin version 2.0.3** (tracks the [tapps-brain](https://github.com/wtthornton/tapps-brain) Python release). *(updated 2026-04-13)*
-- [tapps-brain-memory](../openclaw-skill/README.md) — **Persistent cross-session memory for OpenClaw agents.** *(updated 2026-04-13)*
-- [@tapps-brain/langgraph](../packages/langgraph/README.md) — LangGraph `BaseStore` adapter backed by [tapps-brain](https://github.com/wtthornton/tapps-brain) persistent agent mem... *(updated 2026-04-18)*
-- [@tapps-brain/sdk](../packages/sdk/README.md) — TypeScript SDK for [tapps-brain](https://github.com/wtthornton/tapps-brain) — a Postgres-backed persistent memory sys... *(updated 2026-04-18)*
-- [tapps-brain — Database Migrations](../src/tapps_brain/migrations/README.md) — This folder contains **forward-only** SQL migrations for all tapps-brain Postgres backends. *(updated 2026-04-11)*
 ## Guides
 
-- [Contributing to tapps-brain](../CONTRIBUTING.md) — Thanks for helping improve tapps-brain. This project uses **uv** for environments, **pytest** with a **≥95% coverage*... *(updated 2026-04-15)*
 - [Agent integration guide](guides/agent-integration.md) — This page is the **operator contract** for AI agents using tapps-brain: the *(updated 2026-04-14)*
 - [Agent.md Wiring Guide](guides/agent-md-wiring.md) — This guide explains how to grant tapps-brain MCP access in an `AGENT.md` file *(updated 2026-04-15)*
 - [AgentForge Integration Guide (v3)](guides/agentforge-integration.md) — How any agent host — AgentForge, custom orchestrators, or bare Python scripts — *(updated 2026-04-21)*
@@ -119,31 +102,20 @@
 - [Write-Path Trade-off Guide](guides/write-path-tradeoff.md) — tapps-brain supports two write-path modes: **deterministic** (default) and *(updated 2026-04-18)*
 ## Operations
 
-- [Tapps Hive Password](../docker/secrets/tapps_hive_password.txt) — tapps *(updated 2026-04-16)*
-- [Tapps Http Auth Token](../docker/secrets/tapps_http_auth_token.txt) — debug-token *(updated 2026-04-16)*
 - [DB Roles Runbook — tapps-brain](operations/db-roles-runbook.md) — **Covers EPIC-063 STORY-063.1 + STORY-063.2: least-privilege Postgres roles.** *(updated 2026-04-12)*
 - [Operator Runbook — tapps-brain Observability](operations/observability-runbook.md) — See [`k8s-probes.md`](k8s-probes.md) for full probe spec. *(updated 2026-04-12)*
 - [Postgres Backup Runbook — tapps-brain (Ops On-Call)](operations/postgres-backup-runbook.md) — **Audience:** On-call engineers and SREs. *(updated 2026-04-13)*
 - [Deploying tapps-brain to OpenClaw](planning/DEPLOY-OPENCLAW.md) — There are **two complementary deployment paths** for getting tapps-brain into OpenClaw: *(updated 2026-04-15)*
 - [Agent memory systems — comparative scorecard (2026-04-17)](research/memory-systems-scorecard.md) *(updated 2026-04-20)*
 - [Story 70.15 -- Docker + docs — one binary, both transports](stories/STORY-070.15-docker-unified.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
-- [Ralph Feedback Report](../ralph-feedback-report.md) — **Project:** tapps-brain *(updated 2026-04-05)*
 ## Other
 
-- [Tech Stack](../TECH_STACK.md) — - **Type:** library *(updated 2026-04-24)*
 - [Case study: [Adopter name / project]](case-studies/TEMPLATE.md) — | Parameter | Value | *(updated 2026-04-20)*
 - [Core Call Flows](engineering/call-flows.md) — This document maps the dominant runtime call paths as implemented now. *(updated 2026-04-21)*
 - [tapps-brain v3 Threat Model](engineering/threat-model.md) — **Scope:** tapps-brain v3.0 — Postgres-only persistence plane with private agent memory, *(updated 2026-04-12)*
 - [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-04-05)*
-- [tapps-brain](../llms.txt) — - Version: 3.14.4 *(updated 2026-04-29)*
-- [Coder](../tests/fixtures/profile_tool_sets/coder.txt) — brain_forget *(updated 2026-04-20)*
-- [Full](../tests/fixtures/profile_tool_sets/full.txt) — agent_create *(updated 2026-04-20)*
-- [Operator](../tests/fixtures/profile_tool_sets/operator.txt) — agent_create *(updated 2026-04-20)*
-- [Reviewer](../tests/fixtures/profile_tool_sets/reviewer.txt) — brain_recall *(updated 2026-04-20)*
-- [Seeder](../tests/fixtures/profile_tool_sets/seeder.txt) — brain_status *(updated 2026-04-20)*
 ## Planning
 
-- [tapps-brain Cleanup & Simplification Plan](../CLEANUP-PLAN.md) — **Date:** 2026-04-08 *(updated 2026-04-15)*
 - [LoCoMo benchmark](benchmarks/locomo.md) — - **Paper:** [Maharana et al. 2024, arXiv:2402.17753](https://arxiv.org/abs/2402.17753) *(updated 2026-04-17)*
 - [LongMemEval benchmark](benchmarks/longmemeval.md) — - **Paper:** [Xiao et al. 2024, arXiv:2410.10813](https://arxiv.org/abs/2410.10813) (ICLR 2025) *(updated 2026-04-17)*
 - [Async-Native Performance: EPIC-072 Benchmark Results](engineering/async-performance.md) — **Story:** STORY-072.4 *(updated 2026-04-29)*
@@ -293,10 +265,3 @@
 - [Story 70.7 -- Per-call identity (agent_id / scope / group)](stories/STORY-070.7-per-call-identity.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
 - [Story 70.8 -- Per-tenant auth tokens](stories/STORY-070.8-per-tenant-auth.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
 - [Story 70.9 -- Operator-tool separation](stories/STORY-070.9-operator-tools-split.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
-- [Fix Plan — EPIC-070 AgentForge Integration (Remote-First Brain as a Shared Service)](../fix_plan.md) — All work is tracked in [EPIC-070](docs/epics/EPIC-070-agentforge-integration.md). Stories reference files in `docs/st... *(updated 2026-04-15)*
-## Release
-
-- [Changelog](../CHANGELOG.md) — All notable changes to this project will be documented in this file. *(updated 2026-04-29)*
-- [Security Policy](../SECURITY.md) — | Version | Supported | *(updated 2026-04-05)*
-- [Upgrading the tapps-brain OpenClaw Plugin](../openclaw-plugin/UPGRADING.md) — - Bumps plugin `package.json`, `openclaw.plugin.json`, `ContextEngineInfo` / client identity strings, and manifests t... *(updated 2026-04-10)*
-- [Release Checklist — tapps-brain](../scripts/publish-checklist.md) — Distribution channel for `tapps-brain` (TAP-992).  Default path is automated: *(updated 2026-04-27)*

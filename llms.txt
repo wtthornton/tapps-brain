@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.14.4
+- Version: 3.14.5
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -53,11 +53,14 @@
 - `SECURITY.md`
 - `TECH_STACK.md`
 - `fix_plan.md`
+- `llms-full.txt`
 - `llms.txt`
 - `ralph-feedback-report.md`
 - `docs/DOCUMENTATION_INDEX.md`
 - `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/INDEX.md`
 - `docs/RALPH_SETUP_GUIDE.md`
+- `docs/api-reference.md`
 - `docs/benchmarks/README.md`
 - `docs/benchmarks/locomo.md`
 - `docs/benchmarks/longmemeval.md`
@@ -71,7 +74,46 @@
 - `docs/engineering/data-stores-and-schema.md`
 - `docs/engineering/features-and-technologies.md`
 - `docs/engineering/optional-features-matrix.md`
-- `docs/engineering/system-architecture.md`
-- `docs/engineering/threat-model.md`
-- `docs/engineering/v3-behavioral-parity.md`
-- ... and 216 more
+- ... and 219 more
+
+## API Summary
+
+- Packages: 11
+- Modules: 107
+- Public API symbols: 634
+
+## Project Structure
+
+```
+.coverage
+.cursorignore
+.env
+.env.example
+.envrc
+.gitattributes
+.gitignore
+.mcp.json
+.ralphrc
+.ralphrc.bak.1777419561
+AGENTS.md
+CHANGELOG.md
+CLAUDE.md
+CLEANUP-PLAN.md
+CONTRIBUTING.md
+LICENSE
+Makefile
+README.md
+SECURITY.md
+TECH_STACK.md
+config/
+dist-fresh/
+docker/
+docker-compose.yml
+docs/
+examples/
+fix_plan.md
+llms-full.txt
+llms.txt
+openclaw-plugin/
+... and 13 more
+```

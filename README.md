@@ -32,13 +32,8 @@ Cross-agent memory sharing with namespace isolation, 4 conflict resolution polic
 The **brain-visual** dashboard shows your memory store at a glance — tier mix, scorecard health, retrieval stack, Hive status, agent topology, tag cloud, and diagnostics — no code required. It polls the live `/snapshot` endpoint exposed by the tapps-brain HTTP adapter.
 
 ```bash
-# bring up the brain (Postgres + the unified tapps-brain-http container + nginx dashboard).
-# The HTTP adapter serves private memory, Hive, and Federation on the same
-# /mcp/ + /v1/* API; Hive is a feature of the brain, not a separate service.
 docker compose -f docker/docker-compose.hive.yaml up -d --build
 
-# open the dashboard
-# → http://localhost:8088
 ```
 
 The dashboard polls `/snapshot` every 30 seconds (configurable) and shows a **LIVE / STALE / OFFLINE / ERROR** connection badge with a last-refreshed timestamp. There is no file-load or demo fallback — if the endpoint is unreachable, start the adapter.
@@ -72,7 +67,6 @@ The scaffold lives at [examples/coding-project-init/](examples/coding-project-in
 > **PostgreSQL is required.** As of [ADR-007](docs/planning/adr/ADR-007-postgres-only-no-sqlite.md) (2026-04-11), tapps-brain is **Postgres-only** — there is no SQLite or in-process fallback.  `MemoryStore.__init__` raises `ValueError` if `TAPPS_BRAIN_DATABASE_URL` is unset and no explicit `private_backend` is supplied.  For local dev, run `make brain-up` to start the bundled `pgvector/pg17` container.
 
 ```bash
-# One-liner: Postgres + HTTP adapter + dashboard
 docker compose -f docker/docker-compose.hive.yaml up -d
 export TAPPS_BRAIN_DATABASE_URL=postgresql://tapps:tapps@localhost:5432/tapps_brain
 ```
@@ -87,7 +81,6 @@ pip install tapps-brain
 from pathlib import Path
 from tapps_brain import MemoryStore
 
-# MemoryStore reads TAPPS_BRAIN_DATABASE_URL automatically.
 store = MemoryStore(Path("."))
 
 store.save(
@@ -717,3 +710,64 @@ What you get:
 ## License
 
 [MIT](LICENSE) &copy; 2025 TappsMCP Contributors
+
+<!-- docsmcp:start:table-of-contents -->
+
+<!-- docsmcp:start:table-of-contents -->
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Development](#development)
+- [License](#license)
+<!-- docsmcp:end:table-of-contents -->
+
+<!-- docsmcp:start:features -->
+## Features
+
+- Python project with modern packaging (pyproject.toml)
+- Test suite included
+- CI/CD with GitHub Actions
+- Docker support
+- Documentation included
+- 107 modules with 634 public APIs
+- CLI entry points: src/tapps_brain/cli, src/tapps_brain/mcp_server, src/tapps_brain/mcp_server/server.py, tapps-brain = tapps_brain.cli:app, tapps-brain-http = tapps_brain.http_adapter:main
+- FastAPI web framework
+- Pydantic data validation
+- pytest testing framework
+<!-- docsmcp:end:features -->
+
+<!-- docsmcp:start:usage -->
+## Usage
+
+### `tapps-brain`
+
+```bash
+tapps-brain
+```
+
+### `tapps-brain-http`
+
+```bash
+tapps-brain-http
+```
+<!-- docsmcp:end:usage -->
+
+<!-- docsmcp:start:api-reference -->
+## API Reference
+
+See the [API documentation](docs/api.md) for detailed reference.
+<!-- docsmcp:end:api-reference -->
+
+<!-- docsmcp:start:contributing -->
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes (`git commit -am 'Add my feature'`)
+4. Push to the branch (`git push origin feature/my-feature`)
+5. Open a Pull Request
+<!-- docsmcp:end:contributing -->
