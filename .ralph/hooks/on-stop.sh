@@ -59,6 +59,11 @@ if [[ -n "$_status_block" ]]; then
   linear_epic=$(echo "$_status_block" | grep "LINEAR_EPIC:" | grep -v "LINEAR_EPIC_DONE\|LINEAR_EPIC_TOTAL" | tail -1 | sed 's/.*LINEAR_EPIC:[[:space:]]*//' | tr -d '[:space:]' || echo "")
   linear_epic_done=$(echo "$_status_block" | grep "LINEAR_EPIC_DONE:" | tail -1 | sed 's/.*LINEAR_EPIC_DONE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
   linear_epic_total=$(echo "$_status_block" | grep "LINEAR_EPIC_TOTAL:" | tail -1 | sed 's/.*LINEAR_EPIC_TOTAL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  # TAP-741: project-wide counts Claude reports via Linear MCP. These feed the
+  # push-mode read path in lib/linear_backend.sh so the harness can run the
+  # exit-gate and preflight checks without LINEAR_API_KEY.
+  linear_open_count=$(echo "$_status_block" | grep "LINEAR_OPEN_COUNT:" | tail -1 | sed 's/.*LINEAR_OPEN_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_done_count=$(echo "$_status_block" | grep "LINEAR_DONE_COUNT:" | tail -1 | sed 's/.*LINEAR_DONE_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
 else
   # No structured status block found — extract from full text
   exit_signal="false"
@@ -72,6 +77,8 @@ else
   linear_epic=""
   linear_epic_done=""
   linear_epic_total=""
+  linear_open_count=""
+  linear_done_count=""
 fi
 
 # LINEAR-DASH: sanitize Linear fields; empty strings become JSON null
@@ -79,6 +86,9 @@ fi
 [[ "$linear_epic" =~ ^[Nn]one$ ]] && linear_epic=""
 [[ "$linear_epic_done" =~ ^[0-9]+$ ]] || linear_epic_done=""
 [[ "$linear_epic_total" =~ ^[0-9]+$ ]] || linear_epic_total=""
+# TAP-741: enforce non-negative integer shape; anything else → null (abstain).
+[[ "$linear_open_count" =~ ^[0-9]+$ ]] || linear_open_count=""
+[[ "$linear_done_count" =~ ^[0-9]+$ ]] || linear_done_count=""
 
 # Defaults for empty values
 exit_signal="${exit_signal:-false}"
@@ -206,72 +216,122 @@ loop_count=$((loop_count + 1))
 [[ "$prev_session_input" =~ ^[0-9]+$ ]] || prev_session_input=0
 [[ "$prev_session_output" =~ ^[0-9]+$ ]] || prev_session_output=0
 
-# LINEAR-DASH: Best-effort extraction of token/cost usage from this loop.
-# Claude Code supplies usage+cost in the stream result; try INPUT first, then transcript_path.
+# TOKEN/COST EXTRACTION (rewritten 2026-04 for Claude Code 2.1.x).
+# The Stop-hook stdin doesn't carry .usage or .total_cost_usd, and 2.1.x
+# transcripts omit the "type":"result" line entirely. Primary source is now a
+# single jq pass summing .message.usage across every assistant message in the
+# transcript at $_transcript. Cost is computed via lib/pricing.sh. The
+# stream-json capture (when present) is still a preferred source for the
+# authoritative total_cost_usd, but only when the log is stable (age >=2s) —
+# picking the newest file unconditionally races with the next loop's tee.
+_transcript=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+
 loop_input_tokens=0
 loop_output_tokens=0
+loop_cache_read=0
+loop_cache_create=0
+loop_cache_create_5m=0
+loop_cache_create_1h=0
+loop_model=""
 loop_cost_usd=0
-_ti=$(echo "$INPUT" | jq -r '.usage.input_tokens // .message.usage.input_tokens // empty' 2>/dev/null || echo "")
-_to=$(echo "$INPUT" | jq -r '.usage.output_tokens // .message.usage.output_tokens // empty' 2>/dev/null || echo "")
-_tc=$(echo "$INPUT" | jq -r '.total_cost_usd // .message.total_cost_usd // empty' 2>/dev/null || echo "")
+
+# Future-proofing: if some later Claude Code version adds usage/cost to the hook
+# payload, use it — it's authoritative and avoids both the transcript sum and
+# the stream-log fallback.
+_ti=$(echo "$INPUT" | jq -r '.usage.input_tokens // empty' 2>/dev/null || echo "")
+_to=$(echo "$INPUT" | jq -r '.usage.output_tokens // empty' 2>/dev/null || echo "")
+_tc=$(echo "$INPUT" | jq -r '.total_cost_usd // empty' 2>/dev/null || echo "")
 [[ "$_ti" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ti"
 [[ "$_to" =~ ^[0-9]+$ ]] && loop_output_tokens="$_to"
 [[ "$_tc" =~ ^[0-9]+(\.[0-9]+)?$ ]] && loop_cost_usd="$_tc"
 
-_transcript=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
-
-if [[ "$loop_cost_usd" == "0" ]]; then
-  if [[ -n "$_transcript" && -f "$_transcript" ]]; then
-    # Last "result" message in the transcript JSONL — agent mode emits one per turn.
-    _result=$(tac "$_transcript" 2>/dev/null | grep -m 1 '"type":"result"' || true)
-    if [[ -n "$_result" ]]; then
-      _ti2=$(echo "$_result" | jq -r '.usage.input_tokens // empty' 2>/dev/null || echo "")
-      _to2=$(echo "$_result" | jq -r '.usage.output_tokens // empty' 2>/dev/null || echo "")
-      _tc2=$(echo "$_result" | jq -r '.total_cost_usd // empty' 2>/dev/null || echo "")
-      [[ "$_ti2" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ti2"
-      [[ "$_to2" =~ ^[0-9]+$ ]] && loop_output_tokens="$_to2"
-      [[ "$_tc2" =~ ^[0-9]+(\.[0-9]+)?$ ]] && loop_cost_usd="$_tc2"
-    fi
+# Primary path: transcript sum. Single jq over the JSONL derives the last model
+# plus input/output/cache-read/cache-create-5m/cache-create-1h token totals.
+if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+  _usage_json=$(jq -cs '
+    [ .[] | select(.type == "assistant") ] as $a
+    | {
+        model: (($a[-1].message.model // $a[-1].model // "") | tostring),
+        input:           ([$a[] | .message.usage.input_tokens // 0] | add // 0),
+        output:          ([$a[] | .message.usage.output_tokens // 0] | add // 0),
+        cache_read:      ([$a[] | .message.usage.cache_read_input_tokens // 0] | add // 0),
+        cache_create_5m: ([$a[] | .message.usage.cache_creation.ephemeral_5m_input_tokens // 0] | add // 0),
+        cache_create_1h: ([$a[] | .message.usage.cache_creation.ephemeral_1h_input_tokens // 0] | add // 0)
+      }
+  ' "$_transcript" 2>/dev/null || echo '{}')
+  if [[ -n "$_usage_json" && "$_usage_json" != "null" && "$_usage_json" != "{}" ]]; then
+    _m=$(echo "$_usage_json" | jq -r '.model // ""' 2>/dev/null || echo "")
+    [[ -n "$_m" && "$_m" != "null" ]] && loop_model="$_m"
+    _ui=$(echo "$_usage_json" | jq -r '.input // 0' 2>/dev/null || echo "0")
+    _uo=$(echo "$_usage_json" | jq -r '.output // 0' 2>/dev/null || echo "0")
+    _ur=$(echo "$_usage_json" | jq -r '.cache_read // 0' 2>/dev/null || echo "0")
+    _u5=$(echo "$_usage_json" | jq -r '.cache_create_5m // 0' 2>/dev/null || echo "0")
+    _u1=$(echo "$_usage_json" | jq -r '.cache_create_1h // 0' 2>/dev/null || echo "0")
+    [[ "$_ui" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ui"
+    [[ "$_uo" =~ ^[0-9]+$ ]] && loop_output_tokens="$_uo"
+    [[ "$_ur" =~ ^[0-9]+$ ]] && loop_cache_read="$_ur"
+    [[ "$_u5" =~ ^[0-9]+$ ]] && loop_cache_create_5m="$_u5"
+    [[ "$_u1" =~ ^[0-9]+$ ]] && loop_cache_create_1h="$_u1"
+    loop_cache_create=$((loop_cache_create_5m + loop_cache_create_1h))
   fi
 fi
 
-# Final fallback: scan the live `claude --output-format stream-json` output that ralph_loop.sh
-# captures at $RALPH_DIR/logs/claude_output_<ts>.log. The official transcript at
-# ~/.claude/projects/<proj>/<session>.jsonl does NOT contain `"type":"result"` lines — only
-# the stream-json output does. The instance lock guarantees no concurrent loop, so the
-# newest non-`_stream.log` file in logs/ is the current loop's stream. (At hook time
-# ralph_loop has not yet overwritten it with the extracted result line.)
+# Stream-log fallback: scan the stream-json capture for the authoritative
+# `"type":"result"` line ralph_loop.sh tee'd. Pick the newest (ls -t) log that
+# ALREADY CONTAINS a result line — this sidesteps the ls-t race where the next
+# loop's tee has opened a fresh log before the stop hook for the previous turn
+# fires. The next loop's log has no result line yet, so it's skipped; the
+# previous loop's log does, so it's picked. When ralph_loop.sh isn't capturing
+# (agent mode / SDK), the glob is empty and this block is a no-op.
 if [[ "$loop_cost_usd" == "0" ]]; then
-  _live_stream=$(ls -t "$RALPH_DIR"/logs/claude_output_*.log 2>/dev/null \
-                 | grep -v '_stream\.log$' | head -1 || true)
+  _live_stream=""
+  while IFS= read -r _cand; do
+    [[ -z "$_cand" || ! -f "$_cand" ]] && continue
+    if grep -qE '"type"[[:space:]]*:[[:space:]]*"result"' "$_cand" 2>/dev/null; then
+      _live_stream="$_cand"
+      break
+    fi
+  done < <(ls -t "$RALPH_DIR"/logs/claude_output_*.log 2>/dev/null | grep -v '_stream\.log$')
+
   if [[ -n "$_live_stream" && -f "$_live_stream" ]]; then
     _result=$(grep -E '"type"[[:space:]]*:[[:space:]]*"result"' "$_live_stream" 2>/dev/null | tail -1 || true)
     if [[ -n "$_result" ]]; then
       _ti3=$(echo "$_result" | jq -r '.usage.input_tokens // empty' 2>/dev/null || echo "")
       _to3=$(echo "$_result" | jq -r '.usage.output_tokens // empty' 2>/dev/null || echo "")
       _tc3=$(echo "$_result" | jq -r '.total_cost_usd // empty' 2>/dev/null || echo "")
+      _lm3=$(echo "$_result" | jq -r '(.modelUsage | keys[0]) // empty' 2>/dev/null || echo "")
       [[ "$_ti3" =~ ^[0-9]+$ ]] && loop_input_tokens="$_ti3"
       [[ "$_to3" =~ ^[0-9]+$ ]] && loop_output_tokens="$_to3"
       [[ "$_tc3" =~ ^[0-9]+(\.[0-9]+)?$ ]] && loop_cost_usd="$_tc3"
+      [[ -n "$_lm3" && ( -z "$loop_model" || "$loop_model" == "null" ) ]] && loop_model="$_lm3"
     fi
   fi
 fi
 
-# PHASE1: model used this loop (from last assistant message in transcript)
-loop_model=""
-loop_cache_read=0
-loop_cache_create=0
-if [[ -n "$_transcript" && -f "$_transcript" ]]; then
-  _last_asst=$(tac "$_transcript" 2>/dev/null | grep -m 1 '"type":"assistant"' || true)
-  if [[ -n "$_last_asst" ]]; then
-    loop_model=$(echo "$_last_asst" | jq -r '.message.model // .model // empty' 2>/dev/null || echo "")
+# Cost calc via pricing table — only fires if the two paths above left us with
+# zero cost but a known model. Estimate-quality; the stream-log total_cost_usd
+# is always preferred when available.
+if [[ "$loop_cost_usd" == "0" ]] && [[ -n "$loop_model" && "$loop_model" != "null" ]]; then
+  _pricing_lib=""
+  _hook_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}" 2>/dev/null || echo "${BASH_SOURCE[0]:-$0}")" 2>/dev/null || echo "")
+  for _p in "$HOME/.ralph/lib/pricing.sh" \
+            "${RALPH_INSTALL_DIR:-/nonexistent}/lib/pricing.sh" \
+            "$_hook_dir/../../lib/pricing.sh" \
+            "$_hook_dir/../lib/pricing.sh"; do
+    if [[ -f "$_p" ]]; then _pricing_lib="$_p"; break; fi
+  done
+  if [[ -n "$_pricing_lib" ]]; then
+    # shellcheck source=/dev/null
+    source "$_pricing_lib"
+    loop_cost_usd=$(pricing_compute_cost "$loop_model" \
+      "$loop_input_tokens" "$loop_output_tokens" \
+      "$loop_cache_read" "$loop_cache_create_5m" "$loop_cache_create_1h" \
+      2>/dev/null || echo "0")
   fi
-  # Sum cache read/create tokens across all assistant messages this loop
-  _cr=$(grep '"type":"assistant"' "$_transcript" 2>/dev/null | jq -r '.message.usage.cache_read_input_tokens // 0' 2>/dev/null | awk '{s+=$1} END{print s+0}')
-  _cc=$(grep '"type":"assistant"' "$_transcript" 2>/dev/null | jq -r '.message.usage.cache_creation_input_tokens // 0' 2>/dev/null | awk '{s+=$1} END{print s+0}')
-  [[ "$_cr" =~ ^[0-9]+$ ]] && loop_cache_read="$_cr"
-  [[ "$_cc" =~ ^[0-9]+$ ]] && loop_cache_create="$_cc"
 fi
+
+# Sanitize the final cost — must be a decimal string jq can ingest as a number.
+[[ "$loop_cost_usd" =~ ^[0-9]+(\.[0-9]+)?$ ]] || loop_cost_usd=0
 
 # PHASE1: sub-agent invocations this loop — count Task tool calls by subagent_type
 # Single jq pass over the transcript (treated as JSONL via -s slurp) so counts sum correctly.
@@ -394,6 +454,8 @@ jq -n \
   --arg le "$linear_epic" \
   --arg led "${linear_epic_done}" \
   --arg let "${linear_epic_total}" \
+  --arg loc "${linear_open_count}" \
+  --arg ldc "${linear_done_count}" \
   --argjson lit "$loop_input_tokens" \
   --argjson lot "$loop_output_tokens" \
   --argjson lcu "$loop_cost_usd" \
@@ -421,6 +483,9 @@ jq -n \
     linear_epic: (if $le == "" then null else $le end),
     linear_epic_done: (if $led == "" then null else ($led|tonumber) end),
     linear_epic_total: (if $let == "" then null else ($let|tonumber) end),
+    linear_open_count: (if $loc == "" then null else ($loc|tonumber) end),
+    linear_done_count: (if $ldc == "" then null else ($ldc|tonumber) end),
+    linear_counts_at: (if ($loc == "" and $ldc == "") then null else $ts end),
     loop_input_tokens: $lit, loop_output_tokens: $lot, loop_cost_usd: $lcu,
     session_input_tokens: $sit, session_output_tokens: $sot, session_cost_usd: $scu,
     loop_model: (if $lm == "" then null else $lm end),
@@ -563,6 +628,73 @@ if [[ -f "$_ralph_log" ]]; then
   # Log import graph staleness
   if [[ -f "$RALPH_DIR/.import_graph.json.stale" ]]; then
     echo "[$_ts] [INFO] on-stop: Import graph marked stale (new source files created)" >> "$_ralph_log"
+  fi
+fi
+
+# TAP-750: token propagation for hooks launched outside ralph_loop.sh.
+# When Claude Code is launched from VSCode (not via ralph_loop.sh), secrets.env
+# is never sourced, so TAPPS_BRAIN_AUTH_TOKEN is absent. Load it here so the
+# brain client can authenticate — same fix as Phase A, applied to the hook path.
+if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" && -f "$HOME/.ralph/secrets.env" ]]; then
+  # shellcheck source=/dev/null
+  set -a; source "$HOME/.ralph/secrets.env" 2>/dev/null || true; set +a
+fi
+
+# =============================================================================
+# BRAIN-PHASE-B1: Deterministic tapps-brain writes.
+#
+# Runs after status.json and CB state are finalized, so we can read the
+# authoritative outcome for this loop. The client internally gates on
+# TAPPS_BRAIN_AUTH_TOKEN + session kill-switch — this block only decides
+# *whether the loop was memory-worthy*.
+#
+# Rationale for writing directly from the hook instead of steering Claude:
+# across every stream log on disk Claude never organically called
+# brain_remember from a non-brain repo. Brain stays empty → recall returns
+# nothing → the feedback loop dies. Hook writes bypass Claude's cooperation
+# entirely — every productive loop leaves a trace, every CB trip leaves a
+# warning.
+# =============================================================================
+_brain_lib=""
+for _p in "$HOME/.ralph/lib/brain_client.sh" \
+          "${RALPH_INSTALL_DIR:-/nonexistent}/lib/brain_client.sh"; do
+  [[ -f "$_p" ]] && { _brain_lib="$_p"; break; }
+done
+
+if [[ -n "$_brain_lib" ]]; then
+  # shellcheck source=/dev/null
+  source "$_brain_lib"
+
+  # Success signal: this loop made real progress. Record what got done so
+  # future loops can recall. Task id from Linear field when available.
+  if [[ "$files_modified" -gt 0 && "$tasks_done" -gt 0 ]]; then
+    _brain_desc="Loop $loop_count completed $tasks_done task(s) touching $files_modified file(s)"
+    [[ -n "$recommendation" ]] && _brain_desc="${_brain_desc}. ${recommendation:0:200}"
+    _brain_task_id="${linear_issue:-}"
+    brain_client_write_success "$RALPH_DIR" "$_brain_desc" "$_brain_task_id" >/dev/null 2>&1 || true
+  fi
+
+  # Failure signal: permission denials OR circuit breaker just opened.
+  # Both are deterministic "this task is blocked" markers worth memorizing
+  # so future loops on the same task can recognize the pattern fast.
+  _cb_now="CLOSED"
+  if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
+    _cb_now=$(jq -r '.state // "CLOSED"' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "CLOSED")
+  fi
+  if [[ "$has_permission_denials" == "true" || "$_cb_now" == "OPEN" ]]; then
+    _brain_desc="Loop $loop_count stalled"
+    _brain_err=""
+    if [[ "$has_permission_denials" == "true" ]]; then
+      _brain_desc="${_brain_desc}: $permission_denial_count permission denial(s)"
+      _brain_err="permission_denial"
+    fi
+    if [[ "$_cb_now" == "OPEN" ]]; then
+      _cb_reason=$(jq -r '.reason // "no progress threshold reached"' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "no progress")
+      _brain_desc="${_brain_desc} — circuit breaker OPEN: ${_cb_reason}"
+      _brain_err="circuit_breaker_open"
+    fi
+    _brain_task_id="${linear_issue:-}"
+    brain_client_write_failure "$RALPH_DIR" "$_brain_desc" "$_brain_err" "$_brain_task_id" >/dev/null 2>&1 || true
   fi
 fi
 

@@ -64,7 +64,7 @@ CLAUDE_AUTO_UPDATE=false  # set false — npm global update fails on this machin
 
 # Agent mode (v1.0+): use --agent ralph instead of -p with --allowedTools
 # Requires CLI v2.1+. Falls back to legacy -p mode if unsupported.
-RALPH_USE_AGENT=true
+RALPH_USE_AGENT=false  # was true; legacy mode is forced anyway by custom ALLOWED_TOOLS (Issue #154) — explicit avoids per-loop fallback warning
 RALPH_AGENT_NAME="ralph"
 
 # Parallelism (v1.1.0 — Experimental)
@@ -104,7 +104,6 @@ RALPH_VERBOSE=false
 # NOTE (Issue #154): Agent mode is also auto-disabled when ALLOWED_TOOLS is
 # customized above, because agent mode uses a blocklist (disallowedTools) which
 # is incompatible with the allowlist approach. See TOOL PERMISSIONS section.
-RALPH_USE_AGENT=true
 RALPH_AGENT_NAME="ralph"
 
 # Custom prompt file (relative to .ralph/)

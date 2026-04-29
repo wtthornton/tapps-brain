@@ -34,7 +34,7 @@ if [[ "$FILE_PATH" == */.ralph/* ]] || [[ "$FILE_PATH" == .ralph/* ]]; then
 fi
 
 # Block .ralphrc modifications
-if [[ "$FILE_PATH" == *".ralphrc"* ]]; then
+if [[ "$FILE_PATH" == *".ralphrc"* ]] && [[ -f "$FILE_PATH" ]]; then
   echo "BLOCKED: Cannot modify Ralph configuration: $FILE_PATH" >&2
   exit 2
 fi
