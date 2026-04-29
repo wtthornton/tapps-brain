@@ -10,6 +10,54 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.4] — 2026-04-29
+
+### Fixed
+
+- **Hive Stack Smoke Test workflow now boots (TAP-1100).**
+  `Hive Stack Smoke Test` had been failing on every PR for at least 12 days
+  (8+ verified runs across 5 different branches, including the merged #113
+  and #117). Every run aborted in <10 seconds with:
+
+  ```
+  error while interpolating services.tapps-brain-migrate.environment.TAPPS_BRAIN_RUNTIME_PASSWORD:
+  required variable TAPPS_BRAIN_RUNTIME_PASSWORD is missing a value
+  ```
+
+  Root cause: `docker/docker-compose.hive.yaml`'s `tapps-brain-migrate`
+  service was updated to mint a separate non-privileged `tapps_runtime`
+  Postgres role (security improvement — `tapps_runtime` does DML only;
+  the brain container no longer needs `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE`)
+  but the `${TAPPS_BRAIN_RUNTIME_PASSWORD:?…}` env interpolation guard was
+  added without a matching update to the smoke harness.
+  `scripts/hive_smoke.sh` mints `SMOKE_PASSWORD` (the superuser) and
+  three other tokens, but never minted a `SMOKE_RUNTIME_PASSWORD` —
+  `docker compose up` therefore aborted before any container started.
+
+  Fix: `scripts/hive_smoke.sh` now mints
+  `SMOKE_RUNTIME_PASSWORD="smoke-$(openssl rand -hex 12)"` alongside the
+  other smoke-only credentials and writes it as
+  `TAPPS_BRAIN_RUNTIME_PASSWORD` into the throwaway `docker/.env` heredoc.
+  No production credential plumbing changes; the existing `:?` guard in
+  the compose file stays in place so a real `docker/.env` that forgets
+  the runtime password still aborts loudly.
+
+  Also added a cross-reference comment in
+  `docker/docker-compose.hive.yaml:55-60` pointing at
+  `scripts/hive_smoke.sh`'s heredoc, so the next person who adds or
+  renames a required env var on the migrate service remembers to update
+  the smoke harness too.
+
+### Changed
+
+- Release plumbing only: `pyproject.toml`, `server.json`, both
+  `openclaw.plugin.json` manifests, `openclaw-plugin/package.json` +
+  `package-lock.json`, `openclaw-skill/SKILL.md`, `llms.txt`,
+  `docs/contracts/openapi.json`, and the `install.pip` lower bound bumped
+  3.14.3 → 3.14.4.
+
+---
+
 ## [3.14.3] — 2026-04-28
 
 ### Fixed

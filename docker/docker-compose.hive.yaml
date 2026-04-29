@@ -52,6 +52,12 @@ services:
   #   4. sets TAPPS_BRAIN_RUNTIME_PASSWORD on that role
   # After exit the brain container connects as tapps_runtime (non-privileged),
   # so TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE is no longer needed on the brain.
+  #
+  # NOTE: the ${TAPPS_BRAIN_RUNTIME_PASSWORD:?...} guard below is enforced at
+  # `docker compose up` time.  If you add or rename a required env var here,
+  # update scripts/hive_smoke.sh's docker/.env heredoc to mint and write it
+  # too — otherwise the Hive Stack Smoke Test workflow goes red on every PR
+  # (TAP-1100).
   tapps-brain-migrate:
     image: docker-tapps-brain-migrate:latest
     container_name: tapps-brain-migrate
