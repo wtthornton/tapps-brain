@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import statistics
 import sys
 import threading
 import time
@@ -44,7 +43,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Latency recording
@@ -106,7 +104,7 @@ def _timed(bucket: LatencyBucket, fn: Callable[[], None]) -> None:
     t0 = time.perf_counter()
     try:
         fn()
-    except Exception:  # noqa: BLE001
+    except Exception:
         bucket.record_error()
         raise
     finally:
@@ -173,7 +171,7 @@ def run_agent_workload(
             with contextlib.suppress(Exception):
                 conn_mgr.close()
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         errors.append(f"[{agent_id}] fatal: {exc}\n{traceback.format_exc()}")
 
 
@@ -207,7 +205,6 @@ def _print_summary(buckets: list[LatencyBucket], n_agents: int, ops: int) -> Non
 
 
 def main(argv: list[str] | None = None) -> int:
-    import contextlib
 
     parser = argparse.ArgumentParser(
         description="tapps-brain v3 concurrent-agent load smoke (EPIC-059 STORY-059.6)"
@@ -294,6 +291,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    import contextlib  # noqa: E402 (re-import ok in __main__ guard)
+    import contextlib
 
     sys.exit(main())

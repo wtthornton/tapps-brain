@@ -1231,3 +1231,148 @@ def memory_entries_by_tag(
         ],
         "count": len(entries),
     }
+
+
+# ---------------------------------------------------------------------------
+# Async-native variants (EPIC-072 STORY-072.5)
+#
+# These functions validate synchronously (pure CPU, no IO) then issue the
+# write via ``AsyncMemoryStore`` so Postgres I/O stays off the thread pool.
+# The sync originals remain for non-native code paths.
+# ---------------------------------------------------------------------------
+
+
+async def async_memory_save(
+    async_store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    key: str,
+    value: str,
+    tier: str = "pattern",
+    source: str = "agent",
+    tags: list[str] | None = None,
+    scope: str = "project",
+    confidence: float = -1.0,
+    agent_scope: str = "private",
+    source_agent: str = "",
+    group: str | None = None,
+) -> dict[str, Any]:
+    from tapps_brain.agent_scope import (
+        agent_scope_valid_values_for_errors,
+        normalize_agent_scope,
+    )
+    from tapps_brain.memory_group import MEMORY_GROUP_UNSET
+    from tapps_brain.models import MemoryTier
+    from tapps_brain.tier_normalize import normalize_save_tier
+
+    try:
+        agent_scope = normalize_agent_scope(agent_scope)
+    except ValueError as exc:
+        return {
+            "error": "invalid_agent_scope",
+            "message": str(exc),
+            "valid_values": agent_scope_valid_values_for_errors(),
+        }
+
+    tier = normalize_save_tier(tier, async_store.profile)
+
+    _valid_tiers: frozenset[str] = (
+        frozenset(async_store.profile.layer_names)
+        if async_store.profile is not None
+        else frozenset(m.value for m in MemoryTier)
+    )
+    if tier not in _valid_tiers:
+        _sorted_valid = sorted(_valid_tiers)
+        return {
+            "error": "invalid_tier",
+            "message": f"Invalid tier {tier!r}. Valid values: {_sorted_valid}",
+            "valid_values": _sorted_valid,
+        }
+    _valid_sources = ("human", "agent", "inferred", "system")
+    if source not in _valid_sources:
+        return {
+            "error": "invalid_source",
+            "message": f"Invalid source {source!r}. Valid values: {list(_valid_sources)}",
+            "valid_values": list(_valid_sources),
+        }
+    resolved_agent = source_agent if source_agent else agent_id
+    memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
+
+    from pydantic import ValidationError as _PydanticValidationError
+
+    try:
+        result = await async_store.save(
+            key=key,
+            value=value,
+            tier=tier,
+            source=source,
+            tags=tags,
+            scope=scope,
+            confidence=confidence,
+            agent_scope=agent_scope,
+            source_agent=resolved_agent,
+            memory_group=memory_group_arg,
+        )
+    except _PydanticValidationError as exc:
+        errors = exc.errors()
+        msg = errors[0].get("msg", str(exc)) if errors else str(exc)
+        return {"error": "bad_request", "message": msg}
+
+    if isinstance(result, dict):
+        return result
+    return {
+        "status": "saved",
+        "key": result.key,
+        "tier": str(result.tier),
+        "confidence": result.confidence,
+        "memory_group": result.memory_group,
+    }
+
+
+async def async_brain_forget(
+    async_store: Any, project_id: str, agent_id: str, *, key: str
+) -> dict[str, Any]:
+    entry = await async_store.get(key)
+    if entry is None:
+        return {"forgotten": False, "reason": "not_found"}
+    await async_store.delete(key)
+    return {"forgotten": True, "key": key}
+
+
+async def async_brain_learn_success(
+    async_store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    task_description: str,
+    task_id: str = "",
+) -> dict[str, Any]:
+    from tapps_brain.agent_brain import _content_key
+
+    key = _content_key(f"success-{task_description}")
+    tags = ["success"]
+    if task_id:
+        tags.append(f"task:{task_id}")
+    await async_store.save(key=key, value=task_description, tier="procedural", tags=tags)
+    return {"learned": True, "key": key}
+
+
+async def async_brain_learn_failure(
+    async_store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    description: str,
+    task_id: str = "",
+    error: str = "",
+) -> dict[str, Any]:
+    from tapps_brain.agent_brain import _content_key
+
+    key = _content_key(f"failure-{description}")
+    value = f"{description}\n\nError: {error}" if error else description
+    tags = ["failure"]
+    if task_id:
+        tags.append(f"task:{task_id}")
+    await async_store.save(key=key, value=value, tier="procedural", tags=tags)
+    return {"learned": True, "key": key}

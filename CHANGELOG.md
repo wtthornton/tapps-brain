@@ -10,6 +10,38 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Async-native write path available via `TAPPS_BRAIN_ASYNC_NATIVE=1` (EPIC-072).**
+  Set `TAPPS_BRAIN_ASYNC_NATIVE=1` to enable `AsyncMemoryStore` to route Postgres
+  writes through `AsyncPostgresPrivateBackend` (native `psycopg_pool.AsyncConnectionPool`)
+  instead of blocking a thread-pool thread on every save. The default remains `0`
+  for this release to allow production observation before graduating to the new default.
+
+  Affected write paths: `/v1/remember`, `/v1/forget`, `/v1/learn_success`,
+  `/v1/learn_failure`, and direct `AsyncMemoryStore.save()` / `.delete()` callers.
+
+  **Deprecation notice:** `TAPPS_BRAIN_ASYNC_NATIVE=0` (the `asyncio.to_thread` path)
+  will become deprecated in the next minor release and removed in the following minor.
+  Set `TAPPS_BRAIN_ASYNC_NATIVE=1` today to opt in and report any issues before the
+  flag is removed. See `docs/guides/deployment.md` and
+  `docs/engineering/async-performance.md`.
+
+  **Known limitations in this release** (tracked in EPIC-072):
+  - Relations (`save_relations`) and audit log (`append_audit`) writes are no-ops on
+    the async-native path; they will be added in a follow-up story.
+  - Reinforce, recall, and batch endpoints still use `to_thread`; native paths planned.
+
+- **Docstring coverage improved across `services/` and `scripts/` (TAP-1094).**
+  All 19 source modules previously missing module-level docstrings now have them.
+  82 public symbols in `services/*.py` and `scripts/*.py` now carry inline docstrings,
+  bringing the MCP tool-registration surface fully documented for contributors and
+  downstream consumers.
+
+---
+
 ## [3.14.4] — 2026-04-29
 
 ### Fixed

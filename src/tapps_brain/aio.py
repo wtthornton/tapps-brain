@@ -1,9 +1,17 @@
 """Async wrapper for MemoryStore (Issue #66).
 
-Thin adapter using ``asyncio.to_thread()`` around every public
+Default path: thin adapter using ``asyncio.to_thread()`` around every public
 ``MemoryStore`` method.  Thread-safe: ``MemoryStore`` already serializes
 via ``threading.Lock``, so ``to_thread()`` simply keeps the event loop
 unblocked — it does NOT add parallelism to store operations.
+
+Async-native path (``TAPPS_BRAIN_ASYNC_NATIVE=1``): hot-path writes are
+intercepted so the actual Postgres I/O goes through
+``AsyncPostgresPrivateBackend`` (native ``psycopg_pool.AsyncConnectionPool``)
+instead of a thread-pool thread.  The MemoryStore's in-memory cache and
+business logic still run in ``to_thread``; only the persistence layer is
+replaced.  Relations, audit, and other secondary writes are deferred in this
+mode (known limitation — tracked in EPIC-072 roadmap).
 
 Usage::
 
@@ -17,6 +25,8 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import os
+import threading
 from typing import TYPE_CHECKING, Any
 
 from tapps_brain.store import MemoryStore
@@ -24,19 +34,161 @@ from tapps_brain.store import MemoryStore
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tapps_brain.models import MemoryEntry
+    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
+
+
+class _CapturePersistenceBackend:
+    """Intercepts save/delete calls during a MemoryStore operation.
+
+    Used in async-native mode to prevent MemoryStore from blocking a thread
+    pool thread on the Postgres write.  The captured entries are flushed via
+    ``AsyncPostgresPrivateBackend`` after the ``to_thread`` call returns.
+
+    All read operations and secondary writes (audit, relations) delegate to
+    the real backend so MemoryStore's read paths continue to work.  Audit
+    ``append_audit`` and ``save_relations`` are no-ops — these are
+    best-effort writes that can be accepted as missing in the MVP of native
+    mode (EPIC-072 roadmap item).
+    """
+
+    def __init__(self, real: Any) -> None:
+        self._real = real
+        self._saved: list[MemoryEntry] = []
+        self._deleted: list[str] = []
+        self._lock = threading.Lock()
+
+    # --- Captured writes ---------------------------------------------------
+
+    def save(self, entry: MemoryEntry) -> None:
+        with self._lock:
+            self._saved.append(entry)
+
+    def delete(self, key: str) -> bool:
+        with self._lock:
+            self._saved = [e for e in self._saved if e.key != key]
+            self._deleted.append(key)
+        return True
+
+    # --- Secondary writes (no-op in native mode) ----------------------------
+
+    def append_audit(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def save_relations(self, *args: Any, **kwargs: Any) -> int:
+        return 0
+
+    # --- Read operations (delegate to real backend) -------------------------
+
+    def load_all(self, **kwargs: Any) -> list[Any]:
+        return list(self._real.load_all(**kwargs))
+
+    def search(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return list(self._real.search(*args, **kwargs))
+
+    def knn_search(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return list(self._real.knn_search(*args, **kwargs))
+
+    def vector_row_count(self) -> int:
+        return int(self._real.vector_row_count())
+
+    def list_relations(self) -> list[Any]:
+        return list(self._real.list_relations())
+
+    def count_relations(self) -> int:
+        return int(self._real.count_relations())
+
+    def load_relations(self, key: str) -> list[Any]:
+        return list(self._real.load_relations(key))
+
+    def get_schema_version(self) -> int:
+        return int(self._real.get_schema_version())
+
+    def verify_expected_indexes(self) -> list[str]:
+        vr = getattr(self._real, "verify_expected_indexes", None)
+        return list(vr()) if callable(vr) else []
+
+    def query_audit(self, **kwargs: Any) -> list[Any]:
+        qa = getattr(self._real, "query_audit", None)
+        return list(qa(**kwargs)) if callable(qa) else []
+
+    def flywheel_meta_get(self, key: str) -> str | None:
+        fn = getattr(self._real, "flywheel_meta_get", None)
+        result = fn(key) if callable(fn) else None
+        return str(result) if result is not None else None
+
+    def flywheel_meta_set(self, key: str, value: str) -> None:
+        fn = getattr(self._real, "flywheel_meta_set", None)
+        if callable(fn):
+            fn(key, value)
+
+    def archive_entry(self, entry: Any) -> int:
+        fn = getattr(self._real, "archive_entry", None)
+        return fn(entry) if callable(fn) else 0
+
+    def list_archive(self, **kwargs: Any) -> list[Any]:
+        fn = getattr(self._real, "list_archive", None)
+        return fn(**kwargs) if callable(fn) else []
+
+    def total_archive_bytes(self) -> int:
+        fn = getattr(self._real, "total_archive_bytes", None)
+        return fn() if callable(fn) else 0
+
+    def close(self) -> None:
+        pass
+
+    @property
+    def store_dir(self) -> Any:
+        return self._real.store_dir
+
+    @property
+    def db_path(self) -> Any:
+        return self._real.db_path
+
+    @property
+    def audit_path(self) -> Any:
+        return self._real.audit_path
+
+    @property
+    def encryption_key(self) -> str | None:
+        key = self._real.encryption_key
+        return str(key) if key is not None else None
+
+    def flush(self) -> tuple[list[MemoryEntry], list[str]]:
+        """Return captured saves/deletes and clear the queues."""
+        with self._lock:
+            saves = list(self._saved)
+            deletes = list(self._deleted)
+            self._saved.clear()
+            self._deleted.clear()
+        return saves, deletes
+
 
 class AsyncMemoryStore:
     """Async facade over :class:`MemoryStore`.
 
     Every public method delegates to the underlying sync store via
-    :func:`asyncio.to_thread`.
+    :func:`asyncio.to_thread` (default) or, when
+    ``TAPPS_BRAIN_ASYNC_NATIVE=1`` is set, intercepts the persistence layer
+    so Postgres writes go through
+    :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`
+    without blocking a thread pool thread.
     """
 
-    __slots__ = ("_store", "_wrapper_cache")
+    __slots__ = ("_async_backend", "_async_native", "_native_lock", "_store", "_wrapper_cache")
 
-    def __init__(self, store: MemoryStore) -> None:
+    def __init__(
+        self,
+        store: MemoryStore,
+        *,
+        async_backend: AsyncPostgresPrivateBackend | None = None,
+    ) -> None:
         self._store = store
         self._wrapper_cache: dict[str, Any] = {}
+        self._async_backend = async_backend
+        self._async_native = async_backend is not None
+        # asyncio.Lock serialises the persistence-swap in native save/delete.
+        self._native_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -44,9 +196,34 @@ class AsyncMemoryStore:
 
     @classmethod
     async def open(cls, project_root: Path, **kwargs: Any) -> AsyncMemoryStore:
-        """Create a ``MemoryStore`` in a worker thread and return the wrapper."""
+        """Create a ``MemoryStore`` in a worker thread and return the wrapper.
+
+        When ``TAPPS_BRAIN_ASYNC_NATIVE=1`` is set and a PostgreSQL DSN is
+        available, also creates an :class:`AsyncPostgresPrivateBackend` that
+        takes over persistence so DB writes no longer block thread-pool
+        threads.
+        """
         store = await asyncio.to_thread(MemoryStore, project_root, **kwargs)
-        return cls(store)
+
+        async_backend = None
+        if os.environ.get("TAPPS_BRAIN_ASYNC_NATIVE") == "1":
+            dsn = (
+                os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+                or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+                or ""
+            ).strip()
+            if dsn.startswith(("postgres://", "postgresql://")):
+                from tapps_brain.backends import create_async_private_backend
+
+                # Derive project_id / agent_id from the sync store.
+                project_id = getattr(store, "_project_id", None) or ""
+                agent_id = getattr(store, "_agent_id", None) or ""
+                if project_id and agent_id:
+                    async_backend = create_async_private_backend(
+                        dsn, project_id=project_id, agent_id=agent_id
+                    )
+
+        return cls(store, async_backend=async_backend)
 
     # ------------------------------------------------------------------
     # Properties (sync — no I/O)
@@ -66,11 +243,59 @@ class AsyncMemoryStore:
         return self._store.profile
 
     # ------------------------------------------------------------------
+    # Native-mode helpers
+    # ------------------------------------------------------------------
+
+    async def _native_save(self, key: str, value: str, **kwargs: Any) -> Any:
+        """Run MemoryStore.save via to_thread but capture the DB write.
+
+        Business logic and in-memory cache update run in the thread pool
+        (MemoryStore lock applies).  The actual Postgres write is flushed
+        via :attr:`_async_backend` after the thread returns.
+        """
+        capture = _CapturePersistenceBackend(self._store._persistence)
+        async with self._native_lock:
+            old = self._store._persistence
+            self._store._persistence = capture
+            try:
+                result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
+            finally:
+                self._store._persistence = old
+        # Flush outside the lock so concurrent saves can proceed.
+        saves, deletes = capture.flush()
+        assert self._async_backend is not None
+        for entry in saves:
+            await self._async_backend.save(entry)
+        for k in deletes:
+            await self._async_backend.delete(k)
+        return result
+
+    async def _native_delete(self, key: str) -> bool:
+        """Run MemoryStore.delete via to_thread, flushing via async backend."""
+        capture = _CapturePersistenceBackend(self._store._persistence)
+        async with self._native_lock:
+            old = self._store._persistence
+            self._store._persistence = capture
+            try:
+                result = await asyncio.to_thread(self._store.delete, key)
+            finally:
+                self._store._persistence = old
+        saves, deletes = capture.flush()
+        assert self._async_backend is not None
+        for entry in saves:
+            await self._async_backend.save(entry)
+        for k in deletes:
+            await self._async_backend.delete(k)
+        return result
+
+    # ------------------------------------------------------------------
     # Primary methods (explicit signatures for IDE discoverability)
     # ------------------------------------------------------------------
 
     async def save(self, key: str, value: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.save`."""
+        if self._async_native:
+            return await self._native_save(key, value, **kwargs)
         return await asyncio.to_thread(self._store.save, key, value, **kwargs)
 
     async def get(self, key: str, **kwargs: Any) -> Any:
@@ -79,6 +304,8 @@ class AsyncMemoryStore:
 
     async def delete(self, key: str) -> bool:
         """Async version of :meth:`MemoryStore.delete`."""
+        if self._async_native:
+            return await self._native_delete(key)
         return await asyncio.to_thread(self._store.delete, key)
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
@@ -215,6 +442,8 @@ class AsyncMemoryStore:
 
     async def close(self) -> None:
         """Async version of :meth:`MemoryStore.close`."""
+        if self._async_backend is not None:
+            await self._async_backend.close()
         await asyncio.to_thread(self._store.close)
 
     # ------------------------------------------------------------------

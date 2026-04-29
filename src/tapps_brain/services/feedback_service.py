@@ -1,4 +1,9 @@
-"""Feedback service functions (EPIC-070 STORY-070.1)."""
+"""Feedback service functions (EPIC-070 STORY-070.1).
+
+Exposes memory feedback recording and querying via MCP feedback tools and the
+HTTP adapter. Delegates to ``MemoryStore.rate_recall()``, ``report_gap()``,
+``report_issue()``, ``record_feedback()``, and ``query_feedback()``.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ def feedback_rate(
     session_id: str = "",
     details_json: str = "",
 ) -> dict[str, Any]:
+    """Record a helpfulness rating (e.g. helpful/unhelpful) for a recalled memory entry."""
     details, err = parse_details_json(details_json)
     if err is not None:
         return {"error": "parse_error", "message": err}
@@ -41,6 +47,7 @@ def feedback_gap(
     session_id: str = "",
     details_json: str = "",
 ) -> dict[str, Any]:
+    """Report a knowledge gap: a query that returned no useful results."""
     details, err = parse_details_json(details_json)
     if err is not None:
         return {"error": "parse_error", "message": err}
@@ -62,6 +69,7 @@ def feedback_issue(
     session_id: str = "",
     details_json: str = "",
 ) -> dict[str, Any]:
+    """Report a quality issue (e.g. stale or incorrect content) against a specific entry."""
     details, err = parse_details_json(details_json)
     if err is not None:
         return {"error": "parse_error", "message": err}
@@ -85,6 +93,7 @@ def feedback_record(
     utility_score: float | None = None,
     details_json: str = "",
 ) -> dict[str, Any]:
+    """Record an arbitrary feedback event with an optional utility score and details blob."""
     details, err = parse_details_json(details_json)
     if err is not None:
         return {"error": "parse_error", "message": err}
@@ -113,6 +122,7 @@ def feedback_query(
     until: str = "",
     limit: int = 100,
 ) -> dict[str, Any]:
+    """Query stored feedback events with optional filters on type, key, session, and date range."""
     events = store.query_feedback(
         event_type=event_type.strip() or None,
         entry_key=entry_key.strip() or None,

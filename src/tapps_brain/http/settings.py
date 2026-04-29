@@ -77,6 +77,8 @@ class _Settings:
         # construction bypassed the hardened pool and raced
         # ``max_connections`` under load.
         self.idempotency_store: Any = None
+        # TAP-826 (EPIC-072 STORY-072.5): async-native write path.
+        self.async_store: Any = None
 
     @staticmethod
     def _resolve_dsn() -> str | None:

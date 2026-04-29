@@ -58,7 +58,45 @@ tapps-brain-mcp --version
 tapps-brain search "memory" --project-dir /path/to/project
 ```
 
-## Path B: Git-only install/upgrade (no PyPI)
+## Path B: GitHub Release wheel (TAP-992 — recommended for private deployments)
+
+The automated `release.yml` workflow attaches signed wheel + sdist to every
+`vX.Y.Z` GitHub Release. This is the **recommended path for AgentForge,
+TappsMCP, NLTlabsPE**, and any other consumer that previously relied on
+vendored wheels. No registry account required — installs from the release URL.
+
+### 1) Install from GitHub Release
+
+```bash
+pip install "https://github.com/wtthornton/tapps-brain/releases/download/vX.Y.Z/tapps_brain-X.Y.Z-py3-none-any.whl[mcp]"
+```
+
+Or pin in `pyproject.toml` (uv-compatible):
+
+```toml
+[tool.uv.sources]
+tapps-brain = { url = "https://github.com/wtthornton/tapps-brain/releases/download/vX.Y.Z/tapps_brain-X.Y.Z-py3-none-any.whl" }
+```
+
+### 2) Build/install plugin, configure, restart
+
+Use the same plugin/config/restart steps from Path A.
+
+### 3) Smoke checks
+
+Use the same smoke checks from Path A.
+
+### Upgrading via GitHub Release
+
+```bash
+# Fetch the latest release tag:
+latest=$(gh release view --repo wtthornton/tapps-brain --json tagName -q .tagName)
+pip install "https://github.com/wtthornton/tapps-brain/releases/download/${latest}/tapps_brain-${latest#v}-py3-none-any.whl[mcp]"
+```
+
+---
+
+## Path C: Git-only install/upgrade (no PyPI)
 
 ### 1) Install from Git
 

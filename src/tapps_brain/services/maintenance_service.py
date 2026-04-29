@@ -1,4 +1,9 @@
-"""Maintenance service functions (EPIC-070 STORY-070.1)."""
+"""Maintenance service functions (EPIC-070 STORY-070.1).
+
+Exposes memory lifecycle operations (consolidation, GC, stale listing, session
+end) via MCP maintenance tools and the HTTP adapter. Delegates to
+``auto_consolidation``, ``MemoryStore.gc()``, and ``session_summary``.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ def maintenance_consolidate(
     min_group_size: int = 3,
     force: bool = True,
 ) -> dict[str, Any]:
+    """Run a periodic consolidation scan, merging similar entries above the similarity threshold."""
     from tapps_brain.auto_consolidation import run_periodic_consolidation_scan
 
     result = run_periodic_consolidation_scan(
@@ -33,6 +39,7 @@ def maintenance_consolidate(
 def maintenance_gc(
     store: Any, project_id: str, agent_id: str, *, dry_run: bool = False
 ) -> dict[str, Any]:
+    """Archive stale memory entries; in dry-run mode reports candidates without modifying data."""
     raw = store.gc(dry_run=dry_run)
     payload = raw.model_dump(mode="json")
     if dry_run:
@@ -54,6 +61,7 @@ def maintenance_gc(
 
 
 def maintenance_stale(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """List entries eligible for GC archival with full detail for review before committing."""
     details = store.list_gc_stale_details()
     return {
         "count": len(details),
@@ -71,6 +79,7 @@ def tapps_brain_session_end(
     tags: list[str] | None = None,
     daily_note: bool = False,
 ) -> dict[str, Any]:
+    """Persist a session summary to disk and optionally append to the daily note."""
     from tapps_brain.session_summary import session_summary_save
 
     return session_summary_save(

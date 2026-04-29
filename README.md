@@ -191,6 +191,13 @@ pip install tapps-brain[all]            # everything above (except visual and ot
 
 > **Pre-release / CI parity:** `bash scripts/release-ready.sh` (Linux, macOS, WSL, or Git Bash on Windows) runs packaging, tests, lint, types, and the OpenClaw plugin build. OpenClaw-facing doc drift: `python scripts/check_openclaw_docs_consistency.py`. Details: [`scripts/publish-checklist.md`](scripts/publish-checklist.md), [`docs/planning/STATUS.md`](docs/planning/STATUS.md).
 
+> **Distribution (TAP-992):** Releases are published as GitHub Release artifacts on every `vX.Y.Z` tag push via `.github/workflows/release.yml`. Consumers that previously used `vendor/*.whl` should switch to:
+> ```toml
+> # pyproject.toml (uv-compatible)
+> tapps-brain = { url = "https://github.com/wtthornton/tapps-brain/releases/download/vX.Y.Z/tapps_brain-X.Y.Z-py3-none-any.whl" }
+> ```
+> See [`scripts/publish-checklist.md`](scripts/publish-checklist.md) and [`docs/guides/openclaw-runbook.md`](docs/guides/openclaw-runbook.md) (Path B).
+
 ---
 
 ## Three interfaces

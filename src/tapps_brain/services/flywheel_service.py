@@ -1,4 +1,9 @@
-"""Flywheel service functions (EPIC-070 STORY-070.1)."""
+"""Flywheel service functions (EPIC-070 STORY-070.1).
+
+Exposes quality-improvement loop operations via MCP flywheel tools and the HTTP
+adapter. Delegates to ``FeedbackProcessor``, ``MemoryStore.knowledge_gaps()``,
+``MemoryStore.generate_report()``, and ``evaluation.evaluate()``.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from typing import Any
 def flywheel_process(
     store: Any, project_id: str, agent_id: str, *, since: str = ""
 ) -> dict[str, Any]:
+    """Run the feedback flywheel processor to apply Bayesian confidence updates."""
     from tapps_brain.flywheel import FeedbackProcessor, FlywheelConfig
 
     return FeedbackProcessor(FlywheelConfig()).process_feedback(
@@ -20,6 +26,7 @@ def flywheel_process(
 def flywheel_gaps(
     store: Any, project_id: str, agent_id: str, *, limit: int = 10, semantic: bool = False
 ) -> dict[str, Any]:
+    """Return the top knowledge gaps ranked by gap score; optionally uses semantic clustering."""
     gaps = store.knowledge_gaps(limit=limit, semantic=semantic)
     return {"gaps": [g.model_dump(mode="json") for g in gaps], "count": len(gaps)}
 
@@ -27,6 +34,7 @@ def flywheel_gaps(
 def flywheel_report(
     store: Any, project_id: str, agent_id: str, *, period_days: int = 7
 ) -> dict[str, Any]:
+    """Generate a markdown quality report covering the given lookback period in days."""
     rep = store.generate_report(period_days=period_days)
     return {
         "rendered_text": rep.rendered_text,
@@ -37,6 +45,7 @@ def flywheel_report(
 def flywheel_evaluate(
     store: Any, project_id: str, agent_id: str, *, suite_path: str, k: int = 5
 ) -> dict[str, Any]:
+    """Run a BEIR-style evaluation suite from a YAML file or directory; returns MRR/nDCG metrics."""
     from tapps_brain.evaluation import EvalSuite, evaluate
 
     p = Path(suite_path).expanduser().resolve()
@@ -55,6 +64,7 @@ def flywheel_evaluate(
 def flywheel_hive_feedback(
     store: Any, project_id: str, agent_id: str, *, threshold: int = 3
 ) -> dict[str, Any]:
+    """Aggregate and process cross-agent Hive feedback signals above the vote threshold."""
     from tapps_brain.flywheel import aggregate_hive_feedback, process_hive_feedback
 
     hs = getattr(store, "_hive_store", None)

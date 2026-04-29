@@ -719,6 +719,10 @@ class _Settings:  # type: ignore[no-redef]  # noqa: F811
         # construction bypassed the hardened pool and raced
         # ``max_connections`` under load.
         self.idempotency_store: Any = None
+        # TAP-826 (EPIC-072 STORY-072.5): async-native write path.
+        # Populated in lifespan startup when TAPPS_BRAIN_ASYNC_NATIVE=1
+        # and a store is available.  None when native mode is off.
+        self.async_store: Any = None
 
     @staticmethod
     def _resolve_dsn() -> str | None:
@@ -1352,6 +1356,30 @@ def create_app(
                     )
                     cfg.idempotency_store = None
 
+        # TAP-826: build async-native store when TAPPS_BRAIN_ASYNC_NATIVE=1.
+        if (
+            getattr(cfg, "async_store", None) is None
+            and os.environ.get("TAPPS_BRAIN_ASYNC_NATIVE") == "1"
+            and cfg.store is not None
+        ):
+            try:
+                from tapps_brain.aio import AsyncMemoryStore
+                from tapps_brain.backends import create_async_private_backend
+
+                _dsn = (cfg.dsn or "").strip()
+                if _dsn.startswith(("postgres://", "postgresql://")):
+                    _project_id = getattr(cfg.store, "_project_id", None) or ""
+                    _agent_id = getattr(cfg.store, "_agent_id", None) or ""
+                    if _project_id and _agent_id:
+                        _ab = create_async_private_backend(
+                            _dsn, project_id=_project_id, agent_id=_agent_id
+                        )
+                        cfg.async_store = AsyncMemoryStore(cfg.store, async_backend=_ab)
+                        logger.info("http_adapter.async_native_store_ready")
+            except Exception as exc:
+                logger.warning("http_adapter.async_store_init_failed", error=str(exc))
+                cfg.async_store = None
+
         mcp = mcp_holder["mcp"]
         if mcp is None:
             try:
@@ -1410,6 +1438,12 @@ def create_app(
                         exc_info=True,
                     )
                 cfg.idempotency_store = None
+            if getattr(cfg, "async_store", None) is not None:
+                try:
+                    await cfg.async_store.close()
+                except Exception:
+                    logger.debug("http_adapter.async_store_close_failed", exc_info=True)
+                cfg.async_store = None
 
     app = FastAPI(
         title="tapps-brain HTTP API",
@@ -1568,6 +1602,10 @@ def create_app(
                 },
             )
         return cfg.store
+
+    def _get_async_store_or_none() -> Any:
+        """Return cfg.async_store when TAPPS_BRAIN_ASYNC_NATIVE=1, else None."""
+        return getattr(cfg, "async_store", None)
 
     # ------------------------------------------------------------------
     # TAP-629: per-key asyncio guards for idempotency serialization.
@@ -1744,24 +1782,43 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            # TAP-1099: offload sync DB call to a worker thread so the FastAPI
-            # event loop keeps serving concurrent requests instead of blocking
-            # on a single in-flight psycopg round-trip.
-            result = await asyncio.to_thread(
-                _ms.memory_save,
-                store,
-                project_id,
-                agent_id,
-                key=mem_key,
-                value=mem_value,
-                tier=body.get("tier", "pattern"),
-                source=body.get("source", "agent"),
-                tags=body.get("tags"),
-                scope=body.get("scope", "project"),
-                confidence=float(body.get("confidence", -1.0)),
-                agent_scope=body.get("agent_scope", "private"),
-                group=body.get("group"),
-            )
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None:
+                # TAP-826: use async-native path — DB write goes through
+                # AsyncPostgresPrivateBackend without blocking a thread.
+                result = await _ms.async_memory_save(
+                    _async_store,
+                    project_id,
+                    agent_id,
+                    key=mem_key,
+                    value=mem_value,
+                    tier=body.get("tier", "pattern"),
+                    source=body.get("source", "agent"),
+                    tags=body.get("tags"),
+                    scope=body.get("scope", "project"),
+                    confidence=float(body.get("confidence", -1.0)),
+                    agent_scope=body.get("agent_scope", "private"),
+                    group=body.get("group"),
+                )
+            else:
+                # TAP-1099: offload sync DB call to a worker thread so the
+                # FastAPI event loop keeps serving concurrent requests instead
+                # of blocking on a single in-flight psycopg round-trip.
+                result = await asyncio.to_thread(
+                    _ms.memory_save,
+                    store,
+                    project_id,
+                    agent_id,
+                    key=mem_key,
+                    value=mem_value,
+                    tier=body.get("tier", "pattern"),
+                    source=body.get("source", "agent"),
+                    tags=body.get("tags"),
+                    scope=body.get("scope", "project"),
+                    confidence=float(body.get("confidence", -1.0)),
+                    agent_scope=body.get("agent_scope", "private"),
+                    group=body.get("group"),
+                )
             if isinstance(result, dict) and "error" in result:
                 status_code = 400
             else:
@@ -2291,10 +2348,16 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            # TAP-1099: offload sync DB call to a worker thread.
-            result = await asyncio.to_thread(
-                _ms.brain_forget, store, project_id, agent_id, key=mem_key
-            )
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None:
+                result = await _ms.async_brain_forget(
+                    _async_store, project_id, agent_id, key=mem_key
+                )
+            else:
+                # TAP-1099: offload sync DB call to a worker thread.
+                result = await asyncio.to_thread(
+                    _ms.brain_forget, store, project_id, agent_id, key=mem_key
+                )
             status_code = 200
 
             if ikey and istore is not None:
@@ -2396,15 +2459,25 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            # TAP-1099: offload sync DB call to a worker thread.
-            result = await asyncio.to_thread(
-                _ms.brain_learn_success,
-                store,
-                project_id,
-                agent_id,
-                task_description=task_description,
-                task_id=str(body.get("task_id") or ""),
-            )
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None:
+                result = await _ms.async_brain_learn_success(
+                    _async_store,
+                    project_id,
+                    agent_id,
+                    task_description=task_description,
+                    task_id=str(body.get("task_id") or ""),
+                )
+            else:
+                # TAP-1099: offload sync DB call to a worker thread.
+                result = await asyncio.to_thread(
+                    _ms.brain_learn_success,
+                    store,
+                    project_id,
+                    agent_id,
+                    task_description=task_description,
+                    task_id=str(body.get("task_id") or ""),
+                )
             status_code = 200
 
             if ikey and istore is not None:
@@ -2507,16 +2580,27 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            # TAP-1099: offload sync DB call to a worker thread.
-            result = await asyncio.to_thread(
-                _ms.brain_learn_failure,
-                store,
-                project_id,
-                agent_id,
-                description=description,
-                task_id=str(body.get("task_id") or ""),
-                error=str(body.get("error") or ""),
-            )
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None:
+                result = await _ms.async_brain_learn_failure(
+                    _async_store,
+                    project_id,
+                    agent_id,
+                    description=description,
+                    task_id=str(body.get("task_id") or ""),
+                    error=str(body.get("error") or ""),
+                )
+            else:
+                # TAP-1099: offload sync DB call to a worker thread.
+                result = await asyncio.to_thread(
+                    _ms.brain_learn_failure,
+                    store,
+                    project_id,
+                    agent_id,
+                    description=description,
+                    task_id=str(body.get("task_id") or ""),
+                    error=str(body.get("error") or ""),
+                )
             status_code = 200
 
             if ikey and istore is not None:

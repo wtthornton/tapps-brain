@@ -1,4 +1,9 @@
-"""Relay service functions (EPIC-070 STORY-070.1)."""
+"""Relay service functions (EPIC-070 STORY-070.1).
+
+Exposes memory relay export via MCP relay tools and the HTTP adapter. Delegates
+to ``tapps_brain.memory_relay.build_relay_json()`` to package entries for
+cross-agent or cross-project transfer.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ def tapps_brain_relay_export(
     source_agent: str,
     items_json: str,
 ) -> dict[str, Any]:
+    """Package a JSON array of memory items into a signed relay payload for transfer."""
     from tapps_brain.memory_relay import RELAY_VERSION, build_relay_json
 
     try:

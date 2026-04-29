@@ -1,4 +1,9 @@
-"""Agent registry service functions (EPIC-070 STORY-070.1)."""
+"""Agent registry service functions (EPIC-070 STORY-070.1).
+
+Exposes agent registration, creation, listing, and deletion via the MCP
+``agent_*`` tools and the HTTP adapter. Delegates to ``AgentRegistry`` and
+``AgentRegistration`` from ``tapps_brain.backends`` / ``tapps_brain.models``.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ def agent_register(
     profile: str = "repo-brain",
     skills: str = "",
 ) -> dict[str, Any]:
+    """Register a new agent with the given profile and skills in the AgentRegistry."""
     if not new_agent_id or not new_agent_id.strip():
         return {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
     try:
@@ -48,6 +54,7 @@ def agent_create(
     profile: str = "repo-brain",
     skills: str = "",
 ) -> dict[str, Any]:
+    """Create and register a new agent, validating the profile exists before registration."""
     if not new_agent_id or not new_agent_id.strip():
         return {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
     try:
@@ -94,6 +101,7 @@ def agent_create(
 
 
 def agent_list(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return all registered agents with their profile and skill metadata."""
     try:
         from tapps_brain.backends import AgentRegistry
 
@@ -108,6 +116,7 @@ def agent_list(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
 def agent_delete(
     store: Any, project_id: str, agent_id: str, *, target_agent_id: str
 ) -> dict[str, Any]:
+    """Unregister an agent by ID; returns deleted=False if the agent was not found."""
     try:
         from tapps_brain.backends import AgentRegistry
 

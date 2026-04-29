@@ -60,7 +60,7 @@ def main() -> int:
         print(f"  [{name}] running…", end=" ", flush=True)
         try:
             applied = apply_fn(dsn)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"FAILED\nERROR: {exc}", file=sys.stderr)
             return 1
         if applied:

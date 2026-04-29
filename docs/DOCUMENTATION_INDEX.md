@@ -1,6 +1,6 @@
 # tapps-brain — Documentation Index
 
-**265 documents** across **9 categories**
+**266 documents** across **9 categories**
 
 ## Overview
 
@@ -13,13 +13,13 @@
 | Guides | 47 |
 | Operations | 9 |
 | Other | 11 |
-| Planning | 150 |
+| Planning | 151 |
 | Release | 4 |
 
 ## API Reference
 
 - [TappsMCP - instructions for AI assistants](../AGENTS.md) — <!-- tapps-agents-version: 3.3.0 --> *(updated 2026-04-24)*
-- [— Documentation Index](DOCUMENTATION_INDEX.md) — **265 documents** across **9 categories** *(updated 2026-04-28)*
+- [— Documentation Index](DOCUMENTATION_INDEX.md) — **266 documents** across **9 categories** *(updated 2026-04-29)*
 - [Code Inventory and Documentation Gaps](engineering/code-inventory-and-doc-gaps.md) — All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers. *(updated 2026-04-21)*
 - [Data Stores and Schema Reference](engineering/data-stores-and-schema.md) — All durable stores use **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). No SQLite fall... *(updated 2026-04-13)*
 - [tapps-brain — Documentation Index](index.md) — **215 documents** across **8 categories** *(updated 2026-04-16)*
@@ -45,10 +45,10 @@
 - [Session prompt — tapps-brain review fixes (TAP-508 → TAP-514)](../prompts/SESSION-tapps-brain-review-fixes.md) — You are working in `/home/wtthornton/code/tapps-brain`. This is a no-LLM Python brain service (uv, pytest, mypy --str... *(updated 2026-04-16)*
 ## Configuration
 
-- [Skill](../openclaw-skill/SKILL.md) *(updated 2026-04-28)*
+- [Skill](../openclaw-skill/SKILL.md) *(updated 2026-04-29)*
 ## Getting Started
 
-- [tapps-brain](../README.md) — AI agents forget everything between sessions. **tapps-brain** gives them persistent, ranked memory that decays natura... *(updated 2026-04-21)*
+- [tapps-brain](../README.md) — AI agents forget everything between sessions. **tapps-brain** gives them persistent, ranked memory that decays natura... *(updated 2026-04-29)*
 - [Docker Artifacts for tapps-brain](../docker/README.md) — Quick reference for the Docker deployment of tapps-brain. The stack is a **unified** tapps-brain-http container (serv... *(updated 2026-04-21)*
 - [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — <!-- tapps-generated: v3.3.0 --> *(updated 2026-04-28)*
 - [Ralph Setup Guide (Windows + WSL)](RALPH_SETUP_GUIDE.md) — Step-by-step guide for setting up Ralph on a new project. Covers the common pitfalls. *(updated 2026-04-05)*
@@ -79,7 +79,7 @@
 - [ClawHub Submission Guide](guides/clawhub-submission.md) — How to submit `tapps-brain-memory` to the ClawHub skill directory. *(updated 2026-04-05)*
 - [TappsBrainClient — official Python client](guides/client.md) — `TappsBrainClient` (sync) and `AsyncTappsBrainClient` (async) let you consume a *(updated 2026-04-16)*
 - [Memory decay: power-law vs exponential](guides/decay.md) — This guide explains the two decay models tapps-brain supports, how to choose between them, and the calibration math b... *(updated 2026-04-17)*
-- [tapps-brain Deployment Guide](guides/deployment.md) — This guide covers deploying tapps-brain as a **shared networked service** — *(updated 2026-04-21)*
+- [tapps-brain Deployment Guide](guides/deployment.md) — This guide covers deploying tapps-brain as a **shared networked service** — *(updated 2026-04-29)*
 - [Pluggable lookup engine for doc validation](guides/doc-validation-lookup-engine.md) — `tapps-brain` validates memory entries against authoritative documentation using a *(updated 2026-04-09)*
 - [Embedding model card (default semantic search)](guides/embedding-model-card.md) — This page documents the **default** dense embedding stack for built-in vector / hybrid retrieval (**EPIC-042** STORY-... *(updated 2026-04-21)*
 - [Error Taxonomy and Retry Semantics](guides/errors.md) — tapps-brain uses a **stable error code vocabulary** so client circuit-breakers and retry policies can be written once... *(updated 2026-04-14)*
@@ -103,7 +103,7 @@
 - [Migration Guide: tapps-brain 3.5.x → 3.6](guides/migration-3.5-to-3.6.md) — This guide covers the breaking changes and migration steps required when *(updated 2026-04-15)*
 - [Migration 3.6 → 3.7](guides/migration-3.6-to-3.7.md) — Upgrading an existing v3.6.x deployment to v3.7.x (including v3.7.2). Three concrete changes; the rest is backwards c... *(updated 2026-04-16)*
 - [Observability](guides/observability.md) — tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics**, and **feedback** surfaces through... *(updated 2026-04-21)*
-- [OpenClaw Install and Upgrade Runbook (Canonical)](guides/openclaw-runbook.md) — This is the source-of-truth runbook for installing and upgrading tapps-brain in OpenClaw. *(updated 2026-04-12)*
+- [OpenClaw Install and Upgrade Runbook (Canonical)](guides/openclaw-runbook.md) — This is the source-of-truth runbook for installing and upgrading tapps-brain in OpenClaw. *(updated 2026-04-29)*
 - [tapps-brain for OpenClaw](guides/openclaw.md) — Persistent cross-session memory for your OpenClaw agents. MCP tool and resource *(updated 2026-04-15)*
 - [Postgres Backup and Restore — tapps-brain](guides/postgres-backup.md) — tapps-brain stores **all durable state** in PostgreSQL (ADR-007): private memories, *(updated 2026-04-12)*
 - [Environment Variable Reference](guides/postgres-dsn.md) — This is the **canonical environment variable contract** for tapps-brain v3. *(updated 2026-04-21)*
@@ -135,7 +135,7 @@
 - [Core Call Flows](engineering/call-flows.md) — This document maps the dominant runtime call paths as implemented now. *(updated 2026-04-21)*
 - [tapps-brain v3 Threat Model](engineering/threat-model.md) — **Scope:** tapps-brain v3.0 — Postgres-only persistence plane with private agent memory, *(updated 2026-04-12)*
 - [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-04-05)*
-- [tapps-brain](../llms.txt) — - Version: 3.14.2 *(updated 2026-04-28)*
+- [tapps-brain](../llms.txt) — - Version: 3.14.4 *(updated 2026-04-29)*
 - [Coder](../tests/fixtures/profile_tool_sets/coder.txt) — brain_forget *(updated 2026-04-20)*
 - [Full](../tests/fixtures/profile_tool_sets/full.txt) — agent_create *(updated 2026-04-20)*
 - [Operator](../tests/fixtures/profile_tool_sets/operator.txt) — agent_create *(updated 2026-04-20)*
@@ -146,6 +146,7 @@
 - [tapps-brain Cleanup & Simplification Plan](../CLEANUP-PLAN.md) — **Date:** 2026-04-08 *(updated 2026-04-15)*
 - [LoCoMo benchmark](benchmarks/locomo.md) — - **Paper:** [Maharana et al. 2024, arXiv:2402.17753](https://arxiv.org/abs/2402.17753) *(updated 2026-04-17)*
 - [LongMemEval benchmark](benchmarks/longmemeval.md) — - **Paper:** [Xiao et al. 2024, arXiv:2410.10813](https://arxiv.org/abs/2410.10813) (ICLR 2025) *(updated 2026-04-17)*
+- [Async-Native Performance: EPIC-072 Benchmark Results](engineering/async-performance.md) — **Story:** STORY-072.4 *(updated 2026-04-29)*
 - [v3 Behavioral Parity — What Changed vs v2](engineering/v3-behavioral-parity.md) — **Epic:** [EPIC-059](../planning/epics/EPIC-059.md) — Greenfield v3 Postgres-Only Persistence Plane *(updated 2026-04-12)*
 - [Epic 70: AgentForge Integration — Remote-First Brain as a Shared Service](epics/EPIC-070-agentforge-integration.md) — <!-- docsmcp:start:metadata --> *(updated 2026-04-14)*
 - [Epic Validation — Regression Runbook](operations/epic-validation-regression.md) — This runbook verifies that the **Epic Validation** CI job (`.github/workflows/epic-validation.yml`) *(updated 2026-04-11)*
@@ -153,7 +154,7 @@
 - [Agent Feature Governance](planning/AGENT_FEATURE_GOVERNANCE.md) — Last updated: 2026-03-27 *(updated 2026-04-05)*
 - [Feature Feasibility Criteria (Agent Standard)](planning/FEATURE_FEASIBILITY_CRITERIA.md) — Last updated: 2026-03-27 (web-calibrated pass) *(updated 2026-04-15)*
 - [Issue triage — saved searches and board setup](planning/ISSUE_TRIAGE_VIEWS.md) — Last updated: 2026-03-27 *(updated 2026-04-05)*
-- [Planning Conventions](planning/PLANNING.md) — This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding ... *(updated 2026-04-21)*
+- [Planning Conventions](planning/PLANNING.md) — This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding ... *(updated 2026-04-29)*
 - [Project status snapshot](planning/STATUS.md) — **Last updated:** 2026-04-20 (America/Los_Angeles) — **v3.10.0** — Security batch (TAP-626–655): per-tenant auth bypa... *(updated 2026-04-21)*
 - [SQLite to Postgres - Meeting Notes](planning/archive/sqlite-to-postgres-meeting-notes.md) — Status: active discussion *(updated 2026-04-05)*
 - [Implementation plan: dynamic tapps-brain visual identity](planning/brain-visual-implementation-plan.md) — Track progress here for a **modern, per-instance-unique** visual representation of tapps-brain (dashboard, marketing,... *(updated 2026-04-15)*
@@ -224,7 +225,7 @@
 - [EPIC-061: Greenfield v3 — Observability-First Product (Simple & Complete)](planning/epics/EPIC-061.md) — Make **OpenTelemetry** traces and metrics the default observability path for save/recall/hive operations, with health... *(updated 2026-04-27)*
 - [EPIC-062: Greenfield v3 — MCP-Primary Integration & Environment Contract](planning/epics/EPIC-062.md) — Make **MCP** the primary IDE/agent integration, wiring the MCP server to the **same Postgres-backed** Hive and config... *(updated 2026-04-27)*
 - [EPIC-063: Greenfield v3 — Trust Boundaries & Postgres Enforcement](planning/epics/EPIC-063.md) — Enforce **least-privilege Postgres roles**, document an **RLS vs app-layer** decision, and publish a **threat model**... *(updated 2026-04-15)*
-- [EPIC-064: Product surface — narrative motion, deep insight, NLT brand fidelity](planning/epics/EPIC-064.md) — The **greenfield v3** epics created the same day ([EPIC-059](EPIC-059.md)–[EPIC-063](EPIC-063.md)) are infrastructure... *(updated 2026-04-15)*
+- [EPIC-064: Product surface — narrative motion, deep insight, NLT brand fidelity](planning/epics/EPIC-064.md) — The **greenfield v3** epics created the same day ([EPIC-059](EPIC-059.md)–[EPIC-063](EPIC-063.md)) are infrastructure... *(updated 2026-04-29)*
 - [Epic 65: Live Always-On Dashboard — Real-Time tapps-brain and Hive Monitoring](planning/epics/EPIC-065.md) — <!-- docsmcp:start:metadata --> *(updated 2026-04-15)*
 - [Epic 66: Postgres-Only Persistence Plane — Production Readiness](planning/epics/EPIC-066.md) — <!-- docsmcp:start:metadata --> *(updated 2026-04-15)*
 - [Epic 67: Docker Hive Stack — Production Completeness](planning/epics/EPIC-067.md) — <!-- docsmcp:start:metadata --> *(updated 2026-04-15)*
@@ -277,7 +278,7 @@
 - [Story 70.6 -- Update Docker image and compose for unified HTTP/MCP surface](planning/epics/stories/STORY-070.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-15)*
 - [Story 70.7 -- AgentForge integration spike and remote-MCP migration guide](planning/epics/stories/STORY-070.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-15)*
 - [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy everything below the line into a new chat (or Ralph task) as the **user message**. *(updated 2026-04-15)*
-- [Open Issues Roadmap — retired](planning/open-issues-roadmap.md) — **Status:** retired 2026-04-21. This file is no longer the canonical delivery queue. *(updated 2026-04-21)*
+- [Open Issues Roadmap — retired](planning/open-issues-roadmap.md) — **Status:** retired 2026-04-21. This file is no longer the canonical delivery queue. *(updated 2026-04-29)*
 - [Story 70.1 -- Streamable-HTTP MCP transport](stories/STORY-070.1-streamable-http-mcp-transport.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
 - [Story 70.10 -- Native async parity](stories/STORY-070.10-async-parity.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
 - [Story 70.11 -- Official TappsBrainClient (sync + async)](stories/STORY-070.11-tapps-brain-client.md) — <!-- docsmcp:start:user-story --> *(updated 2026-04-14)*
@@ -295,7 +296,7 @@
 - [Fix Plan — EPIC-070 AgentForge Integration (Remote-First Brain as a Shared Service)](../fix_plan.md) — All work is tracked in [EPIC-070](docs/epics/EPIC-070-agentforge-integration.md). Stories reference files in `docs/st... *(updated 2026-04-15)*
 ## Release
 
-- [Changelog](../CHANGELOG.md) — All notable changes to this project will be documented in this file. *(updated 2026-04-28)*
+- [Changelog](../CHANGELOG.md) — All notable changes to this project will be documented in this file. *(updated 2026-04-29)*
 - [Security Policy](../SECURITY.md) — | Version | Supported | *(updated 2026-04-05)*
 - [Upgrading the tapps-brain OpenClaw Plugin](../openclaw-plugin/UPGRADING.md) — - Bumps plugin `package.json`, `openclaw.plugin.json`, `ContextEngineInfo` / client identity strings, and manifests t... *(updated 2026-04-10)*
 - [Release Checklist — tapps-brain](../scripts/publish-checklist.md) — Distribution channel for `tapps-brain` (TAP-992).  Default path is automated: *(updated 2026-04-27)*

@@ -65,8 +65,8 @@ import os
 import statistics
 import time
 import uuid
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 # ---------------------------------------------------------------------------
 # Configuration

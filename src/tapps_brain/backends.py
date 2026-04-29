@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         HiveBackend,
         PrivateBackend,
     )
+    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
     from tapps_brain.store import MemoryStore
 
 from tapps_brain.agent_scope import hive_group_name_from_scope
@@ -604,6 +605,47 @@ def create_private_backend(
 
     cm = PostgresConnectionManager(dsn)
     return PostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)
+
+
+def create_async_private_backend(
+    dsn: str,
+    *,
+    project_id: str,
+    agent_id: str,
+) -> AsyncPostgresPrivateBackend:
+    """Create an :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`.
+
+    Returns the async-native backend that uses
+    ``psycopg_pool.AsyncConnectionPool`` directly — no ``asyncio.to_thread()``.
+    A **PostgreSQL** DSN is required (ADR-007).
+
+    Args:
+        dsn: PostgreSQL DSN (``postgres://`` or ``postgresql://``).
+        project_id: Canonical project identifier.
+        agent_id: Agent identifier string.
+
+    Raises:
+        ValueError: When *dsn* is empty or does not use a Postgres scheme.
+    """
+    if not dsn or not dsn.strip():
+        msg = (
+            "create_async_private_backend() requires a PostgreSQL DSN "
+            "(postgres:// or postgresql://). SQLite private backends are not "
+            "supported in v3 (ADR-007)."
+        )
+        raise ValueError(msg)
+    if not dsn.startswith(("postgres://", "postgresql://")):
+        msg = (
+            "Async private memory backend requires a PostgreSQL DSN. "
+            "SQLite backends are not supported in v3 (ADR-007)."
+        )
+        raise ValueError(msg)
+
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
+
+    cm = PostgresConnectionManager(dsn)
+    return AsyncPostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)
 
 
 def resolve_private_backend_from_env(

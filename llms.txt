@@ -4,40 +4,74 @@
 
 - Version: 3.14.4
 - License: MIT
-- Repository: https://github.com/wtthornton/tapps-brain
+- Homepage: https://github.com/wtthornton/tapps-brain
 
-## Tech stack
+## Tech Stack
 
 - Python >=3.12
-- Pydantic v2; PostgreSQL with pgvector HNSW + tsvector FTS (Postgres-only per ADR-007 — SQLite was removed in v3.6 stage 2)
-- psycopg[binary,pool] (sync + async pools), sentence-transformers, structlog, opentelemetry-api
-- uv for development; hatchling build
+- Node.js
+- Pydantic
+- uv (package manager)
+- GitHub Actions
 
-## Entry points (console scripts)
+## Entry Points
 
-- `tapps-brain` → `tapps_brain.cli:app` (CLI: memory ops, profiles, hive admin, project register)
-- `tapps-brain-http` → `tapps_brain.http_adapter:main` (HTTP/MCP server on :8080 — `/v1/*`, `/mcp/`, `/admin/*`, `/metrics`)
+- `tapps-brain` -> `tapps_brain.cli:app`
+- `tapps-brain-http` -> `tapps_brain.http_adapter:main`
+- `.venv-tag-smoke/lib/python3.12/site-packages/markdown_it/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/annotated_doc/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/huggingface_hub/inference/_mcp/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/pygments/__main__.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/__main__.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/__main__.py`
 
-## Where to read first
+## Key Files
 
-- [`README.md`](README.md) — product overview, install, interfaces
-- [`AGENTS.md`](AGENTS.md) — contributor quick path (Cursor / automation)
-- [`docs/engineering/README.md`](docs/engineering/README.md) — architecture index
-- [`docs/guides/getting-started.md`](docs/guides/getting-started.md) — interfaces and workflows
-- [`docs/DOCUMENTATION_INDEX.md`](docs/DOCUMENTATION_INDEX.md) — generated map of all docs
-- [`CHANGELOG.md`](CHANGELOG.md) — releases
+- `README.md`
+- `CLAUDE.md`
+- `AGENTS.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `LICENSE`
+- `pyproject.toml`
+- `package.json`
+- `Makefile`
+- `docker-compose.yml`
+- `.env.example`
 
-## API surface (approximate)
+## Documentation Map
 
-- Primary package: `tapps_brain` (agent API: `agent_brain.AgentBrain`; storage: `store.MemoryStore`)
-- See source under `src/tapps_brain/` and tests under `tests/`
-
-## Layout
-
-```
-src/tapps_brain/   # library and CLI/MCP
-tests/             # unit, integration, benchmarks
-docs/              # guides, engineering, planning
-openclaw-plugin/   # OpenClaw plugin package
-scripts/           # release, codegen, maintenance
-```
+- `AGENTS.md`
+- `CHANGELOG.md`
+- `CLAUDE.md`
+- `CLEANUP-PLAN.md`
+- `CONTRIBUTING.md`
+- `README.md`
+- `SECURITY.md`
+- `TECH_STACK.md`
+- `fix_plan.md`
+- `llms.txt`
+- `ralph-feedback-report.md`
+- `docs/DOCUMENTATION_INDEX.md`
+- `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/RALPH_SETUP_GUIDE.md`
+- `docs/benchmarks/README.md`
+- `docs/benchmarks/locomo.md`
+- `docs/benchmarks/longmemeval.md`
+- `docs/case-studies/README.md`
+- `docs/case-studies/TEMPLATE.md`
+- `docs/design/nlt-brand/README.md`
+- `docs/engineering/README.md`
+- `docs/engineering/async-performance.md`
+- `docs/engineering/call-flows.md`
+- `docs/engineering/code-inventory-and-doc-gaps.md`
+- `docs/engineering/data-stores-and-schema.md`
+- `docs/engineering/features-and-technologies.md`
+- `docs/engineering/optional-features-matrix.md`
+- `docs/engineering/system-architecture.md`
+- `docs/engineering/threat-model.md`
+- `docs/engineering/v3-behavioral-parity.md`
+- ... and 216 more

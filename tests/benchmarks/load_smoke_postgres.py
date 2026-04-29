@@ -4,6 +4,17 @@ Simulates a realistic multi-agent workload (save → recall → hive_search) and
 records p95 latencies.  Results are **informational only** (pre-SLO in v3.0) —
 no hard budget is enforced.
 
+Two test variants
+-----------------
+``test_load_smoke_50_agents``
+    Original thread-based benchmark (50 threads × ``TAPPS_SMOKE_DURATION`` s).
+
+``test_load_smoke_async_comparison``
+    STORY-072.4 addition: 50 concurrent ``asyncio`` tasks, comparing
+    (a) ``asyncio.to_thread`` baseline and (b) async-native
+    (``AsyncPostgresPrivateBackend``).  Results are printed side-by-side so
+    the p95 delta is immediately visible.
+
 Marks
 -----
 - ``requires_postgres`` — skipped unless ``TAPPS_BRAIN_DATABASE_URL`` is set
@@ -23,11 +34,12 @@ Usage
     # Via Makefile helper (see AGENTS.md § benchmark-postgres):
     make benchmark-postgres
 
-Story: STORY-066.9 / EPIC-059 STORY-059.6
+Stories: STORY-066.9 / EPIC-059 STORY-059.6 / EPIC-072 STORY-072.4
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import statistics
 import threading
@@ -386,3 +398,215 @@ def test_load_smoke_50_agents(capsys: pytest.CaptureFixture[str]) -> None:  # ty
         p95_hive = hive_search_bucket.percentile(95)
         assert p95_hive is not None
         print(f"  hive_search p95 = {p95_hive:.2f} ms  (informational)")
+
+
+# ---------------------------------------------------------------------------
+# STORY-072.4: Async benchmark — asyncio tasks instead of threads
+# ---------------------------------------------------------------------------
+
+
+async def _run_agent_async(
+    *,
+    agent_id: str,
+    project_id: str,
+    dsn: str,
+    duration_s: int,
+    save_bucket: _LatencyBucket,
+    recall_bucket: _LatencyBucket,
+    async_native: bool,
+    errors: list[str],
+    barrier: asyncio.Barrier,
+) -> None:
+    """One async agent task: timed loop of save → recall using AsyncMemoryStore."""
+    try:
+        from tapps_brain.aio import AsyncMemoryStore
+        from tapps_brain.backends import create_async_private_backend, create_private_backend
+        from tapps_brain.postgres_migrations import apply_private_migrations
+        from tapps_brain.store import MemoryStore
+
+        await asyncio.to_thread(apply_private_migrations, dsn)
+
+        if async_native:
+            sync_backend = await asyncio.to_thread(
+                create_private_backend, dsn, project_id=project_id, agent_id=agent_id
+            )
+            sync_store = await asyncio.to_thread(
+                MemoryStore,
+                f"/tmp/tapps_bench_async_{agent_id}",
+                agent_id=agent_id,
+                private_backend=sync_backend,
+            )
+            async_backend = create_async_private_backend(
+                dsn, project_id=project_id, agent_id=agent_id
+            )
+            store = AsyncMemoryStore(sync_store, async_backend=async_backend)
+        else:
+            sync_backend = await asyncio.to_thread(
+                create_private_backend, dsn, project_id=project_id, agent_id=agent_id
+            )
+            sync_store = await asyncio.to_thread(
+                MemoryStore,
+                f"/tmp/tapps_bench_thread_{agent_id}",
+                agent_id=agent_id,
+                private_backend=sync_backend,
+            )
+            store = AsyncMemoryStore(sync_store)
+
+        await barrier.wait()
+
+        op_index = 0
+        deadline = time.perf_counter() + duration_s
+        while time.perf_counter() < deadline:
+            key = f"{agent_id}-op-{op_index:06d}"
+            value = (
+                f"Entry {op_index} from async agent {agent_id}: "
+                f"architectural decision about component {op_index % 20}."
+            )
+
+            t0 = time.perf_counter()
+            try:
+                await store.save(key, value, tier="pattern")
+                save_bucket.record(time.perf_counter() - t0)
+            except Exception:
+                save_bucket.record_error()
+
+            query = f"architectural decision component {op_index % 20}"
+            t0 = time.perf_counter()
+            try:
+                await store.search(query)
+                recall_bucket.record(time.perf_counter() - t0)
+            except Exception:
+                recall_bucket.record_error()
+
+            op_index += 1
+
+        await store.close()
+
+    except Exception as exc:
+        errors.append(f"[{agent_id}] fatal: {exc}\n{traceback.format_exc()}")
+
+
+async def _run_async_phase(
+    *,
+    dsn: str,
+    project_id: str,
+    n_agents: int,
+    duration_s: int,
+    async_native: bool,
+) -> tuple[_LatencyBucket, _LatencyBucket]:
+    """Run a single async phase (to_thread or native) and return save/recall buckets."""
+    save_bucket = _LatencyBucket("save")
+    recall_bucket = _LatencyBucket("recall")
+    errors: list[str] = []
+    barrier = asyncio.Barrier(n_agents)
+
+    tasks = [
+        _run_agent_async(
+            agent_id=f"agent-{idx:03d}",
+            project_id=project_id,
+            dsn=dsn,
+            duration_s=duration_s,
+            save_bucket=save_bucket,
+            recall_bucket=recall_bucket,
+            async_native=async_native,
+            errors=errors,
+            barrier=barrier,
+        )
+        for idx in range(n_agents)
+    ]
+    await asyncio.gather(*tasks)
+
+    if errors:
+        for e in errors[:3]:
+            print(f"  ERROR: {e[:200]}")
+
+    return save_bucket, recall_bucket
+
+
+@pytest.mark.requires_postgres
+@pytest.mark.benchmark
+def test_load_smoke_async_comparison(capsys: pytest.CaptureFixture[str]) -> None:  # type: ignore[type-arg]
+    """STORY-072.4: Compare asyncio.to_thread baseline vs async-native.
+
+    Runs two phases of 50 concurrent asyncio tasks each:
+      Phase A — to_thread baseline (TAPPS_BRAIN_ASYNC_NATIVE unset)
+      Phase B — async-native (AsyncPostgresPrivateBackend)
+
+    p95 save and recall latencies are printed side-by-side.
+    Results are informational only — no hard SLO is enforced.
+    """
+    dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
+    if not dsn:
+        pytest.skip("TAPPS_BRAIN_DATABASE_URL not set — requires live Postgres")
+
+    n_agents = int(os.environ.get("TAPPS_SMOKE_AGENTS", str(_DEFAULT_AGENTS)))
+    duration_s = int(os.environ.get("TAPPS_SMOKE_DURATION", str(_DEFAULT_DURATION)))
+    project_id = f"smoke-async-{uuid.uuid4().hex[:8]}"
+
+    width = 82
+    print(f"\n{'─' * width}")
+    print(
+        f"  STORY-072.4 async comparison  |  {n_agents} tasks × {duration_s}s  "
+        "(pre-SLO / informational)"
+    )
+    print(f"  Project: {project_id}")
+    print(f"{'─' * width}")
+
+    print("\n  Phase A: asyncio.to_thread baseline …")
+    t0 = time.perf_counter()
+    save_a, recall_a = asyncio.run(
+        _run_async_phase(
+            dsn=dsn,
+            project_id=f"{project_id}-a",
+            n_agents=n_agents,
+            duration_s=duration_s,
+            async_native=False,
+        )
+    )
+    elapsed_a = time.perf_counter() - t0
+
+    print("\n  Phase B: async-native (AsyncPostgresPrivateBackend) …")
+    t0 = time.perf_counter()
+    save_b, recall_b = asyncio.run(
+        _run_async_phase(
+            dsn=dsn,
+            project_id=f"{project_id}-b",
+            n_agents=n_agents,
+            duration_s=duration_s,
+            async_native=True,
+        )
+    )
+    elapsed_b = time.perf_counter() - t0
+
+    def _p95(b: _LatencyBucket) -> str:
+        v = b.percentile(95)
+        return f"{v:.2f}" if v is not None else "—"
+
+    print(f"\n{'─' * width}")
+    print(f"  {'Metric':<30} {'Phase A (to_thread)':>20} {'Phase B (native)':>20} {'Delta':>8}")
+    print("─" * width)
+    for label, b_a, b_b in [
+        ("save p95 (ms)", save_a, save_b),
+        ("recall p95 (ms)", recall_a, recall_b),
+    ]:
+        p_a = b_a.percentile(95)
+        p_b = b_b.percentile(95)
+        if p_a is not None and p_b is not None:
+            delta = f"{(p_b - p_a):+.2f}"
+        else:
+            delta = "—"
+        print(f"  {label:<30} {_p95(b_a):>20} {_p95(b_b):>20} {delta:>8}")
+    print(f"  {'wall time (s)':<30} {elapsed_a:>20.2f} {elapsed_b:>20.2f}")
+    print("─" * width)
+    print("NOTE: Results are informational only. No hard SLO budget is enforced.")
+    print()
+
+    # Assertions: both phases must complete with ops recorded.
+    assert save_a.count >= n_agents, f"Phase A save count too low: {save_a.count}"
+    assert save_b.count >= n_agents, f"Phase B save count too low: {save_b.count}"
+
+    # p95 must be computable when ops were recorded.
+    if save_a.count:
+        assert save_a.percentile(95) is not None
+    if save_b.count:
+        assert save_b.percentile(95) is not None

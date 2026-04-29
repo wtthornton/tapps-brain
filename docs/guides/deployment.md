@@ -255,6 +255,40 @@ readinessProbe:
 
 ---
 
+## Async-Native Write Path (TAPPS_BRAIN_ASYNC_NATIVE)
+
+tapps-brain supports an opt-in async-native Postgres write path for deployments
+where HTTP handler concurrency is the bottleneck.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TAPPS_BRAIN_ASYNC_NATIVE` | `0` | Set to `1` to route `AsyncMemoryStore` writes through `AsyncPostgresPrivateBackend` (native async pool) instead of `asyncio.to_thread`. |
+
+**What changes when enabled:**
+- `/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` write to
+  Postgres without occupying a thread-pool slot for the I/O wait.
+- Thread pool threads are released after in-memory cache updates (~0.1 ms) rather
+  than after the full Postgres round-trip (~5–20 ms).
+- Read paths, reinforce, and batch endpoints are unaffected (still use `to_thread`).
+
+**When to enable:**
+- You are running 50+ concurrent agents and observing thread pool saturation
+  (high `asyncio.to_thread` queue depth, increased p95 latency under load).
+- You have confirmed the flag's behavior against your workload using
+  `tests/benchmarks/load_smoke_postgres.py::test_load_smoke_async_comparison`.
+
+**Migration note:**
+`TAPPS_BRAIN_ASYNC_NATIVE=0` (the `asyncio.to_thread` path) will be deprecated in the
+next minor release. Set `TAPPS_BRAIN_ASYNC_NATIVE=1` now to opt in early and report
+issues before the flag is removed. See `docs/engineering/async-performance.md` for
+benchmark methodology and result templates.
+
+**Known limitations (EPIC-072):**
+- `save_relations` and `append_audit` are no-ops on the async-native path;
+  these will be wired in a follow-up story.
+
+---
+
 ## Security Considerations
 
 - The HTTP data-plane (`8080`) is protected by `TAPPS_BRAIN_AUTH_TOKEN`.

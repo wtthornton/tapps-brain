@@ -1,4 +1,9 @@
-"""Profile service functions (EPIC-070 STORY-070.1)."""
+"""Profile service functions (EPIC-070 STORY-070.1).
+
+Exposes memory profile introspection and switching via MCP profile tools and
+the HTTP adapter. Delegates to ``MemoryStore.profile``, ``get_builtin_profile()``,
+and ``tapps_brain.onboarding``.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,7 @@ logger = structlog.get_logger(__name__)
 
 
 def profile_info(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return the active profile's name, layers, scoring weights, and description."""
     profile = store.profile
     if profile is None:
         return {"error": "no_profile", "message": "No profile loaded."}
@@ -36,6 +42,7 @@ def profile_info(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
 
 
 def memory_profile_onboarding(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Render the agent onboarding guide for the active profile as a markdown string."""
     profile = store.profile
     if profile is None:
         return {"error": "no_profile", "message": "No profile loaded."}
@@ -45,6 +52,7 @@ def memory_profile_onboarding(store: Any, project_id: str, agent_id: str) -> dic
 
 
 def profile_switch(store: Any, project_id: str, agent_id: str, *, name: str) -> dict[str, Any]:
+    """Switch the active profile on the store to the named built-in profile."""
     try:
         from tapps_brain.profile import get_builtin_profile
 

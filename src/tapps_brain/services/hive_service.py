@@ -26,6 +26,7 @@ def hive_status(
     *,
     hive_resolver: HiveResolver,
 ) -> dict[str, Any]:
+    """Return Hive namespace counts, total entries, and per-agent contribution stats."""
     try:
         from tapps_brain.backends import AgentRegistry
 
@@ -66,6 +67,7 @@ def hive_search(
     query: str,
     namespace: str | None = None,
 ) -> dict[str, Any]:
+    """Search Hive memory by query string, optionally scoped to a single namespace."""
     try:
         hive, should_close = hive_resolver()
         try:
@@ -91,6 +93,7 @@ def hive_propagate(
     force: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    """Propagate a single local memory entry to Hive under the given scope."""
     entry = store.get(key)
     if entry is None:
         return {"error": "not_found", "message": f"Key '{key}' not found."}
@@ -178,6 +181,7 @@ def hive_push(
     dry_run: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
+    """Bulk-push selected local entries to Hive, filtered by tags, tier, or explicit keys."""
     try:
         from tapps_brain.agent_scope import (
             agent_scope_valid_values_for_errors,
@@ -257,6 +261,7 @@ def hive_write_revision(
     *,
     hive_resolver: HiveResolver,
 ) -> dict[str, Any]:
+    """Return the current Hive write-notify revision counter for change polling."""
     try:
         hive, should_close = hive_resolver()
         try:
@@ -279,6 +284,7 @@ def hive_wait_write(
     since_revision: int = 0,
     timeout_seconds: float = 10.0,
 ) -> dict[str, Any]:
+    """Block until a new Hive write occurs or ``timeout_seconds`` elapses."""
     try:
         hive, should_close = hive_resolver()
         try:
