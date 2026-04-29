@@ -87,9 +87,7 @@ class TestAsyncPostgresPrivateBackendInit:
 
         from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
 
-        backend = AsyncPostgresPrivateBackend(
-            _make_cm(), project_id="proj", agent_id="agent"
-        )
+        backend = AsyncPostgresPrivateBackend(_make_cm(), project_id="proj", agent_id="agent")
         # relations lock must be asyncio.Lock, not threading.Lock
         assert not isinstance(backend._relations_lock, type(threading.Lock()))
         assert isinstance(backend._relations_lock, asyncio.Lock)
@@ -278,9 +276,7 @@ class TestCreateAsyncPrivateBackend:
         from tapps_brain.backends import create_async_private_backend
 
         with pytest.raises(ValueError, match="PostgreSQL DSN"):
-            create_async_private_backend(
-                "sqlite:///test.db", project_id="p", agent_id="a"
-            )
+            create_async_private_backend("sqlite:///test.db", project_id="p", agent_id="a")
 
     def test_factory_creates_backend(self) -> None:
         from tapps_brain.backends import create_async_private_backend

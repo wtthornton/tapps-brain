@@ -966,9 +966,7 @@ class AsyncPostgresPrivateBackend:
                 if not chunk:
                     break
                 for row in chunk:
-                    results.append(
-                        self._row_to_entry(dict(zip(col_names, row, strict=False)))
-                    )
+                    results.append(self._row_to_entry(dict(zip(col_names, row, strict=False))))
                     if limit is not None and len(results) >= limit:
                         return results
         return results
@@ -1027,9 +1025,7 @@ class AsyncPostgresPrivateBackend:
     # Vector similarity search
     # ------------------------------------------------------------------
 
-    async def knn_search(
-        self, query_embedding: list[float], k: int
-    ) -> list[tuple[str, float]]:
+    async def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance."""
         if not query_embedding:
             return []
@@ -1120,9 +1116,7 @@ class AsyncPostgresPrivateBackend:
                 keys = []
             created_raw = r[5]
             created_str = (
-                created_raw.isoformat()
-                if hasattr(created_raw, "isoformat")
-                else str(created_raw)
+                created_raw.isoformat() if hasattr(created_raw, "isoformat") else str(created_raw)
             )
             results.append(
                 {
@@ -1357,9 +1351,7 @@ class AsyncPostgresPrivateBackend:
         """Return the most recent *limit* rows from ``gc_archive``."""
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _sql.LIST_ARCHIVE_SQL, (self._project_id, self._agent_id, limit)
-                )
+                await cur.execute(_sql.LIST_ARCHIVE_SQL, (self._project_id, self._agent_id, limit))
                 rows = await cur.fetchall()
         except Exception:
             logger.warning("async_postgres_private.gc_archive_list_failed", exc_info=True)
@@ -1368,9 +1360,7 @@ class AsyncPostgresPrivateBackend:
         for row in rows:
             key, archived_at, byte_count, payload = row
             ts_str = (
-                archived_at.isoformat()
-                if hasattr(archived_at, "isoformat")
-                else str(archived_at)
+                archived_at.isoformat() if hasattr(archived_at, "isoformat") else str(archived_at)
             )
             results.append(
                 {
@@ -1386,15 +1376,11 @@ class AsyncPostgresPrivateBackend:
         """Return ``SUM(byte_count)`` from ``gc_archive`` for this agent scope."""
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _sql.TOTAL_ARCHIVE_BYTES_SQL, (self._project_id, self._agent_id)
-                )
+                await cur.execute(_sql.TOTAL_ARCHIVE_BYTES_SQL, (self._project_id, self._agent_id))
                 row = await cur.fetchone()
             return int(row[0]) if row else 0
         except Exception:
-            logger.warning(
-                "async_postgres_private.gc_archive_total_bytes_failed", exc_info=True
-            )
+            logger.warning("async_postgres_private.gc_archive_total_bytes_failed", exc_info=True)
             return 0
 
     # ------------------------------------------------------------------

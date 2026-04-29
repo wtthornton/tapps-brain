@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+---
+
+## [3.14.5] — 2026-04-29
+
 ### Added
 
 - **Async-native write path available via `TAPPS_BRAIN_ASYNC_NATIVE=1` (EPIC-072).**
