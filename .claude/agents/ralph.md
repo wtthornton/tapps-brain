@@ -13,6 +13,17 @@ tools:
   - Task
   - TodoWrite
   - WebFetch
+  # MCP tools — narrowed namespaces only (BRAIN-PHASE-B0). tapps-brain
+  # exposes ~55 tools, most of which are operator-facing; we list only
+  # the 5 agent-facing brain_* tools so Claude's catalog stays focused.
+  # tapps-mcp and docs-mcp are smaller surfaces and can take wildcards.
+  - mcp__tapps-mcp__*
+  - mcp__docs-mcp__*
+  - mcp__tapps-brain__brain_recall
+  - mcp__tapps-brain__brain_remember
+  - mcp__tapps-brain__brain_forget
+  - mcp__tapps-brain__brain_learn_success
+  - mcp__tapps-brain__brain_learn_failure
 disallowedTools:
   - Bash(git clean *)
   - Bash(git rm *)

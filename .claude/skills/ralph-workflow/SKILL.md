@@ -37,11 +37,43 @@ Ralph reads tasks from one of two backends, set by `RALPH_TASK_SOURCE` in
 - **`file`** (default) — tasks are unchecked `- [ ]` items in
   `.ralph/fix_plan.md`. Tick `- [x]` when done. Empty plan → exit.
 - **`linear`** — tasks are open issues in the Linear project named by
-  `RALPH_LINEAR_PROJECT`. Pick the highest-priority unblocked issue via
-  the Linear MCP (`mcp__plugin_linear_linear__list_issues`), work it,
-  comment with what you did, and move it to **Done**. The full state-
-  transition rules live in `docs/LINEAR-WORKFLOW.md` when the project
-  ships it.
+  `RALPH_LINEAR_PROJECT`. The state machine is `Backlog/Todo →
+  In Progress → Done`. Claude moves the ticket between these states
+  in real time as it works. Use `mcp__plugin_linear_linear__list_issues`
+  to discover, `mcp__plugin_linear_linear__save_issue` with
+  `stateId: "In Progress"` on pickup, and `stateId: "Done"` on
+  completion (only after R1 below is satisfied). The full state-machine
+  spec lives in `docs/LINEAR-WORKFLOW.md`; the must-know rules are
+  inline below.
+
+  **Hard rules (linear mode) — these are not optional**:
+
+  - **R1 — Done requires `main`.** Before moving a ticket to Done, run
+    `git log main --grep='<TICKET-ID>'` and confirm at least one
+    matching commit exists on `main`. If the work is only on a branch,
+    attempt self-merge (`gh pr merge --squash --auto`, direct
+    `git merge`). If the merge is blocked (no permission, conflicts,
+    required checks pending): post a Linear comment listing the
+    unmerged SHAs and **leave the ticket In Progress** — Ralph will
+    retry next loop. An unmerged branch is **not** a Done state and is
+    **not** an In Review state.
+  - **R2 — In Review is for hard blockers only.** Use it only when work
+    cannot proceed AND the blocker matches one of: missing credentials
+    Claude cannot generate, explicit budget/spend cap reached,
+    irreversible destructive operation requiring human sign-off, or
+    genuinely ambiguous product decision with no safe default. "Needs
+    code review", "couldn't figure it out", "unmerged branch", and
+    flaky tests are **not** In Review reasons. When in doubt: pick
+    Done if AC is substantively met, In Progress otherwise.
+  - **R3 — Retry In Progress before picking new.** The harness injects
+    the highest-priority In Progress ticket assigned to Ralph as
+    `RESUME IN PROGRESS` in your context. Resolve it (usually:
+    self-merge its branch) before picking a new ticket from the
+    Backlog/Todo queue.
+  - **R4/R5 — Hands off Backlog, Canceled, Duplicate.** Those are
+    human triage states. If you think a ticket should be canceled or
+    duplicates another, post a comment recommending it and leave the
+    state alone.
 
 The execution contract below is identical for both backends, with the
 substitutions: "fix_plan.md task" ↔ "Linear issue", "tick checkbox" ↔
@@ -51,6 +83,12 @@ substitutions: "fix_plan.md task" ↔ "Linear issue", "tick checkbox" ↔
 
 1. **Pick the next task** from the configured backend (see *Task source*
    above) — exactly one. Do not batch unrelated tasks across sections.
+   In **linear mode**: first check for a `RESUME IN PROGRESS` ticket
+   injected into your context (R3) and finish it before picking a new
+   one; then move the picked ticket to **In Progress** via
+   `mcp__plugin_linear_linear__save_issue` with `stateId: "In Progress"`
+   *before* doing any work, so the Linear board reflects what's
+   actually being worked on right now.
 2. **Verify the task is still needed.** Re-read the task body /
    acceptance criteria, then search the codebase (Grep/Glob, or
    `ralph-explorer` for anything non-trivial) to confirm the described
@@ -63,7 +101,8 @@ substitutions: "fix_plan.md task" ↔ "Linear issue", "tick checkbox" ↔
      the Linear MCP. Do not open a PR.
    - Either way, report `STATUS: COMPLETE`,
      `WORK_TYPE: VERIFICATION`, `TASKS_COMPLETED_THIS_LOOP: 1`,
-     `FILES_MODIFIED: 0` (or 1 if you ticked a box),
+     `FILES_MODIFIED: 0` (file mode: 1 if you ticked a checkbox; linear
+     mode: 0 — comments and state transitions don't write to disk),
      `TESTS_STATUS: NOT_RUN`, `EXIT_SIGNAL: false` — and stop. The
      harness will re-invoke for the next task.
 
@@ -76,8 +115,14 @@ substitutions: "fix_plan.md task" ↔ "Linear issue", "tick checkbox" ↔
    new abstractions.
 4. Implement the smallest change that completes the task. No scope creep, no
    speculative refactors, no "while I'm here" cleanup.
-5. Flip the task's checkbox `- [ ]` → `- [x]` in `fix_plan.md` (file mode),
-   or move the issue to **Done** with a summary comment (linear mode).
+5. Close the task. **File mode**: flip the checkbox `- [ ]` → `- [x]`
+   in `fix_plan.md`. **Linear mode**: satisfy R1 first — run
+   `git log main --grep='<TICKET-ID>'` to confirm at least one commit
+   is on `main`; if the work is branch-only, attempt self-merge; if
+   the merge is blocked, post a comment with the unmerged SHAs and
+   **leave the ticket In Progress** for retry next loop. Only when R1
+   is satisfied: post a summary comment and move the ticket to
+   **Done** via `save_issue` with `stateId: "Done"`.
 6. Commit the implementation and the fix_plan update together when it makes
    sense as a single logical change.
 7. **Decide if this closes the epic.** An epic boundary is the last `- [ ]`
@@ -176,7 +221,7 @@ new code:
 ---RALPH_STATUS---
 STATUS: COMPLETE
 TASKS_COMPLETED_THIS_LOOP: 1
-FILES_MODIFIED: 1
+FILES_MODIFIED: 0
 TESTS_STATUS: NOT_RUN
 WORK_TYPE: VERIFICATION
 EXIT_SIGNAL: false
@@ -184,10 +229,11 @@ RECOMMENDATION: Verified resolved at <commit/file:line> — closed with comment.
 ---END_RALPH_STATUS---
 ```
 
-`FILES_MODIFIED: 1` reflects the single fix_plan tick or the Linear
-state-change. Use `0` if nothing was written (e.g. you only commented on
-the issue without moving it). `EXIT_SIGNAL` stays `false` — the harness
-will reinvoke you for the next task.
+`FILES_MODIFIED` counts files written to disk this loop. In **file
+mode**, set it to `1` if you ticked a `fix_plan.md` checkbox. In
+**linear mode**, comments and state transitions don't write to disk —
+keep it `0`. `EXIT_SIGNAL` stays `false` — the harness will reinvoke
+you for the next task.
 
 ### Epic boundary reached
 
@@ -285,9 +331,10 @@ breaks the loop even if tests pass:
 
 - `.ralph/` (entire directory — state, specs, logs, hooks)
 - `.ralphrc` (project config)
-- `.claude/agents/ralph*.md` (agent definitions — edit via `ralph-upgrade`)
+- `.claude/agents/ralph*.md` and `.cursor/agents/ralph*.md` (agent definitions — edit via `ralph-upgrade` where applicable)
 - `.claude/hooks/on-stop.sh` and `protect-ralph-files.sh` (edit via
   `ralph-upgrade`)
+- `.claude/skills/ralph-workflow/` and `.cursor/skills/ralph-workflow/` (edit via `ralph-upgrade` or repo PRs)
 
 If a cleanup/refactor task seems to require modifying any of these, stop
 and re-read the task — almost always the task means code under `src/`, not
