@@ -28,7 +28,12 @@ export TAPPS_HTTP_PORT="${ADAPTER_PORT}"
 export TAPPS_OPERATOR_MCP_PORT="${TAPPS_OPERATOR_MCP_PORT:-18090}"
 
 # Non-default credentials for this smoke run (written to docker/.env below).
+# Two distinct DB passwords: SMOKE_PASSWORD is the superuser the migrate
+# sidecar connects as (`tapps`); SMOKE_RUNTIME_PASSWORD is what migrate then
+# sets on the DML-only `tapps_runtime` role and what the brain container
+# uses at runtime.  Keep both — TAP-1100.
 SMOKE_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-password)"
+SMOKE_RUNTIME_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-runtime-password)"
 SMOKE_AUTH_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-auth)"
 SMOKE_ADMIN_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-admin)"
 
@@ -117,6 +122,7 @@ write_smoke_env() {
     cat > "$ENV_FILE" <<EOF
 # Smoke-test throwaway — do NOT commit. Restored on exit.
 TAPPS_BRAIN_DB_PASSWORD=${SMOKE_PASSWORD}
+TAPPS_BRAIN_RUNTIME_PASSWORD=${SMOKE_RUNTIME_PASSWORD}
 TAPPS_BRAIN_AUTH_TOKEN=${SMOKE_AUTH_TOKEN}
 TAPPS_BRAIN_ADMIN_TOKEN=${SMOKE_ADMIN_TOKEN}
 TAPPS_HTTP_PORT=${ADAPTER_PORT}
