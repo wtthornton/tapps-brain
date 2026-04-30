@@ -377,6 +377,47 @@ if [[ -n "$_transcript" && -f "$_transcript" ]]; then
   [[ -z "$loop_mcp_calls_json" || "$loop_mcp_calls_json" == "null" ]] && loop_mcp_calls_json="$_empty_mcp_calls"
 fi
 
+# TAP-590 (epic TAP-589 LINOPT): Capture this loop's actual file set into
+# .ralph/.last_completed_files for cache-locality scoring in lib/linear_optimizer.sh.
+# Walks the transcript JSONL for Edit/Write/MultiEdit/NotebookEdit tool_use records,
+# extracts file_path / notebook_path, normalizes to repo-relative, dedupes (jq's
+# `unique` sorts as a side effect), caps at 100, atomic-writes. On no transcript
+# or no edit-class tools, writes an empty file rather than leaving a stale list.
+_lcf_dest="$RALPH_DIR/.last_completed_files"
+_lcf_tmp="${_lcf_dest}.tmp.$$"
+if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+  jq -rs '
+    [ .[] | select(.type == "assistant") | .message.content[]?
+      | select(.type == "tool_use"
+            and (.name == "Edit" or .name == "Write"
+              or .name == "MultiEdit" or .name == "NotebookEdit"))
+      | (.input.file_path // .input.notebook_path // empty) ]
+    | map(select(. != null and . != ""))
+    | unique
+    | .[0:100]
+    | .[]
+  ' "$_transcript" 2>/dev/null > "$_lcf_tmp" || : > "$_lcf_tmp"
+
+  # Strip CLAUDE_PROJECT_DIR prefix to keep paths repo-relative.
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" && -s "$_lcf_tmp" ]]; then
+    _proj_dir="${CLAUDE_PROJECT_DIR%/}"
+    _proj_dir_escaped="${_proj_dir//\\/\\\\}"
+    _proj_dir_escaped="${_proj_dir_escaped//|/\\|}"
+    sed -i "s|^${_proj_dir_escaped}/||" "$_lcf_tmp" 2>/dev/null || true
+    # Re-sort+dedupe in case normalization produced collisions.
+    sort -u -o "$_lcf_tmp" "$_lcf_tmp" 2>/dev/null || true
+  fi
+
+  if mv -f "$_lcf_tmp" "$_lcf_dest" 2>/dev/null; then
+    rm -f "${_lcf_dest}.tmp."* 2>/dev/null || true
+  else
+    rm -f "$_lcf_tmp" 2>/dev/null || true
+  fi
+else
+  # No transcript → empty file (don't leave a stale prior-loop list).
+  : > "$_lcf_dest" 2>/dev/null || true
+fi
+
 # Merge session MCP-call totals (previous + this loop; zero base on new session).
 prev_mcp_calls_json="$_empty_mcp_calls"
 if [[ "$_new_session" == "false" && -f "$RALPH_DIR/status.json" ]]; then

@@ -81,6 +81,13 @@ substitutions: "fix_plan.md task" ↔ "Linear issue", "tick checkbox" ↔
 
 ## Execution contract (one loop)
 
+0. **(Linear mode only) Honor optimizer hint.** If `LOCALITY HINT: <ID>`
+   appears in your context, and that issue is still Backlog/Todo/In-Progress,
+   work it instead of running normal priority selection. After picking it up,
+   delete the hint file: `rm -f .ralph/.linear_next_issue`. If the issue is
+   Done/Cancelled, the hint file is missing, or the ID looks malformed, skip
+   this step and use step 1 normally.
+
 1. **Pick the next task** from the configured backend (see *Task source*
    above) — exactly one. Do not batch unrelated tasks across sections.
    In **linear mode**: first check for a `RESUME IN PROGRESS` ticket

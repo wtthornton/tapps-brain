@@ -198,3 +198,64 @@ RALPH_TASK_SOURCE="file"
 # =============================================================================
 # Beads project for scoped queries
 # =============================================================================
+
+# =============================================================================
+# MODEL ROUTING (PER-TASK COMPLEXITY)
+# =============================================================================
+#
+# Per-task complexity → model routing (lib/complexity.sh::ralph_select_model).
+# When true, build_claude_command picks haiku/sonnet/opus per task instead of
+# always using CLAUDE_MODEL above. Trivial/small tasks → haiku (~1/5 sonnet
+# cost), routine → sonnet, complex → sonnet, architectural → opus. Falls back
+# to CLAUDE_MODEL when task text is empty (e.g., empty plan).
+#
+# Default: true (cost optimization). Set false to keep all calls on CLAUDE_MODEL.
+# Per-iteration decisions are appended to .ralph/.model_routing.jsonl.
+RALPH_MODEL_ROUTING_ENABLED=true
+
+# Per-tier model overrides. Defaults below mirror lib/complexity.sh defaults
+# and are interpreted by Claude CLI's --model flag (short aliases or full IDs
+# both work: "haiku" / "sonnet" / "opus" or "claude-haiku-4-5" / etc).
+RALPH_MODEL_TRIVIAL=haiku
+RALPH_MODEL_ROUTINE=sonnet
+RALPH_MODEL_COMPLEX=sonnet
+RALPH_MODEL_ARCH=opus
+
+# Fallback model when routing is disabled OR the next task text is empty.
+RALPH_DEFAULT_MODEL=sonnet
+# =============================================================================
+# Linear cache-locality optimizer (TAP-589 LINOPT epic)
+# =============================================================================
+# Only active when RALPH_TASK_SOURCE=linear. Fires at
+# session start as a background job: scores open issues by Jaccard overlap
+# with the last-completed file set + import-graph dependency demotion, writes
+# the best candidate ID to .ralph/.linear_next_issue. The runtime build_loop_context()
+# reads this and injects "LOCALITY HINT: <ID>" into Claude's system prompt.
+
+# Disable the entire optimizer (no API calls, no hint file written)
+RALPH_NO_LINEAR_OPTIMIZE=false
+
+# Skip phase 2 dependency demotion (still does locality scoring)
+# When true, candidates that import another open issue's files are NOT demoted
+RALPH_NO_DEP_DEMOTE=false
+
+# Max issues fetched and scored per optimizer run
+RALPH_OPTIMIZER_FETCH_LIMIT=20
+
+# Max ralph-explorer (Haiku) fallback calls per optimizer session
+# Used only for top-3 priority issues with no body paths
+RALPH_OPTIMIZER_EXPLORER_MAX=3
+
+# Per-session telemetry is written to .ralph/metrics/linear_optimizer_YYYY-MM.jsonl
+# (one JSONL line per session, monthly rotation). Inspect via:
+#   jq -s 'group_by(.fallback_reason) | map({reason:.[0].fallback_reason,count:length})' \
+#     .ralph/metrics/linear_optimizer_*.jsonl
+# Run optimizer manually: `ralph --optimize-linear`
+
+# Maximum vague tasks to resolve per optimization run
+# Caps explorer calls to stay within the ContextManager visible window
+RALPH_MAX_EXPLORER_RESOLVE=5
+# =============================================================================
+# Only active when RALPH_TASK_SOURCE=linear. Fires at
+# =============================================================================
+# CONTEXT MANAGEMENT (Phase 14)
