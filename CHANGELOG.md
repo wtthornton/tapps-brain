@@ -14,6 +14,31 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.14.6] — 2026-05-05
+
+### Fixed
+
+- **MCP transport security: stop `Invalid Host header` log flood from mcp SDK 1.27.0.**
+  mcp 1.27.0 enables DNS-rebinding protection by default with an empty
+  `allowed_hosts` list, so every Docker-network call to the brain container
+  was logging `WARNING Invalid Host header: tapps-brain-http:8080` from
+  `mcp/server/transport_security.py`. Two changes:
+
+  - `docker/docker-compose.hive.yaml` now wires `TAPPS_BRAIN_MCP_ALLOWED_HOSTS`
+    with a sane default covering `tapps-brain-http`, `localhost`, and `127.0.0.1`
+    on ports 8080/8090. Operators can override via `docker/.env`.
+  - `_build_transport_security()` (`src/tapps_brain/mcp_server/server.py`) now
+    auto-derives an allow-list from `TAPPS_BRAIN_HTTP_HOST` / `TAPPS_BRAIN_MCP_HOST`
+    + ports + `socket.gethostname()` when the env var is unset and the bind
+    interface is non-loopback. A startup warning surfaces the derived list so
+    operators can spot the gap. Loopback-only binds still defer to the SDK's
+    localhost guard.
+
+  This removes the dependency on the SDK's back-compat fallback, which a future
+  mcp release may remove.
+
+---
+
 ## [3.14.5] — 2026-04-29
 
 ### Added

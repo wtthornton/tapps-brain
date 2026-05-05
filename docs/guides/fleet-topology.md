@@ -179,8 +179,13 @@ Before going live with a multi-container fleet:
   a reverse proxy with its own auth layer.
 - [ ] **`TAPPS_BRAIN_MCP_ALLOWED_HOSTS` set** — comma-separated list of
   `host:port` entries for DNS-rebinding protection when containers call the
-  sidecar via a Docker network hostname (e.g. `brain-sidecar:8080`).  Unset
-  defaults to localhost-only, which blocks sibling-container calls.
+  sidecar via a Docker network hostname (e.g. `brain-sidecar:8080`).  As of
+  v3.14.6 the shipped `docker-compose.hive.yaml` wires a sane default
+  (`tapps-brain-http`/`localhost`/`127.0.0.1` on 8080+8090) so the brain no
+  longer relies on the mcp SDK's back-compat fallback.  Override via
+  `docker/.env` when running behind a different in-network DNS name.  When
+  unset *and* bound to a non-loopback interface, the brain now derives an
+  allow-list at startup and emits a warning so the gap is visible.
 - [ ] **Migrations applied before rollout** — run
   `tapps-brain maintenance migrate` (or set `TAPPS_BRAIN_HIVE_AUTO_MIGRATE=1`)
   before starting new replicas.  Never rely on auto-migrate in multi-host

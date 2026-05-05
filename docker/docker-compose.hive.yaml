@@ -95,6 +95,13 @@ services:
       TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
       TAPPS_BRAIN_ADMIN_TOKEN: ${TAPPS_BRAIN_ADMIN_TOKEN:?set TAPPS_BRAIN_ADMIN_TOKEN in docker/.env}
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
+      # mcp SDK 1.27.0 enables DNS-rebinding protection by default with an
+      # empty allow-list, so any Host header (including the Docker service
+      # DNS name) logs `Invalid Host header` from transport_security.py.
+      # Wire an explicit allow-list covering the in-network service name and
+      # loopback so the warnings stop and we are not relying on the SDK's
+      # back-compat fallback (which a future mcp release may remove).
+      TAPPS_BRAIN_MCP_ALLOWED_HOSTS: "${TAPPS_BRAIN_MCP_ALLOWED_HOSTS:-tapps-brain-http:8080,tapps-brain-http:8090,localhost:8080,localhost:8090,127.0.0.1:8080,127.0.0.1:8090}"
       TAPPS_BRAIN_STRICT: "1"
       # TAP-1076 — production-hardening passthroughs.  Default to empty so
       # the dev stack still boots without these set, but the runtime emits a

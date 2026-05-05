@@ -68,36 +68,100 @@ def _build_transport_security() -> Any:  # noqa: ANN401
 
     When the env var is set (comma-separated host[:port] entries), DNS-rebinding
     protection is enabled with the explicit allow-list so Docker bridge / K8s
-    service-DNS hostnames are accepted.  When unset, ``None`` is returned and
-    FastMCP applies its own default (localhost-only guard when host=127.0.0.1).
+    service-DNS hostnames are accepted.
+
+    When the var is **unset and the MCP/HTTP host binds a non-loopback
+    interface** (e.g. ``0.0.0.0`` in Docker), mcp SDK ≥1.27.0 enables
+    DNS-rebinding protection with an empty allow-list and floods the logs
+    with ``Invalid Host header`` for every in-network call.  We derive a
+    sensible default — loopback + this container's hostname on the
+    configured ports — and emit one INFO log so operators can see what we
+    picked.  A future mcp release may remove the back-compat fallback we
+    used to rely on, so this also future-proofs the deploy path.
+
+    When bound to loopback only and the var is unset, ``None`` is returned
+    and FastMCP's localhost-only guard applies.
 
     Example::
 
         TAPPS_BRAIN_MCP_ALLOWED_HOSTS=tapps-brain-http:8080,localhost:8080
     """
     raw = (os.environ.get("TAPPS_BRAIN_MCP_ALLOWED_HOSTS") or "").strip()
-    if not raw:
-        return None
     try:
         from mcp.server.transport_security import TransportSecuritySettings
     except ImportError:
-        logger.warning(
-            "mcp_server.transport_security_unavailable",
-            detail="TransportSecuritySettings not found in installed mcp package; "
-            "TAPPS_BRAIN_MCP_ALLOWED_HOSTS will be ignored.",
-        )
+        if raw:
+            logger.warning(
+                "mcp_server.transport_security_unavailable",
+                detail="TransportSecuritySettings not found in installed mcp "
+                "package; TAPPS_BRAIN_MCP_ALLOWED_HOSTS will be ignored.",
+            )
         return None
-    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+
+    if raw:
+        hosts = [h.strip() for h in raw.split(",") if h.strip()]
+        source = "env"
+    else:
+        hosts = _default_allowed_hosts()
+        if not hosts:
+            return None
+        source = "auto"
+        logger.warning(
+            "mcp_server.transport_security_autoconfigured",
+            detail=(
+                "TAPPS_BRAIN_MCP_ALLOWED_HOSTS not set while bound to a "
+                "non-loopback interface; using a derived allow-list. Set "
+                "TAPPS_BRAIN_MCP_ALLOWED_HOSTS explicitly in production."
+            ),
+            allowed_hosts=hosts,
+        )
+
     origins = [f"http://{h}" for h in hosts]
     logger.info(
         "mcp_server.transport_security_configured",
         allowed_hosts=hosts,
+        source=source,
     )
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=hosts,
         allowed_origins=origins,
     )
+
+
+def _default_allowed_hosts() -> list[str]:
+    """Derive an allow-list when bound to a non-loopback interface.
+
+    Returns an empty list when the configured host is loopback — the SDK's
+    own localhost guard is sufficient there.
+    """
+    import socket
+
+    bind_hosts = {
+        (os.environ.get("TAPPS_BRAIN_HTTP_HOST") or "").strip(),
+        (os.environ.get("TAPPS_BRAIN_MCP_HOST") or "").strip(),
+    }
+    non_loopback = {h for h in bind_hosts if h and h not in {"127.0.0.1", "localhost", "::1"}}
+    if not non_loopback:
+        return []
+
+    ports: list[str] = []
+    for var in ("TAPPS_BRAIN_HTTP_PORT", "TAPPS_BRAIN_MCP_HTTP_PORT"):
+        val = (os.environ.get(var) or "").strip()
+        if val and val not in ports:
+            ports.append(val)
+    if not ports:
+        ports = ["8080"]
+
+    names = ["localhost", "127.0.0.1"]
+    try:
+        hostname = socket.gethostname()
+    except OSError:
+        hostname = ""
+    if hostname and hostname not in names:
+        names.append(hostname)
+
+    return [f"{name}:{port}" for name in names for port in ports]
 
 
 def _get_store(

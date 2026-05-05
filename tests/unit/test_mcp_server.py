@@ -79,12 +79,39 @@ class TestTransportSecurity:
         from tapps_brain.mcp_server import _build_transport_security
 
         monkeypatch.delenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_HTTP_HOST", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_MCP_HOST", raising=False)
         assert _build_transport_security() is None
 
     def test_empty_env_var_returns_none(self, monkeypatch):
         from tapps_brain.mcp_server import _build_transport_security
 
         monkeypatch.setenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", "   ")
+        monkeypatch.delenv("TAPPS_BRAIN_HTTP_HOST", raising=False)
+        monkeypatch.delenv("TAPPS_BRAIN_MCP_HOST", raising=False)
+        assert _build_transport_security() is None
+
+    def test_auto_derives_when_bound_to_non_loopback(self, monkeypatch):
+        """TAP-1076 follow-up: deriving an allow-list when bound to 0.0.0.0 stops
+        the mcp 1.27.0 `Invalid Host header` log flood without requiring the
+        operator to set TAPPS_BRAIN_MCP_ALLOWED_HOSTS by hand."""
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.delenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", raising=False)
+        monkeypatch.setenv("TAPPS_BRAIN_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("TAPPS_BRAIN_HTTP_PORT", "8080")
+        ts = _build_transport_security()
+        assert ts is not None
+        assert ts.enable_dns_rebinding_protection is True
+        assert any(h.startswith("localhost:") for h in ts.allowed_hosts)
+        assert any(h.startswith("127.0.0.1:") for h in ts.allowed_hosts)
+
+    def test_loopback_bind_without_env_returns_none(self, monkeypatch):
+        from tapps_brain.mcp_server import _build_transport_security
+
+        monkeypatch.delenv("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", raising=False)
+        monkeypatch.setenv("TAPPS_BRAIN_HTTP_HOST", "127.0.0.1")
+        monkeypatch.setenv("TAPPS_BRAIN_MCP_HOST", "localhost")
         assert _build_transport_security() is None
 
     def test_single_host_builds_settings(self, monkeypatch):
