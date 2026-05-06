@@ -1,0 +1,119 @@
+# tapps-brain
+
+> Persistent cross-session memory system for AI coding assistants
+
+- Version: 3.14.5
+- License: MIT
+- Homepage: https://github.com/wtthornton/tapps-brain
+
+## Tech Stack
+
+- Python >=3.12
+- Node.js
+- Pydantic
+- uv (package manager)
+- GitHub Actions
+
+## Entry Points
+
+- `tapps-brain` -> `tapps_brain.cli:app`
+- `tapps-brain-http` -> `tapps_brain.http_adapter:main`
+- `.venv-tag-smoke/lib/python3.12/site-packages/markdown_it/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/annotated_doc/main.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/huggingface_hub/inference/_mcp/cli.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/pygments/__main__.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/typer/__main__.py`
+- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/__main__.py`
+
+## Key Files
+
+- `README.md`
+- `CLAUDE.md`
+- `AGENTS.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `LICENSE`
+- `pyproject.toml`
+- `package.json`
+- `Makefile`
+- `docker-compose.yml`
+- `.env.example`
+
+## Documentation Map
+
+- `AGENTS.md`
+- `CHANGELOG.md`
+- `CLAUDE.md`
+- `CLEANUP-PLAN.md`
+- `CONTRIBUTING.md`
+- `README.md`
+- `SECURITY.md`
+- `TECH_STACK.md`
+- `fix_plan.md`
+- `llms.txt`
+- `ralph-feedback-report.md`
+- `docs/DOCUMENTATION_INDEX.md`
+- `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/RALPH_SETUP_GUIDE.md`
+- `docs/api-reference.md`
+- `docs/benchmarks/README.md`
+- `docs/benchmarks/locomo.md`
+- `docs/benchmarks/longmemeval.md`
+- `docs/case-studies/README.md`
+- `docs/case-studies/TEMPLATE.md`
+- `docs/design/nlt-brand/README.md`
+- `docs/engineering/README.md`
+- `docs/engineering/async-performance.md`
+- `docs/engineering/call-flows.md`
+- `docs/engineering/code-inventory-and-doc-gaps.md`
+- `docs/engineering/data-stores-and-schema.md`
+- `docs/engineering/features-and-technologies.md`
+- `docs/engineering/optional-features-matrix.md`
+- `docs/engineering/system-architecture.md`
+- `docs/engineering/threat-model.md`
+- ... and 217 more
+
+## API Summary
+
+- Packages: 11
+- Modules: 107
+- Public API symbols: 634
+
+## Project Structure
+
+```
+.coverage
+.cursorignore
+.env
+.env.example
+.envrc
+.gitattributes
+.gitignore
+.mcp.json
+.ralphrc
+.ralphrc.bak.1777419561
+AGENTS.md
+CHANGELOG.md
+CLAUDE.md
+CLEANUP-PLAN.md
+CONTRIBUTING.md
+LICENSE
+Makefile
+README.md
+SECURITY.md
+TECH_STACK.md
+config/
+dist-fresh/
+docker/
+docker-compose.yml
+docs/
+examples/
+fix_plan.md
+llms.txt
+openclaw-plugin/
+openclaw-skill/
+... and 12 more
+```
