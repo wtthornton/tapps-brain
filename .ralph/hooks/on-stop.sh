@@ -46,24 +46,77 @@ fi
 # This block does it in ~3 subprocesses total.
 _status_block=$(echo "$response_text" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' || true)
 
+# TRANSCRIPT-FALLBACK (Claude Code 2.1.x): The stop hook stdin no longer carries
+# the response text — 2.1.x removed the "type":"result" line from both the hook
+# payload and the transcript. If _status_block is still empty, read the last
+# assistant message's text from transcript_path and try again. This also fixes
+# response_text so question-pattern and permission-denial detection work correctly.
+if [[ -z "$_status_block" ]]; then
+  _tf_for_status=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+  if [[ -n "$_tf_for_status" && -f "$_tf_for_status" ]]; then
+    _last_assistant_text=$(jq -rs '
+      [.[] | select(.type == "assistant")] | last |
+      .message.content // [] |
+      [.[] | select(.type == "text") | .text] |
+      join("\n")
+    ' "$_tf_for_status" 2>/dev/null || echo "")
+    if [[ -n "$_last_assistant_text" ]]; then
+      response_text="$_last_assistant_text"
+      _status_block=$(echo "$response_text" | sed -n '/---RALPH_STATUS---/,/---END_RALPH_STATUS---/p' || true)
+    fi
+  fi
+fi
+
+# PARSER-HARDENING (2026-04-30): two real bugs caused exit-gate bypass when
+# Claude correctly reported STATUS: BLOCKED + EXIT_SIGNAL: true on a fully-
+# blocked Linear backlog (NLTlabsPE incident, 10 wasted loops + CB trip):
+#   1. Field-name case drift. Projects whose PROMPT.md uses lowercase
+#      `linear_open_count: 0` had the value silently dropped because the
+#      original grep was case-sensitive. The awk pre-pass below uppercases
+#      the field-identifier portion of every "<ident>:..." line so the
+#      downstream greps work regardless of project-side case.
+#   2. Unanchored greps + prose colon. A RECOMMENDATION line containing
+#      "STATUS:BLOCKED" in free-text prose poisoned `grep "STATUS:"` —
+#      `tail -1` picked the recommendation line, sed stripped up to the
+#      *last* "STATUS:" and yielded `BLOCKED)` (the closing paren of the
+#      parenthetical), which broke the EXIT-CLEAN equality check at
+#      line 607. Anchoring every field grep to ^[[:space:]] makes prose
+#      mid-line uncatchable.
 if [[ -n "$_status_block" ]]; then
-  exit_signal=$(echo "$_status_block" | grep "EXIT_SIGNAL:" | tail -1 | sed 's/.*EXIT_SIGNAL:[[:space:]]*//' | tr -d '[:space:]' || echo "false")
-  status=$(echo "$_status_block" | grep "STATUS:" | grep -v "TESTS_STATUS\|END_RALPH" | tail -1 | sed 's/.*STATUS:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
-  tasks_done=$(echo "$_status_block" | grep "TASKS_COMPLETED_THIS_LOOP:" | tail -1 | sed 's/.*TASKS_COMPLETED_THIS_LOOP:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
-  files_modified_reported=$(echo "$_status_block" | grep "FILES_MODIFIED:" | tail -1 | sed 's/.*FILES_MODIFIED:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
-  work_type=$(echo "$_status_block" | grep "WORK_TYPE:" | tail -1 | sed 's/.*WORK_TYPE:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
-  recommendation=$(echo "$_status_block" | grep "RECOMMENDATION:" | tail -1 | sed 's/.*RECOMMENDATION:[[:space:]]*//' || echo "")
+  _status_block=$(echo "$_status_block" | awk '
+    {
+      pos = index($0, ":")
+      if (pos > 0) {
+        field = substr($0, 1, pos - 1)
+        rest  = substr($0, pos)
+        match(field, /^[[:space:]]*/); ws = substr(field, RSTART, RLENGTH)
+        sub(/^[[:space:]]*/, "", field)
+        if (field ~ /^[A-Za-z_][A-Za-z_0-9]*$/) {
+          print ws toupper(field) rest
+          next
+        }
+      }
+      print
+    }
+  ')
+  exit_signal=$(echo "$_status_block" | grep -E "^[[:space:]]*EXIT_SIGNAL:" | tail -1 | sed -E 's/^[[:space:]]*EXIT_SIGNAL:[[:space:]]*//' | tr -d '[:space:]' || echo "false")
+  status=$(echo "$_status_block" | grep -E "^[[:space:]]*STATUS:" | tail -1 | sed -E 's/^[[:space:]]*STATUS:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
+  tasks_done=$(echo "$_status_block" | grep -E "^[[:space:]]*TASKS_COMPLETED_THIS_LOOP:" | tail -1 | sed -E 's/^[[:space:]]*TASKS_COMPLETED_THIS_LOOP:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
+  files_modified_reported=$(echo "$_status_block" | grep -E "^[[:space:]]*FILES_MODIFIED:" | tail -1 | sed -E 's/^[[:space:]]*FILES_MODIFIED:[[:space:]]*//' | tr -d '[:space:]' || echo "0")
+  work_type=$(echo "$_status_block" | grep -E "^[[:space:]]*WORK_TYPE:" | tail -1 | sed -E 's/^[[:space:]]*WORK_TYPE:[[:space:]]*//' | tr -d '[:space:]' || echo "UNKNOWN")
+  recommendation=$(echo "$_status_block" | grep -E "^[[:space:]]*RECOMMENDATION:" | tail -1 | sed -E 's/^[[:space:]]*RECOMMENDATION:[[:space:]]*//' || echo "")
   # LINEAR-DASH: optional Linear-driven fields. Absent in file-mode projects.
-  linear_issue=$(echo "$_status_block" | grep "LINEAR_ISSUE:" | tail -1 | sed 's/.*LINEAR_ISSUE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
-  linear_url=$(echo "$_status_block" | grep "LINEAR_URL:" | tail -1 | sed 's/.*LINEAR_URL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
-  linear_epic=$(echo "$_status_block" | grep "LINEAR_EPIC:" | grep -v "LINEAR_EPIC_DONE\|LINEAR_EPIC_TOTAL" | tail -1 | sed 's/.*LINEAR_EPIC:[[:space:]]*//' | tr -d '[:space:]' || echo "")
-  linear_epic_done=$(echo "$_status_block" | grep "LINEAR_EPIC_DONE:" | tail -1 | sed 's/.*LINEAR_EPIC_DONE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
-  linear_epic_total=$(echo "$_status_block" | grep "LINEAR_EPIC_TOTAL:" | tail -1 | sed 's/.*LINEAR_EPIC_TOTAL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_issue=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_ISSUE:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_ISSUE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_url=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_URL:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_URL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_EPIC:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_EPIC:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic_done=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_EPIC_DONE:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_EPIC_DONE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_epic_total=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_EPIC_TOTAL:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_EPIC_TOTAL:[[:space:]]*//' | tr -d '[:space:]' || echo "")
   # TAP-741: project-wide counts Claude reports via Linear MCP. These feed the
   # push-mode read path in lib/linear_backend.sh so the harness can run the
   # exit-gate and preflight checks without LINEAR_API_KEY.
-  linear_open_count=$(echo "$_status_block" | grep "LINEAR_OPEN_COUNT:" | tail -1 | sed 's/.*LINEAR_OPEN_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
-  linear_done_count=$(echo "$_status_block" | grep "LINEAR_DONE_COUNT:" | tail -1 | sed 's/.*LINEAR_DONE_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_open_count=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_OPEN_COUNT:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_OPEN_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  linear_done_count=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_DONE_COUNT:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_DONE_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  tests_status=$(echo "$_status_block" | grep -E "^[[:space:]]*TESTS_STATUS:" | tail -1 | sed -E 's/^[[:space:]]*TESTS_STATUS:[[:space:]]*//' | tr -d '[:space:]' || echo "")
 else
   # No structured status block found — extract from full text
   exit_signal="false"
@@ -79,6 +132,7 @@ else
   linear_epic_total=""
   linear_open_count=""
   linear_done_count=""
+  tests_status=""
 fi
 
 # LINEAR-DASH: sanitize Linear fields; empty strings become JSON null
@@ -89,6 +143,9 @@ fi
 # TAP-741: enforce non-negative integer shape; anything else → null (abstain).
 [[ "$linear_open_count" =~ ^[0-9]+$ ]] || linear_open_count=""
 [[ "$linear_done_count" =~ ^[0-9]+$ ]] || linear_done_count=""
+
+# Normalize TESTS_STATUS to upper-case for comparison
+tests_status="${tests_status^^}"
 
 # Defaults for empty values
 exit_signal="${exit_signal:-false}"
@@ -599,12 +656,13 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     if [[ "$new_pd" -ge "${pd_threshold}" ]]; then
       echo "Circuit breaker OPEN: permission denied $new_pd consecutive times" >&2
     fi
-  elif [[ "$exit_signal" == "true" && "$status" == "COMPLETE" ]]; then
-    # EXIT-CLEAN: Claude reported clean completion (EXIT_SIGNAL: true + STATUS: COMPLETE)
-    # but with 0 files modified and 0 tasks completed — this is the legitimate
-    # "plan is empty / nothing to do" path, not stagnation. Reset the no-progress
-    # counter so consecutive empty-plan loops don't trip the breaker on the
-    # SAME signal Claude is already using to ask for clean shutdown.
+  elif [[ "$exit_signal" == "true" && ( "$status" == "COMPLETE" || "$status" == "BLOCKED" ) ]]; then
+    # EXIT-CLEAN: Claude reported clean exit with EXIT_SIGNAL: true and either:
+    #   - STATUS: COMPLETE — plan is empty / nothing to do (Grounds 1 in skill)
+    #   - STATUS: BLOCKED — entire queue blocked on external action (Grounds 2)
+    # Both are legitimate "stop looping" signals, not stagnation. Reset the
+    # no-progress counter so consecutive clean-exit loops don't trip the
+    # breaker on the SAME signal Claude is already using to ask for shutdown.
     # Also reset permission denials (none happened) and ensure state stays CLOSED.
     jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
       "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
@@ -672,6 +730,39 @@ if [[ -f "$_ralph_log" ]]; then
   fi
 fi
 
+# =============================================================================
+# QA failure tracking — feeds the type-aware router's Opus escalation path.
+#
+# When TESTS_STATUS is FAILING for a Linear issue, increment the per-issue
+# counter in .ralph/.qa_failures.json. When TESTS_STATUS is PASSING, clear
+# the counter. The router (build_claude_command) reads this counter for the
+# current issue on the next loop and forces Opus when count >= 3.
+#
+# DEFERRED / NOT_RUN are explicitly ignored — they're not failure signals
+# and resetting on DEFERRED would mask consecutive-failure patterns when
+# QA is mid-epic-skipped between two failures.
+# =============================================================================
+if [[ -n "$linear_issue" ]]; then
+  _qa_lib=""
+  for _p in "$HOME/.ralph/lib/qa_failures.sh" \
+            "${RALPH_INSTALL_DIR:-/nonexistent}/lib/qa_failures.sh" \
+            "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}" 2>/dev/null || echo "${BASH_SOURCE[0]:-$0}")")/../../lib/qa_failures.sh"; do
+    [[ -f "$_p" ]] && { _qa_lib="$_p"; break; }
+  done
+  if [[ -n "$_qa_lib" ]]; then
+    # shellcheck source=/dev/null
+    source "$_qa_lib"
+    case "$tests_status" in
+      FAILING)
+        qa_failures_increment "$linear_issue" >/dev/null 2>&1 || true
+        ;;
+      PASSING)
+        qa_failures_reset "$linear_issue" >/dev/null 2>&1 || true
+        ;;
+    esac
+  fi
+fi
+
 # TAP-750: token propagation for hooks launched outside ralph_loop.sh.
 # When Claude Code is launched from VSCode (not via ralph_loop.sh), secrets.env
 # is never sourced, so TAPPS_BRAIN_AUTH_TOKEN is absent. Load it here so the
@@ -706,13 +797,25 @@ if [[ -n "$_brain_lib" ]]; then
   # shellcheck source=/dev/null
   source "$_brain_lib"
 
+  # TAP-918: if the coordinator wrote a brief at the top of this loop AND
+  # is not disabled, its debrief pass owns the brain write — skip the
+  # hook write to avoid double-counting. The hook write stays as fallback
+  # when the coordinator is disabled or its brief is missing (spawn failed
+  # before it could write). This check runs in on-stop, which executes
+  # BEFORE the coordinator's debrief in the loop sequence — so brief.json
+  # is still present here on the coordinator-active path.
+  _brain_skip_hook="false"
+  if [[ -f "$RALPH_DIR/brief.json" ]] && [[ "${RALPH_COORDINATOR_DISABLED:-false}" != "true" ]]; then
+    _brain_skip_hook="true"
+  fi
+
   # Success signal: this loop made real progress. Record what got done so
   # future loops can recall. Task id from Linear field when available.
-  if [[ "$files_modified" -gt 0 && "$tasks_done" -gt 0 ]]; then
+  if [[ "$_brain_skip_hook" != "true" && "$files_modified" -gt 0 && "$tasks_done" -gt 0 ]]; then
     _brain_desc="Loop $loop_count completed $tasks_done task(s) touching $files_modified file(s)"
     [[ -n "$recommendation" ]] && _brain_desc="${_brain_desc}. ${recommendation:0:200}"
     _brain_task_id="${linear_issue:-}"
-    brain_client_write_success "$RALPH_DIR" "$_brain_desc" "$_brain_task_id" >/dev/null 2>&1 || true
+    brain_client_write_success "$RALPH_DIR" "$_brain_desc" "$_brain_task_id" "coordinator-fallback" >/dev/null 2>&1 || true
   fi
 
   # Failure signal: permission denials OR circuit breaker just opened.
@@ -722,7 +825,7 @@ if [[ -n "$_brain_lib" ]]; then
   if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     _cb_now=$(jq -r '.state // "CLOSED"' "$RALPH_DIR/.circuit_breaker_state" 2>/dev/null || echo "CLOSED")
   fi
-  if [[ "$has_permission_denials" == "true" || "$_cb_now" == "OPEN" ]]; then
+  if [[ "$_brain_skip_hook" != "true" && ( "$has_permission_denials" == "true" || "$_cb_now" == "OPEN" ) ]]; then
     _brain_desc="Loop $loop_count stalled"
     _brain_err=""
     if [[ "$has_permission_denials" == "true" ]]; then
@@ -735,7 +838,7 @@ if [[ -n "$_brain_lib" ]]; then
       _brain_err="circuit_breaker_open"
     fi
     _brain_task_id="${linear_issue:-}"
-    brain_client_write_failure "$RALPH_DIR" "$_brain_desc" "$_brain_err" "$_brain_task_id" >/dev/null 2>&1 || true
+    brain_client_write_failure "$RALPH_DIR" "$_brain_desc" "$_brain_err" "$_brain_task_id" "coordinator-fallback" >/dev/null 2>&1 || true
   fi
 fi
 

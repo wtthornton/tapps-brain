@@ -36,6 +36,10 @@ build/
 .ralph/.ralph_session
 .ralph/.response_analysis
 .ralph/.ralph_session_history
+.ralph/.last_completed_files
+.ralph/.ralph.lock
+.ralph/.mcp_failures_session
+.ralph/upgrade.log
 .ralph/live.log
 .ralph/progress.json
 .ralph/status.json
