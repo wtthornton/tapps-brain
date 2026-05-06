@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tapps-mcp-hook-version: 3.10.9
 # TappsMCP Stop hook - Memory Capture (Epic 34.5)
 # Writes session quality data to .tapps-mcp/session-capture.json for
 # persistence into shared memory on next session start.

@@ -49,6 +49,7 @@ coverage.json
 
 # Claude Code local settings (experimental, not committed)
 .claude/settings.local.json
+.claude/next-session-prompt.md
 
 # Claude Code worktrees (agent isolation)
 .claude/worktrees/

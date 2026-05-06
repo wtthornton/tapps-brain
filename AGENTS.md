@@ -1,4 +1,4 @@
-<!-- tapps-agents-version: 3.3.0 -->
+<!-- tapps-agents-version: 3.10.9 -->
 # TappsMCP - instructions for AI assistants
 
 When the **TappsMCP** MCP server is configured, you have access to tools for **code quality, doc lookup, and domain expert advice**. Use them to avoid hallucinated APIs, missed quality steps, and inconsistent output.
@@ -236,8 +236,8 @@ Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wal
 4. **Before modifying a file's API:** Call `tapps_impact_analysis(file_path=...)` to see what depends on it.
 5. **During edits:** Call `tapps_quick_check(file_path=...)` or `tapps_score_file(file_path=..., quick=True)` after each change.
 6. **Before declaring work complete:**
-   - Call `tapps_validate_changed(file_paths="file1.py,file2.py")` with explicit paths to score + gate changed files. Never call without `file_paths` in large repos. Default is quick mode; only use `quick=false` as a last resort (pre-release, security audit).
-   - Call `tapps_checklist(task_type=...)` and, if `complete` is false, call the missing required tools (use `missing_required_hints` for reasons).
+   - Recommended: invoke the `/tapps-finish-task` skill — bundles `tapps_validate_changed` + `tapps_checklist` + an optional memory save and reports a one-line summary.
+   - If you'd rather run the steps manually: `tapps_validate_changed(file_paths="file1.py,file2.py")` with explicit paths to score + gate changed files (never call without `file_paths` in large repos; default is quick mode), then `tapps_checklist(task_type=...)` and, if `complete` is false, call the missing required tools (use `missing_required_hints` for reasons).
    - Optionally call `tapps_report(format="markdown")` to generate a quality summary.
 7. **When in doubt:** Use `tapps_lookup_docs` for domain-specific questions and library guidance; use `tapps_validate_config` for Docker/infra files.
 
@@ -307,11 +307,13 @@ RECOMMENDED: Use `tapps_memory` for architecture decisions and quality patterns.
 
 **Tiers:** `architectural` (180-day half-life, stable decisions), `pattern` (60-day, conventions), `procedural` (30-day, workflows), `context` (14-day, short-lived)
 
-**Scopes:** `project` (default, all sessions), `branch` (git branch), `session` (ephemeral), `shared` (federation-eligible)
+**Scopes:** `project` (default, all sessions), `branch` (git branch), `session` (current session only). Cross-project handoff goes through federation actions (`federate_publish` / `federate_subscribe`), not a `scope=` value.
 
 **Memory profiles:** Built-in profiles from tapps-brain (e.g. `repo-brain` default). Use `profile_info`, `profile_list`, `profile_switch` actions.
 
 **Configuration:** Override `memory.profile`, `memory.capture_prompt`, `memory.write_rules`, and `memory_hooks` in `.tapps-mcp.yaml`. Max 1500 entries per project. Auto-GC at 80% capacity.
+
+**Cross-session handoff:** when one session needs to pass a token, ID, or short payload to a later session in the same project, call `tapps_memory(action="save", key="<slug>", value="<payload>")` instead of printing it to stdout. The default `project` scope is already cross-session within the same repo. Read it back with `action="get"` (by key) or `action="search"`. For cross-agent handoff in Agent Teams, use `action="hive_propagate"`; for cross-project, use the federation actions above.
 
 ---
 
@@ -328,6 +330,14 @@ When `tapps_init` generates platform-specific files, it also creates **hooks**, 
 - **TaskCompleted** - Reminds you to validate before marking task complete (non-blocking)
 - **PreCompact** - Backs up scoring context before context window compaction
 - **SubagentStart** - Injects TappsMCP awareness into spawned subagents
+
+Opt-in `PreToolUse` gates are independent flags in `.tapps-mcp.yaml` — enable each based on what you want blocked:
+- `destructive_guard: true` — blocks destructive Bash commands (`rm -rf`, `format c:`, etc.).
+- `linear_enforce_gate: true` — blocks `mcp__plugin_linear_linear__save_issue` unless the `linear-issue` skill flow (with `docs_validate_linear_issue`) was used recently. Bypass: `TAPPS_LINEAR_SKIP_VALIDATE=1`. Bash + PowerShell. Default: on at medium/high engagement, off at low.
+- `linear_enforce_cache_gate: "off" | "warn" | "block"` (TAP-1224) — gates `mcp__plugin_linear_linear__list_issues` behind a recent `tapps_linear_snapshot_get` for the same `(team, project, state, label, limit)` slice. **Warn mode** (default at medium/high engagement) logs violations to `.tapps-mcp/.cache-gate-violations.jsonl` and allows the call. **Block mode** rejects with exit 2 unless a matching sentinel < 300s old exists. Single-issue lookups must use `mcp__plugin_linear_linear__get_issue` instead. Pairs with the `linear-read` skill which routes the cache-first dance. Bypass: `TAPPS_LINEAR_SKIP_CACHE_GATE=1`. `tapps doctor` reports current mode + 24h violation count.
+- `install_git_hooks: true` (TAP-979) — writes `.githooks/pre-commit` and sets `core.hooksPath = .githooks`. Runs `tapps-mcp validate-changed --quick` on staged Python files and fails the commit on gate failure. Bypass: `TAPPS_SKIP_GATE=1`. Default: off.
+
+Run `tapps-mcp doctor` to list wired matchers.
 
 **Cursor** (`.cursor/hooks/`): 3 hook scripts:
 - **beforeMCPExecution** - Logs MCP tool invocations for observability
@@ -410,6 +420,20 @@ The bare `mcp__tapps-mcp` entry is needed as a reliable fallback - the wildcard 
 2. Verify the TappsMCP server is running: `tapps-mcp doctor`
 3. Check that your permission mode is not `dontAsk` (which auto-denies unlisted tools)
 4. As a last resort, use `tapps_quick_check` on individual files instead of `tapps_validate_changed`
+
+---
+
+## Tapps Rules
+
+Seven rules every agent in this project should follow.
+
+1. **Fix root causes, not symptoms.** No workarounds, no `--no-verify`, no try/except-and-swallow. If you are tempted to bypass a failure, stop and diagnose it.
+2. **When confidence drops below 100%, query tapps-mcp before writing code.** `tapps_lookup_docs` for library APIs, `tapps_memory(action="search")` for prior decisions and patterns. Guessing from memory is the most common source of hallucinated APIs.
+3. **`tapps_lookup_docs` is a Context7-backed cache — use it freely.** Lookups are local-cache-first; repeat calls are near-zero cost. There is no budget to conserve.
+4. **Be context-window aware — delegate noisy work to subagents.** If a task would dump more than three file reads or large tool output you won't reference again, spawn `Explore` or `general-purpose`. Subagents return summaries; the main thread stays clean.
+5. **Write clean, efficient code.** Clear names, no dead branches, no speculative abstractions, no commented-out code. Every line should justify its presence.
+6. **Don't over-engineer.** The simplest solution that satisfies the requirement is the correct one. No knobs nobody asked for. Three similar lines beat a premature abstraction.
+7. **Route Linear through skills, not raw plugin calls.** Use the `linear-issue` skill for any write (epic, story, update) — it runs the docs-mcp template + validator before push. Use the `linear-read` skill for multi-issue reads (cache-first). Single-issue lookups: `get_issue(id=...)` directly. Release announcements go through the `linear-release-update` skill.
 
 ---
 
