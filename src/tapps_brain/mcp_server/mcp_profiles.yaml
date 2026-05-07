@@ -8,9 +8,9 @@
 # adding @mcp.tool decorators, otherwise the server will refuse to start.
 #
 # Profile summary:
-#   full      (55 tools) — all standard tools; default fallback (backwards-compat)
-#   operator  (68 tools) — full + operator-only maintenance tools
-#   coder     (15 tools) — repo-embedded coding agent subset (~14 per epic spec)
+#   full      (59 tools) — all standard tools; default fallback (backwards-compat)
+#   operator  (72 tools) — full + operator-only maintenance tools
+#   coder     (17 tools) — repo-embedded coding agent subset
 #   reviewer  ( 8 tools) — read-only PR/code review agents
 #   seeder    ( 6 tools) — bulk ingestion scripts
 
@@ -22,17 +22,20 @@ profiles:
   full:
     description: >
       All standard (non-operator) tools. Default profile when no X-Brain-Profile
-      header is set. Preserves today's 55-tool surface — zero breaking change for
-      existing clients.
+      header is set. Includes all brain_* facade tools + KG tools (EPIC-076).
     tools:
       - agent_create
       - agent_delete
       - agent_list
       - agent_register
+      - brain_explain_connection
       - brain_forget
+      - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
       - brain_recall
+      - brain_record_event
+      - brain_record_feedback
       - brain_remember
       - brain_status
       - diagnostics_history
@@ -91,15 +94,19 @@ profiles:
       the human operator / tapps-brain-operator-mcp server. Requires operator
       bearer token.
     tools:
-      # Standard 55 (same as full)
+      # Standard 59 (same as full)
       - agent_create
       - agent_delete
       - agent_list
       - agent_register
+      - brain_explain_connection
       - brain_forget
+      - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
       - brain_recall
+      - brain_record_event
+      - brain_record_feedback
       - brain_remember
       - brain_status
       - diagnostics_history
@@ -189,9 +196,11 @@ profiles:
       - memory_reinforce
       - feedback_rate
       - feedback_gap
-      # Cross-repo + graph (2) — Hive and relation lookups
+      # Cross-repo + graph (4) — Hive and relation lookups + KG tools
       - hive_search
       - memory_find_related
+      - brain_get_neighbors
+      - brain_explain_connection
 
   # --------------------------------------------------------------------------
   # reviewer — read-only PR/code review agents (8 tools)

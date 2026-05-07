@@ -263,8 +263,72 @@ curl -sSL -X POST \
   http://127.0.0.1:8080/mcp/
 ```
 
-A healthy response is a JSON envelope with tool definitions. Expect ~55 tools
-for the `full` profile (default) or ~15 for `coder`.
+A healthy response is a JSON envelope with tool definitions. Expect ~59 tools
+for the `full` profile (default) or ~17 for `coder`.
+
+## Knowledge-Graph tools (EPIC-076)
+
+Four new tools are available on the `full` and `coder` profiles from EPIC-076:
+
+| Tool | Purpose |
+|---|---|
+| `brain_record_event` | Write an `experience_events` row + optional memory / entity / edge / evidence in **one Postgres transaction**. |
+| `brain_get_neighbors` | Fetch 1-hop or 2-hop neighbourhood graph rows around one or more KG entities. |
+| `brain_explain_connection` | Find the shortest path (≤ 3 hops) between two entities and return the full edge chain. |
+| `brain_record_feedback` | Rate a KG edge as `edge_helpful` or `edge_misleading` to adjust its confidence score. |
+
+### When to call each tool
+
+**`brain_record_event`** — call after significant workflow steps (tool invocations, plan completions, approach failures) so the event and any new KG knowledge are durable in one round-trip. Example:
+
+```python
+brain_record_event(
+    event_type="approach_failed",
+    subject_key="my-approach-key",
+    memory_key="auth-rewrite-failed",
+    memory_value="JWTs with HS256 did not satisfy the compliance requirement.",
+    memory_tier="architectural",
+)
+```
+
+**`brain_get_neighbors`** — call when reasoning about how a concept relates to nearby entities. Combine with `brain_recall` for a richer context:
+
+```python
+brain_get_neighbors(
+    entity_ids_json='["<entity-uuid>"]',
+    hops=2,
+    limit=20,
+)
+```
+
+**`brain_explain_connection`** — call to trace *why* two entities are related before modifying their relationship:
+
+```python
+brain_explain_connection(subject_id="<uuid>", object_id="<uuid>")
+# → { "found": true, "hops": 2, "path": [...] }
+```
+
+**`brain_record_feedback`** — call after verifying that a recalled edge was helpful or misleading:
+
+```python
+brain_record_feedback(
+    edge_id="<edge-uuid>",
+    feedback_type="edge_helpful",  # or "edge_misleading"
+)
+```
+
+### Matching HTTP endpoints
+
+For non-MCP callers (HTTP REST clients, AgentForge):
+
+| Endpoint | Body fields |
+|---|---|
+| `POST /v1/experience` | `event_type` (required) + optional `payload`, `entities`, `edges`, `evidence`, `memory_key/value` |
+| `POST /v1/kg/neighbors` | `entity_ids` (list of UUID strings), `hops` (1–2), `limit` |
+| `POST /v1/kg/explain` | `subject_id`, `object_id`, `max_hops` (1–3) |
+| `POST /v1/kg/feedback` | `edge_id`, `feedback_type` (`edge_helpful` or `edge_misleading`) |
+
+All endpoints require `X-Project-Id` and the same bearer token as the rest of the data plane.
 
 ## Troubleshooting
 

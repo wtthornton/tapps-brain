@@ -2614,6 +2614,351 @@ def create_app(
                 if ikey:
                     _drop_idem_guard(project_id, ikey)
 
+    # -------- KG + experience routes (EPIC-076 STORY-076.5) --------
+
+    def _get_kg_cm_or_503() -> Any:
+        """Return a process-level connection manager for KG/experience routes.
+
+        Raises HTTP 503 when ``TAPPS_BRAIN_DATABASE_URL`` is not configured.
+        """
+        from tapps_brain.services import kg_service as _kg_svc
+
+        cm = _kg_svc._get_or_create_cm()
+        if cm is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "db_unavailable",
+                    "detail": "TAPPS_BRAIN_DATABASE_URL is not configured.",
+                },
+            )
+        return cm
+
+    def _kg_brain_id() -> str:
+        from tapps_brain.services import kg_service as _kg_svc
+
+        return _kg_svc._DEFAULT_BRAIN_ID
+
+    @app.post("/v1/experience", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_experience(request: Request) -> JSONResponse:
+        """Record an experience event with optional KG side-effects.
+
+        REST counterpart of the ``brain_record_event`` MCP tool.  All writes
+        (event row + optional memory + entity + edge + evidence) happen in one
+        Postgres transaction.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "event_type": str, "subject_key"?: str, "utility_score"?: float,
+              "payload"?: dict, "entities"?: [EntitySpec], "edges"?: [EdgeSpec],
+              "evidence"?: [EvidenceSpec], "memory_key"?: str,
+              "memory_value"?: str, "memory_tier"?: str,
+              "session_id"?: str, "workflow_run_id"?: str }``
+
+        Response: ``{ "event_id": str, "memory_key": str|null,
+        "entity_ids": [str], "edge_ids": [str], "evidence_ids": [str] }``
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception:
+            logger.exception("http_adapter.kg.read_body_failed")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        event_type = (body.get("event_type") or "").strip()
+        if not event_type:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "event_type is required."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.record_event,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            agent_id,
+            event_type=event_type,
+            subject_key=body.get("subject_key") or None,
+            utility_score=float(body.get("utility_score", 0.0)),
+            payload=body.get("payload") or {},
+            entities_json=json.dumps(body.get("entities") or []),
+            edges_json=json.dumps(body.get("edges") or []),
+            evidence_json=json.dumps(body.get("evidence") or []),
+            memory_key=body.get("memory_key") or None,
+            memory_value=body.get("memory_value") or None,
+            memory_tier=str(body.get("memory_tier") or "pattern"),
+            session_id=body.get("session_id") or None,
+            workflow_run_id=body.get("workflow_run_id") or None,
+        )
+        return JSONResponse(status_code=201, content=result)
+
+    @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_neighbors(request: Request) -> JSONResponse:
+        """Return the neighbourhood graph around one or more KG entities.
+
+        REST counterpart of the ``brain_get_neighbors`` MCP tool.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional): agent identifier.
+
+        Request body (JSON):
+          ``{ "entity_ids": [str], "hops"?: int=1, "limit"?: int=20,
+              "predicate_filter"?: str }``
+
+        Response: ``{ "neighbors": [{...}], "entity_ids": [str] }``
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        entity_ids = body.get("entity_ids") or []
+        if not isinstance(entity_ids, list) or not entity_ids:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entity_ids must be a non-empty list."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.get_neighbors,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            entity_ids=[str(e) for e in entity_ids if e],
+            hops=max(1, min(int(body.get("hops", 1)), 2)),
+            limit=max(1, min(int(body.get("limit", 20)), 200)),
+            predicate_filter=str(body.get("predicate_filter") or "") or None,
+        )
+        return JSONResponse(status_code=200, content=result)
+
+    @app.post("/v1/kg/explain", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_explain(request: Request) -> JSONResponse:
+        """Find the shortest path between two KG entities.
+
+        REST counterpart of the ``brain_explain_connection`` MCP tool.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional): agent identifier.
+
+        Request body (JSON):
+          ``{ "subject_id": str, "object_id": str, "max_hops"?: int=3 }``
+
+        Response: ``{ "found": bool, "hops": int|null, "path": [...],
+        "subject_id": str, "object_id": str }``
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        subject_id = (body.get("subject_id") or "").strip()
+        object_id = (body.get("object_id") or "").strip()
+        if not subject_id or not object_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "subject_id and object_id are required."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.explain_connection,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            subject_id=subject_id,
+            object_id=object_id,
+            max_hops=max(1, min(int(body.get("max_hops", 3)), 3)),
+        )
+        return JSONResponse(status_code=200, content=result)
+
+    @app.post("/v1/kg/feedback", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_feedback(request: Request) -> JSONResponse:
+        """Record edge-level feedback to update KG edge confidence.
+
+        REST counterpart of the ``brain_record_feedback`` MCP tool.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "edge_id": str, "feedback_type": "edge_helpful"|"edge_misleading",
+              "session_id"?: str }``
+
+        Response: ``{ "recorded": true, "edge_id": str, "feedback_type": str }``
+        """
+        store = _get_store_or_503()
+
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        edge_id = (body.get("edge_id") or "").strip()
+        feedback_type = (body.get("feedback_type") or "").strip()
+        if not edge_id or not feedback_type:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "edge_id and feedback_type are required."},
+            )
+
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.record_kg_feedback,
+            store,
+            project_id,
+            agent_id,
+            edge_id=edge_id,
+            feedback_type=feedback_type,
+            session_id=str(body.get("session_id") or ""),
+        )
+
+        # Surface validation errors as 400 rather than 200
+        if isinstance(result, dict) and result.get("error") == "bad_request":
+            raise HTTPException(status_code=400, detail=result)
+
+        return JSONResponse(status_code=200, content=result)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:
