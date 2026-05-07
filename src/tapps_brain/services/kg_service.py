@@ -16,12 +16,9 @@ import json
 import os
 import threading
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
-
-if TYPE_CHECKING:
-    from tapps_brain.postgres_connection import PostgresConnectionManager
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -39,14 +36,14 @@ _CM_LOCK = threading.Lock()
 _CM: Any = None  # PostgresConnectionManager | None
 
 
-def _get_or_create_cm() -> Any | None:  # noqa: ANN401
+def _get_or_create_cm() -> Any | None:
     """Return (creating if absent) a process-level ``PostgresConnectionManager``.
 
     Reads ``TAPPS_BRAIN_DATABASE_URL`` (falling back to
     ``TAPPS_BRAIN_HIVE_DSN``).  Returns ``None`` when no DSN is set — callers
     should return a 503 / capability-unavailable error in that case.
     """
-    global _CM  # noqa: PLW0603
+    global _CM
     if _CM is not None:
         return _CM
     dsn = (
@@ -69,7 +66,7 @@ def _get_or_create_cm() -> Any | None:  # noqa: ANN401
 # ---------------------------------------------------------------------------
 
 
-def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:  # noqa: ANN401
+def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:
     from tapps_brain.postgres_kg import PostgresKnowledgeGraphStore
 
     return PostgresKnowledgeGraphStore(
@@ -86,7 +83,7 @@ def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:  # noqa: ANN401
 
 
 def record_event(
-    cm: Any,  # noqa: ANN401
+    cm: Any,
     project_id: str,
     brain_id: str,
     agent_id: str,
@@ -186,7 +183,7 @@ def record_event(
 
 
 def get_neighbors(
-    cm: Any,  # noqa: ANN401
+    cm: Any,
     project_id: str,
     brain_id: str,
     *,
@@ -237,7 +234,7 @@ def get_neighbors(
 
 
 def explain_connection(
-    cm: Any,  # noqa: ANN401
+    cm: Any,
     project_id: str,
     brain_id: str,
     *,
@@ -311,7 +308,10 @@ def explain_connection(
     finally:
         kg.close()
 
-    return {"found": False, "hops": None, "path": [], "subject_id": subject_id, "object_id": object_id}
+    return {
+        "found": False, "hops": None, "path": [],
+        "subject_id": subject_id, "object_id": object_id,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -320,20 +320,31 @@ def explain_connection(
 
 
 def record_kg_feedback(
-    store: Any,  # noqa: ANN401
+    store: Any,
     project_id: str,
     agent_id: str,
     *,
     edge_id: str,
     feedback_type: str,
     session_id: str = "",
+    confidence_delta: float = 0.05,
 ) -> dict[str, Any]:
     """Record edge-level feedback (``edge_helpful`` or ``edge_misleading``).
 
-    Delegates to
-    :func:`~tapps_brain.services.feedback_service.feedback_record` so the
-    event lands in the ``feedback_events`` table with the edge UUID as the
-    ``entry_key``.
+    Two-phase write (EPIC-076 STORY-076.6):
+
+    1. **FeedbackStore audit trail** — delegates to
+       :func:`~tapps_brain.services.feedback_service.feedback_record` so the
+       event lands in ``feedback_events`` with the edge UUID as ``entry_key``.
+       This gives EWMA diagnostics and the full audit trail for free.
+
+    2. **KG counter + confidence update** — calls
+       :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.apply_edge_feedback`
+       on a fresh ``PostgresKnowledgeGraphStore`` (per-call, same CM) to
+       update ``useful_access_count``, ``positive/negative_feedback_count``,
+       and edge confidence.  A ``Postgres`` connection is required; if none is
+       available the FeedbackStore write still succeeds and the counter step is
+       skipped with a warning.
 
     Parameters
     ----------
@@ -349,6 +360,8 @@ def record_kg_feedback(
         ``"edge_helpful"`` or ``"edge_misleading"``.
     session_id:
         Optional session identifier.
+    confidence_delta:
+        Confidence reduction per ``edge_misleading`` event (default 0.05).
     """
     from tapps_brain.services import feedback_service
 
@@ -359,7 +372,8 @@ def record_kg_feedback(
             "detail": f"feedback_type must be one of {sorted(allowed)!r}.",
         }
 
-    return feedback_service.feedback_record(
+    # Phase 1: FeedbackStore audit trail
+    fb_result = feedback_service.feedback_record(
         store,
         project_id,
         agent_id,
@@ -368,3 +382,31 @@ def record_kg_feedback(
         session_id=session_id,
         details_json=json.dumps({"edge_id": edge_id}),
     )
+    if isinstance(fb_result, dict) and fb_result.get("error"):
+        return fb_result
+
+    # Phase 2: KG counter + confidence update
+    cm = _get_or_create_cm()
+    if cm is None:
+        logger.warning(
+            "kg.feedback.no_cm",
+            edge_id=edge_id,
+            feedback_type=feedback_type,
+            detail="TAPPS_BRAIN_DATABASE_URL not set; KG counters not updated.",
+        )
+        return {**fb_result, "kg_update": "skipped_no_db"}
+
+    from tapps_brain.postgres_kg import PostgresKnowledgeGraphStore
+
+    brain_id = _DEFAULT_BRAIN_ID
+    kg = PostgresKnowledgeGraphStore(cm, brain_id=brain_id, project_id=project_id)
+    try:
+        kg_result = kg.apply_edge_feedback(
+            edge_id,
+            feedback_type,
+            confidence_delta=confidence_delta,
+        )
+    finally:
+        kg.close()
+
+    return {**fb_result, "kg_update": kg_result}

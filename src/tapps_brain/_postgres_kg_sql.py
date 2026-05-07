@@ -361,6 +361,46 @@ LIMIT %s
 #: The WHERE clause embeds the 60-second debounce so the UPDATE is a no-op
 #: when the edge was reinforced recently — the caller checks rowcount.
 #: Params: new_stability, new_difficulty, edge_id::uuid, brain_id.
+# ---------------------------------------------------------------------------
+# Edge feedback counters (EPIC-076 STORY-076.6)
+# ---------------------------------------------------------------------------
+
+#: Apply ``edge_helpful`` counters: increment useful_access_count +
+#: positive_feedback_count + access_count.
+#: Params: edge_id::uuid, brain_id.
+APPLY_EDGE_HELPFUL_SQL = """
+UPDATE kg_edges SET
+    useful_access_count     = useful_access_count + 1,
+    positive_feedback_count = positive_feedback_count + 1,
+    access_count            = access_count + 1,
+    updated_at              = now()
+WHERE id = %s::uuid
+  AND brain_id = %s
+RETURNING id, positive_feedback_count, negative_feedback_count
+"""
+
+#: Apply ``edge_misleading`` counters: increment negative_feedback_count,
+#: reduce confidence by *delta* (clamped at confidence_floor), and set
+#: ``metadata.review_flagged = true`` when the 3:1 negative-to-positive
+#: ratio threshold is exceeded.
+#: Params: confidence_delta (REAL), edge_id::uuid, brain_id.
+APPLY_EDGE_MISLEADING_SQL = """
+UPDATE kg_edges SET
+    negative_feedback_count = negative_feedback_count + 1,
+    access_count            = access_count + 1,
+    confidence              = GREATEST(confidence - %s, confidence_floor),
+    metadata                = CASE
+        WHEN (negative_feedback_count + 1) > (3 * positive_feedback_count)
+        THEN jsonb_set(metadata, '{review_flagged}', 'true'::jsonb, true)
+        ELSE metadata
+    END,
+    updated_at              = now()
+WHERE id = %s::uuid
+  AND brain_id = %s
+RETURNING id, positive_feedback_count, negative_feedback_count,
+          confidence, (metadata->>'review_flagged') AS review_flagged
+"""
+
 REINFORCE_EDGE_SQL = """
 UPDATE kg_edges SET
     last_reinforced     = now(),

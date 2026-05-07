@@ -269,56 +269,106 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_record_feedback(
-        edge_id: str,
         feedback_type: str,
+        edge_id: str = "",
+        entry_key: str = "",
         session_id: str = "",
+        utility_score: float = 0.0,
+        details_json: str = "",
         agent_id: str = "",
     ) -> str:
-        """Record edge-level feedback to update KG edge confidence.
+        """Record feedback for a KG edge or a private memory entry.
 
-        Routes through :class:`~tapps_brain.feedback.FeedbackStore` so the
-        event lands in the ``feedback_events`` table with the edge UUID as
-        the ``entry_key``.  Supports two event types:
+        Accepts **both** edge-level and memory-level feedback in one schema —
+        the routing is determined by which subject identifier is provided:
 
-        * ``edge_helpful``   — edge was useful; boosts confidence.
-        * ``edge_misleading`` — edge was wrong/irrelevant; reduces confidence.
+        * **Edge feedback** (``edge_id`` set): routes through
+          :class:`~tapps_brain.feedback.FeedbackStore` and also applies
+          counter / confidence updates directly to the KG edge row.
+          Supported ``feedback_type`` values: ``"edge_helpful"``,
+          ``"edge_misleading"``.
+        * **Memory feedback** (``entry_key`` set, no ``edge_id``): routes
+          through ``MemoryStore.record_feedback()`` as a generic
+          ``FeedbackEvent``.  Any Object-Action snake_case ``feedback_type``
+          is accepted (e.g. ``"recall_rated"``, ``"gap_reported"``).
 
         Parameters
         ----------
-        edge_id:
-            UUID of the KG edge being rated.
         feedback_type:
-            ``"edge_helpful"`` or ``"edge_misleading"``.
+            Event type.  For edges: ``"edge_helpful"`` or
+            ``"edge_misleading"``.  For memory: any Object-Action snake_case
+            name accepted by :class:`~tapps_brain.feedback.FeedbackStore`.
+        edge_id:
+            UUID of the KG edge being rated (edge feedback path).
+        entry_key:
+            Memory entry key (memory feedback path).  Ignored when
+            ``edge_id`` is set.
         session_id:
             Optional session identifier for correlation.
+        utility_score:
+            Numeric utility signal ``[-1, 1]`` stored alongside the event
+            (memory feedback path only; ignored for edge feedback).
+        details_json:
+            JSON-serialised ``dict`` of extra metadata (memory path only).
         agent_id:
             Override the server-level default for this call (STORY-070.7).
 
         Returns
         -------
-        JSON object: ``{ "recorded": true, "edge_id": str,
-        "feedback_type": str }`` on success, or
+        JSON object: ``{ "recorded": true, "feedback_type": str,
+        "edge_id": str|null, "entry_key": str|null }`` on success, or
         ``{ "error": str, "detail": str }`` on validation failure.
         """
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         project_id = _pid()
 
-        raw = kg_service.record_kg_feedback(
+        # Edge feedback path
+        if edge_id:
+            raw = kg_service.record_kg_feedback(
+                s,
+                project_id,
+                eff_aid,
+                edge_id=edge_id,
+                feedback_type=feedback_type,
+                session_id=session_id or "",
+            )
+            if isinstance(raw, dict) and raw.get("error"):
+                return json.dumps(raw, default=str)
+            result: dict[str, Any] = {
+                "recorded": True,
+                "feedback_type": feedback_type,
+                "edge_id": edge_id,
+                "entry_key": None,
+            }
+            if isinstance(raw, dict):
+                kg_upd = raw.get("kg_update")
+                if isinstance(kg_upd, dict):
+                    result["kg_update"] = kg_upd
+            return json.dumps(result, default=str)
+
+        # Memory feedback path
+        from tapps_brain.services import feedback_service
+
+        score: float | None = float(utility_score) if utility_score else None
+        mem_raw = feedback_service.feedback_record(
             s,
             project_id,
             eff_aid,
-            edge_id=edge_id,
-            feedback_type=feedback_type,
+            event_type=feedback_type,
+            entry_key=entry_key or "",
             session_id=session_id or "",
+            utility_score=score,
+            details_json=details_json or "",
         )
-        # Normalise the FeedbackStore response to the stable KG surface:
-        # { "recorded": true, "edge_id": str, "feedback_type": str }
-        if isinstance(raw, dict) and raw.get("error"):
-            return json.dumps(raw, default=str)
-        result = {
-            "recorded": True,
-            "edge_id": edge_id,
-            "feedback_type": feedback_type,
-        }
-        return json.dumps(result, default=str)
+        if isinstance(mem_raw, dict) and mem_raw.get("error"):
+            return json.dumps(mem_raw, default=str)
+        return json.dumps(
+            {
+                "recorded": True,
+                "feedback_type": feedback_type,
+                "edge_id": None,
+                "entry_key": entry_key or None,
+            },
+            default=str,
+        )

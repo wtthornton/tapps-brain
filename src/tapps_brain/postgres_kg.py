@@ -638,6 +638,84 @@ class PostgresKnowledgeGraphStore:
 
         return updated
 
+    def apply_edge_feedback(
+        self,
+        edge_id: str,
+        feedback_type: str,
+        confidence_delta: float = 0.05,
+    ) -> dict[str, Any]:
+        """Apply feedback counters and confidence adjustment for a KG edge.
+
+        For ``edge_helpful``: increments ``useful_access_count`` and
+        ``positive_feedback_count``, then calls :meth:`reinforce_edge`
+        (subject to the existing 60-second debounce).
+
+        For ``edge_misleading``: increments ``negative_feedback_count``,
+        lowers ``confidence`` by *confidence_delta* (floored at
+        ``confidence_floor``), and sets ``metadata.review_flagged = true``
+        when ``negative_feedback_count > 3 * positive_feedback_count``.
+
+        Returns a plain dict describing the outcome — callers should treat
+        this as informational; the FeedbackStore audit trail is the
+        authoritative record of the event.
+
+        Parameters
+        ----------
+        edge_id:
+            UUID of the edge to update.
+        feedback_type:
+            ``"edge_helpful"`` or ``"edge_misleading"``.
+        confidence_delta:
+            Amount by which to reduce confidence for ``edge_misleading``
+            (default 0.05; clamped at ``confidence_floor``).
+        """
+        if feedback_type == "edge_helpful":
+            with self._scoped_conn() as conn, conn.cursor() as cur:
+                cur.execute(_sql.APPLY_EDGE_HELPFUL_SQL, (edge_id, self._brain_id))
+                row = cur.fetchone()
+            if row is None:
+                logger.debug("kg.edge.feedback_not_found", edge_id=edge_id)
+                return {"applied": False, "reason": "edge_not_found", "edge_id": edge_id}
+            # Reinforce with FSRS update (60 s debounce enforced inside)
+            self.reinforce_edge(edge_id, was_useful=True)
+            logger.debug("kg.edge.feedback_helpful", edge_id=edge_id)
+            return {
+                "applied": True,
+                "feedback_type": feedback_type,
+                "edge_id": edge_id,
+                "positive_feedback_count": float(row[1]),
+                "negative_feedback_count": float(row[2]),
+            }
+
+        if feedback_type == "edge_misleading":
+            with self._scoped_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    _sql.APPLY_EDGE_MISLEADING_SQL,
+                    (float(confidence_delta), edge_id, self._brain_id),
+                )
+                row = cur.fetchone()
+            if row is None:
+                logger.debug("kg.edge.feedback_not_found", edge_id=edge_id)
+                return {"applied": False, "reason": "edge_not_found", "edge_id": edge_id}
+            flagged = row[4] == "true" if row[4] else False
+            logger.debug(
+                "kg.edge.feedback_misleading",
+                edge_id=edge_id,
+                confidence=float(row[3]),
+                flagged_for_review=flagged,
+            )
+            return {
+                "applied": True,
+                "feedback_type": feedback_type,
+                "edge_id": edge_id,
+                "positive_feedback_count": float(row[1]),
+                "negative_feedback_count": float(row[2]),
+                "confidence": float(row[3]),
+                "flagged_for_review": flagged,
+            }
+
+        return {"applied": False, "reason": "unknown_feedback_type", "edge_id": edge_id}
+
     def mark_edge_stale(
         self,
         edge_id: str,

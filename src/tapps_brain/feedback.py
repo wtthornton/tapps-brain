@@ -55,6 +55,9 @@ BUILTIN_EVENT_TYPES: frozenset[str] = frozenset(
         "implicit_positive",
         "implicit_negative",
         "implicit_correction",
+        # EPIC-076 STORY-076.6: edge-level feedback events
+        "edge_helpful",
+        "edge_misleading",
     }
 )
 

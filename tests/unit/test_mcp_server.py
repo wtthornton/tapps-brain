@@ -250,6 +250,11 @@ class TestCoreTools:
             "memory_save_many",
             "memory_recall_many",
             "memory_reinforce_many",
+            # KG tools (EPIC-076 STORY-076.5)
+            "brain_record_event",
+            "brain_get_neighbors",
+            "brain_explain_connection",
+            "brain_record_feedback",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
