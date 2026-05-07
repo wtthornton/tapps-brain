@@ -351,3 +351,239 @@ class TestMaybeAutoMigratePrivate:
 
         mock_status.assert_not_called()
         mock_apply.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TAP-1492 STORY-074.5: KG migrations 016–020 discovery
+# ---------------------------------------------------------------------------
+
+
+class TestKGMigrationDiscovery:
+    """Verify that migrations 016–020 (EPIC-074) are discoverable (TAP-1492)."""
+
+    def test_kg_migrations_16_to_20_are_present(self) -> None:
+        """discover_private_migrations() must include versions 16-20."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        versions = {v for v, _, _ in migrations}
+        for expected in range(16, 21):
+            assert expected in versions, (
+                f"Private migration version {expected} is missing. "
+                f"Found versions: {sorted(versions)}"
+            )
+
+    def test_kg_entities_migration_content(self) -> None:
+        """Migration 016 must create kg_entities with RLS enabled."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_016 = next(sql for v, _, sql in migrations if v == 16)
+        assert "kg_entities" in sql_016
+        assert "ENABLE ROW LEVEL SECURITY" in sql_016
+
+    def test_kg_edges_migration_content(self) -> None:
+        """Migration 017 must create kg_edges with a partial unique index."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_017 = next(sql for v, _, sql in migrations if v == 17)
+        assert "kg_edges" in sql_017
+        # partial unique index for active edges
+        assert "WHERE" in sql_017
+
+    def test_kg_evidence_migration_content(self) -> None:
+        """Migration 018 must create kg_evidence."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_018 = next(sql for v, _, sql in migrations if v == 18)
+        assert "kg_evidence" in sql_018
+
+    def test_kg_aliases_migration_content(self) -> None:
+        """Migration 019 must create kg_aliases."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_019 = next(sql for v, _, sql in migrations if v == 19)
+        assert "kg_aliases" in sql_019
+
+    def test_experience_events_migration_content(self) -> None:
+        """Migration 020 must create the experience_events partitioned table."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_020 = next(sql for v, _, sql in migrations if v == 20)
+        assert "experience_events" in sql_020
+        assert "PARTITION BY RANGE" in sql_020
+
+    def test_kg_migrations_are_sorted_in_order(self) -> None:
+        """Migrations 016-020 must appear in ascending version order."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        versions = [v for v, _, _ in migrations]
+        assert versions == sorted(versions)
+
+    def test_max_private_version_is_at_least_20(self) -> None:
+        """Max bundled private migration version must be >= 20 after EPIC-074."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        max_v = max(v for v, _, _ in migrations)
+        assert max_v >= 20, f"Expected max version >= 20, got {max_v}"
+
+
+# ---------------------------------------------------------------------------
+# TAP-1492 STORY-074.5: pg_advisory_lock in _apply_migrations
+# ---------------------------------------------------------------------------
+
+
+class TestAdvisoryLockId:
+    """Unit tests for the _migration_lock_id helper (TAP-1492)."""
+
+    def test_returns_positive_int(self) -> None:
+        from tapps_brain.postgres_migrations import _migration_lock_id
+
+        lock_id = _migration_lock_id("private_schema_version")
+        assert isinstance(lock_id, int)
+        assert lock_id > 0
+
+    def test_stays_within_signed_int64_range(self) -> None:
+        """Lock ID must fit in a signed 64-bit integer for pg_advisory_lock."""
+        from tapps_brain.postgres_migrations import _migration_lock_id
+
+        for table in ("private_schema_version", "hive_schema_version", "federation_schema_version"):
+            lock_id = _migration_lock_id(table)
+            assert 0 < lock_id < 2**63, f"Lock ID {lock_id} out of signed int64 range"
+
+    def test_stable_across_calls(self) -> None:
+        """Same input must always produce the same lock ID."""
+        from tapps_brain.postgres_migrations import _migration_lock_id
+
+        a = _migration_lock_id("private_schema_version")
+        b = _migration_lock_id("private_schema_version")
+        assert a == b
+
+    def test_different_tables_get_different_ids(self) -> None:
+        from tapps_brain.postgres_migrations import _migration_lock_id
+
+        ids = {
+            _migration_lock_id("private_schema_version"),
+            _migration_lock_id("hive_schema_version"),
+            _migration_lock_id("federation_schema_version"),
+        }
+        assert len(ids) == 3, "All three version tables must have distinct lock IDs"
+
+
+class TestApplyMigrationsAdvisoryLock:
+    """Verify _apply_migrations acquires pg_advisory_lock (TAP-1492)."""
+
+    def test_advisory_lock_acquired_when_not_dry_run(self) -> None:
+        """_apply_migrations must call pg_advisory_lock for live runs."""
+        import psycopg  # noqa: F401 — ensure available
+
+        from tapps_brain.postgres_migrations import _migration_lock_id
+
+        advisory_calls: list[str] = []
+
+        class _FakeCursor:
+            def __init__(self) -> None:
+                self.fetchone_val: tuple[bool] = (False,)
+
+            def execute(self, sql: str, params: tuple = ()) -> None:  # type: ignore[assignment]
+                if "pg_advisory_lock" in sql:
+                    advisory_calls.append(str(params))
+                self.fetchone_val = (False,)
+
+            def fetchone(self) -> tuple[bool]:
+                return self.fetchone_val
+
+            def fetchall(self) -> list:
+                return []
+
+            def __enter__(self) -> "_FakeCursor":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                pass
+
+        class _FakeConn:
+            def __init__(self) -> None:
+                self._cur = _FakeCursor()
+
+            def cursor(self) -> "_FakeCursor":
+                return self._cur
+
+            def execute(self, sql: bytes) -> None:
+                pass
+
+            def commit(self) -> None:
+                pass
+
+            def __enter__(self) -> "_FakeConn":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                pass
+
+        with patch("psycopg.connect", return_value=_FakeConn()):
+            from tapps_brain.postgres_migrations import _apply_migrations
+
+            _apply_migrations(
+                "postgres://localhost/test",
+                "private_schema_version",
+                [],
+                dry_run=False,
+            )
+
+        expected_lock_id = _migration_lock_id("private_schema_version")
+        assert any(str(expected_lock_id) in call for call in advisory_calls), (
+            f"pg_advisory_lock({expected_lock_id}) was never called. "
+            f"advisory_calls={advisory_calls}"
+        )
+
+    def test_advisory_lock_skipped_in_dry_run(self) -> None:
+        """_apply_migrations must NOT call pg_advisory_lock in dry-run mode."""
+        advisory_calls: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, sql: str, params: tuple = ()) -> None:  # type: ignore[assignment]
+                if "pg_advisory_lock" in sql:
+                    advisory_calls.append(str(params))
+
+            def fetchone(self) -> tuple[bool]:
+                return (False,)
+
+            def fetchall(self) -> list:
+                return []
+
+            def __enter__(self) -> "_FakeCursor":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                pass
+
+        class _FakeConn:
+            def cursor(self) -> "_FakeCursor":
+                return _FakeCursor()
+
+            def __enter__(self) -> "_FakeConn":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                pass
+
+        with patch("psycopg.connect", return_value=_FakeConn()):
+            from tapps_brain.postgres_migrations import _apply_migrations
+
+            _apply_migrations(
+                "postgres://localhost/test",
+                "private_schema_version",
+                [],
+                dry_run=True,
+            )
+
+        assert advisory_calls == [], (
+            f"pg_advisory_lock should not be called in dry_run mode, but got: {advisory_calls}"
+        )

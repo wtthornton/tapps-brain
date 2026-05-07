@@ -3,10 +3,12 @@
 EPIC-055 STORY-055.9 — reads SQL migration files and applies them in order,
 tracking applied versions in ``hive_schema_version`` / ``federation_schema_version``.
 STORY-066.8 — auto-migrate private schema on startup when TAPPS_BRAIN_AUTO_MIGRATE=1.
+STORY-074.5 — pg_advisory_lock serialises concurrent migration runners (TAP-1492).
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
 import os
 import re
@@ -23,6 +25,16 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # Pattern: NNN_description.sql  (e.g., 001_initial.sql)
 _MIGRATION_FILE_RE = re.compile(r"^(\d+)_.+\.sql$")
+
+
+def _migration_lock_id(version_table: str) -> int:
+    """Return a stable positive 63-bit advisory lock ID derived from *version_table*.
+
+    Uses the first 16 hex digits of the MD5 digest, masked to a positive signed
+    64-bit integer so it is safe to pass to ``pg_advisory_lock(bigint)``.
+    """
+    h = int(hashlib.md5(version_table.encode()).hexdigest()[:16], 16)
+    return h & 0x7FFFFFFFFFFFFFFF  # keep within signed int8 range
 
 
 def _discover_migration_files(package_path: str) -> list[tuple[int, str, str]]:
@@ -167,6 +179,19 @@ def _apply_migrations(
     applied: list[int] = []
 
     with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        # Acquire a session-level advisory lock to serialise concurrent migration
+        # runners (e.g. multiple replicas starting simultaneously).  The lock is
+        # released automatically when the connection closes.  Skipped in dry-run
+        # mode to avoid acquiring real DB locks during planning/preview.
+        if not dry_run:
+            lock_id = _migration_lock_id(version_table)
+            cur.execute("SELECT pg_advisory_lock(%s)", (lock_id,))
+            logger.debug(
+                "postgres.migrations.advisory_lock_acquired",
+                version_table=version_table,
+                lock_id=lock_id,
+            )
+
         # Check if version table exists to determine already-applied versions.
         cur.execute(
             "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",

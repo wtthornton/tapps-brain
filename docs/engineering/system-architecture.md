@@ -58,7 +58,9 @@ tapps-brain is designed for **many concurrent agents** without shared-DB bottlen
   - Save/update/delete, search, recall orchestration, maintenance, feedback, diagnostics, flywheel
   - Per-agent isolation via `agent_id` parameter (EPIC-053)
 - **Persistence layer**: `postgres_private.py`
-  - `PostgresPrivateBackend` — private-memory Postgres backend; schema migrations in `src/tapps_brain/migrations/private/` (001–014)
+  - `PostgresPrivateBackend` — private-memory Postgres backend; schema migrations in `src/tapps_brain/migrations/private/` (001–020)
+  - Migrations 016–020 add the first-class Knowledge Graph tables (EPIC-074, ADR-011):
+    `kg_entities`, `kg_edges`, `kg_evidence`, `kg_aliases`, `experience_events` (monthly RANGE-partitioned)
 - **Backend abstraction**: `_protocols.py`, `backends.py`
   - `HiveBackend`, `FederationBackend`, `AgentRegistryBackend` protocols
   - `create_hive_backend(dsn)` / `create_federation_backend(dsn)` factories

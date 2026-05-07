@@ -141,6 +141,22 @@ spec:
             storage: 10Gi
 ```
 
+### Knowledge Graph migrations (EPIC-074, migrations 016–020)
+
+Private migrations 016–020 add the first-class KG tables (`kg_entities`, `kg_edges`,
+`kg_evidence`, `kg_aliases`, `experience_events`). They run automatically as part of the
+standard migrate Job — no separate step is needed. The migrate sidecar applies all pending
+private migrations in version order under a `pg_advisory_lock` to prevent interleaving on
+multi-replica restarts.
+
+> **Note:** `experience_events` is RANGE-partitioned monthly. The first 12 partitions are
+> pre-created by migration 020. New monthly partitions must be created by a scheduled job
+> or the migration runner before data arrives (the default partition catches overflow, but
+> queries against it are slower — do not rely on it in production).
+
+The cross-tenant smoke test (see [Smoke tests](#smoke-tests)) should be run after applying
+these migrations to confirm RLS isolation on the new tables.
+
 ### Migration: Job
 
 Use the `docker-tapps-brain-migrate` image (built from `docker/Dockerfile.migrate`) — its entrypoint is `docker/migrate-entrypoint.sh`, which applies private + Hive + Federation schema, creates the `tapps_runtime` role, and sets its password.
