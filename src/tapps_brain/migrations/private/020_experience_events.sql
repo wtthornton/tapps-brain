@@ -12,9 +12,11 @@
 -- Primary key: (id, event_time).  PostgreSQL requires the partition key to be
 --   included in every unique/primary-key constraint on a partitioned table.
 --
--- FKs to kg_entities / kg_edges: created_entity_id / created_edge_id are
---   nullable; NULL means this event produced no KG object.  References the
---   non-partitioned tables created in migrations 016/017 (must exist first).
+-- created_entity_id / created_edge_id: nullable UUID references to KG objects
+--   created by this event.  FK constraints are intentionally deferred to a
+--   future ALTER TABLE migration once all EPIC-074 branches (016-019) have
+--   been merged to main.  On this branch kg_entities / kg_edges may not yet
+--   exist; the columns accept plain UUIDs and are validated at the app layer.
 --
 -- RLS: identical pattern to 012_rls_force.sql + 016-018 — fail-closed FORCE
 --   policy so table owner cannot accidentally bypass tenant isolation.
@@ -50,10 +52,12 @@ CREATE TABLE IF NOT EXISTS experience_events (
     -- Arbitrary payload
     payload             JSONB       NOT NULL DEFAULT '{}'::jsonb,
 
-    -- Cross-references to objects created by this event
+    -- Cross-references to objects created by this event.
+    -- FK constraints (→ kg_entities, → kg_edges) are added in a subsequent
+    -- ALTER TABLE migration once migrations 016-019 are merged to main.
     created_memory_key  TEXT,
-    created_entity_id   UUID        REFERENCES kg_entities(id) ON DELETE SET NULL,
-    created_edge_id     UUID        REFERENCES kg_edges(id)    ON DELETE SET NULL,
+    created_entity_id   UUID,
+    created_edge_id     UUID,
 
     -- Timestamps
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
