@@ -587,6 +587,32 @@ class KnowledgeGraphBackend(Protocol):
         """
         ...
 
+    def get_neighbors_multi(
+        self,
+        entity_ids: list[str],
+        *,
+        hops: int = 1,
+        limit: int = 100,
+        predicate_filter: str | None = None,
+        include_historical: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Batch neighbourhood retrieval for multiple focal entities (STORY-076.2).
+
+        Args:
+            entity_ids:       UUID strings of focal entities.
+            hops:             1 for direct neighbours; 2 for two-hop recursive CTE.
+            limit:            Maximum total edge rows returned.
+            predicate_filter: Restrict to edges with this predicate.
+            include_historical: Include stale / contradicted / superseded edges.
+
+        Returns:
+            List of dicts including at minimum: ``edge_id``, ``predicate``,
+            ``edge_confidence``, ``useful_access_count``, ``access_count``,
+            ``evidence_count``, ``neighbor_id``, ``entity_type``,
+            ``canonical_name``, ``entity_confidence``, ``hop``.
+        """
+        ...
+
     def reinforce_edge(
         self,
         edge_id: str,

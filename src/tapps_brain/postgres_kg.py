@@ -533,6 +533,67 @@ class PostgresKnowledgeGraphStore:
 
         return results
 
+    def get_neighbors_multi(
+        self,
+        entity_ids: list[str],
+        *,
+        hops: int = 1,
+        limit: int = 100,
+        predicate_filter: str | None = None,
+        include_historical: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Batch neighbourhood query for multiple focal entities (STORY-076.2).
+
+        Args:
+            entity_ids:        UUID strings of focal entities.
+            hops:              Neighbourhood depth: 1 (direct neighbours) or 2
+                               (two-hop recursive CTE). Values > 2 are clamped to 2.
+            limit:             Maximum number of edge rows returned in total.
+            predicate_filter:  When set, only edges with this predicate are returned.
+            include_historical: Include stale, contradicted, and superseded edges.
+
+        Returns:
+            List of dicts with keys: ``edge_id``, ``predicate``, ``edge_confidence``,
+            ``stability``, ``difficulty``, ``last_reinforced``, ``edge_updated_at``,
+            ``edge_status``, ``contradicted``, ``reinforce_count``,
+            ``useful_access_count``, ``access_count``, ``evidence_count``,
+            ``neighbor_id``, ``entity_type``, ``canonical_name``,
+            ``entity_confidence``, ``hop``.
+        """
+        if not entity_ids:
+            return []
+
+        hops = max(1, min(hops, 2))
+        ih = include_historical
+
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            if hops == 1:
+                cur.execute(
+                    _sql.GET_MULTI_NEIGHBORS_1HOP_SQL,
+                    (self._brain_id, entity_ids, ih, ih),
+                )
+                rows = cur.fetchall()
+            else:
+                cur.execute(
+                    _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
+                    (
+                        self._brain_id, entity_ids, ih, ih,
+                        self._brain_id, ih, ih,
+                        hops, limit,
+                    ),
+                )
+                rows = cur.fetchall()
+
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                d = _row_to_dict(row, cur.description)
+                if predicate_filter is None or d.get("predicate") == predicate_filter:
+                    results.append(d)
+                    if len(results) >= limit:
+                        break
+
+        return results
+
     # ------------------------------------------------------------------
     # Edge lifecycle mutations
     # ------------------------------------------------------------------

@@ -73,6 +73,7 @@ profile:
     recency: 0.15
     frequency: 0.15
     frequency_cap: 20
+    graph_weight: 0.10
     source_trust:
       human: 1.0
       system: 0.9

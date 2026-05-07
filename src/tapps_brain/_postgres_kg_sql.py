@@ -184,7 +184,7 @@ RETURNING id
 """
 
 # ---------------------------------------------------------------------------
-# Neighbour queries
+# Neighbour queries (single entity — used by the single-entity get_neighbors)
 # ---------------------------------------------------------------------------
 
 #: Outgoing edges (subject = focal entity).
@@ -235,6 +235,116 @@ WHERE e.brain_id = %s
   AND e.status = 'active'
 ORDER BY e.confidence DESC
 LIMIT 100
+"""
+
+# ---------------------------------------------------------------------------
+# Multi-entity neighbourhood queries (STORY-076.2)
+# ---------------------------------------------------------------------------
+
+#: 1-hop outgoing neighbourhood for a set of focal entity UUIDs.
+#: Includes evidence_count via a LEFT JOIN aggregate so callers can use it
+#: in the composite edge-score formula without a second round-trip.
+#: Params: brain_id, focal_ids::uuid[], include_historical (bool).
+GET_MULTI_NEIGHBORS_1HOP_SQL = """
+SELECT
+    e.id                            AS edge_id,
+    e.predicate,
+    e.confidence                    AS edge_confidence,
+    e.stability,
+    e.difficulty,
+    e.last_reinforced,
+    e.updated_at                    AS edge_updated_at,
+    e.status                        AS edge_status,
+    e.contradicted,
+    e.reinforce_count,
+    e.useful_access_count,
+    e.access_count,
+    COALESCE(ev.evidence_count, 0)  AS evidence_count,
+    ent.id::text                    AS neighbor_id,
+    ent.entity_type,
+    ent.canonical_name,
+    ent.confidence                  AS entity_confidence,
+    1                               AS hop
+FROM  kg_edges e
+JOIN  kg_entities ent
+      ON ent.id = e.object_entity_id
+LEFT  JOIN (
+    SELECT edge_id, COUNT(*) AS evidence_count
+    FROM   kg_evidence
+    GROUP  BY edge_id
+) ev ON ev.edge_id = e.id
+WHERE e.brain_id = %s
+  AND e.subject_entity_id = ANY(%s::uuid[])
+  AND (e.status = 'active' OR %s)
+  AND (NOT e.contradicted OR %s)
+ORDER BY e.confidence DESC
+"""
+
+#: 2-hop recursive neighbourhood for a set of focal entity UUIDs.
+#: Uses a recursive CTE to follow outgoing edges up to ``max_hops`` levels
+#: deep.  Duplicate edges (reached via multiple paths) are deduplicated by
+#: ``DISTINCT ON (edge_id)``; the lowest-hop path wins via the ORDER BY.
+#: Params: brain_id, focal_ids::uuid[], include_historical (bool x 2),
+#:         brain_id (again in recursive term), include_historical (bool x 2),
+#:         max_hops (int), limit (int).
+GET_MULTI_NEIGHBORS_2HOP_SQL = """
+WITH RECURSIVE neighbourhood(
+    edge_id, predicate, edge_confidence,
+    stability, difficulty, last_reinforced, edge_updated_at, edge_status,
+    contradicted, reinforce_count, useful_access_count, access_count,
+    neighbor_id, entity_type, canonical_name, entity_confidence, hop
+) AS (
+    -- Base case: direct neighbours of focal entities.
+    SELECT
+        e.id, e.predicate, e.confidence,
+        e.stability, e.difficulty, e.last_reinforced, e.updated_at,
+        e.status, e.contradicted, e.reinforce_count,
+        e.useful_access_count, e.access_count,
+        e.object_entity_id,
+        ent.entity_type, ent.canonical_name, ent.confidence,
+        1 AS hop
+    FROM kg_edges e
+    JOIN kg_entities ent ON ent.id = e.object_entity_id
+    WHERE e.brain_id = %s
+      AND e.subject_entity_id = ANY(%s::uuid[])
+      AND (e.status = 'active' OR %s)
+      AND (NOT e.contradicted OR %s)
+
+    UNION
+
+    -- Recursive step: one hop further from the previous frontier.
+    SELECT
+        e2.id, e2.predicate, e2.confidence,
+        e2.stability, e2.difficulty, e2.last_reinforced, e2.updated_at,
+        e2.status, e2.contradicted, e2.reinforce_count,
+        e2.useful_access_count, e2.access_count,
+        e2.object_entity_id,
+        ent2.entity_type, ent2.canonical_name, ent2.confidence,
+        n.hop + 1
+    FROM kg_edges e2
+    JOIN neighbourhood n      ON n.neighbor_id = e2.subject_entity_id
+    JOIN kg_entities   ent2   ON ent2.id        = e2.object_entity_id
+    WHERE e2.brain_id = %s
+      AND (e2.status = 'active' OR %s)
+      AND (NOT e2.contradicted OR %s)
+      AND n.hop < %s
+)
+SELECT DISTINCT ON (edge_id)
+    edge_id::text,
+    predicate, edge_confidence, stability, difficulty,
+    last_reinforced, edge_updated_at, edge_status, contradicted,
+    reinforce_count, useful_access_count, access_count,
+    COALESCE(ev.evidence_count, 0) AS evidence_count,
+    neighbor_id::text,
+    entity_type, canonical_name, entity_confidence, hop
+FROM neighbourhood n2
+LEFT JOIN (
+    SELECT edge_id, COUNT(*) AS evidence_count
+    FROM   kg_evidence
+    GROUP  BY edge_id
+) ev ON ev.edge_id = n2.edge_id
+ORDER BY edge_id, hop, edge_confidence DESC
+LIMIT %s
 """
 
 # ---------------------------------------------------------------------------

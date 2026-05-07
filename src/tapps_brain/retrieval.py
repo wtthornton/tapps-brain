@@ -52,6 +52,7 @@ from tapps_brain.profile import (
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
 if TYPE_CHECKING:
+    from tapps_brain._protocols import KnowledgeGraphBackend
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
@@ -73,6 +74,30 @@ class ScoredMemory(BaseModel):
     effective_confidence: float = Field(ge=0.0, le=1.0, description="Time-decayed confidence.")
     bm25_relevance: float = Field(ge=0.0, description="Normalized text relevance.")
     stale: bool = Field(default=False, description="Whether the memory is stale.")
+
+
+class ScoredEdge(BaseModel):
+    """A KG edge row with composite neighbourhood scoring (STORY-076.2).
+
+    Returned by :meth:`MemoryRetriever.search_neighborhood`.
+    The ``score`` is the raw edge composite score **before** multiplication
+    by ``scoring_config.graph_weight``.  Callers that blend edges with memory
+    results should apply the weight themselves.
+    """
+
+    edge_id: str = Field(description="UUID string of the KG edge.")
+    predicate: str = Field(description="Predicate label (e.g. 'uses', 'depends_on').")
+    neighbor_id: str = Field(description="UUID string of the neighbouring entity.")
+    entity_type: str = Field(description="Type of the neighbouring entity.")
+    canonical_name: str = Field(description="Canonical name of the neighbouring entity.")
+    hop: int = Field(ge=1, description="Distance from focal entity (1 or 2).")
+    score: float = Field(ge=0.0, le=1.0, description="Composite edge score (0-1).")
+    edge_confidence: float = Field(ge=0.0, le=1.0, description="Edge confidence signal.")
+    evidence_count: int = Field(ge=0, default=0, description="Attached evidence rows.")
+    blended_score: float = Field(
+        ge=0.0,
+        description="score * graph_weight — ready for merging into a ranked list.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +143,27 @@ _W_GRAPH = 0.05  # graph centrality (TAP-734); weights sum to 1.0
 
 _FREQUENCY_CAP = 20.0
 
+# Edge scoring weights (STORY-076.2).  These are the *intra-edge* weights
+# for the composite edge score; they are independent of the memory scoring
+# weights above.  The profile's ``graph_weight`` then scales the entire
+# edge score when blending with memory scores.
+_EW_CONFIDENCE = 0.35
+_EW_RECENCY = 0.20
+_EW_USEFULNESS = 0.15
+_EW_SOURCE_TRUST = 0.15
+_EW_EVIDENCE = 0.10
+_EW_TEMPORAL = 0.05
+
+# Source-trust multipliers for edge scoring (mirrors the memory trust map).
+_EDGE_SOURCE_TRUST: dict[str, float] = {
+    "human": 1.0,
+    "system": 0.9,
+    "agent": 0.7,
+    "inferred": 0.5,
+}
+
+_SECONDS_PER_DAY = 86_400.0
+
 # Per-source trust multipliers applied to composite score (M2).
 # These are post-composite multipliers, not additive weights.
 _DEFAULT_SOURCE_TRUST: dict[str, float] = {
@@ -129,6 +175,83 @@ _DEFAULT_SOURCE_TRUST: dict[str, float] = {
 
 # Marker text for consolidated source entries
 _CONSOLIDATED_MARKER = "consolidated into"
+
+
+def score_edge(edge: dict[str, Any]) -> float:
+    """Compute a composite score (0-1) for a KG edge row (STORY-076.2).
+
+    Formula::
+
+        score = (
+            _EW_CONFIDENCE  * confidence
+            + _EW_RECENCY   * recency_signal
+            + _EW_USEFULNESS * usefulness_ratio
+            + _EW_SOURCE_TRUST * source_trust
+            + _EW_EVIDENCE  * log(1 + evidence_count) / log(1 + 10)
+            + _EW_TEMPORAL  * temporal_validity
+        )
+
+    All components are clamped to [0, 1] before weighting.
+
+    Args:
+        edge: Dict row returned by :meth:`get_neighbors_multi`.
+
+    Returns:
+        Composite score in [0, 1].
+    """
+    import math
+
+    # Confidence component (already 0-1 from DB)
+    confidence = float(edge.get("edge_confidence") or 0.0)
+    confidence = max(0.0, min(1.0, confidence))
+
+    # Recency: half-life ~30 days for edges; 1.0 = just reinforced, 0.0 = very stale
+    last_reinforced = edge.get("last_reinforced")
+    if last_reinforced is not None:
+        try:
+            if hasattr(last_reinforced, "timestamp"):
+                secs = (datetime.now(tz=UTC) - last_reinforced).total_seconds()
+            else:
+                from datetime import datetime as _dt
+                parsed = _dt.fromisoformat(str(last_reinforced))
+                secs = (datetime.now(tz=UTC) - parsed).total_seconds()
+            age_days = secs / _SECONDS_PER_DAY
+            recency = max(0.0, min(1.0, math.exp(-age_days / 30.0)))
+        except Exception:
+            recency = 0.5
+    else:
+        recency = 0.5  # Never reinforced; neutral signal
+
+    # Usefulness ratio: useful_access_count / max(access_count, 1)
+    useful = float(edge.get("useful_access_count") or 0)
+    total = float(edge.get("access_count") or 0)
+    usefulness = useful / max(total, 1.0)
+    usefulness = max(0.0, min(1.0, usefulness))
+
+    # Source trust (from edge source field or default)
+    source = str(edge.get("source") or "agent").lower()
+    source_trust = _EDGE_SOURCE_TRUST.get(source, 0.7)
+    source_trust = max(0.0, min(1.0, source_trust))
+
+    # Evidence count: log-scaled, capped at 10 for normalization
+    ev_count = int(edge.get("evidence_count") or 0)
+    evidence_sig = math.log(1 + ev_count) / math.log(1 + 10)
+    evidence_sig = max(0.0, min(1.0, evidence_sig))
+
+    # Temporal validity: 1.0 unless edge has been superseded / contradicted
+    status = str(edge.get("edge_status") or "active")
+    contradicted = bool(edge.get("contradicted") or False)
+    temporal = 1.0 if status == "active" and not contradicted else 0.0
+
+    raw = (
+        _EW_CONFIDENCE * confidence
+        + _EW_RECENCY * recency
+        + _EW_USEFULNESS * usefulness
+        + _EW_SOURCE_TRUST * source_trust
+        + _EW_EVIDENCE * evidence_sig
+        + _EW_TEMPORAL * temporal
+    )
+    return max(0.0, min(1.0, raw))
 
 
 def _is_consolidated_source(entry: MemoryEntry) -> bool:
@@ -1072,3 +1195,88 @@ class MemoryRetriever:
         shared_keys.discard(entry.key)
 
         return min(1.0, len(shared_keys) / total_entries)
+
+    # ------------------------------------------------------------------
+    # KG neighbourhood retrieval (STORY-076.2)
+    # ------------------------------------------------------------------
+
+    def search_neighborhood(
+        self,
+        entity_ids: list[str],
+        kg_backend: KnowledgeGraphBackend,
+        *,
+        hops: int = 1,
+        limit: int = 100,
+        predicate_filter: str | None = None,
+        include_historical: bool = False,
+    ) -> list[ScoredEdge]:
+        """Retrieve and score the neighbourhood of resolved KG entities.
+
+        Fetches 1-hop or 2-hop edges via ``kg_backend.get_neighbors_multi()``,
+        scores each edge with :func:`score_edge`, applies ``graph_weight`` from
+        the active scoring config, and returns a sorted list of
+        :class:`ScoredEdge` objects (highest ``blended_score`` first).
+
+        Stale + contradicted + superseded edges are excluded by default;
+        ``include_historical=True`` overrides this.
+
+        Args:
+            entity_ids:       Resolved entity UUID strings (from :func:`analyze_query`).
+            kg_backend:       Backend providing ``get_neighbors_multi``.
+            hops:             Neighbourhood depth (1 or 2).
+            limit:            Maximum edge rows returned from the backend.
+            predicate_filter: Filter to edges with this predicate.
+            include_historical: Include non-active edges.
+
+        Returns:
+            Scored edges sorted by ``blended_score`` descending.
+            Returns ``[]`` when ``entity_ids`` is empty or the backend raises.
+        """
+        if not entity_ids:
+            return []
+
+        graph_weight = float(getattr(self._scoring_config, "graph_weight", 0.10))
+
+        try:
+            raw_edges = kg_backend.get_neighbors_multi(
+                entity_ids,
+                hops=hops,
+                limit=limit,
+                predicate_filter=predicate_filter,
+                include_historical=include_historical,
+            )
+        except Exception:
+            logger.warning(
+                "neighborhood_retrieval_failed",
+                entity_count=len(entity_ids),
+                exc_info=True,
+            )
+            return []
+
+        scored: list[ScoredEdge] = []
+        for edge in raw_edges:
+            raw_score = score_edge(edge)
+            blended = raw_score * graph_weight
+            scored.append(
+                ScoredEdge(
+                    edge_id=str(edge.get("edge_id") or ""),
+                    predicate=str(edge.get("predicate") or ""),
+                    neighbor_id=str(edge.get("neighbor_id") or ""),
+                    entity_type=str(edge.get("entity_type") or ""),
+                    canonical_name=str(edge.get("canonical_name") or ""),
+                    hop=int(edge.get("hop") or 1),
+                    score=raw_score,
+                    edge_confidence=float(edge.get("edge_confidence") or 0.0),
+                    evidence_count=int(edge.get("evidence_count") or 0),
+                    blended_score=blended,
+                )
+            )
+
+        scored.sort(key=lambda s: s.blended_score, reverse=True)
+        logger.debug(
+            "neighborhood_retrieval_complete",
+            entity_count=len(entity_ids),
+            edge_count=len(scored),
+            graph_weight=graph_weight,
+        )
+        return scored

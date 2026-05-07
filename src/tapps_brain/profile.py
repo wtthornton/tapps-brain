@@ -142,6 +142,19 @@ class ScoringConfig(BaseModel):
         ),
     )
     frequency_cap: int = Field(default=20, ge=1)
+    graph_weight: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Blend weight for KG neighbourhood edge scores when merged into the "
+            "recall candidate set (STORY-076.2).  Raw edge scores are multiplied "
+            "by this factor before comparison with memory scores.  Default 0.10 "
+            "means edges contribute at most 10%% of the blended score.  "
+            "This is NOT part of the additive weights-sum-to-1.0 constraint — "
+            "it operates as a post-scoring scale factor."
+        ),
+    )
     source_trust: dict[str, float] = Field(
         default_factory=lambda: dict(_DEFAULT_SOURCE_TRUST),
         description=(
