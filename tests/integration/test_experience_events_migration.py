@@ -90,7 +90,7 @@ class TestExperienceEventsTableExists:
         try:
             cur = conn.execute(  # type: ignore[attr-defined]
                 """
-                SELECT pt.partattrs, c.relname
+                SELECT pt.partstrat
                 FROM pg_class c
                 JOIN pg_partitioned_table pt ON c.oid = pt.partrelid
                 WHERE c.relname = 'experience_events'
@@ -98,6 +98,9 @@ class TestExperienceEventsTableExists:
             )
             row = cur.fetchone()
             assert row is not None, "experience_events is not a partitioned table"
+            assert row[0] == "r", (
+                f"Expected RANGE partition strategy ('r'), got {row[0]!r}"
+            )
         finally:
             conn.close()  # type: ignore[attr-defined]
 
@@ -295,7 +298,7 @@ class TestRLSIsolation:
             _insert_event(conn, project, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
-            # Clear app.project_id — RLS should hide all rows
+            # Clear app.project_id — RLS should hide all rows (fail-closed READ path).
             conn.execute(  # type: ignore[attr-defined]
                 "SELECT set_config('app.project_id', '', FALSE)"
             )
@@ -314,18 +317,40 @@ class TestRLSIsolation:
                 )
             conn.close()  # type: ignore[attr-defined]
 
+    def test_rls_blocks_insert_without_project_id(self) -> None:
+        """INSERT with empty app.project_id is rejected by WITH CHECK (fail-closed WRITE path).
+
+        PostgreSQL raises SQLSTATE 42501 (insufficient_privilege) when a row
+        fails a WITH CHECK RLS policy — psycopg3 maps this to InsufficientPrivilege.
+        """
+        psycopg = pytest.importorskip("psycopg")
+        project = f"rls-write-{uuid.uuid4().hex[:8]}"
+        conn = _conn(_PG_DSN)
+        try:
+            # Clear app.project_id before inserting.
+            conn.execute(  # type: ignore[attr-defined]
+                "SELECT set_config('app.project_id', '', FALSE)"
+            )
+            event_time = datetime(2026, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):  # type: ignore[attr-defined]
+                _insert_event(conn, project, event_time)
+                conn.commit()  # type: ignore[attr-defined]
+        finally:
+            conn.close()  # type: ignore[attr-defined]
+
 
 class TestIdempotency:
     """Running migration 020 twice must not raise errors."""
 
     def test_applying_migrations_twice_is_safe(self) -> None:
-        """apply_private_migrations is idempotent — second call does nothing."""
+        """apply_private_migrations is idempotent — second call applies nothing."""
         from tapps_brain.postgres_migrations import apply_private_migrations
 
-        # First application already done by prior tests.
-        # Second application should complete without error.
-        applied = apply_private_migrations(_PG_DSN)
-        # No new migrations should be applied on a clean DB.
-        assert 20 not in applied, (
-            "Migration 020 was re-applied on second run — idempotency broken"
+        # Ensure the DB is at least at v20 by applying once.
+        apply_private_migrations(_PG_DSN)
+
+        # Second application must return an empty list — nothing pending.
+        applied_again = apply_private_migrations(_PG_DSN)
+        assert applied_again == [], (
+            f"Migrations re-applied on second run — idempotency broken: {applied_again}"
         )
