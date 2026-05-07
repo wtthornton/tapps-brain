@@ -250,6 +250,7 @@ class TestKgEvidenceTableStructure:
             "confidence",
             "utility_score",
             "created_at",
+            "updated_at",
             "valid_at",
             "invalid_at",
             "status",

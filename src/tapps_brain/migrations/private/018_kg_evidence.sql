@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS kg_evidence (
 
     -- Lifecycle
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     valid_at            TIMESTAMPTZ,
     invalid_at          TIMESTAMPTZ,
     status              VARCHAR(20) NOT NULL DEFAULT 'active'
