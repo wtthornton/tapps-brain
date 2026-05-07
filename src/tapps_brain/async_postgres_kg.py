@@ -162,13 +162,17 @@ class AsyncPostgresKnowledgeGraphStore:
             existing = await cur.fetchone()
 
             if existing is not None:
+                # GET_ACTIVE_EDGE_SQL column order:
+                # [0]=id [1]=confidence [2]=stability [3]=difficulty
+                # [4]=last_reinforced [5]=reinforce_count [6]=source_agent
+                # [7]=created_at [8]=updated_at
                 edge_id = str(existing[0])
                 new_s, new_d = self._compute_fsrs(
-                    stability=float(existing[1] or 0.0),
-                    difficulty=float(existing[2] or 0.0),
+                    stability=float(existing[2] or 0.0),
+                    difficulty=float(existing[3] or 0.0),
                     layer=layer,
-                    last_reinforced=existing[3],
-                    updated_at=existing[4] if len(existing) > 4 else None,
+                    last_reinforced=existing[4],
+                    updated_at=existing[8],
                     was_useful=True,
                 )
                 await cur.execute(

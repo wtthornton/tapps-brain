@@ -242,11 +242,15 @@ class PostgresKnowledgeGraphStore:
 
             if existing is not None:
                 # Reinforce the existing edge via the debounced UPDATE.
+                # GET_ACTIVE_EDGE_SQL column order:
+                # [0]=id [1]=confidence [2]=stability [3]=difficulty
+                # [4]=last_reinforced [5]=reinforce_count [6]=source_agent
+                # [7]=created_at [8]=updated_at
                 edge_id = str(existing[0])
-                existing_stability = float(existing[1] or 0.0)
-                existing_difficulty = float(existing[2] or 0.0)
-                existing_last_reinforced = existing[3]
-                existing_updated_at = existing[4] if len(existing) > 4 else None
+                existing_stability = float(existing[2] or 0.0)
+                existing_difficulty = float(existing[3] or 0.0)
+                existing_last_reinforced = existing[4]
+                existing_updated_at = existing[8]
 
                 new_s, new_d = self._compute_fsrs(
                     stability=existing_stability,
