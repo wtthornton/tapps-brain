@@ -39,7 +39,7 @@ SESSION_EXPIRY_HOURS=24
 
 # Task sources (for ralph enable --sync)
 # Options: local, beads, github (comma-separated for multiple)
-TASK_SOURCES="github,local"
+TASK_SOURCES="linear"
 GITHUB_TASK_LABEL="ralph-task"
 BEADS_FILTER="status:open"
 
@@ -259,3 +259,8 @@ RALPH_MAX_EXPLORER_RESOLVE=5
 # Only active when RALPH_TASK_SOURCE=linear. Fires at
 # =============================================================================
 # CONTEXT MANAGEMENT (Phase 14)
+
+# Bump MCP probe timeout — dockerized tapps-brain MCP cold-start exceeds the
+# 30s default, causing 'claude mcp list' probe to time out and prompt-side MCP
+# guidance blocks to be omitted at session start.
+RALPH_MCP_PROBE_TIMEOUT_SECONDS=60
