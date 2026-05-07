@@ -27,8 +27,10 @@ if TYPE_CHECKING:
         AgentRegistryBackend,
         FederationBackend,
         HiveBackend,
+        KnowledgeGraphBackend,
         PrivateBackend,
     )
+    from tapps_brain.async_postgres_kg import AsyncPostgresKnowledgeGraphStore
     from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
     from tapps_brain.store import MemoryStore
 
@@ -712,3 +714,96 @@ def create_agent_registry_backend(
         return PostgresAgentRegistry(cm)
     path = Path(registry_path) if registry_path else None
     return FileAgentRegistryBackend(registry_path=path)
+
+
+# ---------------------------------------------------------------------------
+# KnowledgeGraphBackend factory (EPIC-075)
+# ---------------------------------------------------------------------------
+
+
+def create_kg_backend(
+    dsn: str,
+    *,
+    project_id: str,
+    brain_id: str,
+    evidence_required: bool = True,
+) -> KnowledgeGraphBackend:
+    """Create a sync :class:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore`.
+
+    A **PostgreSQL** DSN is required (ADR-007).  No SQLite fallback exists.
+
+    Args:
+        dsn: PostgreSQL DSN (``postgres://`` or ``postgresql://``).
+        project_id: Tenant identifier; sets ``app.project_id`` for RLS.
+        brain_id: Logical brain identity (entity uniqueness scope).
+        evidence_required: When ``True`` (default), edge writes require an
+            ``evidence_id``.  Set to ``False`` for the inferred/low-confidence
+            path; edge confidence is capped at 0.4 automatically (ADR-009).
+
+    Raises:
+        ValueError: When *dsn* is empty or does not use a Postgres scheme.
+    """
+    if not dsn or not dsn.strip():
+        msg = (
+            "create_kg_backend() requires a PostgreSQL DSN "
+            "(postgres:// or postgresql://). SQLite KG backends are not "
+            "supported (ADR-007)."
+        )
+        raise ValueError(msg)
+    if not dsn.startswith(("postgres://", "postgresql://")):
+        msg = (
+            "KnowledgeGraphBackend requires a PostgreSQL DSN. "
+            "SQLite backends are not supported (ADR-007)."
+        )
+        raise ValueError(msg)
+
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.postgres_kg import PostgresKnowledgeGraphStore
+
+    cm = PostgresConnectionManager(dsn)
+    return PostgresKnowledgeGraphStore(
+        cm,
+        project_id=project_id,
+        brain_id=brain_id,
+        evidence_required=evidence_required,
+    )
+
+
+def create_async_kg_backend(
+    dsn: str,
+    *,
+    project_id: str,
+    brain_id: str,
+    evidence_required: bool = True,
+) -> AsyncPostgresKnowledgeGraphStore:
+    """Create an async :class:`~tapps_brain.async_postgres_kg.AsyncPostgresKnowledgeGraphStore`.
+
+    Same argument semantics as :func:`create_kg_backend`.
+
+    Raises:
+        ValueError: When *dsn* is empty or does not use a Postgres scheme.
+    """
+    if not dsn or not dsn.strip():
+        msg = (
+            "create_async_kg_backend() requires a PostgreSQL DSN "
+            "(postgres:// or postgresql://). SQLite KG backends are not "
+            "supported (ADR-007)."
+        )
+        raise ValueError(msg)
+    if not dsn.startswith(("postgres://", "postgresql://")):
+        msg = (
+            "Async KnowledgeGraphBackend requires a PostgreSQL DSN. "
+            "SQLite backends are not supported (ADR-007)."
+        )
+        raise ValueError(msg)
+
+    from tapps_brain.async_postgres_kg import AsyncPostgresKnowledgeGraphStore
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+
+    cm = PostgresConnectionManager(dsn)
+    return AsyncPostgresKnowledgeGraphStore(
+        cm,
+        project_id=project_id,
+        brain_id=brain_id,
+        evidence_required=evidence_required,
+    )
