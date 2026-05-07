@@ -133,14 +133,18 @@ class TestGetNeighborsMulti:
     def test_include_historical_exposes_stale(
         self, kg_store: Any, seeded_entities: list[str], seeded_edges: list[str]
     ) -> None:
-        # The stale edge from test_active_edges_only_by_default should now appear.
+        # Mark a specific edge stale here (idempotent if the previous test already did it).
         stale_edge_id = seeded_edges[0]
+        kg_store.mark_edge_stale(stale_edge_id, reason="test-historical")
+
+        # Query ALL focal entities so we're certain to cover the stale edge's subject.
         result = kg_store.get_neighbors_multi(
-            seeded_entities[:10], hops=1, limit=200, include_historical=True
+            seeded_entities, hops=1, limit=600, include_historical=True
         )
         edge_ids = {r["edge_id"] for r in result}
-        # May or may not be present depending on connectivity; just assert no crash.
-        assert isinstance(edge_ids, set)
+        assert stale_edge_id in edge_ids, (
+            f"Stale edge {stale_edge_id!r} should appear when include_historical=True"
+        )
 
     def test_result_has_expected_keys(
         self, kg_store: Any, seeded_entities: list[str]
@@ -152,7 +156,7 @@ class TestGetNeighborsMulti:
         expected_keys = {
             "edge_id", "predicate", "edge_confidence",
             "neighbor_id", "entity_type", "canonical_name",
-            "hop", "evidence_count",
+            "hop", "evidence_count", "source",
         }
         missing = expected_keys - set(row.keys())
         assert not missing, f"Missing keys: {missing}"

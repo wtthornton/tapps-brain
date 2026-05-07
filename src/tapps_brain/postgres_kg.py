@@ -556,7 +556,7 @@ class PostgresKnowledgeGraphStore:
             List of dicts with keys: ``edge_id``, ``predicate``, ``edge_confidence``,
             ``stability``, ``difficulty``, ``last_reinforced``, ``edge_updated_at``,
             ``edge_status``, ``contradicted``, ``reinforce_count``,
-            ``useful_access_count``, ``access_count``, ``evidence_count``,
+            ``useful_access_count``, ``access_count``, ``source``, ``evidence_count``,
             ``neighbor_id``, ``entity_type``, ``canonical_name``,
             ``entity_confidence``, ``hop``.
         """
@@ -565,32 +565,27 @@ class PostgresKnowledgeGraphStore:
 
         hops = max(1, min(hops, 2))
         ih = include_historical
+        pf = predicate_filter  # None or str — pushed to SQL
 
         with self._scoped_conn() as conn, conn.cursor() as cur:
             if hops == 1:
                 cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_1HOP_SQL,
-                    (self._brain_id, entity_ids, ih, ih),
+                    (self._brain_id, entity_ids, ih, ih, pf, pf, limit),
                 )
-                rows = cur.fetchall()
             else:
                 cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
                     (
-                        self._brain_id, entity_ids, ih, ih,
-                        self._brain_id, ih, ih,
+                        self._brain_id, entity_ids, ih, ih, pf, pf,
+                        self._brain_id, ih, ih, pf, pf,
                         hops, limit,
                     ),
                 )
-                rows = cur.fetchall()
-
-            results: list[dict[str, Any]] = []
-            for row in rows:
-                d = _row_to_dict(row, cur.description)
-                if predicate_filter is None or d.get("predicate") == predicate_filter:
-                    results.append(d)
-                    if len(results) >= limit:
-                        break
+            rows = cur.fetchall()
+            results: list[dict[str, Any]] = [
+                _row_to_dict(row, cur.description) for row in rows
+            ]
 
         return results
 

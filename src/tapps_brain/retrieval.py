@@ -210,10 +210,14 @@ def score_edge(edge: dict[str, Any]) -> float:
     if last_reinforced is not None:
         try:
             if hasattr(last_reinforced, "timestamp"):
+                # Normalize naive datetimes that some psycopg drivers return.
+                if last_reinforced.tzinfo is None:
+                    last_reinforced = last_reinforced.replace(tzinfo=UTC)
                 secs = (datetime.now(tz=UTC) - last_reinforced).total_seconds()
             else:
-                from datetime import datetime as _dt
-                parsed = _dt.fromisoformat(str(last_reinforced))
+                parsed = datetime.fromisoformat(str(last_reinforced))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
                 secs = (datetime.now(tz=UTC) - parsed).total_seconds()
             age_days = secs / _SECONDS_PER_DAY
             recency = max(0.0, min(1.0, math.exp(-age_days / 30.0)))

@@ -427,32 +427,27 @@ class AsyncPostgresKnowledgeGraphStore:
 
         hops = max(1, min(hops, 2))
         ih = include_historical
+        pf = predicate_filter  # None or str — pushed to SQL
 
         async with await self._scoped_conn() as conn, conn.cursor() as cur:
             if hops == 1:
                 await cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_1HOP_SQL,
-                    (self._brain_id, entity_ids, ih, ih),
+                    (self._brain_id, entity_ids, ih, ih, pf, pf, limit),
                 )
-                rows = await cur.fetchall()
             else:
                 await cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
                     (
-                        self._brain_id, entity_ids, ih, ih,
-                        self._brain_id, ih, ih,
+                        self._brain_id, entity_ids, ih, ih, pf, pf,
+                        self._brain_id, ih, ih, pf, pf,
                         hops, limit,
                     ),
                 )
-                rows = await cur.fetchall()
-
-            results: list[dict[str, Any]] = []
-            for row in rows:
-                d = _row_to_dict(row, cur.description)
-                if predicate_filter is None or d.get("predicate") == predicate_filter:
-                    results.append(d)
-                    if len(results) >= limit:
-                        break
+            rows = await cur.fetchall()
+            results: list[dict[str, Any]] = [
+                _row_to_dict(row, cur.description) for row in rows
+            ]
 
         return results
 

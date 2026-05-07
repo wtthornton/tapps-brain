@@ -244,7 +244,8 @@ LIMIT 100
 #: 1-hop outgoing neighbourhood for a set of focal entity UUIDs.
 #: Includes evidence_count via a LEFT JOIN aggregate so callers can use it
 #: in the composite edge-score formula without a second round-trip.
-#: Params: brain_id, focal_ids::uuid[], include_historical (bool).
+#: Params: brain_id, focal_ids::uuid[], include_historical (bool x2),
+#:         predicate_filter (str|None x2), limit (int).
 GET_MULTI_NEIGHBORS_1HOP_SQL = """
 SELECT
     e.id                            AS edge_id,
@@ -259,6 +260,7 @@ SELECT
     e.reinforce_count,
     e.useful_access_count,
     e.access_count,
+    e.source,
     COALESCE(ev.evidence_count, 0)  AS evidence_count,
     ent.id::text                    AS neighbor_id,
     ent.entity_type,
@@ -277,21 +279,23 @@ WHERE e.brain_id = %s
   AND e.subject_entity_id = ANY(%s::uuid[])
   AND (e.status = 'active' OR %s)
   AND (NOT e.contradicted OR %s)
+  AND (%s IS NULL OR e.predicate = %s)
 ORDER BY e.confidence DESC
+LIMIT %s
 """
 
 #: 2-hop recursive neighbourhood for a set of focal entity UUIDs.
-#: Uses a recursive CTE to follow outgoing edges up to ``max_hops`` levels
-#: deep.  Duplicate edges (reached via multiple paths) are deduplicated by
-#: ``DISTINCT ON (edge_id)``; the lowest-hop path wins via the ORDER BY.
-#: Params: brain_id, focal_ids::uuid[], include_historical (bool x 2),
-#:         brain_id (again in recursive term), include_historical (bool x 2),
-#:         max_hops (int), limit (int).
+#: Uses a recursive CTE (UNION ALL for performance; DISTINCT ON deduplicates)
+#: to follow outgoing edges up to ``max_hops`` levels deep.
+#: Params: brain_id, focal_ids::uuid[], include_historical (bool x2),
+#:         predicate_filter (str|None x2),
+#:         brain_id (again in recursive term), include_historical (bool x2),
+#:         predicate_filter (str|None x2), max_hops (int), limit (int).
 GET_MULTI_NEIGHBORS_2HOP_SQL = """
 WITH RECURSIVE neighbourhood(
     edge_id, predicate, edge_confidence,
     stability, difficulty, last_reinforced, edge_updated_at, edge_status,
-    contradicted, reinforce_count, useful_access_count, access_count,
+    contradicted, reinforce_count, useful_access_count, access_count, source,
     neighbor_id, entity_type, canonical_name, entity_confidence, hop
 ) AS (
     -- Base case: direct neighbours of focal entities.
@@ -299,7 +303,7 @@ WITH RECURSIVE neighbourhood(
         e.id, e.predicate, e.confidence,
         e.stability, e.difficulty, e.last_reinforced, e.updated_at,
         e.status, e.contradicted, e.reinforce_count,
-        e.useful_access_count, e.access_count,
+        e.useful_access_count, e.access_count, e.source,
         e.object_entity_id,
         ent.entity_type, ent.canonical_name, ent.confidence,
         1 AS hop
@@ -309,15 +313,16 @@ WITH RECURSIVE neighbourhood(
       AND e.subject_entity_id = ANY(%s::uuid[])
       AND (e.status = 'active' OR %s)
       AND (NOT e.contradicted OR %s)
+      AND (%s IS NULL OR e.predicate = %s)
 
-    UNION
+    UNION ALL
 
     -- Recursive step: one hop further from the previous frontier.
     SELECT
         e2.id, e2.predicate, e2.confidence,
         e2.stability, e2.difficulty, e2.last_reinforced, e2.updated_at,
         e2.status, e2.contradicted, e2.reinforce_count,
-        e2.useful_access_count, e2.access_count,
+        e2.useful_access_count, e2.access_count, e2.source,
         e2.object_entity_id,
         ent2.entity_type, ent2.canonical_name, ent2.confidence,
         n.hop + 1
@@ -327,13 +332,14 @@ WITH RECURSIVE neighbourhood(
     WHERE e2.brain_id = %s
       AND (e2.status = 'active' OR %s)
       AND (NOT e2.contradicted OR %s)
+      AND (%s IS NULL OR e2.predicate = %s)
       AND n.hop < %s
 )
 SELECT DISTINCT ON (edge_id)
     edge_id::text,
     predicate, edge_confidence, stability, difficulty,
     last_reinforced, edge_updated_at, edge_status, contradicted,
-    reinforce_count, useful_access_count, access_count,
+    reinforce_count, useful_access_count, access_count, source,
     COALESCE(ev.evidence_count, 0) AS evidence_count,
     neighbor_id::text,
     entity_type, canonical_name, entity_confidence, hop
