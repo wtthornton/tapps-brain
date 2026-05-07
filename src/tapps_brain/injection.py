@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 import structlog
 
+from tapps_brain.kg_query_analysis import analyze_query
 from tapps_brain.profile import HybridFusionConfig
 from tapps_brain.recall_diagnostics import (
     RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
@@ -38,6 +39,7 @@ from tapps_brain.retrieval import MemoryRetriever
 from tapps_brain.safety import check_content_safety
 
 if TYPE_CHECKING:
+    from tapps_brain._protocols import KnowledgeGraphBackend
     from tapps_brain.decay import DecayConfig
     from tapps_brain.lexical import LexicalRetrievalConfig
     from tapps_brain.profile import ScoringConfig
@@ -68,11 +70,15 @@ def _recall_diag_payload(
     empty_reason: str | None,
     retriever_hits: int = 0,
     visible_entries: int | None = None,
+    mentions_matched: int = 0,
+    mentions_unmatched: int = 0,
 ) -> dict[str, Any]:
     return {
         "empty_reason": empty_reason,
         "retriever_hits": retriever_hits,
         "visible_entries": visible_entries,
+        "mentions_matched": mentions_matched,
+        "mentions_unmatched": mentions_unmatched,
     }
 
 
@@ -182,6 +188,7 @@ def inject_memories(  # noqa: PLR0915
     since: str | None = None,
     until: str | None = None,
     time_field: str = "created_at",
+    kg_backend: KnowledgeGraphBackend | None = None,
 ) -> dict[str, Any]:
     """Search for and format relevant memories for injection.
 
@@ -215,7 +222,12 @@ def inject_memories(  # noqa: PLR0915
           ``rerank_candidates_in``, ``rerank_top_k``, ``rerank_latency_ms``,
           ``rerank_results_out``, ``rerank_error`` (see EPIC-042.6).
         - ``recall_diagnostics``: ``empty_reason`` (code or null), ``retriever_hits``,
-          ``visible_entries`` — for agents when recall is empty.
+          ``visible_entries``, ``mentions_matched``, ``mentions_unmatched`` —
+          for agents when recall is empty or when entity mentions were extracted.
+        kg_backend: Optional KG backend for entity-mention extraction (STORY-076.1).
+          When provided, candidate entity mentions are extracted from *question*
+          and resolved against the KG; counts are reported in ``recall_diagnostics``.
+          When ``None``, mention extraction is skipped (memory-only recall path).
     """
     config = config or InjectionConfig()
     tlabel = _telemetry_token_label(config.count_tokens)
@@ -411,6 +423,10 @@ def inject_memories(  # noqa: PLR0915
     telem["dropped_by_safety"] = dropped_by_safety
     telem["omitted_by_token_budget"] = omitted_by_token_budget
 
+    # Entity-mention extraction (STORY-076.1).
+    # Runs after memory retrieval so it never blocks the memory path.
+    kg_analysis = analyze_query(question, kg_backend)
+
     return {
         "memory_section": "\n".join(lines),
         "memory_injected": len(budgeted_results),
@@ -422,6 +438,8 @@ def inject_memories(  # noqa: PLR0915
             empty_reason=None,
             retriever_hits=n_retriever,
             visible_entries=visible,
+            mentions_matched=kg_analysis.matched_count,
+            mentions_unmatched=kg_analysis.unmatched_count,
         ),
     }
 

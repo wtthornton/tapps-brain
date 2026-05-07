@@ -416,6 +416,63 @@ class PostgresKnowledgeGraphStore:
         )
         return (str(alias_rows[0][0]), float(alias_rows[0][1]), "ambiguous_alias")
 
+    def batch_resolve_entities(
+        self,
+        candidates: list[str],
+    ) -> dict[str, tuple[str, float, str]]:
+        """Batch-resolve a list of candidate strings in a single SQL round-trip.
+
+        Each candidate is lower-cased before lookup.  Exact canonical matches
+        take precedence over alias matches.  Ambiguous alias matches (>1 entity)
+        select the highest-confidence entity and tag the reason as
+        ``"ambiguous_alias"``.
+
+        Args:
+            candidates: Raw surface strings to resolve.
+
+        Returns:
+            Mapping of ``lower(candidate)`` → ``(entity_id, confidence, reason)``.
+            Unmatched candidates are absent from the result.
+        """
+        if not candidates:
+            return {}
+
+        norms = [c.lower() for c in candidates]
+
+        result: dict[str, tuple[str, float, str]] = {}
+
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            # Pass 1 — exact canonical matches.
+            cur.execute(_sql.BATCH_RESOLVE_EXACT_SQL, (self._brain_id, norms))
+            for row in cur.fetchall():
+                norm, entity_id, confidence = str(row[0]), str(row[1]), float(row[2])
+                if norm not in result:
+                    result[norm] = (entity_id, confidence, "exact_match")
+
+            # Pass 2 — alias matches for still-unresolved candidates.
+            unresolved = [n for n in norms if n not in result]
+            if unresolved:
+                cur.execute(_sql.BATCH_RESOLVE_ALIAS_SQL, (self._brain_id, unresolved))
+                alias_hits: dict[str, list[tuple[str, float]]] = {}
+                for row in cur.fetchall():
+                    norm, entity_id, confidence = str(row[0]), str(row[1]), float(row[2])
+                    alias_hits.setdefault(norm, []).append((entity_id, confidence))
+
+                for norm, hits in alias_hits.items():
+                    if norm in result:
+                        continue
+                    best_eid, best_conf = hits[0]
+                    reason = "ambiguous_alias" if len(hits) > 1 else "alias_match"
+                    if len(hits) > 1:
+                        logger.warning(
+                            "kg.batch_resolve.ambiguous_alias",
+                            norm=norm,
+                            match_count=len(hits),
+                        )
+                    result[norm] = (best_eid, best_conf, reason)
+
+        return result
+
     # ------------------------------------------------------------------
     # Neighbour queries
     # ------------------------------------------------------------------

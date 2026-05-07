@@ -555,6 +555,21 @@ class KnowledgeGraphBackend(Protocol):
         """
         ...
 
+    def batch_resolve_entities(
+        self,
+        candidates: list[str],
+    ) -> dict[str, tuple[str, float, str]]:
+        """Batch-resolve candidate surface strings in a single SQL round-trip.
+
+        Each candidate is lower-cased before lookup.  Exact canonical matches
+        take precedence over alias matches.
+
+        Returns:
+            Mapping of ``lower(candidate)`` → ``(entity_id, confidence, reason)``.
+            Unmatched candidates are absent from the result.
+        """
+        ...
+
     def get_neighbors(
         self,
         entity_id: str,
