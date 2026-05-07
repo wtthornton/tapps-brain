@@ -462,6 +462,72 @@ class MemoryEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# KG view models (STORY-076.3)
+# ---------------------------------------------------------------------------
+
+
+class KGEntityView(BaseModel):
+    """A resolved KG entity surfaced in :class:`RecallResult` (STORY-076.3).
+
+    Populated from :class:`~tapps_brain.kg_query_analysis.EntityMention`
+    instances produced by the entity-mention extraction pipeline.
+    """
+
+    entity_id: str = Field(description="UUID of the resolved KG entity.")
+    surface: str = Field(description="Original mention surface form from the query.")
+    confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Resolver confidence score (0-1).",
+    )
+    reason: str = Field(
+        default="",
+        description="Resolution reason: exact_match, alias_match, ambiguous_alias.",
+    )
+
+
+class KGEdgeView(BaseModel):
+    """A scored KG edge surfaced in :class:`RecallResult` (STORY-076.3).
+
+    Converted from :class:`~tapps_brain.retrieval.ScoredEdge` after
+    neighbourhood retrieval and safety filtering.
+    """
+
+    edge_id: str = Field(description="UUID of the KG edge.")
+    predicate: str = Field(description="Predicate label (e.g. 'uses', 'depends_on').")
+    neighbor_id: str = Field(description="UUID of the neighbouring entity.")
+    entity_type: str = Field(default="", description="Type of the neighbouring entity.")
+    canonical_name: str = Field(
+        default="", description="Canonical name of the neighbouring entity."
+    )
+    hop: int = Field(default=1, ge=1, description="Distance from focal entity (1 or 2).")
+    score: float = Field(default=0.0, ge=0.0, le=1.0, description="Composite edge score (0-1).")
+    edge_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Edge confidence signal.",
+    )
+    evidence_count: int = Field(default=0, ge=0, description="Attached evidence rows.")
+
+
+class KGEvidenceView(BaseModel):
+    """A KG evidence piece surfaced in :class:`RecallResult` (STORY-076.3).
+
+    Populated when evidence is fetched alongside edges in the recall pipeline.
+    The list is empty in this story — evidence hydration is added in
+    STORY-076.4 (ExperienceEventRecorder).
+    """
+
+    evidence_id: str = Field(default="", description="UUID of the evidence row.")
+    quote: str | None = Field(default=None, description="Verbatim quoted text from the source.")
+    source_uri: str | None = Field(default=None, description="URI of the evidence source.")
+    source_type: str = Field(default="", description="Source type (e.g. 'agent', 'human').")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Evidence confidence.")
+
+
+# ---------------------------------------------------------------------------
 # Auto-recall models (Epic 003)
 # ---------------------------------------------------------------------------
 
@@ -497,6 +563,22 @@ class RecallDiagnostics(BaseModel):
             "Number of candidate entity mentions from the query that could not be "
             "resolved against the KG (STORY-076.1). Zero when no KG backend is wired."
         ),
+    )
+    # KG neighbourhood diagnostics (STORY-076.3)
+    graph_hits: int = Field(
+        default=0,
+        ge=0,
+        description="KG edges returned by neighbourhood retrieval before safety filtering.",
+    )
+    dropped_stale: int = Field(
+        default=0,
+        ge=0,
+        description="Edges excluded because they were stale, contradicted, or superseded.",
+    )
+    dropped_low_confidence: int = Field(
+        default=0,
+        ge=0,
+        description="Edges excluded due to confidence below the minimum threshold.",
     )
 
 
@@ -547,6 +629,22 @@ class RecallResult(BaseModel):
     recall_diagnostics: RecallDiagnostics | None = Field(
         default=None,
         description="Why recall was empty or pipeline stats (agent observability).",
+    )
+    # KG fields (STORY-076.3) — additive-only; existing callers are unaffected.
+    entities: list[KGEntityView] = Field(
+        default_factory=list,
+        description="Resolved KG entities mentioned in the query (STORY-076.3).",
+    )
+    edges: list[KGEdgeView] = Field(
+        default_factory=list,
+        description="KG edges from neighbourhood retrieval, safety-filtered (STORY-076.3).",
+    )
+    evidence: list[KGEvidenceView] = Field(
+        default_factory=list,
+        description=(
+            "Evidence pieces attached to returned edges (STORY-076.3). "
+            "Hydrated in STORY-076.4."
+        ),
     )
 
 

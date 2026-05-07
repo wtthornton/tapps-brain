@@ -24,6 +24,9 @@ import structlog
 
 from tapps_brain.injection import InjectionConfig, estimate_tokens, inject_memories
 from tapps_brain.models import (
+    KGEdgeView,
+    KGEntityView,
+    KGEvidenceView,
     MemoryEntry,
     MemoryScope,
     MemoryTier,
@@ -33,7 +36,7 @@ from tapps_brain.models import (
 from tapps_brain.recall_diagnostics import RECALL_EMPTY_POST_FILTER
 
 if TYPE_CHECKING:
-    from tapps_brain._protocols import HiveBackend
+    from tapps_brain._protocols import HiveBackend, KnowledgeGraphBackend
     from tapps_brain.decay import DecayConfig
     from tapps_brain.retrieval import MemoryRetriever
     from tapps_brain.store import MemoryStore
@@ -92,6 +95,7 @@ class RecallOrchestrator:
         hive_recall_weight: float = 0.8,
         hive_agent_profile: str = "repo-brain",
         hive_agent_id: str = "unknown",
+        kg_backend: KnowledgeGraphBackend | None = None,
     ) -> None:
         self._store = store
         self._retriever = retriever
@@ -101,6 +105,7 @@ class RecallOrchestrator:
         self._hive_recall_weight = hive_recall_weight
         self._hive_agent_profile = hive_agent_profile
         self._hive_agent_id = hive_agent_id
+        self._kg_backend = kg_backend
 
     # ------------------------------------------------------------------
     # Recall
@@ -140,6 +145,7 @@ class RecallOrchestrator:
             since=cfg.since,
             until=cfg.until,
             time_field=cfg.time_field,
+            kg_backend=self._kg_backend,
         )
 
         diag_raw = result.get("recall_diagnostics")
@@ -192,6 +198,11 @@ class RecallOrchestrator:
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
+        # Extract KG fields from injection result (STORY-076.3).
+        def _as_list(key: str, cls: type) -> list[object]:
+            items = result.get(key, [])
+            return [x for x in items if isinstance(x, cls)]
+
         return RecallResult(
             memory_section=memory_section,
             memories=memories,
@@ -201,6 +212,9 @@ class RecallOrchestrator:
             memory_count=len(memories),
             hive_memory_count=hive_count,
             recall_diagnostics=recall_diag,
+            entities=_as_list("entities", KGEntityView),
+            edges=_as_list("edges", KGEdgeView),
+            evidence=_as_list("evidence", KGEvidenceView),
         )
 
     # ------------------------------------------------------------------

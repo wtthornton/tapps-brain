@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 import structlog
 
 from tapps_brain.kg_query_analysis import analyze_query
+from tapps_brain.models import KGEdgeView, KGEntityView
 from tapps_brain.profile import HybridFusionConfig
 from tapps_brain.recall_diagnostics import (
     RECALL_EMPTY_BELOW_SCORE_THRESHOLD,
@@ -59,6 +60,39 @@ _MAX_INJECT_MEDIUM = 3
 _MIN_SCORE = 0.2
 _MIN_CONFIDENCE_MEDIUM = 0.5
 
+# Token budget split across recall categories (STORY-076.3).
+# Fractions must sum to 1.0.  Profile can override via
+# ``scoring_config.token_budget_memories`` / ``token_budget_entities`` /
+# ``token_budget_edges`` / ``token_budget_evidence`` attributes.
+_DEFAULT_BUDGET_MEMORIES: float = 0.60
+_DEFAULT_BUDGET_ENTITIES: float = 0.15
+_DEFAULT_BUDGET_EDGES: float = 0.15
+_DEFAULT_BUDGET_EVIDENCE: float = 0.10
+
+
+def _budget_fractions(scoring_config: object | None) -> tuple[float, float, float, float]:
+    """Return (memories, entities, edges, evidence) budget fractions.
+
+    Reads optional profile overrides from *scoring_config*; falls back to
+    module defaults.  Fractions are returned as-is — callers multiply by the
+    total token budget.
+    """
+    def _frac(attr: str, default: float) -> float:
+        raw = getattr(scoring_config, attr, None)
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
+    return (
+        _frac("token_budget_memories", _DEFAULT_BUDGET_MEMORIES),
+        _frac("token_budget_entities", _DEFAULT_BUDGET_ENTITIES),
+        _frac("token_budget_edges", _DEFAULT_BUDGET_EDGES),
+        _frac("token_budget_evidence", _DEFAULT_BUDGET_EVIDENCE),
+    )
+
 
 def _visible_entry_count(store: MemoryStore, memory_group: str | None) -> int:
     """Count entries visible for retrieval (respects ``memory_group`` when set)."""
@@ -72,6 +106,9 @@ def _recall_diag_payload(
     visible_entries: int | None = None,
     mentions_matched: int = 0,
     mentions_unmatched: int = 0,
+    graph_hits: int = 0,
+    dropped_stale: int = 0,
+    dropped_low_confidence: int = 0,
 ) -> dict[str, Any]:
     return {
         "empty_reason": empty_reason,
@@ -79,6 +116,9 @@ def _recall_diag_payload(
         "visible_entries": visible_entries,
         "mentions_matched": mentions_matched,
         "mentions_unmatched": mentions_unmatched,
+        "graph_hits": graph_hits,
+        "dropped_stale": dropped_stale,
+        "dropped_low_confidence": dropped_low_confidence,
     }
 
 
@@ -94,6 +134,9 @@ def _injection_empty(
         "memory_section": "",
         "memory_injected": 0,
         "memories": [],
+        "entities": [],
+        "edges": [],
+        "evidence": [],
         "truncated": False,
         "injected_tokens": 0,
         "injection_telemetry": telem,
@@ -378,8 +421,14 @@ def inject_memories(  # noqa: PLR0915
             injection_telemetry=telem,
         )
 
-    # Context budget enforcement (order = retriever score descending, capped by max_inject)
+    # Token budget split across categories (STORY-076.3: memories/entities/edges/evidence).
     max_tokens = config.injection_max_tokens
+    frac_mem, frac_ent, frac_edge, _frac_ev = _budget_fractions(scoring_config)
+    memory_budget = max(1, int(max_tokens * frac_mem))
+    entity_budget = max(1, int(max_tokens * frac_ent))
+    edge_budget = max(1, int(max_tokens * frac_edge))
+
+    # Memory budget enforcement (order = retriever score descending, capped by max_inject)
     budgeted_results: list[Any] = []
     used_tokens = 0
     candidates = safe_results[:max_inject]
@@ -391,7 +440,7 @@ def inject_memories(  # noqa: PLR0915
             f"tier: {tier}): {entry.value}"
         )
         entry_tokens = _entry_token_cost(entry_text, config.count_tokens)
-        if used_tokens + entry_tokens > max_tokens and budgeted_results:
+        if used_tokens + entry_tokens > memory_budget and budgeted_results:
             break
         budgeted_results.append(scored)
         used_tokens += entry_tokens
@@ -427,10 +476,89 @@ def inject_memories(  # noqa: PLR0915
     # Runs after memory retrieval so it never blocks the memory path.
     kg_analysis = analyze_query(question, kg_backend)
 
+    # Neighbourhood retrieval + edge safety filtering (STORY-076.3).
+    entity_views: list[KGEntityView] = []
+    edge_views: list[KGEdgeView] = []
+    graph_hits = 0
+    dropped_stale_count = 0
+    dropped_low_conf_count = 0
+
+    if kg_backend is not None and kg_analysis.mentions:
+        # Build KGEntityView objects from resolved mentions (entity budget).
+        ent_used = 0
+        for mention in kg_analysis.mentions:
+            ent_text = f"- {mention.surface} ({mention.entity_id})"
+            ent_tokens = _entry_token_cost(ent_text, config.count_tokens)
+            if ent_used + ent_tokens > entity_budget and entity_views:
+                break
+            entity_views.append(
+                KGEntityView(
+                    entity_id=mention.entity_id,
+                    surface=mention.surface,
+                    confidence=mention.confidence,
+                    reason=mention.reason,
+                )
+            )
+            ent_used += ent_tokens
+
+        # Neighbourhood retrieval using resolved entity IDs.
+        entity_ids = [m.entity_id for m in kg_analysis.mentions]
+        try:
+            scored_edges = retriever.search_neighborhood(entity_ids, kg_backend)
+        except Exception:
+            logger.warning(
+                "edge_neighborhood_failed",
+                entity_count=len(entity_ids),
+                exc_info=True,
+            )
+            scored_edges = []
+
+        graph_hits = len(scored_edges)
+
+        # Safety filter on edge text (predicate + canonical_name) and entity budget.
+        edge_used = 0
+        for se in scored_edges:
+            edge_text = f"{se.predicate} {se.canonical_name}".strip()
+            safety = check_content_safety(
+                edge_text, ruleset_version=ruleset_ver, metrics=injection_metrics
+            )
+            if not safety.safe:
+                logger.warning(
+                    "edge_injection_blocked",
+                    edge_id=se.edge_id,
+                    patterns=safety.flagged_patterns,
+                )
+                continue  # safety-blocked edges are excluded silently; not stale
+            # Token budget enforcement for edges.
+            budgeted_text = (
+                f"- [{se.hop}-hop] {se.canonical_name} --[{se.predicate}]--"
+                f" (conf: {se.edge_confidence:.2f})"
+            )
+            tokens = _entry_token_cost(budgeted_text, config.count_tokens)
+            if edge_used + tokens > edge_budget and edge_views:
+                break
+            edge_views.append(
+                KGEdgeView(
+                    edge_id=se.edge_id,
+                    predicate=se.predicate,
+                    neighbor_id=se.neighbor_id,
+                    entity_type=se.entity_type,
+                    canonical_name=se.canonical_name,
+                    hop=se.hop,
+                    score=se.score,
+                    edge_confidence=se.edge_confidence,
+                    evidence_count=se.evidence_count,
+                )
+            )
+            edge_used += tokens
+
     return {
         "memory_section": "\n".join(lines),
         "memory_injected": len(budgeted_results),
         "memories": summaries,
+        "entities": entity_views,
+        "edges": edge_views,
+        "evidence": [],
         "truncated": truncated,
         "injected_tokens": used_tokens,
         "injection_telemetry": telem,
@@ -440,6 +568,9 @@ def inject_memories(  # noqa: PLR0915
             visible_entries=visible,
             mentions_matched=kg_analysis.matched_count,
             mentions_unmatched=kg_analysis.unmatched_count,
+            graph_hits=graph_hits,
+            dropped_stale=dropped_stale_count,
+            dropped_low_confidence=dropped_low_conf_count,
         ),
     }
 
