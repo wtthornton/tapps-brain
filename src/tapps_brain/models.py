@@ -482,6 +482,22 @@ class RecallDiagnostics(BaseModel):
         default=None,
         description="Entry count visible for this query (e.g. memory_group scope).",
     )
+    mentions_matched: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of candidate entity mentions from the query that were resolved "
+            "against the KG (STORY-076.1). Zero when no KG backend is wired."
+        ),
+    )
+    mentions_unmatched: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of candidate entity mentions from the query that could not be "
+            "resolved against the KG (STORY-076.1). Zero when no KG backend is wired."
+        ),
+    )
 
 
 class RecallResult(BaseModel):

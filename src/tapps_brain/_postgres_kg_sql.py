@@ -82,6 +82,37 @@ ORDER BY confidence DESC
 LIMIT 2
 """
 
+#: Batch exact canonical-name resolution against an array of normalised candidates.
+#: Returns one row per matched candidate (highest-confidence entity wins ties).
+#: Params: brain_id, candidates::text[] (caller must lower-case each element).
+BATCH_RESOLVE_EXACT_SQL = """
+SELECT lower(canonical_name) AS matched_norm,
+       id::text              AS entity_id,
+       confidence
+FROM kg_entities
+WHERE brain_id = %s
+  AND status   = 'active'
+  AND lower(canonical_name) = ANY(%s::text[])
+ORDER BY confidence DESC
+"""
+
+#: Batch alias resolution against an array of normalised candidates.
+#: Expands JSONB alias arrays and checks each element against the candidate set.
+#: Returns one row per (alias_norm, entity) pair; the caller groups and
+#: picks the best match per candidate.
+#: Params: brain_id, candidates::text[] (caller must lower-case each element).
+BATCH_RESOLVE_ALIAS_SQL = """
+SELECT lower(ae.alias_elem) AS matched_norm,
+       e.id::text            AS entity_id,
+       e.confidence
+FROM   kg_entities e
+CROSS  JOIN LATERAL jsonb_array_elements_text(e.aliases) AS ae(alias_elem)
+WHERE  e.brain_id = %s
+  AND  e.status   = 'active'
+  AND  lower(ae.alias_elem) = ANY(%s::text[])
+ORDER  BY e.confidence DESC
+"""
+
 # ---------------------------------------------------------------------------
 # Edge CRUD
 # ---------------------------------------------------------------------------
