@@ -115,6 +115,8 @@ def _count_entities(conn: object, brain_id: str) -> int:
 @pytest.fixture(scope="module", autouse=True)
 def _apply_private_migrations() -> None:
     """Apply all private migrations (including 016) once per test module."""
+    if _SKIP_PG:
+        return
     _apply_migrations()
 
 
@@ -298,22 +300,20 @@ class TestKgEntitiesRLS:
 
         try:
             # Query as tapps_runtime with tenant_A context — should see the row.
+            # psycopg3 autocommit=False means we are already in an implicit transaction;
+            # SET LOCAL scopes to it, conn.rollback() resets everything cleanly.
             with _runtime_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("BEGIN")
-                    _set_project_id(conn, tenant_a)
-                    count = _count_entities(conn, brain_a)
-                    cur.execute("ROLLBACK")
-            assert count == 1, f"Expected 1 entity for tenant_a, got {count}"
+                _set_project_id(conn, tenant_a)
+                count_a = _count_entities(conn, brain_a)
+                conn.rollback()
+            assert count_a == 1, f"Expected 1 entity for tenant_a, got {count_a}"
 
             # Query as tapps_runtime with tenant_B context — must see 0 rows.
             with _runtime_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("BEGIN")
-                    _set_project_id(conn, tenant_b)
-                    count = _count_entities(conn, brain_a)
-                    cur.execute("ROLLBACK")
-            assert count == 0, f"RLS breach: tenant_b can see tenant_a's entities ({count} rows)"
+                _set_project_id(conn, tenant_b)
+                count_b = _count_entities(conn, brain_a)
+                conn.rollback()
+            assert count_b == 0, f"RLS breach: tenant_b can see tenant_a's entities ({count_b} rows)"
         finally:
             # Cleanup via owner connection.
             with _owner_conn() as conn:
@@ -331,11 +331,10 @@ class TestKgEntitiesRLS:
 
         with _runtime_conn() as conn:
             try:
-                with conn.cursor() as cur:
-                    cur.execute("BEGIN")
-                    _set_project_id(conn, tenant_a)
-                    # Attempt to insert a row belonging to tenant_b — must fail.
-                    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                _set_project_id(conn, tenant_a)
+                # Attempt to insert a row belonging to tenant_b — WITH CHECK must fail.
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    with conn.cursor() as cur:
                         cur.execute(
                             "INSERT INTO kg_entities"
                             " (tenant_id, brain_id, project_id, entity_type, canonical_name)"
