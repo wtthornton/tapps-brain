@@ -78,6 +78,23 @@ Use `mcp__plugin_linear_linear__get_issue(issueId="TAP-NNN")` on the chosen issu
 
 If no parent, emit `LINEAR_EPIC: none`.
 
+### Project progress snapshot (REQUIRED every loop)
+
+The harness exit gate uses **project-scoped** counts, distinct from the epic-scoped ones above.
+Compute them as part of the task-selection flow (the open-side queries are the same `list_issues`
+calls you already run; just record the totals):
+
+- `LINEAR_OPEN_COUNT` = open issues in the `tapps-brain` Linear project — sum of results returned
+  by `list_issues` for `state` ∈ {`Backlog`, `Todo`, `In Progress`, `In Review`}, after filtering
+  out issues assigned to specific humans (same filter as task selection). Use `limit=50` per state;
+  no `parentId` filter — this is project-wide.
+- `LINEAR_DONE_COUNT` = `list_issues` count for `state="Done"` (and `state="Cancelled"` if you query
+  it), `limit=50`, project-wide.
+
+These reads are cache-gated (TAP-1224) — repeat calls within ~5 min are free. If a state returns
+its `limit` cap, the count is a lower bound; emit the cap value, the harness treats any non-null
+integer as valid. Never fabricate — if you cannot compute a count this loop, omit the field.
+
 ### Linear lifecycle updates (REQUIRED)
 
 Every loop that picks up work MUST update Linear. These writes attribute to the operator (Bill) via the OAuth plugin — keep tone professional, volume low.
@@ -183,6 +200,8 @@ LINEAR_URL: https://linear.app/tappscodingagents/issue/TAP-NNN
 LINEAR_EPIC: TAP-NNN | none
 LINEAR_EPIC_DONE: <integer — children in Done/In Review/In Progress>
 LINEAR_EPIC_TOTAL: <integer — total children; 0 if no parent>
+LINEAR_OPEN_COUNT: <integer — open issues in the tapps-brain project (Backlog+Todo+InProgress+InReview)>
+LINEAR_DONE_COUNT: <integer — Done (and Cancelled if queried) issues in the tapps-brain project>
 ---END_RALPH_STATUS---
 ```
 
@@ -218,6 +237,8 @@ LINEAR_URL: ...
 LINEAR_EPIC: ...
 LINEAR_EPIC_DONE: ...
 LINEAR_EPIC_TOTAL: ...
+LINEAR_OPEN_COUNT: ...
+LINEAR_DONE_COUNT: ...
 ---END_RALPH_STATUS---
 ```
 
