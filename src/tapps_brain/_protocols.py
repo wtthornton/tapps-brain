@@ -459,6 +459,165 @@ class PrivateBackend(Protocol):
 
 
 # ---------------------------------------------------------------------------
+# KnowledgeGraphBackend protocol (EPIC-075)
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class KnowledgeGraphBackend(Protocol):
+    """Backend protocol for the first-class Knowledge Graph store.
+
+    Decouples callers from the concrete backend implementation.
+    The only supported backend is :class:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore`
+    (and its async counterpart).  Created via
+    :func:`tapps_brain.backends.create_kg_backend`.
+
+    All entity and edge IDs are UUID strings.
+    """
+
+    def upsert_entity(
+        self,
+        *,
+        entity_type: str,
+        canonical_name: str,
+        aliases: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        confidence: float = 0.6,
+        source: str = "agent",
+        source_agent: str = "unknown",
+    ) -> str:
+        """Insert or update a KG entity; returns the entity UUID string."""
+        ...
+
+    def upsert_edge(
+        self,
+        *,
+        subject_entity_id: str,
+        predicate: str,
+        object_entity_id: str,
+        evidence_id: str | None = None,
+        edge_class: str | None = None,
+        layer: str | None = None,
+        profile_name: str | None = None,
+        confidence: float = 0.6,
+        source: str = "agent",
+        source_agent: str = "unknown",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Insert or reinforce an edge; returns the edge UUID string.
+
+        When *evidence_required* is True on the backend and *evidence_id* is
+        ``None``, raises ``ValueError``.
+        """
+        ...
+
+    def attach_evidence(
+        self,
+        *,
+        edge_id: str | None = None,
+        entity_id: str | None = None,
+        source_type: str = "agent",
+        source_id: str | None = None,
+        source_key: str | None = None,
+        source_uri: str | None = None,
+        source_hash: str | None = None,
+        source_span: str | None = None,
+        quote: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        source_agent: str = "unknown",
+        confidence: float = 1.0,
+        utility_score: float | None = None,
+    ) -> str:
+        """Attach evidence to an edge XOR entity; returns evidence UUID string.
+
+        Exactly one of *edge_id* / *entity_id* must be non-``None``;
+        raises ``ValueError`` otherwise.
+        """
+        ...
+
+    def resolve_entity(
+        self,
+        entity_type: str,
+        name: str,
+    ) -> tuple[str | None, float, str]:
+        """Deterministic entity resolver.
+
+        Returns ``(entity_id, confidence, reason)`` where:
+
+        - ``entity_id``: UUID string of the matched entity, or ``None``.
+        - ``confidence``: confidence of the match (0.0 if not found).
+        - ``reason``: one of ``"exact_match"``, ``"alias_match"``,
+          ``"ambiguous_alias"`` (warning — lowest-confidence match returned),
+          or ``"not_found"``.
+
+        Explicit entity IDs (passed as *name* when it looks like a UUID) take
+        precedence over name matching.
+        """
+        ...
+
+    def get_neighbors(
+        self,
+        entity_id: str,
+        *,
+        direction: str = "both",
+        predicate: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Return active neighbouring entities and their connecting edges.
+
+        *direction* is one of ``"out"``, ``"in"``, or ``"both"``.
+        Each returned dict contains at minimum:
+        ``edge_id``, ``predicate``, ``edge_confidence``, ``neighbor_id``,
+        ``entity_type``, ``canonical_name``, ``entity_confidence``.
+        """
+        ...
+
+    def reinforce_edge(
+        self,
+        edge_id: str,
+        was_useful: bool = True,
+    ) -> bool:
+        """Reinforce an edge; returns ``True`` if updated, ``False`` if debounced."""
+        ...
+
+    def mark_edge_stale(
+        self,
+        edge_id: str,
+        reason: str | None = None,
+    ) -> bool:
+        """Mark an active edge stale; returns ``True`` if updated."""
+        ...
+
+    def supersede_edge(
+        self,
+        old_edge_id: str,
+        *,
+        subject_entity_id: str,
+        predicate: str,
+        object_entity_id: str,
+        evidence_id: str | None = None,
+        confidence: float = 0.6,
+        source_agent: str = "unknown",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Insert a replacement edge and mark the old one superseded.
+
+        Returns the new edge UUID string.
+        """
+        ...
+
+    def contradict_edge(
+        self,
+        edge_id: str,
+        reason: str,
+    ) -> bool:
+        """Mark an edge as contradicted + stale; returns ``True`` if updated."""
+        ...
+
+    def close(self) -> None: ...
+
+
+# ---------------------------------------------------------------------------
 # Write-path policy protocol (TAP-560 / STORY-SC04)
 # ---------------------------------------------------------------------------
 

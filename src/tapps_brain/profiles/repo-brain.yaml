@@ -120,3 +120,19 @@ profile:
   # Optional: bump when changing auto-seed facts; included in seed/reseed summaries.
   # seeding:
   #   seed_version: "1.0.0"
+
+  # Knowledge Graph settings (EPIC-075 / ADR-009).
+  # evidence_required: when true, edge writes via PostgresKnowledgeGraphStore
+  #   reject calls without an evidence_id.  The inferred path (evidence_required=false)
+  #   caps edge confidence at 0.4 and is excluded from recall by default.
+  kg:
+    evidence_required: true
+    inferred_confidence_cap: 0.4
+    # Edge layer → half-life mapping (days). Used by the FSRS decay helper
+    # when computing per-edge stability updates. Mirrors the memory-tier
+    # half-lives above so graph facts decay at the same rate as equivalent
+    # memory entries.
+    edge_layer_half_lives:
+      domain: 60
+      procedural: 30
+      context: 14
