@@ -20,8 +20,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeVar
 
-T = TypeVar("T")
-
 import structlog
 
 from tapps_brain.injection import InjectionConfig, estimate_tokens, inject_memories
@@ -42,6 +40,8 @@ if TYPE_CHECKING:
     from tapps_brain.decay import DecayConfig
     from tapps_brain.retrieval import MemoryRetriever
     from tapps_brain.store import MemoryStore
+
+T = TypeVar("T")
 
 logger = structlog.get_logger(__name__)
 
