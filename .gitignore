@@ -72,6 +72,10 @@ coverage.json
 .ralph/STOP
 .ralph/.ralph_run_id
 .ralph/metrics/
+.ralph/.edits_this_loop
+.ralph/.model_routing.jsonl
+.ralph/.no_status_block_count
+.ralph/.qa_failures.json
 openclaw-plugin/node_modules/
 node_modules/
 

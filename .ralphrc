@@ -263,4 +263,12 @@ RALPH_MAX_EXPLORER_RESOLVE=5
 # Bump MCP probe timeout — dockerized tapps-brain MCP cold-start exceeds the
 # 30s default, causing 'claude mcp list' probe to time out and prompt-side MCP
 # guidance blocks to be omitted at session start.
-RALPH_MCP_PROBE_TIMEOUT_SECONDS=60
+RALPH_MCP_PROBE_TIMEOUT_SECONDS=120
+
+# --- 2026-05-07 follow-ups from run 177817309114405 review ---
+# Coordinator (TAP-915) sub-agent timeout. Default 120s is insufficient here:
+# Loop #3 timed out at 120s (`coordinator: timed out after 120s`) and ran
+# without a brief.json. 3 MCPs (linear plugin + tapps-mcp + tapps-brain HTTP)
+# push the coordinator's session_start + Linear queue scan + brief write past
+# the default on cold start.
+RALPH_COORDINATOR_TIMEOUT_SECONDS=240
