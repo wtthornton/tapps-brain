@@ -76,6 +76,8 @@ coverage.json
 .ralph/.model_routing.jsonl
 .ralph/.no_status_block_count
 .ralph/.qa_failures.json
+.ralph/.cb_open_thrash_count
+.ralph/forensic-*/
 openclaw-plugin/node_modules/
 node_modules/
 
