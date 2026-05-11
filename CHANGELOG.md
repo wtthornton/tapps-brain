@@ -14,7 +14,7 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ### Changed
 
-- **`/v1/reinforce` and `/v1/reinforce:batch` are now async-native** (EPIC-072 STORY-072.9, TAP-1566). `AsyncMemoryStore.reinforce` adopts the capture+flush pattern previously used by `save`/`delete`, so the reinforced entry's Postgres write goes through `AsyncPostgresPrivateBackend` instead of occupying a thread-pool thread. New `async_memory_reinforce` / `async_memory_reinforce_many` service shims dispatch through `cfg.async_store` when wired; both handlers fall back to `asyncio.to_thread(memory_reinforce*, ...)` against the sync store when no async backend is available. Recall (single + batch) is still routed through `asyncio.to_thread` — true async-native recall pipeline is tracked as TAP-1567.
+- **`/v1/reinforce` and `/v1/reinforce:batch` are now async-native** (EPIC-072 STORY-072.9, TAP-1566). `AsyncMemoryStore.reinforce` adopts the capture+flush pattern previously used by `save`/`delete`, so the reinforced entry's Postgres write goes through `AsyncPostgresPrivateBackend` instead of occupying a thread-pool thread. New `async_memory_reinforce` / `async_memory_reinforce_many` service shims dispatch through `cfg.async_store` when wired; both handlers fall back to `asyncio.to_thread(memory_reinforce*, ...)` against the sync store when no async backend is available. Recall (single + batch) is still routed through `asyncio.to_thread` — true async-native recall pipeline is tracked as TAP-1568.
 
 ### Fixed
 

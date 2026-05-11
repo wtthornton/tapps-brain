@@ -71,7 +71,7 @@ no flag is required.
   Postgres I/O is async.
 - Recall (single and batch) is still routed through `asyncio.to_thread`.
   The deep retrieval pipeline (BM25 + vector + RRF + Hive merge) needs
-  either a redesign or a read-side capture pattern — tracked as TAP-1567.
+  either a redesign or a read-side capture pattern — tracked as TAP-1568.
 
 Resolved in STORY-072.8 (TAP-1565): `save_relations` and `append_audit`
 are now captured and flushed through the async backend alongside the
