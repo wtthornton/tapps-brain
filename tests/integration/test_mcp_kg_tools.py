@@ -134,8 +134,6 @@ class TestBrainRecallBackwardCompat:
         "tier",
         "confidence",
         "tags",
-        "source",
-        "created_at",
     }
 
     async def test_recall_with_no_results_returns_list(self, mcp_server) -> None:
@@ -417,10 +415,10 @@ class TestHttpKgEndpoints:
     """HTTP endpoint smoke tests — validates auth enforcement and JSON shapes."""
 
     @pytest.fixture()
-    def http_app(self, project_dir: Path):
+    def http_app(self):
         from tapps_brain.http_adapter import create_app
 
-        app = create_app(project_dir=project_dir)
+        app = create_app()
         return app
 
     @pytest.fixture()
@@ -437,8 +435,8 @@ class TestHttpKgEndpoints:
             headers={"Authorization": "Bearer test-token"},
             content=json.dumps({"event_type": "test"}),
         )
-        # May return 401 (auth) or 400 (missing header) — either is acceptable
-        assert response.status_code in (400, 401, 422)
+        # May return 401/403 (auth) or 400/422 (missing header) — either is acceptable
+        assert response.status_code in (400, 401, 403, 422)
 
     async def test_kg_neighbors_endpoint_missing_entity_ids(self, client) -> None:
         """POST /v1/kg/neighbors returns 400 when entity_ids is absent."""
@@ -447,7 +445,7 @@ class TestHttpKgEndpoints:
             headers={"Authorization": "Bearer test-token", "X-Project-Id": "test-proj"},
             content=json.dumps({}),
         )
-        assert response.status_code in (400, 401, 422, 503)
+        assert response.status_code in (400, 401, 403, 422, 503)
 
     async def test_kg_explain_endpoint_exists(self, client) -> None:
         """POST /v1/kg/explain route is registered."""

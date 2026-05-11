@@ -9,15 +9,15 @@
 #
 # Profile summary:
 #   full      (59 tools) — all standard tools; default fallback (backwards-compat)
-#   operator  (72 tools) — full + operator-only maintenance tools
-#   coder     (17 tools) — repo-embedded coding agent subset
+#   operator  (72 tools) — full + 13 operator-only maintenance tools
+#   coder     (17 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
 #   reviewer  ( 8 tools) — read-only PR/code review agents
 #   seeder    ( 6 tools) — bulk ingestion scripts
 
 profiles:
   # --------------------------------------------------------------------------
   # full — all standard tools (default fallback, backwards-compatible)
-  # 55 tools: all registered tools minus the 13 operator-only tools
+  # 59 tools: all registered tools minus the 13 operator-only tools
   # --------------------------------------------------------------------------
   full:
     description: >
@@ -86,7 +86,7 @@ profiles:
 
   # --------------------------------------------------------------------------
   # operator — all tools (standard + operator-only maintenance)
-  # 68 tools: full + 13 operator-only tools
+  # 72 tools: full (59) + 13 operator-only tools
   # --------------------------------------------------------------------------
   operator:
     description: >
@@ -94,7 +94,7 @@ profiles:
       the human operator / tapps-brain-operator-mcp server. Requires operator
       bearer token.
     tools:
-      # Standard 59 (same as full)
+      # Standard 59 tools (same as full)
       - agent_create
       - agent_delete
       - agent_list
@@ -170,8 +170,8 @@ profiles:
       - tapps_brain_relay_export
 
   # --------------------------------------------------------------------------
-  # coder — repo-embedded coding agent (~15 tools per EPIC-073)
-  # Facade + hook-callable + quality loop + cross-repo graph tools
+  # coder — repo-embedded coding agent (17 tools)
+  # 6 facade + 4 hook-callable + 3 quality loop + 4 cross-repo/graph (EPIC-076 KG)
   # --------------------------------------------------------------------------
   coder:
     description: >

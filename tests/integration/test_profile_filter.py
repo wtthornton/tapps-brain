@@ -118,17 +118,17 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_55_tools(self) -> None:
-        """Golden file for 'full' must list exactly 55 tools."""
-        assert len(_load_golden("full")) == 55
+    def test_full_golden_has_59_tools(self) -> None:
+        """Golden file for 'full' must list exactly 59 tools."""
+        assert len(_load_golden("full")) == 59
 
-    def test_operator_golden_has_68_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 68 tools."""
-        assert len(_load_golden("operator")) == 68
+    def test_operator_golden_has_72_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 72 tools."""
+        assert len(_load_golden("operator")) == 72
 
-    def test_coder_golden_has_15_tools(self) -> None:
-        """Golden file for 'coder' must list exactly 15 tools."""
-        assert len(_load_golden("coder")) == 15
+    def test_coder_golden_has_17_tools(self) -> None:
+        """Golden file for 'coder' must list exactly 17 tools."""
+        assert len(_load_golden("coder")) == 17
 
     def test_reviewer_golden_has_8_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 8 tools."""
@@ -196,7 +196,7 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_operator_profile_covers_all_68_tools(self) -> None:
+    def test_operator_profile_covers_all_72_tools(self) -> None:
         """'operator' must contain all registered tools (standard + operator-only)."""
         registry = ProfileRegistry()
         all_tools = _all_registered_tools()
@@ -208,16 +208,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_68(self) -> None:
-        """The MCP server must have exactly 68 registered tools (55 standard + 13 operator)."""
+    def test_registered_tool_count_is_72(self) -> None:
+        """The MCP server must have exactly 72 registered tools (59 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 68, (
-            f"Expected 68 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 72, (
+            f"Expected 72 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 68 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 72 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -287,7 +287,7 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 55
+        assert len(result) == 59
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -454,11 +454,11 @@ class TestBackwardsCompat:
             if env_backup is not None:
                 os.environ["TAPPS_BRAIN_DEFAULT_PROFILE"] = env_backup
 
-    def test_no_header_list_tools_returns_55_tools(self) -> None:
-        """No profile header → list_tools returns exactly 55 tools (same as 'full')."""
+    def test_no_header_list_tools_returns_59_tools(self) -> None:
+        """No profile header → list_tools returns exactly 59 tools (same as 'full')."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 55
+        assert len(full_tools) == 59
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -468,7 +468,7 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 55
+        assert len(result) == 59
         assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
@@ -565,14 +565,14 @@ class TestEndToEndProfileFiltering:
 
     @pytest.mark.asyncio
     async def test_no_profile_returns_full_tool_set(self, _mcp_server) -> None:
-        """No REQUEST_PROFILE (None) → same 55-tool surface as 'full' profile."""
+        """No REQUEST_PROFILE (None) → same 59-tool surface as 'full' profile."""
         from tapps_brain.mcp_server import REQUEST_PROFILE
 
         # Ensure contextvar is None (simulates no X-Brain-Profile header)
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 55
+            assert len(tools) == 59
         finally:
             REQUEST_PROFILE.reset(token)
 

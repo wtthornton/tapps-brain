@@ -161,12 +161,12 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == set(ALL_TOOLS)
 
-    def test_bundled_coder_profile_returns_15_tools(self) -> None:
-        """Real ProfileRegistry.get('coder') must return exactly 15 tools."""
-        # 6 facade + 4 hook-callable + 3 quality + 2 cross-repo = 15
+    def test_bundled_coder_profile_returns_17_tools(self) -> None:
+        """Real ProfileRegistry.get('coder') must return exactly 17 tools."""
+        # 6 facade + 4 hook-callable + 3 quality + 4 cross-repo/graph (incl. 2 KG) = 17
         real_registry = ProfileRegistry()
         coder_tools = real_registry.get("coder")
-        assert len(coder_tools) == 15
+        assert len(coder_tools) == 17
 
         all_tool_names = list(real_registry.get("full"))
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -180,11 +180,11 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == coder_tools
 
-    def test_bundled_full_profile_returns_55_tools(self) -> None:
-        """Real ProfileRegistry with 'full' profile — no header → all 55 tools."""
+    def test_bundled_full_profile_returns_59_tools(self) -> None:
+        """Real ProfileRegistry with 'full' profile — no header → all 59 tools."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 55
+        assert len(all_tool_names) == 59
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -195,7 +195,7 @@ class TestListToolsFilter:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 55
+        assert len(result) == 59
 
 
 # ---------------------------------------------------------------------------

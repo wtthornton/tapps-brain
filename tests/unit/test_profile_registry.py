@@ -48,10 +48,10 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_55_tools(self) -> None:
+    def test_get_full_returns_59_tools(self) -> None:
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 55
+        assert len(tools) == 59
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -63,10 +63,10 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_68_tools(self) -> None:
+    def test_get_operator_returns_72_tools(self) -> None:
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 68
+        assert len(tools) == 72
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -269,7 +269,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 68, f"Expected 68 tools, found {len(all_tools)}"
+        assert len(all_tools) == 72, f"Expected 72 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
