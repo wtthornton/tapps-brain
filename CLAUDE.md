@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Destructive Command Safety (read this first)
+
+Before any destructive shell command — `rm`, `rm -rf`, `git reset --hard`, `git push --force`, `git branch -D`, `git clean -f`, `drop table`, `truncate`, `kill -9`, `dd`, an overwriting `mv`, etc. — run a **separate, non-destructive verification** in the prior tool call:
+
+1. **Resolve the target.** Print it via `ls -la`, `realpath`, `find -inum <N>`, or `stat`. Show what will actually be deleted, not what you think will be deleted.
+2. **State expected vs observed.** "Target should be 24K of empty stubs; observed is 40K with `.venv/lib` only — matches" — if they don't match, STOP.
+3. **For ambiguous filenames** (trailing whitespace, newlines, leading dashes, unicode lookalikes) use **inode addressing**: `find <dir> -maxdepth 1 -inum <N> -exec rm -rf {} +`. NEVER construct such paths via `$(printf 'name\n')` — bash command substitution strips trailing newlines and the command silently retargets the wrong file.
+4. **Split the operation across two tool calls.** First call = inventory. Second call = destruction. If the inventory output isn't visible in the same turn, request a fresh listing before destroying.
+
+**Incident of record:** On 2026-05-11 the agent ran `rm -rf "$(printf 'tapps-brain\n')"` intending to delete a garbage directory whose name contained a trailing newline. Command substitution stripped the newline, the command became `rm -rf tapps-brain`, and the user's working repo was wiped (`.git`, `.env`, local memory mirror, stash, reflog). Origin was intact so committed work survived, but recovery still required a fresh clone and regenerated secrets. The cost of an extra `ls` call is zero; the cost of being wrong is hours.
+
 ## Project
 
 tapps-brain is a persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), **PostgreSQL-only** persistence (private memory, Hive, Federation), pgvector HNSW + tsvector hybrid retrieval, BM25 ranking, exponential decay, automatic consolidation, cross-project federation. **SQLite was removed in ADR-007 stage 2 (2026-04-11)** — there is no in-process database fallback.
