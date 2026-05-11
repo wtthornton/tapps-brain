@@ -288,3 +288,110 @@ class TestAsyncConcurrentLoad:
             f"\nSTORY-070.10 benchmark: single={single_ms:.2f}ms "
             f"concurrent_100={concurrent_ms:.2f}ms ratio={ratio:.1f}×"
         )
+
+
+# ---------------------------------------------------------------------------
+# STORY-072.8 (TAP-1565): relations + audit parity on the async-native path
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncNativeSecondaryWriteParity:
+    """When ``_async_backend`` is wired, captured ``save_relations`` and
+    ``append_audit`` calls must be flushed via the async backend after the
+    sync ``MemoryStore.save``/``delete`` returns.
+
+    Prior to STORY-072.8 these were silent no-ops, which meant the async
+    write path dropped audit rows and relation upserts."""
+
+    def _make_async_backend(self) -> object:
+        """Return an AsyncMock-backed fake async backend exposing the four
+        async methods :class:`AsyncMemoryStore` flushes through."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        backend = MagicMock()
+        backend.save = AsyncMock()
+        backend.delete = AsyncMock()
+        backend.save_relations = AsyncMock()
+        backend.append_audit = AsyncMock()
+        backend.close = AsyncMock()
+        return backend
+
+    @pytest.mark.asyncio
+    async def test_flush_drains_captured_relations_and_audit(self, tmp_path: Path) -> None:
+        """A save that captures relations + audit must flush them through the
+        async backend before returning."""
+        from tapps_brain.aio import _CapturePersistenceBackend
+        from tapps_brain.models import MemoryEntry
+
+        sync_store = await AsyncMemoryStore.open(tmp_path)
+        try:
+            backend = self._make_async_backend()
+            astore = AsyncMemoryStore(sync_store.sync_store, async_backend=backend)
+
+            # Drive a capture cycle directly so we can assert the flush
+            # contract without dragging the full MemoryStore.save into the
+            # picture — the production path uses the same _flush_capture
+            # helper, and unit-tested helpers stay decoupled from store
+            # internals.
+            capture = _CapturePersistenceBackend(astore.sync_store._persistence)
+            entry = MemoryEntry(
+                key="k",
+                value="v",
+                tier="pattern",
+                confidence=0.5,
+                source="agent",
+                source_agent="agent",
+            )
+            capture.save(entry)
+            capture.delete("old-key")
+            capture.save_relations("k", [object()])  # opaque relation payload
+            capture.append_audit("save", "k", {"reason": "test"})
+
+            await astore._flush_capture(capture)
+
+            backend.save.assert_awaited_once_with(entry)
+            backend.delete.assert_awaited_once_with("old-key")
+            backend.save_relations.assert_awaited_once()
+            rel_call = backend.save_relations.await_args
+            assert rel_call.args[0] == "k"
+            assert len(rel_call.args[1]) == 1
+            backend.append_audit.assert_awaited_once_with("save", "k", {"reason": "test"})
+
+            # Queues are drained after flush.
+            saves, deletes, rels, audit = capture.flush()
+            assert saves == [] and deletes == [] and rels == [] and audit == []
+        finally:
+            await sync_store.close()
+
+    @pytest.mark.asyncio
+    async def test_empty_secondary_queues_skip_backend_calls(self, tmp_path: Path) -> None:
+        """No captured relations / audit → no calls on the async backend."""
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        sync_store = await AsyncMemoryStore.open(tmp_path)
+        try:
+            backend = self._make_async_backend()
+            astore = AsyncMemoryStore(sync_store.sync_store, async_backend=backend)
+
+            capture = _CapturePersistenceBackend(astore.sync_store._persistence)
+            await astore._flush_capture(capture)
+
+            backend.save.assert_not_awaited()
+            backend.delete.assert_not_awaited()
+            backend.save_relations.assert_not_awaited()
+            backend.append_audit.assert_not_awaited()
+        finally:
+            await sync_store.close()
+
+    @pytest.mark.asyncio
+    async def test_capture_save_relations_empty_returns_zero(self) -> None:
+        """``save_relations([])`` is a no-op contract preserved from the
+        sync backend."""
+        from unittest.mock import MagicMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        capture = _CapturePersistenceBackend(MagicMock())
+        assert capture.save_relations("k", []) == 0
+        _saves, _deletes, rels, _audit = capture.flush()
+        assert rels == []

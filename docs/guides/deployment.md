@@ -266,11 +266,10 @@ points at a Postgres DSN; no env-var flag is required.
 
 The previous opt-in flag `TAPPS_BRAIN_ASYNC_NATIVE` was graduated to default
 in EPIC-072 STORY-072.7 (v3.16.0) and is no longer read — set it to anything
-or leave it unset, the behaviour is identical.
-
-**Known limitations (EPIC-072):**
-- `save_relations` and `append_audit` are no-ops on the async-native path;
-  these will be wired in a follow-up story.
+or leave it unset, the behaviour is identical. As of STORY-072.8 (TAP-1565),
+`save_relations` and `append_audit` writes are captured and flushed through
+the async backend alongside the primary save/delete, so the async-native
+path has full secondary-write parity with the sync path.
 
 ---
 

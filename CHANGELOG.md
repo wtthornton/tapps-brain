@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Fixed
+
+- **async-native write path now persists relations and audit rows** (EPIC-072 STORY-072.8, TAP-1565). `_CapturePersistenceBackend.save_relations` and `append_audit` were no-ops in async-native mode — acceptable while the path was opt-in, but a silent-data-loss bug once TAP-1117 made it the default. The capture backend now queues secondary writes alongside primary saves/deletes; `AsyncMemoryStore.save`/`.delete` drain all four queues via the async backend after the sync `MemoryStore` call returns. Closes the EPIC-072 known-limitation bullet about relations/audit being deferred.
+
 ---
 
 ## [3.16.0] — 2026-05-11

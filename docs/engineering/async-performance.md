@@ -66,11 +66,13 @@ no flag is required.
 
 ## Known Limitations (EPIC-072 Roadmap)
 
-- Relations (`save_relations`) and audit log (`append_audit`) writes are no-ops in
-  async-native mode — tracked in EPIC-072 roadmap follow-ups.
 - The in-memory cache update inside `MemoryStore.save()` still runs in a thread
   (`AsyncMemoryStore.save` uses `to_thread` for the sync business logic); only
   Postgres I/O is async.
 - Recall, reinforce, and batch write paths are not yet async-native (only
   `/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` are
-  wired in STORY-072.5).
+  wired in STORY-072.5). Tracked as STORY-072.9 (TAP-1566).
+
+Resolved in STORY-072.8 (TAP-1565): `save_relations` and `append_audit` are
+now captured and flushed through the async backend alongside the primary
+save/delete.

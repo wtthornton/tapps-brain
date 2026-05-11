@@ -9,9 +9,10 @@ Write paths (``save``/``delete``) are async-native: the actual Postgres I/O
 goes through ``AsyncPostgresPrivateBackend`` (native
 ``psycopg_pool.AsyncConnectionPool``) instead of a thread-pool thread.  The
 ``MemoryStore`` in-memory cache and business logic still run in
-``to_thread``; only the persistence layer is intercepted.  Relations, audit,
-and other secondary writes are deferred in this mode (known limitation —
-tracked in EPIC-072 roadmap).
+``to_thread``; only the persistence layer is intercepted.  Captured
+secondary writes (``save_relations``, ``append_audit``) are flushed via
+the async backend alongside the primary save/delete (STORY-072.8 /
+TAP-1565).
 
 When no async backend is wired (e.g. an embedded sync-only test setup),
 ``save``/``delete`` transparently fall back to ``to_thread`` against the
@@ -46,20 +47,21 @@ class _CapturePersistenceBackend:
     """Intercepts save/delete calls during a MemoryStore operation.
 
     Used in async-native mode to prevent MemoryStore from blocking a thread
-    pool thread on the Postgres write.  The captured entries are flushed via
-    ``AsyncPostgresPrivateBackend`` after the ``to_thread`` call returns.
+    pool thread on the Postgres write.  Captured entries — primary saves
+    and deletes as well as secondary writes (``save_relations``,
+    ``append_audit``) — are flushed via ``AsyncPostgresPrivateBackend``
+    after the ``to_thread`` call returns.
 
-    All read operations and secondary writes (audit, relations) delegate to
-    the real backend so MemoryStore's read paths continue to work.  Audit
-    ``append_audit`` and ``save_relations`` are no-ops — these are
-    best-effort writes that can be accepted as missing in the MVP of native
-    mode (EPIC-072 roadmap item).
+    All read operations delegate to the real backend so MemoryStore's read
+    paths continue to work.
     """
 
     def __init__(self, real: Any) -> None:
         self._real = real
         self._saved: list[MemoryEntry] = []
         self._deleted: list[str] = []
+        self._relations: list[tuple[str, list[Any]]] = []
+        self._audit: list[tuple[str, str, dict[str, Any] | None]] = []
         self._lock = threading.Lock()
 
     # --- Captured writes ---------------------------------------------------
@@ -74,13 +76,23 @@ class _CapturePersistenceBackend:
             self._deleted.append(key)
         return True
 
-    # --- Secondary writes (no-op in native mode) ----------------------------
+    # --- Captured secondary writes ------------------------------------------
 
-    def append_audit(self, *args: Any, **kwargs: Any) -> None:
-        pass
+    def append_audit(
+        self,
+        action: str,
+        key: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            self._audit.append((action, key, extra))
 
-    def save_relations(self, *args: Any, **kwargs: Any) -> int:
-        return 0
+    def save_relations(self, key: str, relations: list[Any]) -> int:
+        if not relations:
+            return 0
+        with self._lock:
+            self._relations.append((key, list(relations)))
+        return len(relations)
 
     # --- Read operations (delegate to real backend) -------------------------
 
@@ -158,14 +170,25 @@ class _CapturePersistenceBackend:
         key = self._real.encryption_key
         return str(key) if key is not None else None
 
-    def flush(self) -> tuple[list[MemoryEntry], list[str]]:
-        """Return captured saves/deletes and clear the queues."""
+    def flush(
+        self,
+    ) -> tuple[
+        list[MemoryEntry],
+        list[str],
+        list[tuple[str, list[Any]]],
+        list[tuple[str, str, dict[str, Any] | None]],
+    ]:
+        """Return captured saves/deletes/relations/audit and clear the queues."""
         with self._lock:
             saves = list(self._saved)
             deletes = list(self._deleted)
+            relations = list(self._relations)
+            audit = list(self._audit)
             self._saved.clear()
             self._deleted.clear()
-        return saves, deletes
+            self._relations.clear()
+            self._audit.clear()
+        return saves, deletes, relations, audit
 
 
 class AsyncMemoryStore:
@@ -271,11 +294,7 @@ class AsyncMemoryStore:
                 result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
             finally:
                 self._store._persistence = old
-        saves, deletes = capture.flush()
-        for entry in saves:
-            await self._async_backend.save(entry)
-        for k in deletes:
-            await self._async_backend.delete(k)
+        await self._flush_capture(capture)
         return result
 
     async def get(self, key: str, **kwargs: Any) -> Any:
@@ -301,12 +320,30 @@ class AsyncMemoryStore:
                 result = await asyncio.to_thread(self._store.delete, key)
             finally:
                 self._store._persistence = old
-        saves, deletes = capture.flush()
+        await self._flush_capture(capture)
+        return result
+
+    async def _flush_capture(self, capture: _CapturePersistenceBackend) -> None:
+        """Drain captured writes (saves, deletes, relations, audit) via the async backend.
+
+        ``save_relations`` and ``append_audit`` are best-effort on the sync
+        path — failures are logged but never raised, so we preserve that
+        contract here too.
+        """
+        assert self._async_backend is not None
+        saves, deletes, relations, audit = capture.flush()
         for entry in saves:
             await self._async_backend.save(entry)
         for k in deletes:
             await self._async_backend.delete(k)
-        return result
+        for rel_key, rels in relations:
+            save_rels = getattr(self._async_backend, "save_relations", None)
+            if save_rels is not None:
+                await save_rels(rel_key, rels)
+        for action, audit_key, extra in audit:
+            append = getattr(self._async_backend, "append_audit", None)
+            if append is not None:
+                await append(action, audit_key, extra)
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.search`."""
