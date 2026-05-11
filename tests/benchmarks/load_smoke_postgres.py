@@ -529,7 +529,7 @@ def test_load_smoke_async_comparison(capsys: pytest.CaptureFixture[str]) -> None
     """STORY-072.4: Compare asyncio.to_thread baseline vs async-native.
 
     Runs two phases of 50 concurrent asyncio tasks each:
-      Phase A — to_thread baseline (TAPPS_BRAIN_ASYNC_NATIVE unset)
+      Phase A — to_thread baseline (AsyncMemoryStore without async_backend)
       Phase B — async-native (AsyncPostgresPrivateBackend)
 
     p95 save and recall latencies are printed side-by-side.

@@ -719,9 +719,10 @@ class _Settings:  # type: ignore[no-redef]  # noqa: F811
         # construction bypassed the hardened pool and raced
         # ``max_connections`` under load.
         self.idempotency_store: Any = None
-        # TAP-826 (EPIC-072 STORY-072.5): async-native write path.
-        # Populated in lifespan startup when TAPPS_BRAIN_ASYNC_NATIVE=1
-        # and a store is available.  None when native mode is off.
+        # EPIC-072: async-native write path. Populated in lifespan startup
+        # when a Postgres DSN and store are available (TAP-1117 graduated
+        # this from the TAPPS_BRAIN_ASYNC_NATIVE opt-in flag).  None when no
+        # async backend can be built (e.g. no DSN configured, test injection).
         self.async_store: Any = None
 
     @staticmethod
@@ -1356,12 +1357,11 @@ def create_app(
                     )
                     cfg.idempotency_store = None
 
-        # TAP-826: build async-native store when TAPPS_BRAIN_ASYNC_NATIVE=1.
-        if (
-            getattr(cfg, "async_store", None) is None
-            and os.environ.get("TAPPS_BRAIN_ASYNC_NATIVE") == "1"
-            and cfg.store is not None
-        ):
+        # TAP-1117: build async-native store whenever a Postgres DSN and a
+        # MemoryStore are available.  Previously gated on
+        # TAPPS_BRAIN_ASYNC_NATIVE=1; the flag was graduated to default and
+        # removed in EPIC-072 STORY-072.7.
+        if getattr(cfg, "async_store", None) is None and cfg.store is not None:
             try:
                 from tapps_brain.aio import AsyncMemoryStore
                 from tapps_brain.backends import create_async_private_backend
@@ -1604,7 +1604,7 @@ def create_app(
         return cfg.store
 
     def _get_async_store_or_none() -> Any:
-        """Return cfg.async_store when TAPPS_BRAIN_ASYNC_NATIVE=1, else None."""
+        """Return the async-native store when wired at startup, else None."""
         return getattr(cfg, "async_store", None)
 
     # ------------------------------------------------------------------

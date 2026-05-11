@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Changed
+
+- **async-native is now the only write path; `TAPPS_BRAIN_ASYNC_NATIVE` flag removed** (EPIC-072 STORY-072.7, TAP-1117). Graduated the opt-in async-native Postgres write path to default. `AsyncMemoryStore.save`/`.delete` and the HTTP write endpoints (`/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure`) build the `AsyncPostgresPrivateBackend` automatically whenever a Postgres DSN is configured. The `TAPPS_BRAIN_ASYNC_NATIVE` env var is no longer read — setting it has no effect, and unsetting it no longer routes through the legacy thread-pool write path. `AsyncMemoryStore` retains a `to_thread` fallback when no async backend is wired (embedded sync-only test setups, no DSN).
+
 ---
 
 ## [3.15.0] — 2026-05-10

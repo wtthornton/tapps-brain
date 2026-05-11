@@ -1,7 +1,10 @@
-"""Integration tests for TAP-826: http_adapter async-native write path.
+"""Integration tests for the http_adapter async-native write path.
 
 Verifies that write-path handlers use AsyncMemoryStore directly (no thread
-pool blocking) when TAPPS_BRAIN_ASYNC_NATIVE=1.
+pool blocking) when ``cfg.async_store`` is wired, and that they fall back
+to ``asyncio.to_thread`` against the sync store when no async backend is
+available. Async-native became the default in EPIC-072 STORY-072.7
+(TAP-1117) — the original wire-up was TAP-826.
 
 These tests do NOT require a real Postgres — they inject a mock async store
 so the async dispatch logic can be verified in-process.

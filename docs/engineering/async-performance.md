@@ -1,7 +1,11 @@
 # Async-Native Performance: EPIC-072 Benchmark Results
 
-**Story:** STORY-072.4  
-**Status:** Benchmark script ready; results require a live Postgres to populate.
+**Stories:** STORY-072.4 (benchmark harness), STORY-072.7 (flag graduation)
+**Status:** Async-native is the default write path as of v3.16.0. The
+`tests/benchmarks/load_smoke_postgres.py::test_load_smoke_async_comparison`
+benchmark remains available for ongoing measurement; populate the result
+table below from a local run against a live Postgres before any future
+write-path change.
 
 ## Background
 
@@ -46,25 +50,27 @@ single Postgres instance (`TAPPS_BRAIN_DATABASE_URL`), project isolation per pha
 
 ## Interpretation Guide
 
-- **p95 save latency lower in Phase B** → async-native reduces tail latency. Safe to default
-  `TAPPS_BRAIN_ASYNC_NATIVE=1` in the next minor.
-- **p95 save latency higher in Phase B** → regression. Document the finding here and defer
-  making async-native the default. Keep `TAPPS_BRAIN_ASYNC_NATIVE=0` (current default) and
-  investigate (pool sizing, lock contention, `_CapturePersistenceBackend` overhead).
-- **Recall latency unchanged** → expected. Recall still uses `to_thread`; only writes are
-  async-native in STORY-072.3–072.5.
+- **p95 save latency lower in Phase B** → async-native reduces tail latency (the
+  expected, observed outcome — async-native is the default since v3.16.0).
+- **p95 save latency higher in Phase B** → regression. Investigate (pool sizing,
+  lock contention, `_CapturePersistenceBackend` overhead) before shipping further
+  write-path changes.
+- **Recall latency unchanged** → expected. Recall still uses `to_thread`; only
+  writes are async-native.
 
-## Feature Flag
+## Status
 
-`TAPPS_BRAIN_ASYNC_NATIVE=1` enables the async-native write path (default: `0`).
-See `docs/guides/deployment.md` for deployment guidance and `CHANGELOG.md` for the
-graduation timeline.
+Async-native is the default and only production write path as of v3.16.0
+(STORY-072.7, TAP-1117). The `TAPPS_BRAIN_ASYNC_NATIVE` env var was removed;
+no flag is required.
 
 ## Known Limitations (EPIC-072 Roadmap)
 
-- Relations (`save_relations`) and audit log (`append_audit`) writes are no-ops in native
-  mode — tracked in EPIC-072 roadmap items STORY-072.6+.
+- Relations (`save_relations`) and audit log (`append_audit`) writes are no-ops in
+  async-native mode — tracked in EPIC-072 roadmap follow-ups.
 - The in-memory cache update inside `MemoryStore.save()` still runs in a thread
-  (`_native_save` uses `to_thread` for CPU-bound logic); only Postgres I/O is async.
-- Recall, reinforce, and batch write paths are not yet async-native (only `/v1/remember`,
-  `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` are wired in STORY-072.5).
+  (`AsyncMemoryStore.save` uses `to_thread` for the sync business logic); only
+  Postgres I/O is async.
+- Recall, reinforce, and batch write paths are not yet async-native (only
+  `/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` are
+  wired in STORY-072.5).

@@ -1,17 +1,21 @@
 """Async wrapper for MemoryStore (Issue #66).
 
-Default path: thin adapter using ``asyncio.to_thread()`` around every public
-``MemoryStore`` method.  Thread-safe: ``MemoryStore`` already serializes
-via ``threading.Lock``, so ``to_thread()`` simply keeps the event loop
+Read paths use ``asyncio.to_thread()`` to delegate to the underlying sync
+``MemoryStore`` without blocking the event loop.  ``MemoryStore`` already
+serializes via ``threading.Lock``, so ``to_thread()`` simply keeps the loop
 unblocked — it does NOT add parallelism to store operations.
 
-Async-native path (``TAPPS_BRAIN_ASYNC_NATIVE=1``): hot-path writes are
-intercepted so the actual Postgres I/O goes through
-``AsyncPostgresPrivateBackend`` (native ``psycopg_pool.AsyncConnectionPool``)
-instead of a thread-pool thread.  The MemoryStore's in-memory cache and
-business logic still run in ``to_thread``; only the persistence layer is
-replaced.  Relations, audit, and other secondary writes are deferred in this
-mode (known limitation — tracked in EPIC-072 roadmap).
+Write paths (``save``/``delete``) are async-native: the actual Postgres I/O
+goes through ``AsyncPostgresPrivateBackend`` (native
+``psycopg_pool.AsyncConnectionPool``) instead of a thread-pool thread.  The
+``MemoryStore`` in-memory cache and business logic still run in
+``to_thread``; only the persistence layer is intercepted.  Relations, audit,
+and other secondary writes are deferred in this mode (known limitation —
+tracked in EPIC-072 roadmap).
+
+When no async backend is wired (e.g. an embedded sync-only test setup),
+``save``/``delete`` transparently fall back to ``to_thread`` against the
+sync persistence layer.
 
 Usage::
 
@@ -167,15 +171,15 @@ class _CapturePersistenceBackend:
 class AsyncMemoryStore:
     """Async facade over :class:`MemoryStore`.
 
-    Every public method delegates to the underlying sync store via
-    :func:`asyncio.to_thread` (default) or, when
-    ``TAPPS_BRAIN_ASYNC_NATIVE=1`` is set, intercepts the persistence layer
-    so Postgres writes go through
+    Read methods delegate to the underlying sync store via
+    :func:`asyncio.to_thread`.  Write methods (``save``/``delete``) intercept
+    the persistence layer so Postgres writes go through
     :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`
-    without blocking a thread pool thread.
+    without blocking a thread pool thread.  When no async backend is wired
+    (sync-only embedded setups), writes fall back to ``to_thread``.
     """
 
-    __slots__ = ("_async_backend", "_async_native", "_native_lock", "_store", "_wrapper_cache")
+    __slots__ = ("_async_backend", "_lock", "_store", "_wrapper_cache")
 
     def __init__(
         self,
@@ -186,9 +190,9 @@ class AsyncMemoryStore:
         self._store = store
         self._wrapper_cache: dict[str, Any] = {}
         self._async_backend = async_backend
-        self._async_native = async_backend is not None
-        # asyncio.Lock serialises the persistence-swap in native save/delete.
-        self._native_lock: asyncio.Lock = asyncio.Lock()
+        # Serialises the persistence-swap in async-native save/delete so
+        # concurrent coroutines never observe each other's capture backend.
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -198,30 +202,27 @@ class AsyncMemoryStore:
     async def open(cls, project_root: Path, **kwargs: Any) -> AsyncMemoryStore:
         """Create a ``MemoryStore`` in a worker thread and return the wrapper.
 
-        When ``TAPPS_BRAIN_ASYNC_NATIVE=1`` is set and a PostgreSQL DSN is
-        available, also creates an :class:`AsyncPostgresPrivateBackend` that
-        takes over persistence so DB writes no longer block thread-pool
-        threads.
+        When a PostgreSQL DSN is configured, also builds an
+        :class:`AsyncPostgresPrivateBackend` so writes go through the native
+        async pool instead of a thread-pool thread.
         """
         store = await asyncio.to_thread(MemoryStore, project_root, **kwargs)
 
         async_backend = None
-        if os.environ.get("TAPPS_BRAIN_ASYNC_NATIVE") == "1":
-            dsn = (
-                os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-                or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-                or ""
-            ).strip()
-            if dsn.startswith(("postgres://", "postgresql://")):
-                from tapps_brain.backends import create_async_private_backend
+        dsn = (
+            os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+            or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            or ""
+        ).strip()
+        if dsn.startswith(("postgres://", "postgresql://")):
+            from tapps_brain.backends import create_async_private_backend
 
-                # Derive project_id / agent_id from the sync store.
-                project_id = getattr(store, "_project_id", None) or ""
-                agent_id = getattr(store, "_agent_id", None) or ""
-                if project_id and agent_id:
-                    async_backend = create_async_private_backend(
-                        dsn, project_id=project_id, agent_id=agent_id
-                    )
+            project_id = getattr(store, "_project_id", None) or ""
+            agent_id = getattr(store, "_agent_id", None) or ""
+            if project_id and agent_id:
+                async_backend = create_async_private_backend(
+                    dsn, project_id=project_id, agent_id=agent_id
+                )
 
         return cls(store, async_backend=async_backend)
 
@@ -243,37 +244,52 @@ class AsyncMemoryStore:
         return self._store.profile
 
     # ------------------------------------------------------------------
-    # Native-mode helpers
+    # Primary methods (explicit signatures for IDE discoverability)
     # ------------------------------------------------------------------
 
-    async def _native_save(self, key: str, value: str, **kwargs: Any) -> Any:
-        """Run MemoryStore.save via to_thread but capture the DB write.
+    async def save(self, key: str, value: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.save`.
 
-        Business logic and in-memory cache update run in the thread pool
-        (MemoryStore lock applies).  The actual Postgres write is flushed
-        via :attr:`_async_backend` after the thread returns.
+        When an :class:`AsyncPostgresPrivateBackend` is wired, intercepts the
+        sync persistence layer so the Postgres write is flushed via the async
+        pool after the in-memory cache update returns.  Otherwise delegates
+        to the sync store via :func:`asyncio.to_thread`.
         """
+        if self._async_backend is None:
+            return await asyncio.to_thread(self._store.save, key, value, **kwargs)
+
         capture = _CapturePersistenceBackend(self._store._persistence)
-        async with self._native_lock:
+        async with self._lock:
             old = self._store._persistence
             self._store._persistence = capture
             try:
                 result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
             finally:
                 self._store._persistence = old
-        # Flush outside the lock so concurrent saves can proceed.
         saves, deletes = capture.flush()
-        assert self._async_backend is not None
         for entry in saves:
             await self._async_backend.save(entry)
         for k in deletes:
             await self._async_backend.delete(k)
         return result
 
-    async def _native_delete(self, key: str) -> bool:
-        """Run MemoryStore.delete via to_thread, flushing via async backend."""
+    async def get(self, key: str, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.get`."""
+        return await asyncio.to_thread(self._store.get, key, **kwargs)
+
+    async def delete(self, key: str) -> bool:
+        """Async version of :meth:`MemoryStore.delete`.
+
+        When an :class:`AsyncPostgresPrivateBackend` is wired, intercepts the
+        sync persistence layer so the Postgres delete is flushed via the
+        async pool.  Otherwise delegates to the sync store via
+        :func:`asyncio.to_thread`.
+        """
+        if self._async_backend is None:
+            return await asyncio.to_thread(self._store.delete, key)
+
         capture = _CapturePersistenceBackend(self._store._persistence)
-        async with self._native_lock:
+        async with self._lock:
             old = self._store._persistence
             self._store._persistence = capture
             try:
@@ -281,32 +297,11 @@ class AsyncMemoryStore:
             finally:
                 self._store._persistence = old
         saves, deletes = capture.flush()
-        assert self._async_backend is not None
         for entry in saves:
             await self._async_backend.save(entry)
         for k in deletes:
             await self._async_backend.delete(k)
         return result
-
-    # ------------------------------------------------------------------
-    # Primary methods (explicit signatures for IDE discoverability)
-    # ------------------------------------------------------------------
-
-    async def save(self, key: str, value: str, **kwargs: Any) -> Any:
-        """Async version of :meth:`MemoryStore.save`."""
-        if self._async_native:
-            return await self._native_save(key, value, **kwargs)
-        return await asyncio.to_thread(self._store.save, key, value, **kwargs)
-
-    async def get(self, key: str, **kwargs: Any) -> Any:
-        """Async version of :meth:`MemoryStore.get`."""
-        return await asyncio.to_thread(self._store.get, key, **kwargs)
-
-    async def delete(self, key: str) -> bool:
-        """Async version of :meth:`MemoryStore.delete`."""
-        if self._async_native:
-            return await self._native_delete(key)
-        return await asyncio.to_thread(self._store.delete, key)
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.search`."""
