@@ -540,8 +540,8 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 55),
-            ("coder", 15),
+            ("full", 59),
+            ("coder", 17),
             ("reviewer", 8),
             ("seeder", 6),
         ],
