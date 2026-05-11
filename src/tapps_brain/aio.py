@@ -362,8 +362,27 @@ class AsyncMemoryStore:
         return await asyncio.to_thread(self._store.recall, message, **kwargs)
 
     async def reinforce(self, key: str, **kwargs: Any) -> Any:
-        """Async version of :meth:`MemoryStore.reinforce`."""
-        return await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+        """Async version of :meth:`MemoryStore.reinforce`.
+
+        When an :class:`AsyncPostgresPrivateBackend` is wired, intercepts the
+        sync persistence layer so the reinforced entry's Postgres write is
+        flushed via the async pool after the in-memory cache update returns.
+        Otherwise delegates to the sync store via :func:`asyncio.to_thread`
+        (STORY-072.9, TAP-1566).
+        """
+        if self._async_backend is None:
+            return await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+
+        capture = _CapturePersistenceBackend(self._store._persistence)
+        async with self._lock:
+            old = self._store._persistence
+            self._store._persistence = capture
+            try:
+                result = await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+            finally:
+                self._store._persistence = old
+        await self._flush_capture(capture)
+        return result
 
     async def ingest_context(self, context: str, **kwargs: Any) -> list[str]:
         """Async version of :meth:`MemoryStore.ingest_context`."""

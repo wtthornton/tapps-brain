@@ -60,13 +60,14 @@ def _make_entry(key: str = "k") -> MemoryEntry:
 
 
 def _make_async_store() -> MagicMock:
-    """Return a mock AsyncMemoryStore with async save/get/delete."""
+    """Return a mock AsyncMemoryStore with async save/get/delete/reinforce."""
     entry = _make_entry()
     store = MagicMock()
     store.profile = None
     store.save = AsyncMock(return_value=entry)
     store.get = AsyncMock(return_value=entry)
     store.delete = AsyncMock(return_value=True)
+    store.reinforce = AsyncMock(return_value=entry)
     store.close = AsyncMock()
     return store
 
@@ -278,3 +279,100 @@ class TestAsyncNativeLearnFailure:
 
         assert resp.status_code == 200, resp.text
         async_store.save.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# STORY-072.9 (TAP-1566): /v1/reinforce + /v1/reinforce:batch async dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncNativeReinforce:
+    @pytest.mark.asyncio
+    async def test_reinforce_uses_async_store(self) -> None:
+        """When async_store is set, /v1/reinforce calls async_store.reinforce."""
+        async_store = _make_async_store()
+        sync_store = _make_sync_store()
+        settings = _make_settings(async_store=async_store, sync_store=sync_store)
+
+        _mcp_dummy = MagicMock()
+        _mcp_dummy.session_manager = None
+
+        with (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+        ):
+            app = create_app(mcp_server=_mcp_dummy)
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/reinforce",
+                    json={"key": "k", "confidence_boost": 0.05},
+                    headers=_HEADERS,
+                )
+
+        assert resp.status_code == 200, resp.text
+        async_store.reinforce.assert_awaited_once_with("k", confidence_boost=0.05)
+        sync_store.reinforce.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reinforce_falls_back_to_to_thread_without_async_store(self) -> None:
+        """Without async_store, /v1/reinforce uses asyncio.to_thread on the sync store."""
+        entry = _make_entry("k")
+        sync_store = _make_sync_store()
+        sync_store.reinforce = MagicMock(return_value=entry)
+        settings = _make_settings(async_store=None, sync_store=sync_store)
+
+        _mcp_dummy = MagicMock()
+        _mcp_dummy.session_manager = None
+
+        with (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+        ):
+            app = create_app(mcp_server=_mcp_dummy)
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/reinforce",
+                    json={"key": "k"},
+                    headers=_HEADERS,
+                )
+
+        assert resp.status_code == 200, resp.text
+        sync_store.reinforce.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reinforce_batch_uses_async_store(self) -> None:
+        """When async_store is set, /v1/reinforce:batch routes per-item through async_store.reinforce."""
+        async_store = _make_async_store()
+        sync_store = _make_sync_store()
+        settings = _make_settings(async_store=async_store, sync_store=sync_store)
+
+        _mcp_dummy = MagicMock()
+        _mcp_dummy.session_manager = None
+
+        with (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+        ):
+            app = create_app(mcp_server=_mcp_dummy)
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/reinforce:batch",
+                    json={
+                        "entries": [
+                            {"key": "k1"},
+                            {"key": "k2", "confidence_boost": 0.1},
+                            {"key": "k3"},
+                        ]
+                    },
+                    headers=_HEADERS,
+                )
+
+        assert resp.status_code == 200, resp.text
+        assert async_store.reinforce.await_count == 3
+        sync_store.reinforce.assert_not_called()
+        body = resp.json()
+        assert body["reinforced_count"] == 3
+        assert body["error_count"] == 0

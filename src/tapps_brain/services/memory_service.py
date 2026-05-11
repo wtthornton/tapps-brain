@@ -1376,3 +1376,117 @@ async def async_brain_learn_failure(
         tags.append(f"task:{task_id}")
     await async_store.save(key=key, value=value, tier="procedural", tags=tags)
     return {"learned": True, "key": key}
+
+
+# ---------------------------------------------------------------------------
+# Async-native reinforce shims (STORY-072.9, TAP-1566)
+# ---------------------------------------------------------------------------
+
+
+async def async_memory_reinforce(
+    async_store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    key: str,
+    confidence_boost: float = 0.0,
+) -> dict[str, Any]:
+    """Async-native counterpart of :func:`memory_reinforce`.
+
+    Routes the reinforce write through ``AsyncMemoryStore.reinforce`` which,
+    when an async backend is wired, captures the persistence layer so the
+    Postgres write goes through ``AsyncPostgresPrivateBackend`` instead of a
+    thread-pool thread.
+
+    Returns the same response shape as :func:`memory_reinforce`.
+    """
+    if not (0.0 <= confidence_boost <= _MAX_CONFIDENCE_BOOST):
+        return {
+            "error": "invalid_confidence_boost",
+            "message": (
+                f"confidence_boost must be in [0.0, {_MAX_CONFIDENCE_BOOST}],"
+                f" got {confidence_boost}"
+            ),
+        }
+    try:
+        entry = await async_store.reinforce(key, confidence_boost=confidence_boost)
+    except KeyError:
+        return {"error": "not_found", "key": key}
+    return {
+        "status": "reinforced",
+        "key": entry.key,
+        "confidence": entry.confidence,
+        "access_count": entry.access_count,
+    }
+
+
+async def async_memory_reinforce_many(
+    async_store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    entries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Async-native counterpart of :func:`memory_reinforce_many`.
+
+    Loops :func:`async_memory_reinforce` so each per-item reinforce gets the
+    async-native write path while preserving partial-failure semantics.
+    """
+    from tapps_brain.otel_tracer import start_mcp_tool_span
+
+    limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
+    if len(entries) > limit:
+        return {
+            "error": "batch_too_large",
+            "message": f"Maximum reinforce batch size is {limit}, got {len(entries)}.",
+            "limit": limit,
+        }
+
+    results: list[dict[str, Any]] = []
+    reinforced = 0
+    errors = 0
+
+    with start_mcp_tool_span(
+        "memory_reinforce_many",
+        extra_attributes={"memory.batch_size": len(entries)},
+    ):
+        for i, raw_entry in enumerate(entries):
+            with start_mcp_tool_span(
+                "memory_reinforce_many.item",
+                extra_attributes={"memory.batch_index": i},
+            ):
+                if not isinstance(raw_entry, dict):
+                    item: dict[str, Any] = {
+                        "error": "bad_entry",
+                        "message": "Entry must be a JSON object.",
+                        "index": i,
+                    }
+                    errors += 1
+                else:
+                    key = (raw_entry.get("key") or "").strip()
+                    if not key:
+                        item = {
+                            "error": "bad_entry",
+                            "message": "key is required.",
+                            "index": i,
+                        }
+                        errors += 1
+                    else:
+                        item = await async_memory_reinforce(
+                            async_store,
+                            project_id,
+                            agent_id,
+                            key=key,
+                            confidence_boost=float(raw_entry.get("confidence_boost", 0.0)),
+                        )
+                        if "error" in item:
+                            errors += 1
+                        else:
+                            reinforced += 1
+                results.append(item)
+
+    return {
+        "results": results,
+        "reinforced_count": reinforced,
+        "error_count": errors,
+    }

@@ -69,10 +69,14 @@ no flag is required.
 - The in-memory cache update inside `MemoryStore.save()` still runs in a thread
   (`AsyncMemoryStore.save` uses `to_thread` for the sync business logic); only
   Postgres I/O is async.
-- Recall, reinforce, and batch write paths are not yet async-native (only
-  `/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure` are
-  wired in STORY-072.5). Tracked as STORY-072.9 (TAP-1566).
+- Recall (single and batch) is still routed through `asyncio.to_thread`.
+  The deep retrieval pipeline (BM25 + vector + RRF + Hive merge) needs
+  either a redesign or a read-side capture pattern — tracked as TAP-1567.
 
-Resolved in STORY-072.8 (TAP-1565): `save_relations` and `append_audit` are
-now captured and flushed through the async backend alongside the primary
-save/delete.
+Resolved in STORY-072.8 (TAP-1565): `save_relations` and `append_audit`
+are now captured and flushed through the async backend alongside the
+primary save/delete.
+
+Resolved in STORY-072.9 (TAP-1566): `/v1/reinforce` and
+`/v1/reinforce:batch` are now async-native; `AsyncMemoryStore.reinforce`
+adopts the capture+flush pattern.

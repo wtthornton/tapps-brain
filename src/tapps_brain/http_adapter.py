@@ -1932,15 +1932,27 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
-            # TAP-1099: offload sync DB call to a worker thread.
-            result = await asyncio.to_thread(
-                _ms.memory_reinforce,
-                store,
-                project_id,
-                agent_id,
-                key=mem_key,
-                confidence_boost=float(body.get("confidence_boost", 0.0)),
-            )
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None:
+                # TAP-1566: async-native reinforce — DB write goes through
+                # AsyncPostgresPrivateBackend without blocking a thread.
+                result = await _ms.async_memory_reinforce(
+                    _async_store,
+                    project_id,
+                    agent_id,
+                    key=mem_key,
+                    confidence_boost=float(body.get("confidence_boost", 0.0)),
+                )
+            else:
+                # TAP-1099: offload sync DB call to a worker thread.
+                result = await asyncio.to_thread(
+                    _ms.memory_reinforce,
+                    store,
+                    project_id,
+                    agent_id,
+                    key=mem_key,
+                    confidence_boost=float(body.get("confidence_boost", 0.0)),
+                )
             if isinstance(result, dict) and "error" in result:
                 status_code = 400
             else:
@@ -2165,10 +2177,18 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
-        # TAP-1099: offload batch DB work to a worker thread.
-        result = await asyncio.to_thread(
-            _ms.memory_reinforce_many, store, project_id, agent_id, entries=entries
-        )
+        _async_store = _get_async_store_or_none()
+        if _async_store is not None:
+            # TAP-1566: async-native batch reinforce — each per-item write
+            # goes through AsyncPostgresPrivateBackend.
+            result = await _ms.async_memory_reinforce_many(
+                _async_store, project_id, agent_id, entries=entries
+            )
+        else:
+            # TAP-1099: offload batch DB work to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.memory_reinforce_many, store, project_id, agent_id, entries=entries
+            )
         status_code = 400 if "error" in result else 200
         return JSONResponse(status_code=status_code, content=result)
 
