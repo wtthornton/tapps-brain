@@ -180,7 +180,7 @@ Before going live with a multi-container fleet:
 - [ ] **`TAPPS_BRAIN_MCP_ALLOWED_HOSTS` set** — comma-separated list of
   `host:port` entries for DNS-rebinding protection when containers call the
   sidecar via a Docker network hostname (e.g. `brain-sidecar:8080`).  As of
-  v3.14.6 the shipped `docker-compose.hive.yaml` wires a sane default
+  v3.15.0 the shipped `docker-compose.hive.yaml` wires a sane default
   (`tapps-brain-http`/`localhost`/`127.0.0.1` on 8080+8090) so the brain no
   longer relies on the mcp SDK's back-compat fallback.  Override via
   `docker/.env` when running behind a different in-network DNS name.  When

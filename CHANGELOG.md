@@ -14,6 +14,46 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.15.0] — 2026-05-10
+
+The **Knowledge Graph release** — EPIC-074/075/076 ship the first cut of the experience-aware memory graph: entities, edges, evidence, partitioned event log, deterministic recall enrichment, and feedback. All 19 issues (TAP-1485..TAP-1503) landed; full code audit passed (no stubs, no TODOs, ADRs signed).
+
+### Added
+
+- **Knowledge Graph schema** (EPIC-074, migrations 016–020). Five new Postgres tables — `kg_entities`, `kg_edges`, `kg_evidence`, `kg_aliases`, `experience_events` — all with RLS enforced and forced, lifecycle fields aligned with `memories` (confidence, status, decay), and `experience_events` partitioned by month for write-throughput. Migration runner gains `pg_advisory_lock` for safe concurrent startup and a hard downgrade guard (`MigrationDowngradeError`) when the live schema exceeds the bundled max version.
+- **KnowledgeGraphStore API** (EPIC-075, `src/tapps_brain/postgres_kg.py`). New `PostgresKnowledgeGraphStore` with `upsert_entity`, `upsert_edge`, `resolve_entity` (deterministic 2-pass: exact key → alias match, no LLM calls), `get_neighbors`, `get_neighbors_multi`, and edge lifecycle helpers. Edges enforce a partial unique constraint on `(brain_id, subject_id, predicate, object_id)` for active rows.
+- **Graph-aware recall + experience events** (EPIC-076):
+  - `kg_query_analysis.py` — deterministic regex-based entity mention extraction wired into the recall pipeline; one SQL round-trip, no LLM.
+  - Neighborhood retrieval with profile-aware scoring on `RecallResult`.
+  - `RecallResult` extended additively with `entities`, `edges`, and `evidence` views — existing consumers unaffected.
+  - `ExperienceEventRecorder` (`experience.py`) — single-transaction atomic write API for recording events, edges, and entity creates together. Sync + async variants.
+  - Edge feedback events (`edge_helpful`, `edge_misleading`) registered in `FeedbackStore`.
+- **New MCP tools and HTTP endpoints** (TAP-1502):
+  - MCP: `brain_record_event`, `brain_get_neighbors`, `brain_explain_connection` (BFS shortest-path up to 3 hops), `brain_record_feedback`.
+  - HTTP: `POST /v1/experience`, `GET /v1/kg/neighbors`, `GET /v1/kg/explain`, `POST /v1/kg/feedback`.
+- **ADR-012 — Evidence-required edges.** Every edge insert/upsert requires a corresponding `kg_evidence` row; the XOR CHECK ensures evidence points at exactly one of `edge_id` or `entity_id`. Prevents unsupported claims entering the graph.
+- **ADR-013 — KG inherits memory lifecycle.** `kg_entities` and `kg_edges` reuse the memory `(confidence, status, decay)` lifecycle so graph quality decays alongside the memories that justify it.
+
+### Fixed
+
+- **MCP transport security: stop `Invalid Host header` log flood from mcp SDK 1.27.0.** Previously documented under `[3.14.6]`, never tagged. `docker/docker-compose.hive.yaml` wires `TAPPS_BRAIN_MCP_ALLOWED_HOSTS` with a sane default (`tapps-brain-http`, `localhost`, `127.0.0.1` on 8080/8090); operators can override via `docker/.env`. `_build_transport_security()` (`src/tapps_brain/mcp_server/server.py`) reads the env var and disables DNS-rebinding protection only when the operator explicitly sets `TAPPS_BRAIN_MCP_ALLOWED_HOSTS=*`.
+
+### Migration notes
+
+- **New migrations:** 016–020. The migration sidecar (`tapps-brain-migrate` in `docker-compose.hive.yaml`) applies them automatically on next deploy. For self-hosted Postgres, set `TAPPS_BRAIN_AUTO_MIGRATE=1` or run the sidecar one-shot.
+- **No breaking changes to existing schema** (memories, hive, federation tables untouched).
+- **Downgrade guard:** rolling back to ≤ 3.14.x with the new schema in place will refuse to start (`MigrationDowngradeError`). Take a snapshot before upgrading.
+- **Storage growth:** `experience_events` is partitioned by month — projects with heavy event volume should review the partition retention policy in `docs/engineering/`.
+
+### Ralph / dev tooling
+
+- Ralph templates upgraded to v2.13.1 with Linear-driven task selection enabled.
+- Coordinator routed to `sonnet/medium` for tapps-brain; per-task model routing via LINOPT cache-locality optimizer.
+- Hardening rollout: TAP-623 (`.ralphrc` agent-edit block), TAP-1224/1411/1412 (Linear cache-gate enforcement and auto-population).
+- `.gitignore` extended for per-loop runtime files (`.edits_this_loop`, `.model_routing.jsonl`, `.no_status_block_count`, `.qa_failures.json`); MCP probe + coordinator timeouts raised to 120s / 240s after cold-start failures.
+
+---
+
 ## [3.14.6] — 2026-05-05
 
 ### Fixed
