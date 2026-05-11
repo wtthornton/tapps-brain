@@ -146,34 +146,32 @@ class TestGetNeighborsMulti:
             f"Stale edge {stale_edge_id!r} should appear when include_historical=True"
         )
 
-    def test_result_has_expected_keys(
-        self, kg_store: Any, seeded_entities: list[str]
-    ) -> None:
+    def test_result_has_expected_keys(self, kg_store: Any, seeded_entities: list[str]) -> None:
         result = kg_store.get_neighbors_multi(seeded_entities[:2], hops=1, limit=10)
         if not result:
             pytest.skip("No edges found for the first 2 entities — graph too sparse")
         row = result[0]
         expected_keys = {
-            "edge_id", "predicate", "edge_confidence",
-            "neighbor_id", "entity_type", "canonical_name",
-            "hop", "evidence_count", "source",
+            "edge_id",
+            "predicate",
+            "edge_confidence",
+            "neighbor_id",
+            "entity_type",
+            "canonical_name",
+            "hop",
+            "evidence_count",
+            "source",
         }
         missing = expected_keys - set(row.keys())
         assert not missing, f"Missing keys: {missing}"
 
-    def test_hop_value_is_1_for_1hop_query(
-        self, kg_store: Any, seeded_entities: list[str]
-    ) -> None:
+    def test_hop_value_is_1_for_1hop_query(self, kg_store: Any, seeded_entities: list[str]) -> None:
         result = kg_store.get_neighbors_multi(seeded_entities[:5], hops=1, limit=50)
         for row in result:
             assert row.get("hop") == 1
 
-    def test_2hop_includes_hop_2_rows(
-        self, kg_store: Any, seeded_entities: list[str]
-    ) -> None:
-        result = kg_store.get_neighbors_multi(
-            seeded_entities[:3], hops=2, limit=200
-        )
+    def test_2hop_includes_hop_2_rows(self, kg_store: Any, seeded_entities: list[str]) -> None:
+        result = kg_store.get_neighbors_multi(seeded_entities[:3], hops=2, limit=200)
         hops_seen = {r.get("hop") for r in result}
         # With 500 edges, 2-hop should expose hop=2 rows for most focal sets.
         # Accept hop=1-only if the graph happens to be a star.

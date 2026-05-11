@@ -69,9 +69,7 @@ def test_strict_mode_rejects_unknown_edge_type() -> None:
 
 def _make_kg(cm: Any, project_id: str = "test-proj") -> PostgresKnowledgeGraphStore:
     """Build a KG store against a mocked connection manager."""
-    return PostgresKnowledgeGraphStore(
-        cm, brain_id="test-brain", project_id=project_id
-    )
+    return PostgresKnowledgeGraphStore(cm, brain_id="test-brain", project_id=project_id)
 
 
 def _mock_cm(fetchone_return: Any = None) -> MagicMock:
@@ -222,6 +220,7 @@ def test_brain_record_feedback_edge_path() -> None:
         def decorator(fn: Any) -> Any:
             registered[fn.__name__] = fn
             return fn
+
         return decorator
 
     mcp.tool = fake_tool
@@ -267,6 +266,7 @@ def test_brain_record_feedback_memory_path() -> None:
         def decorator(fn: Any) -> Any:
             registered[fn.__name__] = fn
             return fn
+
         return decorator
 
     mcp.tool = fake_tool
@@ -306,6 +306,7 @@ def test_brain_record_feedback_edge_error_propagated() -> None:
         def decorator(fn: Any) -> Any:
             registered[fn.__name__] = fn
             return fn
+
         return decorator
 
     mcp.tool = fake_tool

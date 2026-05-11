@@ -47,9 +47,7 @@ def _get_or_create_cm() -> Any | None:
     if _CM is not None:
         return _CM
     dsn = (
-        os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-        or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-        or ""
+        os.environ.get("TAPPS_BRAIN_DATABASE_URL") or os.environ.get("TAPPS_BRAIN_HIVE_DSN") or ""
     ).strip()
     if not dsn:
         return None
@@ -309,8 +307,11 @@ def explain_connection(
         kg.close()
 
     return {
-        "found": False, "hops": None, "path": [],
-        "subject_id": subject_id, "object_id": object_id,
+        "found": False,
+        "hops": None,
+        "path": [],
+        "subject_id": subject_id,
+        "object_id": object_id,
     }
 
 

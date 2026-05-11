@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -41,7 +41,7 @@ def _conn(dsn: str):  # type: ignore[return]
 def _insert_event(
     conn: object,
     project_id: str,
-    event_time: "datetime",
+    event_time: datetime,
     event_type: str = "test_event",
 ) -> str:
     """Insert one row into experience_events; returns the generated id."""
@@ -98,9 +98,7 @@ class TestExperienceEventsTableExists:
             )
             row = cur.fetchone()
             assert row is not None, "experience_events is not a partitioned table"
-            assert row[0] == "r", (
-                f"Expected RANGE partition strategy ('r'), got {row[0]!r}"
-            )
+            assert row[0] == "r", f"Expected RANGE partition strategy ('r'), got {row[0]!r}"
         finally:
             conn.close()  # type: ignore[attr-defined]
 
@@ -142,7 +140,7 @@ class TestPartitionRouting:
         conn = _conn(_PG_DSN)
         try:
             _set_tenant(conn, project)
-            event_time = datetime(2026, 5, 15, 12, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
             row_id = _insert_event(conn, project, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
@@ -166,7 +164,7 @@ class TestPartitionRouting:
         conn = _conn(_PG_DSN)
         try:
             _set_tenant(conn, project)
-            event_time = datetime(2027, 1, 10, 8, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2027, 1, 10, 8, 0, 0, tzinfo=UTC)
             row_id = _insert_event(conn, project, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
@@ -192,7 +190,7 @@ class TestPartitionRouting:
         try:
             _set_tenant(conn, project)
             # 2030 is well outside the pre-created 2026-05 through 2027-04 range.
-            event_time = datetime(2030, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2030, 6, 1, 0, 0, 0, tzinfo=UTC)
             row_id = _insert_event(conn, project, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
@@ -223,7 +221,7 @@ class TestRLSIsolation:
         try:
             # Insert as tenant B
             _set_tenant(conn, project_b)
-            event_time = datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2026, 6, 1, 0, 0, 0, tzinfo=UTC)
             row_id_b = _insert_event(conn, project_b, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
@@ -233,9 +231,7 @@ class TestRLSIsolation:
                 "SELECT id FROM experience_events WHERE id = %s", (row_id_b,)
             )
             result = cur.fetchone()
-            assert result is None, (
-                f"Tenant A can read Tenant B's row {row_id_b} — RLS breach!"
-            )
+            assert result is None, f"Tenant A can read Tenant B's row {row_id_b} — RLS breach!"
         finally:
             # Cleanup: reset to B to delete its own row
             _set_tenant(conn, project_b)
@@ -251,8 +247,8 @@ class TestRLSIsolation:
         project_b = f"rls-own-b-{uuid.uuid4().hex[:8]}"
         conn = _conn(_PG_DSN)
         try:
-            event_time_a = datetime(2026, 7, 4, 12, 0, 0, tzinfo=timezone.utc)
-            event_time_b = datetime(2026, 8, 4, 12, 0, 0, tzinfo=timezone.utc)
+            event_time_a = datetime(2026, 7, 4, 12, 0, 0, tzinfo=UTC)
+            event_time_b = datetime(2026, 8, 4, 12, 0, 0, tzinfo=UTC)
 
             # Insert tenant A event
             _set_tenant(conn, project_a)
@@ -294,7 +290,7 @@ class TestRLSIsolation:
         conn = _conn(_PG_DSN)
         try:
             _set_tenant(conn, project)
-            event_time = datetime(2026, 9, 1, 0, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2026, 9, 1, 0, 0, 0, tzinfo=UTC)
             _insert_event(conn, project, event_time)
             conn.commit()  # type: ignore[attr-defined]
 
@@ -331,7 +327,7 @@ class TestRLSIsolation:
             conn.execute(  # type: ignore[attr-defined]
                 "SELECT set_config('app.project_id', '', FALSE)"
             )
-            event_time = datetime(2026, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
+            event_time = datetime(2026, 10, 1, 0, 0, 0, tzinfo=UTC)
             with pytest.raises(psycopg.errors.InsufficientPrivilege):  # type: ignore[attr-defined]
                 _insert_event(conn, project, event_time)
                 conn.commit()  # type: ignore[attr-defined]

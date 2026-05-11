@@ -642,8 +642,7 @@ class RecallResult(BaseModel):
     evidence: list[KGEvidenceView] = Field(
         default_factory=list,
         description=(
-            "Evidence pieces attached to returned edges (STORY-076.3). "
-            "Hydrated in STORY-076.4."
+            "Evidence pieces attached to returned edges (STORY-076.3). Hydrated in STORY-076.4."
         ),
     )
 

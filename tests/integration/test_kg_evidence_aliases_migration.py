@@ -42,9 +42,7 @@ import pytest
 _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
 
-_RUNTIME_DSN = (
-    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
-)
+_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -280,9 +278,7 @@ class TestKgEvidenceTableStructure:
     def test_schema_version_18_recorded(self) -> None:
         with _owner_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT version FROM private_schema_version WHERE version = 18"
-                )
+                cur.execute("SELECT version FROM private_schema_version WHERE version = 18")
                 row = cur.fetchone()
         assert row is not None, "Schema version 18 not recorded"
 
@@ -309,8 +305,11 @@ class TestKgEvidenceXOR:
             conn.commit()
             edge_id = _insert_edge(
                 conn,
-                tenant_id=tid, brain_id=bid, project_id=pid,
-                subject_id=eid1, object_id=eid2,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                subject_id=eid1,
+                object_id=eid2,
             )
             conn.commit()
             ev_id = _insert_evidence(
@@ -376,8 +375,11 @@ class TestKgEvidenceXOR:
             conn.commit()
             edge_id = _insert_edge(
                 conn,
-                tenant_id=tid, brain_id=bid, project_id=pid,
-                subject_id=eid1, object_id=eid2,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                subject_id=eid1,
+                object_id=eid2,
             )
             conn.commit()
             with pytest.raises(psycopg.errors.CheckViolation):
@@ -417,8 +419,11 @@ class TestKgEvidenceCascade:
             conn.commit()
             edge_id = _insert_edge(
                 conn,
-                tenant_id=tid, brain_id=bid, project_id=pid,
-                subject_id=eid1, object_id=eid2,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                subject_id=eid1,
+                object_id=eid2,
             )
             conn.commit()
             ev_id = _insert_evidence(
@@ -476,13 +481,13 @@ class TestKgEvidenceRLS:
         brain_a = f"brain-a-{_uid()}"
 
         with _owner_conn() as conn:
-            ent_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a
-            )
+            ent_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a)
             conn.commit()
             ev_id = _insert_evidence(
                 conn,
-                tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a,
+                tenant_id=tenant_a,
+                brain_id=brain_a,
+                project_id=tenant_a,
                 entity_id=ent_id,
             )
             conn.commit()
@@ -587,9 +592,7 @@ class TestKgAliasesTableStructure:
     def test_schema_version_19_recorded(self) -> None:
         with _owner_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT version FROM private_schema_version WHERE version = 19"
-                )
+                cur.execute("SELECT version FROM private_schema_version WHERE version = 19")
                 row = cur.fetchone()
         assert row is not None, "Schema version 19 not recorded"
 
@@ -613,8 +616,12 @@ class TestKgAliasesCRUD:
             ent_id = _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=pid)
             conn.commit()
             a_id = _insert_alias(
-                conn, tenant_id=tid, brain_id=bid, project_id=pid,
-                entity_id=ent_id, alias=alias,
+                conn,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                entity_id=ent_id,
+                alias=alias,
             )
             conn.commit()
             with conn.cursor() as cur:
@@ -637,15 +644,23 @@ class TestKgAliasesCRUD:
             ent_id = _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=pid)
             conn.commit()
             _insert_alias(
-                conn, tenant_id=tid, brain_id=bid, project_id=pid,
-                entity_id=ent_id, alias=alias,
+                conn,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                entity_id=ent_id,
+                alias=alias,
             )
             conn.commit()
             # Second insert with same alias (different case) must raise.
             with pytest.raises(psycopg.errors.UniqueViolation):
                 _insert_alias(
-                    conn, tenant_id=tid, brain_id=bid, project_id=pid,
-                    entity_id=ent_id, alias=alias.upper(),
+                    conn,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=pid,
+                    entity_id=ent_id,
+                    alias=alias.upper(),
                 )
             conn.rollback()
             # Cleanup
@@ -662,14 +677,16 @@ class TestKgAliasesCRUD:
             ent_id = _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=pid)
             conn.commit()
             a_id = _insert_alias(
-                conn, tenant_id=tid, brain_id=bid, project_id=pid,
-                entity_id=ent_id, alias=alias,
+                conn,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
+                entity_id=ent_id,
+                alias=alias,
             )
             conn.commit()
             with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE kg_aliases SET status = 'rejected' WHERE id = %s", (a_id,)
-                )
+                cur.execute("UPDATE kg_aliases SET status = 'rejected' WHERE id = %s", (a_id,))
             conn.commit()
             # Row must still exist.
             with conn.cursor() as cur:
@@ -744,13 +761,17 @@ class TestKgAliasesCascade:
             conn.commit()
             ev_id = _insert_evidence(
                 conn,
-                tenant_id=tid, brain_id=bid, project_id=pid,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
                 entity_id=ent_id,
             )
             conn.commit()
             a_id = _insert_alias(
                 conn,
-                tenant_id=tid, brain_id=bid, project_id=pid,
+                tenant_id=tid,
+                brain_id=bid,
+                project_id=pid,
                 entity_id=ent_id,
                 evidence_id=ev_id,
             )
@@ -763,9 +784,7 @@ class TestKgAliasesCascade:
 
             # Alias must still exist with evidence_id = NULL.
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, evidence_id FROM kg_aliases WHERE id = %s", (a_id,)
-                )
+                cur.execute("SELECT id, evidence_id FROM kg_aliases WHERE id = %s", (a_id,))
                 row = cur.fetchone()
             assert row is not None, "Alias must survive evidence deletion"
             assert row[1] is None, "evidence_id must be NULL after evidence is deleted"
@@ -790,13 +809,13 @@ class TestKgAliasesRLS:
         brain_a = f"brain-a-{_uid()}"
 
         with _owner_conn() as conn:
-            ent_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a
-            )
+            ent_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a)
             conn.commit()
             a_id = _insert_alias(
                 conn,
-                tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a,
+                tenant_id=tenant_a,
+                brain_id=brain_a,
+                project_id=tenant_a,
                 entity_id=ent_id,
             )
             conn.commit()

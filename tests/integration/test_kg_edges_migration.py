@@ -123,9 +123,14 @@ def _insert_edge(
             RETURNING id
             """,
             (
-                tenant_id, brain_id, project_id,
-                subject_id, predicate, object_id,
-                status, invalid_at,
+                tenant_id,
+                brain_id,
+                project_id,
+                subject_id,
+                predicate,
+                object_id,
+                status,
+                invalid_at,
             ),
         )
         row = cur.fetchone()
@@ -238,9 +243,7 @@ class TestKgEdgesTableStructure:
         """private_schema_version must contain version=17."""
         with _owner_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT version FROM private_schema_version WHERE version = 17"
-                )
+                cur.execute("SELECT version FROM private_schema_version WHERE version = 17")
                 row = cur.fetchone()
         assert row is not None, "Schema version 17 not recorded"
 
@@ -302,8 +305,12 @@ class TestKgEdgesCRUD:
             try:
                 edge_id = _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="USES", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="USES",
+                    object_id=obj_id,
                 )
                 conn.commit()
                 with conn.cursor() as cur:
@@ -339,15 +346,23 @@ class TestKgEdgesPartialUnique:
             try:
                 _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="DEPENDS_ON", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="DEPENDS_ON",
+                    object_id=obj_id,
                 )
                 conn.commit()
                 with pytest.raises(psycopg.errors.UniqueViolation):
                     _insert_edge(
                         conn,
-                        tenant_id=tid, brain_id=bid, project_id=tid,
-                        subject_id=sub_id, predicate="DEPENDS_ON", object_id=obj_id,
+                        tenant_id=tid,
+                        brain_id=bid,
+                        project_id=tid,
+                        subject_id=sub_id,
+                        predicate="DEPENDS_ON",
+                        object_id=obj_id,
                     )
                 conn.rollback()
             finally:
@@ -367,16 +382,24 @@ class TestKgEdgesPartialUnique:
                 # Insert a superseded edge first.
                 _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="IS_A", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="IS_A",
+                    object_id=obj_id,
                     status="superseded",
                 )
                 conn.commit()
                 # Then insert an active edge with the same triple — should succeed.
                 _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="IS_A", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="IS_A",
+                    object_id=obj_id,
                     status="active",
                 )
                 conn.commit()
@@ -397,8 +420,12 @@ class TestKgEdgesPartialUnique:
                 # Insert an invalidated edge (valid but with invalid_at set).
                 _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="CAUSES", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="CAUSES",
+                    object_id=obj_id,
                     status="active",
                     invalid_at="2020-01-01T00:00:00Z",
                 )
@@ -406,8 +433,12 @@ class TestKgEdgesPartialUnique:
                 # Active edge with same triple but no invalid_at should coexist.
                 _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="CAUSES", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="CAUSES",
+                    object_id=obj_id,
                     status="active",
                     invalid_at=None,
                 )
@@ -438,16 +469,24 @@ class TestKgEdgesSupersession:
                 # Old superseded edge.
                 old_id = _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="USES", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="USES",
+                    object_id=obj_id,
                     status="superseded",
                 )
                 conn.commit()
                 # New active edge that supersedes the old one.
                 new_id = _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="USES", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="USES",
+                    object_id=obj_id,
                     status="active",
                 )
                 conn.commit()
@@ -489,8 +528,12 @@ class TestKgEdgesContradiction:
             try:
                 edge_id = _insert_edge(
                     conn,
-                    tenant_id=tid, brain_id=bid, project_id=tid,
-                    subject_id=sub_id, predicate="SUPPORTS", object_id=obj_id,
+                    tenant_id=tid,
+                    brain_id=bid,
+                    project_id=tid,
+                    subject_id=sub_id,
+                    predicate="SUPPORTS",
+                    object_id=obj_id,
                 )
                 conn.commit()
                 with conn.cursor() as cur:
@@ -532,16 +575,16 @@ class TestKgEdgesRLS:
         brain_a = f"brain-a-{_uid()}"
 
         with _owner_conn() as conn:
-            sub_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a
-            )
-            obj_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a
-            )
+            sub_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a)
+            obj_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a)
             _insert_edge(
                 conn,
-                tenant_id=tenant_a, brain_id=brain_a, project_id=tenant_a,
-                subject_id=sub_id, predicate="KNOWS", object_id=obj_id,
+                tenant_id=tenant_a,
+                brain_id=brain_a,
+                project_id=tenant_a,
+                subject_id=sub_id,
+                predicate="KNOWS",
+                object_id=obj_id,
             )
             conn.commit()
 
@@ -575,12 +618,8 @@ class TestKgEdgesRLS:
 
         # Create entities as owner so FK references work.
         with _owner_conn() as conn:
-            sub_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_x, project_id=tenant_a
-            )
-            obj_id = _insert_entity(
-                conn, tenant_id=tenant_a, brain_id=brain_x, project_id=tenant_a
-            )
+            sub_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_x, project_id=tenant_a)
+            obj_id = _insert_entity(conn, tenant_id=tenant_a, brain_id=brain_x, project_id=tenant_a)
             conn.commit()
 
         try:

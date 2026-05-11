@@ -168,8 +168,7 @@ class TestSearchNeighborhood:
     def test_results_sorted_by_blended_score_descending(self) -> None:
         backend = MagicMock()
         backend.get_neighbors_multi.return_value = [
-            _make_edge_row(edge_id=f"e-{i:03d}", edge_confidence=i / 10.0)
-            for i in range(10)
+            _make_edge_row(edge_id=f"e-{i:03d}", edge_confidence=i / 10.0) for i in range(10)
         ]
         results = _make_retriever().search_neighborhood(["some-entity"], backend)
         scores = [r.blended_score for r in results]

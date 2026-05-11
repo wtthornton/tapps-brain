@@ -439,15 +439,23 @@ class AsyncPostgresKnowledgeGraphStore:
                 await cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
                     (
-                        self._brain_id, entity_ids, ih, ih, pf, pf,
-                        self._brain_id, ih, ih, pf, pf,
-                        hops, limit,
+                        self._brain_id,
+                        entity_ids,
+                        ih,
+                        ih,
+                        pf,
+                        pf,
+                        self._brain_id,
+                        ih,
+                        ih,
+                        pf,
+                        pf,
+                        hops,
+                        limit,
                     ),
                 )
             rows = await cur.fetchall()
-            results: list[dict[str, Any]] = [
-                _row_to_dict(row, cur.description) for row in rows
-            ]
+            results: list[dict[str, Any]] = [_row_to_dict(row, cur.description) for row in rows]
 
         return results
 

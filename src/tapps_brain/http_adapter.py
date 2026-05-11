@@ -2938,7 +2938,10 @@ def create_app(
         if not edge_id or not feedback_type:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": "edge_id and feedback_type are required."},
+                detail={
+                    "error": "bad_request",
+                    "detail": "edge_id and feedback_type are required.",
+                },
             )
 
         from tapps_brain.services import kg_service as _kg_svc

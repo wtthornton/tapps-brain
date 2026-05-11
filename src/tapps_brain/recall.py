@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
+
+T = TypeVar("T")
 
 import structlog
 
@@ -199,7 +201,7 @@ class RecallOrchestrator:
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
         # Extract KG fields from injection result (STORY-076.3).
-        def _as_list(key: str, cls: type) -> list[object]:
+        def _as_list(key: str, cls: type[T]) -> list[T]:
             items = result.get(key, [])
             return [x for x in items if isinstance(x, cls)]
 

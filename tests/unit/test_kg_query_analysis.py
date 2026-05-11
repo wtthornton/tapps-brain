@@ -126,9 +126,7 @@ class TestAnalyzeQueryExactMatch:
     """Exact canonical-name matches."""
 
     def test_exact_match_returns_mention(self) -> None:
-        backend = _make_kg_backend(
-            {"postgresql": ("uuid-pg-001", 0.95, "exact_match")}
-        )
+        backend = _make_kg_backend({"postgresql": ("uuid-pg-001", 0.95, "exact_match")})
         result = analyze_query("How does PostgreSQL handle indexing?", kg_backend=backend)
 
         assert result.matched_count >= 1
@@ -164,24 +162,18 @@ class TestAnalyzeQueryAliasMatch:
     """Alias-table matches."""
 
     def test_alias_match_returns_mention(self) -> None:
-        backend = _make_kg_backend(
-            {"psql": ("uuid-pg-001", 0.75, "alias_match")}
-        )
+        backend = _make_kg_backend({"psql": ("uuid-pg-001", 0.75, "alias_match")})
         # "psql" is 4 chars and passes the _MIN_CANDIDATE_LEN filter
         result = analyze_query("migrate using psql connection", kg_backend=backend)
 
         assert result.matched_count >= 1
-        mention = next(
-            (m for m in result.mentions if m.reason == "alias_match"), None
-        )
+        mention = next((m for m in result.mentions if m.reason == "alias_match"), None)
         assert mention is not None
         assert mention.entity_id == "uuid-pg-001"
         assert mention.confidence == pytest.approx(0.75)
 
     def test_alias_match_reason_preserved(self) -> None:
-        backend = _make_kg_backend(
-            {"psql": ("uuid-pg-001", 0.70, "alias_match")}
-        )
+        backend = _make_kg_backend({"psql": ("uuid-pg-001", 0.70, "alias_match")})
         result = analyze_query("psql connection string", kg_backend=backend)
         reasons = {m.reason for m in result.mentions}
         assert "alias_match" in reasons
@@ -191,9 +183,7 @@ class TestAnalyzeQueryAmbiguousMatch:
     """Ambiguous alias (>1 entity per candidate)."""
 
     def test_ambiguous_alias_returns_highest_confidence(self) -> None:
-        backend = _make_kg_backend(
-            {"migration": ("uuid-mig-best", 0.80, "ambiguous_alias")}
-        )
+        backend = _make_kg_backend({"migration": ("uuid-mig-best", 0.80, "ambiguous_alias")})
         result = analyze_query("run migration scripts", kg_backend=backend)
 
         # The batch resolver already resolved ambiguity; analyze_query just forwards.
@@ -202,9 +192,7 @@ class TestAnalyzeQueryAmbiguousMatch:
         assert ambiguous[0].entity_id == "uuid-mig-best"
 
     def test_ambiguous_still_counted_as_matched(self) -> None:
-        backend = _make_kg_backend(
-            {"postgres": ("uuid-a", 0.60, "ambiguous_alias")}
-        )
+        backend = _make_kg_backend({"postgres": ("uuid-a", 0.60, "ambiguous_alias")})
         result = analyze_query("postgres configuration", kg_backend=backend)
         assert result.matched_count >= 1
 

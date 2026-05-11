@@ -55,9 +55,7 @@ _PRE_EPIC_076_RECALL_DIAGNOSTICS_FIELDS: frozenset[str] = frozenset(
 )
 
 # Fields added by STORY-076.3.
-_STORY_076_3_RECALL_RESULT_FIELDS: frozenset[str] = frozenset(
-    {"entities", "edges", "evidence"}
-)
+_STORY_076_3_RECALL_RESULT_FIELDS: frozenset[str] = frozenset({"entities", "edges", "evidence"})
 
 _STORY_076_3_RECALL_DIAGNOSTICS_FIELDS: frozenset[str] = frozenset(
     {"graph_hits", "dropped_stale", "dropped_low_confidence"}
@@ -103,8 +101,7 @@ class TestRecallResultShape:
         baseline = len(_PRE_EPIC_076_RECALL_RESULT_FIELDS)
         actual = len(_model_fields(RecallResult))
         assert actual > baseline, (
-            f"RecallResult field count should be > {baseline} (pre-EPIC-076 baseline), "
-            f"got {actual}"
+            f"RecallResult field count should be > {baseline} (pre-EPIC-076 baseline), got {actual}"
         )
 
     def test_default_construction_no_args(self) -> None:
@@ -171,9 +168,7 @@ class TestRecallDiagnosticsShape:
         """STORY-076.3 must have added graph diagnostic fields."""
         actual = _model_fields(RecallDiagnostics)
         missing = _STORY_076_3_RECALL_DIAGNOSTICS_FIELDS - actual
-        assert not missing, (
-            f"RecallDiagnostics is MISSING STORY-076.3 fields: {missing}"
-        )
+        assert not missing, f"RecallDiagnostics is MISSING STORY-076.3 fields: {missing}"
 
     def test_default_construction(self) -> None:
         """RecallDiagnostics() must be constructable with no arguments."""

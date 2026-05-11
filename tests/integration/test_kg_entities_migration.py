@@ -210,9 +210,7 @@ class TestKgEntitiesTableStructure:
         """private_schema_version must contain version=16."""
         with _owner_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT version FROM private_schema_version WHERE version = 16"
-                )
+                cur.execute("SELECT version FROM private_schema_version WHERE version = 16")
                 row = cur.fetchone()
         assert row is not None, "Schema version 16 not recorded"
 
@@ -234,7 +232,9 @@ class TestKgEntitiesCRUD:
             _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=tid, canonical_name=name)
             conn.commit()
             with conn.cursor() as cur:
-                cur.execute("SELECT canonical_name_norm FROM kg_entities WHERE brain_id = %s", (bid,))
+                cur.execute(
+                    "SELECT canonical_name_norm FROM kg_entities WHERE brain_id = %s", (bid,)
+                )
                 row = cur.fetchone()
             assert row is not None
             assert row[0] == name.lower()
@@ -254,7 +254,9 @@ class TestKgEntitiesCRUD:
             _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=tid, canonical_name=name)
             conn.commit()
             with pytest.raises(psycopg.errors.UniqueViolation):
-                _insert_entity(conn, tenant_id=tid, brain_id=bid, project_id=tid, canonical_name=name)
+                _insert_entity(
+                    conn, tenant_id=tid, brain_id=bid, project_id=tid, canonical_name=name
+                )
             conn.rollback()
             # Cleanup
             with conn.cursor() as cur:
@@ -313,7 +315,9 @@ class TestKgEntitiesRLS:
                 _set_project_id(conn, tenant_b)
                 count_b = _count_entities(conn, brain_a)
                 conn.rollback()
-            assert count_b == 0, f"RLS breach: tenant_b can see tenant_a's entities ({count_b} rows)"
+            assert count_b == 0, (
+                f"RLS breach: tenant_b can see tenant_a's entities ({count_b} rows)"
+            )
         finally:
             # Cleanup via owner connection.
             with _owner_conn() as conn:

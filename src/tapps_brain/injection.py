@@ -77,6 +77,7 @@ def _budget_fractions(scoring_config: object | None) -> tuple[float, float, floa
     module defaults.  Fractions are returned as-is — callers multiply by the
     total token budget.
     """
+
     def _frac(attr: str, default: float) -> float:
         raw = getattr(scoring_config, attr, None)
         if raw is None:

@@ -142,9 +142,7 @@ class TestRecordHappyPath:
         assert result.memory_key == "approach-key"
         assert _count_events(cm, project_id) == 1
 
-    def test_event_with_entity_returns_entity_id(
-        self, recorder: ExperienceEventRecorder
-    ) -> None:
+    def test_event_with_entity_returns_entity_id(self, recorder: ExperienceEventRecorder) -> None:
         """An event with EntitySpec upserts the entity and returns its UUID."""
         result = recorder.record(
             ExperienceEvent(
@@ -224,9 +222,7 @@ class TestRecordHappyPath:
         uuid.UUID(result.edge_ids[0])
         uuid.UUID(result.evidence_ids[0])
 
-    def test_multiple_entities_returned_in_order(
-        self, recorder: ExperienceEventRecorder
-    ) -> None:
+    def test_multiple_entities_returned_in_order(self, recorder: ExperienceEventRecorder) -> None:
         """entity_ids are returned in the same order as ExperienceEvent.entities."""
         result = recorder.record(
             ExperienceEvent(

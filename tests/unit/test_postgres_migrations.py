@@ -502,7 +502,7 @@ class TestApplyMigrationsAdvisoryLock:
             def fetchall(self) -> list:
                 return []
 
-            def __enter__(self) -> "_FakeCursor":
+            def __enter__(self) -> _FakeCursor:
                 return self
 
             def __exit__(self, *_: object) -> None:
@@ -512,7 +512,7 @@ class TestApplyMigrationsAdvisoryLock:
             def __init__(self) -> None:
                 self._cur = _FakeCursor()
 
-            def cursor(self) -> "_FakeCursor":
+            def cursor(self) -> _FakeCursor:
                 return self._cur
 
             def execute(self, sql: bytes) -> None:
@@ -521,7 +521,7 @@ class TestApplyMigrationsAdvisoryLock:
             def commit(self) -> None:
                 pass
 
-            def __enter__(self) -> "_FakeConn":
+            def __enter__(self) -> _FakeConn:
                 return self
 
             def __exit__(self, *_: object) -> None:
@@ -558,17 +558,17 @@ class TestApplyMigrationsAdvisoryLock:
             def fetchall(self) -> list:
                 return []
 
-            def __enter__(self) -> "_FakeCursor":
+            def __enter__(self) -> _FakeCursor:
                 return self
 
             def __exit__(self, *_: object) -> None:
                 pass
 
         class _FakeConn:
-            def cursor(self) -> "_FakeCursor":
+            def cursor(self) -> _FakeCursor:
                 return _FakeCursor()
 
-            def __enter__(self) -> "_FakeConn":
+            def __enter__(self) -> _FakeConn:
                 return self
 
             def __exit__(self, *_: object) -> None:

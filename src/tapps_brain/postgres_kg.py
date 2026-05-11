@@ -80,7 +80,7 @@ class _EdgeDecayAdapter:
         difficulty: float,
         layer: str | None,
         last_reinforced: Any,  # datetime | None (psycopg returns datetime)
-        updated_at: Any,       # datetime
+        updated_at: Any,  # datetime
     ) -> None:
         self.stability = stability
         self.difficulty = difficulty
@@ -88,9 +88,7 @@ class _EdgeDecayAdapter:
         # "domain"/"procedural"/"context" are valid tier names in decay.py.
         self.tier = layer or "pattern"
         # decay.py expects ISO-8601 strings; psycopg returns datetime objects.
-        self.last_reinforced = (
-            last_reinforced.isoformat() if last_reinforced is not None else None
-        )
+        self.last_reinforced = last_reinforced.isoformat() if last_reinforced is not None else None
         self.updated_at = updated_at.isoformat() if updated_at is not None else None
 
 
@@ -577,15 +575,23 @@ class PostgresKnowledgeGraphStore:
                 cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
                     (
-                        self._brain_id, entity_ids, ih, ih, pf, pf,
-                        self._brain_id, ih, ih, pf, pf,
-                        hops, limit,
+                        self._brain_id,
+                        entity_ids,
+                        ih,
+                        ih,
+                        pf,
+                        pf,
+                        self._brain_id,
+                        ih,
+                        ih,
+                        pf,
+                        pf,
+                        hops,
+                        limit,
                     ),
                 )
             rows = cur.fetchall()
-            results: list[dict[str, Any]] = [
-                _row_to_dict(row, cur.description) for row in rows
-            ]
+            results: list[dict[str, Any]] = [_row_to_dict(row, cur.description) for row in rows]
 
         return results
 

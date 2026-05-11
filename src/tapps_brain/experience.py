@@ -86,9 +86,7 @@ class EdgeSpec(BaseModel):
     predicate: str = Field(description="Edge predicate label.")
     object_entity_id: str = Field(description="UUID of the object entity (pre-resolved).")
     edge_class: str | None = Field(default=None, description="Optional edge class tag.")
-    layer: str | None = Field(
-        default=None, description="Memory layer, e.g. 'pattern', 'context'."
-    )
+    layer: str | None = Field(default=None, description="Memory layer, e.g. 'pattern', 'context'.")
     profile_name: str | None = Field(
         default=None, description="Profile that defined this edge type."
     )
@@ -379,7 +377,7 @@ class ExperienceEventRecorder:
                 cur.execute(
                     _kg_sql.UPSERT_ENTITY_SQL,
                     (
-                        self._project_id,   # tenant_id
+                        self._project_id,  # tenant_id
                         self._brain_id,
                         self._project_id,
                         entity_spec.entity_type,
@@ -414,7 +412,7 @@ class ExperienceEventRecorder:
                     cur.execute(
                         _kg_sql.INSERT_EDGE_SQL,
                         (
-                            self._project_id,   # tenant_id
+                            self._project_id,  # tenant_id
                             self._brain_id,
                             self._project_id,
                             edge_spec.subject_entity_id,
@@ -426,7 +424,7 @@ class ExperienceEventRecorder:
                             edge_spec.confidence,
                             edge_spec.source,
                             self._agent_id,
-                            self._agent_id,     # created_by_agent
+                            self._agent_id,  # created_by_agent
                             json.dumps(edge_spec.metadata),
                         ),
                     )
@@ -439,7 +437,7 @@ class ExperienceEventRecorder:
                 cur.execute(
                     _kg_sql.ATTACH_EVIDENCE_SQL,
                     (
-                        self._project_id,   # tenant_id
+                        self._project_id,  # tenant_id
                         self._brain_id,
                         self._project_id,
                         ev_spec.edge_id,

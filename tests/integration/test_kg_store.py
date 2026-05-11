@@ -30,9 +30,7 @@ import pytest
 _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
 
-_RUNTIME_DSN = (
-    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
-)
+_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -223,12 +221,8 @@ class TestUpsertEdge:
         self._pid = "test_kg_" + _uid()
         self._bid = "brain_" + _uid()
         self._store = _make_sync_store(self._pid, self._bid, evidence_required=False)
-        self._subj = self._store.upsert_entity(
-            entity_type="language", canonical_name="Python"
-        )
-        self._obj = self._store.upsert_entity(
-            entity_type="framework", canonical_name="Django"
-        )
+        self._subj = self._store.upsert_entity(entity_type="language", canonical_name="Python")
+        self._obj = self._store.upsert_entity(entity_type="framework", canonical_name="Django")
 
     def test_upsert_edge_returns_uuid(self) -> None:
         eid = self._store.upsert_edge(
@@ -304,9 +298,7 @@ class TestAttachEvidence:
         uuid.UUID(ev_id)
 
     def test_attach_evidence_to_edge(self) -> None:
-        obj = self._store.upsert_entity(
-            entity_type="domain", canonical_name="Systems_" + _uid()
-        )
+        obj = self._store.upsert_entity(entity_type="domain", canonical_name="Systems_" + _uid())
         edge_id = self._store.upsert_edge(
             subject_entity_id=self._subj,
             predicate="USED_IN",
@@ -322,9 +314,7 @@ class TestAttachEvidence:
         uuid.UUID(ev_id)
 
     def test_attach_evidence_xor_enforced(self) -> None:
-        obj = self._store.upsert_entity(
-            entity_type="domain", canonical_name="Domain_" + _uid()
-        )
+        obj = self._store.upsert_entity(entity_type="domain", canonical_name="Domain_" + _uid())
         with pytest.raises(ValueError, match="exactly one"):
             self._store.attach_evidence(
                 edge_id="fake-edge",
@@ -437,15 +427,11 @@ class TestEdgeLifecycle:
         assert updated is False
 
     def test_contradict_edge(self) -> None:
-        updated = self._store.contradict_edge(
-            self._edge_id, reason="conflicting evidence"
-        )
+        updated = self._store.contradict_edge(self._edge_id, reason="conflicting evidence")
         assert updated is True
 
     def test_supersede_edge_returns_new_id(self) -> None:
-        new_obj = self._store.upsert_entity(
-            entity_type="b", canonical_name="B_new_" + _uid()
-        )
+        new_obj = self._store.upsert_entity(entity_type="b", canonical_name="B_new_" + _uid())
         new_edge_id = self._store.supersede_edge(
             self._edge_id,
             subject_entity_id=self._subj,
@@ -536,9 +522,7 @@ class TestSyncAsyncParity:
         sync_id = sync_store.upsert_entity(entity_type="concept", canonical_name=name)
 
         async def _run_async() -> str:
-            return await async_store.upsert_entity(
-                entity_type="concept", canonical_name=name
-            )
+            return await async_store.upsert_entity(entity_type="concept", canonical_name=name)
 
         async_id = asyncio.get_event_loop().run_until_complete(_run_async())
 

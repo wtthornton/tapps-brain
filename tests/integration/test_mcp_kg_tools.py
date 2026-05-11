@@ -91,7 +91,8 @@ class TestKgToolDiscovery:
             kg_tool_map = {
                 t.name: t
                 for t in result.tools
-                if t.name in {
+                if t.name
+                in {
                     "brain_record_event",
                     "brain_get_neighbors",
                     "brain_explain_connection",
@@ -180,9 +181,7 @@ class TestBrainRecallBackwardCompat:
 class TestBrainRecordEventNoDB:
     """brain_record_event returns a db_unavailable error when no DSN is set."""
 
-    async def test_record_event_no_db_returns_error(
-        self, mcp_server, monkeypatch
-    ) -> None:
+    async def test_record_event_no_db_returns_error(self, mcp_server, monkeypatch) -> None:
         """Without a DB, brain_record_event returns error JSON (not MCP error)."""
         # Patch the process-level CM cache to None so no DB is used.
         from tapps_brain.services import kg_service
@@ -201,9 +200,7 @@ class TestBrainRecordEventNoDB:
             body = json.loads(result.content[0].text)
             assert "error" in body
 
-    async def test_get_neighbors_no_db_returns_error(
-        self, mcp_server, monkeypatch
-    ) -> None:
+    async def test_get_neighbors_no_db_returns_error(self, mcp_server, monkeypatch) -> None:
         from tapps_brain.services import kg_service
 
         monkeypatch.setattr(kg_service, "_CM", None)
