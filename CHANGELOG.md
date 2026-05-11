@@ -12,9 +12,21 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+---
+
+## [3.16.0] — 2026-05-11
+
+The **async-native graduation release** — EPIC-072 STORY-072.7 (TAP-1117) flips the async-native Postgres write path from an opt-in feature flag to the default. No new APIs; behaviour change is transparent for operators with a Postgres DSN configured.
+
 ### Changed
 
 - **async-native is now the only write path; `TAPPS_BRAIN_ASYNC_NATIVE` flag removed** (EPIC-072 STORY-072.7, TAP-1117). Graduated the opt-in async-native Postgres write path to default. `AsyncMemoryStore.save`/`.delete` and the HTTP write endpoints (`/v1/remember`, `/v1/forget`, `/v1/learn_success`, `/v1/learn_failure`) build the `AsyncPostgresPrivateBackend` automatically whenever a Postgres DSN is configured. The `TAPPS_BRAIN_ASYNC_NATIVE` env var is no longer read — setting it has no effect, and unsetting it no longer routes through the legacy thread-pool write path. `AsyncMemoryStore` retains a `to_thread` fallback when no async backend is wired (embedded sync-only test setups, no DSN).
+
+### Migration notes
+
+- **No action required for operators on Postgres.** The default path is now what the flag used to enable. Remove `TAPPS_BRAIN_ASYNC_NATIVE` from your deployment env if it was set — leaving it has no effect.
+- **No schema changes.** No new migrations.
+- **Known limitations carried forward from EPIC-072:** `save_relations` and `append_audit` remain no-ops on the async-native path; recall/reinforce/batch endpoints still use `asyncio.to_thread`. Tracked as EPIC-072 follow-ups.
 
 ---
 

@@ -219,7 +219,12 @@ class AsyncMemoryStore:
 
             project_id = getattr(store, "_project_id", None) or ""
             agent_id = getattr(store, "_agent_id", None) or ""
-            if project_id and agent_id:
+            if (
+                isinstance(project_id, str)
+                and isinstance(agent_id, str)
+                and project_id
+                and agent_id
+            ):
                 async_backend = create_async_private_backend(
                     dsn, project_id=project_id, agent_id=agent_id
                 )

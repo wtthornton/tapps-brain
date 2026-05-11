@@ -1370,7 +1370,12 @@ def create_app(
                 if _dsn.startswith(("postgres://", "postgresql://")):
                     _project_id = getattr(cfg.store, "_project_id", None) or ""
                     _agent_id = getattr(cfg.store, "_agent_id", None) or ""
-                    if _project_id and _agent_id:
+                    if (
+                        isinstance(_project_id, str)
+                        and isinstance(_agent_id, str)
+                        and _project_id
+                        and _agent_id
+                    ):
                         _ab = create_async_private_backend(
                             _dsn, project_id=_project_id, agent_id=_agent_id
                         )
