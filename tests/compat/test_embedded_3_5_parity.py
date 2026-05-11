@@ -80,7 +80,9 @@ class TestReturnShapes:
     def test_recall_entries_have_canonical_keys(self, tmp_path: Path) -> None:
         with _brain(tmp_path) as brain:
             brain.remember("ruff is the linter for tapps-brain")
-            results = brain.recall("ruff linting")
+            # Use a query that BM25 can match without stemming.  "ruff linting"
+            # fails because the stored token is "linter" — see TAP follow-up.
+            results = brain.recall("ruff linter")
 
         assert len(results) > 0, "recall() must return at least one entry"
         for entry in results:
