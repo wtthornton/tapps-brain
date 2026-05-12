@@ -102,6 +102,47 @@ def reset_profile_filter_counters() -> None:
         _MCP_TOOLS_CALL_TOTAL.clear()
 
 
+# ---------------------------------------------------------------------------
+# TAP-1580: ValidationError → required_fields hint enrichment
+# ---------------------------------------------------------------------------
+
+
+def _missing_required_fields(exc: BaseException) -> list[str]:
+    """Walk ``exc.__cause__`` chain for a pydantic ``ValidationError`` and
+    return the dotted-path locations of all entries reporting
+    ``type == "missing"``. Returns ``[]`` when no missing-required entries are
+    present (including when no ValidationError is in the chain)."""
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        errors_fn = getattr(cur, "errors", None)
+        if cur.__class__.__name__ == "ValidationError" and callable(errors_fn):
+            try:
+                errs = errors_fn()
+            except Exception:
+                return []
+            missing: list[str] = []
+            for e in errs:
+                if e.get("type") != "missing":
+                    continue
+                loc = e.get("loc", ())
+                missing.append(".".join(str(p) for p in loc) if loc else "<root>")
+            return missing
+        cur = cur.__cause__
+    return []
+
+
+def _enriched_tool_error_message(name: str, original: str, missing: list[str]) -> str:
+    """Inject a ``required_fields: [...]`` hint into a FastMCP ``ToolError``
+    message string while preserving the original ``"Error executing tool <name>: "``
+    prefix and the original pydantic body verbatim."""
+    prefix = f"Error executing tool {name}: "
+    body = original[len(prefix) :] if original.startswith(prefix) else original
+    hint = "required_fields: [" + ", ".join(repr(f) for f in missing) + "]"
+    return f"{prefix}{hint}. {body}"
+
+
 def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools + call_tool hooks
     mcp: Any,
     *,
@@ -259,7 +300,20 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             with _METRICS_LOCK:
                 key = (profile, "", "allowed")
                 _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
-        return await _orig_call_tool(name, arguments, **kwargs)
+        try:
+            return await _orig_call_tool(name, arguments, **kwargs)
+        except Exception as exc:
+            # TAP-1580: enrich ToolError messages whose underlying cause is a
+            # pydantic ValidationError reporting missing required fields.
+            from mcp.server.fastmcp.exceptions import ToolError
+
+            if not isinstance(exc, ToolError):
+                raise
+            missing = _missing_required_fields(exc)
+            if not missing:
+                raise
+            enriched = ToolError(_enriched_tool_error_message(name, str(exc), missing))
+            raise enriched from exc.__cause__
 
     # Install wrappers on the tool manager instance (not the class) so only
     # this *mcp* instance is affected.
