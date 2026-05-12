@@ -566,3 +566,195 @@ class TestProfileFilterMetrics:
         assert snap_after["list_total"] == {}
         assert snap_after["list_visible"] == {}
         assert snap_after["call_total"] == {}
+
+
+# ---------------------------------------------------------------------------
+# TAP-1580: ValidationError enrichment with required-field hints
+# ---------------------------------------------------------------------------
+
+
+def _build_validation_error(field_names: list[str]) -> Exception:
+    """Return a pydantic ValidationError for a model whose required fields
+    (``field_names``) are missing from the input."""
+    from pydantic import ValidationError, create_model
+
+    fields: dict[str, Any] = dict.fromkeys(field_names, (str, ...))
+    args_model = create_model("argsModel", **fields)  # type: ignore[call-overload]
+    try:
+        args_model.model_validate({})
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected ValidationError")
+
+
+def _wrap_in_tool_error(name: str, validation_exc: Exception) -> Exception:
+    """Mirror FastMCP's ``Tool.run`` wrapping of ``pydantic.ValidationError``."""
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    return ToolError(f"Error executing tool {name}: {validation_exc}")
+
+
+class TestValidationErrorEnrichment:
+    """TAP-1580: ToolError messages must include a ``required_fields`` hint
+    when the underlying cause is a ``pydantic.ValidationError`` reporting
+    missing required fields."""
+
+    @pytest.mark.asyncio
+    async def test_single_missing_required_field_adds_hint(self) -> None:
+        """A single missing required field is named in the enriched message."""
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich1", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        validation_exc = _build_validation_error(["query"])
+        wrapped = _wrap_in_tool_error("memory_recall", validation_exc)
+        wrapped.__cause__ = validation_exc
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=wrapped)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_recall", {})
+
+        msg = str(exc_info.value)
+        assert "required_fields" in msg
+        assert "query" in msg
+        assert "memory_recall" in msg
+
+    @pytest.mark.asyncio
+    async def test_multiple_missing_required_fields_all_listed(self) -> None:
+        """Multiple missing required fields are listed in the hint."""
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich2", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        validation_exc = _build_validation_error(["key", "value"])
+        wrapped = _wrap_in_tool_error("memory_save", validation_exc)
+        wrapped.__cause__ = validation_exc
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=wrapped)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_save", {})
+
+        msg = str(exc_info.value)
+        assert "required_fields" in msg
+        assert "key" in msg
+        assert "value" in msg
+
+    @pytest.mark.asyncio
+    async def test_original_pydantic_message_preserved(self) -> None:
+        """Original pydantic error text remains in the enriched message."""
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich3", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        validation_exc = _build_validation_error(["query"])
+        original_text = str(validation_exc)
+        wrapped = _wrap_in_tool_error("memory_recall", validation_exc)
+        wrapped.__cause__ = validation_exc
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=wrapped)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_recall", {})
+
+        msg = str(exc_info.value)
+        assert "Field required" in original_text  # sanity check
+        assert "Field required" in msg
+
+    @pytest.mark.asyncio
+    async def test_non_missing_validation_error_no_required_fields_hint(self) -> None:
+        """Type errors on present fields don't synthesize a required_fields hint."""
+        from mcp.server.fastmcp.exceptions import ToolError
+        from pydantic import BaseModel, ValidationError
+
+        class _Args(BaseModel):
+            limit: int
+
+        try:
+            _Args.model_validate({"limit": "not-an-int"})
+        except ValidationError as exc:
+            validation_exc: Exception = exc
+        else:
+            raise AssertionError("expected ValidationError")
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich4", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        wrapped = _wrap_in_tool_error("memory_search", validation_exc)
+        wrapped.__cause__ = validation_exc
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=wrapped)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_search", {"limit": "not-an-int"})
+
+        msg = str(exc_info.value)
+        assert "required_fields" not in msg
+
+    @pytest.mark.asyncio
+    async def test_non_validation_error_unchanged(self) -> None:
+        """RuntimeError (non-validation) passes through untouched."""
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich5", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        original = RuntimeError("boom — totally unrelated")
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=original)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_recall", {})
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_toolerror_without_validation_cause_unchanged(self) -> None:
+        """ToolError that doesn't wrap a ValidationError isn't modified."""
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "test_validation_enrich6", default=None
+        )
+        cv.set("full")
+        mcp = _make_mock_mcp(ALL_TOOLS)
+        registry = _make_registry(RESTRICTED_REGISTRY)
+
+        original = ToolError("Error executing tool memory_recall: internal blowup")
+        mcp._tool_manager.call_tool = AsyncMock(side_effect=original)
+
+        install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp._tool_manager.call_tool("memory_recall", {})
+
+        msg = str(exc_info.value)
+        assert "required_fields" not in msg
+        assert "internal blowup" in msg
