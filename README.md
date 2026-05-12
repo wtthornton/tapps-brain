@@ -757,7 +757,7 @@ tapps-brain-http
 <!-- docsmcp:start:api-reference -->
 ## API Reference
 
-See the [API documentation](docs/api.md) for detailed reference.
+See the [API documentation](docs/api-reference.md) for detailed reference.
 <!-- docsmcp:end:api-reference -->
 
 <!-- docsmcp:start:contributing -->

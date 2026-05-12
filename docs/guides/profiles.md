@@ -438,7 +438,7 @@ profile:
 
 When `default_memory_group` is `null` (the default), saves without an explicit group remain ungrouped. This is **opt-in** -- setting a default does not retroactively change existing ungrouped entries.
 
-The `memory_group` field is indexed in the project SQLite store (`idx_memories_memory_group`) for efficient `list_groups()` and group-filtered queries. Groups are project-local partitions; they are distinct from Hive `group:<name>` namespaces (which are cross-agent).
+The `memory_group` field is indexed in the Postgres `private_memories` table (`idx_private_memories_memory_group`, migration 001) for efficient `list_groups()` and group-filtered queries. Groups are project-local partitions; they are distinct from Hive `group:<name>` namespaces (which are cross-agent).
 
 ### Seeding (optional)
 

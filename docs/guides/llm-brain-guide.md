@@ -34,13 +34,16 @@ Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools.
 
 ## Tier guide
 
-| Tier | Use for | Typical lifespan |
-|------|---------|-----------------|
-| `architectural` | Tech stack, framework choices, API contracts | Long-lived |
-| `pattern` | Naming conventions, code style, file organization | Long-lived |
-| `procedural` | How-to knowledge, build steps, deploy procedures | Medium |
-| `context` | Current task state, recent decisions | Session-length |
-| `ephemeral` | Scratch notes, intermediate reasoning | Very short |
+The four tiers below are the **default `repo-brain` profile** — every coding-agent install ships with these. Half-lives are exponential-decay parameters set in [`profile-catalog.md`](profile-catalog.md).
+
+| Tier | Use for | Half-life (repo-brain) |
+|------|---------|-----------------------|
+| `architectural` | Tech stack, framework choices, API contracts, ADR-level decisions | 180 days |
+| `pattern` | Naming conventions, code style, file organisation, reusable design patterns | 60 days |
+| `procedural` | How-to knowledge, build steps, deploy procedures, runbooks | 30 days |
+| `context` | Current task state, recent session-scoped decisions | 14 days |
+
+Custom profiles can add additional tiers (`ephemeral`, `personal`, etc.) — call `profile_info` or `memory_profile_onboarding` to see the active profile's layer stack. `MemoryTier` accepts `ephemeral` as an enum value, but the default `repo-brain` profile does not define an `ephemeral` layer, so its decay behaviour falls back to `context`-tier defaults.
 
 ## MCP tool examples
 

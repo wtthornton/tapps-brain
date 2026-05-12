@@ -46,6 +46,20 @@ When adding new features, please include appropriate tests.
 
 CI runs automatically on pull requests (workflows: ci, epic-validation, hive-smoke).
 
+## Documentation Quality
+
+Documentation health is tracked via [docs-mcp](https://github.com/anthropics/docs-mcp). The canonical drift-ignore manifest lives in [`.docsmcp.yaml`](.docsmcp.yaml) at the repo root — keep it in sync when adding or removing internal-only constants that the scanner flags but that don't belong in user docs.
+
+Running drift cleanly (zero false positives):
+
+```bash
+# Build the comma-joined argument from .docsmcp.yaml, then invoke docs_check_drift
+ARGS=$(python -c "import yaml; print(','.join(yaml.safe_load(open('.docsmcp.yaml'))['drift_ignore_patterns']))")
+# Then call docs_check_drift via your MCP client with ignore_patterns=$ARGS
+```
+
+A `drift_score` above 0 after applying the manifest is real signal — investigate before merging.
+
 ## Submitting Changes
 
 1. Create a feature branch from `main`:

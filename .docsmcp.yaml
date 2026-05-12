@@ -1,0 +1,61 @@
+# docs-mcp configuration for tapps-brain.
+#
+# This file is the canonical manifest for `docs_check_drift` ignore patterns.
+# At the time of writing, docs-mcp does NOT load `drift_ignore_patterns` from
+# `.docsmcp.yaml` automatically — patterns must be passed at call time via the
+# `ignore_patterns` argument. Keep this file in sync with the wrapper invocation;
+# audits should always quote from here as the source of truth.
+#
+# To run drift cleanly (zero false positives), pass these patterns joined by
+# commas as `ignore_patterns`:
+#
+#   docs_check_drift(ignore_patterns="defaults,scripts.*,examples.*,...")
+#
+# Bash one-liner that joins the YAML list:
+#
+#   docs_check_drift_args=$(python -c "import yaml; \
+#     print(','.join(yaml.safe_load(open('.docsmcp.yaml'))['drift_ignore_patterns']))")
+#
+# Patterns are fnmatch globs on fully-qualified symbol names (e.g.
+# `tapps_brain.module.NAME`). The literal string `defaults` opts into
+# docs-mcp's built-in private/test list (`_*`, `test_*`, `tests.*`, etc.).
+#
+# When updating: re-run `docs_check_drift` and confirm only signal remains.
+
+drift_ignore_patterns:
+  - defaults
+
+  # One-off scripts and example code — never user-facing.
+  - "scripts.*"
+  - "examples.*"
+
+  # Internal OTel tracing constants. Documented in tapps_brain/otel_tracer.py's
+  # module docstring (allowed-attribute table). User-facing observability docs
+  # reference the OTel semantic-convention *values*, not the Python identifiers.
+  - "tapps_brain.otel_tracer.SPAN_*"
+  - "tapps_brain.otel_tracer.ATTR_*"
+  - "tapps_brain.otel_tracer.GEN_AI_*"
+  - "tapps_brain.otel_tracer.W3C_*"
+  - "tapps_brain.otel_tracer.MCP_META_KEY"
+
+  # Internal env-var / header name constants. The actual env-var and header
+  # *values* (TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE, X-Tapps-Project,
+  # TAPPS_BRAIN_PROJECT) are documented in postgres-dsn.md, agent-playbook.md,
+  # and module docstrings. The scanner flags the Python identifier, which is
+  # internal and uninteresting to readers.
+  - "tapps_brain.integrity.INTEGRITY_KEY_REGENERATE_ENV"
+  - "tapps_brain.project_resolver.HEADER_NAME"
+  - "tapps_brain.project_resolver.ENV_VAR"
+  - "tapps_brain.project_resolver.DEFAULT_PROJECT_ID"
+  - "tapps_brain.http.middleware.MCP_AUTH_EXPECTED_ENV"
+
+  # Privacy mode name constants. The mode *values* (standard/strict/local) are
+  # documented in visual-snapshot.md; the Python identifiers are internal.
+  - "tapps_brain.visual_snapshot.PRIVACY_*"
+
+  # Internal SQL templates for the KG store. Documented in postgres_kg.py and
+  # async_postgres_kg.py module docstrings — not user-facing.
+  - "tapps_brain._postgres_kg_sql.*"
+
+  # Private CLI helper.
+  - "tapps_brain.cli._common._PREVIEW_LEN"

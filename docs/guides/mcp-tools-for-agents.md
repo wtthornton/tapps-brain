@@ -30,13 +30,16 @@ Simplified 5-method API on top of `MemoryStore` + `HiveBackend`. This is the pri
 
 ### `brain_remember`
 Save a memory to the agent's brain.
-- Args: `fact*`, `tier` (`architectural`/`pattern`/`procedural`/`context`, default `procedural`), `share` (default `False`), `share_with` (e.g. `"hive"`), `agent_id`.
-- **When I use it:** when a decision carries rationale that isn't obvious from the code. Pick the tier by half-life (architectural 180d → context 14d). Never save git-derivable facts or secrets.
+- Args: `fact*`, `tier` (`architectural`/`pattern`/`procedural`/`context`, default `procedural`), `share` (default `False`), `share_with` (e.g. `"hive"`), `agent_scope` (`"private"`/`"domain"`/`"hive"`/`"group:<name>"` — wins over `share`/`share_with` when set; TAP-989), `memory_group` (project-local partition, orthogonal to Hive scope), `temporal_sensitivity` (`"high"` decays 4× faster, `"low"` decays 4× slower, omit for tier default), `failed_approaches` (list of up to 5 dead-end paths, surfaced in future recalls), `agent_id`.
+- **When I use it:** when a decision carries rationale that isn't obvious from the code. Pick the tier by half-life (architectural 180d → context 14d). Tag with `critical` / `security` for ranking boost. Never save git-derivable facts or secrets.
+- **Response:** `{saved: true, key: "<content-key>"}`. If a near-duplicate active entry exists, the response also carries `supersession_candidate: "<old-key>"` — call `memory_supersede` (or re-call `brain_remember` with `supersedes=<old-key>`) to keep the version chain.
 
 ### `brain_recall`
 Recall memories matching a query.
 - Args: `query*`, `max_results` (default 5), `agent_id`.
 - **When I use it:** **session start** (with the user's opening topic) and **before any non-trivial decision**. Primary read path.
+- **Pre-filters via the MCP tool are intentionally narrow.** The underlying service (`memory_service.brain_recall`) supports `filter_tier`, `filter_tags` (ALL), `filter_tags_any` (OR), `filter_memory_class`, `include_stale` — but the MCP wrapper does not expose them yet. When I need those, reach for `memory_search` (time + scope + tier filters) or `memory_entries_by_tag`.
+- **Empty result?** The MCP wrapper returns a plain list. To get a diagnostics envelope (why nothing came back: store empty, below threshold, scope filtered, RAG-blocked, circuit-breaker open), call `memory_recall` once with the same query — it returns a `RecallResult` with an `empty_reason` enum.
 
 ### `brain_forget`
 Archive (not delete) a memory by key.
@@ -372,6 +375,8 @@ for full client-specific examples (Claude Code, Cursor, Aider).
 
 ## Related docs
 
+- [docs/guides/agent-playbook.md](agent-playbook.md) — the *decision tree* version of this catalog: when to call what, response shapes, failure modes.
+- [docs/guides/knowledge-graph.md](knowledge-graph.md) — full reference for the four `brain_record_event` / `brain_get_neighbors` / `brain_explain_connection` / `brain_record_feedback` tools, with spec dataclasses and constraints.
 - [docs/guides/mcp-client-repo-setup.md](mcp-client-repo-setup.md) — wiring `.mcp.json` + `.env` for a new repo.
 - [docs/guides/claude-code-hooks.md](claude-code-hooks.md) — the SessionStart hook that auto-primes `brain_recall` on turn 1.
 - [docs/guides/auto-recall.md](auto-recall.md) — how `memory_recall` ranks and fuses results.
