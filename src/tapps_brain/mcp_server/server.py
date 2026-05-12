@@ -207,6 +207,14 @@ _MCP_INSTRUCTIONS = (
     "tapps-brain is a persistent cross-session memory system. "
     "Use memory tools to save, retrieve, search, and manage "
     "knowledge across coding sessions.\n\n"
+    "## Quick start\n\n"
+    '- Save by key:       `memory_save(key="...", value="...")`\n'
+    '- Get by key:        `memory_get(key="...")`\n'
+    '- Recall by query:   `memory_recall(query="...")`\n'
+    '- Agent facade:      `brain_remember(fact="...")` / '
+    '`brain_recall(query="...")`\n'
+    '- Share across agents: pass `agent_scope="hive"` (or '
+    '`"domain"` / `"group:<name>"`) on `memory_save`.\n\n'
     "## Hive (multi-agent memory sharing)\n\n"
     "When Hive is enabled, memories can be shared across agents "
     "using the `agent_scope` parameter on `memory_save`:\n\n"

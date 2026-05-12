@@ -87,7 +87,7 @@ Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools.
 {
   "tool": "brain_learn_success",
   "arguments": {
-    "task_description": "Implemented responsive sidebar with Tailwind",
+    "description": "Implemented responsive sidebar with Tailwind",
     "task_id": "TASK-42"
   }
 }

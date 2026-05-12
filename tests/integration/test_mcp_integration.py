@@ -261,7 +261,7 @@ class TestLifecycleTools:
                     "tier": "architectural",
                 },
             )
-            result = await session.call_tool("memory_recall", {"message": "What database?"})
+            result = await session.call_tool("memory_recall", {"query": "What database?"})
             body = json.loads(result.content[0].text)
             assert "memory_count" in body
             assert "token_count" in body

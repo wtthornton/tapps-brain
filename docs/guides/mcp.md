@@ -232,7 +232,7 @@ memory_search(query="authentication", tier="architectural")
 
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Run auto-recall for a message, returning ranked relevant memories |
+| `memory_recall` | Run auto-recall for a query, returning ranked relevant memories |
 | `memory_reinforce` | Boost a memory's confidence after it proved useful |
 | `memory_ingest` | Extract and store durable facts from conversation text |
 | `memory_supersede` | Create a new version of a memory (bi-temporal versioning) |
@@ -241,7 +241,7 @@ memory_search(query="authentication", tier="architectural")
 **Example — recall:**
 
 ```
-memory_recall(message="How does authentication work in this project?")
+memory_recall(query="How does authentication work in this project?")
 ```
 
 Returns a `memory_section` string with ranked memories, token count, and timing.

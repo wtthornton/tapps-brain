@@ -12,6 +12,23 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+---
+
+## [3.17.0] — 2026-05-12
+
+The **MCP-tool parameter-alignment release** — addresses NLTlabsPE 2026-05-12 feedback on the public MCP tool surface. Two parameter renames + new quick-start in the server `instructions=` string. Old names still accepted as deprecated aliases for one minor cycle (removed in 3.18.0).
+
+### Changed
+
+- **`memory_recall(message=...)` → `memory_recall(query=...)`** (NLTlabsPE alignment, TAP-tbd). The new MCP tool surface uses `query=` to match `memory_search(query=...)` and `brain_recall(query=...)`. The `message=` kwarg is a **deprecated alias** kept for back-compat — calls emit `DeprecationWarning` and forward to the new path. Passing both raises `ValueError`. Removed in 3.18.0.
+- **`brain_learn_success(task_description=...)` → `brain_learn_success(description=...)`** (NLTlabsPE alignment, TAP-tbd). Aligns the parameter name with `brain_learn_failure(description=...)`. The `task_description=` kwarg is a **deprecated alias** with the same warn-and-forward semantics. Service-layer signatures are unchanged. Removed in 3.18.0.
+- **FastMCP server `instructions=` now ships a 5-line quick-start** at the top of the server preamble: `memory_save` / `memory_get` / `memory_recall` / `brain_remember` / `agent_scope`. Lets agents pick up the canonical save/get/recall surface from the server preamble alone, without a `ToolSearch` round-trip on first use.
+
+### Migration notes
+
+- **No action required for callers using `tapps-brain` >= 3.17.0 directly.** Old names still work and emit a `DeprecationWarning`.
+- **Update tapps-mcp BrainBridge** (`packages/tapps-core/src/tapps_core/brain_bridge.py:1191`) to send `query=` and `description=` to silence the warning before 3.18.0 lands. Tracked as a cross-repo follow-up.
+
 ### Changed
 
 - **`/v1/reinforce` and `/v1/reinforce:batch` are now async-native** (EPIC-072 STORY-072.9, TAP-1566). `AsyncMemoryStore.reinforce` adopts the capture+flush pattern previously used by `save`/`delete`, so the reinforced entry's Postgres write goes through `AsyncPostgresPrivateBackend` instead of occupying a thread-pool thread. New `async_memory_reinforce` / `async_memory_reinforce_many` service shims dispatch through `cfg.async_store` when wired; both handlers fall back to `asyncio.to_thread(memory_reinforce*, ...)` against the sync store when no async backend is available. Recall (single + batch) is still routed through `asyncio.to_thread` — true async-native recall pipeline is tracked as TAP-1568.

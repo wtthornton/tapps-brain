@@ -597,7 +597,7 @@ class TestMcpToolHandlerExecution:
         store.save(key="mcp-rc", value="unique recall phrase xyz", tier="pattern")
 
         recall = _tool_fn(mcp_server, "memory_recall")
-        payload = json.loads(recall(message="recall phrase xyz"))
+        payload = json.loads(recall(query="recall phrase xyz"))
         assert "memory_count" in payload
         assert "token_count" in payload
         assert "recall_diagnostics" in payload
@@ -623,11 +623,33 @@ class TestMcpToolHandlerExecution:
         srv = create_server(root, enable_hive=False)
         try:
             recall = _tool_fn(srv, "memory_recall")
-            payload = json.loads(recall(message="anything"))
+            payload = json.loads(recall(query="anything"))
             assert payload["memory_count"] == 0
             assert payload["recall_diagnostics"]["empty_reason"] == "store_empty"
         finally:
             srv._tapps_store.close()
+
+    def test_memory_recall_accepts_deprecated_message_alias(self, mcp_server: Any) -> None:
+        """``message=`` still works in 3.17 and emits a DeprecationWarning."""
+        store = mcp_server._tapps_store
+        store.save(key="mcp-rc-alias", value="alias phrase abc", tier="pattern")
+
+        recall = _tool_fn(mcp_server, "memory_recall")
+        with pytest.warns(DeprecationWarning, match=r"memory_recall\(message="):
+            payload = json.loads(recall(message="alias phrase"))
+        assert "memory_count" in payload
+
+    def test_memory_recall_rejects_both_query_and_message(self, mcp_server: Any) -> None:
+        """Passing both raises so callers can't silently drift."""
+        recall = _tool_fn(mcp_server, "memory_recall")
+        with pytest.raises(ValueError, match="not both"):
+            recall(query="a", message="b")
+
+    def test_memory_recall_requires_query_or_alias(self, mcp_server: Any) -> None:
+        """Empty call fails fast with a Required-style message."""
+        recall = _tool_fn(mcp_server, "memory_recall")
+        with pytest.raises(ValueError, match="'query' is required"):
+            recall()
 
     def test_memory_supersede_and_history_tools(self, mcp_server):
         store = mcp_server._tapps_store
