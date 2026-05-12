@@ -1,0 +1,10 @@
+brain_explain_connection
+brain_forget
+brain_get_neighbors
+brain_learn_failure
+brain_learn_success
+brain_recall
+brain_record_event
+brain_record_feedback
+brain_remember
+brain_status

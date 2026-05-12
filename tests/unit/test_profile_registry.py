@@ -162,6 +162,52 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
+    def test_get_agent_brain_returns_10_tools(self) -> None:
+        """TAP-1579: 'agent_brain' profile exposes the 10 brain_* facade tools."""
+        reg = ProfileRegistry()
+        agent_brain = reg.get("agent_brain")
+        assert len(agent_brain) == 10
+
+    def test_get_agent_brain_contains_facade_tools(self) -> None:
+        """TAP-1579: agent_brain must contain the 6 core AgentBrain facade tools."""
+        reg = ProfileRegistry()
+        agent_brain = reg.get("agent_brain")
+        for tool in (
+            "brain_recall",
+            "brain_remember",
+            "brain_forget",
+            "brain_learn_success",
+            "brain_learn_failure",
+            "brain_status",
+        ):
+            assert tool in agent_brain, (
+                f"Expected agent_brain profile to contain {tool!r}"
+            )
+
+    def test_get_agent_brain_excludes_memory_star_tools(self) -> None:
+        """TAP-1579: agent_brain hides all low-level memory_* tools."""
+        reg = ProfileRegistry()
+        agent_brain = reg.get("agent_brain")
+        for tool in agent_brain:
+            assert not tool.startswith("memory_"), (
+                f"agent_brain profile must not contain memory_* tools, "
+                f"found {tool!r}"
+            )
+
+    def test_get_agent_brain_contains_only_brain_star_tools(self) -> None:
+        """TAP-1579: every tool in agent_brain must start with brain_."""
+        reg = ProfileRegistry()
+        agent_brain = reg.get("agent_brain")
+        non_brain = [t for t in agent_brain if not t.startswith("brain_")]
+        assert not non_brain, (
+            f"agent_brain profile must contain only brain_* tools, "
+            f"found {sorted(non_brain)}"
+        )
+
+    def test_get_agent_brain_is_subset_of_full(self) -> None:
+        reg = ProfileRegistry()
+        assert reg.get("agent_brain").issubset(reg.get("full"))
+
     def test_get_returns_frozenset(self) -> None:
         reg = ProfileRegistry()
         assert isinstance(reg.get("full"), frozenset)

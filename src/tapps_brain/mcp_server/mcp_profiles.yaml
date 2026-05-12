@@ -8,11 +8,22 @@
 # adding @mcp.tool decorators, otherwise the server will refuse to start.
 #
 # Profile summary:
-#   full      (59 tools) — all standard tools; default fallback (backwards-compat)
-#   operator  (72 tools) — full + 13 operator-only maintenance tools
-#   coder     (17 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
-#   reviewer  ( 8 tools) — read-only PR/code review agents
-#   seeder    ( 6 tools) — bulk ingestion scripts
+#   full        (59 tools) — all standard tools; default fallback (backwards-compat)
+#   operator    (72 tools) — full + 13 operator-only maintenance tools
+#   coder       (17 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
+#   reviewer    ( 8 tools) — read-only PR/code review agents
+#   seeder      ( 6 tools) — bulk ingestion scripts
+#   agent_brain (10 tools) — TAP-1579 canonical agent-brain consumer surface
+#                             (brain_* facade only; no memory_*/hive_*/feedback_*)
+#
+# Canonical surface split (TAP-1579):
+#   agent-brain consumers (AgentBrain class, embedded agents) → `agent_brain`
+#     profile. Sees only `brain_*` tools — the high-level facade. Memory-layer
+#     `memory_*` tools, Hive `hive_*` tools, and admin tools are hidden.
+#   full-access consumers (operator scripts, full-fidelity clients) → `full`
+#     or `operator` profile. Sees the low-level surface.
+#   Coding agents that need session capture + reinforcement → `coder` profile
+#     (brain_* facade + memory_capture / memory_index_session / memory_reinforce).
 
 profiles:
   # --------------------------------------------------------------------------
@@ -234,3 +245,30 @@ profiles:
       - memory_save
       - memory_save_many
       - memory_supersede
+
+  # --------------------------------------------------------------------------
+  # agent_brain — canonical AgentBrain consumer surface (10 tools) — TAP-1579
+  # Exposes only the `brain_*` facade. Agents using the AgentBrain class never
+  # need the low-level `memory_*`, `hive_*`, `feedback_*`, `agent_*`, or
+  # `maintenance_*` tools — hiding them reduces context bloat and enforces the
+  # architectural boundary between the facade and the storage layer.
+  # --------------------------------------------------------------------------
+  agent_brain:
+    description: >
+      Canonical agent-brain consumer surface. Exposes only the high-level
+      brain_* facade (remember / recall / forget / learn_success /
+      learn_failure / status, plus the KG and event helpers). Excludes all
+      memory_*, hive_*, feedback_*, agent_*, and maintenance_* tools. Intended
+      for any agent that uses the AgentBrain class or speaks to tapps-brain
+      via the brain_* facade only.
+    tools:
+      - brain_explain_connection
+      - brain_forget
+      - brain_get_neighbors
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_recall
+      - brain_record_event
+      - brain_record_feedback
+      - brain_remember
+      - brain_status

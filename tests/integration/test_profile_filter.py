@@ -41,9 +41,9 @@ _MCP_SERVER_DIR = Path(__file__).parent.parent.parent / "src" / "tapps_brain" / 
 _MCP_INIT = _MCP_SERVER_DIR / "__init__.py"
 
 # Profiles exposed on the standard server (no operator tools).
-_STANDARD_PROFILES = ["coder", "full", "reviewer", "seeder"]
+_STANDARD_PROFILES = ["agent_brain", "coder", "full", "reviewer", "seeder"]
 # Profiles that include operator-only tools.
-_ALL_PROFILES = ["coder", "full", "operator", "reviewer", "seeder"]
+_ALL_PROFILES = ["agent_brain", "coder", "full", "operator", "reviewer", "seeder"]
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +137,18 @@ class TestGoldenFileContracts:
     def test_seeder_golden_has_6_tools(self) -> None:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
+
+    def test_agent_brain_golden_has_10_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 10 brain_* tools."""
+        assert len(_load_golden("agent_brain")) == 10
+
+    def test_agent_brain_golden_is_brain_star_only(self) -> None:
+        """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
+        for tool in _load_golden("agent_brain"):
+            assert tool.startswith("brain_"), (
+                f"'agent_brain' profile must contain only brain_* tools, "
+                f"found {tool!r}"
+            )
 
     @pytest.mark.parametrize("profile", _STANDARD_PROFILES)
     def test_restricted_profiles_are_subsets_of_full(self, profile: str) -> None:
@@ -344,6 +356,9 @@ class TestCallEnforcement:
             ("reviewer", "hive_search"),
             ("seeder", "memory_save"),
             ("seeder", "memory_ingest"),
+            ("agent_brain", "brain_recall"),
+            ("agent_brain", "brain_remember"),
+            ("agent_brain", "brain_status"),
         ],
     )
     async def test_in_profile_tool_is_callable(self, profile: str, allowed_tool: str) -> None:
@@ -370,6 +385,11 @@ class TestCallEnforcement:
             ("reviewer", "memory_delete"),
             ("seeder", "memory_delete"),
             ("seeder", "brain_recall"),
+            ("agent_brain", "memory_save"),
+            ("agent_brain", "memory_delete"),
+            ("agent_brain", "memory_recall"),
+            ("agent_brain", "hive_search"),
+            ("agent_brain", "agent_delete"),
         ],
     )
     async def test_out_of_profile_tool_raises_mcp_error(
