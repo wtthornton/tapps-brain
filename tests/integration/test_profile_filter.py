@@ -146,8 +146,7 @@ class TestGoldenFileContracts:
         """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
         for tool in _load_golden("agent_brain"):
             assert tool.startswith("brain_"), (
-                f"'agent_brain' profile must contain only brain_* tools, "
-                f"found {tool!r}"
+                f"'agent_brain' profile must contain only brain_* tools, found {tool!r}"
             )
 
     @pytest.mark.parametrize("profile", _STANDARD_PROFILES)

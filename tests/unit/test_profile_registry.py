@@ -180,9 +180,7 @@ class TestBundledProfiles:
             "brain_learn_failure",
             "brain_status",
         ):
-            assert tool in agent_brain, (
-                f"Expected agent_brain profile to contain {tool!r}"
-            )
+            assert tool in agent_brain, f"Expected agent_brain profile to contain {tool!r}"
 
     def test_get_agent_brain_excludes_memory_star_tools(self) -> None:
         """TAP-1579: agent_brain hides all low-level memory_* tools."""
@@ -190,8 +188,7 @@ class TestBundledProfiles:
         agent_brain = reg.get("agent_brain")
         for tool in agent_brain:
             assert not tool.startswith("memory_"), (
-                f"agent_brain profile must not contain memory_* tools, "
-                f"found {tool!r}"
+                f"agent_brain profile must not contain memory_* tools, found {tool!r}"
             )
 
     def test_get_agent_brain_contains_only_brain_star_tools(self) -> None:
@@ -200,8 +197,7 @@ class TestBundledProfiles:
         agent_brain = reg.get("agent_brain")
         non_brain = [t for t in agent_brain if not t.startswith("brain_")]
         assert not non_brain, (
-            f"agent_brain profile must contain only brain_* tools, "
-            f"found {sorted(non_brain)}"
+            f"agent_brain profile must contain only brain_* tools, found {sorted(non_brain)}"
         )
 
     def test_get_agent_brain_is_subset_of_full(self) -> None:
