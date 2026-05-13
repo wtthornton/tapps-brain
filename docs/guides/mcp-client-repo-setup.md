@@ -104,11 +104,12 @@ narrower attack surface.
 
 | Use case | Profile | Tools |
 |---|---|---|
-| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 15 |
+| AgentBrain consumer / brain_* facade only | `agent_brain` | 10 |
+| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 17 |
 | Read-only PR / code-review bot | `reviewer` | 8 |
 | Bulk ingestion / seeding script | `seeder` | 6 |
-| Human admin or operator console | `operator` | 68 |
-| Everything (backwards-compatible default) | `full` | 55 |
+| Human admin or operator console | `operator` | 72 |
+| Everything (backwards-compatible default) | `full` | 59 |
 
 Omitting the header is equivalent to `full` — no existing client breaks.
 
@@ -166,8 +167,34 @@ mcp_servers:
 ```
 
 **Verification** — after restarting your MCP client run `tools/list`; you
-should see ~15 tools instead of 55 when using the `coder` profile.
-The healthcheck script (`scripts/brain-healthcheck.sh`) also reports the configured profile.
+should see ~17 tools instead of 59 when using the `coder` profile, or 10
+when using `agent_brain`. The healthcheck script
+(`scripts/brain-healthcheck.sh`) also reports the configured profile.
+
+#### Profile wire contract (stable across tapps-brain 3.x) — TAP-1579
+
+For bridge implementations (e.g. tapps-mcp `BrainBridge`) that need to
+distinguish "tool hidden by my profile" from "tool does not exist", these
+elements are part of the 3.x stable surface:
+
+| Surface | Value | Notes |
+|---|---|---|
+| Declaration | `X-Brain-Profile` HTTP header on every request | Set once in the client config (`.mcp.json` / `.aider.conf.yml`) — no per-call override needed. |
+| Default when header is omitted | `full` (59 tools) | Zero behavior change for clients that never set the header. |
+| Default override | `TAPPS_BRAIN_DEFAULT_PROFILE` env var on the server | Operators may flip the default per deployment (see EPIC-073 rollout plan). |
+| Out-of-profile `tools/call` error code | `-32602` (`INVALID_PARAMS`) | Distinct from `-32601` (`METHOD_NOT_FOUND`) so bridges can react. |
+| Out-of-profile `tools/call` `error.data` | `{"reason": "out_of_profile", "tool": "<name>", "profile": "<name>"}` | Stable keys; consumers may dispatch on `reason`. |
+| Out-of-profile `tools/list` behavior | Tool is omitted from the response | No error; the tool simply isn't visible. |
+| Unknown profile name | Fails open (acts like `full`) | Avoids denying legitimate operators against a server with stale YAML. |
+
+A bridge that hits `-32602` with `data.reason == "out_of_profile"` should:
+1. Either declare a wider profile via `X-Brain-Profile` on subsequent
+   initialize calls, or
+2. Surface the structured error to the caller so it can re-route.
+
+A bridge that hits `-32601` should treat the tool as genuinely missing
+(server has been upgraded / tool was deprecated) and adjust its call list,
+not its profile.
 
 ### 6. Teach the MCP client how and when to use the brain
 

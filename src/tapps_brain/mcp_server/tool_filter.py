@@ -251,7 +251,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                     # module-load time so this module can be imported in
                     # environments that don't have the [mcp] extra installed.
                     from mcp.shared.exceptions import McpError
-                    from mcp.types import METHOD_NOT_FOUND, ErrorData
+                    from mcp.types import INVALID_PARAMS, ErrorData
 
                     # STORY-073.4: WARN log with structured fields for alerting.
                     # Read agent_id / project_id from contextvars (best-effort;
@@ -279,12 +279,16 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                     with _METRICS_LOCK:
                         key = (profile, name, "denied_profile")
                         _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                    # TAP-1579: use INVALID_PARAMS (-32602) with
+                    # `data.reason = "out_of_profile"` so MCP-bridge consumers
+                    # (e.g. tapps-mcp BrainBridge) can distinguish "hidden by
+                    # profile" from "tool does not exist" (-32601).
                     raise McpError(
                         ErrorData(
-                            code=METHOD_NOT_FOUND,
+                            code=INVALID_PARAMS,
                             message=(f"Tool {name!r} is not available in profile {profile!r}."),
                             data={
-                                "error": "tool_not_in_profile",
+                                "reason": "out_of_profile",
                                 "tool": name,
                                 "profile": profile,
                             },

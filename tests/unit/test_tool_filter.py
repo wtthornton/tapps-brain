@@ -10,7 +10,9 @@ Tests cover:
 - tools/call enforcement: disallowed tool in restricted profile → McpError.
 - tools/call enforcement: None contextvar value → falls back to "full" (pass).
 - tools/call enforcement: unknown profile → fail open (allow).
-- McpError data fields: code=-32601, data includes tool + profile.
+- McpError data fields: code=-32602 (INVALID_PARAMS) with
+  ``data.reason = "out_of_profile"`` so consumers distinguish "hidden by
+  profile" from "tool does not exist" (-32601). See TAP-1579.
 """
 
 from __future__ import annotations
@@ -255,7 +257,12 @@ class TestCallToolEnforcement:
 
     @pytest.mark.asyncio
     async def test_disallowed_tool_raises_mcp_error(self) -> None:
-        """Calling a tool outside the profile must raise McpError(-32601)."""
+        """Calling a tool outside the profile must raise McpError(-32602).
+
+        TAP-1579: code is INVALID_PARAMS (-32602) with
+        ``data.reason = "out_of_profile"`` so MCP-bridge consumers can
+        distinguish "hidden by profile" from "tool does not exist" (-32601).
+        """
         try:
             from mcp.shared.exceptions import McpError
         except ImportError:
@@ -274,9 +281,9 @@ class TestCallToolEnforcement:
             await mcp._tool_manager.call_tool("memory_delete", {})
 
         err = exc_info.value
-        assert err.error.code == -32601  # METHOD_NOT_FOUND
+        assert err.error.code == -32602  # INVALID_PARAMS, distinct from -32601
         assert err.error.data is not None
-        assert err.error.data["error"] == "tool_not_in_profile"
+        assert err.error.data["reason"] == "out_of_profile"
         assert err.error.data["tool"] == "memory_delete"
         assert err.error.data["profile"] == "coder"
 
@@ -363,7 +370,7 @@ class TestCallToolEnforcement:
         with pytest.raises(McpError) as exc_info:
             await mcp._tool_manager.call_tool("memory_delete", {})
 
-        assert exc_info.value.error.code == -32601
+        assert exc_info.value.error.code == -32602
 
 
 # ---------------------------------------------------------------------------

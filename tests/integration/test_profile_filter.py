@@ -395,7 +395,13 @@ class TestCallEnforcement:
     async def test_out_of_profile_tool_raises_mcp_error(
         self, profile: str, denied_tool: str
     ) -> None:
-        """An out-of-profile tool call must raise McpError with code -32601."""
+        """An out-of-profile tool call must raise McpError(-32602).
+
+        TAP-1579 wire contract: INVALID_PARAMS (-32602) with
+        ``data.reason = "out_of_profile"`` so MCP-bridge consumers (e.g.
+        tapps-mcp BrainBridge) can distinguish "hidden by profile" from
+        "tool does not exist" (-32601).
+        """
         try:
             from mcp.shared.exceptions import McpError
         except ImportError:
@@ -413,9 +419,13 @@ class TestCallEnforcement:
             await mcp._tool_manager.call_tool(denied_tool, {})
 
         err = exc_info.value
-        assert err.error.code == -32601, f"Expected METHOD_NOT_FOUND (-32601), got {err.error.code}"
+        assert err.error.code == -32602, (
+            f"Expected INVALID_PARAMS (-32602), got {err.error.code} — "
+            "must be distinct from -32601 (METHOD_NOT_FOUND) so consumers "
+            "can tell 'hidden by profile' from 'tool does not exist'."
+        )
         assert err.error.data is not None
-        assert err.error.data["error"] == "tool_not_in_profile"
+        assert err.error.data["reason"] == "out_of_profile"
         assert err.error.data["tool"] == denied_tool
         assert err.error.data["profile"] == profile
 
@@ -616,7 +626,10 @@ class TestEndToEndProfileFiltering:
 
     @pytest.mark.asyncio
     async def test_out_of_profile_call_is_denied_end_to_end(self, _mcp_server) -> None:
-        """Out-of-profile call_tool raises McpError with code -32601 on a real server."""
+        """Out-of-profile call_tool raises McpError(-32602) on a real server.
+
+        TAP-1579: code is INVALID_PARAMS, distinct from METHOD_NOT_FOUND.
+        """
         from mcp.shared.exceptions import McpError
 
         from tapps_brain.mcp_server import REQUEST_PROFILE
@@ -625,7 +638,8 @@ class TestEndToEndProfileFiltering:
         try:
             with pytest.raises(McpError) as exc_info:
                 await _mcp_server._tool_manager.call_tool("memory_save", {"key": "k", "value": "v"})
-            assert exc_info.value.error.code == -32601
+            assert exc_info.value.error.code == -32602
+            assert exc_info.value.error.data["reason"] == "out_of_profile"
         finally:
             REQUEST_PROFILE.reset(token)
 
