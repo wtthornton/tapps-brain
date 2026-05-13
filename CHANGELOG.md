@@ -14,6 +14,21 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.17.1] — 2026-05-12
+
+Patch release that bakes the `agent_brain` MCP profile (TAP-1579) and richer `ValidationError` diagnostics (TAP-1580) into a clean wheel + image. v3.17.0 plus three follow-ups, no behavior changes for callers staying on the `full` profile. Cuts the deployed `tapps-brain-http` container off its 2026-05-12 hot-patches.
+
+### Added
+
+- **`agent_brain` MCP profile** (TAP-1579, commit `9feb1b1`). Canonical 10-tool agent-brain consumer surface — `brain_*` facade only; the lower-level `memory_*`, `hive_*`, and `feedback_*` tools are gated out. Intended for embedded agents (AgentBrain class, AgentForge) that should only see the high-level facade. Operator scripts and full-fidelity clients continue to use the `full` profile.
+- **`required_fields` hint on MCP `ValidationError`** (TAP-1580, commit `01604cc`). `tool_filter._enriched_tool_error_message` walks the pydantic `ValidationError.__cause__` chain, extracts missing required-field locations, and prepends `required_fields: [...]` to the FastMCP `ToolError` message — agents no longer have to parse the pydantic body to figure out what to retry with.
+
+### Fixed
+
+- **Out-of-profile error shape + wire contract documented** (TAP-1579, commit `cd659e7`). `tool_filter` raises `McpError(code=-32602, data={"reason": "out_of_profile", "tool": ..., "profile": ...})` for gated tools, matching the contract documented in `docs/guides/mcp-client-repo-setup.md#profile-wire-contract`. `mcp` 1.27.x's FastMCP HTTP transport currently drops the `data` payload on the wire — tracked as TAP-1619; consumers fall back to the canonical text message until that lands.
+
+---
+
 ## [3.17.0] — 2026-05-12
 
 The **MCP-tool parameter-alignment release** — addresses NLTlabsPE 2026-05-12 feedback on the public MCP tool surface. Two parameter renames + new quick-start in the server `instructions=` string. Old names still accepted as deprecated aliases for one minor cycle (removed in 3.18.0).
