@@ -63,8 +63,11 @@ That script runs, in order: OpenClaw docs consistency (`scripts/check_openclaw_d
   - `openclaw-plugin/package.json` (`"version":`) and `package-lock.json` (root)
   - `openclaw-plugin/openclaw.plugin.json` and `openclaw-skill/openclaw.plugin.json`
     (including `install.pip` lower bound `>=X.Y.Z` in the skill manifest)
-  - `openclaw-plugin/src/index.ts` (`ContextEngineInfo.version`)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
+  - **Not a sync target:** `openclaw-plugin/src/index.ts` `ContextEngineInfo.version` is
+    the OpenClaw plugin's own semver (the identity exposed to the OpenClaw runtime), not
+    a tapps-brain mirror. Decoupled at v2.0.4; bump it only when the plugin's own surface
+    changes, not on every tapps-brain release.
 - [ ] CHANGELOG.md updated with release notes — heading must be `## X.Y.Z`
       so `release.yml` can extract the section
 - [ ] All changes committed and pushed to `main`
