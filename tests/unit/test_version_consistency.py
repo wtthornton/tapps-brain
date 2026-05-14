@@ -44,6 +44,21 @@ def _read_package_json_version() -> str:
     return version
 
 
+def _read_package_lock_version() -> str:
+    """Read the root package version from openclaw-plugin/package-lock.json.
+
+    Returns only the top-level ``version`` field — the lockfile's root package
+    identity, not any nested subdependency version. TAP-1691: this drifted
+    behind ``package.json`` for 8 releases (3.15.0 → 3.17.2) because
+    ``npm ci`` does not validate that the lock's root version matches
+    ``package.json``'s.
+    """
+    lock = PROJECT_ROOT / "openclaw-plugin" / "package-lock.json"
+    data = json.loads(lock.read_text(encoding="utf-8"))
+    version: str = data["version"]
+    return version
+
+
 def _read_plugin_json_version() -> str:
     """Read version from openclaw-skill/openclaw.plugin.json."""
     plugin = PROJECT_ROOT / "openclaw-skill" / "openclaw.plugin.json"
@@ -73,6 +88,7 @@ def test_all_versions_match() -> None:
     pyproject_ver = _read_pyproject_version()
     skill_md_ver = _read_skill_md_version()
     package_json_ver = _read_package_json_version()
+    package_lock_ver = _read_package_lock_version()
     plugin_json_ver = _read_plugin_json_version()
     openclaw_plugin_manifest_ver = _read_openclaw_plugin_manifest_version()
     server_json_ver = _read_server_json_version()
@@ -81,6 +97,7 @@ def test_all_versions_match() -> None:
         "pyproject.toml": pyproject_ver,
         "openclaw-skill/SKILL.md": skill_md_ver,
         "openclaw-plugin/package.json": package_json_ver,
+        "openclaw-plugin/package-lock.json": package_lock_ver,
         "openclaw-skill/openclaw.plugin.json": plugin_json_ver,
         "openclaw-plugin/openclaw.plugin.json": openclaw_plugin_manifest_ver,
         "server.json": server_json_ver,
