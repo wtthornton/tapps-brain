@@ -323,3 +323,110 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
     # this *mcp* instance is affected.
     mcp._tool_manager.list_tools = _filtered_list_tools
     mcp._tool_manager.call_tool = _filtered_call_tool
+
+    # ------------------------------------------------------------------
+    # TAP-1619: wrap the lowlevel `CallToolRequest` handler so the
+    # profile denial reaches the HTTP wire as a JSON-RPC `error` envelope.
+    #
+    # Why this is needed in addition to the `_tool_manager.call_tool`
+    # wrap above: the lowlevel server's `call_tool` decorator
+    # (`mcp/server/lowlevel/server.py` ~L583) ends with a bare
+    # ``except Exception as e: return _make_error_result(str(e))`` that
+    # catches the `McpError` raised by `_filtered_call_tool` above and
+    # converts it to ``CallToolResult(content=[TextContent(...)],
+    # isError=True)`` — the structured ``data={"reason":
+    # "out_of_profile", ...}`` payload is silently dropped before it
+    # hits the wire.  Bridge consumers (tapps-mcp `BrainBridge`,
+    # AgentForge) end up regex-matching the canonical denial string
+    # because the JSON-RPC `error` envelope they're documented to
+    # dispatch on never arrives.
+    #
+    # Fix: pre-check the profile here, *outside* the call_tool
+    # decorator's try/except.  When denied, raise `McpError` directly;
+    # `_handle_request` (`mcp/server/lowlevel/server.py` ~L764) catches
+    # `McpError` separately and emits the full `ErrorData` as a
+    # JSON-RPC `error` envelope.
+    #
+    # In-process callers that go straight through
+    # ``mcp._tool_manager.call_tool`` (e.g. existing TAP-1579 unit
+    # tests, ``test_out_of_profile_tool_raises_mcp_error`` above)
+    # bypass this handler entirely and continue to receive the
+    # `McpError` raised by ``_filtered_call_tool``.  The two layers
+    # therefore each fire exactly once per request and metrics are not
+    # double-counted: HTTP-denied requests never reach
+    # ``_filtered_call_tool``; in-process-denied requests never reach
+    # this handler.
+    # ------------------------------------------------------------------
+
+    try:
+        from mcp import types as _mcp_types
+    except ImportError:  # pragma: no cover — mcp extra not installed
+        return
+
+    lowlevel = getattr(mcp, "_mcp_server", None)
+    if lowlevel is None:  # pragma: no cover — defensive against API drift
+        return
+    request_handlers = getattr(lowlevel, "request_handlers", None)
+    if request_handlers is None:  # pragma: no cover
+        return
+    _orig_request_handler = request_handlers.get(_mcp_types.CallToolRequest)
+    if _orig_request_handler is None:  # pragma: no cover
+        return
+
+    async def _profile_gated_request_handler(req: Any) -> Any:
+        profile: str = profile_contextvar.get() or default_profile
+        if profile != default_profile:
+            try:
+                allowed = profile_registry.get(profile)
+            except Exception:
+                # Unknown profile — fail open (matches list_tools / call_tool
+                # behaviour above).  Delegate to the original handler so the
+                # error metric and any other downstream effects still happen.
+                return await _orig_request_handler(req)
+
+            tool_name = req.params.name
+            if tool_name not in allowed:
+                from mcp.shared.exceptions import McpError
+                from mcp.types import INVALID_PARAMS, ErrorData
+
+                # Mirror the metrics + log emitted by ``_filtered_call_tool``
+                # so HTTP-denied requests are observable on the same counters
+                # as in-process-denied requests.
+                try:
+                    from tapps_brain.mcp_server import (
+                        REQUEST_AGENT_ID,
+                        REQUEST_PROJECT_ID,
+                    )
+
+                    _agent_id = REQUEST_AGENT_ID.get()
+                    _project_id = REQUEST_PROJECT_ID.get()
+                except Exception:
+                    _agent_id = None
+                    _project_id = None
+
+                logger.warning(
+                    "tool_filter.call_tool.denied",
+                    tool=tool_name,
+                    profile=profile,
+                    agent_id=_agent_id,
+                    project_id=_project_id,
+                    request_id=None,
+                    transport="jsonrpc",
+                )
+                with _METRICS_LOCK:
+                    key = (profile, tool_name, "denied_profile")
+                    _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                raise McpError(
+                    ErrorData(
+                        code=INVALID_PARAMS,
+                        message=(f"Tool {tool_name!r} is not available in profile {profile!r}."),
+                        data={
+                            "reason": "out_of_profile",
+                            "tool": tool_name,
+                            "profile": profile,
+                        },
+                    )
+                )
+        return await _orig_request_handler(req)
+
+    request_handlers[_mcp_types.CallToolRequest] = _profile_gated_request_handler

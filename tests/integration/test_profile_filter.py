@@ -652,3 +652,141 @@ class TestEndToEndProfileFiltering:
         assert isinstance(registry, ProfileRegistry)
         assert "full" in registry.profiles
         assert "coder" in registry.profiles
+
+
+# ---------------------------------------------------------------------------
+# 7. HTTP wire contract (TAP-1619) — JSON-RPC error envelope reaches the wire
+# ---------------------------------------------------------------------------
+
+
+class TestHttpWireContract:
+    """TAP-1619: out-of-profile denials must reach the HTTP wire as JSON-RPC
+    `error` envelopes (code=-32602, data.reason="out_of_profile"), not as
+    `result.isError=true` text-only responses.
+
+    The bug: McpError raised by the per-request profile filter inside the
+    FastMCP `_tool_manager.call_tool` wrapper is swallowed by the lowlevel
+    server's `call_tool` decorator's bare `except Exception`
+    (mcp/server/lowlevel/server.py:583), which converts the exception to a
+    text-only `CallToolResult(isError=True)`. The structured `data` payload
+    (with `reason`, `tool`, `profile`) is dropped before reaching the wire.
+
+    The fix: wrap the registered `request_handlers[CallToolRequest]` so the
+    profile check runs *outside* the decorator's try/except and the McpError
+    propagates up to `_handle_request`'s `except McpError as err: response =
+    err.error` (mcp/server/lowlevel/server.py:764), which preserves the
+    full ErrorData and emits a proper JSON-RPC error envelope.
+    """
+
+    @pytest.mark.asyncio
+    async def test_out_of_profile_call_returns_jsonrpc_error_envelope_on_wire(
+        self, tmp_path: Path
+    ) -> None:
+        """Posting `tools/call` for a gated tool over the Streamable HTTP
+        transport returns a JSON-RPC `error` envelope with `code=-32602`
+        and the structured `data.reason == "out_of_profile"` payload.
+
+        This is the TAP-1619 contract: bridge consumers (tapps-mcp
+        BrainBridge, AgentForge) must be able to dispatch on the structured
+        `error.data.reason` field without falling back to regex parsing of
+        the canonical denial message.
+
+        The test mounts the real FastMCP `streamable_http_app()` in
+        stateless mode (skips initialize handshake) and sets
+        `REQUEST_PROFILE` directly — mirroring exactly what
+        `McpTenantMiddleware` does in `http_adapter.py` when a request
+        carries `X-Brain-Profile: agent_brain`.
+        """
+        pytest.importorskip("httpx")
+        import os
+
+        import httpx
+        from starlette.applications import Starlette
+        from starlette.routing import Mount
+
+        os.environ["TAPPS_BRAIN_STATELESS_HTTP"] = "1"
+        # Allow the in-process httpx ASGITransport's default host header.
+        os.environ.setdefault("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", "127.0.0.1")
+
+        from tapps_brain.mcp_server import REQUEST_PROFILE, create_server
+
+        mcp = create_server(tmp_path, enable_hive=False, agent_id="tap1619-test")
+        try:
+            mcp.settings.streamable_http_path = "/"
+            sub = mcp.streamable_http_app()
+            app = Starlette(routes=[Mount("/mcp", app=sub)])
+
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {"name": "memory_save", "arguments": {"key": "k", "value": "v"}},
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            token = REQUEST_PROFILE.set("agent_brain")
+            try:
+                async with mcp.session_manager.run():
+                    transport = httpx.ASGITransport(app=app)
+                    async with httpx.AsyncClient(
+                        transport=transport, base_url="http://127.0.0.1"
+                    ) as client:
+                        resp = await client.post("/mcp/", json=payload, headers=headers)
+            finally:
+                REQUEST_PROFILE.reset(token)
+
+            assert resp.status_code < 400, f"transport error {resp.status_code}: {resp.text[:500]}"
+
+            ctype = resp.headers.get("content-type", "")
+            if "application/json" in ctype:
+                body = resp.json()
+            elif "text/event-stream" in ctype:
+                # Pull the first JSON-RPC frame out of the SSE stream.
+                import json as _json
+
+                data_line = next(
+                    (
+                        line[len("data: ") :]
+                        for line in resp.text.splitlines()
+                        if line.startswith("data: ")
+                    ),
+                    None,
+                )
+                assert data_line is not None, f"no SSE data frame in: {resp.text[:500]}"
+                body = _json.loads(data_line)
+            else:
+                raise AssertionError(f"unexpected content-type {ctype!r}: {resp.text[:500]}")
+
+            # The contract: a JSON-RPC error envelope, NOT result.isError=true.
+            assert "error" in body, (
+                "TAP-1619: out-of-profile denial must surface as a JSON-RPC `error` "
+                f"envelope, not result.isError=true.  Body: {body!r}"
+            )
+            assert "result" not in body or body["result"] is None, (
+                f"JSON-RPC envelope must not carry both `result` and `error`: {body!r}"
+            )
+
+            err = body["error"]
+            assert err["code"] == -32602, (
+                f"Expected INVALID_PARAMS (-32602), got {err.get('code')!r}.  "
+                "Distinct from -32601 so consumers can tell 'hidden by profile' "
+                "from 'tool does not exist'."
+            )
+            assert "data" in err and err["data"] is not None, (
+                f"error.data must be present and non-null: {err!r}"
+            )
+            assert err["data"].get("reason") == "out_of_profile", (
+                f"error.data.reason must be 'out_of_profile': {err!r}"
+            )
+            assert err["data"].get("tool") == "memory_save", (
+                f"error.data.tool must echo the denied tool name: {err!r}"
+            )
+            assert err["data"].get("profile") == "agent_brain", (
+                f"error.data.profile must echo the active profile: {err!r}"
+            )
+        finally:
+            if hasattr(mcp, "_tapps_store"):
+                mcp._tapps_store.close()
