@@ -14,6 +14,16 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.17.2] — 2026-05-13
+
+Patch release that lands the HTTP-wire half of the `out_of_profile` contract documented in v3.17.1. The structured JSON-RPC error envelope now actually reaches bridge consumers (tapps-mcp `BrainBridge`, AgentForge) instead of being swallowed by FastMCP's `isError` wrapper.
+
+### Fixed
+
+- **`out_of_profile` denial reaches the wire as a JSON-RPC `error` envelope** (TAP-1619, commit `883d8ca`). The `mcp` 1.27.x lowlevel server's `call_tool` decorator catches `McpError` with a bare `except Exception` (`mcp/server/lowlevel/server.py:583`) and converts it to text-only `result.isError=true`, dropping `ErrorData.data` silently. `tool_filter` now installs a second wrapper at `_mcp_server.request_handlers[CallToolRequest]` so the profile pre-check raises `McpError` *outside* that try/except — the exception then propagates up to `_handle_request`'s `except McpError` block (~L764) and emits a proper JSON-RPC `error` envelope with the full structured payload (`code=-32602`, `data={"reason": "out_of_profile", "tool": ..., "profile": ...}`). In-process callers (existing TAP-1579 unit tests in `TestCallEnforcement`) bypass the request handler entirely and continue receiving `McpError` from the original `_filtered_call_tool` wrapper; HTTP-denied requests never reach `_filtered_call_tool` because the new wrapper short-circuits first, so the `denied_profile` metric is not double-counted. The `Profile wire contract` section in `docs/guides/mcp-client-repo-setup.md` no longer needs the "consumers fall back to the canonical text message until that lands" caveat — the wire shape now matches the documented contract.
+
+---
+
 ## [3.17.1] — 2026-05-12
 
 Patch release that bakes the `agent_brain` MCP profile (TAP-1579) and richer `ValidationError` diagnostics (TAP-1580) into a clean wheel + image. v3.17.0 plus three follow-ups, no behavior changes for callers staying on the `full` profile. Cuts the deployed `tapps-brain-http` container off its 2026-05-12 hot-patches.
