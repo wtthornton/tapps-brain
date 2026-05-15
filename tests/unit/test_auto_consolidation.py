@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,7 @@ def temp_root() -> Path:
 
 
 @pytest.fixture()
-def store(temp_root: Path) -> MemoryStore:  # type: ignore[misc]
+def store(temp_root: Path) -> Iterator[MemoryStore]:
     s = MemoryStore(temp_root)
     yield s
     s.close()
@@ -75,7 +76,10 @@ def _setup_consolidated_entry(store: MemoryStore) -> str:
         )
     result = check_consolidation_on_save(e2, store, threshold=0.3, min_entries=2)
     if not result.triggered or result.consolidated_entry is None:
-        pytest.skip("Consolidation did not trigger — similarity below threshold on this platform")
+        pytest.fail(
+            "Consolidation did not trigger with threshold=0.3 and JWT-domain content. "
+            "This is a setup error, not a platform variance — check similarity scoring."
+        )
     return result.consolidated_entry.key
 
 
@@ -167,6 +171,8 @@ class TestUndoConsolidationMergeLockSafety:
             "undo thread did not produce a ConsolidationUndoResult"
         )
         r = undo_results[0]
-        assert r.ok or r.reason == "consolidated_entry_missing", (
-            f"undo_consolidation_merge failed with unexpected reason: {r.reason!r}"
+        assert r.ok is True, (
+            f"undo_consolidation_merge failed with reason: {r.reason!r} — "
+            "concurrent saves write only unique keys and cannot remove the consolidated entry, "
+            "so undo must succeed."
         )
