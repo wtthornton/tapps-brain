@@ -969,6 +969,9 @@ class TestMaintenanceCommands:
 
         from tapps_brain.store import MemoryStore
 
+        # Patch the origin module, not maintenance's namespace, because the import
+        # is inside the function body (lazy) so the name is not in maintenance's
+        # module-level namespace until called.
         before_count = MemoryStore(project_dir, embedding_provider=None).count()
         with patch(
             "tapps_brain.auto_consolidation.find_last_consolidation_merge_audit",
@@ -1081,7 +1084,11 @@ class TestMaintenanceCommands:
         assert "Undo OK" in result.stdout
 
     def test_consolidation_merge_undo_non_tty_without_yes_exits_1(self, project_dir):
-        """Non-interactive mode without --yes exits 1 with a helpful message."""
+        """Non-interactive mode without --yes exits 1 with a helpful message.
+
+        typer.testing.CliRunner provides BytesIO as stdin, which is never a TTY,
+        so no additional mocking is needed to simulate non-interactive mode.
+        """
         result = runner.invoke(
             app,
             [
