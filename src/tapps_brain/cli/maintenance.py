@@ -8,6 +8,8 @@ hive-schema-status, backup-hive, restore-hive.
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import Annotated
 
 import typer
@@ -216,6 +218,18 @@ def maintenance_save_conflict_candidates(
 def maintenance_consolidation_merge_undo(
     consolidated_key: Annotated[str, typer.Argument(help="Key of the consolidated row to undo.")],
     project_dir: ProjectDir = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview what would be removed/restored without changes."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip confirmation prompt (also: TAPPS_BRAIN_CONFIRM_YES=1 env var).",
+        ),
+    ] = False,
     as_json: JsonFlag = False,
 ) -> None:
     """Revert the last auto-consolidation merge for this key (EPIC-044 STORY-044.4).
@@ -223,9 +237,70 @@ def maintenance_consolidation_merge_undo(
     Restores superseded source rows, deletes the consolidated row, and appends
     ``consolidation_merge_undo`` to ``memory_log.jsonl``. Requires matching audit
     and unchanged supersede metadata on sources.
+
+    Pass ``--dry-run`` to preview what would be removed/restored without making changes.
+    Pass ``--yes`` (or set ``TAPPS_BRAIN_CONFIRM_YES=1``) to skip the TTY confirmation
+    prompt in non-interactive scripts.
     """
+    from tapps_brain.auto_consolidation import find_last_consolidation_merge_audit
+
+    auto_yes = yes or os.environ.get("TAPPS_BRAIN_CONFIRM_YES") == "1"
+
     store = _get_store(project_dir)
     try:
+        if dry_run:
+            merge_rec = find_last_consolidation_merge_audit(
+                store._persistence.audit_path,
+                consolidated_key,
+                persistence=store._persistence,
+            )
+            if merge_rec is None:
+                typer.echo(
+                    f"No consolidation merge audit found for key: {consolidated_key} "
+                    f"(nothing to undo)."
+                )
+                return
+            source_keys = list(merge_rec.get("source_keys") or [])
+            if as_json:
+                _output(
+                    {
+                        "dry_run": True,
+                        "consolidated_key": consolidated_key,
+                        "would_remove": [consolidated_key],
+                        "would_restore": source_keys,
+                    },
+                    as_json=True,
+                )
+            else:
+                typer.echo("Dry run — no changes made.")
+                typer.echo(f"  would remove 1 consolidated row: {consolidated_key}")
+                typer.echo(f"  would restore {len(source_keys)} source row(s):")
+                for sk in source_keys:
+                    typer.echo(f"    <- {sk}")
+            return
+
+        if not auto_yes:
+            if sys.stdin.isatty():
+                merge_rec = find_last_consolidation_merge_audit(
+                    store._persistence.audit_path,
+                    consolidated_key,
+                    persistence=store._persistence,
+                )
+                source_keys = (merge_rec.get("source_keys") or []) if merge_rec else []
+                n_src = len(source_keys)
+                typer.confirm(
+                    f"Restore {n_src} source row(s) and remove 1 consolidated row?",
+                    abort=True,
+                    default=False,
+                )
+            else:
+                typer.echo(
+                    "Non-interactive mode: pass --yes or set TAPPS_BRAIN_CONFIRM_YES=1 "
+                    "to confirm this destructive operation.",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
         result = store.undo_consolidation_merge(consolidated_key)
         data = result.to_dict()
         if as_json:
