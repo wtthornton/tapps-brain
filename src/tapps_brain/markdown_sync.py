@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,9 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# Warn once (per process) if directory fsync is unavailable on this platform.
+_FSYNC_PARENT_UNAVAILABLE_WARNED: bool = False
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -45,6 +49,44 @@ _SYNC_STATE_VERSION = 1
 # Schema version embedded in MEMORY.md YAML front matter.
 # Increment when the exported format changes in a backward-incompatible way.
 MEMORY_MD_SCHEMA_VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _fsync_parent_dir(path: Path) -> None:
+    """fsync the parent directory of *path* after an ``os.replace`` rename.
+
+    ``os.replace`` is atomic on POSIX once the rename syscall returns, but the
+    rename is only *durable* after the parent directory's inode is flushed to
+    stable storage.  Calling ``fsync`` on the directory fd closes this gap.
+
+    On Windows, NTFS write-back is journal-protected and ``os.fsync`` on a
+    directory fd is not supported; we fall back to a no-op and emit a
+    one-time warning so operators can audit the behaviour.
+    """
+    global _FSYNC_PARENT_UNAVAILABLE_WARNED
+    if sys.platform == "win32":
+        if not _FSYNC_PARENT_UNAVAILABLE_WARNED:
+            _FSYNC_PARENT_UNAVAILABLE_WARNED = True
+            logger.warning(
+                "markdown_sync.fsync_parent_dir_unavailable",
+                reason="Windows does not support fsync on directory fds; "
+                "durability relies on NTFS journaling",
+                path=str(path),
+            )
+        return
+    try:
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        logger.warning("markdown_sync.fsync_parent_dir_error", path=str(path), exc_info=True)
+
 
 # Heading prefix used for each tier when writing MEMORY.md
 _TIER_HEADING: dict[str, str] = {
@@ -69,11 +111,6 @@ _MULTI_SEP_RE = re.compile(r"[-_.]{2,}")
 
 # Daily note filename: YYYY-MM-DD.md
 _DAILY_NOTE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _slugify(text: str) -> str:
@@ -208,7 +245,9 @@ def _save_sync_state(workspace_dir: Path, state: dict[str, Any]) -> None:
         state_path = state_dir / _SYNC_STATE_FILENAME
         tmp_state_path = state_path.with_name(state_path.name + ".tmp")
         tmp_state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        os.replace(tmp_state_path, state_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
+        # atomic rename; fsync the parent dir so the rename is durable, not just atomic
+        os.replace(tmp_state_path, state_path)
+        _fsync_parent_dir(state_path)
     except OSError:
         logger.warning("markdown_sync.state_save_error", workspace=str(workspace_dir))
 
@@ -360,7 +399,9 @@ def sync_to_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any]:
     tmp_md_path = memory_md_path.with_name(memory_md_path.name + ".tmp")
     try:
         tmp_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(tmp_md_path, memory_md_path)  # atomic on POSIX and Windows (Python ≥ 3.3)
+        # atomic rename; fsync the parent dir so the rename is durable, not just atomic
+        os.replace(tmp_md_path, memory_md_path)
+        _fsync_parent_dir(memory_md_path)
     except BaseException:
         # Clean up the partial tmp file so stale artefacts do not accumulate.
         with contextlib.suppress(OSError):
