@@ -61,9 +61,13 @@ That script runs, in order: OpenClaw docs consistency (`scripts/check_openclaw_d
   - `server.json` (`"version":`)
   - `openclaw-skill/SKILL.md` (YAML frontmatter `version:`)
   - `openclaw-plugin/package.json` (`"version":`) and `package-lock.json` (root)
+    — bump both atomically with `(cd openclaw-plugin && npm version --no-git-tag-version X.Y.Z)`;
+    hand-editing `package.json` alone leaves the lock's root `version` behind (TAP-1691)
   - `openclaw-plugin/openclaw.plugin.json` and `openclaw-skill/openclaw.plugin.json`
     (including `install.pip` lower bound `>=X.Y.Z` in the skill manifest)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
+    (TAP-1691 added `package-lock.json` to this gate; `release-ready.sh` step [5/8] now
+    blocks the release if the lockfile's root `version` drifts from `pyproject.toml`)
   - **Not a sync target:** `openclaw-plugin/src/index.ts` `ContextEngineInfo.version` is
     the OpenClaw plugin's own semver (the identity exposed to the OpenClaw runtime), not
     a tapps-brain mirror. Decoupled at v2.0.4; bump it only when the plugin's own surface
@@ -150,3 +154,24 @@ twine upload dist/*                         # production PyPI
 - Entry points: `tapps-brain` (CLI) and `tapps-brain-mcp` (MCP server)
 - Optional extras: `cli`, `mcp`, `vector`, `reranker`, `otel`, `all`, `dev`
 - Python requirement: `>=3.12`
+
+### Audit — why `npm ci` missed package-lock.json drift (TAP-1691)
+
+Between v3.15.0 and v3.17.2 the lockfile's root `version` field stayed pinned at 3.15.0
+while `package.json` advanced through 8 releases. `release-ready.sh` step [8/8] runs
+`npm ci`, which validates that the lockfile's *dependency tree* matches `package.json`'s
+declared deps — it does **not** compare the lockfile's root `version` against
+`package.json`'s `version`. Both fields are descriptive metadata as far as `npm ci` is
+concerned.
+
+Mitigations now in place:
+
+1. **Detection.** `tests/unit/test_version_consistency.py::test_all_versions_match`
+   includes `openclaw-plugin/package-lock.json`. `release-ready.sh` step [5/8] runs this
+   suite before step [8/8], so drift blocks the release with a precise error.
+2. **Prevention.** The version-bump checklist above instructs operators to bump
+   `package.json` + lockfile atomically via `npm version --no-git-tag-version`.
+
+`release-ready.sh` itself was intentionally not modified: regenerating the lockfile
+mid-release would mutate a tracked file during the gate (non-idempotent), and the
+pytest check is sufficient to fail-fast.
