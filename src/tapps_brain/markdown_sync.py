@@ -36,6 +36,9 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # Warn once (per process) if directory fsync is unavailable on this platform.
+# Not protected by a lock: at worst two threads both see False and emit the
+# warning twice on Windows.  A duplicate log entry is acceptable; no data is
+# at risk.  The flag is reset in tests via setup_method.
 _FSYNC_PARENT_UNAVAILABLE_WARNED: bool = False
 
 # ---------------------------------------------------------------------------
