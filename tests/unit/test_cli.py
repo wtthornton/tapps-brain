@@ -963,6 +963,144 @@ class TestMaintenanceCommands:
         data = json.loads(result.stdout)
         assert data["schema_version"] >= 1
 
+    def test_consolidation_merge_undo_dry_run_no_audit(self, project_dir):
+        """--dry-run with no audit record exits 0 and leaves the store unchanged."""
+        from unittest.mock import patch
+
+        from tapps_brain.store import MemoryStore
+
+        # Patch the origin module, not maintenance's namespace, because the import
+        # is inside the function body (lazy) so the name is not in maintenance's
+        # module-level namespace until called.
+        before_count = MemoryStore(project_dir, embedding_provider=None).count()
+        with patch(
+            "tapps_brain.auto_consolidation.find_last_consolidation_merge_audit",
+            return_value=None,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "consolidation-merge-undo",
+                    "some-key",
+                    "--project-dir",
+                    project_dir,
+                    "--dry-run",
+                ],
+            )
+        assert result.exit_code == 0
+        after_count = MemoryStore(project_dir, embedding_provider=None).count()
+        assert before_count == after_count
+
+    def test_consolidation_merge_undo_dry_run_with_audit(self, project_dir):
+        """--dry-run with an existing audit record prints preview and exits 0."""
+        from unittest.mock import patch
+
+        fake_rec = {
+            "action": "consolidation_merge",
+            "key": "merged-key",
+            "source_keys": ["src-a", "src-b"],
+        }
+        with patch(
+            "tapps_brain.auto_consolidation.find_last_consolidation_merge_audit",
+            return_value=fake_rec,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "consolidation-merge-undo",
+                    "merged-key",
+                    "--project-dir",
+                    project_dir,
+                    "--dry-run",
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Dry run" in result.stdout
+        assert "merged-key" in result.stdout
+        assert "src-a" in result.stdout
+        assert "src-b" in result.stdout
+
+    def test_consolidation_merge_undo_yes_bypasses_prompt(self, project_dir):
+        """--yes skips the TTY prompt in non-interactive mode."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.auto_consolidation import ConsolidationUndoResult
+
+        mock_result = ConsolidationUndoResult(
+            ok=True,
+            reason="ok",
+            consolidated_key="merged-key",
+            source_keys=("src-a", "src-b"),
+        )
+        mock_store = MagicMock()
+        mock_store.undo_consolidation_merge.return_value = mock_result
+
+        with patch("tapps_brain.cli.maintenance._get_store", return_value=mock_store):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "consolidation-merge-undo",
+                    "merged-key",
+                    "--project-dir",
+                    project_dir,
+                    "--yes",
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Undo OK" in result.stdout
+        mock_store.undo_consolidation_merge.assert_called_once_with("merged-key")
+
+    def test_consolidation_merge_undo_env_var_bypasses_prompt(self, project_dir, monkeypatch):
+        """TAPPS_BRAIN_CONFIRM_YES=1 skips the TTY prompt in non-interactive mode."""
+        from unittest.mock import MagicMock, patch
+
+        from tapps_brain.auto_consolidation import ConsolidationUndoResult
+
+        monkeypatch.setenv("TAPPS_BRAIN_CONFIRM_YES", "1")
+        mock_result = ConsolidationUndoResult(
+            ok=True,
+            reason="ok",
+            consolidated_key="merged-key",
+            source_keys=("src-a",),
+        )
+        mock_store = MagicMock()
+        mock_store.undo_consolidation_merge.return_value = mock_result
+
+        with patch("tapps_brain.cli.maintenance._get_store", return_value=mock_store):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "consolidation-merge-undo",
+                    "merged-key",
+                    "--project-dir",
+                    project_dir,
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Undo OK" in result.stdout
+
+    def test_consolidation_merge_undo_non_tty_without_yes_exits_1(self, project_dir):
+        """Non-interactive mode without --yes exits 1 with a helpful message.
+
+        typer.testing.CliRunner provides BytesIO as stdin, which is never a TTY,
+        so no additional mocking is needed to simulate non-interactive mode.
+        """
+        result = runner.invoke(
+            app,
+            [
+                "maintenance",
+                "consolidation-merge-undo",
+                "some-key",
+                "--project-dir",
+                project_dir,
+            ],
+        )
+        assert result.exit_code == 1
+
 
 class TestFlywheelCli:
     """EPIC-031 flywheel commands."""
