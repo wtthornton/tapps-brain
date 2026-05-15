@@ -133,8 +133,9 @@ def undo_consolidation_merge(  # noqa: PLR0911
     auto-consolidation writes). On success, appends ``consolidation_merge_undo`` to
     the JSONL audit log and removes relations tied to the consolidated key.
 
-    The store serialization lock is held for the full in-memory + SQLite sequence so
-    concurrent saves do not interleave with undo.
+    The store serialization lock (``store._serialized()``) is held for the full
+    in-memory + persistence sequence so concurrent saves do not interleave with undo
+    and no partial state is observable by other threads.
     """
     merge_rec = find_last_consolidation_merge_audit(
         store._persistence.audit_path,
