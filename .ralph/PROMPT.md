@@ -100,9 +100,8 @@ integer as valid. Never fabricate — if you cannot compute a count this loop, o
 Every loop that picks up work MUST update Linear. These writes attribute to the operator (Bill) via the OAuth plugin — keep tone professional, volume low.
 
 - **On start of a task** — if not already In Progress: `mcp__plugin_linear_linear__save_issue` with `status="In Progress"`.
-- **On completion** — move to In Review (NOT Done; human reviews before closure): `save_issue` with `status="In Review"`. Then `save_comment` with: what was done, branch name, commit SHA(s), test status, any follow-ups.
-- **On blocker** — keep status as-is, `save_comment` explaining the blocker and what human action unblocks it. Set `STATUS: BLOCKED`.
-- **Never** move an issue to Done yourself — that's the human reviewer's call.
+- **On completion (`MERGED: yes`)** — move to **Done**: `save_issue` with `status="Done"`. Then `save_comment` with: what was done, branch name, commit SHA(s), test status, any follow-ups. RALPH IS HEADLESS — there is no human reviewer. "Shipped" means commits are verified on `origin/main` (divergence `0	0` from step 9b).
+- **On blocker (`MERGED: no` / `deferred-blocker`)** — leave ticket **In Progress** (NOT In Review): `save_comment` explaining what is blocked and what human action unblocks it. Set `STATUS: BLOCKED`. Use `status="In Review"` ONLY for the four R2 hard blockers: (1) credentials a human must generate via browser OAuth, (2) explicit budget/spend cap approval, (3) required branch-protection checks needing admin override, (4) legal/security sign-off gate.
 - **Never** post a "working on it" comment — only on completion or blocker.
 - **Hard limit: maximum 1 `save_comment` call per loop.** Zero comments is the norm during exploration loops. A second `save_comment` call in any single loop is a bug — stop immediately.
 
