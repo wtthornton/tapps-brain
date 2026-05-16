@@ -4,8 +4,81 @@ tapps-brain ships with a configurable profile system that lets you define custom
 
 > **48% of documentation readers in 2026 are AI agents** ([Mintlify](https://mintlify.com)). This guide is written for both human integrators and AI agents designing memory systems.
 
+> **Two distinct profile systems exist.** This document covers **MemoryStore profiles** — YAML files that configure memory layers, decay models, and scoring weights. For **MCP tool filter profiles** (which tools a client session sees), see the [MCP Tool Filter Profiles](#mcp-tool-filter-profiles) section below.
+
+---
+
+## MCP Tool Filter Profiles
+
+MCP tool filter profiles (EPIC-073) control which tools a connecting client session sees in `tools/list`. They are defined in `src/tapps_brain/mcp_server/mcp_profiles.yaml` and selected per-request via the `X-Brain-Profile` HTTP header.
+
+This is completely separate from MemoryStore profiles (memory layers, decay, scoring) — a session can use the `coder` tool filter profile while the backend reads memory with a `repo-brain` MemoryStore profile.
+
+### Available profiles
+
+| Profile | Tools | Intended for |
+|---------|-------|-------------|
+| `agent_brain` | 10 | AgentBrain facade consumers — `brain_*` tools only. No `memory_*`, `hive_*`, or admin tools. |
+| `coder` | 17 | Repo-embedded coding agents (Claude Code, Cursor, Aider). brain_* facade + session hooks + quality loop + graph lookups. |
+| `reviewer` | 8 | Read-only PR/code review bots. Recall + search + graph only, no writes. |
+| `seeder` | 6 | Bulk ingestion scripts. Write-heavy subset, no reads beyond `brain_status`. |
+| `full` | 59 | All standard tools. Default when no `X-Brain-Profile` header is set (backwards-compatible). |
+| `operator` | 72 | Full + 13 operator-only maintenance tools. Requires operator bearer token. |
+
+### Setting the profile for a Claude Code session
+
+In `.mcp.json` (project root), add `X-Brain-Profile` to the `tapps-brain` server headers:
+
+```json
+{
+  "mcpServers": {
+    "tapps-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
+        "X-Project-Id": "<slug>",
+        "X-Agent-Id": "claude-code-<user>",
+        "X-Brain-Profile": "coder"
+      }
+    }
+  }
+}
+```
+
+**Important:** The profile name must be one of the six listed above. An invalid name (e.g. a MemoryStore profile name like `repo-brain`) returns HTTP 400 and breaks the MCP connection. Omitting the header falls back to `full`.
+
+### Per-agent profile via the agent registry
+
+Alternatively, register an agent with a profile in the database. The resolver checks the agent registry before the server default, so the override is transparent to the client:
+
+```bash
+# Register claude-code-<user> to always use the coder profile for this project
+tapps-brain agent register \
+    --project-id <slug> \
+    --agent-id claude-code-<user> \
+    --profile coder
+```
+
+### Server-level default
+
+Set `TAPPS_BRAIN_DEFAULT_PROFILE` on the server to change the fallback for all clients that omit the header. The default is `full` (backwards-compatible). Operators running a dedicated coding-agent cluster can set this to `coder`:
+
+```bash
+TAPPS_BRAIN_DEFAULT_PROFILE=coder tapps-brain serve
+```
+
+### Resolution precedence (highest → lowest)
+
+1. `X-Brain-Profile` HTTP header (per-request, validated against registry)
+2. Agent-registry lookup `(project_id, agent_id)` → profile (cached 60 s)
+3. `TAPPS_BRAIN_DEFAULT_PROFILE` env var, or `"full"` if unset
+
+---
+
 ## Table of Contents
 
+- [MCP Tool Filter Profiles](#mcp-tool-filter-profiles)
 - [What is a Profile?](#what-is-a-profile)
 - [Quick Start](#quick-start)
 - [Profile Resolution Order](#profile-resolution-order)
