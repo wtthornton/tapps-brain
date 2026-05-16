@@ -151,11 +151,27 @@ Do NOT read `.ralph/fix_plan.md` — it is a harness sentinel only.
 7. Implement the smallest complete change for that issue.
 8. Run targeted verification for the touched scope (see Testing Guidelines below).
 9. Commit with the Linear ID: `feat(TAP-NNN): description` or `fix(TAP-NNN): description`. Commits go to the issue branch, not main.
+9a. **Push branch to origin and merge to main:**
+    ```bash
+    git push -u origin <issue.gitBranchName>
+    gh pr merge <issue.gitBranchName> --squash --delete-branch 2>/dev/null \\
+      || (git checkout main && git merge --squash <issue.gitBranchName> \\
+          && git commit -m "feat(TAP-NNN): squash merge from <branch>")
+    ```
+    If this step fails (conflicts, permission denied, required checks): set `MERGED: deferred-blocker`, post `save_comment` with the error and unmerged branch SHAs, leave ticket **In Progress**, then **STOP**.
+9b. **Verify push reached origin — paste the output into the status block:**
+    ```bash
+    git push origin main
+    git fetch origin
+    git rev-list --left-right --count origin/main...main
+    ```
+    - If `git push origin main` exits non-zero **OR** the divergence output is NOT `0	0` (i.e. `0       0`): set `MERGED: no`, leave ticket **In Progress**, post `save_comment` listing unmerged SHAs and the divergence output, then **STOP — do NOT move to Done**.
+    - If both succeed and divergence is `0	0`: set `MERGED: yes`, confirm with `git log main --oneline --grep="TAP-NNN" | head -3`, then continue.
 10. **Spawn `ralph-reviewer` subagent** to review your diff. Give it the issue ID + branch name + commit SHA(s). It reads the diff and returns a verdict: blockers, suggestions, or clean.
     - **Blockers** (obvious bugs, missing error handling, security issues, broken tests): address them in an additional commit on the same branch, then re-spawn the reviewer to re-verify. Max 2 review cycles per loop.
-    - **Non-blocker suggestions** (style nits, optional refactors): note in the `save_comment` for the human. Do not block the In Review transition.
-    - **Reviewer errors or unavailable**: log it in your reply, proceed to In Review anyway. Do not spin on reviewer failures.
-11. `save_issue` to `In Review`.
+    - **Non-blocker suggestions** (style nits, optional refactors): note in the `save_comment` for the human. Do not block the Done transition.
+    - **Reviewer errors or unavailable**: log it in your reply, proceed to Done step anyway. Do not spin on reviewer failures.
+11. Move ticket to Done (**only** when `MERGED: yes`): `save_issue` to Done. If `MERGED: no` or `MERGED: deferred-blocker`, leave ticket **In Progress** instead — do NOT use In Review unless this is a genuine R2 hard blocker requiring explicit human action.
 12. **ONE `save_comment`** (hard limit — a second call in the same loop is a bug): summary + branch + SHA(s) + test status + reviewer verdict (`clean` / `suggestions` / `blockers-addressed`). Do NOT call `save_comment` at any earlier step.
 13. Report: issue, branch, files changed, verification, reviewer outcome, next action/blocker.
 14. **STOP. End response immediately after the status block.**
@@ -194,6 +210,7 @@ FILES_MODIFIED: <number>
 TESTS_STATUS: PASSING | FAILING | DEFERRED | NOT_RUN
 WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | REFACTORING
 EXIT_SIGNAL: false | true
+MERGED: yes | no | deferred-blocker
 RECOMMENDATION: <one line summary of what to do next>
 LINEAR_ISSUE: TAP-NNN
 LINEAR_URL: https://linear.app/tappscodingagents/issue/TAP-NNN
@@ -231,6 +248,7 @@ FILES_MODIFIED: ...
 TESTS_STATUS: ...
 WORK_TYPE: ...
 EXIT_SIGNAL: ...
+MERGED: ...
 RECOMMENDATION: ...
 LINEAR_ISSUE: ...
 LINEAR_URL: ...
