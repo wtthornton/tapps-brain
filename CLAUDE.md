@@ -173,7 +173,7 @@ Tag important entries with `critical` or `security` for ranking boost.
 
 ## Linear automation (Claude Agent user)
 
-**Status: PLANNED — not yet wired.** Full design in [`docs/guides/linear-claude-agent.md`](docs/guides/linear-claude-agent.md). Read the guide before generating the API key or starting the poller.
+**Status: IN PROGRESS — wrapper script ready, API key pending human step.** `scripts/run-ralph.sh` sources the credential automatically (TAP-1846 done). The remaining step is generating a Personal API key for the Claude Agent Linear user and writing it to `~/.config/claude-agent/linear.env` (TAP-1845 — human browser action). Full design and credential setup in [`docs/guides/linear-claude-agent.md`](docs/guides/linear-claude-agent.md). Wrapper usage in [`docs/guides/ralph-setup.md`](docs/guides/ralph-setup.md).
 
 Summary: a dedicated Linear user *Claude Agent* (`tapp.thornton+claude@gmail.com`, username `claude`) will be driven by a scheduled poller authed with a Personal API key at `~/.config/claude-agent/linear.env` (chmod 600, never committed). The interactive Linear plugin inside Claude Code stays authed as the operator — only the poller posts as Claude Agent. Trigger convention: `@Claude Agent` in a comment. Dedup: watermark in tapps-brain + in-thread reply check + hidden `<!-- claude-reply:<id> -->` marker.
 
