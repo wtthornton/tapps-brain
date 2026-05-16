@@ -278,7 +278,7 @@ d = json.load(sys.stdin).get('data', {})
 print(d.get('done', 'N/A') if d.get('available') else 'N/A')
 " 2>/dev/null || echo "N/A")
   echo "Linear count (open_count=$OPEN, age=$(echo "$COUNT_RESULT" | \
-    python3 -c "import json,sys; d=json.load(sys.stdin).get('data',{}); print(int(d.get('age_seconds',0)))s" \
+    python3 -c "import json,sys; d=json.load(sys.stdin).get('data',{}); print(str(int(d.get('age_seconds',0)))+'s')" \
     2>/dev/null || echo '?')) via tapps-mcp cache"
 fi
 ```
