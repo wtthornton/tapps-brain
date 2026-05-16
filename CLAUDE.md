@@ -390,6 +390,18 @@ You should follow these steps to avoid broken, insecure, or hallucinated code.
 You should call `tapps_session_start()` as the first action in every session.
 This returns server info (version, checkers, config) and project context.
 
+**Sub-agent session sharing (TAP-1841):** Ralph sub-agents (`ralph-explorer`, `ralph-reviewer`,
+`ralph-tester`, `ralph-coordinator`) should avoid duplicate bootstrap calls:
+
+- Always pass `force=False` (the default) — the tapps-mcp server caches the result per-process.
+- If `.ralph/.tapps-session-id` exists and is < 1 h old, skip `tapps_session_start` entirely
+  and proceed directly (the primary Ralph agent already bootstrapped this loop).
+- If no `.ralph/` directory is present (ad-hoc non-Ralph sessions), call `tapps_session_start()`
+  normally — no sentinel file to read.
+
+Each `tapps_session_start` takes ~140 ms; 5 sub-agents × 140 ms = 700 ms per loop saved when
+the sentinel pattern is honoured.
+
 ### Before Using Any Library API
 
 You should call `tapps_lookup_docs(library, topic)` before writing code that uses an external library.
