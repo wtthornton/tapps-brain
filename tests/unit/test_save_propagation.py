@@ -7,11 +7,10 @@ raises mid-call, and ``agent_scope == "private"`` (no propagation).
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from tapps_brain._save_propagation import propagate_group_save, publish_to_experts
 from tapps_brain.models import MemoryEntry, MemoryTier
-
 
 # ---------------------------------------------------------------------------
 # Helpers

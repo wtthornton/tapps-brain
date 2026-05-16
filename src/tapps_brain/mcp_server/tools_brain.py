@@ -112,37 +112,14 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         description: str = "",
         task_id: str = "",
         agent_id: str = "",
-        task_description: str = "",
     ) -> str:
         """Record a successful task outcome.
 
         Required: ``description`` (free-text describing the task that
-        succeeded).
-
-        ``task_description`` is a **deprecated alias** for ``description``
-        kept for one minor cycle to ease the rename landed in 3.17.0 — it
-        will be removed in 3.18.  This also aligns the parameter name with
-        ``brain_learn_failure(description=...)``.  Passing both raises
-        ``ValueError``.
+        succeeded). Aligns with ``brain_learn_failure(description=...)``.
         """
-        if description and task_description:
-            raise ValueError(
-                "brain_learn_success: pass either 'description' or "
-                "'task_description' (deprecated), not both."
-            )
-        effective_desc = description or task_description
-        if not effective_desc:
+        if not description:
             raise ValueError("brain_learn_success: 'description' is required.")
-        if task_description and not description:
-            import warnings
-
-            warnings.warn(
-                "brain_learn_success(task_description=...) is deprecated; "
-                "use description=... instead. The 'task_description' alias "
-                "will be removed in tapps-brain 3.18.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -151,7 +128,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
                 s,
                 _pid(),
                 eff_aid,
-                task_description=effective_desc,
+                task_description=description,
                 task_id=task_id,
             )
         )

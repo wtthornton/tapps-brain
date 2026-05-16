@@ -1757,9 +1757,7 @@ class TestBootstrapTracerWithTimeout:
             # bootstrap_tracer should not raise.
             bootstrap_tracer(OTelConfig(enabled=True))
 
-    def test_configure_otlp_provider_not_called_without_endpoint(
-        self, monkeypatch: Any
-    ) -> None:
+    def test_configure_otlp_provider_not_called_without_endpoint(self, monkeypatch: Any) -> None:
         """When OTEL_EXPORTER_OTLP_ENDPOINT is unset, provider is not configured."""
         monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
 

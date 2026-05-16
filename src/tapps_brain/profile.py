@@ -675,7 +675,7 @@ def load_profile(path: Path) -> MemoryProfile:
             ):
                 layer_idx = loc[1]
                 tier_name = (
-                    raw_layers[layer_idx].get("name", f"layer[{layer_idx}]")  # type: ignore[union-attr]
+                    raw_layers[layer_idx].get("name", f"layer[{layer_idx}]")  # type: ignore[attr-defined]
                     if isinstance(layer_idx, int) and layer_idx < len(raw_layers)
                     else f"layer[{layer_idx}]"
                 )

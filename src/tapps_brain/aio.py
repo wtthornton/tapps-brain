@@ -32,15 +32,18 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from tapps_brain.models import MemoryEntry
     from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
+
+_T = TypeVar("_T")
 
 
 class _CapturePersistenceBackend:
@@ -236,11 +239,15 @@ class AsyncMemoryStore:
         # Serialises the persistence-swap in async-native save/delete so
         # concurrent coroutines never observe each other's capture backend.
         self._lock: asyncio.Lock = asyncio.Lock()
-        _w = max_concurrent_writes if max_concurrent_writes is not None else int(
-            os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "16")
+        _w = (
+            max_concurrent_writes
+            if max_concurrent_writes is not None
+            else int(os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "16"))
         )
-        _r = max_concurrent_reads if max_concurrent_reads is not None else int(
-            os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "64")
+        _r = (
+            max_concurrent_reads
+            if max_concurrent_reads is not None
+            else int(os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "64"))
         )
         # Guard against misconfigured zero/negative values so asyncio.Semaphore
         # never receives a value < 1.
@@ -279,7 +286,7 @@ class AsyncMemoryStore:
     # Bounded thread-pool helpers
     # ------------------------------------------------------------------
 
-    async def _write_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+    async def _write_thread(self, fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
         """Run *fn* in a worker thread, bounded by the write semaphore."""
         async with self._write_sem:
             self._write_inflight += 1
@@ -288,7 +295,7 @@ class AsyncMemoryStore:
             finally:
                 self._write_inflight -= 1
 
-    async def _read_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+    async def _read_thread(self, fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
         """Run *fn* in a worker thread, bounded by the read semaphore."""
         async with self._read_sem:
             self._read_inflight += 1

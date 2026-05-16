@@ -14,6 +14,50 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ---
 
+## [3.18.0] — 2026-05-16
+
+Minor release that closes the deprecation window opened in 3.17.0, hardens the MCP cold path, adds operator visibility on probe latency, and lands a batch of correctness fixes (decay, relations, idempotency, atomic writes, prompt-injection detection).
+
+### Removed
+
+- **`memory_recall(message=...)` deprecated alias** (commits `tools_memory.py`). The kwarg was retained for one minor cycle as promised in 3.17.0 and now goes away. Callers that still pass `message=` will get a `TypeError`. Service-layer signature (`memory_service.memory_recall(..., message=...)`) is unchanged.
+- **`brain_learn_success(task_description=...)` deprecated alias** (`tools_brain.py`). Same shape as above — the kwarg is gone from the MCP tool surface; service-layer kwarg `task_description=` stays. The Python client wrappers (`TappsBrainClient.memory_recall`, `TappsBrainClient.learn_success`, and the async variants) were renamed to `query` / `description` to match — positional callers are unaffected, keyword callers must rename.
+
+### Added
+
+- **`/v1/tools/list` static-snapshot route + p95/p99 benchmark gate** (TAP-1843, TAP-1855). New REST endpoint returns the cached tool catalog without booting the MCP server; pytest-benchmark gate asserts warm-state p95 stays under 200 ms.
+- **`tapps_brain_mcp_probe_duration_seconds` Prometheus histogram on `/metrics`** (TAP-1849). Per-call latency for SessionStart hook MCP probes, so operators can see when the probe is the long pole.
+- **DB-checked `/healthz` probe + tightened docker-compose healthcheck** (TAP-1835). `/healthz` runs a `SELECT 1` against Postgres; the compose healthcheck no longer reports green when the DB is unreachable.
+- **Migration rollback** (TAP-1818). Each `*.up.sql` ships a paired `*.down.sql`; new CLI command applies the down step in reverse order; CI test asserts every up has a down.
+- **`/v1/tools/list` profile cache + lazy package init** (TAP-1833, TAP-1834). `tools/list` result is cached per profile with a 300 s TTL; `tapps_brain/__init__.py` lazy-loads submodules and defers `structlog.configure()` to first use — cuts cold-import cost for catalog-only probes.
+- **`AsyncMemoryStore` thread-pool semaphore guards** (TAP-1815). Bounds concurrent thread-pool dispatch so a burst of async calls cannot starve the executor.
+
+### Changed
+
+- **SessionStart hook pre-warms `tapps-brain-http` before the MCP probe** (TAP-1837). Removes a cold-start tail latency that was tripping the probe timeout on the first request after container restart.
+- **Refactored hot-path search helpers to reduce cyclomatic complexity** (TAP-1844). No behaviour change; structure cleanup.
+- **`tapps_session_start` sharing via `.tapps-mcp/` sentinel** (TAP-1841). Sub-agents in a Ralph loop skip their own `tapps_session_start` call when the primary agent has already bootstrapped (sentinel < 1 h old).
+
+### Fixed
+
+- **`extract_relations` preserves `created_at` and `confidence_history` across merges** (TAP-1812, TAP-1816). Relation merges no longer reset timestamps to `now()` or drop the merged entries' confidence history.
+- **Atomic writes `fsync` the parent directory after `os.replace`** (TAP-1809). Closes a durability gap where a power loss between rename and parent-dir flush could leave the rename invisible on remount.
+- **Zero-denominator guards on `power_law_decay` and `exponential_decay`** (TAP-1811). Prevents `ZeroDivisionError` when a memory's age equals the half-life pivot.
+- **OTLP exporter timeout + circuit breaker** (TAP-1814). Bounds per-export latency and short-circuits after consecutive failures, so an unreachable collector cannot stall the request path.
+- **Prompt-injection detector recognises base64 / hex / URL-safe-b64 encoded payloads** (TAP-1813). Closes a bypass where attackers wrapped the injection string in an encoding the regex didn't cover.
+- **Idempotency guard hardening + monotonic time fix** (TAP-1814 follow-up). Race window between idempotency check and write narrowed; clock-skew sensitivity removed.
+- **Bare asserts replaced with explicit `RuntimeError` raises** (TAP-1822). Invariants survive `python -O`.
+- **`consolidation-merge-undo` CLI gets `--dry-run`, `--yes`, `TAPPS_BRAIN_CONFIRM_YES`** (TAP-1810). Lets ops scripts run the undo without interactive prompts.
+- **`_pin_seeds` helper at every evaluation entry-point** (TAP-1817). Pins NumPy / PyTorch / random seeds via `try/except ImportError` so eval runs are deterministic.
+
+### Migration notes
+
+- **No action required for callers using `description=` / `query=` directly.** The new canonical names landed in 3.17.0 and are unchanged here.
+- **tapps-mcp `BrainBridge`** must already be sending `query=` and `description=` (per the 3.17.0 migration note). Any caller still on the old kwargs starts getting `TypeError` on this release.
+- **Python-client keyword callers** of `client.memory_recall(message=...)` or `client.learn_success(task_description=...)` must rename to `query=` / `description=`. Positional calls are unchanged.
+
+---
+
 ## [3.17.2] — 2026-05-13
 
 Patch release that lands the HTTP-wire half of the `out_of_profile` contract documented in v3.17.1. The structured JSON-RPC error envelope now actually reaches bridge consumers (tapps-mcp `BrainBridge`, AgentForge) instead of being swallowed by FastMCP's `isError` wrapper.

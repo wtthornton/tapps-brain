@@ -12,7 +12,7 @@ import threading
 import time
 from collections import OrderedDict
 from contextlib import suppress
-from typing import Any
+from typing import Any, cast
 
 from tapps_brain.http.probe_cache import _get_hive_pool_stats, _probe_db
 
@@ -381,9 +381,9 @@ def _collect_metrics(  # noqa: PLR0915
 
         _probe_snap = get_probe_duration_histogram_snapshot()
         # Only emit if at least one observation exists across either path.
-        _has_probe_data = any(
-            s.get("count", 0) > 0 for s in _probe_snap.values()  # type: ignore[union-attr]
-        )
+        # ``snapshot["count"]`` is an int (see _ProbeHistogram.snapshot) but
+        # the broader ``dict[str, object]`` shape erases that — cast for >.
+        _has_probe_data = any(int(cast("int", s.get("count", 0))) > 0 for s in _probe_snap.values())
         if _has_probe_data:
             _metric_name = "tapps_brain_mcp_probe_duration_seconds"
             lines.append(

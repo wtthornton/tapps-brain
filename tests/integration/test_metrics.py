@@ -134,7 +134,7 @@ class TestProbeHistogram:
         h = _ProbeHistogram(_PROBE_HISTOGRAM_BUCKETS)
         h.observe(0.03)  # hits all buckets
         h.observe(0.08)  # hits le>=0.1
-        h.observe(1.5)   # hits le>=2.0
+        h.observe(1.5)  # hits le>=2.0
         snap = h.snapshot()
         assert snap["count"] == 3
         # le=0.05 only counts 0.03

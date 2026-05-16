@@ -103,7 +103,16 @@ _MCP_TOOLS_CALL_TOTAL: dict[tuple[str, str, str], int] = {}
 #: Bucket upper bounds in seconds.  Covers warm cache (< 50 ms) through worst-
 #: case cold-start (> 60 s).  MUST stay sorted ascending; +Inf is implicit.
 _PROBE_HISTOGRAM_BUCKETS: tuple[float, ...] = (
-    0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 30.0, 60.0, 120.0
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    30.0,
+    60.0,
+    120.0,
 )
 
 

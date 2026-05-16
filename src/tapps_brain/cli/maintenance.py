@@ -927,9 +927,7 @@ def maintenance_migrations_rollback(
     }[schema]
 
     if not dry_run and not yes:
-        typer.echo(
-            f"This will roll back the '{schema}' schema to version {target_version}."
-        )
+        typer.echo(f"This will roll back the '{schema}' schema to version {target_version}.")
         typer.echo("Run with --dry-run to preview, or --yes to confirm.")
         confirmed = typer.confirm("Proceed with rollback?", default=False)
         if not confirmed:
@@ -944,9 +942,7 @@ def maintenance_migrations_rollback(
         "rolled_back": rolled_back,
         "dry_run": dry_run,
         "status": (
-            "dry-run"
-            if dry_run
-            else ("rolled-back" if rolled_back else "nothing-to-rollback")
+            "dry-run" if dry_run else ("rolled-back" if rolled_back else "nothing-to-rollback")
         ),
     }
     if as_json:

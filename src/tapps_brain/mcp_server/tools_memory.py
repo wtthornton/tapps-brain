@@ -171,38 +171,19 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         query: str = "",
         group: str | None = None,
         agent_id: str = "",
-        message: str = "",
     ) -> str:
         """Run auto-recall for a query and return ranked memories.
 
         Required: ``query`` (natural-language string to match against stored
         memories).
-
-        ``message`` is a **deprecated alias** for ``query`` kept for one
-        minor cycle to ease the rename landed in 3.17.0 — it will be removed
-        in 3.18.  Passing both raises ``ValueError``.
         """
-        if query and message:
-            raise ValueError(
-                "memory_recall: pass either 'query' or 'message' (deprecated), not both."
-            )
-        effective_query = query or message
-        if not effective_query:
+        if not query:
             raise ValueError("memory_recall: 'query' is required.")
-        if message and not query:
-            import warnings
-
-            warnings.warn(
-                "memory_recall(message=...) is deprecated; use query=... instead. "
-                "The 'message' alias will be removed in tapps-brain 3.18.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         return json.dumps(
-            memory_service.memory_recall(s, _pid(), eff_aid, message=effective_query, group=group)
+            memory_service.memory_recall(s, _pid(), eff_aid, message=query, group=group)
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]

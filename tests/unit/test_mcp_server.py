@@ -629,23 +629,7 @@ class TestMcpToolHandlerExecution:
         finally:
             srv._tapps_store.close()
 
-    def test_memory_recall_accepts_deprecated_message_alias(self, mcp_server: Any) -> None:
-        """``message=`` still works in 3.17 and emits a DeprecationWarning."""
-        store = mcp_server._tapps_store
-        store.save(key="mcp-rc-alias", value="alias phrase abc", tier="pattern")
-
-        recall = _tool_fn(mcp_server, "memory_recall")
-        with pytest.warns(DeprecationWarning, match=r"memory_recall\(message="):
-            payload = json.loads(recall(message="alias phrase"))
-        assert "memory_count" in payload
-
-    def test_memory_recall_rejects_both_query_and_message(self, mcp_server: Any) -> None:
-        """Passing both raises so callers can't silently drift."""
-        recall = _tool_fn(mcp_server, "memory_recall")
-        with pytest.raises(ValueError, match="not both"):
-            recall(query="a", message="b")
-
-    def test_memory_recall_requires_query_or_alias(self, mcp_server: Any) -> None:
+    def test_memory_recall_requires_query(self, mcp_server: Any) -> None:
         """Empty call fails fast with a Required-style message."""
         recall = _tool_fn(mcp_server, "memory_recall")
         with pytest.raises(ValueError, match="'query' is required"):

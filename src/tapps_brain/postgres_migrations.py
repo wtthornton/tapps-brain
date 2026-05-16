@@ -489,9 +489,7 @@ def rollback_private_migrations(
     )
 
 
-def rollback_hive_migrations(
-    dsn: str, *, target_version: int, dry_run: bool = False
-) -> list[int]:
+def rollback_hive_migrations(dsn: str, *, target_version: int, dry_run: bool = False) -> list[int]:
     """Roll back Hive schema migrations to *target_version*.
 
     Returns the list of version numbers that were rolled back.

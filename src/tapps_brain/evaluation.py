@@ -47,13 +47,13 @@ def _pin_seeds(seed: int = 0) -> None:
     """
     random.seed(seed)
     try:
-        import numpy as np  # type: ignore[import-untyped]
+        import numpy as np
 
         np.random.seed(seed)
     except ImportError:
         pass
     try:
-        import torch  # type: ignore[import-untyped]
+        import torch
 
         torch.manual_seed(seed)
     except ImportError:

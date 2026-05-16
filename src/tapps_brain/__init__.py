@@ -143,7 +143,7 @@ def __getattr__(name: str) -> object:
         val = getattr(mod, attr)
         # Cache in module globals so __getattr__ is not called again.
         globals()[name] = val
-        return val  # type: ignore[return-value]
+        return val
     raise AttributeError(f"module 'tapps_brain' has no attribute {name!r}")
 
 

@@ -48,7 +48,7 @@ Archive (not delete) a memory by key.
 
 ### `brain_learn_success`
 Record a successful task outcome.
-- Args: `description*` (canonical; `task_description` is a deprecated alias accepted through 3.17.x), `task_id`, `agent_id`.
+- Args: `description*`, `task_id`, `agent_id`. (The `task_description` alias was removed in 3.18.0; callers must use `description=`.)
 - **When I use it:** after shipping a non-obvious win, to bank "X approach worked for Y problem".
 
 ### `brain_learn_failure`
@@ -99,7 +99,7 @@ List distinct project-local memory group names.
 
 ### `memory_recall`
 Run auto-recall for a query and return ranked memories.
-- Args: `query*` (canonical; `message` is a deprecated alias accepted through 3.17.x), `group`, `agent_id`.
+- Args: `query*`, `group`, `agent_id`. (The `message` alias was removed in 3.18.0; callers must use `query=`.)
 - **Not needed** — duplicates `brain_recall`. Use the facade.
 
 ### `memory_reinforce`

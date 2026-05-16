@@ -27,7 +27,6 @@ from tapps_brain.similarity import (
     text_similarity,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -369,11 +368,11 @@ class TestFindSimilarThresholdBoundaries:
     def test_use_embeddings_false_forces_jaccard_plus_tf_path(self) -> None:
         """use_embeddings=False uses compute_similarity (not compute_similarity_with_embeddings)."""
         ref = _entry("jwt-token-config", "JWT RS256 signing setup", tags=["jwt", "auth"])
-        similar = _entry("jwt-auth-setup", "JWT RS256 algorithm configuration", tags=["jwt", "auth"])
-        # Both paths should still find similarity; verify the flag doesn't break results
-        results_emb_off = find_similar(
-            ref, [similar], threshold=0.0, use_embeddings=False
+        similar = _entry(
+            "jwt-auth-setup", "JWT RS256 algorithm configuration", tags=["jwt", "auth"]
         )
+        # Both paths should still find similarity; verify the flag doesn't break results
+        results_emb_off = find_similar(ref, [similar], threshold=0.0, use_embeddings=False)
         assert len(results_emb_off) == 1
         # Score should be > 0 (shared tags + text overlap)
         assert results_emb_off[0].combined_score > 0.0

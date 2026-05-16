@@ -23,7 +23,6 @@ from tapps_brain.models import MemoryTier
 from tapps_brain.store import MemoryStore
 from tests.factories import make_entry
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -126,7 +125,7 @@ class TestUndoConsolidationMergeLockSafety:
                     value=f"concurrent value from thread {idx}",
                     skip_consolidation=True,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 with errors_lock:
                     thread_errors.append(exc)
 
@@ -134,13 +133,12 @@ class TestUndoConsolidationMergeLockSafety:
             try:
                 result = store.undo_consolidation_merge(consolidated_key)
                 undo_results.append(result)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 with errors_lock:
                     thread_errors.append(exc)
 
         threads: list[threading.Thread] = [
-            threading.Thread(target=_saver, args=(i,), name=f"saver-{i}")
-            for i in range(n_savers)
+            threading.Thread(target=_saver, args=(i,), name=f"saver-{i}") for i in range(n_savers)
         ]
         threads.append(threading.Thread(target=_undo, name="undo"))
 
@@ -167,9 +165,7 @@ class TestUndoConsolidationMergeLockSafety:
             )
 
         # ----- assert undo produced a coherent result -----
-        assert len(undo_results) == 1, (
-            "undo thread did not produce a ConsolidationUndoResult"
-        )
+        assert len(undo_results) == 1, "undo thread did not produce a ConsolidationUndoResult"
         r = undo_results[0]
         assert r.ok is True, (
             f"undo_consolidation_merge failed with reason: {r.reason!r} — "

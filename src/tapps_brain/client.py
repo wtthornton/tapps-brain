@@ -689,11 +689,11 @@ class TappsBrainClient:
         result = self._tool("brain_forget", key=key, agent_id=agent_id)
         return bool(result.get("forgotten")) if isinstance(result, dict) else False
 
-    def learn_success(self, task_description: str, *, task_id: str = "", agent_id: str = "") -> str:
+    def learn_success(self, description: str, *, task_id: str = "", agent_id: str = "") -> str:
         """Record a successful task outcome."""
         result = self._tool(
             "brain_learn_success",
-            task_description=task_description,
+            description=description,
             task_id=task_id,
             agent_id=agent_id,
         )
@@ -725,9 +725,9 @@ class TappsBrainClient:
         result = self._tool("memory_search", query=query, **kwargs)
         return result if isinstance(result, list) else []
 
-    def memory_recall(self, message: str, **kwargs: Any) -> dict[str, Any]:
-        """Run auto-recall for a message."""
-        return self._tool("memory_recall", message=message, **kwargs)
+    def memory_recall(self, query: str, **kwargs: Any) -> dict[str, Any]:
+        """Run auto-recall for a query."""
+        return self._tool("memory_recall", query=query, **kwargs)
 
     def memory_reinforce(self, key: str, *, confidence_boost: float = 0.0) -> dict[str, Any]:
         """Reinforce a memory entry."""
@@ -963,12 +963,12 @@ class AsyncTappsBrainClient:
         return bool(result.get("forgotten")) if isinstance(result, dict) else False
 
     async def learn_success(
-        self, task_description: str, *, task_id: str = "", agent_id: str = ""
+        self, description: str, *, task_id: str = "", agent_id: str = ""
     ) -> str:
         """Record a successful task outcome."""
         result = await self._tool(
             "brain_learn_success",
-            task_description=task_description,
+            description=description,
             task_id=task_id,
             agent_id=agent_id,
         )
@@ -1000,9 +1000,9 @@ class AsyncTappsBrainClient:
         result = await self._tool("memory_search", query=query, **kwargs)
         return result if isinstance(result, list) else []
 
-    async def memory_recall(self, message: str, **kwargs: Any) -> dict[str, Any]:
-        """Run auto-recall for a message."""
-        return await self._tool("memory_recall", message=message, **kwargs)
+    async def memory_recall(self, query: str, **kwargs: Any) -> dict[str, Any]:
+        """Run auto-recall for a query."""
+        return await self._tool("memory_recall", query=query, **kwargs)
 
     async def memory_reinforce(self, key: str, *, confidence_boost: float = 0.0) -> dict[str, Any]:
         """Reinforce a memory entry."""

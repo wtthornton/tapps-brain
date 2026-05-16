@@ -429,10 +429,7 @@ class TestBoundedConcurrency:
         # Monkey-patch the underlying sync save so our counter runs in-thread.
         astore.sync_store.save = counting_save  # type: ignore[method-assign]
 
-        tasks = [
-            asyncio.create_task(astore.save(key=f"k{i}", value=f"v{i}"))
-            for i in range(100)
-        ]
+        tasks = [asyncio.create_task(astore.save(key=f"k{i}", value=f"v{i}")) for i in range(100)]
         await asyncio.gather(*tasks)
         # Close via base (astore shares the same sync_store and has no async backend).
         await base.close()
@@ -466,10 +463,7 @@ class TestBoundedConcurrency:
         )
         astore.sync_store.search = counting_search  # type: ignore[method-assign]
 
-        tasks = [
-            asyncio.create_task(astore.search(f"query{i}"))
-            for i in range(50)
-        ]
+        tasks = [asyncio.create_task(astore.search(f"query{i}")) for i in range(50)]
         await asyncio.gather(*tasks)
         # Close via base (astore shares sync_store and has no async backend).
         await base.close()

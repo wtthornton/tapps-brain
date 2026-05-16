@@ -101,12 +101,12 @@ Both `TappsBrainClient` and `AsyncTappsBrainClient` expose the same methods
 | `remember(fact, *, tier, share, share_with, agent_id)` | Save a memory; returns key |
 | `recall(query, *, max_results, agent_id)` | Search memories |
 | `forget(key, agent_id)` | Archive a memory by key |
-| `learn_success(task_description, *, task_id, agent_id)` | Record success |
+| `learn_success(description, *, task_id, agent_id)` | Record success |
 | `learn_failure(description, *, task_id, error, agent_id)` | Record failure |
 | `memory_save(key, value, **kwargs)` | Save a raw entry |
 | `memory_get(key)` | Retrieve an entry by key |
 | `memory_search(query, **kwargs)` | Full text / semantic search |
-| `memory_recall(message, **kwargs)` | Auto-recall for a message |
+| `memory_recall(query, **kwargs)` | Auto-recall for a query |
 | `memory_reinforce(key, *, confidence_boost)` | Reinforce a memory |
 | `memory_save_many(entries, agent_id)` | Bulk save |
 | `memory_recall_many(queries, agent_id)` | Bulk recall |

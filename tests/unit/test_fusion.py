@@ -24,7 +24,6 @@ from tapps_brain.fusion import (
     reciprocal_rank_fusion_weighted,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -310,16 +309,16 @@ class TestHybridWeightsQuestionAndSemanticBranches:
         coin-flip when the medium-length bias cancels the question bias.
         """
         prefixes = [
-            "how do I",          # vague(−1) + how (−1) = −2
-            "why is this",       # vague(−1) + why (−1) = −2
-            "when should we",    # vague(−1) + when(−1) = −2
-            "where is config",   # vague(−1) + where(−1) = −2
-            "who owns this",     # vague(−1) + who (−1) = −2
+            "how do I",  # vague(−1) + how (−1) = −2
+            "why is this",  # vague(−1) + why (−1) = −2
+            "when should we",  # vague(−1) + when(−1) = −2
+            "where is config",  # vague(−1) + where(−1) = −2
+            "who owns this",  # vague(−1) + who (−1) = −2
             "which backend is",  # vague(−1) + which(−1) = −2
-            "explain the logic", # vague(−1) + explain(−1) = −2
-            "describe the arch", # vague(−1) + describe(−1) = −2
-            "tell me about",     # vague(−1) + tell me(−1) = −2
-            "find anything now", # vague(−1) + "find anything "(−1) = −2
+            "explain the logic",  # vague(−1) + explain(−1) = −2
+            "describe the arch",  # vague(−1) + describe(−1) = −2
+            "tell me about",  # vague(−1) + tell me(−1) = −2
+            "find anything now",  # vague(−1) + "find anything "(−1) = −2
         ]
         for q in prefixes:
             bm25_w, vec_w = hybrid_rrf_weights_for_query(q)

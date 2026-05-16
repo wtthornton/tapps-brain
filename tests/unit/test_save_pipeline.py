@@ -9,11 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from tapps_brain._save_pipeline import ScopeAndGroup, validate_scope_and_group
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
-
 
 # ---------------------------------------------------------------------------
 # validate_scope_and_group — happy paths

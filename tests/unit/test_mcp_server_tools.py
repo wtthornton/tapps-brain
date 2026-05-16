@@ -105,7 +105,7 @@ def test_brain_remember_happy_path(mcp: Any, fake_ctx: ToolContext) -> None:
 
 
 def test_brain_learn_success_canonical_description(mcp: Any, fake_ctx: ToolContext) -> None:
-    """3.17.0 rename: ``description=`` is the canonical kwarg."""
+    """``description=`` is the canonical kwarg (3.18.0 — alias removed)."""
     from tapps_brain.mcp_server.tools_brain import register_brain_tools
 
     with patch("tapps_brain.mcp_server.tools_brain.memory_service") as svc:
@@ -119,32 +119,6 @@ def test_brain_learn_success_canonical_description(mcp: Any, fake_ctx: ToolConte
         # Service-layer kwarg name is unchanged for back-compat.
         assert kwargs["task_description"] == "shipped the feature"
         assert kwargs["task_id"] == "T-1"
-
-
-def test_brain_learn_success_accepts_deprecated_task_description(
-    mcp: Any, fake_ctx: ToolContext
-) -> None:
-    """``task_description=`` still works in 3.17 with a DeprecationWarning."""
-    from tapps_brain.mcp_server.tools_brain import register_brain_tools
-
-    with patch("tapps_brain.mcp_server.tools_brain.memory_service") as svc:
-        svc.brain_learn_success.return_value = {"learned": True, "key": "k"}
-        register_brain_tools(mcp, fake_ctx)
-        tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "brain_learn_success")
-        with pytest.warns(DeprecationWarning, match=r"task_description"):
-            tool.fn(task_description="legacy caller")
-        kwargs = svc.brain_learn_success.call_args.kwargs
-        assert kwargs["task_description"] == "legacy caller"
-
-
-def test_brain_learn_success_rejects_both_aliases(mcp: Any, fake_ctx: ToolContext) -> None:
-    """Passing both raises so silent drift can't sneak in."""
-    from tapps_brain.mcp_server.tools_brain import register_brain_tools
-
-    register_brain_tools(mcp, fake_ctx)
-    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "brain_learn_success")
-    with pytest.raises(ValueError, match="not both"):
-        tool.fn(description="a", task_description="b")
 
 
 def test_brain_learn_success_requires_description(mcp: Any, fake_ctx: ToolContext) -> None:

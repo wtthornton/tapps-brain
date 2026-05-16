@@ -14,13 +14,14 @@ import pytest
 from tapps_brain._save_conflict import ConflictPlan, plan_conflicts, resolve_similarity_threshold
 from tapps_brain.models import MemoryEntry, MemoryTier
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _entry(key: str, value: str, tier: MemoryTier = MemoryTier.pattern, invalid_at: str | None = None) -> MemoryEntry:
+def _entry(
+    key: str, value: str, tier: MemoryTier = MemoryTier.pattern, invalid_at: str | None = None
+) -> MemoryEntry:
     """Minimal MemoryEntry for tabletop conflict fixtures."""
     return MemoryEntry(key=key, value=value, tier=tier, invalid_at=invalid_at)
 

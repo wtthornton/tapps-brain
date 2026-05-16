@@ -2,6 +2,7 @@
 
 TAP-1818 — postgres_migrations.py: no downgrade path for any migration.
 """
+
 from __future__ import annotations
 
 import re
@@ -59,8 +60,7 @@ def test_every_forward_migration_has_a_down_file(plane: str) -> None:
 
     assert not missing, (
         f"Migration plane '{plane}': the following forward migrations have no "
-        f"paired *.down.sql file:\n"
-        + "\n".join(f"  {s}.sql" for s in missing)
+        f"paired *.down.sql file:\n" + "\n".join(f"  {s}.sql" for s in missing)
     )
 
 
