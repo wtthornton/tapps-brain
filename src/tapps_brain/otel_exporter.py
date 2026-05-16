@@ -79,6 +79,8 @@ import importlib.util
 import logging
 import os
 import re
+import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -185,6 +187,20 @@ class OTelConfig:
     3. Default ``False`` when neither is set.
     """
 
+    export_timeout: float = 5.0
+    """OTLP export timeout in seconds.
+
+    Applied to every OTLP client constructor (span and metric exporters).
+    Default: ``5.0`` seconds.  Controlled by ``OTEL_EXPORTER_OTLP_TIMEOUT``
+    (treated as seconds; the standard env var uses milliseconds, but this
+    implementation follows the acceptance criteria and uses seconds directly).
+
+    Set lower (e.g. ``2.0``) in high-traffic environments where a blocked
+    collector should be detected quickly.  The companion circuit breaker
+    (see :class:`_CircuitBreakerSpanExporter`) opens after 5 consecutive
+    timeouts and remains open for 30 s.
+    """
+
     @classmethod
     def from_env(cls) -> OTelConfig:
         """Construct :class:`OTelConfig` from environment variables.
@@ -196,6 +212,7 @@ class OTelConfig:
             TAPPS_BRAIN_OTEL_ENABLED    — "1"/"true"/"yes" enables (default).
                                            "0"/"false"/"no"  disables.
             OTEL_SERVICE_NAME            — service name (default: ``"tapps-brain"``).
+            OTEL_EXPORTER_OTLP_TIMEOUT   — export timeout in seconds (default: ``5.0``).
             TAPPS_BRAIN_OTEL_CAPTURE_CONTENT
                                          — opt-in content capture (default: ``"0"``).
                                            Takes priority over the semconv var below.
@@ -210,6 +227,11 @@ class OTelConfig:
         enabled = raw_enabled not in {"0", "false", "no"}
         service_name = os.environ.get("OTEL_SERVICE_NAME", "tapps-brain") or "tapps-brain"
 
+        try:
+            export_timeout = float(os.environ.get("OTEL_EXPORTER_OTLP_TIMEOUT", "5.0"))
+        except ValueError:
+            export_timeout = 5.0
+
         # Privacy: content capture — tapps-brain var takes priority over semconv var.
         tapps_capture_raw = os.environ.get("TAPPS_BRAIN_OTEL_CAPTURE_CONTENT", "")
         if tapps_capture_raw.strip():
@@ -218,7 +240,12 @@ class OTelConfig:
             semconv_raw = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "")
             capture_content = _parse_bool_env(semconv_raw, default=False)
 
-        return cls(enabled=enabled, service_name=service_name, capture_content=capture_content)
+        return cls(
+            enabled=enabled,
+            service_name=service_name,
+            capture_content=capture_content,
+            export_timeout=export_timeout,
+        )
 
 
 def should_capture_content(config: OTelConfig | None = None) -> bool:
@@ -256,6 +283,165 @@ def should_capture_content(config: OTelConfig | None = None) -> bool:
     return cfg.capture_content
 
 
+# ---------------------------------------------------------------------------
+# Circuit-breaker span exporter (TAP-1814)
+# ---------------------------------------------------------------------------
+
+_CB_MAX_FAILURES: int = 5
+"""Number of consecutive export failures before the circuit opens."""
+
+_CB_OPEN_DURATION: float = 30.0
+"""Seconds the circuit stays open after tripping."""
+
+_logger: logging.Logger = logging.getLogger(__name__)
+
+
+class _CircuitBreakerSpanExporter:
+    """Wraps a :class:`opentelemetry.sdk.trace.export.SpanExporter` with a circuit breaker.
+
+    After :data:`_CB_MAX_FAILURES` consecutive export failures the circuit
+    **opens** for :data:`_CB_OPEN_DURATION` seconds.  While open, every
+    ``export()`` call returns :attr:`SpanExportResult.FAILURE` immediately
+    without touching the underlying transport — this prevents an unreachable
+    collector from stalling the BatchSpanProcessor thread.
+
+    After the open window elapses the circuit transitions to **half-open**:
+    the next call is tried against the real exporter.  Success resets the
+    failure counter; failure reopens the circuit.
+    """
+
+    def __init__(self, inner: Any) -> None:  # noqa: ANN401
+        self._inner = inner
+        self._consecutive_failures: int = 0
+        self._open_until: float | None = None
+        self._lock: threading.Lock = threading.Lock()
+
+    def export(self, spans: Any) -> Any:  # noqa: ANN401
+        """Export *spans*, applying circuit-breaker logic.
+
+        Returns the underlying exporter's result on success, or
+        :attr:`SpanExportResult.FAILURE` when the circuit is open or the
+        underlying export raises.
+        """
+        try:
+            from opentelemetry.sdk.trace.export import SpanExportResult
+        except ImportError:  # pragma: no cover — SDK not installed
+            return None
+
+        # Check if circuit is open (fast path under lock).
+        with self._lock:
+            if self._open_until is not None:
+                now = time.monotonic()
+                if now < self._open_until:
+                    _logger.warning(
+                        "OTel circuit breaker OPEN; dropping %d spans (reopens in %.0f s)",
+                        len(spans) if spans else 0,
+                        self._open_until - now,
+                    )
+                    return SpanExportResult.FAILURE
+                # Timeout elapsed — transition to half-open.
+                self._open_until = None
+
+        # Attempt the real export outside the lock so we don't hold it during I/O.
+        try:
+            result = self._inner.export(spans)
+        except Exception as exc:
+            _logger.warning("OTel export raised: %s(%s)", type(exc).__name__, exc)
+            result = SpanExportResult.FAILURE
+
+        # Update failure count.
+        with self._lock:
+            if result != SpanExportResult.SUCCESS:
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= _CB_MAX_FAILURES:
+                    self._open_until = time.monotonic() + _CB_OPEN_DURATION
+                    _logger.warning(
+                        "OTel circuit breaker OPEN after %d consecutive failures; "
+                        "will retry in %.0f s",
+                        self._consecutive_failures,
+                        _CB_OPEN_DURATION,
+                    )
+                    # Increment otel.export_failures_total metric (best-effort).
+                    _increment_export_failure_metric(reason="circuit_open")
+            else:
+                self._consecutive_failures = 0
+                self._open_until = None
+
+        return result
+
+    def shutdown(self) -> None:
+        """Delegate shutdown to the inner exporter."""
+        with contextlib.suppress(Exception):
+            self._inner.shutdown()
+
+
+def _increment_export_failure_metric(*, reason: str) -> None:
+    """Increment ``otel.export_failures_total`` in-process (best-effort, no-op on error)."""
+    try:
+        if get_meter is None:
+            return
+        meter = get_meter("tapps_brain")
+        counter = meter.create_counter(
+            name="otel.export_failures_total",
+            description="Number of OTLP export failures (circuit breaker trips).",
+        )
+        counter.add(1, {"reason": reason})
+    except Exception:  # nosec B110
+        pass
+
+
+def _configure_otlp_provider(cfg: OTelConfig, endpoint: str) -> None:
+    """Configure the global OTel :class:`TracerProvider` with an OTLP span exporter.
+
+    Only called when ``opentelemetry-sdk`` is installed *and* an OTLP endpoint
+    is configured.  Wraps the exporter in a :class:`_CircuitBreakerSpanExporter`
+    so that a non-responsive collector never blocks the BatchSpanProcessor thread
+    longer than *cfg.export_timeout* seconds.
+
+    **Idempotency:** This function is a no-op when a non-default provider is
+    already registered (detected via ``isinstance`` against the SDK's
+    ``ProxyTracerProvider``), so repeated calls to :func:`bootstrap_tracer`
+    do not orphan an existing :class:`~opentelemetry.sdk.trace.BatchSpanProcessor`
+    queue.
+
+    This is a no-op (swallows all exceptions) when the SDK is unavailable or
+    when the provider has already been set to a non-default provider.
+    """
+    try:
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        # Idempotency guard: do not replace a provider that was already configured.
+        # The default provider is a ProxyTracerProvider; once replaced it becomes
+        # a concrete TracerProvider (or subclass).
+        existing = trace.get_tracer_provider()
+        try:
+            from opentelemetry.trace import ProxyTracerProvider
+
+            if not isinstance(existing, ProxyTracerProvider):
+                return  # A real provider is already installed — skip silently.
+        except ImportError:
+            pass  # ProxyTracerProvider not available in this SDK version; proceed.
+
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=endpoint,
+            timeout=cfg.export_timeout,
+        )
+        cb_exporter = _CircuitBreakerSpanExporter(otlp_exporter)
+
+        resource = Resource.create({"service.name": cfg.service_name})
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(BatchSpanProcessor(cb_exporter))
+        trace.set_tracer_provider(provider)
+    except Exception:  # nosec B110 — SDK not available or misconfigured; silently skip
+        pass
+
+
 def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
     """Return an OTel tracer for *config*, or ``None`` when OTel is disabled.
 
@@ -271,6 +457,13 @@ def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
     already wired to yield ``None`` without creating any span objects —
     **zero allocation** on the hot path.
 
+    When ``opentelemetry-sdk`` is installed and ``OTEL_EXPORTER_OTLP_ENDPOINT``
+    is set, this function also configures the global :class:`TracerProvider`
+    with a :class:`_CircuitBreakerSpanExporter` wrapping an
+    :class:`opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter`
+    whose timeout is taken from *config.export_timeout* (default 5 s, overridable
+    via ``OTEL_EXPORTER_OTLP_TIMEOUT``).
+
     Args:
         config: OTel bootstrap configuration.  When ``None`` a default
             :class:`OTelConfig` (all defaults, enabled) is used.
@@ -283,6 +476,12 @@ def bootstrap_tracer(config: OTelConfig | None = None) -> Any:  # noqa: ANN401
         return None
     try:
         from opentelemetry import trace  # lazy — API is a core dep but guard anyway
+
+        # When the SDK is available and an OTLP endpoint is configured, set up
+        # the TracerProvider with a timeout-aware, circuit-breaking exporter.
+        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+        if _has_otel_sdk() and endpoint:
+            _configure_otlp_provider(cfg, endpoint)
 
         return trace.get_tracer(cfg.service_name)
     except Exception:
