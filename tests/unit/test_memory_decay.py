@@ -146,6 +146,18 @@ class TestPowerLawDecayFunction:
         r_large_k = power_law_decay(5.0, hl, beta, k=10.0)
         assert r_small_k < r_large_k
 
+    @pytest.mark.parametrize("half_life", [0, -1, float("-inf"), float("nan")])
+    def test_invalid_half_life_raises(self, half_life: float) -> None:
+        """TAP-1811: non-positive or nan half_life raises ValueError before math.pow."""
+        with pytest.raises(ValueError, match="decay: half_life must be > 0"):
+            power_law_decay(10.0, half_life=half_life, decay_exponent=1.0)
+
+    @pytest.mark.parametrize("k", [0, -1, float("nan")])
+    def test_invalid_k_raises(self, k: float) -> None:
+        """TAP-1811: non-positive or nan k raises ValueError before math.pow."""
+        with pytest.raises(ValueError, match="decay: k must be > 0"):
+            power_law_decay(10.0, half_life=30.0, decay_exponent=1.0, k=k)
+
 
 class TestExponentialDecayFunction:
     """STORY-SC02 (TAP-558): standalone tests for ``exponential_decay``."""
@@ -166,6 +178,12 @@ class TestExponentialDecayFunction:
             r = exponential_decay(float(t), 30.0)
             assert 0.0 < r < prev
             prev = r
+
+    @pytest.mark.parametrize("half_life", [0, -1, float("-inf"), float("nan")])
+    def test_invalid_half_life_raises(self, half_life: float) -> None:
+        """TAP-1811: non-positive or nan half_life raises ValueError before the divide."""
+        with pytest.raises(ValueError, match="decay: half_life must be > 0"):
+            exponential_decay(10.0, half_life=half_life)
 
 
 class TestPerLayerDecayKOverride:

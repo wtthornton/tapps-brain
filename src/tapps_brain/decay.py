@@ -185,6 +185,10 @@ def power_law_decay(
     """
     if days <= 0.0:
         return 1.0
+    if not half_life > 0.0:
+        raise ValueError("decay: half_life must be > 0")
+    if not k > 0.0:
+        raise ValueError("decay: k must be > 0")
     return math.pow(1.0 + days / (k * half_life), -decay_exponent)
 
 
@@ -197,6 +201,8 @@ def exponential_decay(days: float, half_life: float) -> float:
     """
     if days <= 0.0:
         return 1.0
+    if not half_life > 0.0:
+        raise ValueError("decay: half_life must be > 0")
     return math.pow(0.5, days / half_life)
 
 

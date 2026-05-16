@@ -17,6 +17,7 @@ from tapps_brain.profile import (
     LayerDefinition,
     LimitsConfig,
     MemoryProfile,
+    ProfileValidationError,
     PromotionThreshold,
     RecallProfileConfig,
     ScoringConfig,
@@ -440,6 +441,22 @@ class TestLoadProfile:
         path = _write_yaml(tmp_path / "seed.yaml", data)
         profile = load_profile(path)
         assert profile.seeding.seed_version == "yaml-v1"
+
+    @pytest.mark.parametrize("bad_half_life", [0, -1])
+    def test_reject_non_positive_half_life_raises_profile_validation_error(
+        self, tmp_path: Path, bad_half_life: int
+    ) -> None:
+        """TAP-1811: a layer with half_life_days <= 0 raises ProfileValidationError
+        quoting the offending tier name — not a bare Pydantic ValidationError."""
+        data = {
+            "profile": {
+                "name": "bad-decay",
+                "layers": [{"name": "fast-tier", "half_life_days": bad_half_life}],
+            }
+        }
+        path = _write_yaml(tmp_path / "bad.yaml", data)
+        with pytest.raises(ProfileValidationError, match="fast-tier"):
+            load_profile(path)
 
 
 # ---------------------------------------------------------------------------

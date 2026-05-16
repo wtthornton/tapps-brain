@@ -15,10 +15,29 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+from pydantic import (
+    ValidationError as PydanticValidationError,
+)
 
 from tapps_brain.feedback import FeedbackConfig
 from tapps_brain.lexical import LexicalRetrievalConfig
+
+
+class ProfileValidationError(ValueError):
+    """Raised when a profile file fails validation.
+
+    Wraps Pydantic's ``ValidationError`` with a human-readable message that
+    quotes the offending tier/layer name, making misconfigured profiles visible
+    at load time instead of as a ``ZeroDivisionError`` deep in the recall path.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Sub-models
@@ -625,6 +644,9 @@ def load_profile(path: Path) -> MemoryProfile:
     Raises:
         FileNotFoundError: If *path* does not exist.
         ValueError: If the YAML is invalid or fails validation.
+        ProfileValidationError: If a layer has a non-positive ``half_life_days``
+            or any other Pydantic validation failure; the offending tier name is
+            quoted in the message.
     """
     text = path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
@@ -635,7 +657,34 @@ def load_profile(path: Path) -> MemoryProfile:
     if "profile" not in data:
         msg = f"Profile YAML must have a top-level 'profile:' key, got keys: {list(data)}"
         raise ValueError(msg)
-    return MemoryProfile.model_validate(data["profile"])
+
+    try:
+        return MemoryProfile.model_validate(data["profile"])
+    except PydanticValidationError as exc:
+        # Surface half_life_days errors with the tier name for actionable messages.
+        profile_data = data["profile"]
+        raw_layers: list[object] = (
+            profile_data.get("layers", []) if isinstance(profile_data, dict) else []
+        )
+        for err in exc.errors():
+            loc = err.get("loc", ())
+            if (
+                len(loc) >= 3  # noqa: PLR2004
+                and loc[0] == "layers"
+                and loc[2] == "half_life_days"
+            ):
+                layer_idx = loc[1]
+                tier_name = (
+                    raw_layers[layer_idx].get("name", f"layer[{layer_idx}]")  # type: ignore[union-attr]
+                    if isinstance(layer_idx, int) and layer_idx < len(raw_layers)
+                    else f"layer[{layer_idx}]"
+                )
+                bad_val = err.get("input")
+                raise ProfileValidationError(
+                    f"Profile '{path.name}': tier '{tier_name}' has non-positive "
+                    f"half_life_days={bad_val!r}; value must be >= 1"
+                ) from exc
+        raise ProfileValidationError(str(exc)) from exc
 
 
 def _builtin_profiles_dir() -> Path:
