@@ -1,8 +1,34 @@
 # Linear automation via a dedicated Claude Agent user
 
-**Status:** PLANNED — key not yet generated, poller not yet built. This
-guide describes the intended setup so it's captured before we execute.
+**Status:** Partially Active (as of 2026-05-16) — `scripts/run-ralph.sh`
+wrapper is ready (TAP-1846/WS3.2); the API key at
+`~/.config/claude-agent/linear.env` is the remaining **human step**
+(TAP-1845/WS3.1 — log in as Claude Agent in a browser, generate a
+Personal API key, write it to the path above). See
+[ralph-setup.md](ralph-setup.md) for wrapper usage and the credential
+load order.
 Flip sections from "planned" to "current" as each step lands.
+
+**Quick verify** (run after WS3.1 completes):
+
+```bash
+# Confirm the credential file is present and well-formed
+grep -c '^LINEAR_API_KEY=lin_api_' ~/.config/claude-agent/linear.env \
+  && echo "OK" || echo "MISSING or wrong format"
+
+# Confirm Linear accepts the key as Claude Agent
+source ~/.config/claude-agent/linear.env
+curl -s \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ viewer { id name email } }"}' \
+  https://api.linear.app/graphql | python3 -m json.tool
+# Expected: "name": "Claude Agent" (not the operator's name)
+
+# Confirm the wrapper picks it up
+bash scripts/run-ralph.sh --version 2>&1 | head -2
+# Expected: [run-ralph] Loaded Linear credentials from ~/.config/claude-agent/linear.env
+```
 
 **Audience:** a human operator wiring a Linear workspace so Claude-driven
 automation (commenting, status updates, triage responses) appears under a

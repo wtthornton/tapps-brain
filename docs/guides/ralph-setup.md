@@ -40,8 +40,9 @@ the Claude Agent Linear user (`tapp.thornton+claude@gmail.com`).
 ## Setting up the credential (one-time, human step)
 
 The credential file must be created by a human operator logged into Linear as
-Claude Agent. See `docs/guides/linear-claude-agent.md` for the full credential
-lifecycle.
+Claude Agent. See [`docs/guides/linear-claude-agent.md`](linear-claude-agent.md)
+for the full credential lifecycle, the quick-verify smoke-test block, and
+revocation/rotation guidance.
 
 ```bash
 mkdir -p ~/.config/claude-agent
