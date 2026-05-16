@@ -90,7 +90,9 @@ def _mcp_auth_error_body(
 # These are probe / scrape endpoints that must remain reachable from any origin
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})
+_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset(
+    {"/", "/health", "/ready", "/metrics", "/v1/tools/list"}
+)
 
 
 def _resolve_tenant_headers(request: Request) -> tuple[str, str, str | None, str | None]:

@@ -1037,7 +1037,9 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa:
 # These are probe / scrape endpoints that must remain reachable from any origin
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/healthz", "/ready", "/metrics"})  # type: ignore[no-redef]  # noqa: F811
+_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset(  # type: ignore[no-redef]  # noqa: F811
+    {"/", "/health", "/healthz", "/ready", "/metrics", "/v1/tools/list"}
+)
 
 
 class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa: F811
@@ -1055,6 +1057,7 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  
     * ``/healthz`` — readiness probe (DB-checked; used by Docker healthcheck)
     * ``/ready`` — readiness probe (verbose; includes pool stats)
     * ``/metrics`` — Prometheus scrape endpoint
+    * ``/v1/tools/list`` — static tool-catalog snapshot (TAP-1843; no secrets)
 
     Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
     protection to all bearer-authenticated routes (``/v1/*``, ``/admin/*``,
@@ -1307,6 +1310,11 @@ def create_app(
     # module without paying for it.
     mcp_holder: dict[str, Any] = {"mcp": mcp_server}
 
+    # TAP-1843: in-memory snapshot of the tool catalog, built once in lifespan.
+    # Keyed by "payload" so the lifespan closure can update it without a
+    # nonlocal declaration (mutable container pattern, same as mcp_holder).
+    _tools_snapshot_holder: dict[str, bytes] = {"payload": b'{"tools":[]}'}
+
     def _get_mcp_asgi_sub(mcp: Any) -> Any:
         """Return the Streamable HTTP ASGI sub-app from a FastMCP instance.
 
@@ -1423,6 +1431,33 @@ def create_app(
                 except Exception as exc:
                     logger.error("http_adapter.session_manager_start_failed", error=str(exc))
                     session_cm = None
+
+            # TAP-1843: build the static tools snapshot once at startup so
+            # GET /v1/tools/list never hits the MCP registry on the hot path.
+            try:
+                _raw_tools = mcp._tool_manager.list_tools()
+                _snapshot_data = {
+                    "tools": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.parameters,
+                        }
+                        for t in _raw_tools
+                    ]
+                }
+                _tools_snapshot_holder["payload"] = json.dumps(
+                    _snapshot_data, separators=(",", ":")
+                ).encode()
+                logger.info(
+                    "http_adapter.tools_snapshot_built",
+                    count=len(_raw_tools),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "http_adapter.tools_snapshot_build_failed",
+                    error=str(exc),
+                )
         try:
             yield
         finally:
@@ -1555,6 +1590,26 @@ def create_app(
             ),
             status_code=200,
             media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
+    @app.get("/v1/tools/list")
+    async def _v1_tools_list() -> Response:
+        """Return the static tool-catalog snapshot built at container startup.
+
+        TAP-1843: zero-overhead alternative to the MCP ``tools/list`` call for
+        clients that only need to enumerate tool names (load-balancers, monitoring
+        probes, Ralph's cache-locality optimizer).  The payload is identical to
+        the ``result.tools`` array from a MCP ``tools/list`` response — same
+        per-tool ``name``, ``description``, and ``inputSchema`` fields, minus
+        the JSON-RPC envelope.  Built once in the lifespan hook; never read
+        live from the registry on the request path.
+
+        Unauthenticated, Origin-exempt, and publicly cacheable (no secrets).
+        """
+        return Response(
+            content=_tools_snapshot_holder["payload"],
+            media_type="application/json",
+            headers={"Cache-Control": "public, max-age=300"},
         )
 
     @app.get("/info", dependencies=[Depends(require_data_plane_auth)])
