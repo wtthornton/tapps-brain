@@ -424,6 +424,7 @@ class AsyncMemoryStore:
         path — failures are logged but never raised, so we preserve that
         contract here too.
         """
+        # unreachable: callers guard on _async_backend is not None before calling
         if self._async_backend is None:  # pragma: no cover
             raise RuntimeError("aio: _async_backend not initialised before write")
         saves, deletes, relations, audit = capture.flush()

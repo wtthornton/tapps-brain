@@ -260,6 +260,7 @@ def import_relay_to_store(store: MemoryStore, payload: dict[str, Any]) -> RelayI
             result.skipped += 1
             continue
 
+        # unreachable: _coerce_relay_item_save_kwargs sets exactly one of save_kw/skip
         if save_kw is None:  # pragma: no cover
             raise RuntimeError("memory_relay: save_kw missing — invariant violated")
 
