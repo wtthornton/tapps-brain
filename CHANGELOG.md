@@ -12,6 +12,23 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Added
+
+- **X-Brain-Profile gating on `/v1/*` REST endpoints** (TAP-1929 — security). The `X-Brain-Profile` header now enforces the same tool surface on the REST path as the MCP path. HTTP-only consumers (AgentForge `BrainBridge`, future SDKs) running with `agent_brain` profile can no longer call `memory_*`-backed REST endpoints — denials return `403` with the documented JSON-RPC `-32602` shape (`{"error": "out_of_profile", "data": {"reason": "out_of_profile", "tool": ..., "profile": ...}}`). REST route → tool mapping is centralised in `src/tapps_brain/http/rest_profile_gate.py` with startup drift detection; `GET /v1/tools/list` filters the catalog by the caller's profile when the header is set.
+- **`POST /v1/experience:batch` bulk experience ingestion** (TAP-1934). Patterned after `/v1/reinforce:batch`; accepts `{"events": [event1, event2, ...]}` and writes the entire batch in one Postgres transaction via the new `ExperienceEventRecorder.record_many`. Per-event 64 KB, total batch 1 MiB, max 100 events per request. High-throughput consumers (Ralph-style loops at 20+ tasks/min) collapse N round-trips into one.
+- **Native list shapes on `brain_record_event` MCP tool** (TAP-1932). `entities`, `edges`, `evidence`, and `payload` now accept native Python lists / dicts matching the REST `/v1/experience` shape. The legacy `entities_json` / `edges_json` / `evidence_json` / `payload_json` string aliases still work and emit `DeprecationWarning`; **removed in the next minor release**.
+- **`utility_score` honored on the edge feedback path** (TAP-1930). `brain_record_feedback(..., utility_score=...)` and `POST /v1/kg/feedback` now accept the continuous signal on edges as well as memory feedback. The edge confidence delta is weighted by `abs(utility_score)`. Validated server-side; out-of-range values get a `400`. Backward-compatible — omitting `utility_score` keeps the fixed-step behaviour.
+- **Configurable `brain_explain_connection` traversal ceilings** (TAP-1933). `TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS` (default 3) caps the hop ceiling; `TAPPS_BRAIN_KG_EXPLAIN_BRANCHING_FACTOR` (default 50) caps BFS fan-out per layer to keep deeper searches bounded on dense graphs. Per-call `max_hops` is clamped against the ceiling (not rejected) for backward compatibility.
+- **Raised `/v1/experience` body limit to 256 KB** (TAP-1940). The single-event experience endpoint now accepts up to 256 KB so evidence payloads (stack trace + log slice + tool output) fit without consumer-side glue. Other `/v1/kg/*` endpoints stay at the 64 KB default. New module-level constants `_KG_MAX_BODY_BYTES`, `_EXPERIENCE_MAX_BODY_BYTES`, `_EXPERIENCE_BATCH_MAX_BODY_BYTES` document each ceiling.
+
+### Changed
+
+- **`_resolve_per_call_agent_id` warns on header / kwarg disagreement** (TAP-1936). When both `X-Agent-Id` (or `_meta.agent_id`) and the `agent_id=` kwarg are set to non-equal values, the resolver now emits a `WARNING`-level structured log line so attribution drift is diagnosable. Default behaviour is unchanged — the kwarg still wins. Set `TAPPS_BRAIN_STRICT_AGENT_ID=1` to make mismatches a hard `ValueError` instead.
+
+### Verified
+
+- **KG migration rollback coverage for 016-020** (TAP-1937). Confirmed every `*.up.sql` for migrations 016 (`kg_entities`), 017 (`kg_edges`), 018 (`kg_evidence`), 019 (`kg_aliases`), and 020 (`experience_events`) ships a paired `*.down.sql`. `tests/unit/test_migration_down_files.py` (TAP-1818) enforces this without an allowlist. No back-port was needed.
+
 ---
 
 ## [3.18.0] — 2026-05-16

@@ -108,6 +108,7 @@ from tapps_brain.http.middleware import (
     McpTenantMiddleware,
     OriginAllowlistMiddleware,
     OtelSpanMiddleware,
+    RestProfileGateMiddleware,
     _mcp_auth_error_body,
     _peek_mcp_tool_name,
 )
@@ -153,6 +154,15 @@ _SERVICE_NAME = "tapps-brain"
 _SNAPSHOT_TTL_SECONDS: float = 15.0
 _PROCESS_START_TIME: float = time.time()
 _BEARER_PREFIX = "bearer "
+
+# Per-endpoint body-size ceilings (TAP-1940). Default for /v1/kg/* and most
+# single-shot writes is 64 KB; /v1/experience is bumped to 256 KB so evidence
+# payloads (stack trace + log slice + tool output) fit without consumer glue.
+# /v1/experience:batch uses _EXPERIENCE_BATCH_MAX_BODY_BYTES below.
+_KG_MAX_BODY_BYTES: int = 65_536
+_EXPERIENCE_MAX_BODY_BYTES: int = 262_144
+_EXPERIENCE_BATCH_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB total for batch.
+_EXPERIENCE_BATCH_MAX_ITEMS: int = 100
 
 # STORY-070.12: bounded per-(project_id, agent_id) request counters for
 # Prometheus export.  agent_id cardinality is capped at 100 distinct values
@@ -1434,25 +1444,44 @@ def create_app(
 
             # TAP-1843: build the static tools snapshot once at startup so
             # GET /v1/tools/list never hits the MCP registry on the hot path.
+            # TAP-1929: also build a per-tool index so the endpoint can filter
+            # by the caller's profile, and validate the REST→tool drift map.
             try:
                 _raw_tools = mcp._tool_manager.list_tools()
-                _snapshot_data = {
-                    "tools": [
-                        {
-                            "name": t.name,
-                            "description": t.description,
-                            "inputSchema": t.parameters,
-                        }
-                        for t in _raw_tools
-                    ]
+                _tools_by_name = {
+                    t.name: {
+                        "name": t.name,
+                        "description": t.description,
+                        "inputSchema": t.parameters,
+                    }
+                    for t in _raw_tools
                 }
+                _snapshot_data = {"tools": list(_tools_by_name.values())}
                 _tools_snapshot_holder["payload"] = json.dumps(
                     _snapshot_data, separators=(",", ":")
+                ).encode()
+                _tools_snapshot_holder["by_name_json"] = json.dumps(
+                    _tools_by_name, separators=(",", ":")
                 ).encode()
                 logger.info(
                     "http_adapter.tools_snapshot_built",
                     count=len(_raw_tools),
                 )
+
+                # TAP-1929: REST route drift detection. Fail fast at startup
+                # if mcp_profiles.yaml or REST_ROUTE_TO_TOOL drift apart.
+                try:
+                    from tapps_brain.http.rest_profile_gate import (
+                        validate_rest_route_map,
+                    )
+
+                    validate_rest_route_map(frozenset(_tools_by_name))
+                except Exception as drift_exc:
+                    logger.error(
+                        "http_adapter.rest_profile_gate_drift",
+                        error=str(drift_exc),
+                    )
+                    raise
             except Exception as exc:
                 logger.warning(
                     "http_adapter.tools_snapshot_build_failed",
@@ -1520,8 +1549,12 @@ def create_app(
     # Register middlewares.  add_middleware order is reversed: last-added = outermost
     # = first to process requests.  Origin allowlist must run before MCP tenant auth
     # so a bad Origin returns 403 before the auth check can return 401/403 (TAP-627).
+    # RestProfileGateMiddleware (TAP-1929) runs after MCP tenant middleware so /mcp
+    # routes are unaffected and before the route handlers so /v1/* denials avoid the
+    # body parse / DB hop entirely.
     app.add_middleware(OtelSpanMiddleware)
     app.add_middleware(McpTenantMiddleware)
+    app.add_middleware(RestProfileGateMiddleware)
     app.add_middleware(OriginAllowlistMiddleware)
 
     # -------- ops routes --------
@@ -1593,7 +1626,7 @@ def create_app(
         )
 
     @app.get("/v1/tools/list")
-    async def _v1_tools_list() -> Response:
+    async def _v1_tools_list(request: Request) -> Response:
         """Return the static tool-catalog snapshot built at container startup.
 
         TAP-1843: zero-overhead alternative to the MCP ``tools/list`` call for
@@ -1604,10 +1637,66 @@ def create_app(
         the JSON-RPC envelope.  Built once in the lifespan hook; never read
         live from the registry on the request path.
 
-        Unauthenticated, Origin-exempt, and publicly cacheable (no secrets).
+        TAP-1929: when the caller supplies ``X-Brain-Profile``, the response
+        is filtered to the tools allowed by that profile so consumers can
+        enumerate exactly what they are permitted to call.  Per-profile
+        filtered snapshots are memoised in :data:`_tools_snapshot_holder`
+        so the filter runs once per profile, not per request.
+
+        Unauthenticated, Origin-exempt, and publicly cacheable (no secrets
+        beyond the tool surface that bearer auth already protects).
         """
+        header_profile = (request.headers.get("x-brain-profile") or "").strip()
+        if not header_profile:
+            return Response(
+                content=_tools_snapshot_holder["payload"],
+                media_type="application/json",
+                headers={"Cache-Control": "public, max-age=300"},
+            )
+
+        cache_key = f"by_profile:{header_profile}"
+        cached = _tools_snapshot_holder.get(cache_key)
+        if cached is not None:
+            return Response(
+                content=cached,
+                media_type="application/json",
+                headers={"Cache-Control": "public, max-age=300"},
+            )
+
+        from tapps_brain.http.profile_resolver import _get_profile_resolver
+        from tapps_brain.mcp_server.profile_registry import UnknownProfileError
+
+        try:
+            allowed = _get_profile_resolver()._registry.get(header_profile)
+        except UnknownProfileError as exc:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "bad_request",
+                    "detail": f"Unknown MCP profile {header_profile!r}.",
+                    "available": exc.available,
+                },
+            )
+
+        by_name_payload = _tools_snapshot_holder.get("by_name_json")
+        if by_name_payload is None:
+            # Snapshot not built (lifespan failed / running in tests without
+            # the lifespan hook). Fall back to the unfiltered payload.
+            return Response(
+                content=_tools_snapshot_holder["payload"],
+                media_type="application/json",
+                headers={"Cache-Control": "public, max-age=300"},
+            )
+
+        try:
+            by_name = json.loads(by_name_payload.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            by_name = {}
+        filtered = {"tools": [by_name[name] for name in allowed if name in by_name]}
+        encoded = json.dumps(filtered, separators=(",", ":")).encode()
+        _tools_snapshot_holder[cache_key] = encoded
         return Response(
-            content=_tools_snapshot_holder["payload"],
+            content=encoded,
             media_type="application/json",
             headers={"Cache-Control": "public, max-age=300"},
         )
@@ -2777,10 +2866,16 @@ def create_app(
             raise HTTPException(
                 status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
             )
-        if len(raw) > 65_536:
+        # TAP-1940: /v1/experience uses a higher 256 KB ceiling than the 64 KB
+        # default applied to /v1/kg/* endpoints, so evidence payloads (stack
+        # traces + log slices + tool output) fit without consumer-side glue.
+        if len(raw) > _EXPERIENCE_MAX_BODY_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                detail={
+                    "error": "payload_too_large",
+                    "detail": f"Max {_EXPERIENCE_MAX_BODY_BYTES} bytes.",
+                },
             )
         try:
             body = json.loads(raw.decode("utf-8"))
@@ -2815,15 +2910,111 @@ def create_app(
             subject_key=body.get("subject_key") or None,
             utility_score=float(body.get("utility_score", 0.0)),
             payload=body.get("payload") or {},
-            entities_json=json.dumps(body.get("entities") or []),
-            edges_json=json.dumps(body.get("edges") or []),
-            evidence_json=json.dumps(body.get("evidence") or []),
+            entities=list(body.get("entities") or []),
+            edges=list(body.get("edges") or []),
+            evidence=list(body.get("evidence") or []),
             memory_key=body.get("memory_key") or None,
             memory_value=body.get("memory_value") or None,
             memory_tier=str(body.get("memory_tier") or "pattern"),
             session_id=body.get("session_id") or None,
             workflow_run_id=body.get("workflow_run_id") or None,
         )
+        return JSONResponse(status_code=201, content=result)
+
+    @app.post("/v1/experience:batch", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_experience_batch(request: Request) -> JSONResponse:
+        """Atomically record a batch of experience events (TAP-1934).
+
+        REST counterpart of :func:`tapps_brain.services.kg_service.record_events_batch`.
+        Patterned after :func:`/v1/reinforce:batch` from v3.17.0.  All events
+        write in **one Postgres transaction**: any failure rolls back the
+        entire batch — no partial commits.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+
+        Request body (JSON):
+          ``{ "events": [event1, event2, ...] }`` where each event matches the
+          single-event ``/v1/experience`` schema.
+
+        Limits:
+          - Total batch body capped at 1 MiB.
+          - Up to 100 events per request (overflow → 400).
+
+        Response:
+          ``{ "results": [...], "count": int }`` with one result per event in
+          input order.
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        try:
+            raw = await request.body()
+        except Exception:
+            logger.exception("http_adapter.kg.batch.read_body_failed")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > _EXPERIENCE_BATCH_MAX_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "error": "payload_too_large",
+                    "detail": f"Max {_EXPERIENCE_BATCH_MAX_BODY_BYTES} bytes for batch requests.",
+                },
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        events = body.get("events")
+        if not isinstance(events, list):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "events must be a JSON array."},
+            )
+        if len(events) > _EXPERIENCE_BATCH_MAX_ITEMS:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "detail": f"Max {_EXPERIENCE_BATCH_MAX_ITEMS} events per batch.",
+                },
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.record_events_batch,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            agent_id,
+            events=events,
+        )
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(status_code=400, detail=result)
         return JSONResponse(status_code=201, content=result)
 
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
@@ -2963,6 +3154,8 @@ def create_app(
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
 
+        # TAP-1933: clamp against the configured ceiling, not the hard-coded 3.
+        ceiling = _kg_svc.explain_max_hops_ceiling()
         result = await asyncio.to_thread(
             _kg_svc.explain_connection,
             cm,
@@ -2970,7 +3163,7 @@ def create_app(
             _kg_brain_id(),
             subject_id=subject_id,
             object_id=object_id,
-            max_hops=max(1, min(int(body.get("max_hops", 3)), 3)),
+            max_hops=max(1, min(int(body.get("max_hops", 3)), ceiling)),
         )
         return JSONResponse(status_code=200, content=result)
 
@@ -3040,6 +3233,24 @@ def create_app(
                 },
             )
 
+        # TAP-1930: utility_score is optional; when supplied, kg_service
+        # validates the [-1, 1] range and surfaces 400 on overflow.
+        us_raw = body.get("utility_score")
+        utility_score: float | None
+        if us_raw is None:
+            utility_score = None
+        else:
+            try:
+                utility_score = float(us_raw)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": "utility_score must be a number.",
+                    },
+                )
+
         from tapps_brain.services import kg_service as _kg_svc
 
         result = await asyncio.to_thread(
@@ -3050,6 +3261,7 @@ def create_app(
             edge_id=edge_id,
             feedback_type=feedback_type,
             session_id=str(body.get("session_id") or ""),
+            utility_score=utility_score,
         )
 
         # Surface validation errors as 400 rather than 200

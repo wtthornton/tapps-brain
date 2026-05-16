@@ -315,11 +315,38 @@ def _resolve_per_call_agent_id(call_val: str, *, default: str) -> str:
       2. :func:`_current_request_agent_id` — contextvar (header) or
          ``_meta.agent_id`` from the MCP envelope.
       3. *default* — the server-level agent_id passed to :func:`create_server`.
+
+    TAP-1936: When both *call_val* and the contextvar resolve to non-empty,
+    non-equal values, emit a structured ``WARNING`` log so attribution drift
+    is diagnosable.  If ``TAPPS_BRAIN_STRICT_AGENT_ID=1`` is set, raise
+    :class:`ValueError` instead (caller translates to 400 / error envelope).
     """
     v = (call_val or "").strip()
+    ctx = _current_request_agent_id()
+    if v and ctx and v != ctx:
+        strict = os.environ.get("TAPPS_BRAIN_STRICT_AGENT_ID", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if strict:
+            raise ValueError(
+                f"agent_id mismatch: header/contextvar={ctx!r} kwarg={v!r}; "
+                "TAPPS_BRAIN_STRICT_AGENT_ID is enabled."
+            )
+        _get_logger().warning(
+            "agent_id.mismatch",
+            kwarg_agent_id=v,
+            header_agent_id=ctx,
+            resolved=v,
+            detail=(
+                "agent_id kwarg and X-Agent-Id header (or _meta.agent_id) "
+                "disagree; kwarg wins (backward compat). Set "
+                "TAPPS_BRAIN_STRICT_AGENT_ID=1 to make this a hard error."
+            ),
+        )
     if v:
         return v
-    ctx = _current_request_agent_id()
     if ctx:
         return ctx
     return default

@@ -24,12 +24,72 @@ trivial — no Pydantic models are imported in the hot path.
 from __future__ import annotations
 
 import json
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from tapps_brain.mcp_server.context import ToolContext
 
 from tapps_brain.services import kg_service
+
+
+def _coerce_payload(
+    native: dict[str, Any] | None,
+    legacy_json: str,
+) -> dict[str, Any]:
+    """Resolve effective payload from native dict or deprecated JSON string.
+
+    Native ``payload`` wins.  When only ``payload_json`` is provided, emit
+    :class:`DeprecationWarning` and parse it.  Returns ``{}`` when both are
+    absent or invalid (silent fallback for backward compat).
+    """
+    if isinstance(native, dict):
+        return native
+    if legacy_json and legacy_json.strip() not in ("", "{}"):
+        warnings.warn(
+            "brain_record_event(payload_json=...) is deprecated; "
+            "pass payload=<dict> instead. Removed in the next minor release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        try:
+            parsed = json.loads(legacy_json)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _coerce_list(
+    native: list[dict[str, Any]] | None,
+    legacy_json: str,
+    field_name: str,
+) -> list[dict[str, Any]]:
+    """Resolve effective list-of-dicts from native list or deprecated JSON string.
+
+    Native ``entities`` / ``edges`` / ``evidence`` wins.  When only the
+    ``*_json`` alias is provided and non-empty, emit
+    :class:`DeprecationWarning` and parse it.  Returns ``[]`` on absence or
+    decode failure (silent fallback for backward compat).
+    """
+    if isinstance(native, list):
+        return [item for item in native if isinstance(item, dict)]
+    if legacy_json and legacy_json.strip() not in ("", "[]"):
+        warnings.warn(
+            f"brain_record_event({field_name}_json=...) is deprecated; "
+            f"pass {field_name}=<list[dict]> instead. "
+            "Removed in the next minor release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        try:
+            parsed = json.loads(legacy_json)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    return []
 
 
 def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0915
@@ -44,16 +104,21 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         event_type: str,
         subject_key: str = "",
         utility_score: float = 0.0,
-        payload_json: str = "",
-        entities_json: str = "",
-        edges_json: str = "",
-        evidence_json: str = "",
+        payload: dict[str, Any] | None = None,
+        entities: list[dict[str, Any]] | None = None,
+        edges: list[dict[str, Any]] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
         memory_key: str = "",
         memory_value: str = "",
         memory_tier: str = "pattern",
         session_id: str = "",
         workflow_run_id: str = "",
         agent_id: str = "",
+        # Deprecated JSON-string aliases (TAP-1932). Removed in next minor.
+        payload_json: str = "",
+        entities_json: str = "",
+        edges_json: str = "",
+        evidence_json: str = "",
     ) -> str:
         """Record an experience event with optional KG side-effects.
 
@@ -71,21 +136,20 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             Optional primary memory key this event relates to.
         utility_score:
             Measured utility ``[0, 1]``.  Defaults to ``0.0``.
-        payload_json:
-            JSON-serialised ``dict`` of arbitrary event metadata.  Omit or
-            pass ``"{}"`` for an empty payload.
-        entities_json:
-            JSON-serialised ``list[dict]`` matching
-            :class:`~tapps_brain.experience.EntitySpec`.  Pass ``""`` to skip.
-        edges_json:
-            JSON-serialised ``list[dict]`` matching
-            :class:`~tapps_brain.experience.EdgeSpec`.  Both
-            ``subject_entity_id`` and ``object_entity_id`` must be
-            pre-resolved entity UUIDs.  Pass ``""`` to skip.
-        evidence_json:
-            JSON-serialised ``list[dict]`` matching
-            :class:`~tapps_brain.experience.EvidenceSpec`.  Pass ``""`` to
-            skip.
+        payload:
+            ``dict`` of arbitrary event metadata (TAP-1932 native shape).
+            Omit or pass ``None`` for an empty payload.
+        entities:
+            ``list[dict]`` matching :class:`~tapps_brain.experience.EntitySpec`.
+            Native shape (TAP-1932) — REST `/v1/experience` parity.  Pass
+            ``None`` or ``[]`` to skip.
+        edges:
+            ``list[dict]`` matching :class:`~tapps_brain.experience.EdgeSpec`.
+            Both ``subject_entity_id`` and ``object_entity_id`` must be
+            pre-resolved entity UUIDs.  Pass ``None`` or ``[]`` to skip.
+        evidence:
+            ``list[dict]`` matching :class:`~tapps_brain.experience.EvidenceSpec`.
+            Pass ``None`` or ``[]`` to skip.
         memory_key / memory_value:
             When both are provided, a private memory is written atomically
             alongside the event.
@@ -95,13 +159,21 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             Optional grouping identifiers for correlation.
         agent_id:
             Override the server-level default for this call (STORY-070.7).
+        payload_json, entities_json, edges_json, evidence_json:
+            **Deprecated (TAP-1932).** JSON-string aliases retained for one
+            minor cycle.  Use native ``payload`` / ``entities`` / ``edges`` /
+            ``evidence`` instead.  Emits :class:`DeprecationWarning` when
+            non-empty.  Removed in the next minor release.
 
         Returns
         -------
         JSON object: ``{ "event_id": str, "memory_key": str|null,
         "entity_ids": [str], "edge_ids": [str], "evidence_ids": [str] }``
         """
-        eff_aid = _rpc(agent_id, default=_server_aid)
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
         project_id = _pid()
 
         cm = kg_service._get_or_create_cm()
@@ -110,15 +182,11 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
             )
 
-        # Parse payload_json — silently fall back to empty dict on decode error.
-        payload: dict[str, Any] = {}
-        if payload_json and payload_json.strip() not in ("", "{}"):
-            try:
-                parsed = json.loads(payload_json)
-                if isinstance(parsed, dict):
-                    payload = parsed
-            except json.JSONDecodeError:
-                pass
+        # TAP-1932: prefer native shapes; fall back to deprecated _json aliases.
+        eff_payload = _coerce_payload(payload, payload_json)
+        eff_entities = _coerce_list(entities, entities_json, "entities")
+        eff_edges = _coerce_list(edges, edges_json, "edges")
+        eff_evidence = _coerce_list(evidence, evidence_json, "evidence")
 
         result = kg_service.record_event(
             cm,
@@ -128,10 +196,10 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             event_type=event_type,
             subject_key=subject_key or None,
             utility_score=float(utility_score),
-            payload=payload,
-            entities_json=entities_json,
-            edges_json=edges_json,
-            evidence_json=evidence_json,
+            payload=eff_payload,
+            entities=eff_entities,
+            edges=eff_edges,
+            evidence=eff_evidence,
             memory_key=memory_key or None,
             memory_value=memory_value or None,
             memory_tier=memory_tier or "pattern",
@@ -226,7 +294,9 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         object_id:
             UUID of the target entity.
         max_hops:
-            Maximum hops to traverse (clamped to [1, 3]).  Default 3.
+            Maximum hops to traverse.  Clamped against the configured ceiling
+            ``TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS`` (default 3) — TAP-1933.
+            Values above the ceiling are clamped, not rejected.
         agent_id:
             Override the server-level default for this call (STORY-070.7).
 
@@ -240,7 +310,10 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         Each intermediate step includes ``edge_id`` and ``predicate``.
         When ``found=false`` the path list is empty.
         """
-        eff_aid = _rpc(agent_id, default=_server_aid)
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
         project_id = _pid()
 
         # Suppress unused variable warning — eff_aid kept for consistency
@@ -257,13 +330,14 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
             )
 
+        ceiling = kg_service.explain_max_hops_ceiling()
         result = kg_service.explain_connection(
             cm,
             project_id,
             kg_service._DEFAULT_BRAIN_ID,
             subject_id=subject_id,
             object_id=object_id,
-            max_hops=max(1, min(int(max_hops), 3)),
+            max_hops=max(1, min(int(max_hops), ceiling)),
         )
         return json.dumps(result, default=str)
 
@@ -306,8 +380,12 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         session_id:
             Optional session identifier for correlation.
         utility_score:
-            Numeric utility signal ``[-1, 1]`` stored alongside the event
-            (memory feedback path only; ignored for edge feedback).
+            Numeric utility signal ``[-1, 1]``.  Stored alongside the event
+            on both the memory feedback path and (TAP-1930) the edge feedback
+            path — on edges the value weights the confidence delta so callers
+            can express continuous "how helpful / how misleading" rather than
+            binary.  Default ``0.0`` means "not provided"; pass any non-zero
+            value to opt in to weighting.
         details_json:
             JSON-serialised ``dict`` of extra metadata (memory path only).
         agent_id:
@@ -319,9 +397,16 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         "edge_id": str|null, "entry_key": str|null }`` on success, or
         ``{ "error": str, "detail": str }`` on validation failure.
         """
-        eff_aid = _rpc(agent_id, default=_server_aid)
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
         s = _resolve(agent_id)
         project_id = _pid()
+
+        # TAP-1930: utility_score=0.0 is the legacy "not provided" sentinel.
+        # Non-zero values opt in to weighted edge updates / FeedbackStore record.
+        us: float | None = float(utility_score) if utility_score else None
 
         # Edge feedback path
         if edge_id:
@@ -332,6 +417,7 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 edge_id=edge_id,
                 feedback_type=feedback_type,
                 session_id=session_id or "",
+                utility_score=us,
             )
             if isinstance(raw, dict) and raw.get("error"):
                 return json.dumps(raw, default=str)
@@ -350,7 +436,6 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         # Memory feedback path
         from tapps_brain.services import feedback_service
 
-        score: float | None = float(utility_score) if utility_score else None
         mem_raw = feedback_service.feedback_record(
             s,
             project_id,
@@ -358,7 +443,7 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             event_type=feedback_type,
             entry_key=entry_key or "",
             session_id=session_id or "",
-            utility_score=score,
+            utility_score=us,
             details_json=details_json or "",
         )
         if isinstance(mem_raw, dict) and mem_raw.get("error"):
