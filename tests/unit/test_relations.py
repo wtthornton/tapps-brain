@@ -135,6 +135,36 @@ class TestExtractRelations:
         assert "uses" in predicates
         assert "manages" in predicates
 
+    # -----------------------------------------------------------------------
+    # TAP-1812: created_at forwarding to prevent timestamp drift
+    # -----------------------------------------------------------------------
+
+    def test_created_at_forwarded_to_all_relations(self):
+        """All extracted RelationEntry objects carry the caller-supplied created_at."""
+        fixed_ts = "2020-01-01T00:00:00+00:00"
+        rels = extract_relations("k", "The backend uses PostgreSQL", created_at=fixed_ts)
+        assert len(rels) >= 1
+        assert all(r.created_at == fixed_ts for r in rels)
+
+    def test_created_at_stable_across_re_extraction(self):
+        """Extracting the same value twice with the same created_at yields identical timestamps.
+
+        Regression test for TAP-1812: without the fix, each call returned
+        now(), making the two timestamps diverge.
+        """
+        fixed_ts = "2020-01-01T00:00:00+00:00"
+        value = "The backend uses PostgreSQL"
+        rels1 = extract_relations("k", value, created_at=fixed_ts)
+        rels2 = extract_relations("k", value, created_at=fixed_ts)
+        assert rels1[0].created_at == rels2[0].created_at == fixed_ts
+
+    def test_created_at_none_uses_default_factory(self):
+        """When created_at is omitted the default factory still fires (backward compat)."""
+        rels = extract_relations("k", "The backend uses PostgreSQL")
+        assert len(rels) >= 1
+        # Default factory should have produced a non-empty ISO-8601 string
+        assert rels[0].created_at  # truthy, not empty/None
+
 
 # ---------------------------------------------------------------------------
 # Tests: extract_relations_from_entries
@@ -167,6 +197,18 @@ class TestExtractFromEntries:
         rels = extract_relations_from_entries([e1, e2])
         predicates = {r.predicate for r in rels}
         assert len(predicates) >= 2
+
+    def test_created_at_from_entry_is_threaded_through(self):
+        """extract_relations_from_entries propagates entry.created_at to RelationEntry.
+
+        Regression test for TAP-1812: relations extracted from an entry should
+        carry the *entry's* creation timestamp, not the current wall-clock.
+        """
+        fixed_ts = "2019-06-15T12:00:00+00:00"
+        e = _make_entry(key="m1", value="The API uses Redis", created_at=fixed_ts)
+        rels = extract_relations_from_entries([e])
+        assert len(rels) >= 1
+        assert all(r.created_at == fixed_ts for r in rels)
 
 
 # ---------------------------------------------------------------------------
