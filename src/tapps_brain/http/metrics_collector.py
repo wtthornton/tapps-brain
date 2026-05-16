@@ -374,8 +374,9 @@ def _collect_metrics(  # noqa: PLR0915
     # TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram.
     # Tracks tools/list latency split by cache_hit label so operators can
     # distinguish warm (cache-hit) from cold (cache-miss) probe durations.
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
+    # suppress(Exception): crash guard — a broken import must not crash /metrics.
+    # No pragma: no cover here; this block is exercised by test_metrics.py.
+    with suppress(Exception):
         from tapps_brain.mcp_server.tool_filter import get_probe_duration_histogram_snapshot
 
         _probe_snap = get_probe_duration_histogram_snapshot()

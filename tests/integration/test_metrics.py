@@ -12,7 +12,6 @@ No Postgres required — all state is pure in-memory module variables.
 
 from __future__ import annotations
 
-from contextlib import suppress
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -208,28 +207,29 @@ def test_snapshot_structure_matches_buckets() -> None:
 
 def test_collect_metrics_includes_histogram_when_observations_exist() -> None:
     """_collect_metrics renders tapps_brain_mcp_probe_duration_seconds lines."""
-    # We need at least one observation to trigger rendering.
+    pytest.importorskip("fastapi")  # skip if [http] extra not installed
+
+    from tapps_brain.http.metrics_collector import _collect_metrics
+
+    # Trigger a cache-miss observation so the histogram has data to render.
     mcp = _make_mock_mcp(ALL_TOOLS)
     registry = _make_registry({"full": frozenset(ALL_TOOLS)})
     install_tool_filter(mcp, profile_registry=registry)
-    mcp._tool_manager.list_tools()  # triggers cache-miss observation
+    mcp._tool_manager.list_tools()
 
-    # Import the renderer and call it without a DSN (metrics still renders).
-    with suppress(Exception):
-        from tapps_brain.http.metrics_collector import _collect_metrics
-
-        text = _collect_metrics(dsn=None)
-        assert "tapps_brain_mcp_probe_duration_seconds_bucket" in text
-        assert 'cache_hit="false"' in text
-        assert 'le="+Inf"' in text
-        assert "tapps_brain_mcp_probe_duration_seconds_sum" in text
-        assert "tapps_brain_mcp_probe_duration_seconds_count" in text
+    text = _collect_metrics(dsn=None)
+    assert "tapps_brain_mcp_probe_duration_seconds_bucket" in text
+    assert 'cache_hit="false"' in text
+    assert 'le="+Inf"' in text
+    assert "tapps_brain_mcp_probe_duration_seconds_sum" in text
+    assert "tapps_brain_mcp_probe_duration_seconds_count" in text
 
 
 def test_collect_metrics_omits_histogram_when_no_observations() -> None:
     """Histogram lines are absent from /metrics when no tools/list calls occurred."""
-    with suppress(Exception):
-        from tapps_brain.http.metrics_collector import _collect_metrics
+    pytest.importorskip("fastapi")  # skip if [http] extra not installed
 
-        text = _collect_metrics(dsn=None)
-        assert "tapps_brain_mcp_probe_duration_seconds" not in text
+    from tapps_brain.http.metrics_collector import _collect_metrics
+
+    text = _collect_metrics(dsn=None)
+    assert "tapps_brain_mcp_probe_duration_seconds" not in text
