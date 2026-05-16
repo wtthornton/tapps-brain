@@ -78,6 +78,8 @@ coverage.json
 .ralph/.qa_failures.json
 .ralph/.cb_open_thrash_count
 .ralph/forensic-*/
+.ralph/.brief_cache/
+.ralph/.coordinator_timings.jsonl
 openclaw-plugin/node_modules/
 node_modules/
 
