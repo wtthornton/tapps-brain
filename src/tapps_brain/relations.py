@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -47,12 +47,27 @@ class RelationEntry(BaseModel):
         description="Memory entry keys this relation was extracted from.",
     )
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Extraction confidence.")
+    confidence_history: list[float] = Field(
+        default_factory=list,
+        description=(
+            "All confidence values contributed by individual extractions. "
+            "Populated with [confidence] on first construction; appended on "
+            "each merge so the full provenance is preserved."
+        ),
+    )
     created_at: str = Field(default_factory=_utc_now_iso, description="ISO-8601 UTC creation time.")
 
     # -- Constants ----------------------------------------------------------
     MAX_RELATIONS_PER_ENTRY: ClassVar[int] = 5
     MIN_ENTITY_LENGTH: ClassVar[int] = 2
     MAX_EDGES_PER_KEY: ClassVar[int] = 20
+
+    @model_validator(mode="after")
+    def _seed_confidence_history(self) -> RelationEntry:
+        """Ensure confidence_history is non-empty on freshly constructed instances."""
+        if not self.confidence_history:
+            self.confidence_history = [self.confidence]
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +173,9 @@ def extract_relations(
                 continue
             seen_triples.add(triple_key)
 
+            extra: dict[str, Any] = {}
+            if created_at is not None:
+                extra["created_at"] = created_at
             results.append(
                 RelationEntry(
                     subject=subject,
@@ -165,7 +183,7 @@ def extract_relations(
                     object_entity=obj,
                     source_entry_keys=[entry_key],
                     confidence=0.8,
-                    **({"created_at": created_at} if created_at is not None else {}),
+                    **extra,
                 )
             )
 

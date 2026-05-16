@@ -9,9 +9,12 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from tapps_brain.models import (
     ConsolidatedEntry,
@@ -408,16 +411,23 @@ def should_consolidate(
 def merge_entry_relations(
     relation_lists: list[list[dict[str, Any]]],
     target_key: str,
+    *,
+    confidence_aggregator: Callable[[list[float]], float] = max,
 ) -> list[RelationEntry]:
     """Merge relations from multiple source entries, deduplicating triples.
 
     Relations are deduplicated by ``(subject, predicate, object_entity)``
-    (case-insensitive).  When duplicates are found the highest confidence
-    is kept and ``source_entry_keys`` are merged.
+    (case-insensitive).  When duplicates are found their confidence values
+    are accumulated in ``confidence_history`` and ``confidence`` is
+    re-derived via ``confidence_aggregator`` (default: ``max``).
+    ``source_entry_keys`` are merged across all contributors.
 
     Args:
         relation_lists: One list of relation dicts per source entry.
         target_key: The consolidated entry key to assign as source.
+        confidence_aggregator: Callable ``(list[float]) -> float`` used to
+            derive the scalar ``confidence`` from the accumulated
+            ``confidence_history``.  Defaults to ``max``.
 
     Returns:
         Deduplicated list of :class:`RelationEntry` instances.
@@ -430,14 +440,18 @@ def merge_entry_relations(
                 r["predicate"].lower(),
                 r["object_entity"].lower(),
             )
+            dup_confidence = float(r.get("confidence", 0.8))
+            # Use existing history from the dict if present, else seed from confidence.
+            dup_history: list[float] = list(r.get("confidence_history") or [dup_confidence])
             if triple in seen:
                 existing = seen[triple]
-                # Merge source keys and keep highest confidence
                 merged_keys = list(dict.fromkeys([*existing.source_entry_keys, target_key]))
+                merged_history = [*existing.confidence_history, *dup_history]
                 seen[triple] = existing.model_copy(
                     update={
                         "source_entry_keys": merged_keys,
-                        "confidence": max(existing.confidence, float(r.get("confidence", 0.8))),
+                        "confidence_history": merged_history,
+                        "confidence": confidence_aggregator(merged_history),
                     }
                 )
             else:
@@ -446,7 +460,8 @@ def merge_entry_relations(
                     predicate=r["predicate"],
                     object_entity=r["object_entity"],
                     source_entry_keys=[target_key],
-                    confidence=float(r.get("confidence", 0.8)),
+                    confidence=dup_confidence,
+                    confidence_history=dup_history,
                 )
     return list(seen.values())
 
