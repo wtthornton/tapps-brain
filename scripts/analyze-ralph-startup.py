@@ -117,6 +117,9 @@ def main() -> int:
     print(header)
     print("-" * len(header))
 
+    def _fmt(ms: float) -> str:
+        return f"{ms:>6.0f}ms" if ms > 0 else "       —"
+
     for field, label in PHASES:
         all_vals = [float(e.get(field, 0)) for e in entries]
         measured = [v for v in all_vals if v > 0]
@@ -129,9 +132,6 @@ def main() -> int:
             mx = max(measured)
         else:
             p50 = p95 = p99 = mn = mx = 0.0
-
-        def _fmt(ms: float) -> str:
-            return f"{ms:>6.0f}ms" if ms > 0 else "       —"
 
         print(
             f"{label:<26} {n:>7}  {_fmt(p50)} {_fmt(p95)} {_fmt(p99)} {_fmt(mn)} {_fmt(mx)}"

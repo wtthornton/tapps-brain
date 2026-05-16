@@ -135,8 +135,8 @@ each startup phase from the client's perspective:
 | `linear_count_ms` | Linear count probe latency (0 when not measured) |
 | `total_ms` | Total SessionStart hook wall-clock time |
 
-Each line is appended atomically, so partial writes on kill are not
-possible.
+Entries are appended one line at a time (`echo "..." >> file`); any
+malformed line is silently skipped by the analyser.
 
 ### Analysing the metrics
 
