@@ -510,3 +510,87 @@ class TestToolsListCache:
         # Subsequent call should still return the original tool list.
         second = server._tool_manager.list_tools()
         assert len(second) == 1, "Cache was corrupted by mutation of the returned list"
+
+
+# ---------------------------------------------------------------------------
+# TAP-1843: /v1/tools/list static snapshot route
+# ---------------------------------------------------------------------------
+
+
+class TestV1ToolsList:
+    def test_v1_tools_list_static_snapshot(self) -> None:
+        """GET /v1/tools/list returns the static tool snapshot built at startup.
+
+        TAP-1843: the route must be unauthenticated, return Cache-Control
+        public/max-age=300, and expose a ``{tools:[...]}`` payload with the
+        same per-tool fields (name, description, inputSchema) as MCP
+        ``tools/list`` minus the JSON-RPC envelope.
+
+        Uses Starlette TestClient so the ASGI lifespan runs (httpx
+        ASGITransport skips the lifespan scope; TestClient does not).
+        """
+        # Use SimpleNamespace for tool stubs — MagicMock.name is a reserved
+        # mock attribute and cannot be overridden via attribute assignment.
+        import types
+
+        from starlette.testclient import TestClient
+
+        def _make_tool(name: str, description: str) -> Any:
+            return types.SimpleNamespace(
+                name=name,
+                description=description,
+                parameters={"type": "object", "properties": {}},
+            )
+
+        mock_tool_manager = MagicMock()
+        mock_tool_manager.list_tools.return_value = [
+            _make_tool("brain_remember", "Store a memory entry"),
+            _make_tool("brain_recall", "Retrieve memory entries"),
+        ]
+
+        mcp_server = MagicMock()
+        mcp_server.session_manager = None
+        mcp_server._tool_manager = mock_tool_manager
+
+        settings = _make_settings()
+
+        with (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+        ):
+            app = create_app(mcp_server=mcp_server)
+            with TestClient(app, raise_server_exceptions=True) as client:
+                resp = client.get("/v1/tools/list")
+
+        assert resp.status_code == 200
+        assert "public" in resp.headers.get("cache-control", "")
+        assert "max-age=300" in resp.headers.get("cache-control", "")
+        data = resp.json()
+        assert "tools" in data
+        assert isinstance(data["tools"], list)
+        assert len(data["tools"]) == 2
+        names = {t["name"] for t in data["tools"]}
+        assert "brain_remember" in names
+        assert "brain_recall" in names
+        for tool_entry in data["tools"]:
+            assert "name" in tool_entry
+            assert "description" in tool_entry
+            assert "inputSchema" in tool_entry
+
+    def test_v1_tools_list_no_auth_required(self) -> None:
+        """GET /v1/tools/list succeeds without an Authorization header."""
+        from starlette.testclient import TestClient
+
+        mcp_server = MagicMock()
+        mcp_server.session_manager = None
+        settings = _make_settings()
+
+        with (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+        ):
+            app = create_app(mcp_server=mcp_server)
+            with TestClient(app) as client:
+                resp = client.get("/v1/tools/list")
+
+        assert resp.status_code == 200
