@@ -93,6 +93,98 @@ _MCP_TOOLS_LIST_VISIBLE_GAUGE: dict[str, int] = {}
 # key: (profile, tool, outcome) where outcome in {allowed, denied_profile, error}
 _MCP_TOOLS_CALL_TOTAL: dict[tuple[str, str, str], int] = {}
 
+# ---------------------------------------------------------------------------
+# TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram
+# ---------------------------------------------------------------------------
+# Prometheus-style fixed-bucket histogram tracking tools/list latency.
+# Separate histograms for cache-hit (warm) and cache-miss (cold) paths so
+# operators can graph warm vs cold distributions independently.
+
+#: Bucket upper bounds in seconds.  Covers warm cache (< 50 ms) through worst-
+#: case cold-start (> 60 s).  MUST stay sorted ascending; +Inf is implicit.
+_PROBE_HISTOGRAM_BUCKETS: tuple[float, ...] = (
+    0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 30.0, 60.0, 120.0
+)
+
+
+class _ProbeHistogram:
+    """Thread-safe Prometheus-style fixed-bucket histogram for probe durations.
+
+    Each :meth:`observe` call records one *value_seconds* observation.
+    Bucket counts are cumulative — ``bucket_counts[i]`` is the number of
+    observations where ``value_seconds <= buckets[i]``.
+
+    Only used for the tools/list probe metric; keep it minimal and lock-free
+    except at observe/snapshot boundaries.
+    """
+
+    __slots__ = ("_bucket_counts", "_buckets", "_count", "_lock", "_sum")
+
+    def __init__(self, buckets: tuple[float, ...]) -> None:
+        self._buckets: tuple[float, ...] = buckets
+        # One slot per declared bucket; each stores cumulative count ≤ that bound.
+        self._bucket_counts: list[int] = [0] * len(buckets)
+        self._sum: float = 0.0
+        self._count: int = 0
+        self._lock = threading.Lock()
+
+    def observe(self, value_seconds: float) -> None:
+        """Record one observation of *value_seconds*."""
+        with self._lock:
+            self._sum += value_seconds
+            self._count += 1
+            # Increment every bucket whose upper bound covers this observation.
+            for i, bound in enumerate(self._buckets):
+                if value_seconds <= bound:
+                    self._bucket_counts[i] += 1
+
+    def snapshot(self) -> dict[str, object]:
+        """Return a frozen snapshot: ``{bucket_counts, sum, count, buckets}``."""
+        with self._lock:
+            return {
+                "buckets": self._buckets,
+                "bucket_counts": list(self._bucket_counts),
+                "sum": self._sum,
+                "count": self._count,
+            }
+
+    def reset(self) -> None:
+        """Clear all state.  For use in tests only."""
+        with self._lock:
+            self._bucket_counts = [0] * len(self._buckets)
+            self._sum = 0.0
+            self._count = 0
+
+
+# One histogram per cache_hit label value.
+_PROBE_HIST_HIT: _ProbeHistogram = _ProbeHistogram(_PROBE_HISTOGRAM_BUCKETS)
+_PROBE_HIST_MISS: _ProbeHistogram = _ProbeHistogram(_PROBE_HISTOGRAM_BUCKETS)
+
+
+def get_probe_duration_histogram_snapshot() -> dict[str, dict[str, object]]:
+    """Return frozen snapshots for the MCP probe duration histogram.
+
+    Returns a dict with two keys:
+
+    ``"true"``
+        Snapshot for cache-hit (warm) observations.
+    ``"false"``
+        Snapshot for cache-miss (cold) observations.
+
+    Each value is the dict returned by :meth:`_ProbeHistogram.snapshot`.
+    Intended for the ``/metrics`` Prometheus renderer.
+    """
+    return {
+        "true": _PROBE_HIST_HIT.snapshot(),
+        "false": _PROBE_HIST_MISS.snapshot(),
+    }
+
+
+def reset_probe_histogram_counters() -> None:
+    """Reset both probe duration histograms.  For use in tests only."""
+    _PROBE_HIST_HIT.reset()
+    _PROBE_HIST_MISS.reset()
+
 
 def get_profile_filter_metrics_snapshot() -> dict[str, Any]:
     """Return a frozen copy of the profile-filter counters for ``/metrics``.
@@ -214,58 +306,74 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
         seconds (300 s default).  The tool registry is immutable for the
         process lifetime; the TTL is a safety valve for future hot-reload
         scenarios.  Cache invalidates automatically on container restart.
+
+        TAP-1849: every call is timed and recorded to
+        ``_PROBE_HIST_HIT`` (cache-warm path) or ``_PROBE_HIST_MISS``
+        (cache-cold path) so ``/metrics`` can expose the probe duration
+        histogram split by ``cache_hit`` label.
         """
-        profile: str = profile_contextvar.get() or default_profile
-        now = time.monotonic()
-
-        # --- TAP-1833: cache hit — return a copy so callers cannot mutate ---
-        cached = _TOOLS_LIST_CACHE.get(profile)
-        if cached is not None and now < cached[0]:
-            cached_tools = cached[1]
-            with _METRICS_LOCK:
-                _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(cached_tools)
-            return list(cached_tools)
-
-        # --- Cache miss: build the list from the underlying registry ---
-        all_tools: list[Any] = list(_orig_list_tools())
-
-        if profile == default_profile:
-            # Fast path: no filtering for the default ("full") profile.
-            visible_count = len(all_tools)
-            with _METRICS_LOCK:
-                _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
-            # Store in cache (concurrent miss → idempotent overwrite, same result).
-            # Return a copy — the cached list is the canonical reference; the
-            # caller must not be able to corrupt it via mutation.
-            _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, all_tools)
-            return list(all_tools)
+        _t0 = time.monotonic()
+        _cache_hit = False
         try:
-            allowed: frozenset[str] = profile_registry.get(profile)
-        except Exception:
-            # Unknown profile — fail open for list_tools; return full list.
-            # Do NOT cache: the unknown profile may be a transient registration
-            # race; a subsequent call after the profile is registered should
-            # see the filtered view.
-            logger.warning(
-                "tool_filter.list_tools.unknown_profile",
-                profile=profile,
-                action="fail_open",
-            )
-            visible_count = len(all_tools)
+            profile: str = profile_contextvar.get() or default_profile
+            now = _t0  # reuse the monotonic timestamp; sub-ms drift is harmless
+
+            # --- TAP-1833: cache hit — return a copy so callers cannot mutate ---
+            cached = _TOOLS_LIST_CACHE.get(profile)
+            if cached is not None and now < cached[0]:
+                cached_tools = cached[1]
+                with _METRICS_LOCK:
+                    _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(cached_tools)
+                _cache_hit = True
+                return list(cached_tools)
+
+            # --- Cache miss: build the list from the underlying registry ---
+            all_tools: list[Any] = list(_orig_list_tools())
+
+            if profile == default_profile:
+                # Fast path: no filtering for the default ("full") profile.
+                visible_count = len(all_tools)
+                with _METRICS_LOCK:
+                    _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
+                # Store in cache (concurrent miss → idempotent overwrite, same result).
+                # Return a copy — the cached list is the canonical reference; the
+                # caller must not be able to corrupt it via mutation.
+                _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, all_tools)
+                return list(all_tools)
+            try:
+                allowed: frozenset[str] = profile_registry.get(profile)
+            except Exception:
+                # Unknown profile — fail open for list_tools; return full list.
+                # Do NOT cache: the unknown profile may be a transient registration
+                # race; a subsequent call after the profile is registered should
+                # see the filtered view.
+                logger.warning(
+                    "tool_filter.list_tools.unknown_profile",
+                    profile=profile,
+                    action="fail_open",
+                )
+                visible_count = len(all_tools)
+                with _METRICS_LOCK:
+                    _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
+                return all_tools
+            filtered = [t for t in all_tools if t.name in allowed]
             with _METRICS_LOCK:
                 _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
-            return all_tools
-        filtered = [t for t in all_tools if t.name in allowed]
-        with _METRICS_LOCK:
-            _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-            _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
-        # Cache the filtered result for this profile.
-        # Return a copy — same mutation safety rationale as the full-profile path.
-        _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
-        return list(filtered)
+                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
+            # Cache the filtered result for this profile.
+            # Return a copy — same mutation safety rationale as the full-profile path.
+            _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
+            return list(filtered)
+        finally:
+            # TAP-1849: record probe duration regardless of outcome.
+            _elapsed = time.monotonic() - _t0
+            if _cache_hit:
+                _PROBE_HIST_HIT.observe(_elapsed)
+            else:
+                _PROBE_HIST_MISS.observe(_elapsed)
 
     # ------------------------------------------------------------------
     # Wrap call_tool

@@ -371,5 +371,41 @@ def _collect_metrics(  # noqa: PLR0915
                         _cn = "tapps_brain_mcp_profile_cache_events_total"
                         lines.append(f'{_cn}{{result="{_result}"}} {_count}')
 
+    # TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram.
+    # Tracks tools/list latency split by cache_hit label so operators can
+    # distinguish warm (cache-hit) from cold (cache-miss) probe durations.
+    # suppress(Exception): any import or runtime error must not crash /metrics.
+    with suppress(Exception):  # pragma: no cover
+        from tapps_brain.mcp_server.tool_filter import get_probe_duration_histogram_snapshot
+
+        _probe_snap = get_probe_duration_histogram_snapshot()
+        # Only emit if at least one observation exists across either path.
+        _has_probe_data = any(
+            s.get("count", 0) > 0 for s in _probe_snap.values()  # type: ignore[union-attr]
+        )
+        if _has_probe_data:
+            _metric_name = "tapps_brain_mcp_probe_duration_seconds"
+            lines.append(
+                f"# HELP {_metric_name} Duration in seconds of MCP tools/list probe calls,"
+                " labelled by cache_hit (true=warm, false=cold)."
+            )
+            lines.append(f"# TYPE {_metric_name} histogram")
+            # Emit in consistent order: false (cold) then true (warm).
+            for _cache_hit_label in ("false", "true"):
+                _snap = _probe_snap.get(_cache_hit_label, {})
+                _buckets: tuple[float, ...] = _snap.get("buckets", ())  # type: ignore[assignment]
+                _bucket_counts: list[int] = _snap.get("bucket_counts", [])  # type: ignore[assignment]
+                _total_count: int = _snap.get("count", 0)  # type: ignore[assignment]
+                _total_sum: float = _snap.get("sum", 0.0)  # type: ignore[assignment]
+                _lbl = f'cache_hit="{_cache_hit_label}"'
+                for _bound, _bcount in zip(_buckets, _bucket_counts, strict=True):
+                    # Format bucket boundary: strip trailing zeros for readability.
+                    _le = f"{_bound:g}"
+                    lines.append(f'{_metric_name}_bucket{{{_lbl},le="{_le}"}} {_bcount}')
+                # +Inf bucket = total count
+                lines.append(f'{_metric_name}_bucket{{{_lbl},le="+Inf"}} {_total_count}')
+                lines.append(f"{_metric_name}_sum{{{_lbl}}} {_total_sum}")
+                lines.append(f"{_metric_name}_count{{{_lbl}}} {_total_count}")
+
     lines.append("")
     return "\n".join(lines)
