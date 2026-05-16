@@ -381,7 +381,119 @@ class MemoryRetriever:
         # EPIC-042.6: set by ``search()`` when rerank runs; read by injection/recall telemetry.
         self.last_rerank_stats: dict[str, Any] | None = None
 
-    def search(  # noqa: PLR0915
+    # ------------------------------------------------------------------
+    # Private helpers for search()
+    # ------------------------------------------------------------------
+
+    def _filter_candidates_to_pending(
+        self,
+        candidates: list[tuple[MemoryEntry, float]],
+        *,
+        include_sources: bool,
+        include_contradicted: bool,
+        include_superseded: bool,
+        as_of: str | None,
+        min_confidence: float,
+        now: datetime,
+    ) -> list[tuple[MemoryEntry, float, float, bool, bool]]:
+        """Apply entry-level filters and compute effective confidence.
+
+        Returns a list of ``(entry, relevance_raw, eff_conf, stale_flag,
+        temporally_valid)`` tuples for candidates that pass all filters.
+        Extracted from ``search()`` to reduce its cyclomatic complexity.
+        """
+        pending: list[tuple[MemoryEntry, float, float, bool, bool]] = []
+        for entry, relevance_raw in candidates:
+            # Filter source entries of consolidated memories (Epic 58.5)
+            if not include_sources and _is_consolidated_source(entry):
+                continue
+
+            # Filter contradicted entries (sources already handled above)
+            is_included_source = include_sources and _is_consolidated_source(entry)
+            if entry.contradicted and not include_contradicted and not is_included_source:
+                continue
+
+            # Temporal filtering (EPIC-004)
+            temporally_valid = entry.is_temporally_valid(as_of)
+            if not temporally_valid and not include_superseded:
+                continue
+
+            # Calculate effective confidence
+            eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
+            if eff_conf < min_confidence:
+                continue
+
+            stale_flag = is_stale(entry, self._config, now=now)
+            # Mark temporally invalid entries as stale (EPIC-004)
+            if not temporally_valid:
+                stale_flag = True
+
+            pending.append((entry, relevance_raw, eff_conf, stale_flag, temporally_valid))
+        return pending
+
+    def _build_scored_memory_item(
+        self,
+        entry: MemoryEntry,
+        relevance_norm: float,
+        eff_conf: float,
+        stale_flag: bool,
+        temporally_valid: bool,
+        query: str,
+        entity_index: dict[str, set[str]],
+        entity_total: int,
+        now: datetime,
+    ) -> ScoredMemory:
+        """Compute the composite score for one entry and return a ScoredMemory.
+
+        Handles graph centrality, provenance trust, per-source multiplier,
+        superseded penalty, and exact-key bonus.
+        Extracted from ``search()`` to reduce its cyclomatic complexity.
+        """
+        recency = self._recency_score(entry, now)
+        frequency = self._frequency_score(entry)
+
+        # Graph centrality: degree centrality via entity co-occurrence (TAP-734).
+        graph_centrality = (
+            self._compute_graph_centrality(entry, entity_index, entity_total)
+            if self._w_graph > 0.0
+            else 0.0
+        )
+
+        # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
+        source_key = (
+            entry.source.value if isinstance(entry.source, MemorySource) else str(entry.source)
+        )
+        provenance_trust = self._source_trust.get(source_key, 1.0)
+
+        composite = (
+            self._w_relevance * relevance_norm
+            + self._w_confidence * eff_conf
+            + self._w_recency * recency
+            + self._w_frequency * frequency
+            + self._w_graph * graph_centrality
+            + self._w_provenance * provenance_trust
+        )
+
+        # M2: Apply per-source trust multiplier (same key, no double-lookup needed)
+        composite *= self._source_trust.get(source_key, 1.0)
+
+        # Penalty for superseded entries included via include_superseded
+        if not temporally_valid:
+            composite *= 0.5
+
+        # Bonus for exact key match (capped at 1.0 to keep score in valid range)
+        if entry.key == query.lower().replace(" ", "-"):
+            composite = min(composite + 0.1, 1.0)
+
+        return ScoredMemory(
+            entry=entry,
+            score=round(composite, 4),
+            effective_confidence=round(eff_conf, 4),
+            bm25_relevance=round(relevance_norm, 4),
+            stale=stale_flag,
+        )
+
+    def search(
         self,
         query: str,
         store: MemoryStore,
@@ -477,40 +589,18 @@ class MemoryRetriever:
             filtered_keys = {e.key for e in filtered_entries}
             candidates = [(e, s) for e, s in candidates if e.key in filtered_keys]
 
-        # Score and filter (two phases: collect candidates, then min-max normalize)
-        pending: list[
-            tuple[MemoryEntry, float, float, bool, bool]
-        ] = []  # entry, relevance_raw, eff_conf, stale_flag, temporally_valid
+        # Phase 1: filter candidates and compute per-entry effective confidence.
+        pending = self._filter_candidates_to_pending(
+            candidates,
+            include_sources=include_sources,
+            include_contradicted=include_contradicted,
+            include_superseded=include_superseded,
+            as_of=as_of,
+            min_confidence=min_confidence,
+            now=now,
+        )
 
-        for entry, relevance_raw in candidates:
-            # Filter source entries of consolidated memories (Epic 58.5)
-            if not include_sources and _is_consolidated_source(entry):
-                continue
-
-            # Filter contradicted entries (sources already handled above)
-            is_included_source = include_sources and _is_consolidated_source(entry)
-            if entry.contradicted and not include_contradicted and not is_included_source:
-                continue
-
-            # Temporal filtering (EPIC-004)
-            temporally_valid = entry.is_temporally_valid(as_of)
-            if not temporally_valid and not include_superseded:
-                continue
-
-            # Calculate effective confidence
-            eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
-
-            # Filter low confidence
-            if eff_conf < min_confidence:
-                continue
-
-            stale_flag = is_stale(entry, self._config, now=now)
-            # Mark temporally invalid entries as stale (EPIC-004)
-            if not temporally_valid:
-                stale_flag = True
-
-            pending.append((entry, relevance_raw, eff_conf, stale_flag, temporally_valid))
-
+        # Phase 2: min-max normalize raw relevance across surviving candidates.
         rmin: float | None = None
         rmax: float | None = None
         if pending:
@@ -520,62 +610,24 @@ class MemoryRetriever:
 
         # Graph centrality: read entity index from store (TAP-734).
         # Snapshot outside the loop — O(1) attribute access, not per-entry.
-        _entity_index: dict[str, set[str]] = getattr(store, "_entity_index", {})
-        _entity_total: int = len(getattr(store, "_entries", {}))
+        entity_index: dict[str, set[str]] = getattr(store, "_entity_index", {})
+        entity_total: int = len(getattr(store, "_entries", {}))
 
-        scored: list[ScoredMemory] = []
-        for entry, relevance_raw, eff_conf, stale_flag, temporally_valid in pending:
-            relevance_norm = self._normalize_relevance(relevance_raw, rmin=rmin, rmax=rmax)
-            recency = self._recency_score(entry, now)
-            frequency = self._frequency_score(entry)
-
-            # Graph centrality: degree centrality via entity co-occurrence (TAP-734).
-            graph_centrality = (
-                self._compute_graph_centrality(entry, _entity_index, _entity_total)
-                if self._w_graph > 0.0
-                else 0.0
+        # Phase 3: build scored memories.
+        scored: list[ScoredMemory] = [
+            self._build_scored_memory_item(
+                entry,
+                self._normalize_relevance(relevance_raw, rmin=rmin, rmax=rmax),
+                eff_conf,
+                stale_flag,
+                temporally_valid,
+                query,
+                entity_index,
+                entity_total,
+                now,
             )
-
-            # Provenance trust: source_trust * channel_trust (channel_trust=1.0 for now)
-            source_key_pt = (
-                entry.source.value if isinstance(entry.source, MemorySource) else str(entry.source)
-            )
-            channel_trust = 1.0
-            provenance_trust = self._source_trust.get(source_key_pt, 1.0) * channel_trust
-
-            composite = (
-                self._w_relevance * relevance_norm
-                + self._w_confidence * eff_conf
-                + self._w_recency * recency
-                + self._w_frequency * frequency
-                + self._w_graph * graph_centrality
-                + self._w_provenance * provenance_trust
-            )
-
-            # M2: Apply per-source trust multiplier
-            source_key = (
-                entry.source.value if isinstance(entry.source, MemorySource) else str(entry.source)
-            )
-            trust = self._source_trust.get(source_key, 1.0)
-            composite *= trust
-
-            # Penalty for superseded entries included via include_superseded
-            if not temporally_valid:
-                composite *= 0.5
-
-            # Bonus for exact key match (capped at 1.0 to keep score in valid range)
-            if entry.key == query.lower().replace(" ", "-"):
-                composite = min(composite + 0.1, 1.0)
-
-            scored.append(
-                ScoredMemory(
-                    entry=entry,
-                    score=round(composite, 4),
-                    effective_confidence=round(eff_conf, 4),
-                    bm25_relevance=round(relevance_norm, 4),
-                    stale=stale_flag,
-                )
-            )
+            for entry, relevance_raw, eff_conf, stale_flag, temporally_valid in pending
+        ]
 
         # Epic 65.14: Apply retrieval policy tag filtering
         if self._retrieval_policy is not None:

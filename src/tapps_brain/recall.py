@@ -443,6 +443,46 @@ class RecallOrchestrator:
             or cfg.dedupe_window
         )
 
+    def _passes_entry_filters(
+        self,
+        entry: MemoryEntry,
+        mem: dict[str, object],
+        cfg: RecallConfig,
+    ) -> bool:
+        """Return True when *entry* satisfies all active scope/tier/branch/group filters."""
+        if cfg.scope_filter and entry.scope != cfg.scope_filter:
+            return False
+        if cfg.tier_filter and entry.tier != cfg.tier_filter:
+            return False
+        if cfg.branch and entry.scope == MemoryScope.branch and entry.branch != cfg.branch:
+            return False
+        return not (
+            cfg.memory_group
+            and str(mem.get("source", "")) != "hive"
+            and entry.memory_group != cfg.memory_group
+        )
+
+    def _build_filtered_section(
+        self,
+        filtered: list[dict[str, object]],
+        entry_cache: dict[str, MemoryEntry | None],
+    ) -> str:
+        """Format *filtered* memories into the '### Project Memory' section string."""
+        lines = ["### Project Memory"]
+        for mem in filtered:
+            key = str(mem.get("key", ""))
+            raw_conf = mem.get("confidence", 0.0)
+            # Only accept numeric types — strings could raise ValueError in float()
+            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
+            tier = str(mem.get("tier", "pattern"))
+            # Reuse cached entry when available; fall back to a fresh lookup.
+            store_entry: MemoryEntry | None = (
+                entry_cache[key] if key in entry_cache else (self._store.get(key) if key else None)
+            )
+            value = store_entry.value if store_entry else str(key)
+            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}")
+        return "\n".join(lines)
+
     def _apply_post_filters(
         self,
         memories: list[dict[str, object]],
@@ -475,39 +515,12 @@ class RecallOrchestrator:
                     # Entry not found — keep the memory (defensive)
                     filtered.append(mem)
                     continue
-
-                if cfg.scope_filter and entry.scope != cfg.scope_filter:
-                    continue
-                if cfg.tier_filter and entry.tier != cfg.tier_filter:
-                    continue
-                if cfg.branch and entry.scope == MemoryScope.branch and entry.branch != cfg.branch:
-                    continue
-                if (
-                    cfg.memory_group
-                    and str(mem.get("source", "")) != "hive"
-                    and entry.memory_group != cfg.memory_group
-                ):
+                if not self._passes_entry_filters(entry, mem, cfg):
                     continue
 
             filtered.append(mem)
 
-        # Rebuild section from filtered memories
         if not filtered:
             return [], ""
 
-        lines = ["### Project Memory"]
-        for mem in filtered:
-            key = str(mem.get("key", ""))
-            raw_conf = mem.get("confidence", 0.0)
-            # Only accept numeric types — strings could raise ValueError in float()
-            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
-            tier = str(mem.get("tier", "pattern"))
-            # Reuse cached entry when available; fall back to a fresh lookup.
-            cached = entry_cache.get(key)
-            store_entry: MemoryEntry | None = (
-                cached if key in entry_cache else (self._store.get(key) if key else None)
-            )
-            value = store_entry.value if store_entry else str(key)
-            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}")
-
-        return filtered, "\n".join(lines)
+        return filtered, self._build_filtered_section(filtered, entry_cache)
