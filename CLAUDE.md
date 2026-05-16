@@ -216,7 +216,7 @@ This project is configured for [Ralph for Claude Code](https://github.com/frankb
 - Do ONE task per loop from fix_plan.md, in the order listed.
 - Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
 - **Do NOT run pytest, ruff, or mypy mid-epic.** QA is deferred to epic boundaries (when the last `- [ ]` in a `##` section is completed). Set `TESTS_STATUS: DEFERRED` for all mid-epic tasks. This saves 2-5 minutes per loop.
-- **Do NOT use `python3 -c "..."` or `python3 -e "..."`** — the PreToolUse hook blocks these and wastes a tool call plus retry latency (TAP-1858). Write scratch scripts to `/tmp/tap_NNN_check.py` instead and run with `python3 /tmp/tap_NNN_check.py`. Alternatively, use stdin form `python3 - << 'EOF' ... EOF` which is not blocked.
+- **Do NOT use `-c` or `-e` one-liner flags with any interpreter** (`python3`, `bash`, `sh`, `perl`, `ruby`, `node`) — the PreToolUse hook blocks all of these and wastes a tool call plus retry latency (TAP-1858). Write scratch scripts to `/tmp/tap_NNN_check.py` instead, or use stdin heredoc form `python3 - << 'EOF' ... EOF` which is not blocked.
 
 ### Ralph Files
 
