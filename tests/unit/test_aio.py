@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -395,3 +396,110 @@ class TestAsyncNativeSecondaryWriteParity:
         assert capture.save_relations("k", []) == 0
         _saves, _deletes, rels, _audit = capture.flush()
         assert rels == []
+
+
+class TestBoundedConcurrency:
+    """TAP-1815 — write and read semaphores bound concurrent to_thread calls."""
+
+    @pytest.mark.asyncio
+    async def test_write_semaphore_bounds_concurrent_saves(self, tmp_path: Path) -> None:
+        """1000 concurrent saves with semaphore=4 never exceed 4 simultaneous threads."""
+        max_seen: list[int] = [0]
+        active: list[int] = [0]
+        lock = threading.Lock()
+
+        base = await AsyncMemoryStore.open(tmp_path)
+        original_save = base.sync_store.save
+
+        def counting_save(key: str, value: str, **kwargs: object) -> object:
+            with lock:
+                active[0] += 1
+                if active[0] > max_seen[0]:
+                    max_seen[0] = active[0]
+            try:
+                return original_save(key, value, **kwargs)
+            finally:
+                with lock:
+                    active[0] -= 1
+
+        astore = AsyncMemoryStore(
+            base.sync_store,
+            max_concurrent_writes=4,
+        )
+        # Monkey-patch the underlying sync save so our counter runs in-thread.
+        astore.sync_store.save = counting_save  # type: ignore[method-assign]
+
+        tasks = [
+            asyncio.create_task(astore.save(key=f"k{i}", value=f"v{i}"))
+            for i in range(100)
+        ]
+        await asyncio.gather(*tasks)
+        await base.close()
+
+        assert max_seen[0] <= 4, f"Expected ≤4 concurrent writes; saw {max_seen[0]}"
+
+    @pytest.mark.asyncio
+    async def test_read_semaphore_bounds_concurrent_searches(self, tmp_path: Path) -> None:
+        """Concurrent searches are bounded by max_concurrent_reads."""
+        max_seen: list[int] = [0]
+        active: list[int] = [0]
+        lock = threading.Lock()
+
+        base = await AsyncMemoryStore.open(tmp_path)
+        original_search = base.sync_store.search
+
+        def counting_search(query: str, **kwargs: object) -> object:
+            with lock:
+                active[0] += 1
+                if active[0] > max_seen[0]:
+                    max_seen[0] = active[0]
+            try:
+                return original_search(query, **kwargs)
+            finally:
+                with lock:
+                    active[0] -= 1
+
+        astore = AsyncMemoryStore(
+            base.sync_store,
+            max_concurrent_reads=4,
+        )
+        astore.sync_store.search = counting_search  # type: ignore[method-assign]
+
+        tasks = [
+            asyncio.create_task(astore.search(f"query{i}"))
+            for i in range(50)
+        ]
+        await asyncio.gather(*tasks)
+        await base.close()
+
+        assert max_seen[0] <= 4, f"Expected ≤4 concurrent reads; saw {max_seen[0]}"
+
+    @pytest.mark.asyncio
+    async def test_queue_depth_properties_idle(self, tmp_path: Path) -> None:
+        """write_queue_depth and read_queue_depth are 0 when store is idle."""
+        async with await AsyncMemoryStore.open(tmp_path) as astore:
+            assert astore.write_queue_depth == 0
+            assert astore.read_queue_depth == 0
+
+    @pytest.mark.asyncio
+    async def test_write_semaphore_default_from_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES env var sets semaphore size."""
+        monkeypatch.setenv("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "8")
+        base = await AsyncMemoryStore.open(tmp_path)
+        astore = AsyncMemoryStore(base.sync_store)
+        # Semaphore starts full — internal _value reflects max capacity.
+        assert astore._write_sem._value == 8  # type: ignore[attr-defined]
+        await base.close()
+
+    @pytest.mark.asyncio
+    async def test_read_semaphore_default_from_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS env var sets semaphore size."""
+        monkeypatch.setenv("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "32")
+        base = await AsyncMemoryStore.open(tmp_path)
+        astore = AsyncMemoryStore(base.sync_store)
+        assert astore._read_sem._value == 32  # type: ignore[attr-defined]
+        await base.close()

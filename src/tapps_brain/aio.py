@@ -194,21 +194,41 @@ class _CapturePersistenceBackend:
 class AsyncMemoryStore:
     """Async facade over :class:`MemoryStore`.
 
-    Read methods delegate to the underlying sync store via
-    :func:`asyncio.to_thread`.  Write methods (``save``/``delete``) intercept
-    the persistence layer so Postgres writes go through
-    :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`
-    without blocking a thread pool thread.  When no async backend is wired
-    (sync-only embedded setups), writes fall back to ``to_thread``.
+    All concurrency is *thread-based* (``asyncio.to_thread``) — this wrapper
+    does not add true async I/O parallelism to the underlying sync store.
+
+    Write methods (``save`` / ``delete`` / ``reinforce`` and other mutating
+    calls) are bounded by a write semaphore (default 16 concurrent writes,
+    configurable via ``TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES`` env var or the
+    ``max_concurrent_writes`` constructor argument).  Read methods are bounded
+    by a separate read semaphore (default 64, ``TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS``
+    / ``max_concurrent_reads``).  Both bounds make back-pressure explicit and
+    observable via :attr:`write_queue_depth` / :attr:`read_queue_depth`.
+
+    When an :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`
+    is wired, write-path Postgres I/O also goes through the async pool instead
+    of a thread-pool thread.  When no async backend is wired (sync-only embedded
+    setups), writes fall back to ``to_thread`` under the same semaphore.
     """
 
-    __slots__ = ("_async_backend", "_lock", "_store", "_wrapper_cache")
+    __slots__ = (
+        "_async_backend",
+        "_lock",
+        "_read_inflight",
+        "_read_sem",
+        "_store",
+        "_write_inflight",
+        "_write_sem",
+        "_wrapper_cache",
+    )
 
     def __init__(
         self,
         store: MemoryStore,
         *,
         async_backend: AsyncPostgresPrivateBackend | None = None,
+        max_concurrent_writes: int | None = None,
+        max_concurrent_reads: int | None = None,
     ) -> None:
         self._store = store
         self._wrapper_cache: dict[str, Any] = {}
@@ -216,6 +236,55 @@ class AsyncMemoryStore:
         # Serialises the persistence-swap in async-native save/delete so
         # concurrent coroutines never observe each other's capture backend.
         self._lock: asyncio.Lock = asyncio.Lock()
+        _w = max_concurrent_writes if max_concurrent_writes is not None else int(
+            os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "16")
+        )
+        _r = max_concurrent_reads if max_concurrent_reads is not None else int(
+            os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "64")
+        )
+        self._write_sem: asyncio.Semaphore = asyncio.Semaphore(_w)
+        self._read_sem: asyncio.Semaphore = asyncio.Semaphore(_r)
+        # Count of operations *currently holding* the respective semaphore.
+        # Incremented after acquire, decremented in finally — safe because
+        # asyncio coroutines are cooperative (no true parallelism in the loop).
+        self._write_inflight: int = 0
+        self._read_inflight: int = 0
+
+    # ------------------------------------------------------------------
+    # Concurrency gauges
+    # ------------------------------------------------------------------
+
+    @property
+    def write_queue_depth(self) -> int:
+        """Number of write operations currently holding the write semaphore."""
+        return self._write_inflight
+
+    @property
+    def read_queue_depth(self) -> int:
+        """Number of read operations currently holding the read semaphore."""
+        return self._read_inflight
+
+    # ------------------------------------------------------------------
+    # Bounded thread-pool helpers
+    # ------------------------------------------------------------------
+
+    async def _write_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Run *fn* in a worker thread, bounded by the write semaphore."""
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                return await asyncio.to_thread(fn, *args, **kwargs)
+            finally:
+                self._write_inflight -= 1
+
+    async def _read_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Run *fn* in a worker thread, bounded by the read semaphore."""
+        async with self._read_sem:
+            self._read_inflight += 1
+            try:
+                return await asyncio.to_thread(fn, *args, **kwargs)
+            finally:
+                self._read_inflight -= 1
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -282,24 +351,31 @@ class AsyncMemoryStore:
         sync persistence layer so the Postgres write is flushed via the async
         pool after the in-memory cache update returns.  Otherwise delegates
         to the sync store via :func:`asyncio.to_thread`.
+
+        Concurrent saves are bounded by ``_write_sem`` (default 16).
         """
         if self._async_backend is None:
-            return await asyncio.to_thread(self._store.save, key, value, **kwargs)
+            return await self._write_thread(self._store.save, key, value, **kwargs)
 
-        capture = _CapturePersistenceBackend(self._store._persistence)
-        async with self._lock:
-            old = self._store._persistence
-            self._store._persistence = capture
+        async with self._write_sem:
+            self._write_inflight += 1
             try:
-                result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
+                    finally:
+                        self._store._persistence = old
+                await self._flush_capture(capture)
+                return result
             finally:
-                self._store._persistence = old
-        await self._flush_capture(capture)
-        return result
+                self._write_inflight -= 1
 
     async def get(self, key: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.get`."""
-        return await asyncio.to_thread(self._store.get, key, **kwargs)
+        return await self._read_thread(self._store.get, key, **kwargs)
 
     async def delete(self, key: str) -> bool:
         """Async version of :meth:`MemoryStore.delete`.
@@ -308,20 +384,27 @@ class AsyncMemoryStore:
         sync persistence layer so the Postgres delete is flushed via the
         async pool.  Otherwise delegates to the sync store via
         :func:`asyncio.to_thread`.
+
+        Bounded by ``_write_sem`` (default 16).
         """
         if self._async_backend is None:
-            return await asyncio.to_thread(self._store.delete, key)
+            return await self._write_thread(self._store.delete, key)
 
-        capture = _CapturePersistenceBackend(self._store._persistence)
-        async with self._lock:
-            old = self._store._persistence
-            self._store._persistence = capture
+        async with self._write_sem:
+            self._write_inflight += 1
             try:
-                result = await asyncio.to_thread(self._store.delete, key)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(self._store.delete, key)
+                    finally:
+                        self._store._persistence = old
+                await self._flush_capture(capture)
+                return result
             finally:
-                self._store._persistence = old
-        await self._flush_capture(capture)
-        return result
+                self._write_inflight -= 1
 
     async def _flush_capture(self, capture: _CapturePersistenceBackend) -> None:
         """Drain captured writes (saves, deletes, relations, audit) via the async backend.
@@ -347,19 +430,19 @@ class AsyncMemoryStore:
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.search`."""
-        return await asyncio.to_thread(self._store.search, query, **kwargs)
+        return await self._read_thread(self._store.search, query, **kwargs)
 
     async def list_all(self, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.list_all`."""
-        return await asyncio.to_thread(self._store.list_all, **kwargs)
+        return await self._read_thread(self._store.list_all, **kwargs)
 
     async def list_memory_groups(self) -> list[str]:
         """Async version of :meth:`MemoryStore.list_memory_groups`."""
-        return await asyncio.to_thread(self._store.list_memory_groups)
+        return await self._read_thread(self._store.list_memory_groups)
 
     async def recall(self, message: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.recall`."""
-        return await asyncio.to_thread(self._store.recall, message, **kwargs)
+        return await self._read_thread(self._store.recall, message, **kwargs)
 
     async def reinforce(self, key: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.reinforce`.
@@ -369,124 +452,131 @@ class AsyncMemoryStore:
         flushed via the async pool after the in-memory cache update returns.
         Otherwise delegates to the sync store via :func:`asyncio.to_thread`
         (STORY-072.9, TAP-1566).
+
+        Bounded by ``_write_sem`` (default 16).
         """
         if self._async_backend is None:
-            return await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+            return await self._write_thread(self._store.reinforce, key, **kwargs)
 
-        capture = _CapturePersistenceBackend(self._store._persistence)
-        async with self._lock:
-            old = self._store._persistence
-            self._store._persistence = capture
+        async with self._write_sem:
+            self._write_inflight += 1
             try:
-                result = await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(self._store.reinforce, key, **kwargs)
+                    finally:
+                        self._store._persistence = old
+                await self._flush_capture(capture)
+                return result
             finally:
-                self._store._persistence = old
-        await self._flush_capture(capture)
-        return result
+                self._write_inflight -= 1
 
     async def ingest_context(self, context: str, **kwargs: Any) -> list[str]:
         """Async version of :meth:`MemoryStore.ingest_context`."""
-        return await asyncio.to_thread(self._store.ingest_context, context, **kwargs)
+        return await self._write_thread(self._store.ingest_context, context, **kwargs)
 
     async def record_access(self, key: str, was_useful: bool) -> None:
         """Async version of :meth:`MemoryStore.record_access`."""
-        await asyncio.to_thread(self._store.record_access, key, was_useful)
+        await self._write_thread(self._store.record_access, key, was_useful)
 
     async def history(self, key: str) -> list[Any]:
         """Async version of :meth:`MemoryStore.history`."""
-        return await asyncio.to_thread(self._store.history, key)
+        return await self._read_thread(self._store.history, key)
 
     async def health(self) -> Any:
         """Async version of :meth:`MemoryStore.health`."""
-        return await asyncio.to_thread(self._store.health)
+        return await self._read_thread(self._store.health)
 
     async def audit(self, **kwargs: Any) -> list[dict[str, Any]]:
         """Async version of :meth:`MemoryStore.audit`."""
-        return await asyncio.to_thread(self._store.audit, **kwargs)
+        return await self._read_thread(self._store.audit, **kwargs)
 
     async def diagnostics(self, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.diagnostics`."""
-        return await asyncio.to_thread(self._store.diagnostics, **kwargs)
+        return await self._read_thread(self._store.diagnostics, **kwargs)
 
     async def count(self) -> int:
         """Async version of :meth:`MemoryStore.count`."""
-        return await asyncio.to_thread(self._store.count)
+        return await self._read_thread(self._store.count)
 
     async def snapshot(self) -> Any:
         """Async version of :meth:`MemoryStore.snapshot`."""
-        return await asyncio.to_thread(self._store.snapshot)
+        return await self._read_thread(self._store.snapshot)
 
     async def gc(self, *, dry_run: bool = False) -> Any:
         """Async version of :meth:`MemoryStore.gc` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.gc, dry_run=dry_run)
+        return await self._write_thread(self._store.gc, dry_run=dry_run)
 
     async def supersede(self, old_key: str, new_value: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.supersede` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.supersede, old_key, new_value, **kwargs)
+        return await self._write_thread(self._store.supersede, old_key, new_value, **kwargs)
 
     async def get_gc_config(self) -> Any:
         """Async version of :meth:`MemoryStore.get_gc_config` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.get_gc_config)
+        return await self._read_thread(self._store.get_gc_config)
 
     async def set_gc_config(self, config: Any) -> None:
         """Async version of :meth:`MemoryStore.set_gc_config` (STORY-070.10)."""
-        await asyncio.to_thread(self._store.set_gc_config, config)
+        await self._write_thread(self._store.set_gc_config, config)
 
     async def get_consolidation_config(self) -> Any:
         """Async version of :meth:`MemoryStore.get_consolidation_config` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.get_consolidation_config)
+        return await self._read_thread(self._store.get_consolidation_config)
 
     async def set_consolidation_config(self, config: Any) -> None:
         """Async version of :meth:`MemoryStore.set_consolidation_config` (STORY-070.10)."""
-        await asyncio.to_thread(self._store.set_consolidation_config, config)
+        await self._write_thread(self._store.set_consolidation_config, config)
 
     async def get_relations(self, key: str) -> Any:
         """Async version of :meth:`MemoryStore.get_relations` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.get_relations, key)
+        return await self._read_thread(self._store.get_relations, key)
 
     async def get_relations_batch(self, keys: list[str]) -> Any:
         """Async version of :meth:`MemoryStore.get_relations_batch` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.get_relations_batch, keys)
+        return await self._read_thread(self._store.get_relations_batch, keys)
 
     async def find_related(self, key: str, *, max_hops: int = 2) -> Any:
         """Async version of :meth:`MemoryStore.find_related` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.find_related, key, max_hops=max_hops)
+        return await self._read_thread(self._store.find_related, key, max_hops=max_hops)
 
     async def query_relations(self, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.query_relations` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.query_relations, **kwargs)
+        return await self._read_thread(self._store.query_relations, **kwargs)
 
     async def list_tags(self) -> Any:
         """Async version of :meth:`MemoryStore.list_tags` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.list_tags)
+        return await self._read_thread(self._store.list_tags)
 
     async def update_tags(self, key: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.update_tags` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.update_tags, key, **kwargs)
+        return await self._write_thread(self._store.update_tags, key, **kwargs)
 
     async def entries_by_tag(self, tag: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.entries_by_tag` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.entries_by_tag, tag, **kwargs)
+        return await self._read_thread(self._store.entries_by_tag, tag, **kwargs)
 
     async def index_session(self, session_id: str, chunks: list[str]) -> Any:
         """Async version of :meth:`MemoryStore.index_session` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.index_session, session_id, chunks)
+        return await self._write_thread(self._store.index_session, session_id, chunks)
 
     async def search_sessions(self, query: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.search_sessions` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.search_sessions, query, **kwargs)
+        return await self._read_thread(self._store.search_sessions, query, **kwargs)
 
     async def list_gc_stale_details(self) -> Any:
         """Async version of :meth:`MemoryStore.list_gc_stale_details` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.list_gc_stale_details)
+        return await self._read_thread(self._store.list_gc_stale_details)
 
     async def generate_report(self, *, period_days: int = 7) -> Any:
         """Async version of :meth:`MemoryStore.generate_report` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.generate_report, period_days=period_days)
+        return await self._read_thread(self._store.generate_report, period_days=period_days)
 
     async def latest_quality_report(self) -> Any:
         """Async version of :meth:`MemoryStore.latest_quality_report` (STORY-070.10)."""
-        return await asyncio.to_thread(self._store.latest_quality_report)
+        return await self._read_thread(self._store.latest_quality_report)
 
     async def gc_run(self, *, dry_run: bool = False) -> Any:
         """Async version of :meth:`MemoryStore.gc` (alias for STORY-070.10 parity).
@@ -494,7 +584,7 @@ class AsyncMemoryStore:
         ``gc_run()`` is an explicit alias matching the method name used by
         AgentForge callers.  Internally delegates to ``gc(dry_run=dry_run)``.
         """
-        return await asyncio.to_thread(self._store.gc, dry_run=dry_run)
+        return await self._write_thread(self._store.gc, dry_run=dry_run)
 
     async def close(self) -> None:
         """Async version of :meth:`MemoryStore.close`."""
@@ -549,7 +639,7 @@ class AsyncMemoryStore:
             return attr
 
         async def _async_proxy(*args: Any, **kwargs: Any) -> Any:
-            return await asyncio.to_thread(attr, *args, **kwargs)
+            return await self._read_thread(attr, *args, **kwargs)
 
         _async_proxy.__name__ = name
         _async_proxy.__qualname__ = f"AsyncMemoryStore.{name}"
