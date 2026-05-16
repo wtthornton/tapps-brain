@@ -167,6 +167,35 @@ total hook duration             42    370ms    950ms   1380ms     60ms   2300ms
 
 Phases showing `—` were not measured that run (0 in the JSONL).
 
+## Timeout knobs
+
+### `RALPH_MCP_PROBE_TIMEOUT_SECONDS` (`.ralphrc:266`)
+
+Controls how long Ralph waits for `claude mcp list` to respond on startup.
+Default: **120 s** — this is sufficient after the TAP-1832 cold-start fixes
+(WS1.1–WS1.4: tools/list cache, deferred imports, docker healthcheck,
+pre-warm hook) reduced the cold path to < 2 s.
+
+If you still see `MCP probe failed: timed out` after those fixes are deployed,
+check that the `tapps-brain-http` container is healthy first:
+
+```bash
+curl -f http://localhost:8080/healthz   # should return 200
+docker compose ps tapps-brain-http      # should show "healthy"
+```
+
+Only bump the timeout as a last resort:
+
+```bash
+# In .ralphrc — human must apply; agent edits are blocked by TAP-623
+sed -i 's/RALPH_MCP_PROBE_TIMEOUT_SECONDS=120/RALPH_MCP_PROBE_TIMEOUT_SECONDS=240/' .ralphrc
+```
+
+**Planned reversal:** The 240 s value is a short-term workaround only.
+Once `tapps-brain-http` stays warm (via the docker healthcheck + pre-warm
+hook from TAP-1835 / TAP-1837), revert to 120 s to surface probe regressions
+sooner. TAP-1832 WS1.1–WS1.4 deliver the fixes that make 120 s reliable.
+
 ## Security notes
 
 - `~/.config/claude-agent/linear.env` is outside the repo and therefore
