@@ -1555,12 +1555,6 @@ class TestOTelConfigExportTimeout:
 class TestCircuitBreakerSpanExporter:
     """TAP-1814: _CircuitBreakerSpanExporter opens after N consecutive failures."""
 
-    def _make_mock_result(self, success: bool) -> Any:
-        """Return a mock SpanExportResult value."""
-        mock_result = MagicMock()
-        mock_result.__eq__ = lambda self, other: success == (other == self)  # type: ignore[method-assign]
-        return mock_result
-
     def test_passes_through_on_success(self) -> None:
         from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
 

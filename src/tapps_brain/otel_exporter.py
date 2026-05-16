@@ -331,11 +331,12 @@ class _CircuitBreakerSpanExporter:
         # Check if circuit is open (fast path under lock).
         with self._lock:
             if self._open_until is not None:
-                if time.monotonic() < self._open_until:
+                now = time.monotonic()
+                if now < self._open_until:
                     _logger.warning(
                         "OTel circuit breaker OPEN; dropping %d spans (reopens in %.0f s)",
                         len(spans) if spans else 0,
-                        self._open_until - time.monotonic(),
+                        self._open_until - now,
                     )
                     return SpanExportResult.FAILURE
                 # Timeout elapsed — transition to half-open.
@@ -397,6 +398,12 @@ def _configure_otlp_provider(cfg: OTelConfig, endpoint: str) -> None:
     so that a non-responsive collector never blocks the BatchSpanProcessor thread
     longer than *cfg.export_timeout* seconds.
 
+    **Idempotency:** This function is a no-op when a non-default provider is
+    already registered (detected via ``isinstance`` against the SDK's
+    ``ProxyTracerProvider``), so repeated calls to :func:`bootstrap_tracer`
+    do not orphan an existing :class:`~opentelemetry.sdk.trace.BatchSpanProcessor`
+    queue.
+
     This is a no-op (swallows all exceptions) when the SDK is unavailable or
     when the provider has already been set to a non-default provider.
     """
@@ -408,6 +415,18 @@ def _configure_otlp_provider(cfg: OTelConfig, endpoint: str) -> None:
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        # Idempotency guard: do not replace a provider that was already configured.
+        # The default provider is a ProxyTracerProvider; once replaced it becomes
+        # a concrete TracerProvider (or subclass).
+        existing = trace.get_tracer_provider()
+        try:
+            from opentelemetry.trace import ProxyTracerProvider
+
+            if not isinstance(existing, ProxyTracerProvider):
+                return  # A real provider is already installed — skip silently.
+        except ImportError:
+            pass  # ProxyTracerProvider not available in this SDK version; proceed.
 
         otlp_exporter = OTLPSpanExporter(
             endpoint=endpoint,
