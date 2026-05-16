@@ -1073,7 +1073,7 @@ class MemoryStore:
                 auto_publish=auto_publish,
             )
 
-            self._persist_relations(key, value)
+            self._persist_relations(key, value, created_at=entry.created_at)
 
             if (
                 self._consolidation_config.enabled
@@ -1524,10 +1524,10 @@ class MemoryStore:
             self._remove_entry_entities(key)
         self._index_entry_entities(key, entry.value)
 
-    def _persist_relations(self, key: str, value: str) -> None:
+    def _persist_relations(self, key: str, value: str, *, created_at: str | None = None) -> None:
         """Extract + persist relations and warn on simple cycles (EPIC-006)."""
         with MetricsTimer(self._metrics, "store.save.phase.relations_ms"):
-            relations = extract_relations(key, value)
+            relations = extract_relations(key, value, created_at=created_at)
             if not relations:
                 return
 

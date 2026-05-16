@@ -112,7 +112,12 @@ def _clean_entity(raw: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def extract_relations(entry_key: str, value: str) -> list[RelationEntry]:
+def extract_relations(
+    entry_key: str,
+    value: str,
+    *,
+    created_at: str | None = None,
+) -> list[RelationEntry]:
     """Extract entity-relationship triples from a single memory value.
 
     Uses rule-based regex patterns to find subject-predicate-object triples.
@@ -121,6 +126,11 @@ def extract_relations(entry_key: str, value: str) -> list[RelationEntry]:
     Args:
         entry_key: The memory entry key (for provenance tracking).
         value: The text content to extract relations from.
+        created_at: Optional ISO-8601 UTC timestamp to use as ``created_at``
+            for every extracted ``RelationEntry``.  When supplied, all
+            relations share the *source entry's* creation time, preventing
+            timestamp drift on re-extraction (TAP-1812).  When omitted the
+            ``RelationEntry`` default factory (``_utc_now_iso``) is used.
 
     Returns:
         List of ``RelationEntry`` objects (max 5).
@@ -155,6 +165,7 @@ def extract_relations(entry_key: str, value: str) -> list[RelationEntry]:
                     object_entity=obj,
                     source_entry_keys=[entry_key],
                     confidence=0.8,
+                    **({"created_at": created_at} if created_at is not None else {}),
                 )
             )
 
@@ -191,7 +202,7 @@ def extract_relations_from_entries(
     seen: dict[tuple[str, str, str], RelationEntry] = {}
 
     for entry in entries:
-        relations = extract_relations(entry.key, entry.value)
+        relations = extract_relations(entry.key, entry.value, created_at=entry.created_at)
         for rel in relations:
             triple_key = (
                 rel.subject.lower(),
