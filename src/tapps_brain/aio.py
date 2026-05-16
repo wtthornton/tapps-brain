@@ -217,9 +217,9 @@ class AsyncMemoryStore:
         "_read_inflight",
         "_read_sem",
         "_store",
+        "_wrapper_cache",
         "_write_inflight",
         "_write_sem",
-        "_wrapper_cache",
     )
 
     def __init__(
@@ -424,7 +424,8 @@ class AsyncMemoryStore:
         path — failures are logged but never raised, so we preserve that
         contract here too.
         """
-        assert self._async_backend is not None
+        if self._async_backend is None:  # pragma: no cover
+            raise RuntimeError("aio: _async_backend not initialised before write")
         saves, deletes, relations, audit = capture.flush()
         for entry in saves:
             await self._async_backend.save(entry)
