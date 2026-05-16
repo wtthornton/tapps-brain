@@ -121,6 +121,52 @@ For a background session that survives after the WSL window closes, use
 path (`~/.config/claude-agent/linear.env`) refers to the WSL home, not
 the Windows home — create the file inside WSL.
 
+## Startup-duration metrics (TAP-1852)
+
+The Ralph SessionStart hook writes one JSONL line per loop to
+`.ralph/metrics/startup-YYYY-MM.jsonl` recording wall-clock timing for
+each startup phase from the client's perspective:
+
+| Field | What it measures |
+|---|---|
+| `mcp_probe_ms` | Pre-warm `curl /healthz` latency |
+| `tools_list_ms` | `GET /v1/tools/list` static-snapshot latency |
+| `session_start_ms` | `tapps_session_start` MCP tool latency (0 when not measured) |
+| `linear_count_ms` | Linear count probe latency (0 when not measured) |
+| `total_ms` | Total SessionStart hook wall-clock time |
+
+Each line is appended atomically, so partial writes on kill are not
+possible.
+
+### Analysing the metrics
+
+```bash
+# p50/p95/p99 for each phase over the last 7 days
+python3 scripts/analyze-ralph-startup.py
+
+# Custom look-back window
+python3 scripts/analyze-ralph-startup.py --days 30
+
+# Non-default metrics directory
+python3 scripts/analyze-ralph-startup.py --metrics-dir /path/to/.ralph/metrics
+```
+
+Example output:
+
+```
+Ralph startup metrics — last 7 days  (42 samples)
+
+Phase                      samples      p50      p95      p99      min      max
+----------------------------------------------------------------------
+pre-warm /healthz               42    312ms    890ms   1200ms     45ms   2100ms
+/v1/tools/list                  42     38ms     82ms    120ms     12ms    200ms
+tapps_session_start              0        —        —        —        —        —
+Linear count probe               0        —        —        —        —        —
+total hook duration             42    370ms    950ms   1380ms     60ms   2300ms
+```
+
+Phases showing `—` were not measured that run (0 in the JSONL).
+
 ## Security notes
 
 - `~/.config/claude-agent/linear.env` is outside the repo and therefore
