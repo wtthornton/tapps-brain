@@ -237,8 +237,10 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
                 _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
             # Store in cache (concurrent miss → idempotent overwrite, same result).
+            # Return a copy — the cached list is the canonical reference; the
+            # caller must not be able to corrupt it via mutation.
             _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, all_tools)
-            return all_tools
+            return list(all_tools)
         try:
             allowed: frozenset[str] = profile_registry.get(profile)
         except Exception:
@@ -261,8 +263,9 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
             _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
         # Cache the filtered result for this profile.
+        # Return a copy — same mutation safety rationale as the full-profile path.
         _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
-        return filtered
+        return list(filtered)
 
     # ------------------------------------------------------------------
     # Wrap call_tool
