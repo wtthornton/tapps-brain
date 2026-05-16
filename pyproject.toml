@@ -178,6 +178,7 @@ select = [
     "TCH",  # flake8-type-checking
     "RUF",  # ruff-specific rules
     "PLR",  # pylint refactor
+    "S101", # assert in non-test source is stripped by python -O
 ]
 ignore = [
     "PLR0913", # too many arguments (inherent to dispatch functions)
@@ -197,6 +198,7 @@ ignore = [
     "N806", "N814",      # naming conventions relaxed in tests
     "RUF012",            # mutable class defaults fine in test fixtures
     "F821",              # forward-ref return annotations in lazy-import helpers
+    "S101",   # assert statements are idiomatic in pytest tests
 ]
 "src/tapps_brain/_protocols.py" = ["ANN401"]
 "src/tapps_brain/aio.py" = ["ANN401"]
