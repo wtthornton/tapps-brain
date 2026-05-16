@@ -434,6 +434,7 @@ class TestBoundedConcurrency:
             for i in range(100)
         ]
         await asyncio.gather(*tasks)
+        # Close via base (astore shares the same sync_store and has no async backend).
         await base.close()
 
         assert max_seen[0] <= 4, f"Expected ≤4 concurrent writes; saw {max_seen[0]}"
@@ -470,6 +471,7 @@ class TestBoundedConcurrency:
             for i in range(50)
         ]
         await asyncio.gather(*tasks)
+        # Close via base (astore shares sync_store and has no async backend).
         await base.close()
 
         assert max_seen[0] <= 4, f"Expected ≤4 concurrent reads; saw {max_seen[0]}"

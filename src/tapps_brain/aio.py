@@ -242,11 +242,22 @@ class AsyncMemoryStore:
         _r = max_concurrent_reads if max_concurrent_reads is not None else int(
             os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "64")
         )
+        # Guard against misconfigured zero/negative values so asyncio.Semaphore
+        # never receives a value < 1.
+        _w = max(_w, 1)
+        _r = max(_r, 1)
         self._write_sem: asyncio.Semaphore = asyncio.Semaphore(_w)
         self._read_sem: asyncio.Semaphore = asyncio.Semaphore(_r)
         # Count of operations *currently holding* the respective semaphore.
         # Incremented after acquire, decremented in finally — safe because
-        # asyncio coroutines are cooperative (no true parallelism in the loop).
+        # asyncio coroutines are cooperative; there is no await between the
+        # semaphore acquire and the increment, so the update is atomic from
+        # the event-loop's perspective.
+        # NOTE: for the async-backend code path (save/delete/reinforce),
+        # _lock serialises the persistence-swap, so the effective concurrency
+        # for those operations is 1 even though the write semaphore allows
+        # up to max_concurrent_writes holders.  write_queue_depth reflects
+        # semaphore holders (including those blocked on _lock), not active I/O.
         self._write_inflight: int = 0
         self._read_inflight: int = 0
 
