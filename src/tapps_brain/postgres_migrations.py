@@ -24,7 +24,11 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 # Pattern: NNN_description.sql  (e.g., 001_initial.sql)
-_MIGRATION_FILE_RE = re.compile(r"^(\d+)_.+\.sql$")
+# Matches forward migrations (e.g. 001_initial.sql) but NOT down files.
+_MIGRATION_FILE_RE = re.compile(r"^(\d+)_.+(?<!\.down)\.sql$")
+
+# Matches rollback (down) migration files (e.g. 001_initial.down.sql).
+_DOWN_MIGRATION_FILE_RE = re.compile(r"^(\d+)_.+\.down\.sql$")
 
 
 def _migration_lock_id(version_table: str) -> int:
@@ -332,3 +336,188 @@ def maybe_auto_migrate_private(dsn: str) -> None:
         )
     else:
         logger.info("postgres.auto_migrate.already_up_to_date")
+
+
+# ---------------------------------------------------------------------------
+# Down-migration discovery
+# ---------------------------------------------------------------------------
+
+
+def _discover_down_migration_files(package_path: str) -> list[tuple[int, str, str]]:
+    """Discover down-migration SQL files from a package resource directory.
+
+    Returns a sorted list of ``(version, filename, sql_content)`` tuples for
+    all ``NNN_*.down.sql`` files found under *package_path*.
+    """
+    results: list[tuple[int, str, str]] = []
+    try:
+        ref = importlib.resources.files("tapps_brain.migrations").joinpath(package_path)
+        for item in ref.iterdir():
+            m = _DOWN_MIGRATION_FILE_RE.match(item.name)
+            if m is not None:
+                version = int(m.group(1))
+                sql = item.read_text(encoding="utf-8")
+                results.append((version, item.name, sql))
+    except (FileNotFoundError, TypeError):
+        # Fall back to filesystem path for development / editable installs.
+        pkg_dir = Path(__file__).parent / "migrations" / package_path
+        if pkg_dir.is_dir():
+            for p in sorted(pkg_dir.iterdir()):
+                m = _DOWN_MIGRATION_FILE_RE.match(p.name)
+                if m is not None:
+                    version = int(m.group(1))
+                    sql = p.read_text(encoding="utf-8")
+                    results.append((version, p.name, sql))
+
+    results.sort(key=lambda t: t[0])
+    return results
+
+
+def discover_hive_down_migrations() -> list[tuple[int, str, str]]:
+    """Return Hive down-migration files as ``(version, filename, sql)``."""
+    return _discover_down_migration_files("hive")
+
+
+def discover_federation_down_migrations() -> list[tuple[int, str, str]]:
+    """Return Federation down-migration files as ``(version, filename, sql)``."""
+    return _discover_down_migration_files("federation")
+
+
+def discover_private_down_migrations() -> list[tuple[int, str, str]]:
+    """Return private-memory down-migration files as ``(version, filename, sql)``."""
+    return _discover_down_migration_files("private")
+
+
+# ---------------------------------------------------------------------------
+# Rollback migrations
+# ---------------------------------------------------------------------------
+
+
+def _rollback_migrations(
+    dsn: str,
+    version_table: str,
+    down_migrations: list[tuple[int, str, str]],
+    *,
+    target_version: int,
+    dry_run: bool = False,
+) -> list[int]:
+    """Apply down-migrations to roll back to *target_version*.
+
+    Executes the down SQL for every discovered version > *target_version*, in
+    descending order (newest first).  Each down file is expected to include a
+    ``DELETE FROM <version_table> WHERE version = N`` statement; after the SQL
+    runs the CLI wrapper need not issue a separate cleanup.
+
+    Returns the list of version numbers that were rolled back.
+    """
+    try:
+        import psycopg
+    except ImportError:
+        raise ImportError(
+            "psycopg is required for PostgreSQL migrations.\n"
+            "Install with: pip install 'psycopg[binary]'"
+        ) from None
+
+    # Descending order: roll back newest migration first.
+    to_rollback = sorted(
+        [(v, fname, sql) for v, fname, sql in down_migrations if v > target_version],
+        key=lambda t: t[0],
+        reverse=True,
+    )
+
+    if not to_rollback:
+        logger.info(
+            "postgres.migrations.rollback.nothing_to_do",
+            version_table=version_table,
+            target_version=target_version,
+        )
+        return []
+
+    rolled_back: list[int] = []
+
+    with psycopg.connect(dsn) as conn:
+        if not dry_run:
+            lock_id = _migration_lock_id(version_table)
+            conn.execute("SELECT pg_advisory_lock(%s)", (lock_id,))
+            logger.debug(
+                "postgres.migrations.advisory_lock_acquired",
+                version_table=version_table,
+                lock_id=lock_id,
+            )
+
+        for version, fname, sql in to_rollback:
+            if dry_run:
+                logger.info(
+                    "postgres.migrations.rollback.would_apply",
+                    version=version,
+                    filename=fname,
+                )
+                rolled_back.append(version)
+                continue
+
+            logger.info(
+                "postgres.migrations.rollback.applying",
+                version=version,
+                filename=fname,
+            )
+            conn.execute(sql.encode())
+            conn.commit()
+            rolled_back.append(version)
+            logger.info(
+                "postgres.migrations.rollback.applied",
+                version=version,
+                filename=fname,
+            )
+
+    return rolled_back
+
+
+def rollback_private_migrations(
+    dsn: str, *, target_version: int, dry_run: bool = False
+) -> list[int]:
+    """Roll back private-memory migrations to *target_version*.
+
+    Returns the list of version numbers that were rolled back.
+    """
+    down_migrations = discover_private_down_migrations()
+    return _rollback_migrations(
+        dsn,
+        "private_schema_version",
+        down_migrations,
+        target_version=target_version,
+        dry_run=dry_run,
+    )
+
+
+def rollback_hive_migrations(
+    dsn: str, *, target_version: int, dry_run: bool = False
+) -> list[int]:
+    """Roll back Hive schema migrations to *target_version*.
+
+    Returns the list of version numbers that were rolled back.
+    """
+    down_migrations = discover_hive_down_migrations()
+    return _rollback_migrations(
+        dsn,
+        "hive_schema_version",
+        down_migrations,
+        target_version=target_version,
+        dry_run=dry_run,
+    )
+
+
+def rollback_federation_migrations(
+    dsn: str, *, target_version: int, dry_run: bool = False
+) -> list[int]:
+    """Roll back Federation schema migrations to *target_version*.
+
+    Returns the list of version numbers that were rolled back.
+    """
+    down_migrations = discover_federation_down_migrations()
+    return _rollback_migrations(
+        dsn,
+        "federation_schema_version",
+        down_migrations,
+        target_version=target_version,
+        dry_run=dry_run,
+    )
