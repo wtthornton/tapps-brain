@@ -243,11 +243,18 @@ class TestTextSimilarityBoundary:
         entry = _entry("memory-key", "some important fact about configuration")
         assert text_similarity(entry, entry) == pytest.approx(1.0)
 
-    def test_disjoint_single_char_tokens_give_zero(self) -> None:
-        """Single-char non-stop-word keys with disjoint values → similarity 0.0."""
-        # "a" is a stop word so the key contributes no token; value "x"/"y" differ
-        entry_a = _entry("a", "x")
-        entry_b = _entry("b", "y")
+    def test_completely_disjoint_token_sets_give_zero(self) -> None:
+        """Entries with no shared tokens after tokenisation → similarity 0.0.
+
+        Uses clearly non-stop-word, non-overlapping tokens so the test
+        exercises the orthogonal-vector path of cosine_similarity without
+        relying on stop-word stripping behaviour.
+        """
+        # TF(a) ≈ {"elephant": 0.5, "ocean": 0.5}
+        # TF(b) ≈ {"volcano": 0.5, "castle": 0.5}
+        # No shared terms → cosine = 0.0
+        entry_a = _entry("elephant", "ocean")
+        entry_b = _entry("volcano", "castle")
         assert text_similarity(entry_a, entry_b) == pytest.approx(0.0)
 
     def test_shared_significant_token_gives_positive_score(self) -> None:
