@@ -18,6 +18,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 SKIP_FULL_PYTEST="${SKIP_FULL_PYTEST:-0}"
+SKIP_BENCHMARKS="${SKIP_BENCHMARKS:-1}"
 SKIP_LINT="${SKIP_LINT:-0}"
 # TAP-570: set TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 to include the cross-tenant HTTP
 # denial smoke test.  Requires a live sidecar on TAPPS_BRAIN_SIDECAR_URL (default
@@ -85,6 +86,18 @@ else
   # requires_postgres skip behavior.
   TAPPS_BRAIN_TESTS_STRICT=1 uv run pytest tests/compat/ -v --tb=short \
     || fail "compat suite under STRICT (TAP-511) — set TAPPS_BRAIN_DATABASE_URL"
+fi
+
+# TAP-1855: HTTP adapter warm-path benchmark gate.
+# Off by default (SKIP_BENCHMARKS=1) to avoid adding 5-10 s to every release
+# run.  Set SKIP_BENCHMARKS=0 to enable before performance-sensitive releases.
+if [[ "$SKIP_BENCHMARKS" == "1" ]]; then
+  echo "==> [6b/8] HTTP benchmark gate (skipped: SKIP_BENCHMARKS=1; set to 0 to enable)"
+else
+  echo "==> [6b/8] HTTP benchmark gate (tests/benchmarks/test_http_adapter_tools_list.py)"
+  uv run pytest tests/benchmarks/test_http_adapter_tools_list.py -v --benchmark-only \
+    --benchmark-fail=mean:1.5x \
+    || fail "benchmark gate — p95/p99 regression; see docs/perf/benchmarks.md"
 fi
 
 if [[ "$SKIP_LINT" == "1" ]]; then

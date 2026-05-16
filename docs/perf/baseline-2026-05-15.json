@@ -1,0 +1,29 @@
+{
+  "generated": "2026-05-15",
+  "generator": "pytest-benchmark 5.2.3",
+  "test": "tests/benchmarks/test_http_adapter_tools_list.py::TestV1ToolsListBenchmark::test_warm_p95_under_200ms",
+  "description": "GET /v1/tools/list warm-path: 1 warmup round + 100 measured rounds, in-process Starlette TestClient",
+  "environment": {
+    "platform": "linux",
+    "python": "3.12.3",
+    "cpu": "WSL2/Ubuntu 22.04"
+  },
+  "stats": {
+    "rounds": 100,
+    "iterations": 1,
+    "warmup_rounds": 1,
+    "min_us": 426,
+    "max_us": 814,
+    "mean_us": 552,
+    "median_us": 543,
+    "stddev_us": 74,
+    "p95_ms": 0.69,
+    "p99_ms": 0.79
+  },
+  "limits": {
+    "p95_ms": 200,
+    "p99_ms": 500,
+    "note": "Limits are deliberately conservative; the in-memory snapshot makes real latency ~0.5 ms (1000x headroom)."
+  },
+  "refresh": "See docs/perf/benchmarks.md for the refresh procedure."
+}
