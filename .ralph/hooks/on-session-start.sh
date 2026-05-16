@@ -15,6 +15,24 @@ if [[ ! -d "$RALPH_DIR" ]]; then
   exit 0
 fi
 
+# --- Pre-warm tapps-brain-http (TAP-1837) ---
+# Best-effort: wait for /healthz before MCP probes so lazy-init runs outside
+# the 120 s MCP probe timeout window. Non-fatal on any failure.
+_prewarm_url="http://127.0.0.1:8080/healthz"
+_prewarm_log="$RALPH_DIR/live.log"
+_prewarm_start_ms=$(date +%s%3N 2>/dev/null || echo "0")
+if curl -sf --max-time 60 "$_prewarm_url" &>/dev/null; then
+  _prewarm_end_ms=$(date +%s%3N 2>/dev/null || echo "0")
+  _prewarm_elapsed=$(( _prewarm_end_ms - _prewarm_start_ms ))
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Pre-warmed tapps-brain-http in ${_prewarm_elapsed} ms" \
+    >> "$_prewarm_log" 2>/dev/null || true
+else
+  _prewarm_end_ms=$(date +%s%3N 2>/dev/null || echo "0")
+  _prewarm_elapsed=$(( _prewarm_end_ms - _prewarm_start_ms ))
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] tapps-brain-http pre-warm: /healthz not reachable after ${_prewarm_elapsed} ms (continuing)" \
+    >> "$_prewarm_log" 2>/dev/null || true
+fi
+
 # --- Source Ralph libraries ---
 # Libraries live in the Ralph installation, not the project
 RALPH_LIB=""
