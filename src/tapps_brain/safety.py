@@ -11,6 +11,8 @@ EPIC-044 STORY-044.1: versioned pattern rulesets (semver keys) and optional
 
 from __future__ import annotations
 
+import base64
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -96,6 +98,131 @@ _SUSPICIOUS_DENSITY_THRESHOLD = 0.15
 # Maximum pattern matches before flagging entire document
 _MAX_PATTERN_MATCHES = 5
 
+# ------------------------------------------------------------------
+# Encoded-payload detector (TAP-1813)
+# ------------------------------------------------------------------
+
+# Minimum encoded-token length to attempt decoding (≥24 chars = ≥18 raw bytes)
+_MIN_ENCODED_LENGTH = 24
+
+# Maximum decoded size before rejecting (avoids DoS on huge blobs)
+_MAX_DECODED_BYTES = 32 * 1024  # 32 KiB
+
+# Shannon-entropy ceiling for decoded text (bits/byte).
+# Human-readable text is typically 3.5-4.5 b/byte; binary blobs approach 8.
+# A threshold of 5.0 reliably rejects crypto keys, compressed data, and image
+# pixels while passing Unicode-rich injection phrases (e.g. with emoji prefix).
+_MAX_TEXT_ENTROPY_BITS: float = 5.0
+
+# Upper bound on encoded token length matched by the regexes.
+# Prevents the regex engine from materialising a giant match group before
+# _decode_as_text can apply _MAX_DECODED_BYTES.  44 000 base64 chars ≈ 33 KiB
+# decoded — just above _MAX_DECODED_BYTES (32 KiB), so the decoder never
+# fires on tokens larger than the size gate would reject anyway.
+_MAX_B64_TOKEN_CHARS = 44_000  # ≈ 32 KiB decoded
+_MAX_HEX_TOKEN_CHARS = 65_536  # 32 KiB decoded * 2 hex chars/byte
+
+# Regex for standalone standard-base64 tokens (A-Za-z0-9+/).
+# Lookbehind/lookahead on the same charset prevents mid-token matching.
+_B64_TOKEN_RE = re.compile(
+    rf"(?<![A-Za-z0-9+/])([A-Za-z0-9+/]{{24,{_MAX_B64_TOKEN_CHARS}}}={{0,2}})(?![A-Za-z0-9+/=])"
+)
+
+# Regex for standalone url-safe-base64 tokens (A-Za-z0-9-_).
+# We only process these when the token contains '-' or '_' (otherwise the
+# standard-b64 path already covers them).
+_URLSAFE_B64_TOKEN_RE = re.compile(
+    rf"(?<![A-Za-z0-9\-_])([A-Za-z0-9\-_]{{24,{_MAX_B64_TOKEN_CHARS}}}={{0,2}})(?![A-Za-z0-9\-_=])"
+)
+
+# Regex for standalone hex strings (even number of hex digits, ≥48 chars = ≥24 raw bytes).
+_HEX_TOKEN_RE = re.compile(
+    rf"(?<![0-9a-fA-F])([0-9a-fA-F]{{48,{_MAX_HEX_TOKEN_CHARS}}})(?![0-9a-fA-F])"
+)
+
+
+def _byte_entropy(data: bytes) -> float:
+    """Compute Shannon entropy of *data* in bits per byte."""
+    if not data:
+        return 0.0
+    total = len(data)
+    counts: dict[int, int] = {}
+    for b in data:
+        counts[b] = counts.get(b, 0) + 1
+    return -sum((c / total) * math.log2(c / total) for c in counts.values())
+
+
+def _decode_as_text(raw: bytes) -> str | None:
+    """Return *raw* decoded as UTF-8 text if it looks human-readable, else ``None``.
+
+    Rejects payloads that are:
+    - Larger than ``_MAX_DECODED_BYTES`` (DoS guard).
+    - Not valid UTF-8 (binary blobs: images, crypto keys, DER certs).
+    - Shannon entropy > ``_MAX_TEXT_ENTROPY_BITS`` (compressed or encrypted data).
+    """
+    if len(raw) > _MAX_DECODED_BYTES:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if _byte_entropy(raw) > _MAX_TEXT_ENTROPY_BITS:
+        return None
+    return text
+
+
+def _has_encoded_injection(
+    content: str,
+    patterns: list[tuple[str, re.Pattern[str]]],
+) -> bool:
+    """Return ``True`` if *content* contains an encoded injection payload.
+
+    Scans for standalone standard-base64, url-safe-base64, and hex tokens,
+    decodes each candidate (with size + entropy gates), then re-checks the
+    full injection *patterns* set on the decoded text.
+    """
+
+    def _matches_any(text: str) -> bool:
+        return any(pat.search(text) for _, pat in patterns)
+
+    # --- Standard base64 ---
+    for m in _B64_TOKEN_RE.finditer(content):
+        token = m.group(1)
+        pad = (4 - len(token) % 4) % 4
+        try:
+            raw = base64.b64decode(token + "=" * pad, validate=True)
+        except Exception:
+            continue
+        text = _decode_as_text(raw)
+        if text is not None and _matches_any(text):
+            return True
+
+    # --- URL-safe base64 (only tokens that use - or _; others caught above) ---
+    for m in _URLSAFE_B64_TOKEN_RE.finditer(content):
+        token = m.group(1)
+        if "-" not in token and "_" not in token:
+            continue
+        pad = (4 - len(token) % 4) % 4
+        try:
+            raw = base64.urlsafe_b64decode(token + "=" * pad)
+        except Exception:
+            continue
+        text = _decode_as_text(raw)
+        if text is not None and _matches_any(text):
+            return True
+
+    # --- Hex ---
+    for m in _HEX_TOKEN_RE.finditer(content):
+        try:
+            raw = bytes.fromhex(m.group(1))
+        except ValueError:
+            continue
+        text = _decode_as_text(raw)
+        if text is not None and _matches_any(text):
+            return True
+
+    return False
+
 
 def resolve_safety_ruleset_version(requested: str | None) -> str:
     """Return a supported ruleset semver, falling back to the default if unknown."""
@@ -163,6 +290,33 @@ def check_content_safety(
         if matches:
             flagged.append(pattern_name)
             total_matches += len(matches)
+
+    # Encoded-payload check (base64 / url-safe-b64 / hex).
+    # Obfuscated injections are always blocked — deliberate encoding is a
+    # strong threat signal regardless of plaintext match count / density.
+    if _has_encoded_injection(normalised, patterns):
+        encoded_flagged = [*flagged, "base64_payload"]
+        encoded_total = total_matches + 1
+        logger.warning(
+            "rag_safety_encoded_injection_blocked",
+            match_count=encoded_total,
+            patterns=encoded_flagged,
+            ruleset_version=resolved,
+        )
+        result = SafetyCheckResult(
+            safe=False,
+            flagged_patterns=encoded_flagged,
+            match_count=encoded_total,
+            warning=(
+                f"Content blocked: encoded injection payload detected "
+                f"({', '.join(encoded_flagged)})"
+            ),
+            ruleset_version=resolved,
+        )
+        if metrics is not None:
+            metrics.increment("safety.encoded_injection_blocked_total")
+            metrics.increment("rag_safety.blocked")
+        return result
 
     # Short-circuit before the more expensive per-line density scan
     if total_matches == 0:
