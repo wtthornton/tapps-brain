@@ -6,13 +6,18 @@ consolidation threshold sweeps (EPIC-044 STORY-044.4; CLI
 ``maintenance consolidation-threshold-sweep``), and read-only save-conflict
 candidate export for offline NLI review (EPIC-044 STORY-044.3; CLI
 ``maintenance save-conflict-candidates`` — no model on the sync save path).
+
+All harness entry-points are deterministic given the same seed (default 0).
+Call :func:`_pin_seeds` at the top of each entry-point to enforce this.
 """
 
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import math
+import random
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -28,6 +33,26 @@ if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
+
+
+def _pin_seeds(seed: int = 0) -> None:
+    """Pin all random seeds so harness entry-points are deterministic.
+
+    Handles missing optional dependencies (numpy, torch) without raising
+    :class:`ImportError` — uses :func:`importlib.util.find_spec` gates.
+
+    Args:
+        seed: Integer seed value. Default ``0`` gives stable CI outputs.
+    """
+    random.seed(seed)
+    if importlib.util.find_spec("numpy") is not None:
+        import numpy as np  # type: ignore[import-untyped]
+
+        np.random.seed(seed)
+    if importlib.util.find_spec("torch") is not None:
+        import torch  # type: ignore[import-untyped]
+
+        torch.manual_seed(seed)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +230,7 @@ def lexical_golden_eval_suite() -> EvalSuite:
     a lexical channel must stay sharp. Use with :func:`load_eval_suite_into_store`
     before :func:`evaluate`.
     """
+    _pin_seeds()
     docs = {
         "mem-err-enoent": EvalDoc.model_validate(
             {
@@ -382,6 +408,7 @@ def run_consolidation_threshold_sweep(
         active_only: When True, drop :class:`~tapps_brain.models.ConsolidatedEntry`
             subclasses and ``contradicted`` rows (same filter as periodic scan).
     """
+    _pin_seeds()
     from tapps_brain.models import ConsolidatedEntry
     from tapps_brain.similarity import (
         DEFAULT_TAG_WEIGHT,
@@ -494,6 +521,7 @@ def run_save_conflict_candidate_report(
             treated as hypothetical incoming saves (scan corpus is still full
             ``entries``).
     """
+    _pin_seeds()
     from tapps_brain.contradictions import detect_save_conflicts
     from tapps_brain.models import ConsolidatedEntry
 
@@ -588,6 +616,7 @@ def evaluate(
     thresholds: EvalThresholds | None = None,
 ) -> EvalReport:
     """Run each query through ranked retrieval and compute IR metrics."""
+    _pin_seeds()
     from tapps_brain.retrieval import MemoryRetriever
 
     k_eff = max(1, min(k, 50))
@@ -783,6 +812,7 @@ def evaluate_with_judge(
     Each query item is ``(query_id, query_text)``. Retrieved memories are
     judged against the query; grade 1 if score >= 0.5 else 0.
     """
+    _pin_seeds()
     from tapps_brain.retrieval import MemoryRetriever
 
     k_eff = max(1, min(k, 50))
