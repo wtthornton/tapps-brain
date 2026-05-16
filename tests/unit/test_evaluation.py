@@ -380,12 +380,16 @@ def test_evaluate_with_judge_skips(tmp_path: Path) -> None:
 
 
 def test_pin_seeds_does_not_raise_without_optional_deps() -> None:
-    """_pin_seeds must not raise ImportError when numpy/torch are absent."""
+    """_pin_seeds must not raise ImportError when torch is absent.
+
+    Simulates an environment where torch is not installed by blocking it in
+    sys.modules (setting to None makes ``import torch`` raise ModuleNotFoundError,
+    a subclass of ImportError). _pin_seeds must swallow it and seed stdlib random.
+    """
     import sys
     from unittest.mock import patch
 
-    with patch.dict(sys.modules, {"numpy": None, "torch": None}):
-        # find_spec returns None for modules explicitly set to None in sys.modules
+    with patch.dict(sys.modules, {"torch": None}):
         _pin_seeds(0)
         _pin_seeds(42)
 

@@ -14,7 +14,6 @@ Call :func:`_pin_seeds` at the top of each entry-point to enforce this.
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import json
 import math
 import random
@@ -39,20 +38,26 @@ def _pin_seeds(seed: int = 0) -> None:
     """Pin all random seeds so harness entry-points are deterministic.
 
     Handles missing optional dependencies (numpy, torch) without raising
-    :class:`ImportError` — uses :func:`importlib.util.find_spec` gates.
+    :class:`ImportError` — catches :class:`ImportError` on each optional
+    import so callers are unaffected when a dep is absent or blocked in
+    ``sys.modules``.
 
     Args:
         seed: Integer seed value. Default ``0`` gives stable CI outputs.
     """
     random.seed(seed)
-    if importlib.util.find_spec("numpy") is not None:
+    try:
         import numpy as np  # type: ignore[import-untyped]
 
         np.random.seed(seed)
-    if importlib.util.find_spec("torch") is not None:
+    except ImportError:
+        pass
+    try:
         import torch  # type: ignore[import-untyped]
 
         torch.manual_seed(seed)
+    except ImportError:
+        pass
 
 
 # ---------------------------------------------------------------------------
