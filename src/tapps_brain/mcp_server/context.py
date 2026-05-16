@@ -31,9 +31,17 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-import structlog
 
-logger = structlog.get_logger(__name__)
+def _get_logger() -> Any:  # noqa: ANN401
+    """Return a structlog logger for this module, importing structlog lazily.
+
+    TAP-1834: avoids eager structlog import at module load time so that
+    ``import tapps_brain.mcp_server`` (tool-catalog probe) does not pay the
+    ~60 ms structlog startup cost.
+    """
+    import structlog
+
+    return structlog.get_logger(__name__)
 
 
 # STORY-070.4: transport-neutral contextvars set by the FastAPI tenant
@@ -136,7 +144,7 @@ def _safe_close_store(store: Any) -> None:  # noqa: ANN401
     try:
         close()
     except Exception:
-        logger.debug("store_cache.close_failed", exc_info=True)
+        _get_logger().debug("store_cache.close_failed", exc_info=True)
 
 
 _STORE_CACHE = _StoreCache()

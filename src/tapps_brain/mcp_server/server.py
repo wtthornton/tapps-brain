@@ -26,8 +26,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import structlog
-
 from tapps_brain.mcp_server.context import (
     ToolContext,
     _current_request_project_id,
@@ -37,12 +35,26 @@ from tapps_brain.mcp_server.context import (
     _StoreProxy,
 )
 
-# Silence structlog for server mode — MCP uses stdin/stdout for protocol.
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
-)
 
-logger = structlog.get_logger(__name__)
+def _configure_structlog() -> None:
+    """Silence structlog for server mode (MCP uses stdin/stdout for protocol).
+
+    TAP-1834: Called lazily from create_server/main rather than at module load
+    time so that ``import tapps_brain.mcp_server`` does not eagerly import the
+    full structlog package during tool-catalog probes.
+    """
+    import structlog
+
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
+    )
+
+
+def _get_logger() -> Any:  # noqa: ANN401
+    """Return a structlog logger for this module, importing structlog lazily."""
+    import structlog
+
+    return structlog.get_logger(__name__)
 
 
 def _lazy_import_mcp() -> Any:  # noqa: ANN401
@@ -91,7 +103,7 @@ def _build_transport_security() -> Any:  # noqa: ANN401
         from mcp.server.transport_security import TransportSecuritySettings
     except ImportError:
         if raw:
-            logger.warning(
+            _get_logger().warning(
                 "mcp_server.transport_security_unavailable",
                 detail="TransportSecuritySettings not found in installed mcp "
                 "package; TAPPS_BRAIN_MCP_ALLOWED_HOSTS will be ignored.",
@@ -106,7 +118,7 @@ def _build_transport_security() -> Any:  # noqa: ANN401
         if not hosts:
             return None
         source = "auto"
-        logger.warning(
+        _get_logger().warning(
             "mcp_server.transport_security_autoconfigured",
             detail=(
                 "TAPPS_BRAIN_MCP_ALLOWED_HOSTS not set while bound to a "
@@ -117,7 +129,7 @@ def _build_transport_security() -> Any:  # noqa: ANN401
         )
 
     origins = [f"http://{h}" for h in hosts]
-    logger.info(
+    _get_logger().info(
         "mcp_server.transport_security_configured",
         allowed_hosts=hosts,
         source=source,
@@ -260,6 +272,9 @@ def create_server(  # noqa: PLR0915
     modules (TAP-605).  Tool *bodies* themselves live in
     ``tapps_brain.services.*`` (EPIC-070 STORY-070.1).
     """
+    # TAP-1834: Configure structlog here (on first real use) rather than at
+    # module import time so tool-catalog probes skip the full structlog load.
+    _configure_structlog()
     fastmcp_cls = _lazy_import_mcp()
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
