@@ -167,6 +167,38 @@ total hook duration             42    370ms    950ms   1380ms     60ms   2300ms
 
 Phases showing `—` were not measured that run (0 in the JSONL).
 
+## MCP probe sentinel cache (TAP-1838, ralph-claude-code 2.15.0+)
+
+Ralph ships a sentinel-based skip for `claude mcp list`. When enabled (the
+default), Ralph computes a SHA-256 of `claude --version`, `.mcp.json`, and
+`~/.claude.json` and writes the result to `.ralph/.mcp-probe-sentinel` after
+a successful live probe. On the next startup, if the hash matches and the
+sentinel is younger than 24 h, Ralph loads the cached server-availability
+flags from the sentinel instead of running the 30 s live probe.
+
+**Startup log on a cache hit:**
+
+```
+[INFO] MCP probe cached (age 342s): tapps=true docs=true brain=true
+```
+
+**Knobs (`.ralphrc` or env):**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RALPH_MCP_PROBE_SKIP_IF_UNCHANGED` | `true` | Set `false` to disable caching entirely |
+| `RALPH_MCP_PROBE_SENTINEL_MAX_AGE` | `86400` (24 h) | Seconds before the sentinel expires |
+
+To force a fresh probe this loop (without disabling caching long-term):
+
+```bash
+rm .ralph/.mcp-probe-sentinel
+```
+
+The sentinel is never written when the probe fails (empty output / timeout),
+so a failing probe always re-runs on the next startup — no stale false
+negatives.
+
 ## Timeout knobs
 
 ### `RALPH_MCP_PROBE_TIMEOUT_SECONDS` (`.ralphrc:266`)
