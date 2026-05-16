@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def percentile(values: list[float], p: int) -> float:
-    """Return the p-th percentile of *values* (0–100).  Returns 0.0 if empty."""
+    """Return the p-th percentile of *values* (0-100).  Returns 0.0 if empty."""
     if not values:
         return 0.0
     s = sorted(values)
@@ -102,7 +102,7 @@ def main() -> int:
         )
         return 1
 
-    since = datetime.now(tz=timezone.utc) - timedelta(days=args.days)
+    since = datetime.now(tz=UTC) - timedelta(days=args.days)
     entries = load_entries(metrics_dir, since)
 
     if not entries:
