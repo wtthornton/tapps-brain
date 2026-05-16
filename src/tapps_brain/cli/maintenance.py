@@ -838,3 +838,123 @@ def maintenance_restore_hive(
             stderr = stderr.replace(pgpassword, "***")
         typer.echo(f"Error: {stderr}", err=True)
         raise typer.Exit(1) from e
+
+
+@maintenance_app.command("migrations-rollback")
+def maintenance_migrations_rollback(
+    target_version: Annotated[
+        int,
+        typer.Argument(help="Roll back all migrations above this version number."),
+    ],
+    schema: Annotated[
+        str,
+        typer.Option(
+            "--schema",
+            help="Schema plane to roll back: private, hive, or federation.",
+        ),
+    ] = "private",
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="TAPPS_BRAIN_DATABASE_URL",
+            help="PostgreSQL DSN (or set TAPPS_BRAIN_DATABASE_URL).",
+        ),
+    ] = "",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview down-migrations without applying them."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Skip the interactive confirmation prompt."),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Roll back schema migrations to TARGET_VERSION.
+
+    Executes the paired *.down.sql files for all versions above TARGET_VERSION
+    in reverse order (newest first).  Each down file undoes the schema changes
+    of its corresponding forward migration.
+
+    Requires --yes (or confirmation on a TTY) unless --dry-run is set.
+
+    Examples:
+
+      # Preview: show what would be rolled back
+      tapps-brain maintenance migrations-rollback --schema private 14 --dry-run
+
+      # Roll back private schema to version 14
+      tapps-brain maintenance migrations-rollback --schema private 14 --yes
+
+      # Roll back Hive schema to version 1 using a custom DSN
+      tapps-brain maintenance migrations-rollback --schema hive 1 \\
+          --dsn postgresql://user:pass@host/db --yes
+    """
+    from tapps_brain.postgres_migrations import (
+        rollback_federation_migrations,
+        rollback_hive_migrations,
+        rollback_private_migrations,
+    )
+
+    _valid_schemas = {"private", "hive", "federation"}
+    if schema not in _valid_schemas:
+        choices = ", ".join(sorted(_valid_schemas))
+        typer.echo(f"Error: unknown --schema '{schema}'. Choose one of: {choices}.", err=True)
+        raise typer.Exit(code=1)
+
+    # Resolve DSN: --dsn flag / env var for each plane.
+    if not dsn:
+        if schema == "hive":
+            dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN", "") or os.environ.get(
+                "TAPPS_BRAIN_DATABASE_URL", ""
+            )
+        elif schema == "federation":
+            dsn = os.environ.get("TAPPS_BRAIN_FEDERATION_DSN", "") or os.environ.get(
+                "TAPPS_BRAIN_DATABASE_URL", ""
+            )
+    if not dsn:
+        typer.echo(
+            f"Error: --dsn or TAPPS_BRAIN_DATABASE_URL is required for --schema={schema}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    rollback_fn = {
+        "private": rollback_private_migrations,
+        "hive": rollback_hive_migrations,
+        "federation": rollback_federation_migrations,
+    }[schema]
+
+    if not dry_run and not yes:
+        typer.echo(
+            f"This will roll back the '{schema}' schema to version {target_version}."
+        )
+        typer.echo("Run with --dry-run to preview, or --yes to confirm.")
+        confirmed = typer.confirm("Proceed with rollback?", default=False)
+        if not confirmed:
+            typer.echo("Aborted.")
+            raise typer.Exit(code=0)
+
+    rolled_back = rollback_fn(dsn, target_version=target_version, dry_run=dry_run)
+
+    data = {
+        "schema": schema,
+        "target_version": target_version,
+        "rolled_back": rolled_back,
+        "dry_run": dry_run,
+        "status": (
+            "dry-run"
+            if dry_run
+            else ("rolled-back" if rolled_back else "nothing-to-rollback")
+        ),
+    }
+    if as_json:
+        _output(data, as_json=True)
+    elif not rolled_back:
+        typer.echo(
+            f"Nothing to roll back: no '{schema}' down-migrations above version {target_version}."
+        )
+    else:
+        action = "Would roll back" if dry_run else "Rolled back"
+        typer.echo(f"{action} '{schema}' migrations: {rolled_back}")
