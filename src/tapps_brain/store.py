@@ -1827,6 +1827,94 @@ class MemoryStore:
         days = n if unit == "d" else n * 7 if unit == "w" else n * 30
         return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
+    def _apply_search_filters(
+        self,
+        results: list[MemoryEntry],
+        *,
+        tags: list[str] | None,
+        tier: str | None,
+        scope: str | None,
+        memory_group: str | None,
+        include_historical: bool,
+        as_of: str | None,
+    ) -> list[MemoryEntry]:
+        """Apply post-FTS attribute filters and temporal filtering.
+
+        Extracted from ``search()`` to reduce its cyclomatic complexity.
+        All filters are optional; unset parameters are skipped.
+        """
+        if tier is not None:
+            results = [r for r in results if r.tier == tier]
+        if scope is not None:
+            results = [r for r in results if r.scope == scope]
+        if memory_group is not None:
+            results = [r for r in results if r.memory_group == memory_group]
+        if tags:
+            tag_set = set(tags)
+            results = [r for r in results if tag_set.intersection(r.tags)]
+        # Temporal filtering (EPIC-004 + GitHub #29)
+        if not include_historical:
+            results = [r for r in results if r.is_temporally_valid(as_of)]
+        return results
+
+    def _append_group_memories(
+        self,
+        results: list[MemoryEntry],
+        query: str,
+        max_group_results: int,
+    ) -> None:
+        """Extend *results* in-place with Hive group-namespace matches (STORY-056.5).
+
+        Extracted from ``search()`` to reduce its cyclomatic complexity and nesting.
+        No-ops when ``self._groups`` is empty or ``self._hive_store`` is None.
+        """
+        if not self._groups or self._hive_store is None:
+            return
+        seen_keys = {r.key for r in results}
+        for group_name in self._groups:
+            try:
+                with start_span(
+                    SPAN_HIVE_SEARCH,
+                    {"hive.group": group_name, "hive.namespace": f"group:{group_name}"},
+                ):
+                    group_results = self._hive_store.search(
+                        query,
+                        namespaces=[f"group:{group_name}"],
+                        limit=max_group_results,
+                    )
+                for gr in group_results:
+                    gk = gr.get("key", "")
+                    if not gk or gk in seen_keys:
+                        continue
+                    seen_keys.add(gk)
+                    # Convert hive dict to MemoryEntry for uniform return
+                    try:
+                        results.append(
+                            MemoryEntry(
+                                key=gk,
+                                value=gr.get("value", ""),
+                                tier=gr.get("tier", "pattern"),
+                                confidence=gr.get("confidence", 0.5),
+                                source=gr.get("source", "agent"),
+                                source_agent=gr.get("source_agent", "unknown"),
+                                tags=gr.get("tags", []) if isinstance(gr.get("tags"), list) else [],
+                                agent_scope=f"group:{group_name}",
+                            )
+                        )
+                    except Exception:
+                        logger.warning(
+                            "group_search_entry_convert_failed",
+                            group=group_name,
+                            key=gk,
+                            exc_info=True,
+                        )
+            except Exception:
+                logger.warning(
+                    "group_search_failed",
+                    group=group_name,
+                    exc_info=True,
+                )
+
     def search(
         self,
         query: str,
@@ -1891,66 +1979,19 @@ class MemoryStore:
                 memory_class=memory_class,
             )
 
-            if tier is not None:
-                results = [r for r in results if r.tier == tier]
-            if scope is not None:
-                results = [r for r in results if r.scope == scope]
-            if memory_group is not None:
-                results = [r for r in results if r.memory_group == memory_group]
-            if tags:
-                tag_set = set(tags)
-                results = [r for r in results if tag_set.intersection(r.tags)]
-
-            # Temporal filtering (EPIC-004 + GitHub #29)
-            if not include_historical:
-                results = [r for r in results if r.is_temporally_valid(as_of)]
+            results = self._apply_search_filters(
+                results,
+                tags=tags,
+                tier=tier,
+                scope=scope,
+                memory_group=memory_group,
+                include_historical=include_historical,
+                as_of=as_of,
+            )
 
             # STORY-056.5: Group-aware recall — search group namespaces in Hive
-            if include_group_memories and self._groups and self._hive_store is not None:
-                _seen_keys = {r.key for r in results}
-                for _gn in self._groups:
-                    try:
-                        with start_span(
-                            SPAN_HIVE_SEARCH,
-                            {"hive.group": _gn, "hive.namespace": f"group:{_gn}"},
-                        ):
-                            group_results = self._hive_store.search(
-                                query,
-                                namespaces=[f"group:{_gn}"],
-                                limit=max_group_results,
-                            )
-                        for _gr in group_results:
-                            _gk = _gr.get("key", "")
-                            if _gk and _gk not in _seen_keys:
-                                _seen_keys.add(_gk)
-                                # Convert hive dict to MemoryEntry for uniform return
-                                try:
-                                    _ge = MemoryEntry(
-                                        key=_gk,
-                                        value=_gr.get("value", ""),
-                                        tier=_gr.get("tier", "pattern"),
-                                        confidence=_gr.get("confidence", 0.5),
-                                        source=_gr.get("source", "agent"),
-                                        source_agent=_gr.get("source_agent", "unknown"),
-                                        tags=_gr.get("tags", [])
-                                        if isinstance(_gr.get("tags"), list)
-                                        else [],
-                                        agent_scope=f"group:{_gn}",
-                                    )
-                                    results.append(_ge)
-                                except Exception:
-                                    logger.warning(
-                                        "group_search_entry_convert_failed",
-                                        group=_gn,
-                                        key=_gk,
-                                        exc_info=True,
-                                    )
-                    except Exception:
-                        logger.warning(
-                            "group_search_failed",
-                            group=_gn,
-                            exc_info=True,
-                        )
+            if include_group_memories:
+                self._append_group_memories(results, query, max_group_results)
 
             self._metrics.increment("store.search.results", len(results))
             _search_elapsed_ms = (time.monotonic() - _search_t0) * 1000.0
