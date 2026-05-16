@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import contextvars
 import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -58,6 +59,25 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _DEFAULT_PROFILE = "full"
+
+# ---------------------------------------------------------------------------
+# TAP-1833: in-process tools/list cache — 300 s TTL
+# ---------------------------------------------------------------------------
+# Key: resolved profile name. Value: (expires_at monotonic float, tool list).
+# Tools are registered at server startup and never change during process
+# lifetime; the 300 s TTL is a safety valve for future hot-reload scenarios.
+#
+# CPython dict read/write is GIL-protected, so no separate lock is needed
+# for the dict itself. Concurrent cache misses on the very first request may
+# double-compute; the second write is idempotent (same tool list) and harmless.
+_TOOLS_LIST_CACHE: dict[str, tuple[float, list[Any]]] = {}
+_TOOLS_LIST_CACHE_TTL: float = 300.0
+
+
+def clear_tools_list_cache() -> None:
+    """Flush the in-process tools/list cache.  For use in tests only."""
+    _TOOLS_LIST_CACHE.clear()
+
 
 # ---------------------------------------------------------------------------
 # STORY-073.4: module-level Prometheus counters (no per-agent-id cardinality)
@@ -188,20 +208,44 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
     # ------------------------------------------------------------------
 
     def _filtered_list_tools() -> list[Any]:
-        """Return tool list filtered to the caller's active profile."""
-        all_tools: list[Any] = list(_orig_list_tools())
+        """Return tool list filtered to the caller's active profile.
+
+        TAP-1833: result is cached per profile for ``_TOOLS_LIST_CACHE_TTL``
+        seconds (300 s default).  The tool registry is immutable for the
+        process lifetime; the TTL is a safety valve for future hot-reload
+        scenarios.  Cache invalidates automatically on container restart.
+        """
         profile: str = profile_contextvar.get() or default_profile
+        now = time.monotonic()
+
+        # --- TAP-1833: cache hit — return a copy so callers cannot mutate ---
+        cached = _TOOLS_LIST_CACHE.get(profile)
+        if cached is not None and now < cached[0]:
+            cached_tools = cached[1]
+            with _METRICS_LOCK:
+                _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
+                _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(cached_tools)
+            return list(cached_tools)
+
+        # --- Cache miss: build the list from the underlying registry ---
+        all_tools: list[Any] = list(_orig_list_tools())
+
         if profile == default_profile:
             # Fast path: no filtering for the default ("full") profile.
             visible_count = len(all_tools)
             with _METRICS_LOCK:
                 _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
                 _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
+            # Store in cache (concurrent miss → idempotent overwrite, same result).
+            _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, all_tools)
             return all_tools
         try:
             allowed: frozenset[str] = profile_registry.get(profile)
         except Exception:
             # Unknown profile — fail open for list_tools; return full list.
+            # Do NOT cache: the unknown profile may be a transient registration
+            # race; a subsequent call after the profile is registered should
+            # see the filtered view.
             logger.warning(
                 "tool_filter.list_tools.unknown_profile",
                 profile=profile,
@@ -216,6 +260,8 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
         with _METRICS_LOCK:
             _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
             _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
+        # Cache the filtered result for this profile.
+        _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
         return filtered
 
     # ------------------------------------------------------------------

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -376,3 +377,136 @@ class TestAsyncNativeReinforce:
         body = resp.json()
         assert body["reinforced_count"] == 3
         assert body["error_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# TAP-1833: tools/list warm-path cache latency
+# ---------------------------------------------------------------------------
+
+
+class TestToolsListCache:
+    """Verify the in-process tools/list cache (TAP-1833).
+
+    Uses the tool_filter layer directly — no HTTP round-trip needed to verify
+    the cache hit path.  The sub-50 ms threshold is generous relative to the
+    actual cost of a cache hit (< 0.1 ms) so CI timing variance cannot flap.
+    """
+
+    def setup_method(self) -> None:
+        """Clear cache state before each test."""
+        from tapps_brain.mcp_server.tool_filter import (
+            clear_tools_list_cache,
+            reset_profile_filter_counters,
+        )
+
+        clear_tools_list_cache()
+        reset_profile_filter_counters()
+
+    def test_tools_list_warm_under_50ms(self) -> None:
+        """Second tools/list call returns cached result well under 50 ms.
+
+        Acceptance criterion for TAP-1833: the warm-path cost collapses to
+        a list copy after the first call populates the in-process cache.
+        """
+        mcp = pytest.importorskip("mcp.server.fastmcp", reason="mcp extra not installed")
+        FastMCP = mcp.FastMCP
+
+        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
+        from tapps_brain.mcp_server.tool_filter import (
+            _TOOLS_LIST_CACHE,
+            clear_tools_list_cache,
+            install_tool_filter,
+        )
+
+        server = FastMCP("tap-1833-test")
+
+        @server.tool(description="ping")  # type: ignore[misc]
+        def ping(x: int) -> str:
+            return str(x)
+
+        @server.tool(description="echo")  # type: ignore[misc]
+        def echo(msg: str) -> str:
+            return msg
+
+        registry = ProfileRegistry()
+        clear_tools_list_cache()
+        install_tool_filter(server, profile_registry=registry)
+
+        # Cold call: populates cache.
+        cold_result = server._tool_manager.list_tools()
+        assert len(cold_result) == 2
+
+        # Cache must be populated after the first call.
+        assert "full" in _TOOLS_LIST_CACHE, "cache not populated after first call"
+
+        # Warm call: must be served from cache in < 50 ms.
+        start = time.monotonic()
+        warm_result = server._tool_manager.list_tools()
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        assert len(warm_result) == 2
+        assert elapsed_ms < 50.0, (
+            f"Warm tools/list took {elapsed_ms:.2f} ms — expected < 50 ms (TAP-1833)"
+        )
+
+    def test_tools_list_cache_expires_after_ttl(self) -> None:
+        """Cache entry is rebuilt after the TTL expires."""
+        mcp = pytest.importorskip("mcp.server.fastmcp", reason="mcp extra not installed")
+        FastMCP = mcp.FastMCP
+
+        from tapps_brain.mcp_server import tool_filter as _tf
+        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
+
+        server = FastMCP("tap-1833-expiry-test")
+
+        @server.tool(description="a")  # type: ignore[misc]
+        def tool_a() -> str:
+            return "a"
+
+        registry = ProfileRegistry()
+        _tf.clear_tools_list_cache()
+        _tf.install_tool_filter(server, profile_registry=registry)
+
+        # Populate cache.
+        server._tool_manager.list_tools()
+        assert "full" in _tf._TOOLS_LIST_CACHE
+
+        # Backdate the cache entry so it appears expired.
+        _old_expires, old_tools = _tf._TOOLS_LIST_CACHE["full"]
+        _tf._TOOLS_LIST_CACHE["full"] = (time.monotonic() - 1.0, old_tools)
+
+        # Next call should rebuild (expired TTL → cache miss path).
+        result = server._tool_manager.list_tools()
+        assert len(result) == 1
+
+        # Cache is refreshed with a new expiry in the future.
+        new_expires, _ = _tf._TOOLS_LIST_CACHE["full"]
+        assert new_expires > time.monotonic()
+
+    def test_tools_list_cache_returns_copy(self) -> None:
+        """Cache returns a list copy so callers cannot corrupt the cached state."""
+        mcp = pytest.importorskip("mcp.server.fastmcp", reason="mcp extra not installed")
+        FastMCP = mcp.FastMCP
+
+        from tapps_brain.mcp_server import tool_filter as _tf
+        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
+
+        server = FastMCP("tap-1833-copy-test")
+
+        @server.tool(description="b")  # type: ignore[misc]
+        def tool_b() -> str:
+            return "b"
+
+        registry = ProfileRegistry()
+        _tf.clear_tools_list_cache()
+        _tf.install_tool_filter(server, profile_registry=registry)
+
+        # Populate cache.
+        first = server._tool_manager.list_tools()
+
+        # Mutate the returned list — should NOT affect cached state.
+        first.clear()
+
+        # Subsequent call should still return the original tool list.
+        second = server._tool_manager.list_tools()
+        assert len(second) == 1, "Cache was corrupted by mutation of the returned list"
