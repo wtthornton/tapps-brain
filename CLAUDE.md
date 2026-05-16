@@ -394,10 +394,15 @@ This returns server info (version, checkers, config) and project context.
 `ralph-tester`, `ralph-coordinator`) should avoid duplicate bootstrap calls:
 
 - Always pass `force=False` (the default) — the tapps-mcp server caches the result per-process.
-- If `.ralph/.tapps-session-id` exists and is < 1 h old, skip `tapps_session_start` entirely
+- If `.tapps-mcp/.tapps-session-id` exists and is < 1 h old, skip `tapps_session_start` entirely
   and proceed directly (the primary Ralph agent already bootstrapped this loop).
-- If no `.ralph/` directory is present (ad-hoc non-Ralph sessions), call `tapps_session_start()`
-  normally — no sentinel file to read.
+- If no `.tapps-mcp/.tapps-session-id` file is present (ad-hoc non-Ralph sessions, or first loop),
+  call `tapps_session_start()` normally — then write the sentinel:
+  ```bash
+  mkdir -p .tapps-mcp && date -u +%Y-%m-%dT%H:%M:%SZ > .tapps-mcp/.tapps-session-id
+  ```
+- The sentinel is written by the primary Ralph agent after its own `tapps_session_start` call, so
+  sub-agents spawned later in the same loop will find it and skip their own bootstrap.
 
 Each `tapps_session_start` takes ~140 ms; 5 sub-agents × 140 ms = 700 ms per loop saved when
 the sentinel pattern is honoured.
