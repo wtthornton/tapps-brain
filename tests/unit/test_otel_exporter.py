@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -1513,3 +1514,282 @@ class TestShouldCaptureContent:
 
         result = should_capture_content(OTelConfig())
         assert isinstance(result, bool)
+
+
+# ---------------------------------------------------------------------------
+# TAP-1814: OTelConfig.export_timeout + circuit breaker
+# ---------------------------------------------------------------------------
+
+
+class TestOTelConfigExportTimeout:
+    """TAP-1814: OTelConfig carries export_timeout from env var."""
+
+    def test_default_export_timeout(self) -> None:
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig()
+        assert cfg.export_timeout == 5.0
+
+    def test_from_env_default_timeout(self, monkeypatch: Any) -> None:
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_TIMEOUT", raising=False)
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig.from_env()
+        assert cfg.export_timeout == 5.0
+
+    def test_from_env_custom_timeout(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "2.5")
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig.from_env()
+        assert cfg.export_timeout == 2.5
+
+    def test_from_env_invalid_timeout_falls_back_to_default(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "not-a-float")
+        from tapps_brain.otel_exporter import OTelConfig
+
+        cfg = OTelConfig.from_env()
+        assert cfg.export_timeout == 5.0
+
+
+class TestCircuitBreakerSpanExporter:
+    """TAP-1814: _CircuitBreakerSpanExporter opens after N consecutive failures."""
+
+    def _make_mock_result(self, success: bool) -> Any:
+        """Return a mock SpanExportResult value."""
+        mock_result = MagicMock()
+        mock_result.__eq__ = lambda self, other: success == (other == self)  # type: ignore[method-assign]
+        return mock_result
+
+    def test_passes_through_on_success(self) -> None:
+        from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
+
+        mock_inner = MagicMock()
+        # Simulate SUCCESS by patching SpanExportResult
+        with patch("tapps_brain.otel_exporter._CB_MAX_FAILURES", 5):
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+            with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+                mock_res.SUCCESS = "SUCCESS"
+                mock_res.FAILURE = "FAILURE"
+                mock_inner.export.return_value = "SUCCESS"
+                result = cb.export([])
+        assert result == "SUCCESS"
+
+    def test_circuit_opens_after_max_failures(self) -> None:
+        """After _CB_MAX_FAILURES consecutive failures the circuit is open."""
+        from tapps_brain.otel_exporter import (
+            _CB_MAX_FAILURES,
+            _CircuitBreakerSpanExporter,
+        )
+
+        mock_inner = MagicMock()
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+            mock_inner.export.return_value = "FAILURE"
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+
+            # Exhaust the failure budget.
+            for _ in range(_CB_MAX_FAILURES):
+                cb.export([])
+
+            # Circuit should now be open; inner exporter must NOT be called again.
+            mock_inner.export.reset_mock()
+            result = cb.export([])
+
+        assert result == "FAILURE"
+        mock_inner.export.assert_not_called()
+
+    def test_circuit_resets_on_success(self) -> None:
+        """A success resets the consecutive failure counter."""
+        from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
+
+        mock_inner = MagicMock()
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+            # Two failures, then a success.
+            mock_inner.export.side_effect = ["FAILURE", "FAILURE", "SUCCESS"]
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+            cb.export([])
+            cb.export([])
+            cb.export([])  # success — resets counter
+
+            # Counter should be reset; circuit still closed.
+            assert cb._consecutive_failures == 0
+            assert cb._open_until is None
+
+    def test_circuit_reopens_after_open_duration_elapses(self) -> None:
+        """After _CB_OPEN_DURATION seconds the circuit half-opens and retries."""
+        from tapps_brain.otel_exporter import (
+            _CB_MAX_FAILURES,
+            _CircuitBreakerSpanExporter,
+        )
+
+        mock_inner = MagicMock()
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+            mock_inner.export.return_value = "FAILURE"
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+
+            # Trip the breaker.
+            for _ in range(_CB_MAX_FAILURES):
+                cb.export([])
+
+            # Simulate the open window elapsing by back-dating _open_until.
+            with cb._lock:
+                cb._open_until = time.monotonic() - 1.0  # already expired
+
+            mock_inner.export.reset_mock()
+            # Half-open: the next export tries the inner exporter.
+            cb.export([])
+
+        mock_inner.export.assert_called_once()
+
+    def test_export_exception_counts_as_failure(self) -> None:
+        """An exception from the inner exporter counts as a failure."""
+        from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
+
+        mock_inner = MagicMock()
+        mock_inner.export.side_effect = ConnectionRefusedError("collector down")
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+            result = cb.export([])
+
+        assert result == "FAILURE"
+        assert cb._consecutive_failures == 1
+
+    def test_shutdown_delegates_to_inner(self) -> None:
+        from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
+
+        mock_inner = MagicMock()
+        cb = _CircuitBreakerSpanExporter(mock_inner)
+        cb.shutdown()
+        mock_inner.shutdown.assert_called_once()
+
+    def test_export_returns_failure_within_timeout(self) -> None:
+        """Non-responsive socket simulation: export returns FAILURE without blocking.
+
+        Injects a mock inner exporter that raises TimeoutError (simulating what an
+        OTLPSpanExporter does when the collector is unreachable and the timeout fires).
+        Asserts the circuit breaker returns FAILURE in well under 6 s.
+        """
+        import socketserver
+        import threading as _threading
+
+        from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
+
+        # Create a TCP server that accepts connections but never responds.
+        class _SilentHandler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                # Block forever without sending anything.
+                try:
+                    self.request.recv(4096)
+                except Exception:
+                    pass
+
+        server = socketserver.TCPServer(("127.0.0.1", 0), _SilentHandler)
+        server.timeout = 0.05
+        port = server.server_address[1]
+
+        server_thread = _threading.Thread(target=server.handle_request, daemon=True)
+        server_thread.start()
+
+        # Inner mock: raises TimeoutError after ~0.01 s (simulates SDK timeout).
+        mock_inner = MagicMock()
+
+        def _slow_export(_spans: Any) -> Any:
+            raise TimeoutError("simulated connect timeout")
+
+        mock_inner.export.side_effect = _slow_export
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+            start = time.monotonic()
+            result = cb.export([MagicMock()])
+            elapsed = time.monotonic() - start
+
+        server.server_close()
+
+        assert result == "FAILURE"
+        assert elapsed < 6.0, f"export took {elapsed:.2f} s — expected < 6 s"
+
+    def test_circuit_open_logs_warning(self, caplog: Any) -> None:
+        """Opening the circuit emits a WARN log."""
+        from tapps_brain.otel_exporter import (
+            _CB_MAX_FAILURES,
+            _CircuitBreakerSpanExporter,
+        )
+
+        mock_inner = MagicMock()
+
+        with patch("opentelemetry.sdk.trace.export.SpanExportResult") as mock_res:
+            mock_res.SUCCESS = "SUCCESS"
+            mock_res.FAILURE = "FAILURE"
+            mock_inner.export.return_value = "FAILURE"
+
+            cb = _CircuitBreakerSpanExporter(mock_inner)
+
+            with caplog.at_level(logging.WARNING, logger="tapps_brain.otel_exporter"):
+                for _ in range(_CB_MAX_FAILURES):
+                    cb.export([])
+
+        assert any("circuit breaker OPEN" in r.message for r in caplog.records)
+
+
+class TestBootstrapTracerWithTimeout:
+    """TAP-1814: bootstrap_tracer wires the circuit-breaking exporter when SDK+endpoint set."""
+
+    def test_bootstrap_tracer_without_sdk_returns_none_or_tracer(self) -> None:
+        """Without SDK, bootstrap_tracer returns None (or API no-op tracer)."""
+        from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+        # Patch away SDK so _configure_otlp_provider is never called.
+        with patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=False):
+            # bootstrap_tracer should not raise.
+            bootstrap_tracer(OTelConfig(enabled=True))
+
+    def test_configure_otlp_provider_not_called_without_endpoint(
+        self, monkeypatch: Any
+    ) -> None:
+        """When OTEL_EXPORTER_OTLP_ENDPOINT is unset, provider is not configured."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+
+        with (
+            patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True),
+            patch("tapps_brain.otel_exporter._configure_otlp_provider") as mock_cfg,
+        ):
+            from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+            bootstrap_tracer(OTelConfig(enabled=True))
+
+        mock_cfg.assert_not_called()
+
+    def test_configure_otlp_provider_called_with_endpoint(self, monkeypatch: Any) -> None:
+        """When SDK and endpoint are available, _configure_otlp_provider is invoked."""
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+
+        with (
+            patch("tapps_brain.otel_exporter._has_otel_sdk", return_value=True),
+            patch("tapps_brain.otel_exporter._configure_otlp_provider") as mock_cfg,
+        ):
+            from tapps_brain.otel_exporter import OTelConfig, bootstrap_tracer
+
+            cfg = OTelConfig(enabled=True, export_timeout=3.0)
+            bootstrap_tracer(cfg)
+
+        mock_cfg.assert_called_once_with(cfg, "http://localhost:4318")

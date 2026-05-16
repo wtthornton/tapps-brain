@@ -4,6 +4,67 @@ tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics
 
 ---
 
+## OTLP export timeout and circuit breaker (TAP-1814)
+
+OTel is designed to **fail open** — a blocked exporter must never stall the
+application.  tapps-brain enforces this with two complementary mechanisms.
+
+### Export timeout
+
+Every OTLP client constructor (span exporter, metric exporter) receives a
+configurable `timeout` so that a connect-hang from an unreachable collector
+returns quickly.
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `5.0` | Export timeout **in seconds**. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset)_ | OTLP collector endpoint URL. When unset no OTLP exporter is created. |
+
+The value is read by `OTelConfig.from_env()` and propagated to every OTLP
+client constructor.  Set it lower (e.g. `2.0`) in high-traffic environments
+where a dead collector should be detected quickly.
+
+### Circuit breaker
+
+`_CircuitBreakerSpanExporter` wraps the OTLP span exporter.  After **5
+consecutive export failures** the circuit **opens** for **30 seconds**.
+While open, every `export()` call returns `SpanExportResult.FAILURE`
+immediately — no I/O, no thread stall.
+
+After the 30-second window elapses the circuit transitions to **half-open**:
+the next export is tried against the real collector.  Success resets the
+failure counter; another failure reopens the circuit.
+
+**Metric:** each time the circuit opens, `otel.export_failures_total{reason="circuit_open"}` is incremented via the in-process OTel Metrics API.
+
+**Logging:** the circuit emits a `WARNING` log via `tapps_brain.otel_exporter` when it opens:
+
+```
+OTel circuit breaker OPEN after 5 consecutive failures; will retry in 30 s
+```
+
+While open, each dropped batch logs:
+
+```
+OTel circuit breaker OPEN; dropping N spans (reopens in Xs)
+```
+
+### How bootstrap_tracer wires everything
+
+`bootstrap_tracer(config)` is the single configuration entry point.  When
+`opentelemetry-sdk` is installed **and** `OTEL_EXPORTER_OTLP_ENDPOINT` is set,
+it calls `_configure_otlp_provider(cfg, endpoint)` which:
+
+1. Creates `OTLPSpanExporter(endpoint=..., timeout=cfg.export_timeout)`.
+2. Wraps it in `_CircuitBreakerSpanExporter`.
+3. Registers a `BatchSpanProcessor` on a fresh `TracerProvider`.
+4. Sets the provider as the global OTel provider.
+
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is unset, no OTLP exporter is created and
+`trace.get_tracer()` returns a no-op tracer.
+
+---
+
 ## HTTP probe endpoints (liveness / readiness)
 
 The HTTP adapter (EPIC-060) exposes two lightweight probe endpoints designed
