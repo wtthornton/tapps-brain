@@ -1037,7 +1037,7 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa:
 # These are probe / scrape endpoints that must remain reachable from any origin
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/ready", "/metrics"})  # type: ignore[no-redef]  # noqa: F811
+_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset({"/", "/health", "/healthz", "/ready", "/metrics"})  # type: ignore[no-redef]  # noqa: F811
 
 
 class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa: F811
@@ -1052,7 +1052,8 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  
 
     * ``/`` — root liveness check
     * ``/health`` — liveness probe
-    * ``/ready`` — readiness probe
+    * ``/healthz`` — readiness probe (DB-checked; used by Docker healthcheck)
+    * ``/ready`` — readiness probe (verbose; includes pool stats)
     * ``/metrics`` — Prometheus scrape endpoint
 
     Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
@@ -1502,6 +1503,21 @@ def create_app(
         return JSONResponse(
             status_code=200,
             content={"status": "ok", "service": _SERVICE_NAME, "version": cfg.version},
+        )
+
+    @app.get("/healthz")
+    async def _healthz() -> JSONResponse:
+        """DB-checked readiness probe used by the Docker healthcheck.
+
+        Returns 200 only after a successful Postgres connection and pgvector
+        schema check (via ``_probe_db``).  Returns 503 when the DB is
+        unreachable or not yet migrated.  Unauthenticated and Origin-exempt
+        so load-balancers and ``docker compose ps`` can reach it freely.
+        """
+        is_ready, _migration_version, detail = _probe_db(cfg.dsn)
+        return JSONResponse(
+            status_code=200 if is_ready else 503,
+            content={"status": "ok" if is_ready else "degraded", "detail": detail},
         )
 
     @app.get("/ready")

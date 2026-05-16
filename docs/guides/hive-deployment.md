@@ -24,6 +24,7 @@ make hive-deploy                        # OR, directly:
 # 3. Verify
 docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
 curl http://localhost:8080/health       # {"status":"ok","service":"tapps-brain",...}
+curl http://localhost:8080/healthz      # {"status":"ok","detail":"ready (migration_version=N)"} — DB-checked
 ```
 
 The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tapps`: applies Hive + private + federation schema, creates the least-privilege `tapps_runtime` role, grants DML on all tables, sets `TAPPS_BRAIN_RUNTIME_PASSWORD` on the role, then exits. The `tapps-brain-http` container then starts and connects as `tapps_runtime` (no superuser, no `BYPASSRLS`, no table ownership) — the privileged-role audit guard stays on.

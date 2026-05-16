@@ -132,16 +132,13 @@ services:
       tapps-brain-migrate:
         condition: service_completed_successfully
     healthcheck:
-      # Public HTTP data plane + /mcp/ on :8080 is the only externally-
-      # reachable surface that matters for dependent services. /health on
-      # :8090 now requires admin auth (2026 hardening), so it's not a clean
-      # probe from inside the container.
-      test:
-        - "CMD-SHELL"
-        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""
-      interval: 10s
+      # /healthz returns 200 only after a successful DB connection and schema
+      # check (TAP-1835). This ensures `depends_on: condition: service_healthy`
+      # chains wait until the brain is truly ready to serve, not just started.
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz"]
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 20s
     restart: unless-stopped
 
