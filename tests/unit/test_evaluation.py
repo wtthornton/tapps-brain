@@ -21,6 +21,7 @@ from tapps_brain.evaluation import (
     EvalThresholds,
     JudgeResult,
     OpenAIJudge,
+    _pin_seeds,
     dcg_at_k,
     evaluate,
     evaluate_with_judge,
@@ -371,3 +372,53 @@ def test_evaluate_with_judge_skips(tmp_path: Path) -> None:
         assert isinstance(empty.per_query, list)
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# _pin_seeds determinism tests (TAP-1817)
+# ---------------------------------------------------------------------------
+
+
+def test_pin_seeds_does_not_raise_without_optional_deps() -> None:
+    """_pin_seeds must not raise ImportError when torch is absent.
+
+    Simulates an environment where torch is not installed by blocking it in
+    sys.modules (setting to None makes ``import torch`` raise ModuleNotFoundError,
+    a subclass of ImportError). _pin_seeds must swallow it and seed stdlib random.
+    """
+    import sys
+    from unittest.mock import patch
+
+    with patch.dict(sys.modules, {"torch": None}):
+        _pin_seeds(0)
+        _pin_seeds(42)
+
+
+def test_pin_seeds_consolidation_sweep_idempotent() -> None:
+    """run_consolidation_threshold_sweep returns byte-identical rows on repeated calls.
+
+    Runs the harness twice with the same seed and asserts the structural output
+    (rows, counts, weights) is identical — confirming that seed pinning prevents
+    any non-determinism from propagating through the computation.
+    """
+    e1 = make_entry(key="s-a", value="python data science", tags=["ml"])
+    e2 = make_entry(key="s-b", value="python data science ml", tags=["ml"])
+    e3 = make_entry(key="s-c", value="unrelated note about lunch", tags=[])
+
+    _pin_seeds(0)
+    rep1 = run_consolidation_threshold_sweep(
+        [e1, e2, e3], thresholds=[0.5, 0.7, 0.9], min_group_size=2, active_only=False
+    )
+
+    _pin_seeds(0)
+    rep2 = run_consolidation_threshold_sweep(
+        [e1, e2, e3], thresholds=[0.5, 0.7, 0.9], min_group_size=2, active_only=False
+    )
+
+    # Metric rows must be byte-identical across both runs
+    assert rep1.rows == rep2.rows
+    assert rep1.source_entry_count == rep2.source_entry_count
+    assert rep1.analyzed_entry_count == rep2.analyzed_entry_count
+    assert rep1.tag_weight == rep2.tag_weight
+    assert rep1.text_weight == rep2.text_weight
+    assert rep1.active_only == rep2.active_only
