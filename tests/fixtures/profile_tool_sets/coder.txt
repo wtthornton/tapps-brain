@@ -4,6 +4,7 @@ brain_get_neighbors
 brain_learn_failure
 brain_learn_success
 brain_recall
+brain_record_events_batch
 brain_remember
 brain_status
 feedback_gap

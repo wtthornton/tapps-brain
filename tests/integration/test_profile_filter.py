@@ -118,17 +118,17 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_59_tools(self) -> None:
-        """Golden file for 'full' must list exactly 59 tools."""
-        assert len(_load_golden("full")) == 59
+    def test_full_golden_has_60_tools(self) -> None:
+        """Golden file for 'full' must list exactly 60 tools (TAP-1973: +1)."""
+        assert len(_load_golden("full")) == 60
 
-    def test_operator_golden_has_72_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 72 tools."""
-        assert len(_load_golden("operator")) == 72
+    def test_operator_golden_has_73_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 73 tools (TAP-1973: +1)."""
+        assert len(_load_golden("operator")) == 73
 
-    def test_coder_golden_has_17_tools(self) -> None:
-        """Golden file for 'coder' must list exactly 17 tools."""
-        assert len(_load_golden("coder")) == 17
+    def test_coder_golden_has_18_tools(self) -> None:
+        """Golden file for 'coder' must list exactly 18 tools (TAP-1973: +1)."""
+        assert len(_load_golden("coder")) == 18
 
     def test_reviewer_golden_has_8_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 8 tools."""
@@ -266,7 +266,7 @@ class TestProfileFilterIntegration:
         deferred = registry.get_deferred(profile)
         expected_visible = golden - deferred
 
-        # For 'operator', supply all 72 tools as the registered set.
+        # For 'operator', supply all registered tools as the set (73 post-TAP-1973).
         if profile == "operator":
             all_names = list(registry.get("operator"))
         else:
@@ -613,14 +613,14 @@ class TestEndToEndProfileFiltering:
 
     @pytest.mark.asyncio
     async def test_no_profile_returns_full_tool_set(self, _mcp_server) -> None:
-        """No REQUEST_PROFILE (None) → same 59-tool surface as 'full' profile."""
+        """No REQUEST_PROFILE (None) → same 60-tool surface as 'full' profile (TAP-1973)."""
         from tapps_brain.mcp_server import REQUEST_PROFILE
 
         # Ensure contextvar is None (simulates no X-Brain-Profile header)
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 59
+            assert len(tools) == 60
         finally:
             REQUEST_PROFILE.reset(token)
 

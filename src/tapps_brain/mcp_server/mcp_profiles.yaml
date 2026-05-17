@@ -8,12 +8,12 @@
 # adding @mcp.tool decorators, otherwise the server will refuse to start.
 #
 # Profile summary:
-#   full        (59 tools, 8 eager) — all standard tools; default fallback
-#   operator    (72 tools, 8 eager) — full + 13 operator-only maintenance tools
-#   coder       (17 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
+#   full        (60 tools, 8 eager) — all standard tools; default fallback
+#   operator    (73 tools, 8 eager) — full + 13 operator-only maintenance tools
+#   coder       (18 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
 #   reviewer    ( 8 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (10 tools) — TAP-1579 canonical agent-brain consumer surface
+#   agent_brain (11 tools) — TAP-1579 canonical agent-brain consumer surface
 #                             (brain_* facade only; no memory_*/hive_*/feedback_*)
 #
 # Canonical surface split (TAP-1579):
@@ -36,7 +36,7 @@
 profiles:
   # --------------------------------------------------------------------------
   # full — all standard tools (default fallback, backwards-compatible)
-  # 59 tools total: 8 eager daily drivers + 51 deferred
+  # 60 tools total: 8 eager daily drivers + 52 deferred (TAP-1973: +brain_record_events_batch)
   #
   # Daily-driver budget (8) — eager catalog returned by `tools/list` when no
   # Tool Search BETA header is present. Picked for highest call frequency in
@@ -75,6 +75,8 @@ profiles:
       - name: brain_learn_success
         defer_loading: true
       - name: brain_record_event
+        defer_loading: true
+      - name: brain_record_events_batch
         defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
@@ -165,7 +167,7 @@ profiles:
 
   # --------------------------------------------------------------------------
   # operator — all tools (standard + operator-only maintenance)
-  # 72 tools total: 8 eager daily drivers + 64 deferred (51 standard + 13 admin)
+  # 73 tools total: 8 eager daily drivers + 65 deferred (52 standard + 13 admin)
   # --------------------------------------------------------------------------
   operator:
     description: >
@@ -200,6 +202,8 @@ profiles:
       - name: brain_learn_success
         defer_loading: true
       - name: brain_record_event
+        defer_loading: true
+      - name: brain_record_events_batch
         defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
@@ -316,8 +320,8 @@ profiles:
         defer_loading: true
 
   # --------------------------------------------------------------------------
-  # coder — repo-embedded coding agent (17 tools)
-  # 6 facade + 4 hook-callable + 3 quality loop + 4 cross-repo/graph (EPIC-076 KG)
+  # coder — repo-embedded coding agent (18 tools)
+  # 6 facade + 4 hook-callable + 3 quality loop + 5 cross-repo/graph (EPIC-076 KG + TAP-1973 batch)
   # --------------------------------------------------------------------------
   coder:
     description: >
@@ -342,11 +346,12 @@ profiles:
       - memory_reinforce
       - feedback_rate
       - feedback_gap
-      # Cross-repo + graph (4) — Hive and relation lookups + KG tools
+      # Cross-repo + graph (5) — Hive and relation lookups + KG tools
       - hive_search
       - memory_find_related
       - brain_get_neighbors
       - brain_explain_connection
+      - brain_record_events_batch
 
   # --------------------------------------------------------------------------
   # reviewer — read-only PR/code review agents (8 tools)
@@ -382,7 +387,7 @@ profiles:
       - memory_supersede
 
   # --------------------------------------------------------------------------
-  # agent_brain — canonical AgentBrain consumer surface (10 tools) — TAP-1579
+  # agent_brain — canonical AgentBrain consumer surface (11 tools) — TAP-1579
   # Exposes only the `brain_*` facade. Agents using the AgentBrain class never
   # need the low-level `memory_*`, `hive_*`, `feedback_*`, `agent_*`, or
   # `maintenance_*` tools — hiding them reduces context bloat and enforces the
@@ -404,6 +409,7 @@ profiles:
       - brain_learn_success
       - brain_recall
       - brain_record_event
+      - brain_record_events_batch
       - brain_record_feedback
       - brain_remember
       - brain_status
