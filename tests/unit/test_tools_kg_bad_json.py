@@ -277,3 +277,104 @@ class TestBrainGetNeighborsBadJson:
             assert body == {"neighbors": [], "entity_ids": []}
             svc.get_neighbors.assert_called_once()
             assert svc.get_neighbors.call_args.kwargs["entity_ids"] == []
+
+
+# ---------------------------------------------------------------------------
+# brain_record_feedback wrapper — details_json decode failure (TAP-1969)
+# ---------------------------------------------------------------------------
+
+
+class TestBrainRecordFeedbackBadJson:
+    def test_bad_details_json_on_memory_path_returns_envelope(
+        self, mcp: Any, fake_ctx: ToolContext
+    ) -> None:
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        # The memory path is reached when `edge_id` is not set.
+        with (
+            patch("tapps_brain.mcp_server.tools_kg.kg_service"),
+            patch("tapps_brain.services.feedback_service.feedback_record") as fb_record,
+        ):
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_record_feedback")
+            body = json.loads(
+                tool.fn(
+                    feedback_type="recall_rated",
+                    entry_key="some-key",
+                    details_json="{bad json}",
+                )
+            )
+            assert body["error"] == "bad_json"
+            assert body["field"] == "details_json"
+            assert body["detail"]
+            # No feedback recorded.
+            fb_record.assert_not_called()
+
+    def test_bad_details_json_on_edge_path_short_circuits(
+        self, mcp: Any, fake_ctx: ToolContext
+    ) -> None:
+        """Even with edge_id set, malformed details_json fails fast — no KG write."""
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_record_feedback")
+            body = json.loads(
+                tool.fn(
+                    feedback_type="edge_helpful",
+                    edge_id="11111111-1111-1111-1111-111111111111",
+                    details_json="[1, 2, 3]",
+                )
+            )
+            assert body == {
+                "error": "bad_json",
+                "field": "details_json",
+                "detail": "expected JSON object, got list",
+            }
+            svc.record_kg_feedback.assert_not_called()
+
+    def test_empty_details_json_proceeds_normally(self, mcp: Any, fake_ctx: ToolContext) -> None:
+        """Back-compat: empty string and ``{}`` still route to the service layer."""
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with (
+            patch("tapps_brain.mcp_server.tools_kg.kg_service"),
+            patch("tapps_brain.services.feedback_service.feedback_record") as fb_record,
+        ):
+            fb_record.return_value = {"status": "recorded", "event": {}}
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_record_feedback")
+            body = json.loads(
+                tool.fn(
+                    feedback_type="recall_rated",
+                    entry_key="some-key",
+                    details_json="",
+                )
+            )
+            assert body == {
+                "recorded": True,
+                "feedback_type": "recall_rated",
+                "edge_id": None,
+                "entry_key": "some-key",
+            }
+            fb_record.assert_called_once()
+
+    def test_valid_details_json_proceeds_normally(self, mcp: Any, fake_ctx: ToolContext) -> None:
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with (
+            patch("tapps_brain.mcp_server.tools_kg.kg_service"),
+            patch("tapps_brain.services.feedback_service.feedback_record") as fb_record,
+        ):
+            fb_record.return_value = {"status": "recorded", "event": {}}
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_record_feedback")
+            body = json.loads(
+                tool.fn(
+                    feedback_type="recall_rated",
+                    entry_key="some-key",
+                    details_json='{"note": "ok"}',
+                )
+            )
+            assert body["recorded"] is True
+            assert fb_record.call_args.kwargs["details_json"] == '{"note": "ok"}'
