@@ -275,6 +275,39 @@ guarantee the recall happens, add the SessionStart hook documented in
 existing Ralph / TappsMCP hooks and does not require secrets in the hook
 script (it uses the MCP session that `.mcp.json` already opens).
 
+### 6c. (Optional) Install the tapps-brain Claude Code skill
+
+For agents working on **this repo**, the skill at
+[`.claude/skills/tapps-brain/SKILL.md`](../../.claude/skills/tapps-brain/SKILL.md)
+is auto-discovered by Claude Code — no action needed.
+
+For agents working on **other repos** that consume the deployed brain,
+install the skill once so the harness can trigger it on recall / remember
+keywords. Two install paths:
+
+```bash
+# 1. Project-scoped (recommended for repo-specific behavioural rules) —
+#    copy into the consumer repo's .claude/skills/ tree:
+mkdir -p .claude/skills/tapps-brain
+curl -fsSL https://raw.githubusercontent.com/wtthornton/tapps-brain/main/.claude/skills/tapps-brain/SKILL.md \
+     -o .claude/skills/tapps-brain/SKILL.md
+git add .claude/skills/tapps-brain/SKILL.md
+```
+
+```bash
+# 2. User-scoped (one install, every repo for this user):
+mkdir -p ~/.claude/skills/tapps-brain
+curl -fsSL https://raw.githubusercontent.com/wtthornton/tapps-brain/main/.claude/skills/tapps-brain/SKILL.md \
+     -o ~/.claude/skills/tapps-brain/SKILL.md
+```
+
+The skill is a **thin trigger** (~80 lines) — it points back at
+[`llm-brain-guide.md`](llm-brain-guide.md), [`errors.md`](errors.md), and
+the AgentForge integration guide rather than restating them. It is
+semver-tagged (`version: "3.19.0"`) so consumers can check whether the
+locally-installed skill matches the deployed brain version. Re-run the
+curl command after a tapps-brain release to refresh.
+
 ### 7. Restart the MCP client
 
 Launch Claude Code from a shell where `direnv` has loaded `.env` (i.e.
