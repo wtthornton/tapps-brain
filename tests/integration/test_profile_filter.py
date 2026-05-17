@@ -253,12 +253,20 @@ class TestProfileFilterIntegration:
 
     @pytest.mark.parametrize("profile", _ALL_PROFILES)
     def test_list_tools_returns_exact_golden_set(self, profile: str) -> None:
-        """list_tools() with a given profile must return exactly the golden tool set."""
+        """list_tools() with a given profile must return the golden tool set
+        minus any tools annotated ``defer_loading: true`` (TAP-1985).
+
+        The golden file represents the *callable* surface for each profile;
+        deferred tools are still callable but are hidden from the default
+        ``tools/list`` response to keep the eager catalog small. We compute the
+        expected visible set as ``golden - deferred``.
+        """
         registry = ProfileRegistry()
         golden = _load_golden(profile)
+        deferred = registry.get_deferred(profile)
+        expected_visible = golden - deferred
 
-        # The 'full' profile is the filter's fast-path default.
-        # For 'operator', supply all 68 tools as the registered set.
+        # For 'operator', supply all 72 tools as the registered set.
         if profile == "operator":
             all_names = list(registry.get("operator"))
         else:
@@ -278,16 +286,22 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         actual = {t.name for t in result}
-        assert actual == golden, (
+        assert actual == expected_visible, (
             f"Profile '{profile}': filter returned unexpected tools.\n"
-            f"  Extra (returned but not in golden): {sorted(actual - golden)}\n"
-            f"  Missing (in golden but not returned): {sorted(golden - actual)}"
+            f"  Extra (returned but not expected): {sorted(actual - expected_visible)}\n"
+            f"  Missing (expected but not returned): {sorted(expected_visible - actual)}"
         )
 
-    def test_no_profile_header_returns_full_set(self) -> None:
-        """No profile (contextvar None) → same 55-tool surface as 'full'."""
+    def test_no_profile_header_returns_eager_full_set(self) -> None:
+        """No profile (contextvar None) → 8 eager tools from `full` (TAP-1985).
+
+        The full callable surface remains 59 (callable via tools/call), but
+        51 of those carry `defer_loading: true` and are hidden from the
+        default tools/list response.
+        """
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
+        eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_no_profile", default=None
@@ -297,8 +311,8 @@ class TestProfileFilterIntegration:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 59
+        assert {t.name for t in result} == eager_full
+        assert len(result) == 8
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -483,11 +497,16 @@ class TestBackwardsCompat:
             if env_backup is not None:
                 os.environ["TAPPS_BRAIN_DEFAULT_PROFILE"] = env_backup
 
-    def test_no_header_list_tools_returns_59_tools(self) -> None:
-        """No profile header → list_tools returns exactly 59 tools (same as 'full')."""
+    def test_no_header_list_tools_returns_8_eager_tools(self) -> None:
+        """No profile header → list_tools returns 8 eager tools (TAP-1985).
+
+        Same surface as explicit 'full': the callable set is still 59, but
+        51 are deferred and hidden from the default tools/list payload.
+        """
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 59
+        assert len(full_tools) == 59  # callable surface unchanged
+        eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -497,8 +516,8 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 59
-        assert {t.name for t in result} == registry.get("full")
+        assert len(result) == 8
+        assert {t.name for t in result} == eager_full
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
         """Explicit 'full' header must produce an identical result to no header."""

@@ -12,11 +12,29 @@ ProfileRegistry(config_path=None)
     Load profiles from *config_path* (or the bundled default).
 ProfileRegistry.get(name) -> frozenset[str]
     Return the tool names for profile *name*.  Raises ``UnknownProfileError``.
+ProfileRegistry.get_deferred(name) -> frozenset[str]
+    Return the subset of tools in profile *name* marked with
+    ``defer_loading: true`` in the YAML (TAP-1985).  Deferred tools remain
+    callable; they are hidden from the default ``tools/list`` response so the
+    eager catalog stays within the per-server budget (parent epic TAP-1983).
+    Returns an empty frozenset for profiles with no deferred entries.  Raises
+    ``UnknownProfileError`` for unknown *name*.
 ProfileRegistry.profiles -> list[str]
     Sorted list of known profile names.
 ProfileRegistry.validate_against(known_tools)
     Check every YAML-listed tool name exists in *known_tools*.  Raise
     ``ValueError`` on drift so the server fails fast at startup.
+
+YAML tool-entry shape (TAP-1985)
+--------------------------------
+Each entry in ``profiles.<name>.tools`` is either:
+
+* a plain string — eager (visible in ``tools/list``); or
+* a mapping ``{name: <str>, defer_loading: <bool>}`` — when
+  ``defer_loading: true``, the tool is registered and callable but omitted
+  from the default ``tools/list`` response.
+
+The two forms can be mixed within a single profile.
 """
 
 from __future__ import annotations
@@ -65,9 +83,42 @@ class ProfileRegistry:
         raw = self._read(config_path)
         data: dict[str, Any] = yaml.safe_load(raw) or {}
         self._profiles: dict[str, frozenset[str]] = {}
+        self._deferred: dict[str, frozenset[str]] = {}
         for name, conf in data.get("profiles", {}).items():
-            tools: list[str] = conf.get("tools") or []
-            self._profiles[name] = frozenset(tools)
+            tool_names, deferred_names = self._parse_tool_entries(name, conf.get("tools") or [])
+            self._profiles[name] = frozenset(tool_names)
+            self._deferred[name] = frozenset(deferred_names)
+
+    @staticmethod
+    def _parse_tool_entries(profile_name: str, entries: list[Any]) -> tuple[list[str], list[str]]:
+        """Split *entries* into (all_tool_names, deferred_tool_names).
+
+        Accepts mixed plain-string and ``{name, defer_loading}`` dict forms
+        (TAP-1985). Raises ``ValueError`` on malformed entries so misconfigured
+        YAML fails fast at startup rather than producing a silently-wrong
+        catalog.
+        """
+        all_names: list[str] = []
+        deferred: list[str] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                all_names.append(entry)
+                continue
+            if isinstance(entry, dict):
+                name = entry.get("name")
+                if not isinstance(name, str) or not name:
+                    raise ValueError(
+                        f"profile {profile_name!r}: tool entry missing 'name': {entry!r}"
+                    )
+                all_names.append(name)
+                if bool(entry.get("defer_loading", False)):
+                    deferred.append(name)
+                continue
+            raise ValueError(
+                f"profile {profile_name!r}: tool entry must be a string or "
+                f"{{name, defer_loading}} dict, got {type(entry).__name__}: {entry!r}"
+            )
+        return all_names, deferred
 
     @staticmethod
     def _read(config_path: Path | None) -> str:
@@ -97,6 +148,31 @@ class ProfileRegistry:
         if name not in self._profiles:
             raise UnknownProfileError(name, list(self._profiles))
         return self._profiles[name]
+
+    def get_deferred(self, name: str) -> frozenset[str]:
+        """Return the frozenset of *deferred* tool names for profile *name*.
+
+        Deferred tools are still registered and callable; they are hidden from
+        the default ``tools/list`` response so the eager catalog stays within
+        the per-server budget (TAP-1985, parent epic TAP-1983). Clients adopt
+        Anthropic Tool Search BETA (opt-in via the
+        ``advanced-tool-use-2025-11-20`` header) to discover deferred tools.
+
+        Returns an empty frozenset when the profile has no deferred entries.
+
+        Parameters
+        ----------
+        name:
+            Profile name, e.g. ``"coder"`` or ``"full"``.
+
+        Raises
+        ------
+        UnknownProfileError
+            If *name* is not in the registry.
+        """
+        if name not in self._profiles:
+            raise UnknownProfileError(name, list(self._profiles))
+        return self._deferred.get(name, frozenset())
 
     @property
     def profiles(self) -> list[str]:

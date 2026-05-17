@@ -11,8 +11,17 @@ Two responsibilities installed once at server startup via :func:`install_tool_fi
    that knows the tool name can invoke it despite not seeing it in
    ``tools/list``.
 
-The ``full`` profile is the **fast path** — no filtering is applied, zero
-runtime overhead.
+TAP-1985: deferred-tool filtering
+---------------------------------
+Profiles may mark individual tools with ``defer_loading: true`` in the YAML.
+Deferred tools remain **callable** (they're not removed from the allowed-set
+for ``tools/call``) but are **omitted from the default ``tools/list`` response**
+so the eager catalog stays within the per-server budget (parent epic TAP-1983).
+Clients adopt Anthropic Tool Search BETA via the
+``advanced-tool-use-2025-11-20`` header to discover deferred tools on demand.
+
+When a profile has no deferred entries, the ``full``-profile fast path stays
+zero-overhead.
 
 Installing the filter
 ---------------------
@@ -223,6 +232,30 @@ def reset_profile_filter_counters() -> None:
         _MCP_TOOLS_CALL_TOTAL.clear()
 
 
+def _deferred_for(profile_registry: Any, profile: str) -> frozenset[str]:
+    """Return the deferred-tool set for *profile* with mock-friendly fallback.
+
+    Mocks in unit tests (``MagicMock(spec=ProfileRegistry)``) auto-create a
+    ``get_deferred`` attribute that returns a ``MagicMock`` rather than a
+    frozenset.  When the registry doesn't expose ``get_deferred`` (older
+    ProfileRegistry instances) or returns a non-iterable sentinel, fall back to
+    an empty frozenset so the filter remains backwards-compatible.
+    """
+    fn = getattr(profile_registry, "get_deferred", None)
+    if not callable(fn):
+        return frozenset()
+    try:
+        result = fn(profile)
+    except Exception:
+        return frozenset()
+    if isinstance(result, frozenset):
+        return result
+    try:
+        return frozenset(result)
+    except TypeError:
+        return frozenset()
+
+
 # ---------------------------------------------------------------------------
 # TAP-1580: ValidationError → required_fields hint enrichment
 # ---------------------------------------------------------------------------
@@ -339,18 +372,24 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
 
             # --- Cache miss: build the list from the underlying registry ---
             all_tools: list[Any] = list(_orig_list_tools())
+            # TAP-1985: drop deferred tools from the visible catalog. Empty set
+            # for profiles with no deferral annotations → zero-overhead.
+            deferred = _deferred_for(profile_registry, profile)
 
             if profile == default_profile:
-                # Fast path: no filtering for the default ("full") profile.
-                visible_count = len(all_tools)
+                # Fast path for the default ("full") profile: no profile-allow
+                # filtering, just the deferred-tool curtain when applicable.
+                visible_tools = (
+                    [t for t in all_tools if t.name not in deferred] if deferred else all_tools
+                )
                 with _METRICS_LOCK:
                     _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
+                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(visible_tools)
                 # Store in cache (concurrent miss → idempotent overwrite, same result).
                 # Return a copy — the cached list is the canonical reference; the
                 # caller must not be able to corrupt it via mutation.
-                _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, all_tools)
-                return list(all_tools)
+                _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, visible_tools)
+                return list(visible_tools)
             try:
                 allowed: frozenset[str] = profile_registry.get(profile)
             except Exception:
@@ -368,7 +407,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                     _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
                     _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
                 return all_tools
-            filtered = [t for t in all_tools if t.name in allowed]
+            filtered = [t for t in all_tools if t.name in allowed and t.name not in deferred]
             with _METRICS_LOCK:
                 _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
                 _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
