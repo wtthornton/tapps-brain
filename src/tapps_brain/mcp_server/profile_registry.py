@@ -84,10 +84,13 @@ class ProfileRegistry:
         data: dict[str, Any] = yaml.safe_load(raw) or {}
         self._profiles: dict[str, frozenset[str]] = {}
         self._deferred: dict[str, frozenset[str]] = {}
+        self._descriptions: dict[str, str] = {}
         for name, conf in data.get("profiles", {}).items():
             tool_names, deferred_names = self._parse_tool_entries(name, conf.get("tools") or [])
             self._profiles[name] = frozenset(tool_names)
             self._deferred[name] = frozenset(deferred_names)
+            desc = conf.get("description")
+            self._descriptions[name] = str(desc).strip() if isinstance(desc, str) else ""
 
     @staticmethod
     def _parse_tool_entries(profile_name: str, entries: list[Any]) -> tuple[list[str], list[str]]:
@@ -173,6 +176,20 @@ class ProfileRegistry:
         if name not in self._profiles:
             raise UnknownProfileError(name, list(self._profiles))
         return self._deferred.get(name, frozenset())
+
+    def get_description(self, name: str) -> str:
+        """Return the human-readable description for profile *name* (TAP-2006).
+
+        Returns an empty string when the YAML did not declare a description.
+
+        Raises
+        ------
+        UnknownProfileError
+            If *name* is not in the registry.
+        """
+        if name not in self._profiles:
+            raise UnknownProfileError(name, list(self._profiles))
+        return self._descriptions.get(name, "")
 
     @property
     def profiles(self) -> list[str]:
