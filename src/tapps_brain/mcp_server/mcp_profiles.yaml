@@ -326,9 +326,15 @@ profiles:
   coder:
     description: >
       Repo-embedded coding agent subset. Exposes the brain_* facade, session
-      hooks, quality-loop tools, and cross-repo graph lookups. Intentionally
-      excludes destructive ops (memory_delete, agent_delete, etc.) and bulk
-      admin tools to reduce context-bloat and attack surface.
+      hooks, quality-loop tools, and cross-repo graph lookups. The KG
+      discovery primitives — `memory_find_related(key, max_hops=2)` for
+      memory-to-memory traversal and `brain_get_neighbors(entity_ids, hops=2)`
+      for entity-graph traversal — answer "what else does this file / rule
+      touch?" without dragging in the full memory_* admin surface. Use
+      `brain_explain_connection` to verify a hypothesised path between two
+      entities. Intentionally excludes destructive ops (memory_delete,
+      agent_delete, etc.) and bulk admin tools to reduce context-bloat and
+      attack surface.
     tools:
       # Facade (6) — primary agent API
       - brain_recall

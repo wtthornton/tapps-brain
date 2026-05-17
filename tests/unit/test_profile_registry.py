@@ -116,6 +116,38 @@ class TestBundledProfiles:
         assert "hive_search" in coder
         assert "memory_find_related" in coder
 
+    def test_get_coder_contains_kg_discovery_tools(self) -> None:
+        """TAP-2006: KG discovery primitives must be on the coder profile."""
+        reg = ProfileRegistry()
+        coder = reg.get("coder")
+        # Both multi-hop primitives + the path verifier.
+        assert "memory_find_related" in coder
+        assert "brain_get_neighbors" in coder
+        assert "brain_explain_connection" in coder
+
+    def test_get_coder_tool_count_is_17(self) -> None:
+        """TAP-2006: pin the coder profile size at 17 tools.
+
+        Six facade + four hook-callable + three quality-loop + four cross-repo /
+        KG discovery (`hive_search`, `memory_find_related`,
+        `brain_get_neighbors`, `brain_explain_connection`). Bump this in lockstep
+        with the profile YAML when the surface changes.
+        """
+        reg = ProfileRegistry()
+        coder = reg.get("coder")
+        assert len(coder) == 17, sorted(coder)
+
+    def test_coder_description_calls_out_kg_discovery_tools(self) -> None:
+        """TAP-2006: description must surface the discovery primitives by name.
+
+        The description is what agents read when picking a profile — leaving the
+        KG tools un-named there hides the most useful part of the surface.
+        """
+        reg = ProfileRegistry()
+        description = reg.get_description("coder")
+        assert "memory_find_related" in description
+        assert "brain_get_neighbors" in description
+
     def test_get_coder_excludes_destructive_ops(self) -> None:
         reg = ProfileRegistry()
         coder = reg.get("coder")
