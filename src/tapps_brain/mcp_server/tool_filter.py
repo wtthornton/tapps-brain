@@ -549,6 +549,13 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
     # this *mcp* instance is affected.
     mcp._tool_manager.list_tools = _filtered_list_tools
     mcp._tool_manager.call_tool = _filtered_call_tool
+    # TAP-2050: expose the pre-filter ``list_tools`` so tests can verify which
+    # tools are **registered and callable** without going through the
+    # profile / deferred-loading curtain. Production paths must keep using
+    # ``list_tools`` so the eager catalog stays correct. Deferred tools are
+    # still callable via ``call_tool`` regardless of which list view a
+    # caller inspects.
+    mcp._tool_manager._unfiltered_list_tools = _orig_list_tools
 
     # ------------------------------------------------------------------
     # TAP-1619: wrap the lowlevel `CallToolRequest` handler so the

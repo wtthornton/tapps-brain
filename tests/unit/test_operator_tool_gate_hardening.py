@@ -66,11 +66,11 @@ def _close(server: Any) -> None:
 
 
 def _tool_names(server: Any) -> set[str]:
-    return {t.name for t in server._tool_manager.list_tools()}
+    return {t.name for t in server._tool_manager._unfiltered_list_tools()}
 
 
 def _tool_fn(server: Any, name: str):
-    for tool in server._tool_manager.list_tools():
+    for tool in server._tool_manager._unfiltered_list_tools():
         if tool.name == name:
             return tool.fn
     msg = f"tool not found: {name}"

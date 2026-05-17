@@ -139,7 +139,7 @@ class TestMemoryStoreGCConfig:
 
 
 def _tool_fn(mcp_server, name: str):
-    for tool in mcp_server._tool_manager.list_tools():
+    for tool in mcp_server._tool_manager._unfiltered_list_tools():
         if tool.name == name:
             return tool.fn
     msg = f"tool not found: {name}"
@@ -193,7 +193,7 @@ class TestMemoryGcConfigMCPTool:
 
     @pytest.mark.requires_mcp
     def test_memory_gc_config_tools_registered(self, mcp_server) -> None:
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_gc_config" in tool_names
         assert "memory_gc_config_set" in tool_names
 

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.requires_mcp
 
 
 def _tool_fn(mcp_server, name: str):
-    for tool in mcp_server._tool_manager.list_tools():
+    for tool in mcp_server._tool_manager._unfiltered_list_tools():
         if tool.name == name:
             return tool.fn
     msg = f"tool not found: {name}"
@@ -158,28 +158,28 @@ class TestCoreTools:
     """Test core memory CRUD tools are registered."""
 
     def test_memory_save_tool_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_save" in tool_names
 
     def test_memory_get_tool_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_get" in tool_names
 
     def test_memory_delete_tool_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_delete" in tool_names
 
     def test_memory_search_tool_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_search" in tool_names
 
     def test_memory_list_tool_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_list" in tool_names
 
     def test_all_expected_tools_present(self, mcp_server):
         """Default server (no operator tools) must expose only the core tool surface."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         expected = {
             # Core memory tools
             "memory_save",
@@ -255,6 +255,8 @@ class TestCoreTools:
             "brain_get_neighbors",
             "brain_explain_connection",
             "brain_record_feedback",
+            # KG batch (TAP-1973, EPIC-302)
+            "brain_record_events_batch",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
@@ -264,7 +266,7 @@ class TestCoreTools:
 
     def test_operator_tools_absent_by_default(self, mcp_server):
         """Operator tools must NOT appear in the default (non-operator) session."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         operator_tools = {
             "maintenance_consolidate",
             "maintenance_gc",
@@ -290,7 +292,7 @@ class TestCoreTools:
 
         server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
         try:
-            tool_names = {t.name for t in server._tool_manager.list_tools()}
+            tool_names = {t.name for t in server._tool_manager._unfiltered_list_tools()}
             expected_operator = {
                 "maintenance_consolidate",
                 "maintenance_gc",
@@ -317,7 +319,7 @@ class TestLifecycleTools:
     """Test lifecycle tools are registered and callable (STORY-008.3)."""
 
     def test_lifecycle_tools_registered(self, mcp_server):
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         expected = {
             "memory_recall",
             "memory_reinforce",
@@ -916,7 +918,7 @@ class TestFederationAndMaintenance:
     """Test federation and maintenance tools (STORY-008.5)."""
 
     def test_federation_tools_registered(self, mcp_server):
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         expected = {
             "federation_status",
             "federation_subscribe",
@@ -926,13 +928,13 @@ class TestFederationAndMaintenance:
         assert expected.issubset(tool_names)
 
     def test_maintenance_tools_registered(self, mcp_server):
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "maintenance_consolidate" in tool_names
         assert "maintenance_gc" in tool_names
         assert "maintenance_stale" in tool_names
 
     def test_export_import_tools_registered(self, mcp_server):
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "memory_export" in tool_names
         assert "memory_import" in tool_names
 
@@ -2777,15 +2779,15 @@ class TestKnowledgeGraphTools:
         store.close()
 
     def test_memory_relations_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_relations" in tool_names
 
     def test_memory_find_related_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_find_related" in tool_names
 
     def test_memory_query_relations_registered(self, mcp_server):
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_query_relations" in tool_names
 
     def test_memory_relations_returns_list(self, server_with_relations):
@@ -2876,7 +2878,7 @@ class TestAuditTrailMCPTool:
 
     def test_memory_audit_registered(self, mcp_server):
         """memory_audit tool is registered on the server."""
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_audit" in tool_names
 
     def test_memory_audit_returns_structure(self, server_with_events):
@@ -2968,7 +2970,7 @@ class TestTagManagementMCPTools:
 
     def test_memory_list_tags_registered(self, mcp_server):
         """memory_list_tags is registered on the server."""
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_list_tags" in tool_names
 
     def test_memory_list_tags_returns_structure(self, server_with_tags):
@@ -3009,7 +3011,7 @@ class TestTagManagementMCPTools:
 
     def test_memory_update_tags_registered(self, mcp_server):
         """memory_update_tags is registered on the server."""
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_update_tags" in tool_names
 
     def test_memory_update_tags_add_tags(self, server_with_tags):
@@ -3080,7 +3082,7 @@ class TestTagManagementMCPTools:
 
     def test_memory_entries_by_tag_registered(self, mcp_server):
         """memory_entries_by_tag is registered on the server."""
-        tool_names = [t.name for t in mcp_server._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp_server._tool_manager._unfiltered_list_tools()]
         assert "memory_entries_by_tag" in tool_names
 
     def test_memory_entries_by_tag_returns_structure(self, server_with_tags):
@@ -3172,7 +3174,7 @@ class TestGcAndConsolidationConfigTools:
 
     def test_memory_gc_config_registered(self, mcp_server):
         """memory_gc_config is registered on the server."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "memory_gc_config" in tool_names
 
     def test_memory_gc_config_returns_structure(self, server):
@@ -3201,7 +3203,7 @@ class TestGcAndConsolidationConfigTools:
 
     def test_memory_gc_config_set_registered(self, mcp_server):
         """memory_gc_config_set is registered on the server."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "memory_gc_config_set" in tool_names
 
     def test_memory_gc_config_set_updates_floor_retention(self, server):
@@ -3262,7 +3264,7 @@ class TestGcAndConsolidationConfigTools:
 
     def test_memory_consolidation_config_registered(self, mcp_server):
         """memory_consolidation_config is registered on the server."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "memory_consolidation_config" in tool_names
 
     def test_memory_consolidation_config_returns_structure(self, server):
@@ -3288,7 +3290,7 @@ class TestGcAndConsolidationConfigTools:
 
     def test_memory_consolidation_config_set_registered(self, mcp_server):
         """memory_consolidation_config_set is registered on the server."""
-        tool_names = {t.name for t in mcp_server._tool_manager.list_tools()}
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
         assert "memory_consolidation_config_set" in tool_names
 
     def test_memory_consolidation_config_set_enables(self, server):

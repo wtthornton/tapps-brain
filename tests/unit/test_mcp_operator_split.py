@@ -42,7 +42,7 @@ _OPERATOR_TOOL_NAMES = frozenset(
 
 
 def _tool_names(server: Any) -> set[str]:
-    return {t.name for t in server._tool_manager.list_tools()}
+    return {t.name for t in server._tool_manager._unfiltered_list_tools()}
 
 
 def _close(server: Any) -> None:
