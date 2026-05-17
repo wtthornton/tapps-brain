@@ -258,6 +258,113 @@ class TestEdgeUtilityScore:
                 )
                 assert result.get("error") is None, f"score {score} should be accepted"
 
+    def test_nonzero_score_weights_misleading_delta(self) -> None:
+        """|utility_score| * 0.1 replaces the legacy 0.05 default on edge_misleading."""
+        from tapps_brain.services import kg_service
+
+        captured: dict[str, float] = {}
+
+        class _StubKg:
+            def __init__(self, *_a: Any, **_kw: Any) -> None:
+                return
+
+            def apply_edge_feedback(
+                self, edge_id: str, feedback_type: str, confidence_delta: float
+            ) -> dict[str, Any]:
+                captured["delta"] = float(confidence_delta)
+                return {"applied": True}
+
+            def close(self) -> None:
+                return
+
+        with (
+            mock.patch(
+                "tapps_brain.services.feedback_service.feedback_record",
+                return_value={"recorded": True},
+            ),
+            mock.patch(
+                "tapps_brain.services.kg_service._get_or_create_cm",
+                return_value=object(),
+            ),
+            mock.patch("tapps_brain.postgres_kg.PostgresKnowledgeGraphStore", _StubKg),
+        ):
+            kg_service.record_kg_feedback(
+                store=mock.Mock(),
+                project_id="p",
+                agent_id="a",
+                edge_id="e",
+                feedback_type="edge_misleading",
+                utility_score=1.0,
+            )
+            assert captured["delta"] == pytest.approx(0.1)
+
+            kg_service.record_kg_feedback(
+                store=mock.Mock(),
+                project_id="p",
+                agent_id="a",
+                edge_id="e",
+                feedback_type="edge_misleading",
+                utility_score=0.3,
+            )
+            assert captured["delta"] == pytest.approx(0.03)
+
+    def test_explicit_zero_score_keeps_legacy_default(self) -> None:
+        """utility_score=0.0 is "no useful signal" — fixed 0.05 step applies.
+
+        Regression guard for the transport-divergence bug found in review:
+        MCP used to coerce 0.0 → None and REST passed 0.0 raw, so the same
+        input produced two different deltas.  Both transports now pass the
+        raw value; service layer ignores explicit 0.0 to preserve the legacy
+        misleading penalty.
+        """
+        from tapps_brain.services import kg_service
+
+        captured: dict[str, float] = {}
+
+        class _StubKg:
+            def __init__(self, *_a: Any, **_kw: Any) -> None:
+                return
+
+            def apply_edge_feedback(
+                self, edge_id: str, feedback_type: str, confidence_delta: float
+            ) -> dict[str, Any]:
+                captured["delta"] = float(confidence_delta)
+                return {"applied": True}
+
+            def close(self) -> None:
+                return
+
+        with (
+            mock.patch(
+                "tapps_brain.services.feedback_service.feedback_record",
+                return_value={"recorded": True},
+            ),
+            mock.patch(
+                "tapps_brain.services.kg_service._get_or_create_cm",
+                return_value=object(),
+            ),
+            mock.patch("tapps_brain.postgres_kg.PostgresKnowledgeGraphStore", _StubKg),
+        ):
+            kg_service.record_kg_feedback(
+                store=mock.Mock(),
+                project_id="p",
+                agent_id="a",
+                edge_id="e",
+                feedback_type="edge_misleading",
+                utility_score=0.0,
+            )
+            assert captured["delta"] == pytest.approx(0.05), "explicit 0.0 → legacy step"
+
+            kg_service.record_kg_feedback(
+                store=mock.Mock(),
+                project_id="p",
+                agent_id="a",
+                edge_id="e",
+                feedback_type="edge_misleading",
+                utility_score=None,
+            )
+            assert captured["delta"] == pytest.approx(0.05), "None → legacy step"
+
 
 # ---------------------------------------------------------------------------
 # TAP-1934 — record_events_batch validation

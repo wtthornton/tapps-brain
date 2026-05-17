@@ -354,15 +354,11 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-        resolved_profile: str | None = _get_profile_resolver().resolve(
+        resolved_profile: str = _get_profile_resolver().resolve(
             project_id=project_id,
             agent_id=agent_id,
             header_profile=header_profile,
         )
-
-        # Resolve the allowed-tool set for the resolved profile.
-        if resolved_profile is None:
-            return await call_next(request)  # type: ignore[no-any-return]
 
         try:
             allowed_tools = _get_profile_resolver()._registry.get(resolved_profile)

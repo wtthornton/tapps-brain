@@ -545,12 +545,19 @@ def record_kg_feedback(
     confidence_delta:
         Confidence reduction per ``edge_misleading`` event (default 0.05).
     utility_score:
-        TAP-1930. Continuous utility signal in ``[-1, 1]``.  When supplied,
-        the confidence delta is weighted by ``abs(utility_score)`` (so the
-        edge confidence move scales with how strong the signal is).  The
-        score is also passed to the FeedbackStore audit row so EWMA / flywheel
-        diagnostics pick it up.  When omitted (``None``), behaviour is
-        identical to the pre-TAP-1930 fixed-step path.
+        TAP-1930. Continuous utility signal in ``[-1, 1]``.  Passed to the
+        FeedbackStore audit row on **both** edge_helpful and edge_misleading
+        so EWMA / flywheel diagnostics pick it up regardless of feedback
+        type.  On **edge_misleading**, ``abs(utility_score)`` additionally
+        weights the confidence delta so callers can express "how misleading"
+        as a continuous signal (max 0.1 at ``|utility_score| = 1.0``).  On
+        **edge_helpful**, the underlying ``APPLY_EDGE_HELPFUL_SQL`` does not
+        accept a delta — the FSRS reinforce step is binary — so the score
+        is recorded in the audit trail but does not alter the edge
+        confidence.  When *utility_score* is ``None`` the legacy
+        fixed-step behaviour applies. Explicit ``0.0`` is treated as
+        "no useful signal" — the fixed step still applies (zeroing the
+        delta would defeat the purpose of recording the feedback).
     """
     from tapps_brain.services import feedback_service
 
@@ -568,11 +575,13 @@ def record_kg_feedback(
             "detail": "utility_score must be in [-1, 1].",
         }
 
-    # TAP-1930: weight the confidence delta by |utility_score| when provided.
-    # Maximum weighted delta is 0.1 (a strong negative signal), matching the
-    # default fixed step at |utility_score| = 0.5.
+    # TAP-1930: weight the confidence delta by |utility_score| when a non-zero
+    # value is provided.  Explicit 0.0 is treated as "no useful signal" and
+    # keeps the legacy fixed step so the call still moves the needle (zeroing
+    # the delta would silently drop the misleading penalty altogether).  The
+    # weighting applies only to the edge_misleading SQL — see docstring above.
     effective_delta = confidence_delta
-    if utility_score is not None:
+    if utility_score is not None and float(utility_score) != 0.0:
         effective_delta = abs(float(utility_score)) * 0.1
 
     # Phase 1: FeedbackStore audit trail

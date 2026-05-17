@@ -242,10 +242,18 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         neighbor_id, entity_type, canonical_name, hop, ...}],
         "entity_ids": [str] }``
         """
-        eff_aid = _rpc(agent_id, default=_server_aid)
+        # TAP-1936: under TAPPS_BRAIN_STRICT_AGENT_ID=1 the resolver raises
+        # on header/kwarg disagreement.  Translate to the same {error: ...}
+        # envelope the other KG tools use for consistency.
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
         project_id = _pid()
 
-        # Suppress unused variable warning — eff_aid kept for consistency
+        # eff_aid is intentionally computed for its side effects (the mismatch
+        # warning in strict-soft mode) — the get_neighbors service routine
+        # does not currently take an agent_id.
         _ = eff_aid
 
         cm = kg_service._get_or_create_cm()
@@ -382,10 +390,13 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         utility_score:
             Numeric utility signal ``[-1, 1]``.  Stored alongside the event
             on both the memory feedback path and (TAP-1930) the edge feedback
-            path — on edges the value weights the confidence delta so callers
-            can express continuous "how helpful / how misleading" rather than
-            binary.  Default ``0.0`` means "not provided"; pass any non-zero
-            value to opt in to weighting.
+            path — recorded in the audit trail on both ``edge_helpful`` and
+            ``edge_misleading``.  On ``edge_misleading``, ``abs(utility_score)``
+            additionally weights the confidence delta (max 0.1 at
+            ``|utility_score| = 1.0``).  On ``edge_helpful`` the SQL path is
+            counter-based and ignores the delta — the score still lands in the
+            audit row.  Default ``0.0`` means "no useful signal" (legacy
+            fixed-step behaviour applies).
         details_json:
             JSON-serialised ``dict`` of extra metadata (memory path only).
         agent_id:
@@ -404,9 +415,11 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         s = _resolve(agent_id)
         project_id = _pid()
 
-        # TAP-1930: utility_score=0.0 is the legacy "not provided" sentinel.
-        # Non-zero values opt in to weighted edge updates / FeedbackStore record.
-        us: float | None = float(utility_score) if utility_score else None
+        # TAP-1930: pass utility_score through verbatim on both paths so MCP
+        # and REST behave identically.  The service layer treats explicit 0.0
+        # as "no useful signal" (fixed-step delta) and only weights when
+        # |score| > 0 — see kg_service.record_kg_feedback.
+        us = float(utility_score)
 
         # Edge feedback path
         if edge_id:

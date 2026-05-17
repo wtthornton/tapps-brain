@@ -3,8 +3,9 @@
 The MCP transport honors :data:`tapps_brain.mcp_server.REQUEST_PROFILE` via the
 ``ListToolsMiddleware`` / call-tool interceptors.  Until now the REST surface
 under ``/v1/*`` was profile-agnostic — an HTTP consumer with
-``X-Brain-Profile: agent_brain`` could still POST to ``/v1/forget`` (a
-``memory_*``-backed endpoint) without any server-side check.
+``X-Brain-Profile: agent_brain`` could still POST to ``/v1/reinforce`` (a
+``memory_*``-backed endpoint excluded from the ``agent_brain`` surface)
+without any server-side check.
 
 This module owns the canonical map from REST path → tool name so that
 :class:`tapps_brain.http.middleware.RestProfileGateMiddleware` can refuse

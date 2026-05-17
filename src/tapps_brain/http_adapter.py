@@ -1445,7 +1445,8 @@ def create_app(
             # TAP-1843: build the static tools snapshot once at startup so
             # GET /v1/tools/list never hits the MCP registry on the hot path.
             # TAP-1929: also build a per-tool index so the endpoint can filter
-            # by the caller's profile, and validate the REST→tool drift map.
+            # by the caller's profile.
+            _tools_by_name: dict[str, dict[str, Any]] = {}
             try:
                 _raw_tools = mcp._tool_manager.list_tools()
                 _tools_by_name = {
@@ -1467,26 +1468,27 @@ def create_app(
                     "http_adapter.tools_snapshot_built",
                     count=len(_raw_tools),
                 )
-
-                # TAP-1929: REST route drift detection. Fail fast at startup
-                # if mcp_profiles.yaml or REST_ROUTE_TO_TOOL drift apart.
-                try:
-                    from tapps_brain.http.rest_profile_gate import (
-                        validate_rest_route_map,
-                    )
-
-                    validate_rest_route_map(frozenset(_tools_by_name))
-                except Exception as drift_exc:
-                    logger.error(
-                        "http_adapter.rest_profile_gate_drift",
-                        error=str(drift_exc),
-                    )
-                    raise
             except Exception as exc:
                 logger.warning(
                     "http_adapter.tools_snapshot_build_failed",
                     error=str(exc),
                 )
+
+            # TAP-1929: REST route drift detection — MUST fail startup hard
+            # when REST_ROUTE_TO_TOOL diverges from the live tool catalog.
+            # Hoisted out of the snapshot-build try block so a drift ValueError
+            # is not silently downgraded to a warning. Skipped only when the
+            # tool catalog itself could not be built (already logged above).
+            if _tools_by_name:
+                from tapps_brain.http.rest_profile_gate import (
+                    validate_rest_route_map,
+                )
+
+                try:
+                    validate_rest_route_map(frozenset(_tools_by_name))
+                except ValueError:
+                    logger.error("http_adapter.rest_profile_gate_drift")
+                    raise
         try:
             yield
         finally:
