@@ -206,3 +206,74 @@ class TestBrainRecordEventBadJson:
             )
             assert body == {"event_id": "evt-1"}
             svc.record_event.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# brain_get_neighbors wrapper — entity_ids_json decode failure (TAP-1968)
+# ---------------------------------------------------------------------------
+
+
+class TestBrainGetNeighborsBadJson:
+    def test_bad_entity_ids_json_returns_envelope(self, mcp: Any, fake_ctx: ToolContext) -> None:
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
+            svc._get_or_create_cm.return_value = MagicMock(name="cm")
+            svc._DEFAULT_BRAIN_ID = "brain"
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_get_neighbors")
+            body = json.loads(tool.fn(entity_ids_json="[bad"))
+            assert body["error"] == "bad_json"
+            assert body["field"] == "entity_ids_json"
+            assert body["detail"]
+            # No query issued against the KG.
+            svc.get_neighbors.assert_not_called()
+
+    def test_non_array_entity_ids_json_returns_envelope(
+        self, mcp: Any, fake_ctx: ToolContext
+    ) -> None:
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
+            svc._get_or_create_cm.return_value = MagicMock(name="cm")
+            svc._DEFAULT_BRAIN_ID = "brain"
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_get_neighbors")
+            body = json.loads(tool.fn(entity_ids_json='{"id": "x"}'))
+            assert body == {
+                "error": "bad_json",
+                "field": "entity_ids_json",
+                "detail": "expected JSON array, got dict",
+            }
+            svc.get_neighbors.assert_not_called()
+
+    def test_valid_entity_ids_json_passes_through(self, mcp: Any, fake_ctx: ToolContext) -> None:
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
+            svc._get_or_create_cm.return_value = MagicMock(name="cm")
+            svc._DEFAULT_BRAIN_ID = "brain"
+            svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": ["a", "b"]}
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_get_neighbors")
+            body = json.loads(tool.fn(entity_ids_json='["a", "b"]'))
+            assert body == {"neighbors": [], "entity_ids": ["a", "b"]}
+            svc.get_neighbors.assert_called_once()
+            assert svc.get_neighbors.call_args.kwargs["entity_ids"] == ["a", "b"]
+
+    def test_empty_entity_ids_json_still_calls_service(
+        self, mcp: Any, fake_ctx: ToolContext
+    ) -> None:
+        """Back-compat: empty string still maps to []; service is queried."""
+        from tapps_brain.mcp_server.tools_kg import register_kg_tools
+
+        with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
+            svc._get_or_create_cm.return_value = MagicMock(name="cm")
+            svc._DEFAULT_BRAIN_ID = "brain"
+            svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": []}
+            register_kg_tools(mcp, fake_ctx)
+            tool = _get_tool(mcp, "brain_get_neighbors")
+            body = json.loads(tool.fn(entity_ids_json=""))
+            assert body == {"neighbors": [], "entity_ids": []}
+            svc.get_neighbors.assert_called_once()
+            assert svc.get_neighbors.call_args.kwargs["entity_ids"] == []
