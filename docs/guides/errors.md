@@ -72,6 +72,53 @@ Fields:
 | `data.error`     | string | Stable error code (same as HTTP `error` field)       |
 | `data.*`         | any    | Optional extra context (e.g. `project_id`)           |
 
+## `bad_json` envelope — malformed `*_json` MCP arguments (v3.19.0+)
+
+The KG MCP tools (`brain_record_event`, `brain_get_neighbors`,
+`brain_record_feedback`) accept JSON-string fallback arguments like
+`payload_json`, `entities_json`, `edges_json`, `evidence_json`,
+`entity_ids_json`, and `details_json` for clients that can't pass native
+Python `list` / `dict`. Pre-v3.19.0 the tools silently substituted `{}` /
+`[]` on JSON decode failure — operator typos shipped as no-ops.
+
+Per TAP-1967 / TAP-1968 / TAP-1969 (EPIC-300), each tool now returns a
+structured `bad_json` envelope and writes nothing on decode failure:
+
+```jsonc
+{
+  "error":  "bad_json",
+  "field":  "payload_json",        // the offending parameter name
+  "detail": "Expecting value: line 1 column 5 (char 4)"
+}
+```
+
+Empty string and `"{}"` / `"[]"` continue to map to empty payloads
+(back-compat). Native `payload=` / `entities=` / `edges=` / `evidence=` /
+`entity_ids=` / `details=` kwargs are unaffected — the envelope only fires
+on JSON-string arguments that fail to decode or yield the wrong root type.
+
+Client guidance: treat `bad_json` as a permanent (non-retryable) caller bug.
+Surface `data.field` and `data.detail` to the operator; do not auto-retry.
+
+## Out-of-profile denial envelope (v3.19.0+)
+
+When `X-Brain-Profile` denies a tool, the `-32602` (MCP) or 403 (REST) error
+data carries:
+
+```jsonc
+{
+  "reason":            "out_of_profile",
+  "tool":              "brain_forget",
+  "profile":           "reviewer",
+  "suggested_profile": "agent_brain"     // TAP-1972 (v3.19.0+); null when no profile exposes the tool
+}
+```
+
+Bridges that hit this envelope should retry with
+`X-Brain-Profile: <data.suggested_profile>` when that field is non-null
+(self-routing path), or surface the error otherwise. See
+[mcp-client-repo-setup.md § Profile wire contract](mcp-client-repo-setup.md#profile-wire-contract-stable-across-tapps-brain-3x--tap-1579).
+
 ## Client implementation guide
 
 ### Python (httpx / requests)

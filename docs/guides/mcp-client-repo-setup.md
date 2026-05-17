@@ -189,13 +189,13 @@ elements are part of the 3.x stable surface:
 | Default when header is omitted | `full` (59 callable, 8 eager — TAP-1985) | Existing clients keep their callable surface; the eager `tools/list` payload shrinks to the daily-driver budget. |
 | Default override | `TAPPS_BRAIN_DEFAULT_PROFILE` env var on the server | Operators may flip the default per deployment (see EPIC-073 rollout plan). |
 | Out-of-profile `tools/call` error code | `-32602` (`INVALID_PARAMS`) | Distinct from `-32601` (`METHOD_NOT_FOUND`) so bridges can react. |
-| Out-of-profile `tools/call` `error.data` | `{"reason": "out_of_profile", "tool": "<name>", "profile": "<name>"}` | Stable keys; consumers may dispatch on `reason`. |
+| Out-of-profile `tools/call` `error.data` | `{"reason": "out_of_profile", "tool": "<name>", "profile": "<name>", "suggested_profile": "<name>" \| null}` | Stable keys; consumers may dispatch on `reason`. `suggested_profile` (TAP-1972, v3.19.0+) names the smallest profile that exposes the denied tool — `null` when no profile exposes it. |
 | Out-of-profile `tools/list` behavior | Tool is omitted from the response | No error; the tool simply isn't visible. |
 | Unknown profile name | Fails open (acts like `full`) | Avoids denying legitimate operators against a server with stale YAML. |
 
 A bridge that hits `-32602` with `data.reason == "out_of_profile"` should:
-1. Either declare a wider profile via `X-Brain-Profile` on subsequent
-   initialize calls, or
+1. Retry with `X-Brain-Profile: <data.suggested_profile>` when that field is
+   non-null (TAP-1972 self-routing), or
 2. Surface the structured error to the caller so it can re-route.
 
 A bridge that hits `-32601` should treat the tool as genuinely missing
