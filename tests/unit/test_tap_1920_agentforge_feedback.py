@@ -99,52 +99,70 @@ class TestAgentIdDisambiguation:
 
 
 class TestNativeListCoercion:
+    """TAP-1932 + TAP-1967/1968/1969: ``_coerce_payload`` / ``_coerce_list`` now
+    return ``(value, error)`` so the structured ``bad_json`` envelope reaches
+    the tool wrapper instead of being silently substituted (TAP-2057)."""
+
     def test_native_payload_wins_over_legacy_json(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_payload
 
-        assert _coerce_payload({"a": 1}, '{"b": 2}') == {"a": 1}
+        value, err = _coerce_payload({"a": 1}, '{"b": 2}')
+        assert value == {"a": 1}
+        assert err is None
 
     def test_legacy_payload_json_falls_back_with_warning(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_payload
 
         with pytest.warns(DeprecationWarning):
-            assert _coerce_payload(None, '{"x": 42}') == {"x": 42}
+            value, err = _coerce_payload(None, '{"x": 42}')
+        assert value == {"x": 42}
+        assert err is None
 
     def test_empty_payload_returns_dict(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_payload
 
-        assert _coerce_payload(None, "") == {}
-        assert _coerce_payload(None, "{}") == {}
+        assert _coerce_payload(None, "") == ({}, None)
+        assert _coerce_payload(None, "{}") == ({}, None)
 
     def test_native_list_wins_over_legacy_json(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_list
 
         native = [{"a": 1}]
-        assert _coerce_list(native, '[{"b": 2}]', "entities") == native
+        value, err = _coerce_list(native, '[{"b": 2}]', "entities")
+        assert value == native
+        assert err is None
 
     def test_legacy_list_json_falls_back_with_warning(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_list
 
         with pytest.warns(DeprecationWarning):
-            result = _coerce_list(None, '[{"x": 1}]', "entities")
-        assert result == [{"x": 1}]
+            value, err = _coerce_list(None, '[{"x": 1}]', "entities")
+        assert value == [{"x": 1}]
+        assert err is None
 
     def test_empty_list_returns_empty(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_list
 
-        assert _coerce_list(None, "", "edges") == []
-        assert _coerce_list(None, "[]", "edges") == []
+        assert _coerce_list(None, "", "edges") == ([], None)
+        assert _coerce_list(None, "[]", "edges") == ([], None)
 
     def test_malformed_list_json_returns_empty(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_list
 
-        # Malformed JSON should silently return [] (backward compat with old behaviour)
-        assert _coerce_list(None, "not json", "evidence") == []
+        # Post TAP-1968: malformed JSON returns the structured bad_json envelope
+        # alongside an empty list. The wrapper raises on `err is not None`.
+        value, err = _coerce_list(None, "not json", "evidence")
+        assert value == []
+        assert err is not None
+        assert err["error"] == "bad_json"
+        assert err["field"] == "evidence_json"
 
     def test_filters_non_dict_items(self) -> None:
         from tapps_brain.mcp_server.tools_kg import _coerce_list
 
-        assert _coerce_list([{"ok": 1}, "skip", 42], "", "entities") == [{"ok": 1}]
+        value, err = _coerce_list([{"ok": 1}, "skip", 42], "", "entities")
+        assert value == [{"ok": 1}]
+        assert err is None
 
 
 # ---------------------------------------------------------------------------
