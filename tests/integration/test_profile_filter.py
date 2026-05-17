@@ -441,6 +441,16 @@ class TestCallEnforcement:
         assert err.error.data["reason"] == "out_of_profile"
         assert err.error.data["tool"] == denied_tool
         assert err.error.data["profile"] == profile
+        # TAP-1972: suggested_profile is always present (None when no other
+        # profile exposes the tool).  Must never echo back the caller's own
+        # profile.
+        assert "suggested_profile" in err.error.data
+        suggested = err.error.data["suggested_profile"]
+        assert suggested is None or isinstance(suggested, str)
+        if isinstance(suggested, str):
+            assert suggested != profile
+            # And the suggestion must actually expose the denied tool.
+            assert denied_tool in registry.get(suggested)
 
     @pytest.mark.asyncio
     async def test_out_of_profile_error_message_is_informative(self) -> None:
@@ -805,6 +815,14 @@ class TestHttpWireContract:
             )
             assert err["data"].get("profile") == "agent_brain", (
                 f"error.data.profile must echo the active profile: {err!r}"
+            )
+            # TAP-1972: suggested_profile must be present (str or None).
+            assert "suggested_profile" in err["data"], (
+                f"error.data.suggested_profile must always be present: {err!r}"
+            )
+            sug = err["data"]["suggested_profile"]
+            assert sug is None or (isinstance(sug, str) and sug != "agent_brain"), (
+                f"suggested_profile must be None or a different profile: {err!r}"
             )
         finally:
             if hasattr(mcp, "_tapps_store"):

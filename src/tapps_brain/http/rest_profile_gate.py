@@ -102,12 +102,15 @@ def out_of_profile_response_body(
     tool: str,
     profile: str | None,
     detail: str | None = None,
+    suggested_profile: str | None = None,
 ) -> dict[str, Any]:
     """Build the documented JSON-RPC ``-32602`` error body for REST denials.
 
     Mirrors the MCP wire shape from TAP-1619 so HTTP consumers see consistent
     error structure across transports.  HTTP status code is the caller's
-    responsibility (typically 403).
+    responsibility (typically 403).  ``suggested_profile`` (TAP-1972) names
+    the smallest profile that exposes *tool* — the caller may pass ``None``
+    when the lookup fails or no profile exposes the tool.
     """
     return {
         "error": "out_of_profile",
@@ -121,5 +124,6 @@ def out_of_profile_response_body(
             "reason": "out_of_profile",
             "tool": tool,
             "profile": profile,
+            "suggested_profile": suggested_profile,
         },
     }
