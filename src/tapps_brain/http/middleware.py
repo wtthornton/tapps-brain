@@ -368,6 +368,12 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
             return await call_next(request)  # type: ignore[no-any-return]
 
         if tool not in allowed_tools:
+            # TAP-1972: hint the smallest profile that exposes the tool so
+            # consumers (`tapps doctor`, operator scripts) can surface
+            # "switch to profile X" without re-parsing the YAML.
+            suggested = _get_profile_resolver()._registry.suggest_profile_for_tool(
+                tool, exclude=resolved_profile
+            )
             logger.info(
                 "rest_profile_gate.denied",
                 path=path,
@@ -375,10 +381,15 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
                 profile=resolved_profile,
                 project_id=project_id,
                 agent_id=agent_id,
+                suggested_profile=suggested,
             )
             return JSONResponse(
                 status_code=403,
-                content=out_of_profile_response_body(tool=tool, profile=resolved_profile),
+                content=out_of_profile_response_body(
+                    tool=tool,
+                    profile=resolved_profile,
+                    suggested_profile=suggested,
+                ),
             )
 
         # Bridge into mcp_server contextvars so downstream handlers can read

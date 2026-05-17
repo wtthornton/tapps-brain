@@ -232,6 +232,23 @@ def reset_profile_filter_counters() -> None:
         _MCP_TOOLS_CALL_TOTAL.clear()
 
 
+def _suggest_profile(profile_registry: Any, tool: str, *, exclude: str | None = None) -> str | None:
+    """Best-effort wrapper around :meth:`ProfileRegistry.suggest_profile_for_tool`.
+
+    Returns ``None`` when *profile_registry* doesn't expose the helper (older
+    instances or mock test doubles) or raises — the ``out_of_profile``
+    envelope just omits the hint in that case rather than failing the denial.
+    """
+    fn = getattr(profile_registry, "suggest_profile_for_tool", None)
+    if not callable(fn):
+        return None
+    try:
+        result = fn(tool, exclude=exclude)
+    except Exception:
+        return None
+    return result if (result is None or isinstance(result, str)) else None
+
+
 def _deferred_for(profile_registry: Any, profile: str) -> frozenset[str]:
     """Return the deferred-tool set for *profile* with mock-friendly fallback.
 
@@ -488,6 +505,9 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                     # `data.reason = "out_of_profile"` so MCP-bridge consumers
                     # (e.g. tapps-mcp BrainBridge) can distinguish "hidden by
                     # profile" from "tool does not exist" (-32601).
+                    # TAP-1972: include `suggested_profile` so clients can
+                    # render "switch to profile X" without re-parsing YAML.
+                    _suggested = _suggest_profile(profile_registry, name, exclude=profile)
                     raise McpError(
                         ErrorData(
                             code=INVALID_PARAMS,
@@ -496,6 +516,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                                 "reason": "out_of_profile",
                                 "tool": name,
                                 "profile": profile,
+                                "suggested_profile": _suggested,
                             },
                         )
                     )
@@ -621,6 +642,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 with _METRICS_LOCK:
                     key = (profile, tool_name, "denied_profile")
                     _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                _suggested = _suggest_profile(profile_registry, tool_name, exclude=profile)
                 raise McpError(
                     ErrorData(
                         code=INVALID_PARAMS,
@@ -629,6 +651,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                             "reason": "out_of_profile",
                             "tool": tool_name,
                             "profile": profile,
+                            "suggested_profile": _suggested,
                         },
                     )
                 )

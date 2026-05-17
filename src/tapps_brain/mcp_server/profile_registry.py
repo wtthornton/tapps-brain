@@ -196,6 +196,38 @@ class ProfileRegistry:
         """Sorted list of known profile names."""
         return sorted(self._profiles)
 
+    def suggest_profile_for_tool(self, tool: str, *, exclude: str | None = None) -> str | None:
+        """Suggest the smallest profile that exposes *tool* (TAP-1972).
+
+        Used by the ``out_of_profile`` error envelope to hint the caller
+        which profile to switch to.  Stable ordering: profiles are sorted
+        by ascending tool-set size, then by profile name.  Returns the
+        first such profile that contains *tool*; returns ``None`` when no
+        profile exposes it (e.g. removed from every profile or never
+        registered).
+
+        Parameters
+        ----------
+        tool:
+            The denied tool name.
+        exclude:
+            Optional profile name to skip — typically the caller's current
+            profile, so the suggestion never echoes back the same profile
+            the call was denied under.
+        """
+        # Smallest profile first (least-privilege escalation), name-tiebreak
+        # for stability so the same denial always produces the same hint.
+        ordered = sorted(
+            self._profiles.items(),
+            key=lambda kv: (len(kv[1]), kv[0]),
+        )
+        for name, tools in ordered:
+            if name == exclude:
+                continue
+            if tool in tools:
+                return name
+        return None
+
     def validate_against(self, known_tools: frozenset[str]) -> None:
         """Validate every profile against *known_tools* and fail fast on drift.
 

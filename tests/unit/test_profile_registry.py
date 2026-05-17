@@ -159,6 +159,29 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("coder").issubset(reg.get("full"))
 
+    def test_suggest_profile_for_tool_picks_smallest_profile(self) -> None:
+        """TAP-1972: suggested profile is the smallest profile that exposes the tool.
+
+        `memory_save` lives in `seeder` (6 tools) and `full` (59) — `seeder`
+        wins on tool-count ascending order.
+        """
+        reg = ProfileRegistry()
+        assert reg.suggest_profile_for_tool("memory_save") == "seeder"
+
+    def test_suggest_profile_for_tool_excludes_current(self) -> None:
+        """TAP-1972: the caller's own profile is never echoed back."""
+        reg = ProfileRegistry()
+        suggested = reg.suggest_profile_for_tool("brain_recall", exclude="agent_brain")
+        assert suggested != "agent_brain"
+        # The suggestion must actually contain the tool.
+        assert suggested is not None
+        assert "brain_recall" in reg.get(suggested)
+
+    def test_suggest_profile_for_tool_returns_none_when_no_profile_exposes_it(self) -> None:
+        """TAP-1972: a tool that no profile lists returns None."""
+        reg = ProfileRegistry()
+        assert reg.suggest_profile_for_tool("nonexistent_tool_xyz") is None
+
     def test_get_reviewer_is_read_only(self) -> None:
         reg = ProfileRegistry()
         reviewer = reg.get("reviewer")
