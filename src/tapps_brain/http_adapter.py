@@ -42,6 +42,7 @@ All public names are re-exported from this module for backward compat.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -1323,7 +1324,9 @@ def create_app(
     # TAP-1843: in-memory snapshot of the tool catalog, built once in lifespan.
     # Keyed by "payload" so the lifespan closure can update it without a
     # nonlocal declaration (mutable container pattern, same as mcp_holder).
-    _tools_snapshot_holder: dict[str, bytes] = {"payload": b'{"tools":[]}'}
+    # TAP-1971: also holds "generated_at" (ISO-8601 string of build time) and
+    # "etag:<key>" cache entries so per-request ETag computation is O(1).
+    _tools_snapshot_holder: dict[str, Any] = {"payload": b'{"tools":[]}'}
 
     def _get_mcp_asgi_sub(mcp: Any) -> Any:
         """Return the Streamable HTTP ASGI sub-app from a FastMCP instance.
@@ -1464,6 +1467,16 @@ def create_app(
                 _tools_snapshot_holder["by_name_json"] = json.dumps(
                     _tools_by_name, separators=(",", ":")
                 ).encode()
+                # TAP-1971: tag the snapshot build time so `/v1/tools/list`
+                # can expose `X-Catalog-Generated-At` without recomputing it
+                # per request.  ISO-8601 UTC with second precision.
+                _tools_snapshot_holder["generated_at"] = time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                )
+                # Drop any cached per-profile ETags so the next request
+                # recomputes against the fresh payload.
+                for _k in [k for k in _tools_snapshot_holder if str(k).startswith("etag:")]:
+                    _tools_snapshot_holder.pop(_k, None)
                 logger.info(
                     "http_adapter.tools_snapshot_built",
                     count=len(_raw_tools),
@@ -1673,6 +1686,40 @@ def create_app(
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
+    def _tools_list_response(
+        content: bytes,
+        cache_slot: str,
+        request: Request,
+    ) -> Response:
+        """Build the cache-validated response for ``/v1/tools/list`` (TAP-1971).
+
+        Adds the ``ETag``, ``Cache-Control``, ``X-Brain-Version`` and
+        ``X-Catalog-Generated-At`` headers; honours ``If-None-Match`` by
+        returning ``304 Not Modified`` (with the same headers, empty body)
+        when the weak validator matches.  Per-slot ETags are memoised on
+        :data:`_tools_snapshot_holder` so the SHA-256 runs at most once per
+        snapshot-build per slot.
+        """
+        etag_key = f"etag:{cache_slot}"
+        etag = _tools_snapshot_holder.get(etag_key)
+        if not isinstance(etag, str):
+            etag = f'W/"{hashlib.sha256(content).hexdigest()[:16]}"'
+            _tools_snapshot_holder[etag_key] = etag
+        generated_at = _tools_snapshot_holder.get("generated_at") or time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+        )
+        base_headers = {
+            "Cache-Control": "public, max-age=300",
+            "ETag": etag,
+            "X-Brain-Version": cfg.version,
+            "X-Catalog-Generated-At": str(generated_at),
+        }
+        # If-None-Match — exact match (weak or strong) → 304 + headers, no body.
+        client_etag = (request.headers.get("if-none-match") or "").strip()
+        if client_etag and client_etag == etag:
+            return Response(status_code=304, headers=base_headers)
+        return Response(content=content, media_type="application/json", headers=base_headers)
+
     @app.get("/v1/tools/list")
     async def _v1_tools_list(request: Request) -> Response:
         """Return the static tool-catalog snapshot built at container startup.
@@ -1691,25 +1738,22 @@ def create_app(
         filtered snapshots are memoised in :data:`_tools_snapshot_holder`
         so the filter runs once per profile, not per request.
 
+        TAP-1971: responses carry ``ETag`` (weak validator over the JSON
+        payload), ``Cache-Control: public, max-age=300``, ``X-Brain-Version``,
+        and ``X-Catalog-Generated-At`` (snapshot-build timestamp).
+        ``If-None-Match`` is honoured for 304 short-circuits.
+
         Unauthenticated, Origin-exempt, and publicly cacheable (no secrets
         beyond the tool surface that bearer auth already protects).
         """
         header_profile = (request.headers.get("x-brain-profile") or "").strip()
         if not header_profile:
-            return Response(
-                content=_tools_snapshot_holder["payload"],
-                media_type="application/json",
-                headers={"Cache-Control": "public, max-age=300"},
-            )
+            return _tools_list_response(_tools_snapshot_holder["payload"], "unfiltered", request)
 
         cache_key = f"by_profile:{header_profile}"
         cached = _tools_snapshot_holder.get(cache_key)
         if cached is not None:
-            return Response(
-                content=cached,
-                media_type="application/json",
-                headers={"Cache-Control": "public, max-age=300"},
-            )
+            return _tools_list_response(cached, cache_key, request)
 
         from tapps_brain.http.profile_resolver import _get_profile_resolver
         from tapps_brain.mcp_server.profile_registry import UnknownProfileError
@@ -1730,11 +1774,7 @@ def create_app(
         if by_name_payload is None:
             # Snapshot not built (lifespan failed / running in tests without
             # the lifespan hook). Fall back to the unfiltered payload.
-            return Response(
-                content=_tools_snapshot_holder["payload"],
-                media_type="application/json",
-                headers={"Cache-Control": "public, max-age=300"},
-            )
+            return _tools_list_response(_tools_snapshot_holder["payload"], "unfiltered", request)
 
         try:
             by_name = json.loads(by_name_payload.decode("utf-8"))
@@ -1743,11 +1783,7 @@ def create_app(
         filtered = {"tools": [by_name[name] for name in allowed if name in by_name]}
         encoded = json.dumps(filtered, separators=(",", ":")).encode()
         _tools_snapshot_holder[cache_key] = encoded
-        return Response(
-            content=encoded,
-            media_type="application/json",
-            headers={"Cache-Control": "public, max-age=300"},
-        )
+        return _tools_list_response(encoded, cache_key, request)
 
     @app.get("/info", dependencies=[Depends(require_data_plane_auth)])
     async def _info() -> JSONResponse:
