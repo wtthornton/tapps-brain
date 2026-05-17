@@ -282,6 +282,117 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
         return await call_next(request)  # type: ignore[no-any-return]
 
 
+class RestProfileGateMiddleware(BaseHTTPMiddleware):
+    """X-Brain-Profile enforcement for ``/v1/*`` REST endpoints (TAP-1929).
+
+    Until v3.19, the ``X-Brain-Profile`` header gated only the MCP tool list
+    / call interceptors.  An HTTP consumer running with
+    ``X-Brain-Profile: agent_brain`` could still POST to ``/v1/forget`` (a
+    ``memory_*`` endpoint outside the agent_brain profile) without any
+    server-side check — the profile boundary was documentation, not
+    enforcement.
+
+    This middleware:
+
+    * Resolves the per-request profile (header → agent registry → server
+      default), reusing the same :class:`tapps_brain.mcp_server.profile_resolver.ProfileResolver`
+      singleton the MCP transport uses.
+    * Maps the request path to a tool name via
+      :data:`tapps_brain.http.rest_profile_gate.REST_ROUTE_TO_TOOL`.
+    * Returns ``403`` with the documented JSON-RPC ``-32602`` error shape
+      when the resolved profile does not include the mapped tool.
+
+    Paths in :data:`tapps_brain.http.rest_profile_gate.PUBLIC_PATHS`
+    (probes, scrape endpoints, the static ``/v1/tools/list`` snapshot)
+    bypass this middleware entirely.  Unmapped ``/v1/*`` paths (admin
+    routes, future endpoints) also pass through — they are gated by
+    bearer-token auth in their own dependencies.
+
+    When the ``X-Brain-Profile`` header is absent, the server's default
+    profile applies (typically ``"full"``), so behaviour is backward
+    compatible with pre-1929 callers that never set the header.
+    """
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # noqa: ANN401, PLR0911
+        path = request.url.path
+        if not path.startswith("/v1/"):
+            return await call_next(request)  # type: ignore[no-any-return]
+
+        from tapps_brain.http.rest_profile_gate import (
+            PUBLIC_PATHS,
+            out_of_profile_response_body,
+            resolve_tool_for_path,
+        )
+
+        if path in PUBLIC_PATHS:
+            return await call_next(request)  # type: ignore[no-any-return]
+
+        tool = resolve_tool_for_path(path)
+        if tool is None:
+            # Unmapped /v1/* path — let it through (admin / future routes).
+            return await call_next(request)  # type: ignore[no-any-return]
+
+        # Profile resolution mirrors McpTenantMiddleware exactly.
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+
+        from tapps_brain.http.profile_resolver import _get_profile_resolver
+        from tapps_brain.mcp_server.profile_registry import UnknownProfileError
+
+        header_profile: str | None = (request.headers.get("x-brain-profile") or "").strip() or None
+        if header_profile is not None:
+            try:
+                resolver = _get_profile_resolver()
+                resolver._registry.get(header_profile)
+            except UnknownProfileError as exc:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "bad_request",
+                        "detail": f"Unknown MCP profile {header_profile!r}.",
+                        "available": exc.available,
+                    },
+                )
+
+        resolved_profile: str = _get_profile_resolver().resolve(
+            project_id=project_id,
+            agent_id=agent_id,
+            header_profile=header_profile,
+        )
+
+        try:
+            allowed_tools = _get_profile_resolver()._registry.get(resolved_profile)
+        except UnknownProfileError:
+            # Server default points at an unknown profile — let the call
+            # through rather than refuse; operators see this in startup logs.
+            return await call_next(request)  # type: ignore[no-any-return]
+
+        if tool not in allowed_tools:
+            logger.info(
+                "rest_profile_gate.denied",
+                path=path,
+                tool=tool,
+                profile=resolved_profile,
+                project_id=project_id,
+                agent_id=agent_id,
+            )
+            return JSONResponse(
+                status_code=403,
+                content=out_of_profile_response_body(tool=tool, profile=resolved_profile),
+            )
+
+        # Bridge into mcp_server contextvars so downstream handlers can read
+        # request.state.brain_profile / REQUEST_PROFILE if they care.
+        from tapps_brain import mcp_server as _mcp_mod
+
+        token_profile = _mcp_mod.REQUEST_PROFILE.set(resolved_profile)
+        request.state.brain_profile = resolved_profile
+        try:
+            return await call_next(request)  # type: ignore[no-any-return]
+        finally:
+            _mcp_mod.REQUEST_PROFILE.reset(token_profile)
+
+
 class McpTenantMiddleware(BaseHTTPMiddleware):
     """Enforce the MCP wire envelope for ``/mcp``:
 

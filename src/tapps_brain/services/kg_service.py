@@ -90,14 +90,18 @@ def record_event(
     subject_key: str | None = None,
     utility_score: float = 0.0,
     payload: dict[str, Any] | None = None,
-    entities_json: str = "",
-    edges_json: str = "",
-    evidence_json: str = "",
+    entities: list[dict[str, Any]] | None = None,
+    edges: list[dict[str, Any]] | None = None,
+    evidence: list[dict[str, Any]] | None = None,
     memory_key: str | None = None,
     memory_value: str | None = None,
     memory_tier: str = "pattern",
     session_id: str | None = None,
     workflow_run_id: str | None = None,
+    # Deprecated JSON-string aliases (TAP-1932). Removed in next minor.
+    entities_json: str = "",
+    edges_json: str = "",
+    evidence_json: str = "",
 ) -> dict[str, Any]:
     """Write an ExperienceEvent and optional side-effects atomically.
 
@@ -118,12 +122,15 @@ def record_event(
         Measured utility `[0, 1]`.
     payload:
         Arbitrary JSONB event metadata.
-    entities_json, edges_json, evidence_json:
-        JSON-serialised lists of spec dicts matching
+    entities, edges, evidence:
+        Native ``list[dict]`` shapes matching
         :class:`~tapps_brain.experience.EntitySpec`,
         :class:`~tapps_brain.experience.EdgeSpec`, and
-        :class:`~tapps_brain.experience.EvidenceSpec` respectively.
-        Pass ``""`` or ``"[]"`` to skip that component.
+        :class:`~tapps_brain.experience.EvidenceSpec` respectively
+        (TAP-1932).
+    entities_json, edges_json, evidence_json:
+        **Deprecated (TAP-1932).** JSON-serialised list aliases retained for
+        one minor cycle. The native list arguments take precedence.
     memory_key / memory_value:
         When both are provided, a :class:`~tapps_brain.experience.MemorySpec`
         is written atomically alongside the event.
@@ -137,19 +144,27 @@ def record_event(
         MemorySpec,
     )
 
-    # Parse optional JSON arrays.
-    def _parse_specs(raw: str, cls: type) -> list[Any]:
-        if not raw or raw.strip() in ("", "[]"):
-            return []
-        try:
-            items = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-        return [cls(**item) for item in (items if isinstance(items, list) else [])]
+    def _coerce(
+        native: list[dict[str, Any]] | None,
+        legacy_json: str,
+        cls: type,
+    ) -> list[Any]:
+        """Build spec instances from native list (preferred) or legacy JSON string."""
+        items: list[dict[str, Any]] = []
+        if isinstance(native, list):
+            items = [it for it in native if isinstance(it, dict)]
+        elif legacy_json and legacy_json.strip() not in ("", "[]"):
+            try:
+                parsed = json.loads(legacy_json)
+            except json.JSONDecodeError:
+                parsed = []
+            if isinstance(parsed, list):
+                items = [it for it in parsed if isinstance(it, dict)]
+        return [cls(**item) for item in items]
 
-    entity_specs = _parse_specs(entities_json, EntitySpec)
-    edge_specs = _parse_specs(edges_json, EdgeSpec)
-    evidence_specs = _parse_specs(evidence_json, EvidenceSpec)
+    entity_specs = _coerce(entities, entities_json, EntitySpec)
+    edge_specs = _coerce(edges, edges_json, EdgeSpec)
+    evidence_specs = _coerce(evidence, evidence_json, EvidenceSpec)
 
     mem_spec: MemorySpec | None = None
     if memory_key and memory_value:
@@ -173,6 +188,119 @@ def record_event(
     )
     result = recorder.record(event)
     return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# record_events_batch (TAP-1934)
+# ---------------------------------------------------------------------------
+
+
+def record_events_batch(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    agent_id: str,
+    *,
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Write multiple :class:`ExperienceEvent` rows atomically.
+
+    Patterned after :func:`record_event` but writes the entire batch in a
+    single Postgres transaction via a per-batch
+    :class:`~tapps_brain.experience.ExperienceEventRecorder` invoked with one
+    ``cm.project_context`` block.  Any failure on any event rolls back the
+    whole batch — partial commits are not possible.
+
+    Parameters
+    ----------
+    cm:
+        Open :class:`~tapps_brain.postgres_connection.PostgresConnectionManager`.
+    project_id, brain_id, agent_id:
+        Tenant / identity scope.  Identical to :func:`record_event`.
+    events:
+        List of event dicts matching the ``/v1/experience`` single-event
+        schema.  Each dict accepts the same keys as the per-event body
+        (``event_type``, ``subject_key``, ``utility_score``, ``payload``,
+        ``entities``, ``edges``, ``evidence``, ``memory_key``,
+        ``memory_value``, ``memory_tier``, ``session_id``,
+        ``workflow_run_id``).
+
+    Returns
+    -------
+    ``{"results": [{"event_id": ..., "memory_key": ..., "entity_ids": ...,
+    "edge_ids": ..., "evidence_ids": ...}, ...], "count": int}`` on success,
+    or ``{"error": str, "detail": str}`` on validation failure.
+    """
+    if not isinstance(events, list):
+        return {"error": "bad_request", "detail": "events must be a JSON array."}
+    if not events:
+        return {"error": "bad_request", "detail": "events must contain at least one event."}
+
+    from tapps_brain.experience import (
+        EdgeSpec,
+        EntitySpec,
+        EvidenceSpec,
+        ExperienceEvent,
+        ExperienceEventRecorder,
+        MemorySpec,
+    )
+
+    # Pre-validate: every event must carry a non-empty event_type.
+    for idx, ev in enumerate(events):
+        if not isinstance(ev, dict):
+            return {
+                "error": "bad_request",
+                "detail": f"events[{idx}] must be a JSON object.",
+            }
+        if not (ev.get("event_type") or "").strip():
+            return {
+                "error": "bad_request",
+                "detail": f"events[{idx}].event_type is required.",
+            }
+
+    def _spec_list(raw: Any, cls: type) -> list[Any]:
+        if not isinstance(raw, list):
+            return []
+        return [cls(**item) for item in raw if isinstance(item, dict)]
+
+    event_objs: list[ExperienceEvent] = []
+    for ev in events:
+        mem: MemorySpec | None = None
+        if ev.get("memory_key") and ev.get("memory_value"):
+            mem = MemorySpec(
+                key=str(ev["memory_key"]),
+                value=str(ev["memory_value"]),
+                tier=str(ev.get("memory_tier") or "pattern"),
+            )
+        try:
+            us = float(ev.get("utility_score", 0.0))
+        except (TypeError, ValueError):
+            us = 0.0
+        event_objs.append(
+            ExperienceEvent(
+                event_type=str(ev["event_type"]).strip(),
+                subject_key=ev.get("subject_key") or None,
+                utility_score=max(0.0, min(1.0, us)),
+                payload=ev.get("payload") or {},
+                session_id=ev.get("session_id") or None,
+                workflow_run_id=ev.get("workflow_run_id") or None,
+                memory=mem,
+                entities=_spec_list(ev.get("entities"), EntitySpec),
+                edges=_spec_list(ev.get("edges"), EdgeSpec),
+                evidence=_spec_list(ev.get("evidence"), EvidenceSpec),
+            )
+        )
+
+    recorder = ExperienceEventRecorder(
+        cm, project_id=project_id, brain_id=brain_id, agent_id=agent_id
+    )
+    # TAP-1934: record_many() writes the whole batch in one transaction —
+    # any failure rolls back every event (no partial commits).
+    batch_results = recorder.record_many(event_objs)
+    return {
+        "results": [r.model_dump() for r in batch_results],
+        "count": len(batch_results),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +359,45 @@ def get_neighbors(
 # ---------------------------------------------------------------------------
 
 
+# TAP-1933: configurable explain BFS ceilings. Server-side env vars cap how
+# deep / how wide the brain_explain_connection BFS may walk. Per-call
+# max_hops is still clamped against TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS; per-node
+# fan-out is capped by TAPPS_BRAIN_KG_EXPLAIN_BRANCHING_FACTOR so deeper hops
+# don't explode query cost on dense graphs.
+_DEFAULT_EXPLAIN_MAX_HOPS = 3
+_DEFAULT_EXPLAIN_BRANCHING_FACTOR = 50
+
+
+def _int_env(name: str, default: int, *, minimum: int = 1) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def explain_max_hops_ceiling() -> int:
+    """Return the configured ceiling for ``brain_explain_connection`` hops.
+
+    Defaults to 3 (the historical hard clamp). Operators with denser graphs
+    can raise it by setting ``TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS``.
+    """
+    return _int_env("TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS", _DEFAULT_EXPLAIN_MAX_HOPS)
+
+
+def explain_branching_factor() -> int:
+    """Return the per-node fan-out cap for ``brain_explain_connection`` BFS.
+
+    Defaults to 50 (the historical implicit cap from ``get_neighbors(limit=50)``).
+    Tune via ``TAPPS_BRAIN_KG_EXPLAIN_BRANCHING_FACTOR`` to keep BFS cost
+    bounded on dense graphs.
+    """
+    return _int_env("TAPPS_BRAIN_KG_EXPLAIN_BRANCHING_FACTOR", _DEFAULT_EXPLAIN_BRANCHING_FACTOR)
+
+
 def explain_connection(
     cm: Any,
     project_id: str,
@@ -239,12 +406,13 @@ def explain_connection(
     subject_id: str,
     object_id: str,
     max_hops: int = 3,
+    branching_factor: int | None = None,
 ) -> dict[str, Any]:
     """Find the shortest path between *subject_id* and *object_id*.
 
     Uses BFS over
     :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.get_neighbors`
-    up to *max_hops* depth (capped at 3).  Returns the first path found or
+    up to *max_hops* depth.  Returns the first path found or
     ``found=False`` when no path exists within the hop limit.
 
     Parameters
@@ -254,9 +422,18 @@ def explain_connection(
     object_id:
         UUID of the target entity.
     max_hops:
-        Maximum hops to traverse (clamped to [1, 3]).
+        Maximum hops to traverse.  Clamped against the configured ceiling
+        :func:`explain_max_hops_ceiling` (default 3, env-tunable via
+        ``TAPPS_BRAIN_KG_EXPLAIN_MAX_HOPS``) — TAP-1933.
+    branching_factor:
+        Per-node fan-out cap on each BFS layer.  When ``None``, falls back
+        to :func:`explain_branching_factor` (default 50, env-tunable via
+        ``TAPPS_BRAIN_KG_EXPLAIN_BRANCHING_FACTOR``) — TAP-1933.
     """
-    max_hops = max(1, min(max_hops, 3))
+    ceiling = explain_max_hops_ceiling()
+    max_hops = max(1, min(max_hops, ceiling))
+    fanout = branching_factor if branching_factor is not None else explain_branching_factor()
+    fanout = max(1, min(fanout, 500))
 
     if subject_id == object_id:
         return {"found": True, "hops": 0, "path": [{"entity_id": subject_id}]}
@@ -274,7 +451,7 @@ def explain_connection(
             while queue:
                 current_id, path = queue.popleft()
                 try:
-                    neighbors = kg.get_neighbors(current_id, direction="both", limit=50)
+                    neighbors = kg.get_neighbors(current_id, direction="both", limit=fanout)
                 except Exception:
                     continue
                 for n in neighbors:
@@ -320,6 +497,9 @@ def explain_connection(
 # ---------------------------------------------------------------------------
 
 
+_DEFAULT_EDGE_CONFIDENCE_DELTA = 0.05
+
+
 def record_kg_feedback(
     store: Any,
     project_id: str,
@@ -328,7 +508,8 @@ def record_kg_feedback(
     edge_id: str,
     feedback_type: str,
     session_id: str = "",
-    confidence_delta: float = 0.05,
+    confidence_delta: float = _DEFAULT_EDGE_CONFIDENCE_DELTA,
+    utility_score: float | None = None,
 ) -> dict[str, Any]:
     """Record edge-level feedback (``edge_helpful`` or ``edge_misleading``).
 
@@ -363,6 +544,20 @@ def record_kg_feedback(
         Optional session identifier.
     confidence_delta:
         Confidence reduction per ``edge_misleading`` event (default 0.05).
+    utility_score:
+        TAP-1930. Continuous utility signal in ``[-1, 1]``.  Passed to the
+        FeedbackStore audit row on **both** edge_helpful and edge_misleading
+        so EWMA / flywheel diagnostics pick it up regardless of feedback
+        type.  On **edge_misleading**, ``abs(utility_score)`` additionally
+        weights the confidence delta so callers can express "how misleading"
+        as a continuous signal (max 0.1 at ``|utility_score| = 1.0``).  On
+        **edge_helpful**, the underlying ``APPLY_EDGE_HELPFUL_SQL`` does not
+        accept a delta — the FSRS reinforce step is binary — so the score
+        is recorded in the audit trail but does not alter the edge
+        confidence.  When *utility_score* is ``None`` the legacy
+        fixed-step behaviour applies. Explicit ``0.0`` is treated as
+        "no useful signal" — the fixed step still applies (zeroing the
+        delta would defeat the purpose of recording the feedback).
     """
     from tapps_brain.services import feedback_service
 
@@ -373,6 +568,22 @@ def record_kg_feedback(
             "detail": f"feedback_type must be one of {sorted(allowed)!r}.",
         }
 
+    # TAP-1930: validate utility_score range server-side.
+    if utility_score is not None and not (-1.0 <= float(utility_score) <= 1.0):
+        return {
+            "error": "bad_request",
+            "detail": "utility_score must be in [-1, 1].",
+        }
+
+    # TAP-1930: weight the confidence delta by |utility_score| when a non-zero
+    # value is provided.  Explicit 0.0 is treated as "no useful signal" and
+    # keeps the legacy fixed step so the call still moves the needle (zeroing
+    # the delta would silently drop the misleading penalty altogether).  The
+    # weighting applies only to the edge_misleading SQL — see docstring above.
+    effective_delta = confidence_delta
+    if utility_score is not None and float(utility_score) != 0.0:
+        effective_delta = abs(float(utility_score)) * 0.1
+
     # Phase 1: FeedbackStore audit trail
     fb_result = feedback_service.feedback_record(
         store,
@@ -381,6 +592,7 @@ def record_kg_feedback(
         event_type=feedback_type,
         entry_key=edge_id,
         session_id=session_id,
+        utility_score=utility_score,
         details_json=json.dumps({"edge_id": edge_id}),
     )
     if isinstance(fb_result, dict) and fb_result.get("error"):
@@ -405,7 +617,7 @@ def record_kg_feedback(
         kg_result = kg.apply_edge_feedback(
             edge_id,
             feedback_type,
-            confidence_delta=confidence_delta,
+            confidence_delta=effective_delta,
         )
     finally:
         kg.close()

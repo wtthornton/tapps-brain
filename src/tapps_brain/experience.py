@@ -484,6 +484,192 @@ class ExperienceEventRecorder:
             evidence_ids=evidence_ids,
         )
 
+    def record_many(self, events: list[ExperienceEvent]) -> list[ExperienceResult]:
+        """Write *events* atomically in a single Postgres transaction (TAP-1934).
+
+        Patterned after :meth:`record` but the entire list shares one
+        ``project_context`` cursor block — any failure on any event rolls back
+        the whole batch.  Returns one :class:`ExperienceResult` per event in
+        input order.
+
+        This is the all-or-nothing primitive used by the
+        ``POST /v1/experience:batch`` REST endpoint for high-throughput
+        consumers (Ralph-style autonomous loops emitting 20+ events/min).
+
+        Parameters
+        ----------
+        events:
+            List of events to record.  Each event runs the same side-effect
+            pipeline as :meth:`record` (entities → edges → evidence →
+            cross-ref patch), interleaved within the shared transaction.
+
+        Raises
+        ------
+        psycopg.DatabaseError
+            Propagated on any constraint or RLS violation.  The full batch
+            transaction is rolled back before this is raised.
+        """
+        if not events:
+            return []
+
+        results: list[ExperienceResult] = []
+
+        with self._cm.project_context(self._project_id) as conn, conn.cursor() as cur:
+            for event in events:
+                event_id = str(_uuid_mod.uuid4())
+                entity_ids: list[str] = []
+                edge_ids: list[str] = []
+                evidence_ids: list[str] = []
+                memory_key: str | None = None
+
+                # Insert the event row.
+                cur.execute(
+                    _INSERT_EVENT_SQL,
+                    (
+                        event_id,
+                        self._project_id,
+                        self._brain_id,
+                        self._project_id,
+                        self._agent_id,
+                        event.session_id,
+                        event.workflow_run_id,
+                        event.event_type,
+                        event.subject_key,
+                        event.utility_score,
+                        json.dumps(event.payload),
+                    ),
+                )
+
+                # Optional memory.
+                if event.memory is not None:
+                    mem = event.memory
+                    cur.execute(
+                        _INSERT_MEMORY_SQL,
+                        (
+                            self._project_id,
+                            self._agent_id,
+                            mem.key,
+                            mem.value,
+                            mem.tier,
+                            mem.confidence,
+                            self._agent_id,
+                            mem.agent_scope,
+                            json.dumps(mem.tags),
+                        ),
+                    )
+                    row = cur.fetchone()
+                    memory_key = str(row[0]) if row else mem.key
+
+                # Entities → edges → evidence (identical to record()).
+                for entity_spec in event.entities:
+                    cur.execute(
+                        _kg_sql.UPSERT_ENTITY_SQL,
+                        (
+                            self._project_id,
+                            self._brain_id,
+                            self._project_id,
+                            entity_spec.entity_type,
+                            entity_spec.canonical_name,
+                            json.dumps(entity_spec.aliases),
+                            json.dumps(entity_spec.metadata),
+                            entity_spec.confidence,
+                            entity_spec.source,
+                            self._agent_id,
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        entity_ids.append(str(row[0]))
+
+                for edge_spec in event.edges:
+                    cur.execute(
+                        _kg_sql.GET_ACTIVE_EDGE_SQL,
+                        (
+                            self._brain_id,
+                            edge_spec.subject_entity_id,
+                            edge_spec.predicate,
+                            edge_spec.object_entity_id,
+                        ),
+                    )
+                    existing = cur.fetchone()
+                    if existing is not None:
+                        edge_ids.append(str(existing[0]))
+                    else:
+                        cur.execute(
+                            _kg_sql.INSERT_EDGE_SQL,
+                            (
+                                self._project_id,
+                                self._brain_id,
+                                self._project_id,
+                                edge_spec.subject_entity_id,
+                                edge_spec.predicate,
+                                edge_spec.object_entity_id,
+                                edge_spec.edge_class,
+                                edge_spec.layer,
+                                edge_spec.profile_name,
+                                edge_spec.confidence,
+                                edge_spec.source,
+                                self._agent_id,
+                                self._agent_id,
+                                json.dumps(edge_spec.metadata),
+                            ),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            edge_ids.append(str(row[0]))
+
+                for ev_spec in event.evidence:
+                    cur.execute(
+                        _kg_sql.ATTACH_EVIDENCE_SQL,
+                        (
+                            self._project_id,
+                            self._brain_id,
+                            self._project_id,
+                            ev_spec.edge_id,
+                            ev_spec.entity_id,
+                            ev_spec.source_type,
+                            ev_spec.source_id,
+                            ev_spec.source_key,
+                            ev_spec.source_uri,
+                            ev_spec.source_hash,
+                            ev_spec.source_span,
+                            ev_spec.quote,
+                            json.dumps(ev_spec.metadata),
+                            self._agent_id,
+                            ev_spec.confidence,
+                            ev_spec.utility_score,
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        evidence_ids.append(str(row[0]))
+
+                first_entity_id = entity_ids[0] if entity_ids else None
+                first_edge_id = edge_ids[0] if edge_ids else None
+                if memory_key or first_entity_id or first_edge_id:
+                    cur.execute(
+                        _UPDATE_EVENT_XREFS_SQL,
+                        (memory_key, first_entity_id, first_edge_id, event_id),
+                    )
+
+                results.append(
+                    ExperienceResult(
+                        event_id=event_id,
+                        memory_key=memory_key,
+                        entity_ids=entity_ids,
+                        edge_ids=edge_ids,
+                        evidence_ids=evidence_ids,
+                    )
+                )
+
+        logger.info(
+            "experience_events_batch_recorded",
+            count=len(results),
+            agent_id=self._agent_id,
+        )
+
+        return results
+
 
 # ---------------------------------------------------------------------------
 # Async wrapper
