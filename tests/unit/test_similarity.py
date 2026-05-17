@@ -217,8 +217,14 @@ class TestExtractText:
         assert key_pos < val_pos
 
     def test_empty_value(self) -> None:
-        """Empty value produces output containing only key text."""
-        entry = _entry("some-key", "")
+        """Empty value produces output containing only key text.
+
+        ``MemoryEntry`` rejects empty ``value`` at the model layer (TAP-2052;
+        matches the existing key/tier/tags contract). Use ``model_construct``
+        to bypass validation — this test exercises the similarity helper's
+        edge-case handling of a degenerate value, not the model invariant.
+        """
+        entry = MemoryEntry.model_construct(key="some-key", value="", tier=MemoryTier.pattern)
         text = _extract_text(entry)
         assert "some key" in text
 
@@ -232,9 +238,14 @@ class TestTextSimilarityBoundary:
     """Edge cases for text_similarity (short inputs, stop-word-only, empty)."""
 
     def test_identical_key_empty_value_gives_one(self) -> None:
-        """Identical key with empty value: TF vectors match → similarity 1.0."""
-        entry_a = _entry("auth-jwt", "")
-        entry_b = _entry("auth-jwt", "")
+        """Identical key with empty value: TF vectors match → similarity 1.0.
+
+        Bypasses model validation (which rejects empty ``value``) so the
+        similarity helper's degenerate-input behaviour can be asserted
+        directly — see ``test_empty_value`` for the same rationale.
+        """
+        entry_a = MemoryEntry.model_construct(key="auth-jwt", value="", tier=MemoryTier.pattern)
+        entry_b = MemoryEntry.model_construct(key="auth-jwt", value="", tier=MemoryTier.pattern)
         assert text_similarity(entry_a, entry_b) == pytest.approx(1.0)
 
     def test_identical_entries_give_one(self) -> None:
