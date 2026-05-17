@@ -38,6 +38,24 @@ def _bad_json_error(field: str, detail: str) -> dict[str, str]:
     return {"error": "bad_json", "field": field, "detail": detail}
 
 
+def _validate_optional_json_object(raw: str, field: str) -> dict[str, str] | None:
+    """Validate that *raw* parses to a JSON object — or is empty (TAP-1969).
+
+    Returns ``None`` on empty / valid input; otherwise the ``bad_json``
+    envelope identifying *field*.  Used by ``brain_record_feedback`` to
+    fail the call before either feedback path runs.
+    """
+    if not raw or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return _bad_json_error(field, str(exc))
+    if not isinstance(parsed, dict):
+        return _bad_json_error(field, f"expected JSON object, got {type(parsed).__name__}")
+    return None
+
+
 def _coerce_payload(
     native: dict[str, Any] | None,
     legacy_json: str,
@@ -445,6 +463,16 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             return json.dumps({"error": "bad_request", "detail": str(exc)})
         s = _resolve(agent_id)
         project_id = _pid()
+
+        # TAP-1969: validate details_json once up-front and surface the same
+        # bad_json envelope used by TAP-1967 / TAP-1968.  The service-layer
+        # parser (`parse_details_json`) returns a `parse_error` shape that
+        # other feedback tools depend on — we translate only on this MCP
+        # surface to keep the contract symmetric with brain_record_event /
+        # brain_get_neighbors without rippling through feedback_service.
+        details_err = _validate_optional_json_object(details_json, "details_json")
+        if details_err is not None:
+            return json.dumps(details_err)
 
         # TAP-1930: pass utility_score through verbatim on both paths so MCP
         # and REST behave identically.  The service layer treats explicit 0.0
