@@ -18,7 +18,7 @@ from tapps_brain.store import MemoryStore
 
 
 def _tool_fn(mcp_server: object, name: str):
-    for tool in mcp_server._tool_manager.list_tools():  # type: ignore[attr-defined]
+    for tool in mcp_server._tool_manager._unfiltered_list_tools():  # type: ignore[attr-defined]
         if tool.name == name:
             return tool.fn
     msg = f"tool not found: {name}"

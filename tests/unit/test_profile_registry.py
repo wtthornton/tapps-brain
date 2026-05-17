@@ -125,17 +125,18 @@ class TestBundledProfiles:
         assert "brain_get_neighbors" in coder
         assert "brain_explain_connection" in coder
 
-    def test_get_coder_tool_count_is_17(self) -> None:
-        """TAP-2006: pin the coder profile size at 17 tools.
+    def test_get_coder_tool_count_is_18(self) -> None:
+        """TAP-2006 + TAP-1973: pin the coder profile size at 18 tools.
 
         Six facade + four hook-callable + three quality-loop + four cross-repo /
         KG discovery (`hive_search`, `memory_find_related`,
-        `brain_get_neighbors`, `brain_explain_connection`). Bump this in lockstep
-        with the profile YAML when the surface changes.
+        `brain_get_neighbors`, `brain_explain_connection`) + one KG batch
+        (`brain_record_events_batch`, TAP-1973). Bump this in lockstep with the
+        profile YAML when the surface changes.
         """
         reg = ProfileRegistry()
         coder = reg.get("coder")
-        assert len(coder) == 17, sorted(coder)
+        assert len(coder) == 18, sorted(coder)
 
     def test_coder_description_calls_out_kg_discovery_tools(self) -> None:
         """TAP-2006: description must surface the discovery primitives by name.

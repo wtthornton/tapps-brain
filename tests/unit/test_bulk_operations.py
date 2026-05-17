@@ -527,7 +527,7 @@ class TestMcpBulkTools:
         from tapps_brain.mcp_server import create_server
 
         server = create_server(tmp_path, enable_hive=False)
-        tool_names = [t.name for t in server._tool_manager.list_tools()]
+        tool_names = [t.name for t in server._tool_manager._unfiltered_list_tools()]
         assert "memory_save_many" in tool_names
         server._tapps_store.close()
 
@@ -536,7 +536,7 @@ class TestMcpBulkTools:
         from tapps_brain.mcp_server import create_server
 
         server = create_server(tmp_path, enable_hive=False)
-        tool_names = [t.name for t in server._tool_manager.list_tools()]
+        tool_names = [t.name for t in server._tool_manager._unfiltered_list_tools()]
         assert "memory_recall_many" in tool_names
         server._tapps_store.close()
 
@@ -545,7 +545,7 @@ class TestMcpBulkTools:
         from tapps_brain.mcp_server import create_server
 
         server = create_server(tmp_path, enable_hive=False)
-        tool_names = [t.name for t in server._tool_manager.list_tools()]
+        tool_names = [t.name for t in server._tool_manager._unfiltered_list_tools()]
         assert "memory_reinforce_many" in tool_names
         server._tapps_store.close()
 
@@ -558,7 +558,7 @@ class TestMcpBulkTools:
 
         # Find the tool
         fn = None
-        for tool in server._tool_manager.list_tools():
+        for tool in server._tool_manager._unfiltered_list_tools():
             if tool.name == "memory_save_many":
                 fn = tool.fn
                 break
@@ -581,7 +581,7 @@ class TestMcpBulkTools:
         store.save(key="recall-test", value="hello world", tier="pattern")
 
         fn = None
-        for tool in server._tool_manager.list_tools():
+        for tool in server._tool_manager._unfiltered_list_tools():
             if tool.name == "memory_recall_many":
                 fn = tool.fn
                 break
@@ -603,7 +603,7 @@ class TestMcpBulkTools:
         store.save(key="reinforce-test", value="value", tier="pattern")
 
         fn = None
-        for tool in server._tool_manager.list_tools():
+        for tool in server._tool_manager._unfiltered_list_tools():
             if tool.name == "memory_reinforce_many":
                 fn = tool.fn
                 break

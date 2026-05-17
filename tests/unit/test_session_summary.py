@@ -257,14 +257,14 @@ class TestMCPSessionEnd:
         from tapps_brain.mcp_server import create_server
 
         mcp = create_server(project_dir=tmp_path)
-        tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+        tool_names = [t.name for t in mcp._tool_manager._unfiltered_list_tools()]
         assert "tapps_brain_session_end" in tool_names
 
     def test_tool_saves_entry(self, tmp_path: Path):
         from tapps_brain.mcp_server import create_server
 
         mcp = create_server(project_dir=tmp_path)
-        tool_names = {t.name: t for t in mcp._tool_manager.list_tools()}
+        tool_names = {t.name: t for t in mcp._tool_manager._unfiltered_list_tools()}
         assert "tapps_brain_session_end" in tool_names
 
         # Save via session_summary_save directly to verify the module works
