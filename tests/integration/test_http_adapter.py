@@ -594,3 +594,144 @@ class TestV1ToolsList:
                 resp = client.get("/v1/tools/list")
 
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# TAP-1971: /v1/tools/list ETag + Cache-Control + version headers + 304
+# ---------------------------------------------------------------------------
+
+
+class TestV1ToolsListCacheHeaders:
+    """ETag (weak validator), Cache-Control, X-Brain-Version, X-Catalog-Generated-At.
+
+    The route should expose every header on the 200 response and short-circuit
+    to ``304 Not Modified`` (still emitting Cache-Control + ETag) whenever the
+    client's ``If-None-Match`` matches the current weak validator.
+    """
+
+    @staticmethod
+    def _build_client(tools: list[tuple[str, str]] | None = None) -> Any:
+        import types
+
+        from starlette.testclient import TestClient
+
+        def _make_tool(name: str, description: str) -> Any:
+            return types.SimpleNamespace(
+                name=name,
+                description=description,
+                parameters={"type": "object", "properties": {}},
+            )
+
+        mock_tool_manager = MagicMock()
+        mock_tool_manager.list_tools.return_value = [
+            _make_tool(n, d) for n, d in (tools or [("brain_recall", "Retrieve memory")])
+        ]
+        mcp_server = MagicMock()
+        mcp_server.session_manager = None
+        mcp_server._tool_manager = mock_tool_manager
+        settings = _make_settings()
+        # Stub the REST route drift validator — partial tool mocks would
+        # otherwise fail the startup gate; behaviour is unrelated to TAP-1971.
+        ctx = (
+            patch.object(_http_mod, "_settings", settings),
+            patch.object(_http_mod, "get_settings", return_value=settings),
+            patch(
+                "tapps_brain.http.rest_profile_gate.validate_rest_route_map",
+                lambda _known_tools: None,
+            ),
+        )
+        for cm in ctx:
+            cm.__enter__()
+        app = create_app(mcp_server=mcp_server)
+        return TestClient(app, raise_server_exceptions=True), ctx
+
+    @staticmethod
+    def _close(ctx: tuple[Any, ...]) -> None:
+        for cm in ctx:
+            cm.__exit__(None, None, None)
+
+    def test_200_response_has_all_cache_headers(self) -> None:
+        client, ctx = self._build_client()
+        try:
+            with client:
+                resp = client.get("/v1/tools/list")
+            assert resp.status_code == 200
+            etag = resp.headers["etag"]
+            assert etag.startswith('W/"'), etag
+            assert resp.headers["cache-control"] == "public, max-age=300"
+            assert resp.headers["x-brain-version"]  # cfg.version is non-empty
+            assert resp.headers["x-catalog-generated-at"].endswith("Z")
+        finally:
+            self._close(ctx)
+
+    def test_if_none_match_returns_304_with_headers_and_empty_body(self) -> None:
+        client, ctx = self._build_client()
+        try:
+            with client:
+                first = client.get("/v1/tools/list")
+                etag = first.headers["etag"]
+                second = client.get("/v1/tools/list", headers={"If-None-Match": etag})
+            assert second.status_code == 304
+            assert second.content == b""
+            # Cache-Control + ETag must still be emitted on 304 per RFC 9111.
+            assert second.headers["etag"] == etag
+            assert second.headers["cache-control"] == "public, max-age=300"
+            assert second.headers["x-brain-version"]
+            assert second.headers["x-catalog-generated-at"]
+        finally:
+            self._close(ctx)
+
+    def test_stale_if_none_match_still_returns_200(self) -> None:
+        client, ctx = self._build_client()
+        try:
+            with client:
+                resp = client.get(
+                    "/v1/tools/list", headers={"If-None-Match": 'W/"deadbeefcafebabe"'}
+                )
+            assert resp.status_code == 200
+            # Payload is present (i.e., the route did not short-circuit).
+            assert resp.content
+        finally:
+            self._close(ctx)
+
+    def test_etag_changes_when_tool_catalog_changes(self) -> None:
+        # Two separate apps with different tool sets must produce different ETags.
+        client_a, ctx_a = self._build_client([("brain_recall", "a")])
+        try:
+            with client_a:
+                etag_a = client_a.get("/v1/tools/list").headers["etag"]
+        finally:
+            self._close(ctx_a)
+
+        client_b, ctx_b = self._build_client([("brain_recall", "a"), ("brain_remember", "b")])
+        try:
+            with client_b:
+                etag_b = client_b.get("/v1/tools/list").headers["etag"]
+        finally:
+            self._close(ctx_b)
+        assert etag_a != etag_b
+
+    def test_per_profile_response_has_distinct_etag(self) -> None:
+        # An empty X-Brain-Profile and a known one address different cache slots,
+        # so their weak validators must differ when the filter removes any tool.
+        # Register one tool that the `agent_brain` profile excludes (`memory_save`)
+        # so the filtered payload is a strict subset of the unfiltered one.
+        client, ctx = self._build_client(
+            [
+                ("brain_recall", "a"),
+                ("brain_remember", "b"),
+                ("memory_save", "c"),
+            ]
+        )
+        try:
+            with client:
+                unfiltered = client.get("/v1/tools/list")
+                filtered = client.get("/v1/tools/list", headers={"X-Brain-Profile": "agent_brain"})
+            assert unfiltered.status_code == 200
+            assert filtered.status_code == 200
+            assert unfiltered.headers["etag"] != filtered.headers["etag"]
+            # Filtered payload omits memory_save.
+            names = {t["name"] for t in filtered.json()["tools"]}
+            assert "memory_save" not in names
+        finally:
+            self._close(ctx)
