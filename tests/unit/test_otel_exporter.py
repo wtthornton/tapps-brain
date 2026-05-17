@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from tapps_brain.metrics import MetricsCollector, MetricsSnapshot
 
@@ -1553,7 +1556,19 @@ class TestOTelConfigExportTimeout:
 
 
 class TestCircuitBreakerSpanExporter:
-    """TAP-1814: _CircuitBreakerSpanExporter opens after N consecutive failures."""
+    """TAP-1814: _CircuitBreakerSpanExporter opens after N consecutive failures.
+
+    All tests in this class patch ``opentelemetry.sdk.trace.export.SpanExportResult``,
+    which requires the ``opentelemetry-sdk`` package to be importable. The sdk is
+    gated behind the ``otel`` optional-dependency extra in pyproject.toml and is
+    intentionally not part of the CI ``dev`` group. Skip cleanly when the sdk is
+    absent (TAP-2051) so the otel extra stays opt-in.
+    """
+
+    pytestmark = pytest.mark.skipif(
+        importlib.util.find_spec("opentelemetry.sdk") is None,
+        reason="opentelemetry-sdk not installed (install `otel` extra to run)",
+    )
 
     def test_passes_through_on_success(self) -> None:
         from tapps_brain.otel_exporter import _CircuitBreakerSpanExporter
