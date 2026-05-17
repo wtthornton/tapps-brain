@@ -284,14 +284,23 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
             )
 
+        # TAP-1968: surface JSON decode failures as a structured bad_json error
+        # rather than silently substituting an empty entity_ids list (which used
+        # to return a misleading empty-neighbourhood response).
         entity_ids: list[str] = []
         if entity_ids_json and entity_ids_json.strip():
             try:
                 parsed = json.loads(entity_ids_json)
-                if isinstance(parsed, list):
-                    entity_ids = [str(e) for e in parsed if e]
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                return json.dumps(_bad_json_error("entity_ids_json", str(exc)))
+            if not isinstance(parsed, list):
+                return json.dumps(
+                    _bad_json_error(
+                        "entity_ids_json",
+                        f"expected JSON array, got {type(parsed).__name__}",
+                    )
+                )
+            entity_ids = [str(e) for e in parsed if e]
 
         result = kg_service.get_neighbors(
             cm,
