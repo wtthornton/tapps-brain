@@ -182,7 +182,7 @@
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
     "version": "3.18.0",
-    "x-schema-version": 21
+    "x-schema-version": 22
   },
   "openapi": "3.1.0",
   "paths": {
@@ -597,7 +597,7 @@
     },
     "/healthz": {
       "get": {
-        "description": "DB-checked readiness probe used by the Docker healthcheck.\n\nReturns 200 only after a successful Postgres connection and pgvector\nschema check (via ``_probe_db``).  Returns 503 when the DB is\nunreachable or not yet migrated.  Unauthenticated and Origin-exempt\nso load-balancers and ``docker compose ps`` can reach it freely.",
+        "description": "Phased readiness probe used by the Docker healthcheck (TAP-1970).\n\nReturns a JSON body exposing each phase of readiness so consumers can\ntell ``DB unreachable`` apart from ``MCP cold-starting`` apart from\n``drain queue flooded`` without scraping ``/metrics``.\n\nHTTP semantics are unchanged for Docker / load-balancers \u2014 ``200``\nwhen all phases are green, ``503`` otherwise. ``curl -f /healthz``\nstill flips accordingly.\n\nBody shape (strict superset of the 3.18.0 ``{status, detail}`` shape)::\n\n    {\n      \"ok\":            bool,                 # db_ok AND mcp_ok\n      \"db_ok\":         bool,                 # Postgres reachable + migrated\n      \"mcp_ok\":        bool,                 # MCP ASGI sub-app mounted\n      \"queue_depth\":   int,                  # write + read in-flight ops\n      \"circuit_state\": \"closed\"|\"degraded\"|\"open\"|\"half_open\",\n      \"brain_version\": str,                  # cfg.version\n    }\n\nUnauthenticated and Origin-exempt so load-balancers and\n``docker compose ps`` can reach it freely.",
         "operationId": "_healthz_healthz_get",
         "parameters": [],
         "responses": {
@@ -881,6 +881,62 @@
           }
         ],
         "summary": " V1 Experience"
+      }
+    },
+    "/v1/experience:batch": {
+      "post": {
+        "description": "Atomically record a batch of experience events (TAP-1934).\n\nREST counterpart of :func:`tapps_brain.services.kg_service.record_events_batch`.\nPatterned after :func:`/v1/reinforce:batch` from v3.17.0.  All events\nwrite in **one Postgres transaction**: any failure rolls back the\nentire batch \u2014 no partial commits.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"events\": [event1, event2, ...] }`` where each event matches the\n  single-event ``/v1/experience`` schema.\n\nLimits:\n  - Total batch body capped at 1 MiB.\n  - Up to 100 events per request (overflow \u2192 400).\n\nResponse:\n  ``{ \"results\": [...], \"count\": int }`` with one result per event in\n  input order.",
+        "operationId": "_v1_experience_batch_v1_experience_batch_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          },
+          {
+            "$ref": "#/components/parameters/XIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Experience Batch"
       }
     },
     "/v1/forget": {
@@ -1536,7 +1592,7 @@
     },
     "/v1/tools/list": {
       "get": {
-        "description": "Return the static tool-catalog snapshot built at container startup.\n\nTAP-1843: zero-overhead alternative to the MCP ``tools/list`` call for\nclients that only need to enumerate tool names (load-balancers, monitoring\nprobes, Ralph's cache-locality optimizer).  The payload is identical to\nthe ``result.tools`` array from a MCP ``tools/list`` response \u2014 same\nper-tool ``name``, ``description``, and ``inputSchema`` fields, minus\nthe JSON-RPC envelope.  Built once in the lifespan hook; never read\nlive from the registry on the request path.\n\nUnauthenticated, Origin-exempt, and publicly cacheable (no secrets).",
+        "description": "Return the static tool-catalog snapshot built at container startup.\n\nTAP-1843: zero-overhead alternative to the MCP ``tools/list`` call for\nclients that only need to enumerate tool names (load-balancers, monitoring\nprobes, Ralph's cache-locality optimizer).  The payload is identical to\nthe ``result.tools`` array from a MCP ``tools/list`` response \u2014 same\nper-tool ``name``, ``description``, and ``inputSchema`` fields, minus\nthe JSON-RPC envelope.  Built once in the lifespan hook; never read\nlive from the registry on the request path.\n\nTAP-1929: when the caller supplies ``X-Brain-Profile``, the response\nis filtered to the tools allowed by that profile so consumers can\nenumerate exactly what they are permitted to call.  Per-profile\nfiltered snapshots are memoised in :data:`_tools_snapshot_holder`\nso the filter runs once per profile, not per request.\n\nTAP-1971: responses carry ``ETag`` (weak validator over the JSON\npayload), ``Cache-Control: public, max-age=300``, ``X-Brain-Version``,\nand ``X-Catalog-Generated-At`` (snapshot-build timestamp).\n``If-None-Match`` is honoured for 304 short-circuits.\n\nUnauthenticated, Origin-exempt, and publicly cacheable (no secrets\nbeyond the tool surface that bearer auth already protects).",
         "operationId": "_v1_tools_list_v1_tools_list_get",
         "parameters": [
           {
