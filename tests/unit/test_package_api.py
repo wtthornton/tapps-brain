@@ -25,6 +25,9 @@ class TestPublicAPI:
 
     def test_all_is_complete(self) -> None:
         """__all__ contains all re-exported public symbols."""
+        import typing
+
+        _missing = object()
         # Collect public names that are actually modules' classes/functions
         public_attrs = {
             name for name in dir(tapps_brain) if not name.startswith("_") and name != "annotations"
@@ -36,6 +39,11 @@ class TestPublicAPI:
             obj = getattr(tapps_brain, attr)
             # Skip submodules (they're importable but not part of the API)
             if hasattr(obj, "__path__") or hasattr(obj, "__file__"):
+                continue
+            # Skip stdlib typing sentinels re-imported at module level — e.g.
+            # `from typing import TYPE_CHECKING` to guard type-only re-exports.
+            # These are language plumbing, not part of the tapps_brain API.
+            if obj is getattr(typing, attr, _missing):
                 continue
             assert attr in exported, f"{attr} is public but missing from __all__"
 
