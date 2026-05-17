@@ -9,6 +9,41 @@ connects to tapps-brain's Postgres-backed memory.
 
 ---
 
+## What's new in v3.19.0 for AgentForge
+
+The 2026-05-17 release lands seven AgentForge-facing contract enrichments. Every
+change is a **strict superset** of the previous wire contract — existing 2xx
+clients keep working; AgentForge `BrainBridge` gains the fields it has been
+asking for. Full per-ticket detail in [`CHANGELOG.md`](../../CHANGELOG.md#3190--2026-05-17).
+
+| Surface | Change | Why AgentForge cares |
+|---|---|---|
+| `GET /v1/tools/list` | Adds `ETag` (weak), `Cache-Control: public, max-age=300`, `X-Brain-Version`, `X-Catalog-Generated-At` headers + 304 on matching `If-None-Match`. (TAP-1971) | `BrainBridge` stops re-parsing the tool catalog on every probe. Send `If-None-Match: <etag>` and short-circuit on `304 Not Modified`. |
+| `out_of_profile` denial `data` | Now carries `suggested_profile: "<name>" \| null` — the smallest profile that exposes the denied tool, excluding the caller's current profile. (TAP-1972) | Agents can self-route: on `-32602` / 403 with `reason: out_of_profile`, switch `X-Brain-Profile` to `data.suggested_profile` and retry instead of grepping `mcp_profiles.yaml`. |
+| `brain_record_events_batch` MCP tool | New tool — single round-trip for N events, **per-event transactions** (one bad event does not abort the rest). Response: `{succeeded:[{index,result}], failed:[{index,error,detail}], count, succeeded_count, failed_count}`. Cap at 200 events. (TAP-1973) | Backfill / migration workloads collapse from N round-trips to 1. AgentForge's catalogue-conversion path can ingest 100+ entries in one call. |
+| `brain_record_feedback` edge response | When `edge_id` is set, response now includes top-level `confidence: float`, `helpful_count: int`, `misleading_count: int`, and `flagged_for_review: bool`. Memory-feedback path unchanged. (TAP-1975) | Agents emitting `edge_misleading` decide whether the edge crossed their retry threshold without a follow-up `brain_get_neighbors` read. |
+| `brain_record_event` / `brain_get_neighbors` / `brain_record_feedback` | Malformed `*_json` arguments now return structured `{"error": "bad_json", "field": "<name>", "detail": "<msg>"}` instead of silently falling back to `{}` / `[]`. Empty string and `"{}"` / `"[]"` still map to empty payloads (back-compat). (TAP-1967/1968/1969) | Operator typos are no longer silent no-ops. See [errors.md § bad_json envelope](errors.md). |
+| `GET /healthz` body | Now returns `{ok, db_ok, mcp_ok, queue_depth, circuit_state, brain_version}` instead of `{status, detail}`. HTTP 200/503 semantics unchanged — `curl -f /healthz` still flips correctly. (TAP-1970) | `BrainBridge` / `tapps doctor` can distinguish "DB unreachable" from "MCP cold-starting" from "drain queue flooded" without scraping `/metrics`. |
+| Default MCP tool catalog | The `full` and `operator` profiles' default `tools/list` returns **8 tools** (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools are `defer_loading: true` — still callable via `tools/call`. Anthropic Tool Search BETA reaches deferred tools on demand via the `advanced-tool-use-2025-11-20` header. (TAP-1985) | AgentForge agents see a smaller eager catalog → smaller context window per probe. Deferred tools remain callable; no behaviour change for code that calls tools by name. |
+
+### Minimum BrainBridge changes to take advantage
+
+Most of the above is free — `BrainBridge` continues to work without code
+changes. The two surfaces worth wiring explicitly:
+
+1. **ETag short-circuit on `/v1/tools/list`** — cache the last `ETag` value per
+   brain URL; on subsequent probes send `If-None-Match: "<etag>"` and treat
+   `304 Not Modified` as "catalog unchanged, reuse the cached payload."
+2. **`suggested_profile` self-routing** — on `-32602` (MCP) or 403 (REST) where
+   `error.data.reason == "out_of_profile"` and `data.suggested_profile` is set,
+   retry the call with `X-Brain-Profile: <suggested_profile>` instead of failing
+   to the user.
+
+The structured `bad_json` envelope, edge-feedback state, and phased `/healthz`
+shape are response enrichments — read what's useful, ignore the rest.
+
+---
+
 ## Architecture overview
 
 ```mermaid
@@ -158,13 +193,22 @@ After startup, check the readiness endpoint (if you have the HTTP adapter
 running — see [HTTP adapter reference](http-adapter.md)):
 
 ```bash
-curl -s http://localhost:9090/ready | jq .
+curl -s http://localhost:8080/healthz | jq .
+# v3.19.0+ phased payload (TAP-1970):
 # {
-#   "status": "ok",
-#   "hive_migration_version": 3,
-#   "pool_saturation": 0.12
+#   "ok":            true,
+#   "db_ok":         true,
+#   "mcp_ok":        true,
+#   "queue_depth":   0,
+#   "circuit_state": "closed",
+#   "brain_version": "3.19.0"
 # }
 ```
+
+HTTP 200/503 semantics are unchanged from the pre-v3.19.0 `{status, detail}`
+body — Docker healthchecks (`curl -f /healthz`) still flip correctly. The
+phased body lets clients tell "DB unreachable" apart from "MCP cold-starting"
+apart from "drain queue flooded" without scraping `/metrics`.
 
 Or call `brain.store.health()` directly in Python:
 

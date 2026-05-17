@@ -22,9 +22,75 @@ X-Idempotency-Key: <UUID>             # optional; replays previous response with
 | Route | Method | Purpose |
 |---|---|---|
 | `/health` | GET | Liveness — always 200 if the process is up. |
+| `/healthz` | GET | Phased readiness probe — 200/503 with detailed JSON body (v3.19.0+). |
 | `/ready` | GET | Readiness — 200 when the DB is reachable, 503 when degraded. |
 | `/metrics` | GET | Prometheus-format scrape (use `TAPPS_BRAIN_METRICS_TOKEN` to gate). |
 | `/openapi.json` | GET | Auto-generated OpenAPI spec for every public route. |
+| `/v1/tools/list` | GET | Static MCP-tool catalog snapshot with ETag + Cache-Control (v3.19.0+). |
+
+### `/healthz` — phased readiness body (TAP-1970, v3.19.0+)
+
+`GET /healthz` returns 200 when every phase is green, 503 when any is not.
+The body shape is a strict superset of the pre-v3.19.0 `{status, detail}`
+envelope — Docker healthchecks (`curl -f /healthz`) still flip correctly.
+
+```jsonc
+// 200 OK — happy path
+{
+  "ok":            true,
+  "db_ok":         true,           // Postgres reachable + migrated
+  "mcp_ok":        true,           // MCP ASGI sub-app mounted
+  "queue_depth":   0,              // write + read in-flight ops
+  "circuit_state": "closed",       // closed | degraded | open | half_open
+  "brain_version": "3.19.0"        // matches pyproject.toml
+}
+```
+
+Consumers (notably `BrainBridge`, `tapps doctor`) can distinguish "DB
+unreachable" from "MCP cold-starting" from "drain queue flooded" without
+scraping `/metrics`. DSN strings are never echoed in the body.
+
+### `/v1/tools/list` — static catalog with HTTP cache headers (TAP-1843, TAP-1971, v3.19.0+)
+
+A pre-built JSON snapshot of the MCP tool catalog written at container
+startup — no Python serialisation, no MCP framework round-trip. Carries
+HTTP cache headers so clients can implement conditional fetch:
+
+| Header | Value | Notes |
+|---|---|---|
+| `ETag` | `W/"<sha256:16>"` | Weak validator over the JSON payload; per-cache-slot (per-profile when `X-Brain-Profile` is set). |
+| `Cache-Control` | `public, max-age=300` | Matches the 300 s server-side cache TTL (TAP-1833). |
+| `X-Brain-Version` | `3.19.0` | Lets clients invalidate caches when the brain version changes. |
+| `X-Catalog-Generated-At` | `<iso8601>` | Snapshot-build timestamp from the lifespan hook. |
+
+Conditional fetch:
+
+```bash
+# First call — full payload + ETag
+curl -is http://localhost:8080/v1/tools/list | head
+# HTTP/1.1 200 OK
+# ETag: W/"3f5e9b0e7d4a1c2e"
+# Cache-Control: public, max-age=300
+# X-Brain-Version: 3.19.0
+# X-Catalog-Generated-At: 2026-05-17T20:18:00Z
+# ...
+
+# Subsequent call — short-circuit when the catalog hasn't changed
+curl -is http://localhost:8080/v1/tools/list \
+     -H 'If-None-Match: W/"3f5e9b0e7d4a1c2e"' | head -3
+# HTTP/1.1 304 Not Modified
+# ETag: W/"3f5e9b0e7d4a1c2e"
+# Cache-Control: public, max-age=300
+```
+
+The default `tools/list` MCP payload returns the 8-tool **eager** catalog
+(`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`,
+`brain_explain_connection`, `memory_search`, `memory_find_related`,
+`hive_search`). Non-daily-driver tools carry `defer_loading: true` in
+`mcp_profiles.yaml` and remain callable via `tools/call`; clients can opt
+into Anthropic Tool Search BETA (header
+`advanced-tool-use-2025-11-20`) to discover deferred tools on demand
+(TAP-1985). See [mcp-client-repo-setup.md § profile wire contract](mcp-client-repo-setup.md#profile-wire-contract-stable-across-tapps-brain-3x--tap-1579).
 
 ## Data-plane routes (Bearer auth)
 

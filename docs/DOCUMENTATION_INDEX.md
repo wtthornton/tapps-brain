@@ -2,6 +2,22 @@
 
 **242 documents** across **7 categories**
 
+## What's new — v3.19.0 (2026-05-17)
+
+The latest release lands seven AgentForge / `BrainBridge`-facing contract
+enrichments (all strict-superset, no breaking changes):
+
+- **`/v1/tools/list`** — ETag + `Cache-Control` + `X-Brain-Version` headers + 304 short-circuit (TAP-1971). See [http-adapter.md](guides/http-adapter.md#v1toolslist--static-catalog-with-http-cache-headers-tap-1843-tap-1971-v3190).
+- **`out_of_profile`** errors — new `suggested_profile` hint for client self-routing (TAP-1972). See [errors.md](guides/errors.md#out-of-profile-denial-envelope-v3190).
+- **`brain_record_events_batch`** — new MCP tool for per-event-tx N-event backfill (TAP-1973). See [CHANGELOG `[3.19.0]`](../CHANGELOG.md#3190--2026-05-17).
+- **`brain_record_feedback`** edge response — now surfaces post-update `confidence` / `helpful_count` / `misleading_count` / `flagged_for_review` (TAP-1975).
+- **`brain_record_event` / `brain_get_neighbors` / `brain_record_feedback`** — structured `bad_json` envelope instead of silent fallback on `*_json` decode failure (TAP-1967/1968/1969). See [errors.md](guides/errors.md#bad_json-envelope--malformed-_json-mcp-arguments-v3190).
+- **`/healthz`** — phased readiness body (`db_ok` / `mcp_ok` / `queue_depth` / `circuit_state`) (TAP-1970). See [http-adapter.md](guides/http-adapter.md#healthz--phased-readiness-body-tap-1970-v3190).
+- **8-tool eager MCP catalog** — non-daily-driver tools `defer_loading: true`; remain callable via `tools/call` + Anthropic Tool Search BETA opt-in (TAP-1985).
+
+Full per-ticket detail in [`CHANGELOG.md`](../CHANGELOG.md#3190--2026-05-17).
+AgentForge integrators: start with [`guides/agentforge-integration.md`](guides/agentforge-integration.md#whats-new-in-v3190-for-agentforge).
+
 ## Overview
 
 | Category | Count |
