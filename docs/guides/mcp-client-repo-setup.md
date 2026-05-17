@@ -102,16 +102,21 @@ narrower attack surface.
 
 **Choosing a profile:**
 
-| Use case | Profile | Tools |
-|---|---|---|
-| AgentBrain consumer / brain_* facade only | `agent_brain` | 10 |
-| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 17 |
-| Read-only PR / code-review bot | `reviewer` | 8 |
-| Bulk ingestion / seeding script | `seeder` | 6 |
-| Human admin or operator console | `operator` | 72 |
-| Everything (backwards-compatible default) | `full` | 59 |
+| Use case | Profile | Callable | Eager |
+|---|---|---|---|
+| AgentBrain consumer / brain_* facade only | `agent_brain` | 10 | 10 |
+| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 17 | 17 |
+| Read-only PR / code-review bot | `reviewer` | 8 | 8 |
+| Bulk ingestion / seeding script | `seeder` | 6 | 6 |
+| Human admin or operator console | `operator` | 72 | 8 |
+| Everything (backwards-compatible default) | `full` | 59 | 8 |
 
 Omitting the header is equivalent to `full` — no existing client breaks.
+
+> **`full` and `operator` defer 51 / 64 tools** (TAP-1985). The default `tools/list`
+> response on those profiles returns the 8-tool daily-driver budget; the rest are
+> reachable via `tools/call` and via Anthropic Tool Search BETA (opt-in client
+> header `advanced-tool-use-2025-11-20`). See [profiles.md](profiles.md#available-profiles).
 
 **Claude Code** — add `X-Brain-Profile` to `.mcp.json`:
 
@@ -167,9 +172,10 @@ mcp_servers:
 ```
 
 **Verification** — after restarting your MCP client run `tools/list`; you
-should see ~17 tools instead of 59 when using the `coder` profile, or 10
-when using `agent_brain`. The healthcheck script
-(`scripts/brain-healthcheck.sh`) also reports the configured profile.
+should see ~17 tools when using the `coder` profile, 10 when using
+`agent_brain`, or 8 (the daily-driver eager budget) on the default `full`
+profile. The healthcheck script (`scripts/brain-healthcheck.sh`) also
+reports the configured profile.
 
 #### Profile wire contract (stable across tapps-brain 3.x) — TAP-1579
 
@@ -180,7 +186,7 @@ elements are part of the 3.x stable surface:
 | Surface | Value | Notes |
 |---|---|---|
 | Declaration | `X-Brain-Profile` HTTP header on every request | Set once in the client config (`.mcp.json` / `.aider.conf.yml`) — no per-call override needed. |
-| Default when header is omitted | `full` (59 tools) | Zero behavior change for clients that never set the header. |
+| Default when header is omitted | `full` (59 callable, 8 eager — TAP-1985) | Existing clients keep their callable surface; the eager `tools/list` payload shrinks to the daily-driver budget. |
 | Default override | `TAPPS_BRAIN_DEFAULT_PROFILE` env var on the server | Operators may flip the default per deployment (see EPIC-073 rollout plan). |
 | Out-of-profile `tools/call` error code | `-32602` (`INVALID_PARAMS`) | Distinct from `-32601` (`METHOD_NOT_FOUND`) so bridges can react. |
 | Out-of-profile `tools/call` `error.data` | `{"reason": "out_of_profile", "tool": "<name>", "profile": "<name>"}` | Stable keys; consumers may dispatch on `reason`. |
@@ -290,8 +296,9 @@ curl -sSL -X POST \
   http://127.0.0.1:8080/mcp/
 ```
 
-A healthy response is a JSON envelope with tool definitions. Expect ~59 tools
-for the `full` profile (default) or ~17 for `coder`.
+A healthy response is a JSON envelope with tool definitions. Expect 8 eager
+tools on the default `full` profile (51 are deferred — see TAP-1985) or
+~17 for `coder`.
 
 ## Knowledge-Graph tools (EPIC-076)
 
