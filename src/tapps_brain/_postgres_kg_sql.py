@@ -368,6 +368,8 @@ LIMIT %s
 #: Apply ``edge_helpful`` counters: increment useful_access_count +
 #: positive_feedback_count + access_count.
 #: Params: edge_id::uuid, brain_id.
+#: TAP-1975: also returns the row's current ``confidence`` so the MCP
+#: wrapper can surface post-update edge state without a follow-up read.
 APPLY_EDGE_HELPFUL_SQL = """
 UPDATE kg_edges SET
     useful_access_count     = useful_access_count + 1,
@@ -376,7 +378,7 @@ UPDATE kg_edges SET
     updated_at              = now()
 WHERE id = %s::uuid
   AND brain_id = %s
-RETURNING id, positive_feedback_count, negative_feedback_count
+RETURNING id, positive_feedback_count, negative_feedback_count, confidence
 """
 
 #: Apply ``edge_misleading`` counters: increment negative_feedback_count,

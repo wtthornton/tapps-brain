@@ -96,8 +96,9 @@ def _mock_cm(fetchone_return: Any = None) -> MagicMock:
 
 def test_apply_edge_helpful_returns_applied_true() -> None:
     edge_id = "aaaaaaaa-0000-0000-0000-000000000001"
-    # APPLY_EDGE_HELPFUL_SQL: returns (id, positive_feedback_count, negative_feedback_count)
-    helpful_row = (edge_id, 3.0, 0.0)
+    # APPLY_EDGE_HELPFUL_SQL (TAP-1975): returns
+    # (id, positive_feedback_count, negative_feedback_count, confidence)
+    helpful_row = (edge_id, 3.0, 0.0, 0.72)
 
     cm = _mock_cm(fetchone_return=helpful_row)
     kg = _make_kg(cm)
@@ -110,6 +111,9 @@ def test_apply_edge_helpful_returns_applied_true() -> None:
     assert result["feedback_type"] == "edge_helpful"
     assert result["positive_feedback_count"] == 3.0
     assert result["negative_feedback_count"] == 0.0
+    # TAP-1975: post-update confidence surfaces alongside counters so callers
+    # can decide whether to retry without a follow-up read.
+    assert result["confidence"] == 0.72
     mock_reinforce.assert_called_once_with(edge_id, was_useful=True)
 
 

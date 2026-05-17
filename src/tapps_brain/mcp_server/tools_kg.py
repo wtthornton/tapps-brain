@@ -580,10 +580,26 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 "edge_id": edge_id,
                 "entry_key": None,
             }
+            # TAP-1975: surface post-update edge state at the response top
+            # level so callers (e.g. tapps-mcp edge_feedback) don't have to
+            # drill into `kg_update` to decide whether to retry a path.  The
+            # nested `kg_update` dict is preserved for back-compat — existing
+            # consumers already read confidence / counters from it.
             if isinstance(raw, dict):
                 kg_upd = raw.get("kg_update")
                 if isinstance(kg_upd, dict):
                     result["kg_update"] = kg_upd
+                    if kg_upd.get("applied"):
+                        if "confidence" in kg_upd:
+                            result["confidence"] = float(kg_upd["confidence"])
+                        if "positive_feedback_count" in kg_upd:
+                            result["helpful_count"] = int(float(kg_upd["positive_feedback_count"]))
+                        if "negative_feedback_count" in kg_upd:
+                            result["misleading_count"] = int(
+                                float(kg_upd["negative_feedback_count"])
+                            )
+                        if "flagged_for_review" in kg_upd:
+                            result["flagged_for_review"] = bool(kg_upd["flagged_for_review"])
             return json.dumps(result, default=str)
 
         # Memory feedback path

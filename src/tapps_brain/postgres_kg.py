@@ -682,7 +682,11 @@ class PostgresKnowledgeGraphStore:
             if row is None:
                 logger.debug("kg.edge.feedback_not_found", edge_id=edge_id)
                 return {"applied": False, "reason": "edge_not_found", "edge_id": edge_id}
-            # Reinforce with FSRS update (60 s debounce enforced inside)
+            # Reinforce with FSRS update (60 s debounce enforced inside).
+            # NOTE: reinforce_edge may also nudge confidence upward (x1.05);
+            # the row[3] confidence captured above is pre-reinforce.  For
+            # TAP-1975 we surface the post-feedback (pre-reinforce) confidence
+            # because that's the value the UPDATE landed in this transaction.
             self.reinforce_edge(edge_id, was_useful=True)
             logger.debug("kg.edge.feedback_helpful", edge_id=edge_id)
             return {
@@ -691,6 +695,7 @@ class PostgresKnowledgeGraphStore:
                 "edge_id": edge_id,
                 "positive_feedback_count": float(row[1]),
                 "negative_feedback_count": float(row[2]),
+                "confidence": float(row[3]),
             }
 
         if feedback_type == "edge_misleading":
