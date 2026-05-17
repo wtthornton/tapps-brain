@@ -249,6 +249,87 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_record_events_batch(
+        events_json: str,
+        agent_id: str = "",
+    ) -> str:
+        """Record many experience events in one MCP round-trip (TAP-1973).
+
+        Sibling of :func:`brain_record_event` for N-event backfill.  Each
+        event runs in **its own Postgres transaction** so a single bad event
+        in the batch does not abort the rest — partial success is allowed
+        and surfaced through the ``failed`` array.
+
+        The single-transaction variant lives at the REST surface
+        (``POST /v1/experience:batch`` — TAP-1934).  Pick that one when you
+        need all-or-nothing semantics; pick this tool when you want
+        best-effort import of a large flat dump.
+
+        Parameters
+        ----------
+        events_json:
+            JSON-array string of event dicts.  Each dict accepts the same
+            keys as :func:`brain_record_event` (``event_type``,
+            ``subject_key``, ``utility_score``, ``payload``, ``entities``,
+            ``edges``, ``evidence``, ``memory_key``, ``memory_value``,
+            ``memory_tier``, ``session_id``, ``workflow_run_id``).
+            Capped server-side at 200 events per call.
+        agent_id:
+            Override the server-level default for this call (STORY-070.7).
+
+        Returns
+        -------
+        On success::
+
+            { "succeeded": [{"index": int, "result": {...}}, ...],
+              "failed":    [{"index": int, "error": str, "detail": str}, ...],
+              "count":     int,
+              "succeeded_count": int,
+              "failed_count":    int }
+
+        Malformed ``events_json`` returns the canonical bad-json envelope
+        ``{"error": "bad_json", "field": "events_json", "detail": "<msg>"}``
+        (TAP-1967 / EPIC-300).  A structurally invalid (non-array, empty,
+        too-large) payload returns ``{"error": "bad_request" |
+        "too_many_events", "detail": "..."}``.
+        """
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
+        project_id = _pid()
+
+        # TAP-1967 envelope on JSON decode + shape mismatch.
+        if not events_json or not events_json.strip():
+            return json.dumps({"error": "bad_request", "detail": "events_json is required."})
+        try:
+            parsed = json.loads(events_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps(_bad_json_error("events_json", str(exc)))
+        if not isinstance(parsed, list):
+            return json.dumps(
+                _bad_json_error(
+                    "events_json",
+                    f"expected JSON array, got {type(parsed).__name__}",
+                )
+            )
+
+        cm = kg_service._get_or_create_cm()
+        if cm is None:
+            return json.dumps(
+                {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
+            )
+
+        result = kg_service.record_events_batch_per_event_tx(
+            cm,
+            project_id,
+            kg_service._DEFAULT_BRAIN_ID,
+            eff_aid,
+            events=parsed,
+        )
+        return json.dumps(result, default=str)
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_get_neighbors(
         entity_ids_json: str,
         hops: int = 1,

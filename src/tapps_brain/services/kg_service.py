@@ -303,6 +303,144 @@ def record_events_batch(
     }
 
 
+#: TAP-1973 — server-side cap on the per-event-tx batch tool.  Sized to match
+#: ``ExperienceEventRecorder.record_many`` limit so the two batch surfaces
+#: refuse the same shape.
+_RECORD_EVENTS_BATCH_MAX_EVENTS = 200
+
+
+def record_events_batch_per_event_tx(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    agent_id: str,
+    *,
+    events: list[dict[str, Any]],
+    max_events: int = _RECORD_EVENTS_BATCH_MAX_EVENTS,
+) -> dict[str, Any]:
+    """Write *events* with **per-event transactions** (TAP-1973).
+
+    Sibling of :func:`record_events_batch` (TAP-1934) which uses a single
+    batch transaction — that one rejects the whole batch on any failure.
+    This variant runs each event in its own transaction so a single bad
+    event in a 100-event backfill does not abort the rest.
+
+    Used by ``brain_record_events_batch`` (MCP) and the tapps-mcp EPIC-203
+    migration utility (story 203.7) for N-event backfill where partial
+    success is the desired semantics.
+
+    Parameters
+    ----------
+    cm:
+        Open :class:`~tapps_brain.postgres_connection.PostgresConnectionManager`.
+    project_id, brain_id, agent_id:
+        Tenant / identity scope (identical to :func:`record_event`).
+    events:
+        List of event dicts matching the ``/v1/experience`` single-event
+        schema.  Same keys as :func:`record_events_batch` accepts.
+    max_events:
+        Server-side cap (default 200).  Inputs above this size are rejected
+        wholesale with ``too_many_events`` — clients chunk and retry.
+
+    Returns
+    -------
+    On success::
+
+        {"succeeded": [{"index": int, "result": {...}}, ...],
+         "failed":    [{"index": int, "error": str, "detail": str}, ...],
+         "count":     int,                 # len(events) (validated input size)
+         "succeeded_count": int,
+         "failed_count":    int}
+
+    On structural rejection (not a list, empty, too many, malformed event)::
+
+        {"error": "bad_request" | "too_many_events", "detail": "..."}
+    """
+    if not isinstance(events, list):
+        return {"error": "bad_request", "detail": "events must be a JSON array."}
+    if not events:
+        return {"error": "bad_request", "detail": "events must contain at least one event."}
+    if len(events) > max_events:
+        return {
+            "error": "too_many_events",
+            "detail": (
+                f"batch contains {len(events)} events; server caps each call at {max_events}."
+            ),
+        }
+
+    succeeded: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for idx, ev in enumerate(events):
+        if not isinstance(ev, dict):
+            failed.append(
+                {
+                    "index": idx,
+                    "error": "bad_request",
+                    "detail": f"events[{idx}] must be a JSON object.",
+                }
+            )
+            continue
+        if not (ev.get("event_type") or "").strip():
+            failed.append(
+                {
+                    "index": idx,
+                    "error": "bad_request",
+                    "detail": f"events[{idx}].event_type is required.",
+                }
+            )
+            continue
+        # Delegate to record_event (per-event tx).  Any service-layer error
+        # dict bubbles up; any uncaught exception is caught and tagged with
+        # the event index so the caller can correlate failures.
+        try:
+            result = record_event(
+                cm,
+                project_id,
+                brain_id,
+                agent_id,
+                event_type=str(ev["event_type"]).strip(),
+                subject_key=ev.get("subject_key") or None,
+                utility_score=float(ev.get("utility_score", 0.0) or 0.0),
+                payload=ev.get("payload") or {},
+                entities=ev.get("entities") or [],
+                edges=ev.get("edges") or [],
+                evidence=ev.get("evidence") or [],
+                memory_key=ev.get("memory_key") or None,
+                memory_value=ev.get("memory_value") or None,
+                memory_tier=str(ev.get("memory_tier") or "pattern"),
+                session_id=ev.get("session_id") or None,
+                workflow_run_id=ev.get("workflow_run_id") or None,
+            )
+        except Exception as exc:  # per-event failure isolation
+            failed.append(
+                {
+                    "index": idx,
+                    "error": exc.__class__.__name__,
+                    "detail": str(exc),
+                }
+            )
+            continue
+        if isinstance(result, dict) and result.get("error"):
+            failed.append(
+                {
+                    "index": idx,
+                    "error": str(result.get("error")),
+                    "detail": str(result.get("detail", "")),
+                }
+            )
+            continue
+        succeeded.append({"index": idx, "result": result})
+
+    return {
+        "succeeded": succeeded,
+        "failed": failed,
+        "count": len(events),
+        "succeeded_count": len(succeeded),
+        "failed_count": len(failed),
+    }
+
+
 # ---------------------------------------------------------------------------
 # get_neighbors
 # ---------------------------------------------------------------------------
