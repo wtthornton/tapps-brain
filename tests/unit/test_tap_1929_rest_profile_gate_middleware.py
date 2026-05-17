@@ -133,13 +133,13 @@ class TestRestProfileGateMiddlewareIntegration:
         assert r.status_code == 200
 
     def test_denial_response_includes_full_data_shape(self, client: TestClient) -> None:
-        """Validates the documented JSON-RPC -32602 mirror shape (TAP-1619)."""
+        """Validates the documented JSON-RPC -32602 mirror shape (TAP-1619 + TAP-1972)."""
         r = client.post("/v1/forget", json={}, headers={"X-Brain-Profile": "reviewer"})
         assert r.status_code == 403
         body = r.json()
         # Must match the wire shape used by the MCP path.
         assert set(body) >= {"error", "detail", "data"}
-        assert set(body["data"]) == {"reason", "tool", "profile"}
+        assert set(body["data"]) == {"reason", "tool", "profile", "suggested_profile"}
         assert body["error"] == "out_of_profile"
         assert body["data"]["tool"] == "brain_forget"
         assert body["data"]["profile"] == "reviewer"
