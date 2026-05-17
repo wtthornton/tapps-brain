@@ -23,6 +23,7 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ### Changed
 
+- **Phased `/healthz` response body** (TAP-1970). The Docker / load-balancer probe now returns `{"ok": bool, "db_ok": bool, "mcp_ok": bool, "queue_depth": int, "circuit_state": "closed"|"degraded"|"open"|"half_open", "brain_version": "3.x.y"}` instead of `{"status": "ok"|"degraded", "detail": "..."}`. HTTP 200/503 semantics are unchanged — `curl -f /healthz` still flips correctly — but consumers (notably the tapps-mcp `doctor` work) can now distinguish "DB unreachable" from "MCP cold-starting" from "drain queue flooded" without scraping `/metrics`. The DSN is still never echoed in the body.
 - **`_resolve_per_call_agent_id` warns on header / kwarg disagreement** (TAP-1936). When both `X-Agent-Id` (or `_meta.agent_id`) and the `agent_id=` kwarg are set to non-equal values, the resolver now emits a `WARNING`-level structured log line so attribution drift is diagnosable. Default behaviour is unchanged — the kwarg still wins. Set `TAPPS_BRAIN_STRICT_AGENT_ID=1` to make mismatches a hard `ValueError` instead.
 
 ### Verified

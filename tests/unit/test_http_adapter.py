@@ -346,6 +346,107 @@ class TestReadyEndpointDbHealthy:
 
 
 # ---------------------------------------------------------------------------
+# /healthz endpoint — TAP-1970 phased readiness payload
+# ---------------------------------------------------------------------------
+
+
+class TestHealthzEndpoint:
+    """TAP-1970: ``/healthz`` returns ``{ok, db_ok, mcp_ok, queue_depth,
+    circuit_state, brain_version}``. HTTP 200/503 still flips on ``ok``.
+    """
+
+    _PHASED_KEYS = ("ok", "db_ok", "mcp_ok", "queue_depth", "circuit_state", "brain_version")
+
+    def test_body_contains_all_phased_keys(self) -> None:
+        with _client(_make_settings()) as c:
+            body = c.get("/healthz").json()
+        assert isinstance(body, dict)
+        for key in self._PHASED_KEYS:
+            assert key in body, f"phased /healthz must expose {key!r}"
+
+    def test_returns_503_when_no_dsn(self) -> None:
+        with _client(_make_settings(dsn=None)) as c:
+            resp = c.get("/healthz")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert isinstance(body, dict)
+        assert body["ok"] is False
+        assert body["db_ok"] is False
+
+    def test_returns_503_when_db_unreachable(self) -> None:
+        settings = _make_settings(dsn="postgres://invalid_host_that_does_not_exist:5432/nodb")
+        with _client(settings) as c:
+            resp = c.get("/healthz")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert isinstance(body, dict)
+        assert body["db_ok"] is False
+        assert body["ok"] is False
+
+    def test_dsn_not_leaked_in_body(self) -> None:
+        """The phased body must not echo the DSN host/credentials. TAP-1970
+        keeps the same redaction guarantee as the previous ``{status,detail}``
+        shape — there is no ``detail`` field in the phased payload, but a
+        regression that re-introduced one (or any DSN leak) would fail here.
+        """
+        settings = _make_settings(
+            dsn="postgres://secret_user:secret_pw@invalid_host_that_does_not_exist:5432/nodb"
+        )
+        with _client(settings) as c:
+            body_text = c.get("/healthz").text
+        assert "secret_user" not in body_text
+        assert "secret_pw" not in body_text
+        assert "invalid_host_that_does_not_exist" not in body_text
+
+    def test_returns_200_when_db_healthy(self) -> None:
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            _client(settings) as c,
+        ):
+            resp = c.get("/healthz")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, dict)
+        assert body["ok"] is True
+        assert body["db_ok"] is True
+
+    def test_mcp_ok_true_when_mcp_mounted(self) -> None:
+        """The test harness passes a MagicMock as ``mcp_server`` which the
+        adapter mounts at ``/mcp``; ``mcp_ok`` reflects that mount, not the
+        liveness of the sub-app itself."""
+        with _client(_make_settings()) as c:
+            body = c.get("/healthz").json()
+        assert isinstance(body, dict)
+        assert body["mcp_ok"] is True
+
+    def test_circuit_state_defaults_to_closed_without_store(self) -> None:
+        with _client(_make_settings(store=None)) as c:
+            body = c.get("/healthz").json()
+        assert isinstance(body, dict)
+        assert body["circuit_state"] == "closed"
+
+    def test_queue_depth_zero_when_async_store_absent(self) -> None:
+        with _client(_make_settings()) as c:
+            body = c.get("/healthz").json()
+        assert isinstance(body, dict)
+        assert body["queue_depth"] == 0
+        assert isinstance(body["queue_depth"], int)
+
+    def test_brain_version_matches_settings(self) -> None:
+        settings = _make_settings()
+        with _client(settings) as c:
+            body = c.get("/healthz").json()
+        assert isinstance(body, dict)
+        assert body["brain_version"] == settings.version
+
+
+# ---------------------------------------------------------------------------
 # /metrics endpoint
 # ---------------------------------------------------------------------------
 

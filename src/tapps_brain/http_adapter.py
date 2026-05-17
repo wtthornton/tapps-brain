@@ -1577,17 +1577,63 @@ def create_app(
 
     @app.get("/healthz")
     async def _healthz() -> JSONResponse:
-        """DB-checked readiness probe used by the Docker healthcheck.
+        """Phased readiness probe used by the Docker healthcheck (TAP-1970).
 
-        Returns 200 only after a successful Postgres connection and pgvector
-        schema check (via ``_probe_db``).  Returns 503 when the DB is
-        unreachable or not yet migrated.  Unauthenticated and Origin-exempt
-        so load-balancers and ``docker compose ps`` can reach it freely.
+        Returns a JSON body exposing each phase of readiness so consumers can
+        tell ``DB unreachable`` apart from ``MCP cold-starting`` apart from
+        ``drain queue flooded`` without scraping ``/metrics``.
+
+        HTTP semantics are unchanged for Docker / load-balancers — ``200``
+        when all phases are green, ``503`` otherwise. ``curl -f /healthz``
+        still flips accordingly.
+
+        Body shape (strict superset of the 3.18.0 ``{status, detail}`` shape)::
+
+            {
+              "ok":            bool,                 # db_ok AND mcp_ok
+              "db_ok":         bool,                 # Postgres reachable + migrated
+              "mcp_ok":        bool,                 # MCP ASGI sub-app mounted
+              "queue_depth":   int,                  # write + read in-flight ops
+              "circuit_state": "closed"|"degraded"|"open"|"half_open",
+              "brain_version": str,                  # cfg.version
+            }
+
+        Unauthenticated and Origin-exempt so load-balancers and
+        ``docker compose ps`` can reach it freely.
         """
-        is_ready, _migration_version, detail = _probe_db(cfg.dsn)
+        db_ok, _migration_version, _detail = _probe_db(cfg.dsn)
+        mcp_ok = mcp_holder.get("asgi_sub") is not None
+
+        queue_depth = 0
+        _async_store = getattr(cfg, "async_store", None)
+        if _async_store is not None:
+            try:
+                queue_depth = int(_async_store.write_queue_depth) + int(
+                    _async_store.read_queue_depth
+                )
+            except (AttributeError, TypeError, ValueError):
+                queue_depth = 0
+
+        circuit_state = "closed"
+        _store = getattr(cfg, "store", None)
+        _breaker = getattr(_store, "_circuit_breaker", None) if _store is not None else None
+        if _breaker is not None:
+            try:
+                circuit_state = str(_breaker.state)
+            except (AttributeError, TypeError):
+                circuit_state = "closed"
+
+        ok = db_ok and mcp_ok
         return JSONResponse(
-            status_code=200 if is_ready else 503,
-            content={"status": "ok" if is_ready else "degraded", "detail": detail},
+            status_code=200 if ok else 503,
+            content={
+                "ok": ok,
+                "db_ok": db_ok,
+                "mcp_ok": mcp_ok,
+                "queue_depth": queue_depth,
+                "circuit_state": circuit_state,
+                "brain_version": cfg.version,
+            },
         )
 
     @app.get("/ready")
