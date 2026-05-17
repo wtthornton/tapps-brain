@@ -33,18 +33,26 @@ if TYPE_CHECKING:
 from tapps_brain.services import kg_service
 
 
+def _bad_json_error(field: str, detail: str) -> dict[str, str]:
+    """Build the canonical bad-JSON envelope used across KG MCP tools (TAP-1967)."""
+    return {"error": "bad_json", "field": field, "detail": detail}
+
+
 def _coerce_payload(
     native: dict[str, Any] | None,
     legacy_json: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, str] | None]:
     """Resolve effective payload from native dict or deprecated JSON string.
 
     Native ``payload`` wins.  When only ``payload_json`` is provided, emit
-    :class:`DeprecationWarning` and parse it.  Returns ``{}`` when both are
-    absent or invalid (silent fallback for backward compat).
+    :class:`DeprecationWarning` and parse it.
+
+    Returns ``(payload, None)`` on success or ``({}, error_dict)`` when the
+    legacy JSON string cannot be decoded (TAP-1967 — was silently swallowed).
+    Empty input and ``"{}"`` still map to ``({}, None)``.
     """
     if isinstance(native, dict):
-        return native
+        return native, None
     if legacy_json and legacy_json.strip() not in ("", "{}"):
         warnings.warn(
             "brain_record_event(payload_json=...) is deprecated; "
@@ -54,27 +62,33 @@ def _coerce_payload(
         )
         try:
             parsed = json.loads(legacy_json)
-        except json.JSONDecodeError:
-            return {}
+        except json.JSONDecodeError as exc:
+            return {}, _bad_json_error("payload_json", str(exc))
         if isinstance(parsed, dict):
-            return parsed
-    return {}
+            return parsed, None
+        return {}, _bad_json_error(
+            "payload_json", f"expected JSON object, got {type(parsed).__name__}"
+        )
+    return {}, None
 
 
 def _coerce_list(
     native: list[dict[str, Any]] | None,
     legacy_json: str,
     field_name: str,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, str] | None]:
     """Resolve effective list-of-dicts from native list or deprecated JSON string.
 
     Native ``entities`` / ``edges`` / ``evidence`` wins.  When only the
     ``*_json`` alias is provided and non-empty, emit
-    :class:`DeprecationWarning` and parse it.  Returns ``[]`` on absence or
-    decode failure (silent fallback for backward compat).
+    :class:`DeprecationWarning` and parse it.
+
+    Returns ``(items, None)`` on success or ``([], error_dict)`` when the
+    legacy JSON string cannot be decoded (TAP-1967 — was silently swallowed).
+    Empty input and ``"[]"`` still map to ``([], None)``.
     """
     if isinstance(native, list):
-        return [item for item in native if isinstance(item, dict)]
+        return [item for item in native if isinstance(item, dict)], None
     if legacy_json and legacy_json.strip() not in ("", "[]"):
         warnings.warn(
             f"brain_record_event({field_name}_json=...) is deprecated; "
@@ -85,11 +99,14 @@ def _coerce_list(
         )
         try:
             parsed = json.loads(legacy_json)
-        except json.JSONDecodeError:
-            return []
+        except json.JSONDecodeError as exc:
+            return [], _bad_json_error(f"{field_name}_json", str(exc))
         if isinstance(parsed, list):
-            return [item for item in parsed if isinstance(item, dict)]
-    return []
+            return [item for item in parsed if isinstance(item, dict)], None
+        return [], _bad_json_error(
+            f"{field_name}_json", f"expected JSON array, got {type(parsed).__name__}"
+        )
+    return [], None
 
 
 def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0915
@@ -183,10 +200,15 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             )
 
         # TAP-1932: prefer native shapes; fall back to deprecated _json aliases.
-        eff_payload = _coerce_payload(payload, payload_json)
-        eff_entities = _coerce_list(entities, entities_json, "entities")
-        eff_edges = _coerce_list(edges, edges_json, "edges")
-        eff_evidence = _coerce_list(evidence, evidence_json, "evidence")
+        # TAP-1967: surface decode failures as a structured bad_json error
+        # rather than silently swallowing them (no event row is written).
+        eff_payload, payload_err = _coerce_payload(payload, payload_json)
+        eff_entities, ent_err = _coerce_list(entities, entities_json, "entities")
+        eff_edges, edge_err = _coerce_list(edges, edges_json, "edges")
+        eff_evidence, ev_err = _coerce_list(evidence, evidence_json, "evidence")
+        for err in (payload_err, ent_err, edge_err, ev_err):
+            if err is not None:
+                return json.dumps(err)
 
         result = kg_service.record_event(
             cm,
