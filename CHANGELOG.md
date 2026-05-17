@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.19.0] — 2026-05-17
+
+The **operator-observability + KG throughput release** — closes EPIC-300 (validation hardening), EPIC-301 (operator observability), EPIC-302 (KG scalability), and TAP-1832 (MCP cold-start). Sister releases the CI cleanup epic TAP-2048 that returned main to green after the TAP-1985 deferred-loading rollout. Strict-superset wire contract: every change preserves existing 2xx clients while adding fields downstream consumers (`tapps doctor`, AgentForge `BrainBridge`, NLTlabsPE) have been asking for.
+
 ### Added
 
 - **X-Brain-Profile gating on `/v1/*` REST endpoints** (TAP-1929 — security). The `X-Brain-Profile` header now enforces the same tool surface on the REST path as the MCP path. HTTP-only consumers (AgentForge `BrainBridge`, future SDKs) running with `agent_brain` profile can no longer call `memory_*`-backed REST endpoints — denials return `403` with the documented JSON-RPC `-32602` shape (`{"error": "out_of_profile", "data": {"reason": "out_of_profile", "tool": ..., "profile": ...}}`). REST route → tool mapping is centralised in `src/tapps_brain/http/rest_profile_gate.py` with startup drift detection; `GET /v1/tools/list` filters the catalog by the caller's profile when the header is set.
