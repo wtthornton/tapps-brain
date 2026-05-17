@@ -174,12 +174,16 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == set(ALL_TOOLS)
 
-    def test_bundled_coder_profile_returns_17_tools(self) -> None:
-        """Real ProfileRegistry.get('coder') must return exactly 17 tools."""
-        # 6 facade + 4 hook-callable + 3 quality + 4 cross-repo/graph (incl. 2 KG) = 17
+    def test_bundled_coder_profile_returns_18_tools(self) -> None:
+        """Real ProfileRegistry.get('coder') must return exactly 18 tools.
+
+        6 facade + 4 hook-callable + 3 quality + 5 cross-repo/graph
+        (`hive_search`, `memory_find_related`, `brain_get_neighbors`,
+        `brain_explain_connection`, `brain_record_events_batch` — TAP-1973).
+        """
         real_registry = ProfileRegistry()
         coder_tools = real_registry.get("coder")
-        assert len(coder_tools) == 17
+        assert len(coder_tools) == 18
 
         all_tool_names = list(real_registry.get("full"))
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -197,14 +201,14 @@ class TestListToolsFilter:
         """TAP-1985: `full` profile defaults to 8 daily drivers; 51 deferred.
 
         Replaces the prior "returns 59 tools" assertion. The callable surface
-        (``registry.get('full')``) is still 59, but the default
+        (``registry.get('full')``) is 60 post-TAP-1973, but the default
         ``tools/list`` payload returns only the 8 eager daily drivers so the
         eager catalog stays within the per-server budget (parent epic
         TAP-1983).
         """
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 59  # callable surface unchanged
+        assert len(all_tool_names) == 60  # callable surface (TAP-1973: +1)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -466,7 +470,7 @@ class TestDeferredToolBehavior:
         """Operator profile shares the 8-tool daily-driver budget."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 72  # callable surface
+        assert len(all_tool_names) == 73  # callable surface (TAP-1973: +1)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -484,7 +488,8 @@ class TestDeferredToolBehavior:
         real_registry = ProfileRegistry()
         full_tools = list(real_registry.get("full"))
 
-        expected_counts = {"coder": 17, "reviewer": 8, "seeder": 6, "agent_brain": 10}
+        # TAP-1973: coder + agent_brain each gained `brain_record_events_batch`.
+        expected_counts = {"coder": 18, "reviewer": 8, "seeder": 6, "agent_brain": 11}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None
