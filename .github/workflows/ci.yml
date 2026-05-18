@@ -99,6 +99,10 @@ jobs:
       # Unit tests only — integration/compat/benchmarks excluded; they have
       # known pre-existing failures (tenant isolation, openapi snapshot drift,
       # compat parity) tracked separately. Reintroduce once they're green.
+      # The class of bug v3.20.1 hotfixed (tool catalog ↔ snapshot drift) is
+      # covered by the e2e Docker stack in `hive-smoke.yml`; widened triggers
+      # there ensure any change to `mcp_server/`, `http/`, or `services/`
+      # exercises it.
       - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
 
 # Removed in the 2026-04-27 cost-discipline pass:
