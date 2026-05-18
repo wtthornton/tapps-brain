@@ -362,7 +362,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 <!-- END: karpathy-guidelines -->
 
-<!-- BEGIN: tapps-obligations v3.10.9 -->
+<!-- BEGIN: tapps-obligations v3.10.13 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.
@@ -389,23 +389,6 @@ You should follow these steps to avoid broken, insecure, or hallucinated code.
 
 You should call `tapps_session_start()` as the first action in every session.
 This returns server info (version, checkers, config) and project context.
-
-**Sub-agent session sharing (TAP-1841):** Ralph sub-agents (`ralph-explorer`, `ralph-reviewer`,
-`ralph-tester`, `ralph-coordinator`) should avoid duplicate bootstrap calls:
-
-- Always pass `force=False` (the default) — the tapps-mcp server caches the result per-process.
-- If `.tapps-mcp/.tapps-session-id` exists and is < 1 h old, skip `tapps_session_start` entirely
-  and proceed directly (the primary Ralph agent already bootstrapped this loop).
-- If no `.tapps-mcp/.tapps-session-id` file is present (ad-hoc non-Ralph sessions, or first loop),
-  call `tapps_session_start()` normally — then write the sentinel:
-  ```bash
-  mkdir -p .tapps-mcp && date -u +%Y-%m-%dT%H:%M:%SZ > .tapps-mcp/.tapps-session-id
-  ```
-- The sentinel is written by the primary Ralph agent after its own `tapps_session_start` call, so
-  sub-agents spawned later in the same loop will find it and skip their own bootstrap.
-
-Each `tapps_session_start` takes ~140 ms; 5 sub-agents × 140 ms = 700 ms per loop saved when
-the sentinel pattern is honoured.
 
 ### Before Using Any Library API
 
@@ -439,7 +422,7 @@ You should call `tapps_validate_config(file_path)` when changing Dockerfile, doc
 
 ## Memory System
 
-`tapps_memory` provides persistent cross-session knowledge with **33 actions** (save, search, consolidate, federation, profiles, hive, health, and more). **Tiers:** architectural (180d), pattern (60d), procedural (30d), context (14d). **Scopes:** project, branch, session. Max 1500 entries. Configure `memory_hooks` in `.tapps-mcp.yaml` for auto-recall and auto-capture.
+`tapps_memory` provides persistent cross-session knowledge with **42 actions** (save, search, consolidate, federation, profiles, hive, health, knowledge graph, batch ops, feedback, native session memory, and more). **Tiers:** architectural (180d), pattern (60d), procedural (30d), context (14d). **Scopes:** project, branch, session. Max 1500 entries. Configure `memory_hooks` in `.tapps-mcp.yaml` for auto-recall and auto-capture.
 
 **Cross-session handoff:** when one session needs to pass a token, ID, or payload to a later session, call `tapps_memory(action="save", key="<slug>", value="<payload>")` instead of printing to stdout — the default `project` scope is already cross-session within the same repo. Read it back from the next session with `action="get"` (by key) or `action="search"`. For cross-agent handoff in Agent Teams, use `action="hive_propagate"`; for cross-project, use the federation actions.
 

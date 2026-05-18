@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.9
+# tapps-mcp-hook-version: 3.10.13
 # TappsMCP PostToolUse hook — Linear list_issues auto-populate (TAP-1412)
 # After a successful mcp__plugin_linear_linear__list_issues call, write the
 # response into .tapps-mcp-cache/linear-snapshots/<key>.json so the next

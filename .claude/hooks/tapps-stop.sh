@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.9
+# tapps-mcp-hook-version: 3.10.13
 # TappsMCP Stop hook — TAP-1326 / TAP-1327
 # Enforces tapps_quick_check / validate_changed / quality_gate after file
 # edits and tapps_checklist before EXIT_SIGNAL. Overrides Ralph status.json

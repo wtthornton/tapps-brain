@@ -5,6 +5,17 @@ alwaysApply: true
 
 When integrating with external services, sibling repos, or sub-agent reports, respect upstream sources of truth. Don't build parallel decision paths around something an authoritative system already does, and don't cite second-hand claims about external APIs without checking the producer.
 
+## tapps-brain is bridge-only — never an MCP entry alongside tapps-mcp
+
+`.mcp.json` (and `.cursor/mcp.json` / `.vscode/mcp.json`) lists `tapps-mcp`, `tapps-quality`, `tapps-admin`, and `docs-mcp` — never `tapps-brain` directly. Brain access flows through tapps-mcp's `BrainBridge`, exposed to agents through the `tapps_memory` tool.
+
+- **Why bridge-only.** `tapps_memory` is the agent-facing API contract. It enforces the project profile, tier rules, supersede semantics, feedback-flywheel auto-emission, content-safety gating, and degraded-payload behavior. Wiring tapps-brain as a parallel MCP entry creates a second action surface that bypasses every one of those — drift is then guaranteed.
+- **Auth lives on tapps-mcp.** `TAPPS_MCP_MEMORY_BRAIN_HTTP_URL` and `TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN` go in the tapps-mcp env block in `.mcp.json`; agents never hold the brain credential. See [docs/MEMORY_REFERENCE.md](../../docs/MEMORY_REFERENCE.md#brain-health-diagnostics) for the live-state probe.
+- **Local-only exception.** Direct HTTP calls to `localhost:8080/mcp` are fine for ops work (curl-based smoke tests, brain-side debugging) and external clients written outside the agent flow. They are NOT fine for agent calls.
+- **Operational shape.** tapps-brain runs as a Dockerized PostgreSQL service. tapps-mcp connects via HTTP when `memory.brain_http_url` is set in `.tapps-mcp.yaml`, and falls back to in-process via `AgentBrain` otherwise (ADR-0001). Both modes share the same circuit-breaker, offline-queue, version-floor (ADR-0009), and `brain_bridge_health` probe.
+
+When asked to "add tapps-brain to MCP config" or "give the agent direct memory access," route through `tapps_memory` instead. When auditing `.mcp.json`, flag any `tapps-brain` entry as a regression. When documenting the memory pipeline, point readers at `tapps_memory` + `BrainBridge` + the `brain_bridge_health` probe — not at the brain HTTP API directly.
+
 ## Linear is OAuth via the Claude Code plugin
 
 Linear access in Claude Code sessions is OAuth via `mcp__plugin_linear_linear__*`. Tokens live in `~/.claude/.credentials.json` and are refreshed automatically.

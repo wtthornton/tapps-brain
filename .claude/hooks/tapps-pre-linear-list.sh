@@ -1,32 +1,16 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.9
+# tapps-mcp-hook-version: 3.10.13
 # TappsMCP PreToolUse hook — Linear cache-first read gate (TAP-1224)
 # Gates raw mcp__plugin_linear_linear__list_issues calls behind a recent
 # tapps_linear_snapshot_get sentinel for the same (team, project, state,
 # label, limit) slice (within 300s). Mode is baked in at install time:
 # "warn" logs to .cache-gate-violations.jsonl and allows; "block" exits 2.
 # Bypass with TAPPS_LINEAR_SKIP_CACHE_GATE=1 (logged to .bypass-log.jsonl).
-#
-# TAP-2012: this hook is *defense-in-depth* — the tapps-mcp server already
-# enforces cache-first via the gate envelope; the hook is a second line of
-# defence against clients bypassing the skill. Every decision is logged to
-# .tapps-mcp/hook-debug.log so operators can tell which layer denied.
-ROOT_FOR_LOG="${CLAUDE_PROJECT_DIR:-$PWD}"
-HOOK_DEBUG_LOG="$ROOT_FOR_LOG/.tapps-mcp/hook-debug.log"
-_log() {
-  local decision="$1"
-  local reason="$2"
-  mkdir -p "$ROOT_FOR_LOG/.tapps-mcp" 2>/dev/null
-  printf '{"ts":"%s","hook":"tapps-pre-linear-list","decision":"%s","reason":"%s","note":"[hook: defense-in-depth, primary: server-gate]"}\n' \
-    "$(date -u +%FT%TZ)" "$decision" "$reason" >> "$HOOK_DEBUG_LOG" 2>/dev/null
-}
-_log entry invocation
 MODE="warn"
 INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 if [ -z "$PYBIN" ]; then
   # No python available — cannot compute key; fail-open for portability.
-  _log allow no_python_failopen
   exit 0
 fi
 PARSED=$(echo "$INPUT" | "$PYBIN" -c "
@@ -96,10 +80,9 @@ CALL_TEAM=$(echo "$PARSED" | sed -n '3p')
 CALL_PROJECT=$(echo "$PARSED" | sed -n '4p')
 case "$TOOL" in
   mcp__plugin_linear_linear__list_issues|list_issues) ;;
-  *) _log allow not_list_issues; exit 0 ;;
+  *) exit 0 ;;
 esac
 if [ -z "$KEY" ]; then
-  _log allow empty_key
   exit 0
 fi
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -107,7 +90,6 @@ if [ "${TAPPS_LINEAR_SKIP_CACHE_GATE:-0}" = "1" ]; then
   mkdir -p "$ROOT/.tapps-mcp" 2>/dev/null
   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"bypass\":\"TAPPS_LINEAR_SKIP_CACHE_GATE\",\"key\":\"${KEY}\"}" \
     >> "$ROOT/.tapps-mcp/.bypass-log.jsonl" 2>/dev/null
-  _log allow bypass_env
   exit 0
 fi
 SENTINEL="$ROOT/.tapps-mcp/.linear-snapshot-sentinel-${KEY}"
@@ -117,7 +99,6 @@ if [ -f "$SENTINEL" ]; then
   if echo "$SENT" | grep -Eq '^[0-9]+$'; then
     AGE=$((NOW - SENT))
     if [ "$AGE" -le 300 ]; then
-      _log allow sentinel_hit
       exit 0
     fi
   fi
@@ -145,7 +126,6 @@ echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"key\":\"${KEY}\",\"mode\":\"${MODE}\",\"c
 # Cross-project reads pass through regardless of mode — agent-scope.md allows
 # read-only access to other projects; the gate is for THIS project's writes.
 if [ "$CATEGORY" = "cross_project" ]; then
-  _log allow cross_project_passthrough
   exit 0
 fi
 if [ "$MODE" = "warn" ]; then
@@ -157,7 +137,6 @@ Route reads through the \`linear-read\` skill (TAP-1260):
 This call is allowed (warn mode) but logged to .tapps-mcp/.cache-gate-violations.jsonl.
 See .claude/rules/linear-standards.md.
 MSG
-  _log allow warn_mode_passthrough
   exit 0
 fi
 cat >&2 <<MSG
@@ -170,5 +149,4 @@ For a single-issue lookup, use mcp__plugin_linear_linear__get_issue(id=...) inst
 Or set TAPPS_LINEAR_SKIP_CACHE_GATE=1 for emergency bypass (logged).
 See .claude/rules/linear-standards.md.
 MSG
-_log deny block_mode_gate_miss
 exit 2
