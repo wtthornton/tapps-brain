@@ -8,7 +8,7 @@ bool). Wrappers in ``mcp_server`` / ``http_adapter`` are responsible for
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -386,7 +386,7 @@ def audit_consumers(
             }
             for aid, tools in per_agent.items()
         ),
-        key=lambda r: (-r["total_calls"], r["agent_id"]),
+        key=lambda r: (-cast(int, r["total_calls"]), cast(str, r["agent_id"])),
     )
 
     active_ids = set(per_agent.keys())
