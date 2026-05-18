@@ -149,7 +149,7 @@ hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints
 brain-healthcheck:  ## Verify this repo is wired to the deployed tapps-brain and MCP tools work
 	@bash scripts/brain-healthcheck.sh
 
-publish-brain-image:  ## Build wheel + docker-tapps-brain-http:latest (called by AgentForge brain-build)
+publish-brain-image:  ## Build wheel + all three stack images, each tagged :latest and :$(BRAIN_VERSION) (TAP-2136)
 	rm -f dist/*.whl dist/*.tar.gz
 	uv build
 	docker build \
@@ -157,4 +157,16 @@ publish-brain-image:  ## Build wheel + docker-tapps-brain-http:latest (called by
 	  -f docker/Dockerfile.http \
 	  -t $(BRAIN_IMAGE):latest \
 	  -t $(BRAIN_IMAGE):$(BRAIN_VERSION) \
+	  .
+	docker build \
+	  --build-arg TAPPS_BRAIN_VERSION=$(BRAIN_VERSION) \
+	  -f docker/Dockerfile.migrate \
+	  -t docker-tapps-brain-migrate:latest \
+	  -t docker-tapps-brain-migrate:$(BRAIN_VERSION) \
+	  .
+	docker build \
+	  --build-arg TAPPS_BRAIN_VERSION=$(BRAIN_VERSION) \
+	  -f docker/Dockerfile.visual \
+	  -t docker-tapps-visual:latest \
+	  -t docker-tapps-visual:$(BRAIN_VERSION) \
 	  .

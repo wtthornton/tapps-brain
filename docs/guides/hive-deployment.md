@@ -31,6 +31,28 @@ The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tap
 
 There is no "Hive service" to start separately; the brain serves private memory + Hive + Federation from the same DSN over the same `/mcp/` + `/v1/*` API.
 
+## Upgrading to a New Release (BRAIN_VERSION bump — TAP-2136)
+
+Every service image in `docker/docker-compose.hive.yaml` resolves to `docker-<svc>:${BRAIN_VERSION:-latest}`. To roll the stack forward to a new release:
+
+1. **Bump `BRAIN_VERSION`** in `docker/.env` (and `docker/.env.example` if you're cutting the release commit) to match the `version` field in `pyproject.toml`. Example: `BRAIN_VERSION=3.20.1`.
+2. **Build all three images** with both `:latest` and `:$(BRAIN_VERSION)` tags:
+   ```bash
+   make publish-brain-image          # builds tapps-brain-http, -migrate, -visual
+   ```
+3. **Roll the live stack forward**:
+   ```bash
+   docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d
+   ```
+   `docker compose up -d` is enough — Compose detects that the resolved image tag changed and recreates the affected containers. There is no need for `--force-recreate` or `docker compose down` when `BRAIN_VERSION` moves.
+4. **Verify the live version**:
+   ```bash
+   curl -sS http://localhost:8080/healthz | jq .brain_version
+   # → "3.20.1"
+   ```
+
+If you leave `BRAIN_VERSION` unset, every image resolves to `:latest` and you get the previous (drift-prone) behavior — useful for local development against a freshly-built tree, but **not recommended for production** because `docker compose up -d` will not re-pull `:latest` on its own. Always pin `BRAIN_VERSION` in production `docker/.env`.
+
 ## Single-Host Deployment (default: unified DSN)
 
 For a single host (development, small team, or personal use), the compose file is already configured — you just fill in `docker/.env` and run `make hive-deploy`. If you need to run the brain outside Docker (CLI, embedded library, tests), point it at the same DB:
