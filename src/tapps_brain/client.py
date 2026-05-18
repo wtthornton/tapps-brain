@@ -77,6 +77,48 @@ _SCHEME_MCP_HTTP = "mcp+http://"
 #: Update if the upstream MCP SDK changes the negotiated version.
 _MCP_PROTOCOL_VERSION = "2025-06-18"
 
+#: Per-leg timeout defaults (STORY-071.4). Applied when neither the new per-leg
+#: params nor the legacy ``timeout`` param are passed. The connect default is
+#: tighter than the read default because the brain is normally on the same
+#: host or LAN — a 5 s TCP handshake is already an outlier worth failing fast.
+_DEFAULT_CONNECT_TIMEOUT: float = 5.0
+_DEFAULT_READ_TIMEOUT: float = 30.0
+
+
+def _resolve_timeouts(
+    timeout: float | None,
+    connect_timeout: float | None,
+    read_timeout: float | None,
+) -> tuple[float, float]:
+    """Resolve the connect / read timeout pair (STORY-071.4).
+
+    Per-leg params win when set. Otherwise fall back to the legacy ``timeout``
+    (preserves prior behaviour for callers still using the single-knob API).
+    When everything is unset, use the per-leg defaults.
+    """
+    connect = (
+        connect_timeout
+        if connect_timeout is not None
+        else (timeout if timeout is not None else _DEFAULT_CONNECT_TIMEOUT)
+    )
+    read = (
+        read_timeout
+        if read_timeout is not None
+        else (timeout if timeout is not None else _DEFAULT_READ_TIMEOUT)
+    )
+    return connect, read
+
+
+def _build_httpx_timeout(connect: float, read: float) -> Any:
+    """Construct an ``httpx.Timeout`` carrying the resolved connect/read pair.
+
+    Write and pool legs piggyback on the read timeout — most calls are small
+    JSON bodies, so a separate write knob would be cosmetic.
+    """
+    import httpx
+
+    return httpx.Timeout(read, connect=connect, read=read, write=read, pool=read)
+
 
 def _detect_scheme(url: str) -> str:
     if url.startswith(_SCHEME_MCP_HTTP):
@@ -537,7 +579,15 @@ class TappsBrainClient:
         Bearer token for the HTTP adapter.  Falls back to
         ``TAPPS_BRAIN_AUTH_TOKEN`` env var.
     timeout:
-        HTTP timeout in seconds (default 30).
+        **Deprecated** (STORY-071.4) single-knob HTTP timeout in seconds.
+        When set, it applies to both connect and read legs unless a per-leg
+        timeout is also provided. Prefer ``connect_timeout`` / ``read_timeout``.
+    connect_timeout:
+        TCP / TLS connect-leg timeout in seconds. Defaults to 5 s when nothing
+        else is set; falls back to ``timeout`` when the legacy param is passed.
+    read_timeout:
+        Per-request read-leg timeout in seconds. Defaults to 30 s when nothing
+        else is set; falls back to ``timeout`` when the legacy param is passed.
     max_retries:
         Maximum retry attempts for transient failures (default 2).
     """
@@ -549,15 +599,23 @@ class TappsBrainClient:
         project_id: str | None = None,
         agent_id: str | None = None,
         auth_token: str | None = None,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         max_retries: int = 2,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
     ) -> None:
         self._url = url
         self._scheme = _detect_scheme(url)
         self._project_id = project_id or os.environ.get("TAPPS_BRAIN_PROJECT", "default")
         self._agent_id = agent_id or os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
         self._auth_token = auth_token or os.environ.get("TAPPS_BRAIN_AUTH_TOKEN")
-        self._timeout = timeout
+        self._connect_timeout, self._read_timeout = _resolve_timeouts(
+            timeout, connect_timeout, read_timeout
+        )
+        # Preserve a scalar ``_timeout`` for callers (and existing tests) that
+        # poke the legacy attribute — mirrors the read leg, which is the most
+        # generous bound.
+        self._timeout = self._read_timeout
         self._max_retries = max_retries
         self._http_client: Any = None
         self._closed = False
@@ -586,7 +644,10 @@ class TappsBrainClient:
         default_headers: dict[str, str] = {}
         if self._auth_token:
             default_headers["Authorization"] = f"Bearer {self._auth_token}"
-        self._http_client = httpx.Client(timeout=self._timeout, headers=default_headers)
+        self._http_client = httpx.Client(
+            timeout=_build_httpx_timeout(self._connect_timeout, self._read_timeout),
+            headers=default_headers,
+        )
 
     def _tool(self, name: str, **kwargs: Any) -> Any:
         """Call a tool via the active transport.
@@ -835,15 +896,21 @@ class AsyncTappsBrainClient:
         project_id: str | None = None,
         agent_id: str | None = None,
         auth_token: str | None = None,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         max_retries: int = 2,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
     ) -> None:
         self._url = url
         self._scheme = _detect_scheme(url)
         self._project_id = project_id or os.environ.get("TAPPS_BRAIN_PROJECT", "default")
         self._agent_id = agent_id or os.environ.get("TAPPS_BRAIN_AGENT_ID", "unknown")
         self._auth_token = auth_token or os.environ.get("TAPPS_BRAIN_AUTH_TOKEN")
-        self._timeout = timeout
+        self._connect_timeout, self._read_timeout = _resolve_timeouts(
+            timeout, connect_timeout, read_timeout
+        )
+        # See sync client: legacy scalar attribute mirrors the read leg.
+        self._timeout = self._read_timeout
         self._max_retries = max_retries
         self._http_client: Any = None
         self._closed = False
@@ -864,7 +931,10 @@ class AsyncTappsBrainClient:
             default_headers: dict[str, str] = {}
             if self._auth_token:
                 default_headers["Authorization"] = f"Bearer {self._auth_token}"
-            self._http_client = httpx.AsyncClient(timeout=self._timeout, headers=default_headers)
+            self._http_client = httpx.AsyncClient(
+                timeout=_build_httpx_timeout(self._connect_timeout, self._read_timeout),
+                headers=default_headers,
+            )
 
     async def _tool(self, name: str, **kwargs: Any) -> Any:
         """Call a tool via the active transport (async).

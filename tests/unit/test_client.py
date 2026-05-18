@@ -1002,3 +1002,123 @@ def test_sync_per_call_authorization_overrides_default(
     client._http_client.post("/y")
     assert captured.get("authorization") == "Bearer default-tok"
     client._http_client.close()
+
+
+# ---------------------------------------------------------------------------
+# STORY-071.4 — configurable per-leg timeouts (connect/read)
+# ---------------------------------------------------------------------------
+#
+# The legacy single ``timeout`` knob is now a back-compat fallback; the
+# preferred API exposes ``connect_timeout`` and ``read_timeout`` and propagates
+# both to the underlying httpx client via ``httpx.Timeout(...)``.
+
+
+def test_sync_per_leg_timeouts_propagate_to_httpx_client() -> None:
+    """connect_timeout / read_timeout must appear on the httpx.Client's .timeout."""
+    import httpx
+
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        connect_timeout=3.5,
+        read_timeout=45.0,
+    )
+    try:
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 3.5
+        assert client._http_client.timeout.read == 45.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_defaults_when_nothing_passed() -> None:
+    """No timeout args → connect=5 s, read=30 s (the new per-leg defaults)."""
+    import httpx
+
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 5.0
+        assert client._http_client.timeout.read == 30.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_legacy_timeout_propagates_to_both_legs() -> None:
+    """Single ``timeout=`` (deprecated) still applies to both legs for back-compat."""
+    client = TappsBrainClient(
+        "http://brain:8080", project_id="p1", agent_id="a1", timeout=12.0
+    )
+    try:
+        assert client._http_client.timeout.connect == 12.0
+        assert client._http_client.timeout.read == 12.0
+        # Legacy scalar attribute mirrors the resolved read leg.
+        assert client._timeout == 12.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_per_leg_wins_over_legacy_timeout() -> None:
+    """When connect_timeout / read_timeout are set, they override ``timeout``."""
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        timeout=12.0,
+        connect_timeout=2.0,
+    )
+    try:
+        # Explicit connect wins; read leg falls back to legacy timeout.
+        assert client._http_client.timeout.connect == 2.0
+        assert client._http_client.timeout.read == 12.0
+    finally:
+        client._http_client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_per_leg_timeouts_propagate_to_httpx_client() -> None:
+    """Async: connect_timeout / read_timeout reach the httpx.AsyncClient."""
+    import httpx
+
+    client = AsyncTappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        connect_timeout=4.0,
+        read_timeout=50.0,
+    )
+    try:
+        await client._ensure_client()
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 4.0
+        assert client._http_client.timeout.read == 50.0
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_defaults_when_nothing_passed() -> None:
+    """Async: no timeout args → connect=5 s, read=30 s."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        await client._ensure_client()
+        assert client._http_client.timeout.connect == 5.0
+        assert client._http_client.timeout.read == 30.0
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_legacy_timeout_propagates_to_both_legs() -> None:
+    """Async: single ``timeout=`` still applies to both legs."""
+    client = AsyncTappsBrainClient(
+        "http://brain:8080", project_id="p1", agent_id="a1", timeout=7.5
+    )
+    try:
+        await client._ensure_client()
+        assert client._http_client.timeout.connect == 7.5
+        assert client._http_client.timeout.read == 7.5
+        assert client._timeout == 7.5
+    finally:
+        await client.close()
