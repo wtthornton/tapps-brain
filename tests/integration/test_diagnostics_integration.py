@@ -17,7 +17,12 @@ from tapps_brain.store import MemoryStore
 
 
 def _tool_fn(mcp_server: object, name: str):
-    for tool in mcp_server._tool_manager.list_tools():
+    # TAP-1985 hid deferred tools from ``_tool_manager.list_tools`` to keep
+    # the eager tools/list payload within the per-server budget.  Use the
+    # pre-filter view (TAP-2050) so the registration check still sees the
+    # full callable surface — ``diagnostics_report`` lives behind the
+    # deferred curtain.
+    for tool in mcp_server._tool_manager._unfiltered_list_tools():
         if tool.name == name:
             return tool.fn
     msg = f"tool not found: {name}"
