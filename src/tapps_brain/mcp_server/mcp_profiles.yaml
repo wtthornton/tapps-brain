@@ -8,12 +8,12 @@
 # adding @mcp.tool decorators, otherwise the server will refuse to start.
 #
 # Profile summary:
-#   full        (60 tools, 8 eager) — all standard tools; default fallback
-#   operator    (73 tools, 8 eager) — full + 13 operator-only maintenance tools
+#   full        (61 tools, 8 eager) — all standard tools; default fallback
+#   operator    (74 tools, 8 eager) — full + 13 operator-only maintenance tools
 #   coder       (18 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
 #   reviewer    ( 8 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (11 tools) — TAP-1579 canonical agent-brain consumer surface
+#   agent_brain (12 tools) — TAP-1579 canonical agent-brain consumer surface
 #                             (brain_* facade only; no memory_*/hive_*/feedback_*)
 #
 # Canonical surface split (TAP-1579):
@@ -36,7 +36,7 @@
 profiles:
   # --------------------------------------------------------------------------
   # full — all standard tools (default fallback, backwards-compatible)
-  # 60 tools total: 8 eager daily drivers + 52 deferred (TAP-1973: +brain_record_events_batch)
+  # 61 tools total: 8 eager daily drivers + 53 deferred (TAP-2093: +brain_audit_consumers)
   #
   # Daily-driver budget (8) — eager catalog returned by `tools/list` when no
   # Tool Search BETA header is present. Picked for highest call frequency in
@@ -47,7 +47,7 @@ profiles:
       All standard (non-operator) tools. Default profile when no X-Brain-Profile
       header is set. Includes all brain_* facade tools + KG tools (EPIC-076).
       Eager catalog (`tools/list`) returns the 8 daily-driver tools; the
-      remaining 51 carry `defer_loading: true` and are reachable via Tool Search
+      remaining 53 carry `defer_loading: true` and are reachable via Tool Search
       BETA (parent epic TAP-1983).
     tools:
       # Daily drivers (8) — eager catalog
@@ -67,6 +67,8 @@ profiles:
       - name: agent_list
         defer_loading: true
       - name: agent_register
+        defer_loading: true
+      - name: brain_audit_consumers
         defer_loading: true
       - name: brain_forget
         defer_loading: true
@@ -167,7 +169,7 @@ profiles:
 
   # --------------------------------------------------------------------------
   # operator — all tools (standard + operator-only maintenance)
-  # 73 tools total: 8 eager daily drivers + 65 deferred (52 standard + 13 admin)
+  # 74 tools total: 8 eager daily drivers + 66 deferred (53 standard + 13 admin)
   # --------------------------------------------------------------------------
   operator:
     description: >
@@ -186,7 +188,7 @@ profiles:
       - memory_search
       - memory_find_related
       - hive_search
-      # Deferred standard tools (51) — same as `full`'s deferred set
+      # Deferred standard tools (53) — same as `full`'s deferred set
       - name: agent_create
         defer_loading: true
       - name: agent_delete
@@ -194,6 +196,8 @@ profiles:
       - name: agent_list
         defer_loading: true
       - name: agent_register
+        defer_loading: true
+      - name: brain_audit_consumers
         defer_loading: true
       - name: brain_forget
         defer_loading: true
@@ -408,6 +412,7 @@ profiles:
       for any agent that uses the AgentBrain class or speaks to tapps-brain
       via the brain_* facade only.
     tools:
+      - brain_audit_consumers
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors

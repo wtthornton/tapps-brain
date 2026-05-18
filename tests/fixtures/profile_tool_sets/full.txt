@@ -2,6 +2,7 @@ agent_create
 agent_delete
 agent_list
 agent_register
+brain_audit_consumers
 brain_explain_connection
 brain_forget
 brain_get_neighbors

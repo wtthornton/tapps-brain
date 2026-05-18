@@ -48,14 +48,16 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_60_tools(self) -> None:
-        # TAP-1973 added `brain_record_events_batch` to the full profile.
+    def test_get_full_returns_61_tools(self) -> None:
+        # TAP-1973 added `brain_record_events_batch`; TAP-2093 added
+        # `brain_audit_consumers` to the full profile.
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 60
+        assert len(tools) == 61
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
+        assert "brain_audit_consumers" in tools
         assert "memory_save" in tools
         assert "tapps_brain_session_end" in tools
         # Operator-only tools must NOT be in full
@@ -64,12 +66,12 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_73_tools(self) -> None:
-        # TAP-1973 added `brain_record_events_batch` to the full profile,
-        # which is a subset of operator.
+    def test_get_operator_returns_74_tools(self) -> None:
+        # TAP-1973 added `brain_record_events_batch`; TAP-2093 added
+        # `brain_audit_consumers` to the full profile (subset of operator).
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 73
+        assert len(tools) == 74
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -221,16 +223,18 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
-    def test_get_agent_brain_returns_11_tools(self) -> None:
-        """TAP-1579 (+TAP-1973): 'agent_brain' profile exposes the brain_* facade tools.
+    def test_get_agent_brain_returns_12_tools(self) -> None:
+        """TAP-1579 (+TAP-1973, TAP-2093): 'agent_brain' profile exposes brain_* tools.
 
         Started at 10 tools in TAP-1579; TAP-1973 added
-        `brain_record_events_batch` for partial-success N-event backfill.
+        `brain_record_events_batch` for partial-success N-event backfill;
+        TAP-2093 added `brain_audit_consumers` for declared-vs-active audits.
         """
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        assert len(agent_brain) == 11
+        assert len(agent_brain) == 12
         assert "brain_record_events_batch" in agent_brain
+        assert "brain_audit_consumers" in agent_brain
 
     def test_get_agent_brain_contains_facade_tools(self) -> None:
         """TAP-1579: agent_brain must contain the 6 core AgentBrain facade tools."""
@@ -370,7 +374,8 @@ class TestValidateAgainst:
 
         Tool count is pinned to detect drift; bump when adding/removing a
         ``@mcp.tool`` decorated function.  TAP-1973 added
-        `brain_record_events_batch` → 73.
+        `brain_record_events_batch` → 73; TAP-2093 added
+        `brain_audit_consumers` → 74.
         """
         import re
 
@@ -380,7 +385,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 73, f"Expected 73 tools, found {len(all_tools)}"
+        assert len(all_tools) == 74, f"Expected 74 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -448,12 +453,12 @@ class TestCustomConfigPath:
 class TestDeferredTools:
     """Per-tool ``defer_loading: true`` annotation parsing + ``get_deferred``."""
 
-    def test_bundled_full_has_52_deferred_tools(self) -> None:
-        """`full` profile keeps 8 eager daily drivers + 52 deferred (TAP-1973: +1)."""
+    def test_bundled_full_has_53_deferred_tools(self) -> None:
+        """`full` profile keeps 8 eager daily drivers + 53 deferred (TAP-2093: +1)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
-        assert len(deferred) == 52
+        assert len(deferred) == 53
         assert len(eager) == 8
 
     def test_bundled_full_eager_set_matches_daily_drivers(self) -> None:
@@ -473,12 +478,12 @@ class TestDeferredTools:
             }
         )
 
-    def test_bundled_operator_has_65_deferred_tools(self) -> None:
-        """`operator` profile shares 8 daily drivers; remaining 65 deferred (TAP-1973: +1)."""
+    def test_bundled_operator_has_66_deferred_tools(self) -> None:
+        """`operator` profile shares 8 daily drivers; remaining 66 deferred (TAP-2093: +1)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
-        assert len(deferred) == 65
+        assert len(deferred) == 66
         assert len(eager) == 8
 
     def test_bundled_operator_eager_matches_full(self) -> None:

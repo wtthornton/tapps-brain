@@ -1,3 +1,4 @@
+brain_audit_consumers
 brain_explain_connection
 brain_forget
 brain_get_neighbors

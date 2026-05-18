@@ -246,6 +246,8 @@ class TestCoreTools:
             "brain_learn_success",
             "brain_learn_failure",
             "brain_status",
+            # Consumer audit (TAP-2093)
+            "brain_audit_consumers",
             # Batch tools (STORY-070.11)
             "memory_save_many",
             "memory_recall_many",
