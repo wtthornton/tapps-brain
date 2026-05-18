@@ -12,6 +12,14 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.20.1] — 2026-05-18
+
+Hotfix release. The 3.20.0 container (and any 3.19.0 container with a fresh restart) fails ASGI lifespan startup with `REST route drift detected — update REST_ROUTE_TO_TOOL or mcp_profiles.yaml so the following routes map to a known tool: '/v1/forget' → 'brain_forget', ...`. Same code path also caused `/v1/tools/list?X-Brain-Profile=full` to return only the 8 eager tools instead of the full 63-tool profile surface.
+
+### Fixed
+
+- **HTTP adapter startup crash + broken per-profile `/v1/tools/list` filter.** `http_adapter.py:1454` built the tools snapshot from `_tool_manager.list_tools()`, which after TAP-1985 returns only the 8 eager tools. Two downstream consequences: the TAP-1929 REST-route drift check (added in 3.19.0) raised `ValueError` because every deferred tool (`brain_forget`, `brain_learn_success`, `brain_record_event`, ...) looked missing → ASGI lifespan failure → container never reached the health check. The per-profile filter at request time also returned at most 8 tools because the `by_name_json` lookup only knew about the eager catalog. Use `_unfiltered_list_tools()` for the `by_name` index (drift check + per-profile filter); keep the no-header `payload` built from the filtered view so the daily-driver wire contract stays at 8 tools. Both bugs were latent in 3.19.0 — observable only on fresh container starts.
+
 ## [3.20.0] — 2026-05-18
 
 The **consumer-adoption-surface release** — closes [TAP-2092](https://linear.app/tappscodingagents/issue/TAP-2092) (declared-vs-active visibility) and the four child stories that landed it: [TAP-2093](https://linear.app/tappscodingagents/issue/TAP-2093) `brain_audit_consumers`, [TAP-2094](https://linear.app/tappscodingagents/issue/TAP-2094) recall-quality telemetry, [TAP-2095](https://linear.app/tappscodingagents/issue/TAP-2095) file-backed-mirror spike, [TAP-2099](https://linear.app/tappscodingagents/issue/TAP-2099) `brain_export`. Three new MCP tools, all behind `defer_loading: true` — the 8-tool eager catalog and the wire contract of every existing endpoint are unchanged. Strict superset of 3.19.0.
