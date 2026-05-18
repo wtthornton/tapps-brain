@@ -48,16 +48,17 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_62_tools(self) -> None:
+    def test_get_full_returns_63_tools(self) -> None:
         # TAP-2093 added `brain_audit_consumers`; TAP-2094 added
-        # `recall_quality_metrics` to the full profile.
+        # `recall_quality_metrics`; TAP-2099 added `brain_export`.
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 62
+        assert len(tools) == 63
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
         assert "brain_audit_consumers" in tools
+        assert "brain_export" in tools
         assert "recall_quality_metrics" in tools
         assert "memory_save" in tools
         assert "tapps_brain_session_end" in tools
@@ -67,12 +68,11 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_75_tools(self) -> None:
-        # TAP-2094 added `recall_quality_metrics` to the full profile
-        # (subset of operator).
+    def test_get_operator_returns_76_tools(self) -> None:
+        # TAP-2099 added `brain_export` to the full profile (subset of operator).
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 75
+        assert len(tools) == 76
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -376,7 +376,7 @@ class TestValidateAgainst:
         Tool count is pinned to detect drift; bump when adding/removing a
         ``@mcp.tool`` decorated function.  TAP-2093 added
         `brain_audit_consumers` → 74; TAP-2094 added `recall_quality_metrics`
-        → 75.
+        → 75; TAP-2099 added `brain_export` → 76.
         """
         import re
 
@@ -386,7 +386,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 75, f"Expected 75 tools, found {len(all_tools)}"
+        assert len(all_tools) == 76, f"Expected 76 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -454,12 +454,12 @@ class TestCustomConfigPath:
 class TestDeferredTools:
     """Per-tool ``defer_loading: true`` annotation parsing + ``get_deferred``."""
 
-    def test_bundled_full_has_54_deferred_tools(self) -> None:
-        """`full` profile keeps 8 eager daily drivers + 54 deferred (TAP-2094: +1)."""
+    def test_bundled_full_has_55_deferred_tools(self) -> None:
+        """`full` profile keeps 8 eager daily drivers + 55 deferred (TAP-2099: +1)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
-        assert len(deferred) == 54
+        assert len(deferred) == 55
         assert len(eager) == 8
 
     def test_bundled_full_eager_set_matches_daily_drivers(self) -> None:
@@ -479,12 +479,12 @@ class TestDeferredTools:
             }
         )
 
-    def test_bundled_operator_has_67_deferred_tools(self) -> None:
-        """`operator` profile shares 8 daily drivers; remaining 67 deferred (TAP-2094: +1)."""
+    def test_bundled_operator_has_68_deferred_tools(self) -> None:
+        """`operator` profile shares 8 daily drivers; remaining 68 deferred (TAP-2099: +1)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
-        assert len(deferred) == 67
+        assert len(deferred) == 68
         assert len(eager) == 8
 
     def test_bundled_operator_eager_matches_full(self) -> None:

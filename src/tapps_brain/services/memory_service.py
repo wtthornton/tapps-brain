@@ -386,7 +386,7 @@ def audit_consumers(
             }
             for aid, tools in per_agent.items()
         ),
-        key=lambda r: (-cast(int, r["total_calls"]), cast(str, r["agent_id"])),
+        key=lambda r: (-cast("int", r["total_calls"]), cast("str", r["agent_id"])),
     )
 
     active_ids = set(per_agent.keys())
@@ -487,6 +487,232 @@ def _percentile(sorted_values: list[float], pct: float) -> float | None:
     hi = min(lo + 1, len(sorted_values) - 1)
     frac = rank - lo
     return float(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac)
+
+
+# ---------------------------------------------------------------------------
+# brain_export — Managed Agents-layout snapshot exporter (TAP-2099)
+# ---------------------------------------------------------------------------
+
+_EXPORT_SCHEMA_VERSION: int = 1
+_EXPORT_VALID_LAYOUTS: frozenset[str] = frozenset({"managed-agents"})
+_EXPORT_READONLY_BANNER: str = "<!-- READ-ONLY managed by tapps-brain. Edits ignored. -->"
+_EXPORT_SECRET_TAG: str = "secret"
+
+# Redaction patterns — applied in order; replacement carries the kind so
+# the surviving text still hints at what was scrubbed.
+_REDACTION_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"AKIA[0-9A-Z]{16}", "[REDACTED:aws-key]"),
+    (r"gh[pousr]_[A-Za-z0-9_]{30,}", "[REDACTED:gh-token]"),
+    (r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[REDACTED:jwt]"),
+    (r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[REDACTED:email]"),
+)
+
+
+def _redact_value(text: str) -> tuple[str, int]:
+    """Apply the redaction pattern set to *text*; return (clean_text, hit_count)."""
+    import re
+
+    redacted = text
+    hits = 0
+    for pattern, replacement in _REDACTION_PATTERNS:
+        redacted, n = re.subn(pattern, replacement, redacted)
+        hits += n
+    return redacted, hits
+
+
+def _resolve_confidence(entry: Any) -> float:
+    """Return the effective 0..1 confidence, resolving the -1.0 sentinel."""
+    raw = float(getattr(entry, "confidence", -1.0))
+    if raw >= 0.0:
+        return raw
+    from tapps_brain.models import _SOURCE_CONFIDENCE_DEFAULTS, MemorySource
+
+    source = getattr(entry, "source", MemorySource.agent)
+    return _SOURCE_CONFIDENCE_DEFAULTS.get(source, 0.5)
+
+
+def _recency_score(last_accessed: str) -> float:
+    """Map ``last_accessed`` ISO-8601 to a 0..1 score (newer = higher).
+
+    Returns ``0.0`` when the timestamp is missing or malformed so unknown-age
+    entries lose to anything with a real timestamp under the ranking tie-break.
+    """
+    if not last_accessed:
+        return 0.0
+    from datetime import UTC, datetime
+
+    try:
+        ts = datetime.fromisoformat(last_accessed.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    age_days = max(0.0, (datetime.now(tz=UTC) - ts).total_seconds() / 86400.0)
+    return 1.0 / (1.0 + age_days / 30.0)
+
+
+def _rank_score(entry: Any) -> float:
+    """Combine confidence + recency per the TAP-2099 spec (max of the two)."""
+    return max(_resolve_confidence(entry), _recency_score(getattr(entry, "last_accessed", "")))
+
+
+def _build_frontmatter(entry: Any, *, redacted_value: str) -> str:
+    """Render the per-file frontmatter + body for *entry*."""
+    from tapps_brain.models import tier_str
+
+    tags = list(getattr(entry, "tags", []) or [])
+    source = getattr(entry, "source", "agent")
+    source_value = source.value if hasattr(source, "value") else str(source)
+    tags_field = "[" + ", ".join(tags) + "]"
+    return (
+        f"{_EXPORT_READONLY_BANNER}\n"
+        f"---\n"
+        f"key: {entry.key}\n"
+        f"tier: {tier_str(entry.tier)}\n"
+        f"confidence: {_resolve_confidence(entry):.4f}\n"
+        f"source: {source_value}\n"
+        f"created_at: {getattr(entry, 'created_at', '')}\n"
+        f"last_accessed: {getattr(entry, 'last_accessed', '')}\n"
+        f"tags: {tags_field}\n"
+        f"---\n\n"
+        f"{redacted_value}\n"
+    )
+
+
+def brain_export(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    output_dir: str,
+    layout: str = "managed-agents",
+    redact: bool = True,
+    top_n_per_tier: int = 500,
+    target_project_id: str = "",
+) -> dict[str, Any]:
+    """Snapshot top-N memories per tier into a Managed Agents-shaped folder.
+
+    Writes ``<output_dir>/manifest.json`` and ``<output_dir>/<tier>/<key>.md``
+    files.  Each file carries a ``READ-ONLY`` banner + frontmatter; values are
+    redacted (AWS keys, GitHub tokens, JWTs, emails) when ``redact`` is true;
+    entries tagged ``secret`` are skipped wholesale regardless of ``redact``.
+
+    The export is a one-shot snapshot, NOT a continuous mirror — the
+    TAP-2095 spike rejected the continuous-mirror path.  See
+    :file:`docs/research/file-backed-memory-mirror.md` for the rationale and
+    :file:`docs/guides/brain-export.md` for the operator-facing layout.
+
+    Args:
+        output_dir: Destination directory.  Created if absent; refuses to
+            overwrite when the directory already contains files.
+        layout: Layout name.  Only ``"managed-agents"`` is supported today.
+        redact: When true, apply the redaction pattern set to every value
+            before write.  Independent of the ``secret``-tag skip.
+        top_n_per_tier: Maximum entries to export per tier (default 500).
+        target_project_id: Project to export.  Defaults to the caller's
+            contextvar-resolved project when empty.  Recorded in
+            ``manifest.json`` for the consumer to verify.
+
+    Returns:
+        Envelope with ``project_id``, ``output_dir``, ``layout``,
+        ``schema_version``, ``exported_at``, ``tier_counts``,
+        ``skipped_secret_tag``, ``redacted_fields``, ``files_written``.
+        On invalid input: ``{"error": <code>, "message": <text>}``.
+    """
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    if layout not in _EXPORT_VALID_LAYOUTS:
+        return {
+            "error": "invalid_layout",
+            "message": (f"layout must be one of {sorted(_EXPORT_VALID_LAYOUTS)}, got {layout!r}"),
+        }
+    if top_n_per_tier <= 0:
+        return {
+            "error": "invalid_top_n",
+            "message": f"top_n_per_tier must be > 0, got {top_n_per_tier!r}",
+        }
+    if store is None or not hasattr(store, "iter_active_entries"):
+        return {
+            "error": "store_required",
+            "message": "brain_export needs a MemoryStore with iter_active_entries()",
+        }
+
+    target = Path(output_dir)
+    if target.exists() and any(target.iterdir()):
+        return {
+            "error": "output_exists_not_empty",
+            "message": (
+                f"refusing to write into non-empty directory {target!s}; "
+                "pick a fresh path or empty it first"
+            ),
+        }
+    target.mkdir(parents=True, exist_ok=True)
+
+    effective_pid = target_project_id or project_id
+
+    per_tier: dict[str, list[Any]] = {}
+    skipped_secret = 0
+    for entry in store.iter_active_entries():
+        if _EXPORT_SECRET_TAG in (getattr(entry, "tags", []) or []):
+            skipped_secret += 1
+            continue
+        from tapps_brain.models import tier_str
+
+        tier_key = tier_str(entry.tier)
+        per_tier.setdefault(tier_key, []).append(entry)
+
+    tier_counts: dict[str, int] = {}
+    files_written = 0
+    redacted_fields = 0
+    for tier_key, entries in per_tier.items():
+        ranked = sorted(entries, key=_rank_score, reverse=True)[:top_n_per_tier]
+        if not ranked:
+            continue
+        tier_dir = target / tier_key
+        tier_dir.mkdir(exist_ok=True)
+        tier_counts[tier_key] = len(ranked)
+        for entry in ranked:
+            raw_value = str(getattr(entry, "value", ""))
+            if redact:
+                clean_value, hits = _redact_value(raw_value)
+                redacted_fields += hits
+            else:
+                clean_value = raw_value
+            # Key charset is validator-constrained to [a-z0-9._-] (lowercase slug
+            # starting with alphanumeric, max 128 chars), so it is filesystem-safe
+            # without further sanitization.
+            (tier_dir / f"{entry.key}.md").write_text(
+                _build_frontmatter(entry, redacted_value=clean_value), encoding="utf-8"
+            )
+            files_written += 1
+
+    exported_at = datetime.now(tz=UTC).isoformat()
+    manifest = {
+        "schema_version": _EXPORT_SCHEMA_VERSION,
+        "project_id": effective_pid,
+        "layout": layout,
+        "exported_at": exported_at,
+        "tier_counts": tier_counts,
+        "files_written": files_written,
+        "top_n_per_tier": int(top_n_per_tier),
+        "redact": bool(redact),
+        "skipped_secret_tag": skipped_secret,
+        "redacted_fields": redacted_fields,
+    }
+    (target / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    return {
+        "project_id": effective_pid,
+        "output_dir": str(target),
+        "layout": layout,
+        "schema_version": _EXPORT_SCHEMA_VERSION,
+        "exported_at": exported_at,
+        "tier_counts": tier_counts,
+        "skipped_secret_tag": skipped_secret,
+        "redacted_fields": redacted_fields,
+        "files_written": files_written,
+    }
 
 
 # ---------------------------------------------------------------------------
