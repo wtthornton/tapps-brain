@@ -1125,15 +1125,27 @@ class AsyncTappsBrainClient:
         return self
 
     async def __aexit__(self, *_: object) -> None:
-        await self.close()
+        await self.aclose()
 
-    async def close(self) -> None:
-        """Close the underlying HTTP client."""
+    async def aclose(self) -> None:
+        """Close the underlying ``httpx.AsyncClient`` (idempotent, STORY-071.3).
+
+        Prefer the ``async with`` context manager when the client's lifetime
+        matches a single scope. Use ``aclose()`` directly for clients that
+        outlive their construction site — module-level singletons, app
+        startup/shutdown hooks, etc. — so the connection pool is released
+        instead of being garbage-collected with sockets still open.
+        """
         if self._closed:
             return
         self._closed = True
         if self._http_client is not None:
             await self._http_client.aclose()
+
+    async def close(self) -> None:
+        """Alias for :meth:`aclose` — kept so callers symmetric with the sync
+        client's ``close()`` API don't need to special-case the async surface."""
+        await self.aclose()
 
     # --- AgentBrain-compatible async API ---
 
