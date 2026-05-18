@@ -1449,20 +1449,39 @@ def create_app(
             # GET /v1/tools/list never hits the MCP registry on the hot path.
             # TAP-1929: also build a per-tool index so the endpoint can filter
             # by the caller's profile.
+            #
+            # The ``by_name_json`` lookup MUST include every registered tool so
+            # per-profile filtering (and the REST-route drift check below) can
+            # resolve deferred tools like ``brain_forget`` — TAP-1985 filtered
+            # them out of ``list_tools()`` to keep the eager tools/list payload
+            # within the 8-tool budget. The eager-only payload (returned when no
+            # ``X-Brain-Profile`` header is set) is still built from the
+            # filtered view to preserve the daily-driver wire contract.
             _tools_by_name: dict[str, dict[str, Any]] = {}
             try:
-                _raw_tools = mcp._tool_manager.list_tools()
+                _eager_tools = mcp._tool_manager.list_tools()
+                _unfiltered_view = getattr(mcp._tool_manager, "_unfiltered_list_tools", None)
+                _all_tools = _unfiltered_view() if _unfiltered_view else _eager_tools
                 _tools_by_name = {
                     t.name: {
                         "name": t.name,
                         "description": t.description,
                         "inputSchema": t.parameters,
                     }
-                    for t in _raw_tools
+                    for t in _all_tools
                 }
-                _snapshot_data = {"tools": list(_tools_by_name.values())}
+                _eager_payload = {
+                    "tools": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.parameters,
+                        }
+                        for t in _eager_tools
+                    ]
+                }
                 _tools_snapshot_holder["payload"] = json.dumps(
-                    _snapshot_data, separators=(",", ":")
+                    _eager_payload, separators=(",", ":")
                 ).encode()
                 _tools_snapshot_holder["by_name_json"] = json.dumps(
                     _tools_by_name, separators=(",", ":")
@@ -1479,7 +1498,8 @@ def create_app(
                     _tools_snapshot_holder.pop(_k, None)
                 logger.info(
                     "http_adapter.tools_snapshot_built",
-                    count=len(_raw_tools),
+                    count=len(_all_tools),
+                    eager_count=len(_eager_tools),
                 )
             except Exception as exc:
                 logger.warning(
