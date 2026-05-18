@@ -166,6 +166,34 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         return json.dumps(memory_service.brain_status(s, _pid(), eff_aid), default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def recall_quality_metrics(
+        window_seconds: int = 3600,
+        project_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Aggregate recall-quality samples over the last *window_seconds* (TAP-2094).
+
+        Returns p50/p95 of ``top_score`` and ``oldest_returned_age_days`` plus
+        the empty-recall rate, computed over the in-process ring buffer.
+        ``project_id`` defaults to the caller's effective project.
+
+        The ring buffer is process-local and bounded (default 1000 samples
+        per project); it resets on restart.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.recall_quality_metrics(
+                s,
+                _pid(),
+                eff_aid,
+                window_seconds=window_seconds,
+                target_project_id=project_id,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_audit_consumers(
         project_id: str = "",
         since: str = "",

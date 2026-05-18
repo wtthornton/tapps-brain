@@ -404,6 +404,91 @@ def audit_consumers(
     }
 
 
+def recall_quality_metrics(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    window_seconds: int = 3600,
+    target_project_id: str = "",
+) -> dict[str, Any]:
+    """Aggregate recent recall-quality samples from the in-process ring buffer.
+
+    Reads :mod:`tapps_brain.recall_quality_buffer` snapshots and computes
+    p50 / p95 percentiles over the last *window_seconds* seconds for
+    ``top_score`` and ``oldest_returned_age_days``, plus the empty-recall
+    rate.  Returns ``sample_count == 0`` when no samples fall in the window.
+
+    Args:
+        window_seconds: Lookback window in seconds (must be > 0).  Samples
+            older than ``now - window_seconds`` are excluded.
+        target_project_id: Project to aggregate over.  Defaults to the
+            caller's contextvar-resolved project when empty.
+
+    Returns:
+        Dict with keys ``p50_top_score``, ``p95_top_score``,
+        ``p50_oldest_age_days``, ``p95_oldest_age_days``, ``empty_recall_rate``,
+        ``sample_count``, ``window_seconds``, ``project_id``, ``as_of``.
+        Percentile fields are ``None`` when the relevant sub-sample is empty.
+        On invalid *window_seconds*: ``{"error": "invalid_window", ...}``.
+    """
+    from datetime import UTC, datetime
+
+    if window_seconds <= 0:
+        return {
+            "error": "invalid_window",
+            "message": f"window_seconds must be > 0, got {window_seconds!r}",
+        }
+
+    effective_pid = target_project_id or project_id
+
+    import time as _time
+
+    from tapps_brain import recall_quality_buffer
+
+    cutoff = _time.time() - float(window_seconds)
+    samples = [s for s in recall_quality_buffer.snapshot(effective_pid) if s.timestamp >= cutoff]
+    sample_count = len(samples)
+
+    top_scores = sorted(s.top_score for s in samples if s.top_score is not None)
+    oldest_ages = sorted(
+        s.oldest_returned_age_days for s in samples if s.oldest_returned_age_days is not None
+    )
+    empty_count = sum(1 for s in samples if s.memory_count == 0)
+    empty_rate = (empty_count / sample_count) if sample_count else 0.0
+
+    return {
+        "project_id": effective_pid,
+        "window_seconds": int(window_seconds),
+        "sample_count": sample_count,
+        "p50_top_score": _percentile(top_scores, 50.0),
+        "p95_top_score": _percentile(top_scores, 95.0),
+        "p50_oldest_age_days": _percentile(oldest_ages, 50.0),
+        "p95_oldest_age_days": _percentile(oldest_ages, 95.0),
+        "empty_recall_rate": round(empty_rate, 4),
+        "as_of": datetime.now(tz=UTC).isoformat(),
+    }
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float | None:
+    """Return the *pct*-th percentile of *sorted_values* (linear interpolation).
+
+    Expects *sorted_values* to be already ascending.  Returns ``None`` for an
+    empty list.  Used by :func:`recall_quality_metrics` — kept here rather than
+    importing ``statistics.quantiles`` to keep behaviour deterministic for
+    tiny samples (n < 2).
+    """
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    rank = (pct / 100.0) * (len(sorted_values) - 1)
+    lo = int(rank)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    frac = rank - lo
+    return float(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac)
+
+
 # ---------------------------------------------------------------------------
 # memory_* core CRUD
 # ---------------------------------------------------------------------------
