@@ -194,6 +194,41 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_export(
+        output_dir: str,
+        layout: str = "managed-agents",
+        redact: bool = True,
+        top_n_per_tier: int = 500,
+        project_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Snapshot top-N memories per tier into a Managed Agents folder (TAP-2099).
+
+        One-shot exporter recommended by the TAP-2095 spike (NOT a continuous
+        mirror). Writes ``<output_dir>/manifest.json`` plus
+        ``<output_dir>/<tier>/<key>.md`` files with redacted values and a
+        READ-ONLY banner; entries tagged ``secret`` are skipped wholesale.
+
+        ``project_id`` defaults to the caller's effective project. Refuses to
+        overwrite a non-empty ``output_dir``.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_export(
+                s,
+                _pid(),
+                eff_aid,
+                output_dir=output_dir,
+                layout=layout,
+                redact=redact,
+                top_n_per_tier=top_n_per_tier,
+                target_project_id=project_id,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_audit_consumers(
         project_id: str = "",
         since: str = "",

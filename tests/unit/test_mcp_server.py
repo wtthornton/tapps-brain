@@ -250,6 +250,8 @@ class TestCoreTools:
             "brain_audit_consumers",
             # Recall-quality telemetry (TAP-2094)
             "recall_quality_metrics",
+            # Managed Agents export (TAP-2099)
+            "brain_export",
             # Batch tools (STORY-070.11)
             "memory_save_many",
             "memory_recall_many",

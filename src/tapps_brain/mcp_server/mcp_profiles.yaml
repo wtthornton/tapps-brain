@@ -8,8 +8,8 @@
 # adding @mcp.tool decorators, otherwise the server will refuse to start.
 #
 # Profile summary:
-#   full        (62 tools, 8 eager) — all standard tools; default fallback
-#   operator    (75 tools, 8 eager) — full + 13 operator-only maintenance tools
+#   full        (63 tools, 8 eager) — all standard tools; default fallback
+#   operator    (76 tools, 8 eager) — full + 13 operator-only maintenance tools
 #   coder       (18 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
 #   reviewer    ( 8 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
@@ -36,7 +36,7 @@
 profiles:
   # --------------------------------------------------------------------------
   # full — all standard tools (default fallback, backwards-compatible)
-  # 62 tools total: 8 eager daily drivers + 54 deferred (TAP-2094: +recall_quality_metrics)
+  # 63 tools total: 8 eager daily drivers + 55 deferred (TAP-2099: +brain_export)
   #
   # Daily-driver budget (8) — eager catalog returned by `tools/list` when no
   # Tool Search BETA header is present. Picked for highest call frequency in
@@ -47,7 +47,7 @@ profiles:
       All standard (non-operator) tools. Default profile when no X-Brain-Profile
       header is set. Includes all brain_* facade tools + KG tools (EPIC-076).
       Eager catalog (`tools/list`) returns the 8 daily-driver tools; the
-      remaining 54 carry `defer_loading: true` and are reachable via Tool Search
+      remaining 55 carry `defer_loading: true` and are reachable via Tool Search
       BETA (parent epic TAP-1983).
     tools:
       # Daily drivers (8) — eager catalog
@@ -69,6 +69,8 @@ profiles:
       - name: agent_register
         defer_loading: true
       - name: brain_audit_consumers
+        defer_loading: true
+      - name: brain_export
         defer_loading: true
       - name: brain_forget
         defer_loading: true
@@ -171,7 +173,7 @@ profiles:
 
   # --------------------------------------------------------------------------
   # operator — all tools (standard + operator-only maintenance)
-  # 75 tools total: 8 eager daily drivers + 67 deferred (54 standard + 13 admin)
+  # 76 tools total: 8 eager daily drivers + 68 deferred (55 standard + 13 admin)
   # --------------------------------------------------------------------------
   operator:
     description: >
@@ -190,7 +192,7 @@ profiles:
       - memory_search
       - memory_find_related
       - hive_search
-      # Deferred standard tools (54) — same as `full`'s deferred set
+      # Deferred standard tools (55) — same as `full`'s deferred set
       - name: agent_create
         defer_loading: true
       - name: agent_delete
@@ -200,6 +202,8 @@ profiles:
       - name: agent_register
         defer_loading: true
       - name: brain_audit_consumers
+        defer_loading: true
+      - name: brain_export
         defer_loading: true
       - name: brain_forget
         defer_loading: true

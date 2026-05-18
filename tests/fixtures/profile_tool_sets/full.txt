@@ -4,6 +4,7 @@ agent_list
 agent_register
 brain_audit_consumers
 brain_explain_connection
+brain_export
 brain_forget
 brain_get_neighbors
 brain_learn_failure
