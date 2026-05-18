@@ -232,7 +232,10 @@ def _do_initialize(
     """
     payload = json.dumps(_INITIALIZE_PAYLOAD).encode()
     headers = _initialize_headers(project_id, agent_id, auth_token)
-    resp = http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    try:
+        resp = http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    except Exception as exc:
+        raise _wrap_request_error(exc, where="MCP initialize") from exc
     _raise_for_initialize_status(resp)
     return resp.headers.get("mcp-session-id")
 
@@ -247,7 +250,10 @@ async def _async_do_initialize(
     """Async version of :func:`_do_initialize`."""
     payload = json.dumps(_INITIALIZE_PAYLOAD).encode()
     headers = _initialize_headers(project_id, agent_id, auth_token)
-    resp = await http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    try:
+        resp = await http_client.post(f"{base}/mcp/", headers=headers, content=payload)
+    except Exception as exc:
+        raise _wrap_request_error(exc, where="MCP initialize") from exc
     _raise_for_initialize_status(resp)
     return resp.headers.get("mcp-session-id")
 
@@ -258,15 +264,45 @@ def _is_missing_session_error(exc: BaseException) -> bool:
     FastMCP 3.10.0 rejects requests without a valid ``Mcp-Session-Id`` with
     ``HTTP 400`` and a body that contains ``"Missing session ID"``.
     """
+    # Match wrapped TappsBrainValidationError first (the typed exception
+    # raised by _post_tool's fallback path now that raw httpx.HTTPStatusError
+    # is no longer surfaced — STORY-071.1).
+    from tapps_brain.exceptions import TappsBrainValidationError
+
+    _http_400 = 400
+    if isinstance(exc, TappsBrainValidationError) and exc.status_code == _http_400:
+        message = (exc.body.get("detail") or exc.message or "").lower()
+        if "missing session id" in message:
+            return True
     try:
         import httpx
 
-        _http_400 = 400
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == _http_400:
             return "missing session id" in exc.response.text.lower()
     except ImportError:
         pass
     return False
+
+
+def _wrap_request_error(exc: BaseException, *, where: str) -> BaseException:
+    """Translate an :mod:`httpx` request error into :class:`TappsBrainTransportError`.
+
+    Returns the original exception unchanged when it isn't an
+    :class:`httpx.RequestError`, so callers can ``raise _wrap_request_error(exc)``
+    without losing taxonomy errors that happen to escape the same call site.
+    """
+    try:
+        import httpx
+    except ImportError:
+        return exc
+    if isinstance(exc, httpx.RequestError):
+        from tapps_brain.exceptions import TappsBrainTransportError
+
+        url = getattr(getattr(exc, "request", None), "url", "<unknown>")
+        return TappsBrainTransportError(
+            f"{where} failed: {type(exc).__name__} contacting {url} — {exc}",
+        )
+    return exc
 
 
 def _mcp_envelope(
@@ -337,6 +373,7 @@ def _post_tool(
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
     from tapps_brain.errors import RetryPolicy
+    from tapps_brain.exceptions import raise_for_response
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:
@@ -345,7 +382,10 @@ def _post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
+        try:
+            resp = client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
+        except Exception as exc:
+            raise _wrap_request_error(exc, where=f"POST {tool_name}") from exc
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
@@ -356,24 +396,26 @@ def _post_tool(
             body = {}
 
         exc = _parse_error_response(resp.status_code, body)
-        if exc is not None:
-            from tapps_brain.errors import TaxonomyError
+        if exc is None:
+            # Server returned an unrecognised error code (or no body).
+            # Classify by HTTP status into the TappsBrain* semantic taxonomy
+            # so callers never see a raw httpx.HTTPStatusError. (STORY-071.1)
+            exc = raise_for_response(resp.status_code, body)
 
-            _retryable = (
-                RetryPolicy.RETRY_SAFE,
-                RetryPolicy.RETRY_WITH_BACKOFF,
-                RetryPolicy.RETRY_SAFE_ONCE,
-            )
-            if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-                _hint = float(body.get("retry_after") or 0.0)
-                _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
-                time.sleep(_base * random.uniform(0.8, 1.2))
-                last_exc = exc
-                continue
-            raise exc
+        from tapps_brain.errors import TaxonomyError
 
-        # Fallback — raise the underlying HTTP error
-        resp.raise_for_status()
+        _retryable = (
+            RetryPolicy.RETRY_SAFE,
+            RetryPolicy.RETRY_WITH_BACKOFF,
+            RetryPolicy.RETRY_SAFE_ONCE,
+        )
+        if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
+            _hint = float(body.get("retry_after") or 0.0)
+            _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
+            time.sleep(_base * random.uniform(0.8, 1.2))
+            last_exc = exc
+            continue
+        raise exc
 
     if last_exc is not None:
         raise last_exc
@@ -399,6 +441,7 @@ async def _async_post_tool(
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
     from tapps_brain.errors import RetryPolicy
+    from tapps_brain.exceptions import raise_for_response
 
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:
@@ -407,7 +450,10 @@ async def _async_post_tool(
     last_exc: Exception | None = None
 
     for attempt in range(max_retries + 1):
-        resp = await client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
+        try:
+            resp = await client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
+        except Exception as exc:
+            raise _wrap_request_error(exc, where=f"POST {tool_name}") from exc
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
@@ -417,23 +463,26 @@ async def _async_post_tool(
             body = {}
 
         exc = _parse_error_response(resp.status_code, body)
-        if exc is not None:
-            from tapps_brain.errors import TaxonomyError
+        if exc is None:
+            # Server returned an unrecognised error code (or no body).
+            # Classify by HTTP status into the TappsBrain* semantic taxonomy
+            # so callers never see a raw httpx.HTTPStatusError. (STORY-071.1)
+            exc = raise_for_response(resp.status_code, body)
 
-            _retryable = (
-                RetryPolicy.RETRY_SAFE,
-                RetryPolicy.RETRY_WITH_BACKOFF,
-                RetryPolicy.RETRY_SAFE_ONCE,
-            )
-            if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-                _hint = float(body.get("retry_after") or 0.0)
-                _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
-                await asyncio.sleep(_base * random.uniform(0.8, 1.2))
-                last_exc = exc
-                continue
-            raise exc
+        from tapps_brain.errors import TaxonomyError
 
-        resp.raise_for_status()
+        _retryable = (
+            RetryPolicy.RETRY_SAFE,
+            RetryPolicy.RETRY_WITH_BACKOFF,
+            RetryPolicy.RETRY_SAFE_ONCE,
+        )
+        if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
+            _hint = float(body.get("retry_after") or 0.0)
+            _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
+            await asyncio.sleep(_base * random.uniform(0.8, 1.2))
+            last_exc = exc
+            continue
+        raise exc
 
     if last_exc is not None:
         raise last_exc

@@ -53,6 +53,13 @@ _LAZY: dict[str, tuple[str, str]] = {
     "consolidate": ("tapps_brain.consolidation", "consolidate"),
     # decay
     "DecayConfig": ("tapps_brain.decay", "DecayConfig"),
+    # exceptions (STORY-071.1 — client-facing semantic taxonomy)
+    "TappsBrainAuthError": ("tapps_brain.exceptions", "TappsBrainAuthError"),
+    "TappsBrainError": ("tapps_brain.exceptions", "TappsBrainError"),
+    "TappsBrainNotFoundError": ("tapps_brain.exceptions", "TappsBrainNotFoundError"),
+    "TappsBrainTransientError": ("tapps_brain.exceptions", "TappsBrainTransientError"),
+    "TappsBrainTransportError": ("tapps_brain.exceptions", "TappsBrainTransportError"),
+    "TappsBrainValidationError": ("tapps_brain.exceptions", "TappsBrainValidationError"),
     "calculate_decayed_confidence": ("tapps_brain.decay", "calculate_decayed_confidence"),
     "get_effective_confidence": ("tapps_brain.decay", "get_effective_confidence"),
     "is_stale": ("tapps_brain.decay", "is_stale"),
@@ -175,6 +182,12 @@ if TYPE_CHECKING:
     from tapps_brain.decay import calculate_decayed_confidence as calculate_decayed_confidence
     from tapps_brain.decay import get_effective_confidence as get_effective_confidence
     from tapps_brain.decay import is_stale as is_stale
+    from tapps_brain.exceptions import TappsBrainAuthError as TappsBrainAuthError
+    from tapps_brain.exceptions import TappsBrainError as TappsBrainError
+    from tapps_brain.exceptions import TappsBrainNotFoundError as TappsBrainNotFoundError
+    from tapps_brain.exceptions import TappsBrainTransientError as TappsBrainTransientError
+    from tapps_brain.exceptions import TappsBrainTransportError as TappsBrainTransportError
+    from tapps_brain.exceptions import TappsBrainValidationError as TappsBrainValidationError
     from tapps_brain.gc import GCResult as GCResult
     from tapps_brain.gc import MemoryGarbageCollector as MemoryGarbageCollector
     from tapps_brain.injection import InjectionConfig as InjectionConfig
@@ -284,7 +297,13 @@ __all__ = [
     "SimilarityResult",
     "SlidingWindowRateLimiter",
     "StoreHealthReport",
+    "TappsBrainAuthError",
     "TappsBrainClient",
+    "TappsBrainError",
+    "TappsBrainNotFoundError",
+    "TappsBrainTransientError",
+    "TappsBrainTransportError",
+    "TappsBrainValidationError",
     "__version__",
     "calculate_decayed_confidence",
     "check_content_safety",
