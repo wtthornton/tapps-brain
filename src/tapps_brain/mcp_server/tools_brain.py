@@ -164,3 +164,34 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         return json.dumps(memory_service.brain_status(s, _pid(), eff_aid), default=str)
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_audit_consumers(
+        project_id: str = "",
+        since: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Surface declared-but-silent agents for a project (TAP-2093).
+
+        Joins ``AgentRegistry`` x per-tool call counter to answer "which of my
+        declared agents are actually using the brain?". Returns
+        ``declared_silent``, ``active``, ``unregistered_active``, ``as_of``,
+        and ``window_effective``.
+
+        ``project_id`` defaults to the caller's effective project. ``since``
+        accepts an ISO-8601 timestamp but is informational only — the in-process
+        counter is cumulative since process start, so the effective window is
+        always ``"process_start"`` (reported in ``window_effective``).
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.audit_consumers(
+                s,
+                _pid(),
+                eff_aid,
+                target_project_id=project_id,
+                since=since,
+            ),
+            default=str,
+        )

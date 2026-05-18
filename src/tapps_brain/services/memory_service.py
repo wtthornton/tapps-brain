@@ -313,6 +313,97 @@ def brain_status(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
     }
 
 
+def audit_consumers(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    target_project_id: str = "",
+    since: str = "",
+) -> dict[str, Any]:
+    """Cross-reference registered agents with observed ``brain_*`` tool calls.
+
+    Joins two data sources that already exist independently:
+
+    - :class:`~tapps_brain.backends.AgentRegistry` — agents declared in the
+      YAML-backed registry (``~/.tapps-brain/hive/agents.yaml``).
+    - :func:`~tapps_brain.otel_tracer.get_tool_call_counts_snapshot` — the
+      per-``(project_id, agent_id, tool, status)`` counter populated by
+      STORY-070.12 on every ``start_mcp_tool_span`` invocation.
+
+    The counter is cumulative since process start (no time-window snapshots
+    are persisted), so the *since* parameter is validated for shape but does
+    not actually filter — the response is always "since process start" and
+    the effective window is reported in ``window_effective`` for honesty.
+
+    Args:
+        target_project_id: Project to audit.  Defaults to the caller's
+            contextvar-resolved ``project_id`` when empty.
+        since: Optional ISO-8601 timestamp.  Validated for shape; recorded in
+            the response.  Real windowed filtering is future work — see
+            :issue:`TAP-2092`.
+
+    Returns:
+        Dict with keys ``declared_silent``, ``active``, ``unregistered_active``,
+        ``as_of``, ``project_id``, ``window_effective``, ``since_requested``.
+        On ``since`` parse failure: ``{"error": "invalid_since", ...}``.
+    """
+    from datetime import UTC, datetime
+
+    if since:
+        try:
+            datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            return {
+                "error": "invalid_since",
+                "message": f"since must be a valid ISO-8601 timestamp, got {since!r}",
+            }
+
+    effective_pid = target_project_id or project_id
+
+    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
+
+    registry = AgentRegistry()
+    registered_ids = {a.id for a in registry.list_agents()}
+
+    counts = get_tool_call_counts_snapshot()
+    per_agent: dict[str, dict[str, int]] = {}
+    for (pid, aid, tool, _status), n in counts.items():
+        if pid != effective_pid:
+            continue
+        if not tool.startswith("brain_"):
+            continue
+        per_agent.setdefault(aid, {})
+        per_agent[aid][tool] = per_agent[aid].get(tool, 0) + n
+
+    active = sorted(
+        (
+            {
+                "agent_id": aid,
+                "total_calls": sum(tools.values()),
+                "tools": dict(sorted(tools.items())),
+            }
+            for aid, tools in per_agent.items()
+        ),
+        key=lambda r: (-r["total_calls"], r["agent_id"]),
+    )
+
+    active_ids = set(per_agent.keys())
+    declared_silent = sorted(registered_ids - active_ids)
+    unregistered_active = sorted(active_ids - registered_ids)
+
+    return {
+        "project_id": effective_pid,
+        "declared_silent": declared_silent,
+        "active": active,
+        "unregistered_active": unregistered_active,
+        "as_of": datetime.now(tz=UTC).isoformat(),
+        "since_requested": since,
+        "window_effective": "process_start",
+    }
+
+
 # ---------------------------------------------------------------------------
 # memory_* core CRUD
 # ---------------------------------------------------------------------------

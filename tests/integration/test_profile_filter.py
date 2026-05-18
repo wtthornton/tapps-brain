@@ -118,13 +118,13 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_60_tools(self) -> None:
-        """Golden file for 'full' must list exactly 60 tools (TAP-1973: +1)."""
-        assert len(_load_golden("full")) == 60
+    def test_full_golden_has_61_tools(self) -> None:
+        """Golden file for 'full' must list exactly 61 tools (TAP-2093: +1)."""
+        assert len(_load_golden("full")) == 61
 
-    def test_operator_golden_has_73_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 73 tools (TAP-1973: +1)."""
-        assert len(_load_golden("operator")) == 73
+    def test_operator_golden_has_74_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 74 tools (TAP-2093: +1)."""
+        assert len(_load_golden("operator")) == 74
 
     def test_coder_golden_has_18_tools(self) -> None:
         """Golden file for 'coder' must list exactly 18 tools (TAP-1973: +1)."""
@@ -138,9 +138,9 @@ class TestGoldenFileContracts:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
 
-    def test_agent_brain_golden_has_10_tools(self) -> None:
-        """Golden file for 'agent_brain' must list exactly 10 brain_* tools."""
-        assert len(_load_golden("agent_brain")) == 10
+    def test_agent_brain_golden_has_12_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 12 brain_* tools (TAP-2093: +1)."""
+        assert len(_load_golden("agent_brain")) == 12
 
     def test_agent_brain_golden_is_brain_star_only(self) -> None:
         """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
@@ -219,16 +219,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_72(self) -> None:
-        """The MCP server must have exactly 72 registered tools (59 standard + 13 operator)."""
+    def test_registered_tool_count_is_74(self) -> None:
+        """The MCP server must have exactly 74 registered tools (61 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 72, (
-            f"Expected 72 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 74, (
+            f"Expected 74 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 72 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 74 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -510,12 +510,12 @@ class TestBackwardsCompat:
     def test_no_header_list_tools_returns_8_eager_tools(self) -> None:
         """No profile header → list_tools returns 8 eager tools (TAP-1985).
 
-        Same surface as explicit 'full': the callable set is still 59, but
-        51 are deferred and hidden from the default tools/list payload.
+        Same surface as explicit 'full': the callable set is 61, but 53 are
+        deferred and hidden from the default tools/list payload (TAP-2093).
         """
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 59  # callable surface unchanged
+        assert len(full_tools) == 61  # callable surface unchanged
         eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(

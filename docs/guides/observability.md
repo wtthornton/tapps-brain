@@ -4,6 +4,67 @@ tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics
 
 ---
 
+## Declared-vs-active consumer audit (TAP-2093)
+
+`brain_audit_consumers(project_id, since)` answers *"which of my declared agents are actually using the brain?"* by joining the YAML-backed `AgentRegistry` with the in-process per-`(project_id, agent_id, tool, status)` call counter populated by STORY-070.12 on every `start_mcp_tool_span` invocation.
+
+The tool is registered in the `full`, `operator`, and `agent_brain` profiles. In `full`/`operator` it carries `defer_loading: true` per TAP-1985 — it's operator-facing, not a daily driver, so it's hidden from the eager `tools/list` catalog and reached via Tool Search BETA.
+
+**Caveat:** the counter is cumulative since process start; there is no windowed snapshot. The `since` parameter is validated for ISO-8601 shape and echoed as `since_requested`, but the effective window is always `"process_start"` (reported in `window_effective`). Real time-window filtering is future work — see TAP-2092.
+
+### Response shape
+
+```json
+{
+  "project_id": "tapps-brain",
+  "declared_silent": ["agent-c", "agent-d", "agent-e"],
+  "active": [
+    {"agent_id": "agent-a", "total_calls": 142, "tools": {"brain_recall": 130, "brain_remember": 12}},
+    {"agent_id": "agent-b", "total_calls": 9,   "tools": {"brain_status": 9}}
+  ],
+  "unregistered_active": ["orphan-1"],
+  "as_of": "2026-05-17T18:05:00+00:00",
+  "since_requested": "",
+  "window_effective": "process_start"
+}
+```
+
+### Worked example: 3 of 5 declared agents are silent
+
+A project registers five agents (`agent-a` … `agent-e`). Two of them — `agent-a` and `agent-b` — have called `brain_recall` / `brain_status` since the brain process started. The remaining three never called any `brain_*` tool. A stray `orphan-1` shows up in the counter but is not in the registry.
+
+```bash
+python tools/audit_consumers.py --project-id tapps-brain
+```
+
+```
+project_id          : tapps-brain
+as_of               : 2026-05-17T18:05:00+00:00
+window_effective    : process_start
+since_requested     : (none)
+
+declared_silent (3):
+  - agent-c
+  - agent-d
+  - agent-e
+
+active (2):
+  agent_id                                  total  tools
+  agent-a                                     142  brain_recall=130, brain_remember=12
+  agent-b                                       9  brain_status=9
+
+unregistered_active (1):
+  - orphan-1
+```
+
+The `declared_silent` list is the actionable signal: those agents declared themselves into the registry but never read from or wrote to the brain. Common causes are mis-wired MCP endpoints, missing `TAPPS_BRAIN_AGENT_ID`, or an agent that registered but never shipped its consumer code.
+
+### CLI caveat
+
+`tools/audit_consumers.py` reads the **in-process** counter. Running it as a short-lived subprocess against a separately-running tapps-brain HTTP server will return an empty `active` list — the CLI's process never saw the calls. Use it from inside the brain process (e.g., in CI fixtures that exercise the brain in the same Python process) or against the deployed server via the MCP tool directly.
+
+---
+
 ## OTLP export timeout and circuit breaker (TAP-1814)
 
 OTel is designed to **fail open** — a blocked exporter must never stall the
