@@ -48,6 +48,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     # client
     "AsyncTappsBrainClient": ("tapps_brain.client", "AsyncTappsBrainClient"),
     "BrainClientProtocol": ("tapps_brain.client", "BrainClientProtocol"),
+    "RetryConfig": ("tapps_brain.client", "RetryConfig"),
     "TappsBrainClient": ("tapps_brain.client", "TappsBrainClient"),
     # consolidation
     "consolidate": ("tapps_brain.consolidation", "consolidate"),
@@ -176,6 +177,7 @@ if TYPE_CHECKING:
     from tapps_brain.bm25 import BM25Scorer as BM25Scorer
     from tapps_brain.client import AsyncTappsBrainClient as AsyncTappsBrainClient
     from tapps_brain.client import BrainClientProtocol as BrainClientProtocol
+    from tapps_brain.client import RetryConfig as RetryConfig
     from tapps_brain.client import TappsBrainClient as TappsBrainClient
     from tapps_brain.consolidation import consolidate as consolidate
     from tapps_brain.decay import DecayConfig as DecayConfig
@@ -290,6 +292,7 @@ __all__ = [
     "RecallConfig",
     "RecallOrchestrator",
     "RecallResult",
+    "RetryConfig",
     "RelationEntry",
     "SafetyCheckResult",
     "ScoredMemory",

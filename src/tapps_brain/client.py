@@ -42,6 +42,7 @@ import os
 import random
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,116 @@ def _build_httpx_timeout(connect: float, read: float) -> Any:
     import httpx
 
     return httpx.Timeout(read, connect=connect, read=read, write=read, pool=read)
+
+
+# ---------------------------------------------------------------------------
+# Retry config (STORY-071.2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RetryConfig:
+    """Retry policy for transient brain failures (STORY-071.2).
+
+    The SDK retries only :class:`~tapps_brain.exceptions.TappsBrainTransientError`
+    (HTTP 429 / 5xx). Permanent errors — auth, validation, not-found — are
+    raised on the first attempt regardless of this config.
+
+    Retries are **off by default** on the clients: when neither ``retry_config``
+    nor the legacy ``max_retries`` is passed the SDK falls back to
+    ``RetryConfig(max_attempts=1)`` and never retries. Opt in by passing
+    ``retry_config=RetryConfig()`` (3 attempts, 0.5 s base, ±20 % jitter, 30 s
+    cap) or a custom configuration.
+
+    Attributes
+    ----------
+    max_attempts:
+        Maximum number of HTTP attempts including the first one. ``1`` disables
+        retry; ``3`` (the dataclass default) gives the first attempt plus two
+        retries.
+    base_delay:
+        Initial backoff in seconds. The computed delay for attempt *n* (0-indexed)
+        is ``base_delay * 2 ** n``, capped at ``max_delay``.
+    jitter:
+        When True, the delay is multiplied by ``random.uniform(0.8, 1.2)`` —
+        prevents thundering-herd retries from concurrent clients.
+    max_delay:
+        Hard cap on the computed delay, in seconds. Server-supplied
+        ``Retry-After`` hints bypass this cap.
+    """
+
+    max_attempts: int = 3
+    base_delay: float = 0.5
+    jitter: bool = True
+    max_delay: float = 30.0
+
+
+#: Sentinel retry config that means "do not retry"; resolved when both
+#: ``retry_config`` and the legacy ``max_retries`` are unset on the client.
+_NO_RETRY: RetryConfig = RetryConfig(max_attempts=1)
+
+
+def _resolve_retry_config(
+    retry_config: RetryConfig | None,
+    max_retries: int | None,
+) -> RetryConfig:
+    """Pick the effective :class:`RetryConfig` for a client construction call.
+
+    Resolution order: explicit ``retry_config`` wins; otherwise derive from
+    the legacy ``max_retries`` (preserves prior behaviour for callers using
+    the single-knob API); otherwise default to no-retry.
+    """
+    if retry_config is not None:
+        return retry_config
+    if max_retries is not None:
+        # Legacy schedule matched ``min(2.0 ** attempt, 30.0)`` with
+        # base 1.0 s — preserve it exactly so back-compat callers keep
+        # the same sleep pattern.
+        return RetryConfig(
+            max_attempts=max_retries + 1,
+            base_delay=1.0,
+            jitter=True,
+            max_delay=30.0,
+        )
+    return _NO_RETRY
+
+
+def _retry_after_seconds(resp: Any) -> float:
+    """Parse the HTTP ``Retry-After`` header as float seconds (0.0 if absent).
+
+    Only the delta-seconds form is honoured — the HTTP-date form is rare in
+    brain responses and falls through to the body hint or computed backoff.
+    Defensive against test mocks that lack a real headers mapping.
+    """
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return 0.0
+    try:
+        value = headers.get("retry-after")
+    except (AttributeError, TypeError):
+        return 0.0
+    if not isinstance(value, str):
+        return 0.0
+    try:
+        return float(value)
+    except ValueError:
+        return 0.0
+
+
+def _backoff_delay(config: RetryConfig, attempt: int, hint_seconds: float) -> float:
+    """Compute the sleep duration for a retry attempt.
+
+    Server-supplied *hint_seconds* (Retry-After header or body hint) overrides
+    the computed schedule when greater than zero — the server knows when it
+    will be ready better than we do. Jitter applies in both cases when enabled.
+    """
+    if hint_seconds > 0:
+        base = hint_seconds
+    else:
+        base = min(config.base_delay * (2**attempt), config.max_delay)
+    if config.jitter:
+        return base * random.uniform(0.8, 1.2)
+    return base
 
 
 def _detect_scheme(url: str) -> str:
@@ -394,15 +505,15 @@ def _post_tool(
     auth_token: str | None,
     *,
     idempotency_key: str | None = None,
-    max_retries: int = 2,
+    retry_config: RetryConfig | None = None,
     extra_headers: dict[str, str] | None = None,
 ) -> Any:
     """POST an MCP ``tools/call`` to the brain's ``/mcp/`` endpoint.
 
-    Handles transparent retry on 429/503 (re-using the same idempotency key
-    so writes don't duplicate) and maps structured error bodies to the
-    :mod:`tapps_brain.errors` taxonomy.  Raises ``httpx.HTTPStatusError``
-    as a fallback for unrecognised status codes.
+    Retries only :class:`~tapps_brain.exceptions.TappsBrainTransientError`
+    (HTTP 429 / 5xx) and reuses the same idempotency key across attempts so
+    server-side dedup catches duplicate writes (STORY-071.2). Permanent errors
+    — auth, validation, not-found — propagate on the first attempt.
 
     The brain exposes tools exclusively over the streamable-HTTP MCP
     transport; the previously specced ``/v1/tools/{name}`` REST route
@@ -414,16 +525,16 @@ def _post_tool(
     *extra_headers* are merged into the request headers after the standard
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
-    from tapps_brain.errors import RetryPolicy
-    from tapps_brain.exceptions import raise_for_response
+    from tapps_brain.exceptions import TappsBrainTransientError, raise_for_response
 
+    config = retry_config or _NO_RETRY
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:
         headers.update(extra_headers)
     body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(config.max_attempts):
         try:
             resp = client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
         except Exception as exc:
@@ -431,7 +542,6 @@ def _post_tool(
         if resp.is_success:
             return _unwrap_mcp_result(resp.json())
 
-        # Parse structured error body
         try:
             body: dict[str, Any] = resp.json()
         except ValueError:
@@ -444,24 +554,17 @@ def _post_tool(
             # so callers never see a raw httpx.HTTPStatusError. (STORY-071.1)
             exc = raise_for_response(resp.status_code, body)
 
-        from tapps_brain.errors import TaxonomyError
-
-        _retryable = (
-            RetryPolicy.RETRY_SAFE,
-            RetryPolicy.RETRY_WITH_BACKOFF,
-            RetryPolicy.RETRY_SAFE_ONCE,
-        )
-        if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-            _hint = float(body.get("retry_after") or 0.0)
-            _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
-            time.sleep(_base * random.uniform(0.8, 1.2))
+        is_last_attempt = attempt == config.max_attempts - 1
+        if isinstance(exc, TappsBrainTransientError) and not is_last_attempt:
+            hint = _retry_after_seconds(resp) or float(body.get("retry_after") or 0.0)
+            time.sleep(_backoff_delay(config, attempt, hint))
             last_exc = exc
             continue
         raise exc
 
     if last_exc is not None:
         raise last_exc
-    raise RuntimeError(f"POST {tool_name}: unexpected state after {max_retries + 1} attempts")
+    raise RuntimeError(f"POST {tool_name}: unexpected state after {config.max_attempts} attempts")
 
 
 async def _async_post_tool(
@@ -474,7 +577,7 @@ async def _async_post_tool(
     auth_token: str | None,
     *,
     idempotency_key: str | None = None,
-    max_retries: int = 2,
+    retry_config: RetryConfig | None = None,
     extra_headers: dict[str, str] | None = None,
 ) -> Any:
     """Async version of :func:`_post_tool`.
@@ -482,16 +585,16 @@ async def _async_post_tool(
     *extra_headers* are merged into the request headers after the standard
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
-    from tapps_brain.errors import RetryPolicy
-    from tapps_brain.exceptions import raise_for_response
+    from tapps_brain.exceptions import TappsBrainTransientError, raise_for_response
 
+    config = retry_config or _NO_RETRY
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:
         headers.update(extra_headers)
     body_bytes = _mcp_envelope(tool_name, arguments, project_id, agent_id, idempotency_key)
     last_exc: Exception | None = None
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(config.max_attempts):
         try:
             resp = await client.post(f"{base}/mcp/", headers=headers, content=body_bytes)
         except Exception as exc:
@@ -506,29 +609,19 @@ async def _async_post_tool(
 
         exc = _parse_error_response(resp.status_code, body)
         if exc is None:
-            # Server returned an unrecognised error code (or no body).
-            # Classify by HTTP status into the TappsBrain* semantic taxonomy
-            # so callers never see a raw httpx.HTTPStatusError. (STORY-071.1)
             exc = raise_for_response(resp.status_code, body)
 
-        from tapps_brain.errors import TaxonomyError
-
-        _retryable = (
-            RetryPolicy.RETRY_SAFE,
-            RetryPolicy.RETRY_WITH_BACKOFF,
-            RetryPolicy.RETRY_SAFE_ONCE,
-        )
-        if isinstance(exc, TaxonomyError) and exc.retry in _retryable and attempt < max_retries:
-            _hint = float(body.get("retry_after") or 0.0)
-            _base = _hint if _hint > 0.0 else min(2.0**attempt, 30.0)
-            await asyncio.sleep(_base * random.uniform(0.8, 1.2))
+        is_last_attempt = attempt == config.max_attempts - 1
+        if isinstance(exc, TappsBrainTransientError) and not is_last_attempt:
+            hint = _retry_after_seconds(resp) or float(body.get("retry_after") or 0.0)
+            await asyncio.sleep(_backoff_delay(config, attempt, hint))
             last_exc = exc
             continue
         raise exc
 
     if last_exc is not None:
         raise last_exc
-    raise RuntimeError(f"POST {tool_name}: unexpected state after {max_retries + 1} attempts")
+    raise RuntimeError(f"POST {tool_name}: unexpected state after {config.max_attempts} attempts")
 
 
 # ---------------------------------------------------------------------------
@@ -588,8 +681,16 @@ class TappsBrainClient:
     read_timeout:
         Per-request read-leg timeout in seconds. Defaults to 30 s when nothing
         else is set; falls back to ``timeout`` when the legacy param is passed.
+    retry_config:
+        :class:`RetryConfig` controlling retry on
+        :class:`~tapps_brain.exceptions.TappsBrainTransientError` (HTTP 429 /
+        5xx). When unset, retries are off; pass ``RetryConfig()`` to opt in
+        with sensible defaults (3 attempts, 0.5 s base, ±20 % jitter).
     max_retries:
-        Maximum retry attempts for transient failures (default 2).
+        **Deprecated** (STORY-071.2) single-knob retry count, kept for
+        back-compat. When ``retry_config`` is unset and ``max_retries`` is
+        set, the SDK derives a back-compat :class:`RetryConfig` matching the
+        prior schedule. Prefer ``retry_config``.
     """
 
     def __init__(
@@ -600,9 +701,10 @@ class TappsBrainClient:
         agent_id: str | None = None,
         auth_token: str | None = None,
         timeout: float | None = None,
-        max_retries: int = 2,
+        max_retries: int | None = None,
         connect_timeout: float | None = None,
         read_timeout: float | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         self._url = url
         self._scheme = _detect_scheme(url)
@@ -616,7 +718,10 @@ class TappsBrainClient:
         # poke the legacy attribute — mirrors the read leg, which is the most
         # generous bound.
         self._timeout = self._read_timeout
-        self._max_retries = max_retries
+        self._retry_config = _resolve_retry_config(retry_config, max_retries)
+        # ``_max_retries`` is the legacy mirror — exposed for back-compat
+        # readers; the loop only consults ``_retry_config``.
+        self._max_retries = self._retry_config.max_attempts - 1
         self._http_client: Any = None
         self._closed = False
         # MCP session state — set by _ensure_session() before first tools/call.
@@ -700,7 +805,7 @@ class TappsBrainClient:
                 self._agent_id,
                 self._auth_token,
                 idempotency_key=idempotency_key,
-                max_retries=self._max_retries,
+                retry_config=self._retry_config,
                 extra_headers=extra_headers,
             )
         except Exception as exc:
@@ -725,7 +830,7 @@ class TappsBrainClient:
                     self._agent_id,
                     self._auth_token,
                     idempotency_key=idempotency_key,
-                    max_retries=self._max_retries,
+                    retry_config=self._retry_config,
                     extra_headers=extra_headers,
                 )
             raise
@@ -897,9 +1002,10 @@ class AsyncTappsBrainClient:
         agent_id: str | None = None,
         auth_token: str | None = None,
         timeout: float | None = None,
-        max_retries: int = 2,
+        max_retries: int | None = None,
         connect_timeout: float | None = None,
         read_timeout: float | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         self._url = url
         self._scheme = _detect_scheme(url)
@@ -911,7 +1017,8 @@ class AsyncTappsBrainClient:
         )
         # See sync client: legacy scalar attribute mirrors the read leg.
         self._timeout = self._read_timeout
-        self._max_retries = max_retries
+        self._retry_config = _resolve_retry_config(retry_config, max_retries)
+        self._max_retries = self._retry_config.max_attempts - 1
         self._http_client: Any = None
         self._closed = False
         # MCP session state — see TappsBrainClient for rationale.
@@ -981,7 +1088,7 @@ class AsyncTappsBrainClient:
                 self._agent_id,
                 self._auth_token,
                 idempotency_key=idempotency_key,
-                max_retries=self._max_retries,
+                retry_config=self._retry_config,
                 extra_headers=extra_headers,
             )
         except Exception as exc:
@@ -1006,7 +1113,7 @@ class AsyncTappsBrainClient:
                     self._agent_id,
                     self._auth_token,
                     idempotency_key=idempotency_key,
-                    max_retries=self._max_retries,
+                    retry_config=self._retry_config,
                     extra_headers=extra_headers,
                 )
             raise

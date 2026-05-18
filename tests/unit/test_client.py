@@ -161,6 +161,9 @@ def _mock_error(status: int, body: dict[str, Any]) -> MagicMock:
     resp.is_success = False
     resp.status_code = status
     resp.json.return_value = body
+    # Real empty mapping so the retry layer's Retry-After probe doesn't pick up
+    # an auto-MagicMock from .headers.get() (STORY-071.2).
+    resp.headers = {}
     return resp
 
 
@@ -436,6 +439,8 @@ def _async_mock_error(status: int, body: dict[str, Any]) -> AsyncMock:
     resp.is_success = False
     resp.status_code = status
     resp.json = MagicMock(return_value=body)
+    # See _mock_error: prevent AsyncMock auto-coroutine on .headers.get().
+    resp.headers = {}
     return resp
 
 
