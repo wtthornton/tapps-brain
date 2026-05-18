@@ -580,6 +580,22 @@ class RecallDiagnostics(BaseModel):
         ge=0,
         description="Edges excluded due to confidence below the minimum threshold.",
     )
+    top_score: float | None = Field(
+        default=None,
+        description=(
+            "Highest composite score among returned memories (TAP-2094). "
+            "``None`` when ``memory_count == 0``."
+        ),
+    )
+    oldest_returned_age_days: float | None = Field(
+        default=None,
+        ge=0.0,
+        description=(
+            "Age in days (UTC now - oldest ``last_accessed``) of the oldest "
+            "returned memory (TAP-2094). ``None`` when empty or when no "
+            "``last_accessed`` is available."
+        ),
+    )
 
 
 class RecallResult(BaseModel):

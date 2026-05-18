@@ -248,6 +248,8 @@ class TestCoreTools:
             "brain_status",
             # Consumer audit (TAP-2093)
             "brain_audit_consumers",
+            # Recall-quality telemetry (TAP-2094)
+            "recall_quality_metrics",
             # Batch tools (STORY-070.11)
             "memory_save_many",
             "memory_recall_many",

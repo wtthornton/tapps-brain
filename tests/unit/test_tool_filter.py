@@ -198,17 +198,17 @@ class TestListToolsFilter:
         assert {t.name for t in result} == coder_tools
 
     def test_bundled_full_profile_returns_8_eager_tools(self) -> None:
-        """TAP-1985: `full` profile defaults to 8 daily drivers; 53 deferred.
+        """TAP-1985: `full` profile defaults to 8 daily drivers; 54 deferred.
 
         Replaces the prior "returns 59 tools" assertion. The callable surface
-        (``registry.get('full')``) is 61 post-TAP-2093, but the default
+        (``registry.get('full')``) is 62 post-TAP-2094, but the default
         ``tools/list`` payload returns only the 8 eager daily drivers so the
         eager catalog stays within the per-server budget (parent epic
         TAP-1983).
         """
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 61  # callable surface (TAP-2093: +1)
+        assert len(all_tool_names) == 62  # callable surface (TAP-2094: +1)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -470,7 +470,7 @@ class TestDeferredToolBehavior:
         """Operator profile shares the 8-tool daily-driver budget."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 74  # callable surface (TAP-2093: +1)
+        assert len(all_tool_names) == 75  # callable surface (TAP-2094: +1)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None

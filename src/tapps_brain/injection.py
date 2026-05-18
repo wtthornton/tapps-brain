@@ -467,6 +467,7 @@ def inject_memories(  # noqa: PLR0915
                 "tier": tier,
                 "score": scored.score,
                 "stale": scored.stale,
+                "last_accessed": entry.last_accessed,
             }
         )
 

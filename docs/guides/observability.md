@@ -65,6 +65,47 @@ The `declared_silent` list is the actionable signal: those agents declared thems
 
 ---
 
+## Recall-quality telemetry (TAP-2094)
+
+Two new per-call diagnostics fields and one windowed aggregator MCP tool surface "how good are recalls right now?" without scraping every trace span:
+
+### Per-call fields on `RecallDiagnostics`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `top_score` | `float \| None` | Highest composite score in the returned memories. `None` when `memory_count == 0`. |
+| `oldest_returned_age_days` | `float \| None` | Age in days (UTC now − oldest `last_accessed`). `None` when empty or when no entry had a valid `last_accessed`. |
+
+Populated in `RecallOrchestrator.recall()` immediately before returning. Every recall also writes a `(timestamp, top_score, oldest_age_days, memory_count)` sample into a bounded in-process ring buffer keyed by `project_id`.
+
+### `recall_quality_metrics` MCP tool
+
+```
+recall_quality_metrics(window_seconds: int = 3600, project_id: str = "")
+```
+
+Aggregates samples in the lookback window and returns percentiles:
+
+```json
+{
+  "project_id": "tapps-brain",
+  "window_seconds": 3600,
+  "sample_count": 247,
+  "p50_top_score": 0.61,
+  "p95_top_score": 0.88,
+  "p50_oldest_age_days": 4.2,
+  "p95_oldest_age_days": 31.7,
+  "empty_recall_rate": 0.043,
+  "as_of": "2026-05-17T18:30:00+00:00"
+}
+```
+
+The ring buffer is **process-local** (default 1000 samples per project, FIFO eviction) and **resets on restart** — cross-restart persistence is intentionally not in scope. Use it for "is auto-recall returning low-relevance results right now?" rather than long-term trend analysis.
+
+Registered in the `full` / `operator` profiles with `defer_loading: true` (operator surface, not a daily driver).
+
+---
+
 ## OTLP export timeout and circuit breaker (TAP-1814)
 
 OTel is designed to **fail open** — a blocked exporter must never stall the

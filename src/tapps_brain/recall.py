@@ -46,6 +46,43 @@ T = TypeVar("T")
 logger = structlog.get_logger(__name__)
 
 
+def _compute_recall_quality(
+    memories: list[dict[str, object]],
+) -> tuple[float | None, float | None]:
+    """Compute ``(top_score, oldest_returned_age_days)`` for TAP-2094 telemetry.
+
+    Returns ``(None, None)`` for an empty *memories* list.  Skips entries with
+    a missing or malformed ``last_accessed`` when computing the oldest age —
+    if every entry is malformed, returns ``oldest_age_days=None`` rather than
+    silently reporting age=0.
+    """
+    if not memories:
+        return None, None
+
+    from datetime import UTC, datetime
+
+    scores: list[float] = []
+    ages_days: list[float] = []
+    now = datetime.now(tz=UTC)
+    for mem in memories:
+        raw_score = mem.get("score", 0.0)
+        if isinstance(raw_score, (int, float)):
+            scores.append(float(raw_score))
+        raw_ts = mem.get("last_accessed", "")
+        if isinstance(raw_ts, str) and raw_ts:
+            try:
+                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            age = (now - ts).total_seconds() / 86400.0
+            if age >= 0:
+                ages_days.append(age)
+
+    top_score = max(scores) if scores else None
+    oldest_age = max(ages_days) if ages_days else None
+    return top_score, oldest_age
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -199,6 +236,32 @@ class RecallOrchestrator:
             token_count = result.get("injected_tokens", 0)
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+        # TAP-2094: compute top_score + oldest_returned_age_days and record
+        # the sample into the in-process ring buffer before returning.
+        top_score, oldest_age_days = _compute_recall_quality(memories)
+        if recall_diag is not None:
+            recall_diag = recall_diag.model_copy(
+                update={
+                    "top_score": top_score,
+                    "oldest_returned_age_days": oldest_age_days,
+                }
+            )
+        elif memories:
+            recall_diag = RecallDiagnostics(
+                top_score=top_score,
+                oldest_returned_age_days=oldest_age_days,
+            )
+        project_id = getattr(self._store, "_project_id", None) or ""
+        if project_id:
+            from tapps_brain import recall_quality_buffer
+
+            recall_quality_buffer.record(
+                project_id=project_id,
+                top_score=top_score,
+                oldest_returned_age_days=oldest_age_days,
+                memory_count=len(memories),
+            )
 
         # Extract KG fields from injection result (STORY-076.3).
         def _as_list(key: str, cls: type[T]) -> list[T]:
