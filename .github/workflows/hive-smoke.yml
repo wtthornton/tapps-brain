@@ -8,6 +8,14 @@ on:
       - "scripts/hive_smoke.sh"
       - "src/tapps_brain/http_adapter.py"
       - "src/tapps_brain/cli.py"
+      # Anything that affects tool registration, profiles, or the REST route
+      # map needs the e2e check — the v3.20.1 hotfix shipped because a stale
+      # `_tool_manager.list_tools()` view in the snapshot builder tripped the
+      # TAP-1929 drift check on container startup, and PR CI (unit-only) did
+      # not catch it.
+      - "src/tapps_brain/mcp_server/**"
+      - "src/tapps_brain/http/**"
+      - "src/tapps_brain/services/**"
   workflow_dispatch:
 
 jobs:
