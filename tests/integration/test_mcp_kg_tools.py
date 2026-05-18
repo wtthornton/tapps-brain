@@ -72,18 +72,19 @@ class TestKgToolDiscovery:
     """The four new KG tools appear in tools/list."""
 
     async def test_kg_tools_registered(self, mcp_server) -> None:
-        async with create_connected_server_and_client_session(mcp_server) as session:
-            result = await session.list_tools()
-            tool_names = {t.name for t in result.tools}
-            expected_kg_tools = {
-                "brain_record_event",
-                "brain_get_neighbors",
-                "brain_explain_connection",
-                "brain_record_feedback",
-            }
-            assert expected_kg_tools.issubset(tool_names), (
-                f"Missing KG tools: {expected_kg_tools - tool_names}"
-            )
+        # TAP-2050: client_session.list_tools() returns only the eager catalog
+        # after TAP-1985 deferred-loading filtering. Inspect the registration
+        # surface directly so the discovery test sees deferred KG tools.
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
+        expected_kg_tools = {
+            "brain_record_event",
+            "brain_get_neighbors",
+            "brain_explain_connection",
+            "brain_record_feedback",
+        }
+        assert expected_kg_tools.issubset(tool_names), (
+            f"Missing KG tools: {expected_kg_tools - tool_names}"
+        )
 
     async def test_kg_tools_have_descriptions(self, mcp_server) -> None:
         async with create_connected_server_and_client_session(mcp_server) as session:
@@ -105,20 +106,19 @@ class TestKgToolDiscovery:
 
     async def test_existing_brain_tools_still_present(self, mcp_server) -> None:
         """Registering KG tools does not displace the original brain_* tools."""
-        async with create_connected_server_and_client_session(mcp_server) as session:
-            result = await session.list_tools()
-            tool_names = {t.name for t in result.tools}
-            pre_epic076 = {
-                "brain_remember",
-                "brain_recall",
-                "brain_forget",
-                "brain_learn_success",
-                "brain_learn_failure",
-                "brain_status",
-            }
-            assert pre_epic076.issubset(tool_names), (
-                f"Pre-EPIC-076 brain tools removed: {pre_epic076 - tool_names}"
-            )
+        # TAP-2050: inspect registration directly (see test_kg_tools_registered).
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
+        pre_epic076 = {
+            "brain_remember",
+            "brain_recall",
+            "brain_forget",
+            "brain_learn_success",
+            "brain_learn_failure",
+            "brain_status",
+        }
+        assert pre_epic076.issubset(tool_names), (
+            f"Pre-EPIC-076 brain tools removed: {pre_epic076 - tool_names}"
+        )
 
 
 # ---------------------------------------------------------------------------

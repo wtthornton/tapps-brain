@@ -58,105 +58,105 @@ class TestToolsDiscovery:
     """Verify tools/list returns all expected tools via the MCP protocol."""
 
     async def test_list_tools_returns_all_expected(self, mcp_server):
-        async with create_connected_server_and_client_session(mcp_server) as session:
-            result = await session.list_tools()
-            tool_names = {t.name for t in result.tools}
-            # Operator tools (maintenance_*, gc_config, export/import, health,
-            # relay, flywheel_evaluate, flywheel_hive_feedback) are excluded
-            # from the default session (EPIC-062.4). See test_operator_tools_present.
-            expected = {
-                # Core CRUD
-                "memory_save",
-                "memory_get",
-                "memory_delete",
-                "memory_search",
-                "memory_list",
-                # Lifecycle
-                "memory_recall",
-                "memory_reinforce",
-                "memory_ingest",
-                "memory_supersede",
-                "memory_history",
-                # Session
-                "memory_index_session",
-                "memory_search_sessions",
-                "memory_capture",
-                # Profile
-                "profile_info",
-                "memory_profile_onboarding",
-                "profile_switch",
-                # Hive
-                "hive_status",
-                "hive_search",
-                "hive_propagate",
-                "hive_push",
-                "hive_wait_write",
-                "hive_write_revision",
-                # Agent
-                "agent_register",
-                "agent_create",
-                "agent_list",
-                "agent_delete",
-                # Relations / knowledge graph
-                "memory_relations",
-                "memory_find_related",
-                "memory_query_relations",
-                # Audit
-                "memory_audit",
-                # Tags
-                "memory_list_tags",
-                "memory_update_tags",
-                "memory_entries_by_tag",
-                # Groups
-                "memory_list_groups",
-                # Brain (EPIC-057)
-                "brain_remember",
-                "brain_recall",
-                "brain_forget",
-                "brain_learn_success",
-                "brain_learn_failure",
-                "brain_status",
-                # Diagnostics
-                "diagnostics_report",
-                "diagnostics_history",
-                # Feedback
-                "feedback_record",
-                "feedback_query",
-                "feedback_rate",
-                "feedback_issue",
-                "feedback_gap",
-                # Flywheel
-                "flywheel_process",
-                "flywheel_report",
-                "flywheel_gaps",
-                # Session end
-                "tapps_brain_session_end",
-            }
-            assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
+        # TAP-2050: client_session.list_tools() returns the eager-only catalog
+        # after TAP-1985 deferred-loading filtering. Inspect registration directly
+        # so the discovery test sees the full callable surface.
+        tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
+        # Operator tools (maintenance_*, gc_config, export/import, health,
+        # relay, flywheel_evaluate, flywheel_hive_feedback) are excluded
+        # from the default session (EPIC-062.4). See test_operator_tools_present.
+        expected = {
+            # Core CRUD
+            "memory_save",
+            "memory_get",
+            "memory_delete",
+            "memory_search",
+            "memory_list",
+            # Lifecycle
+            "memory_recall",
+            "memory_reinforce",
+            "memory_ingest",
+            "memory_supersede",
+            "memory_history",
+            # Session
+            "memory_index_session",
+            "memory_search_sessions",
+            "memory_capture",
+            # Profile
+            "profile_info",
+            "memory_profile_onboarding",
+            "profile_switch",
+            # Hive
+            "hive_status",
+            "hive_search",
+            "hive_propagate",
+            "hive_push",
+            "hive_wait_write",
+            "hive_write_revision",
+            # Agent
+            "agent_register",
+            "agent_create",
+            "agent_list",
+            "agent_delete",
+            # Relations / knowledge graph
+            "memory_relations",
+            "memory_find_related",
+            "memory_query_relations",
+            # Audit
+            "memory_audit",
+            # Tags
+            "memory_list_tags",
+            "memory_update_tags",
+            "memory_entries_by_tag",
+            # Groups
+            "memory_list_groups",
+            # Brain (EPIC-057)
+            "brain_remember",
+            "brain_recall",
+            "brain_forget",
+            "brain_learn_success",
+            "brain_learn_failure",
+            "brain_status",
+            # Diagnostics
+            "diagnostics_report",
+            "diagnostics_history",
+            # Feedback
+            "feedback_record",
+            "feedback_query",
+            "feedback_rate",
+            "feedback_issue",
+            "feedback_gap",
+            # Flywheel
+            "flywheel_process",
+            "flywheel_report",
+            "flywheel_gaps",
+            # Session end
+            "tapps_brain_session_end",
+        }
+        assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
     async def test_operator_tools_present(self, mcp_server_operator):
         """Operator tools appear when enable_operator_tools=True (EPIC-062.4)."""
-        async with create_connected_server_and_client_session(mcp_server_operator) as session:
-            result = await session.list_tools()
-            tool_names = {t.name for t in result.tools}
-            operator_expected = {
-                "maintenance_consolidate",
-                "maintenance_gc",
-                "maintenance_stale",
-                "memory_gc_config",
-                "memory_gc_config_set",
-                "memory_consolidation_config",
-                "memory_consolidation_config_set",
-                "memory_export",
-                "memory_import",
-                "tapps_brain_health",
-                "tapps_brain_relay_export",
-                "flywheel_evaluate",
-                "flywheel_hive_feedback",
-            }
-            assert operator_expected.issubset(tool_names), (
-                f"Missing operator tools: {operator_expected - tool_names}"
-            )
+        # TAP-2050: inspect registration directly (see test_list_tools_returns_all_expected).
+        tool_names = {t.name for t in mcp_server_operator._tool_manager._unfiltered_list_tools()}
+        operator_expected = {
+            "maintenance_consolidate",
+            "maintenance_gc",
+            "maintenance_stale",
+            "memory_gc_config",
+            "memory_gc_config_set",
+            "memory_consolidation_config",
+            "memory_consolidation_config_set",
+            "memory_export",
+            "memory_import",
+            "tapps_brain_health",
+            "tapps_brain_relay_export",
+            "flywheel_evaluate",
+            "flywheel_hive_feedback",
+        }
+        assert operator_expected.issubset(tool_names), (
+            f"Missing operator tools: {operator_expected - tool_names}"
+        )
 
     async def test_tools_have_descriptions(self, mcp_server):
         async with create_connected_server_and_client_session(mcp_server) as session:
