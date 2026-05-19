@@ -15,6 +15,9 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 ### Fixed
 
 - **`/v1/kg/*` UUID validation — return 422 instead of 500 on malformed UUIDs** ([TAP-2140](https://linear.app/tappscodingagents/issue/TAP-2140)). Non-UUID strings POSTed to `/v1/kg/feedback`, `/v1/kg/neighbors`, and `/v1/kg/explain` previously reached psycopg's cursor and surfaced as HTTP 500 with a raw `psycopg.errors.InvalidTextRepresentation` traceback (5 occurrences observed in brain v3.20.1 between 21:05 and 21:16 UTC on 2026-05-18). The three handlers now validate every UUID-bound field (`edge_id`; `entity_ids[i]`; `subject_id`/`object_id`) via `uuid.UUID(...)` at the request-model layer and emit HTTP 422 with `{error, field, detail}` instead — no `psycopg` substring in the response body or response-path log line. Gives the [TAP-2133](https://linear.app/tappscodingagents/issue/TAP-2133) SDK's `TappsBrainValidationError` a stable shape to map against.
+### Changed
+
+- **`AsyncMemoryStore.audit()` is now async-native when an `AsyncPostgresPrivateBackend` is wired** ([TAP-2134](https://linear.app/tappscodingagents/issue/TAP-2134)). Previously the method dispatched the call through `asyncio.to_thread(self._store.audit, ...)`, which works but blocks a thread-pool worker on the Postgres round-trip. The async path now calls `AsyncPostgresPrivateBackend.query_audit(...)` directly on the native async pool and wraps the dict rows in `AuditEntry` to preserve the public return type. The legacy `_read_thread` fallback is retained for callers that construct an `AsyncMemoryStore` without an async backend (unit tests, in-memory backends). First concrete read-path conversion in the EPIC-072 follow-on — the deeper orchestrator refactor for `search`/`knn_search` (which requires `MemoryStore.search` to accept an `async_backend` parameter) is out of scope here and tracked separately.
 
 ## [3.20.1] — 2026-05-18
 

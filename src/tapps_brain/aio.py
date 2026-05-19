@@ -510,9 +510,37 @@ class AsyncMemoryStore:
         """Async version of :meth:`MemoryStore.health`."""
         return await self._read_thread(self._store.health)
 
-    async def audit(self, **kwargs: Any) -> list[dict[str, Any]]:
-        """Async version of :meth:`MemoryStore.audit`."""
-        return await self._read_thread(self._store.audit, **kwargs)
+    async def audit(self, **kwargs: Any) -> list[Any]:
+        """Async version of :meth:`MemoryStore.audit` (TAP-2134).
+
+        When an :class:`AsyncPostgresPrivateBackend` is wired, queries the
+        audit log via the native async pool (``query_audit``) and wraps the
+        dict rows in :class:`~tapps_brain.audit.AuditEntry` to preserve the
+        sync return type.  Otherwise delegates to the sync store via
+        :func:`asyncio.to_thread`.
+
+        Bounded by ``_read_sem`` (default 32).
+        """
+        if self._async_backend is None:
+            return await self._read_thread(self._store.audit, **kwargs)
+
+        from tapps_brain.audit import AuditEntry
+
+        async with self._read_sem:
+            self._read_inflight += 1
+            try:
+                rows = await self._async_backend.query_audit(**kwargs)
+            finally:
+                self._read_inflight -= 1
+        return [
+            AuditEntry(
+                timestamp=str(r.get("timestamp", "")),
+                event_type=str(r.get("event_type", "")),
+                key=str(r.get("key", "")),
+                details=dict(r.get("details") or {}),
+            )
+            for r in rows
+        ]
 
     async def diagnostics(self, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.diagnostics`."""
