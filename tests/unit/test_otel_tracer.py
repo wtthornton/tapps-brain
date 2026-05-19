@@ -383,6 +383,75 @@ class TestStoreSpans:
 
 
 # ---------------------------------------------------------------------------
+# Tests for gen_ai.data_source.id on recall/search spans — semconv v1.40.0
+# (TAP-2170)
+# ---------------------------------------------------------------------------
+
+
+class TestGenAiDataSourceIdSpanAttribute:
+    """recall and search spans set ``gen_ai.data_source.id = "tapps-brain"``."""
+
+    def _make_store(self, tmp_path: Any) -> Any:
+        from tapps_brain.store import MemoryStore
+
+        return MemoryStore(tmp_path, embedding_provider=None)
+
+    def _capture_set_attribute(self, target_span_name: str) -> tuple[Any, dict[str, Any]]:
+        """Build a start_span replacement that records set_attribute calls for a span."""
+        captured: dict[str, Any] = {}
+
+        @contextmanager
+        def _capturing(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            mock_span = MagicMock()
+            mock_span.__enter__ = MagicMock(return_value=mock_span)
+            mock_span.__exit__ = MagicMock(return_value=False)
+            if name == target_span_name:
+
+                def _record(key: str, value: Any) -> None:
+                    captured[key] = value
+
+                mock_span.set_attribute.side_effect = _record
+            yield mock_span
+
+        return _capturing, captured
+
+    def test_recall_span_has_gen_ai_data_source_id(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_DATA_SOURCE_ID, SPAN_RECALL
+
+        capturing, captured = self._capture_set_attribute(SPAN_RECALL)
+        store = self._make_store(tmp_path)
+
+        with patch("tapps_brain.store.start_span", capturing):
+            store.recall("what is the test")
+
+        assert captured.get("gen_ai.data_source.id") == GEN_AI_DATA_SOURCE_ID == "tapps-brain"
+
+    def test_search_span_has_gen_ai_data_source_id(self, tmp_path: Any) -> None:
+        from tapps_brain.otel_tracer import GEN_AI_DATA_SOURCE_ID, SPAN_SEARCH
+
+        capturing, captured = self._capture_set_attribute(SPAN_SEARCH)
+        store = self._make_store(tmp_path)
+
+        with patch("tapps_brain.store.start_span", capturing):
+            store.search("test query")
+
+        assert captured.get("gen_ai.data_source.id") == GEN_AI_DATA_SOURCE_ID == "tapps-brain"
+
+    def test_recall_no_op_when_span_is_none(self, tmp_path: Any) -> None:
+        """When ``start_span`` yields ``None`` (HAS_OTEL=False), the guard skips
+        every ``_recall_span.set_attribute`` call without raising."""
+
+        @contextmanager
+        def _none_span(name: str, attributes: dict | None = None, **kwargs: Any):  # type: ignore[no-untyped-def]
+            yield None
+
+        store = self._make_store(tmp_path)
+        with patch("tapps_brain.store.start_span", _none_span):
+            store.recall("what is the test")
+            store.search("test query")
+
+
+# ---------------------------------------------------------------------------
 # Tests for start_mcp_tool_span() — GenAI semconv v1.35.0 (STORY-032.2)
 # ---------------------------------------------------------------------------
 
