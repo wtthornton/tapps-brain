@@ -256,6 +256,11 @@ def brain_recall(
 
 
 def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
+    """Delete a memory entry by key.
+
+    Returns ``{"forgotten": True, "key": key}`` on success or
+    ``{"forgotten": False, "reason": "not_found"}`` when the key is unknown.
+    """
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
     with start_mcp_tool_span("brain_forget"):
@@ -269,6 +274,11 @@ def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dic
 def brain_learn_success(
     store: Any, project_id: str, agent_id: str, *, task_description: str, task_id: str = ""
 ) -> dict[str, Any]:
+    """Record a successful task outcome as a ``procedural``-tier memory.
+
+    The key is derived from a content hash of the description so identical
+    descriptions deduplicate. Adds ``success`` and optional ``task:<id>`` tags.
+    """
     from tapps_brain.agent_brain import _content_key
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
@@ -290,6 +300,11 @@ def brain_learn_failure(
     task_id: str = "",
     error: str = "",
 ) -> dict[str, Any]:
+    """Record a failed task outcome as a ``procedural``-tier memory.
+
+    Key derives from a content hash; optional ``error`` is appended to the
+    stored value. Tagged with ``failure`` and optional ``task:<id>``.
+    """
     from tapps_brain.agent_brain import _content_key
     from tapps_brain.otel_tracer import start_mcp_tool_span
 
@@ -304,6 +319,11 @@ def brain_learn_failure(
 
 
 def brain_status(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return the current agent's identity, group membership, and memory count.
+
+    Includes ``hive_connected`` so callers can detect when a Hive backend is
+    unavailable. Cheap — does not query Postgres.
+    """
     return {
         "agent_id": getattr(store, "agent_id", None),
         "groups": getattr(store, "groups", []),
@@ -736,6 +756,14 @@ def memory_save(
     source_agent: str = "",
     group: str | None = None,
 ) -> dict[str, Any]:
+    """Save a memory entry with full structured validation.
+
+    Validates ``agent_scope`` / ``tier`` / ``source`` against the active
+    profile and returns a structured error envelope on bad input. Returns
+    ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
+    on success, or ``{"error": "bad_request", "message": ...}`` when the
+    underlying pydantic model rejects the payload (TAP-747).
+    """
     from tapps_brain.agent_scope import (
         agent_scope_valid_values_for_errors,
         normalize_agent_scope,
@@ -814,6 +842,11 @@ def memory_save(
 
 
 def memory_get(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
+    """Fetch a single memory entry by key.
+
+    Returns the full :class:`~tapps_brain.models.MemoryEntry` as a JSON-mode
+    dict, or ``{"error": "not_found", "key": key}`` when absent.
+    """
     entry = store.get(key)
     if entry is None:
         return {"error": "not_found", "key": key}
@@ -821,6 +854,11 @@ def memory_get(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[
 
 
 def memory_delete(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
+    """Hard-delete a memory entry. Idempotent.
+
+    Returns ``{"deleted": bool, "key": key}`` — ``deleted`` is False when the
+    key was already absent.
+    """
     deleted = store.delete(key)
     return {"deleted": deleted, "key": key}
 
@@ -839,6 +877,14 @@ def memory_search(
     until: str = "",
     time_field: str = "created_at",
 ) -> list[dict[str, Any]] | dict[str, Any]:
+    """Search memory entries with optional tier/scope/group + time-window filters.
+
+    ``as_of`` (ISO-8601) returns the entry state at that point in time
+    (bitemporal recall). ``since`` / ``until`` window by ``time_field``
+    (``created_at`` by default; ``updated_at`` is also accepted). Returns
+    a flat list of trimmed entry dicts, or ``{"error": "invalid_as_of"}``
+    on a malformed timestamp.
+    """
     if as_of is not None:
         try:
             from datetime import datetime
@@ -882,6 +928,12 @@ def memory_list(
     include_superseded: bool = False,
     group: str | None = None,
 ) -> list[dict[str, Any]]:
+    """List memory entries with optional tier / scope / group filters.
+
+    Values are truncated to the first 200 chars per row — call
+    :func:`memory_get` for full content. ``include_superseded`` is False by
+    default so the result reflects only currently-valid entries.
+    """
     entries = store.list_all(
         tier=tier,
         scope=scope,
@@ -903,6 +955,11 @@ def memory_list(
 
 
 def memory_list_groups(store: Any, project_id: str, agent_id: str) -> list[str]:
+    """Return the distinct ``memory_group`` labels present in this project's store.
+
+    ``memory_group`` is the local partition label (GitHub #49) — distinct from
+    Hive namespaces and profile tiers. See :mod:`tapps_brain.memory_group`.
+    """
     return store.list_memory_groups()  # type: ignore[no-any-return]
 
 
