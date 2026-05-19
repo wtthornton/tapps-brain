@@ -66,6 +66,7 @@ from tapps_brain.metrics import (
 from tapps_brain.otel_tracer import (
     ATTR_LATENCY_MS,
     ATTR_ROWS_RETURNED,
+    GEN_AI_DATA_SOURCE_ID,
     GEN_AI_OPERATION_EXECUTE_TOOL,
     SPAN_DELETE,
     SPAN_HIVE_PROPAGATE,
@@ -2000,6 +2001,8 @@ class MemoryStore:
                 # STORY-070.12: standardised per-operation attributes
                 _search_span.set_attribute(ATTR_ROWS_RETURNED, len(results))
                 _search_span.set_attribute(ATTR_LATENCY_MS, _search_elapsed_ms)
+                # TAP-2170: GenAI semconv v1.40.0 data source identity
+                _search_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
             rm_add_recall_latency_ms(_search_elapsed_ms)
             return results
 
@@ -2650,6 +2653,8 @@ class MemoryStore:
                 _recall_span.set_attribute(
                     ATTR_LATENCY_MS, (time.monotonic() - _recall_t0) * 1000.0
                 )
+                # TAP-2170: GenAI semconv v1.40.0 data source identity
+                _recall_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
 
         # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking
         if session_id is not None:

@@ -92,6 +92,12 @@ GEN_AI_OPERATION_EXECUTE_TOOL: str = "execute_tool"
 #: ``gen_ai.system`` value identifying tapps-brain (semconv v1.35.0).
 GEN_AI_SYSTEM: str = "tapps-brain"
 
+#: ``gen_ai.data_source.id`` value identifying tapps-brain as the retrieval
+#: data source (GenAI semconv v1.40.0, TAP-2170). Emitted on recall and
+#: search spans so downstream observability platforms can pivot on
+#: retrieval-source identity.
+GEN_AI_DATA_SOURCE_ID: str = "tapps-brain"
+
 # ---------------------------------------------------------------------------
 # STORY-070.12: per-request span attribute names (bounded cardinality)
 # ---------------------------------------------------------------------------
