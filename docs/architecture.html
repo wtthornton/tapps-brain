@@ -1,1195 +1,738 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>tapps-brain Architecture - Architecture Report</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-
-/* HomeIQ Design System — Architecture Report */
-:root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1e1e2a;
-  --card-bg: rgba(18, 18, 26, 0.95);
-  --card-bg-alt: rgba(30, 30, 42, 0.95);
-  --card-border: rgba(63, 63, 90, 0.5);
-  --accent-primary: #14b8a6;
-  --accent-secondary: #d4a847;
-  --accent-glow: rgba(20, 184, 166, 0.12);
-  --text-primary: #fafafa;
-  --text-secondary: #d4d4d8;
-  --text-tertiary: #a1a1aa;
-  --text-muted: #71717a;
-  --focus-ring: rgba(20, 184, 166, 0.5);
-  --shadow-card: 0 4px 6px -1px rgba(0,0,0,0.3), 0 0 0 1px rgba(63,63,90,0.3);
-  --shadow-hover: 0 4px 12px -2px rgba(0,0,0,0.25);
-  --radius-md: 0.25rem;
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
-  --motion-fast: 150ms;
-  --motion-normal: 250ms;
-  --ease-enter: cubic-bezier(0.4, 0, 0.2, 1);
-  --font-display: 'Outfit', 'Inter', system-ui, sans-serif;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
+<title>tapps-brain Architecture</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>* { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.45;
-  font-size: 0.875rem;
-  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1, 'cv11' 1;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8f9fa; color: #1a1a2e;
 }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-
-/* Focus */
-:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white; padding: 2rem; text-align: center;
 }
-:focus:not(:focus-visible) { outline: none; }
-
-/* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+.header p { opacity: 0.9; font-size: 1rem; }
+.controls {
+    display: flex; gap: 1rem; padding: 1rem 2rem;
+    background: white; border-bottom: 1px solid #e0e0e0;
+    flex-wrap: wrap; align-items: center;
 }
-@keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+.controls button {
+    padding: 0.5rem 1rem; border: 1px solid #ddd; border-radius: 6px;
+    background: white; cursor: pointer; font-size: 0.9rem;
+    transition: all 0.2s;
 }
-@keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.15); }
-  50% { box-shadow: 0 0 20px 4px rgba(20, 184, 166, 0.08); }
-}
-
-/* Hero */
-.hero {
-  background: linear-gradient(135deg, #0a0a0f 0%, #12121a 30%, #1e1e2a 70%, #0d3d38 100%);
-  padding: 80px 40px;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
-}
-.hero::before {
-  content: '';
-  position: absolute;
-  top: -50%; left: -50%;
-  width: 200%; height: 200%;
-  background: radial-gradient(circle at 30% 50%, rgba(20,184,166,0.1) 0%, transparent 50%),
-              radial-gradient(circle at 70% 80%, rgba(212,168,71,0.06) 0%, transparent 50%);
-  animation: pulseGlow 8s ease-in-out infinite;
-}
-.hero-content { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; }
-.hero-title {
-  font-family: var(--font-display);
-  font-size: 2.25rem; font-weight: 700;
-  letter-spacing: -0.025em; margin-bottom: 12px;
-  color: var(--text-primary);
-}
-.hero-subtitle {
-  font-size: 1rem; color: var(--text-secondary);
-  margin-bottom: 16px; line-height: 1.6;
-}
-.hero-arch {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  margin-top: 8px;
-}
-.arch-badge-hero {
-  display: inline-block;
-  padding: 5px 18px; border-radius: 8px;
-  font-weight: 800; font-size: 0.8rem; letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.hero-arch svg { border-radius: 10px; }
-.hero-meta {
-  font-size: 0.75rem; color: var(--accent-primary);
-  text-transform: uppercase; letter-spacing: 0.08em;
-  font-weight: 600;
-}
-
-/* Sections */
-.section {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 48px 40px;
-  animation: fadeIn 0.4s var(--ease-enter) both;
-}
-.section-title {
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  margin-bottom: 16px;
-  color: var(--text-primary);
-  position: relative;
-  padding-bottom: 12px;
-}
-.section-title::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0;
-  width: 48px; height: 3px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-  border-radius: 2px;
-}
-.section > p {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  line-height: 1.6;
-  margin-bottom: 24px;
-  max-width: 900px;
-}
-
-/* Purpose block */
-.purpose-block {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-left: 3px solid var(--accent-primary);
-  border-radius: var(--radius-lg);
-  padding: 24px 28px;
-  margin-bottom: 32px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-card);
-}
-.purpose-block h3 {
-  font-family: var(--font-display);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--accent-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 10px;
-}
-.purpose-text {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-/* Stats grid */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.stat-card {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  text-align: center;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-card);
-  transition: transform var(--motion-fast) var(--ease-enter),
-              box-shadow var(--motion-fast) var(--ease-enter);
-  animation: fadeInScale 0.4s var(--ease-enter) both;
-}
-.stat-card:nth-child(1) { animation-delay: 0.05s; }
-.stat-card:nth-child(2) { animation-delay: 0.1s; }
-.stat-card:nth-child(3) { animation-delay: 0.15s; }
-.stat-card:nth-child(4) { animation-delay: 0.2s; }
-.stat-card:nth-child(5) { animation-delay: 0.25s; }
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-hover);
-}
-.stat-number {
-  font-family: var(--font-mono);
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--accent-primary);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.015em;
-}
-.stat-label {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 500;
-  margin-top: 4px;
-}
-
-/* Meta badges */
-.meta-details {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.meta-badge {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-md);
-  padding: 4px 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-
-/* Diagram container */
-.diagram-container {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  margin: 24px 0;
-  overflow-x: auto;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-card);
-}
-.diagram-container svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-/* Component cards */
-.component-card {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  margin-bottom: 16px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-card);
-  transition: transform var(--motion-fast) var(--ease-enter),
-              box-shadow var(--motion-fast) var(--ease-enter);
-  animation: fadeIn 0.4s var(--ease-enter) both;
-}
-.component-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-hover);
-}
-.component-header {
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.component-name {
-  font-family: var(--font-display);
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: white;
-  margin: 0;
-}
-.component-stats {
-  display: flex;
-  gap: 12px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.75);
-  font-family: var(--font-mono);
-}
-.component-body {
-  padding: 20px;
-}
-.component-description {
-  color: var(--text-secondary);
-  line-height: 1.6;
-  font-size: 0.875rem;
-}
-.submodule-list {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--card-border);
-}
-.submodule-list h4 {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.submodule-list ul {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.submodule-list li {
-  background: var(--bg-primary);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-md);
-  padding: 3px 10px;
-  font-size: 0.75rem;
-}
-.submodule-list li code {
-  color: var(--accent-primary);
-  font-family: var(--font-mono);
-  font-size: 0.7em;
-}
-
-/* API surface */
-.api-module {
-  margin-bottom: 20px;
-}
-.api-module-path {
-  font-size: 0.8125rem;
-  color: var(--accent-primary);
-  font-family: var(--font-mono);
-  padding: 6px 0;
-  border-bottom: 1px solid var(--card-border);
-  margin-bottom: 10px;
-}
-.api-class {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 18px;
-  margin-bottom: 8px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.api-class-header {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.api-class-name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--accent-primary);
-  font-family: var(--font-mono);
-}
-.api-bases {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-}
-.api-doc {
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  margin-bottom: 6px;
-}
-.api-methods {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-.api-methods code {
-  color: var(--accent-primary);
-  font-family: var(--font-mono);
-  font-size: 0.7em;
-}
-
-/* Tech stack */
-.dep-group {
-  margin-bottom: 20px;
-}
-.dep-group h4 {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-.dep-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.dep-tag {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-md);
-  padding: 4px 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  transition: border-color var(--motion-fast) var(--ease-enter),
-              transform var(--motion-fast) var(--ease-enter);
-}
-.dep-tag:hover {
-  border-color: var(--accent-primary);
-  transform: translateY(-2px);
-}
-.dep-tag.dep-dev {
-  border-style: dashed;
-  color: var(--text-tertiary);
-}
-
-/* Skip link */
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 8px;
-  background: var(--accent-primary);
-  color: var(--bg-primary);
-  padding: 8px 16px;
-  z-index: 100;
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-decoration: none;
-  border-radius: var(--radius-md);
-  transition: top 0.2s var(--ease-enter);
-}
-.skip-link:focus {
-  top: 8px;
-}
-
-/* TOC */
-.toc-section {
-  padding: 24px 40px;
-}
+.controls button:hover { background: #f0f0f0; border-color: #999; }
+.controls button.active { background: #667eea; color: white; border-color: #667eea; }
 .toc {
-  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  padding: 20px 24px;
+    padding: 1rem 2rem; background: white; border-bottom: 1px solid #e0e0e0;
 }
-.toc-title {
-  font-family: var(--font-display);
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 12px;
+.toc h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+.toc a {
+    display: inline-block; margin: 0.25rem 0.5rem; color: #667eea;
+    text-decoration: none; font-size: 0.9rem;
 }
-.toc-list {
-  list-style: none;
+.toc a:hover { text-decoration: underline; }
+.diagram-section {
+    margin: 2rem; background: white; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;
 }
-.toc-list li {
-  margin-bottom: 6px;
+.diagram-section h2 {
+    padding: 1rem 1.5rem; background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0; font-size: 1.2rem;
 }
-.toc-list a {
-  color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 0.8125rem;
+.diagram-wrapper {
+    padding: 2rem; overflow: auto; min-height: 200px;
+    cursor: grab; position: relative;
 }
-.toc-list a:hover {
-  color: var(--accent-primary);
-}
-
-/* Back to top */
-.back-to-top {
-  color: var(--accent-primary);
-  text-decoration: none;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.back-to-top:hover {
-  text-decoration: underline;
-}
-
-/* Footer */
-.footer {
-  text-align: center;
-  padding: 32px;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  border-top: 1px solid var(--card-border);
-  margin-top: 32px;
-}
-.footer strong {
-  color: var(--accent-primary);
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* High contrast */
-@media (prefers-contrast: high) {
-  .component-card, .stat-card, .api-class { border: 2px solid currentColor; }
-}
-
-/* Print */
+.diagram-wrapper:active { cursor: grabbing; }
+.diagram-wrapper .mermaid { display: flex; justify-content: center; }
 @media print {
-  body { background: white; color: black; }
-  .hero { background: #f0f0f0; color: black; }
-  .hero-title, .hero-subtitle, .hero-meta { color: black; }
-  .stat-number { color: black; -webkit-text-fill-color: black; }
+    .controls, .toc { display: none; }
+    .diagram-section { break-inside: avoid; box-shadow: none; }
+    .edgePath path, .flowchart-link {
+        animation: none !important;
+        stroke-dasharray: none !important;
+    }
 }
-
-/* Responsive */
-@media (max-width: 768px) {
-  .hero { padding: 48px 20px; }
-  .hero-title { font-size: 1.5rem; }
-  .section { padding: 32px 20px; }
-  .component-header { flex-direction: column; gap: 6px; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+@media (prefers-reduced-motion: no-preference) {
+    .edgePath path, .flowchart-link {
+        stroke-dasharray: 4 8;
+        animation: tapps-marching-ants 1.2s linear infinite;
+    }
 }
-
-/* Light theme (TappMCP style guide) */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-primary: #f8f9fc;
-    --bg-secondary: #f0f1f5;
-    --card-bg: rgba(255, 255, 255, 0.92);
-    --card-bg-alt: rgba(245, 245, 250, 0.95);
-    --card-border: rgba(0, 0, 0, 0.08);
-    --accent-primary: #0d9488;
-    --accent-secondary: #b8941f;
-    --text-primary: #1a1a2e;
-    --text-secondary: #4a4a5e;
-    --text-muted: #9ca3af;
-  }
-  body { color: var(--text-primary); }
-  .hero { background: linear-gradient(135deg, #f8f9fc 0%, #f0f1f5 30%, #e5e7ed 70%, #ccfbf1 100%); }
-  .stat-number { color: var(--accent-primary); }
+@keyframes tapps-marching-ants {
+    to { stroke-dashoffset: -12; }
 }
-
 </style>
 </head>
 <body>
-<a href="#main-content" class="skip-link">Skip to main content</a>
-
-<section class="hero">
-  <div class="hero-content">
-    <h1 class="hero-title">tapps-brain Architecture</h1>
-    <p class="hero-subtitle">Persistent cross-session memory system for AI coding assistants</p>
-    <p class="hero-meta">Architecture Report</p>
-  </div>
-</section>
-
-<section class="section document-purpose" id="main-content">
-  <h2 class="section-title">Document Purpose</h2>
-  <div class="purpose-block">
-    <h3>Audience &amp; Use</h3>
-    <p class="purpose-text">This report is for <strong>developers and architects</strong>. It explains how components fit together, why they are structured this way, and what constraints apply. Use it to understand the system before making changes, justify architectural decisions, and plan refactors.</p>
-  </div>
-</section>
-<section class="section toc-section">
-  <nav class="toc" aria-label="Table of contents">
-    <h3 class="toc-title">Contents</h3>
-    <ul class="toc-list">
-      <li><a href="#executive-summary">Executive Summary</a></li>
-      <li><a href="#architecture-diagram">High-Level Architecture</a></li>
-      <li><a href="#data-flow">Data Flow Pipeline</a></li>
-      <li><a href="#component-details">Component Deep-Dive</a></li>
-      <li><a href="#dependency-flow">Dependency Flow</a></li>
-      <li><a href="#api-surface">Public API Surface</a></li>
-      <li><a href="#tech-stack">Technology Stack</a></li>
-      <li><a href="#health-insights">Architecture Health</a></li>
-    </ul>
-  </nav>
-</section>
-<section class="section" id="executive-summary" role="region" aria-labelledby="exec-summary-heading">
-<h2 class="section-title" id="exec-summary-heading">Executive Summary</h2>
-<p><strong>Why this matters:</strong> Quick overview for stakeholders; key metrics support risk assessment and technical debt visibility.</p>
-
-<div class="purpose-block">
-  <h3>Purpose &amp; Intent</h3>
-  <p class="purpose-text">Persistent cross-session memory system for AI coding assistants</p>
+<div class="header">
+<h1>tapps-brain Architecture</h1>
+<p>Generated from tapps-brain</p>
 </div>
-
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-number">4</div>
-    <div class="stat-label">Packages</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">16</div>
-    <div class="stat-label">Modules</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">54</div>
-    <div class="stat-label">Public Classes</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">519</div>
-    <div class="stat-label">Public APIs (fns + methods)</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">112</div>
-    <div class="stat-label">External Imports</div>
-  </div>
+<div class="controls">
+<button id="zoom-in">Zoom In (+)</button>
+<button id="zoom-out">Zoom Out (-)</button>
+<button id="zoom-reset">Reset</button>
+<span style="margin-left: 1rem; color: #666;">Toggle:</span>
+<button class="toggle-btn active" data-target="diagram-0">Dependency Graph</button>
+<button class="toggle-btn active" data-target="diagram-1">Module Map</button>
+<button class="toggle-btn active" data-target="diagram-2">C4 System Context</button>
+<button class="toggle-btn active" data-target="diagram-3">C4 Container</button>
+<button class="toggle-btn active" data-target="diagram-4">C4 Component</button>
+<button class="toggle-btn active" data-target="diagram-5">ER Diagram</button>
 </div>
-<div class="meta-details">
-<span class="meta-badge">v3.7.0</span>
-<span class="meta-badge">Python &gt;=3.12</span>
-<span class="meta-badge">MIT</span>
+<div class="toc">
+<h3>Diagrams</h3>
+<a href="#diagram-0">Dependency Graph</a>
+<a href="#diagram-1">Module Map</a>
+<a href="#diagram-2">C4 System Context</a>
+<a href="#diagram-3">C4 Container</a>
+<a href="#diagram-4">C4 Component</a>
+<a href="#diagram-5">ER Diagram</a>
 </div>
-</section>
-<section class="section" id="architecture-diagram">
-<h2 class="section-title">High-Level Architecture</h2>
-<p>The diagram below illustrates the major packages and components that comprise the system. Each box represents a distinct package or subsystem with its own responsibilities and boundaries.</p>
-<figure role="figure" aria-labelledby="arch-figcaption">
-<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 290" class="arch-svg" role="img" aria-labelledby="arch-svg-title">
-  <title id="arch-svg-title">High-level architecture: tapps-brain Architecture</title>
-  <defs>
-    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
-      <feDropShadow dx="2" dy="4" stdDeviation="6" flood-opacity="0.15"/>
-    </filter>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <linearGradient id="grad0" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#2dd4bf"/>
-    </linearGradient>
-    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#d4a847"/>
-      <stop offset="100%" stop-color="#e8c060"/>
-    </linearGradient>
-    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0d9488"/>
-      <stop offset="100%" stop-color="#14b8a6"/>
-    </linearGradient>
-    <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#60a5fa"/>
-    </linearGradient>
-  </defs>
-  <rect width="1120" height="290" rx="16" fill="#0a0a0f" />
-  <text x="560.0" y="45" text-anchor="middle" fill="#fafafa" font-size="22" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">tapps-brain Architecture — Architecture Overview</text>
-  <rect x="60" y="130" width="220" height="100" rx="12" fill="url(#grad0)" filter="url(#shadow)" />
-  <text x="170.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
-  <text x="170.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">2 modules</text>
-  <rect x="320" y="130" width="220" height="100" rx="12" fill="url(#grad1)" filter="url(#shadow)" />
-  <text x="430.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
-  <text x="430.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">4 modules</text>
-  <rect x="580" y="130" width="220" height="100" rx="12" fill="url(#grad2)" filter="url(#shadow)" />
-  <text x="690.0" y="170" text-anchor="middle" fill="#fafafa" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
-  <text x="690.0" y="195" text-anchor="middle" fill="#fafafa" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">1 modules</text>
-  <rect x="840" y="130" width="220" height="100" rx="12" fill="url(#grad3)" filter="url(#shadow)" />
-  <text x="950.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
-  <text x="950.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">9 modules</text>
-</svg></div>
-<figcaption id="arch-figcaption">High-level architecture overview</figcaption>
-</figure>
-</section>
-<section class="section" id="data-flow" role="region" aria-labelledby="data-flow-heading">
-<h2 class="section-title" id="data-flow-heading">Data Flow Pipeline</h2>
-<p><strong>Why this matters:</strong> Understanding runtime flow helps trace how input moves through layers toward output. Each stage represents a processing boundary.</p>
-<figure role="figure" aria-labelledby="data-flow-figcaption">
-<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 278" class="flow-svg">
-  <defs>
-    <marker id="flowArrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#14b8a6"/>
-    </marker>
-  </defs>
-  <rect width="480" height="278" rx="8" fill="#0a0a0f"/>
-  <text x="240.0" y="35" text-anchor="middle" fill="#fafafa" font-size="18" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Data Flow Pipeline</text>
-  <text x="120.0" y="82" text-anchor="middle" fill="#14b8a6" font-size="13" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Core Logic</text>
-  <rect x="40" y="90" width="160" height="124" rx="6" fill="rgba(18,18,26,0.85)" stroke="#14b8a6" stroke-width="1" opacity="0.8"/>
-  <text x="120.0" y="116" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
-  <text x="120.0" y="152" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
-  <text x="120.0" y="188" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
-  <line x1="205" y1="144.0" x2="275" y2="144.0" stroke="#14b8a6" stroke-width="2" marker-end="url(#flowArrow)" opacity="0.7"/>
-  <text x="360.0" y="82" text-anchor="middle" fill="#d4a847" font-size="13" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Output / API</text>
-  <rect x="280" y="90" width="160" height="52" rx="6" fill="rgba(18,18,26,0.85)" stroke="#d4a847" stroke-width="1" opacity="0.8"/>
-  <text x="360.0" y="116" text-anchor="middle" fill="#d4d4d8" font-size="11" font-weight="500" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
-</svg></div>
-<figcaption id="data-flow-figcaption">Data flow pipeline</figcaption>
-</figure>
-</section>
-<section class="section" id="component-details">
-<h2 class="section-title">Component Deep-Dive</h2>
-<p>Each component in the architecture serves a specific purpose, contributing to the overall system through well-defined responsibilities. Understanding these individual building blocks is essential for navigating the codebase, extending functionality, and maintaining the project over time.</p>
+<div class="diagram-section" id="diagram-0">
+<h2>Dependency Graph</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph src[&quot;src&quot;]
+        src_tapps_brain___init___py[&quot;__init__.py&quot;]:::infra
+        src_tapps_brain__feature_flags_py[&quot;_feature_flags.py&quot;]:::infra
+        src_tapps_brain__postgres_kg_sql_py[&quot;_postgres_kg_sql.py&quot;]:::infra
+        src_tapps_brain__postgres_private_sql_py[&quot;_postgres_private_sql.py&quot;]:::infra
+        src_tapps_brain__protocols_py[&quot;_protocols.py&quot;]:::infra
+        src_tapps_brain__save_conflict_py[&quot;_save_conflict.py&quot;]:::infra
+        src_tapps_brain__save_pipeline_py[&quot;_save_pipeline.py&quot;]:::business
+        src_tapps_brain__save_propagation_py[&quot;_save_propagation.py&quot;]:::infra
+        src_tapps_brain_agent_brain_py[&quot;agent_brain.py&quot;]:::infra
+        src_tapps_brain_agent_scope_py[&quot;agent_scope.py&quot;]:::infra
+        src_tapps_brain_aio_py[&quot;aio.py&quot;]:::infra
+        src_tapps_brain_async_postgres_kg_py[&quot;async_postgres_kg.py&quot;]:::infra
+        src_tapps_brain_async_postgres_private_py[&quot;async_postgres_private.py&quot;]:::infra
+        src_tapps_brain_audit_py[&quot;audit.py&quot;]:::infra
+        src_tapps_brain_auto_consolidation_py[&quot;auto_consolidation.py&quot;]:::infra
+        src_tapps_brain_backends_py[&quot;backends.py&quot;]:::infra
+        src_tapps_brain_benchmarks___init___py[&quot;__init__.py&quot;]:::infra
+        src_tapps_brain_benchmarks__common_py[&quot;_common.py&quot;]:::infra
+        src_tapps_brain_benchmarks_locomo_py[&quot;locomo.py&quot;]:::infra
+        src_tapps_brain_benchmarks_longmemeval_py[&quot;longmemeval.py&quot;]:::infra
+        src_tapps_brain_bloom_py[&quot;bloom.py&quot;]:::infra
+        src_tapps_brain_bm25_py[&quot;bm25.py&quot;]:::infra
+        src_tapps_brain_cli___init___py[&quot;__init__.py&quot;]:::infra
+        src_tapps_brain_cli__common_py[&quot;_common.py&quot;]:::infra
+        src_tapps_brain_cli_diagnostics_py[&quot;diagnostics.py&quot;]:::infra
+        src_tapps_brain_cli_feedback_py[&quot;feedback.py&quot;]:::data
+        src_tapps_brain_cli_hive_py[&quot;hive.py&quot;]:::infra
+        src_tapps_brain_cli_maintenance_py[&quot;maintenance.py&quot;]:::infra
+        src_tapps_brain_cli_memory_py[&quot;memory.py&quot;]:::data
+        src_tapps_brain_cli_openclaw_py[&quot;openclaw.py&quot;]:::infra
+        src_tapps_brain_cli_serve_py[&quot;serve.py&quot;]:::infra
+        src_tapps_brain_cli_session_py[&quot;session.py&quot;]:::infra
+        src_tapps_brain_cli_store_py[&quot;store.py&quot;]:::data
+        src_tapps_brain_cli_top_level_py[&quot;top_level.py&quot;]:::infra
+        src_tapps_brain_cli_visual_py[&quot;visual.py&quot;]:::infra
+        src_tapps_brain_client_py[&quot;client.py&quot;]:::presentation
+        src_tapps_brain_consolidation_py[&quot;consolidation.py&quot;]:::infra
+        src_tapps_brain_contradictions_py[&quot;contradictions.py&quot;]:::infra
+        src_tapps_brain_decay_py[&quot;decay.py&quot;]:::infra
+        src_tapps_brain_diagnostics_py[&quot;diagnostics.py&quot;]:::infra
+        src_tapps_brain_doc_validation_py[&quot;doc_validation.py&quot;]:::infra
+        src_tapps_brain_embeddings_py[&quot;embeddings.py&quot;]:::infra
+        src_tapps_brain_errors_py[&quot;errors.py&quot;]:::infra
+        src_tapps_brain_evaluation_py[&quot;evaluation.py&quot;]:::infra
+        src_tapps_brain_exceptions_py[&quot;exceptions.py&quot;]:::infra
+        src_tapps_brain_experience_py[&quot;experience.py&quot;]:::infra
+        src_tapps_brain_extraction_py[&quot;extraction.py&quot;]:::infra
+        src_tapps_brain_feedback_py[&quot;feedback.py&quot;]:::data
+        src_tapps_brain_flywheel_py[&quot;flywheel.py&quot;]:::infra
+        src_tapps_brain_fusion_py[&quot;fusion.py&quot;]:::infra
+    end
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_aio_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_async_postgres_private_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_bm25_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_client_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_client_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_client_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_client_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_consolidation_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain___init___py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain__save_conflict_py -.-&gt; src_tapps_brain_contradictions_py
+    src_tapps_brain__save_pipeline_py --&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain__save_propagation_py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_agent_brain_py --&gt; src_tapps_brain_backends_py
+    src_tapps_brain_agent_brain_py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_agent_brain_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_agent_brain_py -.-&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain_aio_py -.-&gt; src_tapps_brain_audit_py
+    src_tapps_brain_aio_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_async_postgres_kg_py --&gt; src_tapps_brain__postgres_kg_sql_py
+    src_tapps_brain_async_postgres_kg_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_async_postgres_private_py --&gt; src_tapps_brain__postgres_private_sql_py
+    src_tapps_brain_auto_consolidation_py --&gt; src_tapps_brain_consolidation_py
+    src_tapps_brain_backends_py --&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain_backends_py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_backends_py -.-&gt; src_tapps_brain_async_postgres_kg_py
+    src_tapps_brain_backends_py -.-&gt; src_tapps_brain_async_postgres_kg_py
+    src_tapps_brain_benchmarks___init___py --&gt; src_tapps_brain_benchmarks__common_py
+    src_tapps_brain_benchmarks___init___py --&gt; src_tapps_brain_benchmarks_locomo_py
+    src_tapps_brain_benchmarks___init___py --&gt; src_tapps_brain_benchmarks_longmemeval_py
+    src_tapps_brain_benchmarks_locomo_py --&gt; src_tapps_brain_benchmarks__common_py
+    src_tapps_brain_benchmarks_longmemeval_py --&gt; src_tapps_brain_benchmarks__common_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_diagnostics_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_feedback_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_hive_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_maintenance_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_memory_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_openclaw_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_serve_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_session_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_store_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_top_level_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_visual_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_diagnostics_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_feedback_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_maintenance_py
+    src_tapps_brain_cli___init___py --&gt; src_tapps_brain_cli_serve_py
+    src_tapps_brain_cli__common_py --&gt; src_tapps_brain___init___py
+    src_tapps_brain_cli__common_py --&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain_cli__common_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli__common_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli__common_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_cli_diagnostics_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_diagnostics_py -.-&gt; src_tapps_brain_evaluation_py
+    src_tapps_brain_cli_diagnostics_py -.-&gt; src_tapps_brain_flywheel_py
+    src_tapps_brain_cli_feedback_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_hive_py --&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain_cli_hive_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_hive_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_maintenance_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_maintenance_py -.-&gt; src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_cli_maintenance_py -.-&gt; src_tapps_brain_evaluation_py
+    src_tapps_brain_cli_maintenance_py -.-&gt; src_tapps_brain_evaluation_py
+    src_tapps_brain_cli_maintenance_py -.-&gt; src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_cli_maintenance_py -.-&gt; src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_cli_memory_py --&gt; src_tapps_brain_agent_scope_py
+    src_tapps_brain_cli_memory_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_memory_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_cli_openclaw_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_serve_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_serve_py -.-&gt; src_tapps_brain_backends_py
+    src_tapps_brain_cli_session_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_store_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_top_level_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_cli_top_level_py -.-&gt; src_tapps_brain_agent_brain_py
+    src_tapps_brain_cli_top_level_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_cli_visual_py --&gt; src_tapps_brain_cli__common_py
+    src_tapps_brain_client_py -.-&gt; src_tapps_brain_errors_py
+    src_tapps_brain_client_py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain_client_py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain_client_py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain_client_py -.-&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain_contradictions_py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_diagnostics_py --&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_diagnostics_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_diagnostics_py -.-&gt; src_tapps_brain_flywheel_py
+    src_tapps_brain_diagnostics_py -.-&gt; src_tapps_brain_auto_consolidation_py
+    src_tapps_brain_doc_validation_py --&gt; src_tapps_brain_bm25_py
+    src_tapps_brain_doc_validation_py -.-&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_doc_validation_py -.-&gt; src_tapps_brain_decay_py
+    src_tapps_brain_errors_py --&gt; src_tapps_brain_exceptions_py
+    src_tapps_brain_evaluation_py -.-&gt; src_tapps_brain_contradictions_py
+    src_tapps_brain_evaluation_py -.-&gt; src_tapps_brain__feature_flags_py
+    src_tapps_brain_evaluation_py -.-&gt; src_tapps_brain__feature_flags_py
+    src_tapps_brain_experience_py --&gt; src_tapps_brain__postgres_kg_sql_py
+    src_tapps_brain_flywheel_py --&gt; src_tapps_brain__protocols_py
+    src_tapps_brain_flywheel_py --&gt; src_tapps_brain_feedback_py
+    %% Truncated: showing 50 of 138 modules
+    classDef presentation fill:#F5A9D0,stroke:#333,color:#000
+    classDef business fill:#14B8A6,stroke:#333,color:#fff
+    classDef data fill:#9333EA,stroke:#333,color:#fff
+    classDef infra fill:#6B7280,stroke:#333,color:#fff
 
-<div class="component-card">
-  <div class="component-header" style="background: linear-gradient(
-    135deg, #14b8a6, #2dd4bf);">
-    <h3 class="component-name">mcp_server</h3>
-    <div class="component-stats">
-      <span>2 modules</span>
-      <span>18 functions</span>
-      <span>2 classes</span>
-    </div>
-  </div>
-  <div class="component-body">
-    <p class="component-description">The mcp_server package mcp server exposing tapps-brain via model context protocol. It is composed of 2 modules that work together to deliver its capabilities. The package exposes 18 functions and 2 classes, offering both procedural and object-oriented interfaces to its consumers. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
-    <div class="submodule-list">
-      <h4>Key Modules</h4>
-      <ul>
-        <li><code>operator</code></li>
-        <li><code>standard</code></li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<div class="component-card">
-  <div class="component-header" style="background: linear-gradient(
-    135deg, #d4a847, #e8c060);">
-    <h3 class="component-name">migrations</h3>
-    <div class="component-stats">
-      <span>4 modules</span>
-      <span>0 functions</span>
-      <span>0 classes</span>
-    </div>
-  </div>
-  <div class="component-body">
-    <p class="component-description">The migrations package provides a cohesive set of functionality that serves as a building block within the larger system. It is composed of 4 modules that work together to deliver its capabilities. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
-    <div class="submodule-list">
-      <h4>Key Modules</h4>
-      <ul>
-        <li><code>federation</code></li>
-        <li><code>hive</code></li>
-        <li><code>private</code></li>
-        <li><code>roles</code></li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<div class="component-card">
-  <div class="component-header" style="background: linear-gradient(
-    135deg, #0d9488, #14b8a6);">
-    <h3 class="component-name">profiles</h3>
-    <div class="component-stats">
-      <span>1 modules</span>
-      <span>0 functions</span>
-      <span>0 classes</span>
-    </div>
-  </div>
-  <div class="component-body">
-    <p class="component-description">The profiles package provides a cohesive set of functionality that serves as a building block within the larger system. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
-  </div>
-</div>
-
-<div class="component-card">
-  <div class="component-header" style="background: linear-gradient(
-    135deg, #38bdf8, #60a5fa);">
-    <h3 class="component-name">services</h3>
-    <div class="component-stats">
-      <span>9 modules</span>
-      <span>69 functions</span>
-      <span>0 classes</span>
-    </div>
-  </div>
-  <div class="component-body">
-    <p class="component-description">The services package pure, transport-agnostic service functions for tapps-brain (epic-070 story-070.1). It is composed of 9 modules that work together to deliver its capabilities. With 69 functions, it provides a functional interface designed for straightforward integration. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
-    <div class="submodule-list">
-      <h4>Key Modules</h4>
-      <ul>
-        <li><code>agents_service</code></li>
-        <li><code>diagnostics_service</code></li>
-        <li><code>feedback_service</code></li>
-        <li><code>flywheel_service</code></li>
-        <li><code>hive_service</code></li>
-        <li><code>maintenance_service</code></li>
-        <li><code>memory_service</code></li>
-        <li><code>profile_service</code></li>
-        <li><code>relay_service</code></li>
-      </ul>
-    </div>
-  </div>
-</div>
-</section>
-<section class="section" id="dependency-flow" role="region" aria-labelledby="dep-flow-heading">
-<h2 class="section-title" id="dep-flow-heading">Dependency Flow</h2>
-<p><strong>Why this matters:</strong> The dependency flow reveals coupling between packages. Arrows show import relationships; understanding them helps plan refactors and avoid circular dependencies.</p>
-<figure role="figure" aria-labelledby="dep-flow-figcaption">
-<div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 700" class="dep-svg">
-  <defs>
-    <filter id="dshadow" x="-15%" y="-15%" width="130%" height="130%">
-      <feDropShadow dx="1" dy="3" stdDeviation="4" flood-opacity="0.2"/>
-    </filter>
-    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#a1a1aa"/>
-    </marker>
-    <linearGradient id="dgrad0" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#2dd4bf"/>
-    </linearGradient>
-    <linearGradient id="dgrad1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#d4a847"/>
-      <stop offset="100%" stop-color="#e8c060"/>
-    </linearGradient>
-    <linearGradient id="dgrad2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0d9488"/>
-      <stop offset="100%" stop-color="#14b8a6"/>
-    </linearGradient>
-    <linearGradient id="dgrad3" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#60a5fa"/>
-    </linearGradient>
-  </defs>
-  <rect width="800" height="700" rx="16" fill="#0a0a0f"/>
-  <text x="400" y="35" text-anchor="middle" fill="#fafafa" font-size="18" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Dependency Flow</text>
-  <path d="M 400 100 Q 325 275 150 350" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
-  <circle cx="400" cy="100" r="50" fill="url(#dgrad0)" filter="url(#dshadow)"/>
-  <text x="400" y="105" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
-  <circle cx="650" cy="350" r="50" fill="url(#dgrad1)" filter="url(#dshadow)"/>
-  <text x="650" y="355" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
-  <circle cx="400" cy="600" r="50" fill="url(#dgrad2)" filter="url(#dshadow)"/>
-  <text x="400" y="605" text-anchor="middle" fill="#fafafa" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
-  <circle cx="150" cy="350" r="50" fill="url(#dgrad3)" filter="url(#dshadow)"/>
-  <text x="150" y="355" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
-</svg></div>
-<figcaption id="dep-flow-figcaption">Package import relationships</figcaption>
-</figure>
-</section>
-<section class="section" id="api-surface">
-<h2 class="section-title">Public API Surface</h2>
-<p>The public API surface defines the contract between this project and its consumers. Classes listed below represent publicly accessible interfaces that external code may depend upon. This is a curated selection of the 54 public classes discovered.</p>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/agent_brain.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BrainError</code> <span class="api-bases">extends Exception</span>
-    </div>
-    <p class="api-doc">Base class for all tapps-brain exceptions raised through the public API.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BrainConfigError</code> <span class="api-bases">extends BrainError</span>
-    </div>
-    <p class="api-doc">Raised when the agent cannot be started due to a configuration problem.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BrainTransientError</code> <span class="api-bases">extends BrainError</span>
-    </div>
-    <p class="api-doc">Raised when an operation fails due to a transient infrastructure problem.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BrainValidationError</code> <span class="api-bases">extends BrainError, ValueError</span>
-    </div>
-    <p class="api-doc">Raised when a caller-supplied value fails validation.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AgentBrain</code>
-    </div>
-    <p class="api-doc">Simple, agent-facing API that wraps MemoryStore + HiveBackend.</p>
-    <div class="api-methods">Methods: <code>agent_id</code>, <code>store</code>, <code>hive</code>, <code>groups</code>, <code>expert_domains</code>, <code>close</code>, <code>remember</code>, <code>recall</code> <em>+2 more</em></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/aio.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AsyncMemoryStore</code>
-    </div>
-    <p class="api-doc">Async facade over :class:`MemoryStore`.</p>
-    <div class="api-methods">Methods: <code>open</code>, <code>sync_store</code>, <code>project_root</code>, <code>profile</code>, <code>save</code>, <code>get</code>, <code>delete</code>, <code>search</code> <em>+2 more</em></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/audit.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AuditEntry</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">A single entry from the audit trail.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AuditReader</code>
-    </div>
-    <p class="api-doc">Query interface for the audit trail.</p>
-    <div class="api-methods">Methods: <code>query</code>, <code>count</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/auto_consolidation.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">ConsolidationUndoResult</code>
-    </div>
-    <p class="api-doc">Outcome of ``undo_consolidation_merge`` (EPIC-044 STORY-044.4).</p>
-    <div class="api-methods">Methods: <code>to_dict</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">ConsolidationResult</code>
-    </div>
-    <p class="api-doc">Result of a consolidation operation.</p>
-    <div class="api-methods">Methods: <code>to_dict</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">PeriodicScanResult</code>
-    </div>
-    <p class="api-doc">Result of a periodic consolidation scan.</p>
-    <div class="api-methods">Methods: <code>to_dict</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/backends.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AgentRegistry</code>
-    </div>
-    <p class="api-doc">YAML-backed registry of agents participating in the Hive.</p>
-    <div class="api-methods">Methods: <code>register</code>, <code>unregister</code>, <code>get</code>, <code>list_agents</code>, <code>agents_for_domain</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">FileAgentRegistryBackend</code>
-    </div>
-    <p class="api-doc">File-backed :class:`AgentRegistryBackend` (``agents.yaml``).</p>
-    <div class="api-methods">Methods: <code>register</code>, <code>unregister</code>, <code>get</code>, <code>list_agents</code>, <code>agents_for_domain</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">PropagationEngine</code>
-    </div>
-    <p class="api-doc">Routes memory entries to the Hive based on ``agent_scope``.</p>
-    <div class="api-methods">Methods: <code>propagate</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/bloom.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BloomFilter</code>
-    </div>
-    <p class="api-doc">Bloom filter with size/hash count derived from expected load and target FP rate.</p>
-    <div class="api-methods">Methods: <code>bit_size</code>, <code>hash_count</code>, <code>add</code>, <code>might_contain</code>, <code>count</code>, <code>approximate_false_positive_rate</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/bm25.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BM25Scorer</code>
-    </div>
-    <p class="api-doc">Okapi BM25 ranking function over a pre-built document index.</p>
-    <div class="api-methods">Methods: <code>build_index</code>, <code>score</code>, <code>score_batch</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/client.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">BrainClientProtocol</code> <span class="api-bases">extends Protocol</span>
-    </div>
-    <p class="api-doc">Minimal protocol that both sync and async clients satisfy.</p>
-    <div class="api-methods">Methods: <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>close</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">TappsBrainClient</code>
-    </div>
-    <p class="api-doc">Synchronous tapps-brain client.</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code>, <code>memory_get</code> <em>+2 more</em></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">AsyncTappsBrainClient</code>
-    </div>
-    <p class="api-doc">Asynchronous tapps-brain client.</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code>, <code>memory_get</code> <em>+2 more</em></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/contradictions.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">SaveConflictHit</code> <span class="api-bases">extends NamedTuple</span>
-    </div>
-    <p class="api-doc">One existing entry flagged as conflicting with an incoming save.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">Contradiction</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">A detected contradiction between a memory and project state.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">ContradictionDetector</code>
-    </div>
-    <p class="api-doc">Detects memories that contradict observable project state.</p>
-    <div class="api-methods">Methods: <code>detect_contradictions</code></div>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/decay.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DecayConfig</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">Configuration for memory confidence decay.</p>
-  </div>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/diagnostics.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DimensionScore</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">Normalized score for a single health dimension.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DiagnosticsReport</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">Full diagnostics snapshot for a memory store.</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DiagnosticsConfig</code> <span class="api-bases">extends BaseModel</span>
-    </div>
-    <p class="api-doc">Host configuration for diagnostics (profile YAML).</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">CircuitState</code> <span class="api-bases">extends StrEnum</span>
-    </div>
-    <p class="api-doc">Circuit breaker states (STORY-030.4).</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DiagnosticsHistoryStore</code>
-    </div>
-    <p class="api-doc">Append-only diagnostics history scoped to ``(project_id, agent_id)``.</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>record</code>, <code>history</code>, <code>prune_older_than</code>, <code>rolling_average</code></div>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">InMemoryDiagnosticsHistoryStore</code>
-    </div>
-    <p class="api-doc">Thread-safe in-memory diagnostics history — used when no Postgres ``cm``</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>record</code>, <code>history</code>, <code>prune_older_than</code>, <code>rolling_average</code></div>
-  </div>
-  <p class="api-doc"><em>+2 more classes</em></p>
-</div>
-<div class="api-module">
-  <h4 class="api-module-path">src/tapps_brain/doc_validation.py</h4>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">ClaimType</code> <span class="api-bases">extends StrEnum</span>
-    </div>
-    <p class="api-doc">Type of library claim extracted from a memory value.</p>
-  </div>
-  <p class="api-doc"><em>+6 more classes</em></p>
-</div>
-<p style="color:var(--text-muted);font-size:0.75rem;">Showing 30 of 54 public classes. 24 additional classes omitted for brevity.</p>
-</section>
-<section class="section" id="tech-stack" role="region" aria-labelledby="tech-stack-heading">
-<h2 class="section-title" id="tech-stack-heading">Technology Stack</h2>
-<p><strong>Why this matters:</strong> Understanding dependencies helps set up your environment, assess supply-chain risk, and plan upgrades.</p>
-<p>The technology stack represents the foundation upon which this project is built. Each dependency has been selected to address specific technical requirements, from core framework capabilities to development tooling. Understanding these dependencies helps developers set up their environment and appreciate the design choices made.</p>
-<div class="dep-group">
-  <h4>Runtime Dependencies</h4>
-  <div class="dep-tags">
-    <span class="dep-tag">numpy</span>
-    <span class="dep-tag">opentelemetry-api</span>
-    <span class="dep-tag">psycopg</span>
-    <span class="dep-tag">pydantic</span>
-    <span class="dep-tag">pyyaml</span>
-    <span class="dep-tag">sentence-transformers</span>
-    <span class="dep-tag">structlog</span>
-  </div>
-</div>
-<div class="dep-group">
-  <h4>Development Dependencies</h4>
-  <div class="dep-tags">
-    <span class="dep-tag dep-dev">argon2-cffi</span>
-    <span class="dep-tag dep-dev">fastapi</span>
-    <span class="dep-tag dep-dev">flashrank</span>
-    <span class="dep-tag dep-dev">httpx</span>
-    <span class="dep-tag dep-dev">mcp</span>
-    <span class="dep-tag dep-dev">opentelemetry-sdk</span>
-    <span class="dep-tag dep-dev">playwright</span>
-    <span class="dep-tag dep-dev">starlette</span>
-    <span class="dep-tag dep-dev">tapps-brain</span>
-    <span class="dep-tag dep-dev">typer</span>
-    <span class="dep-tag dep-dev">uvicorn</span>
-  </div>
-</div>
-</section>
-<section class="section" id="health-insights">
-<h2 class="section-title">Architecture Health</h2>
-<p>Key indicators for technical leadership assessing system maturity, maintainability risk, and architectural fitness.</p>
-<div class="stats-grid">
-
-<div class="stat-card">
-  <div class="stat-number" style="color:var(--accent-secondary)">Medium</div>
-  <div class="stat-label">Modularity</div>
-</div>
-
-<div class="stat-card">
-  <div class="stat-number">4.0</div>
-  <div class="stat-label">Avg Modules/Package</div>
-</div>
-
-<div class="stat-card">
-  <div class="stat-number" style="color:var(--accent-primary)">Low</div>
-  <div class="stat-label">External Coupling</div>
-</div>
-
-<div class="stat-card">
-  <div class="stat-number">337.5%</div>
-  <div class="stat-label">Class Coverage</div>
+</pre>
 </div>
 </div>
-<div class="purpose-block">
-<h3>Highest Functionality Concentration</h3><p class="purpose-text">Packages with the most functions represent the core business logic. These are the most critical to test thoroughly and document carefully:</p>
-<div class="dep-tags" style="margin-top:12px">
-<span class="dep-tag">services (69 fn)</span>
-<span class="dep-tag">mcp_server (18 fn)</span>
-</div></div>
-<div class="purpose-block">
-<h3>Recommendations</h3>
-<p class="purpose-text">Architecture appears well-structured. Continue monitoring package boundaries as the codebase evolves.</p>
-</div>
-</section>
+<div class="diagram-section" id="diagram-1">
+<h2>Module Map</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph tapps_brain[&quot;tapps-brain&quot;]
+        src_tapps_brain_agent_brain_py[&quot;agent_brain (2F, 5C)&quot;]:::infra
+        src_tapps_brain_agent_scope_py[&quot;agent_scope (3F)&quot;]:::infra
+        src_tapps_brain_aio_py[&quot;aio (2C)&quot;]:::infra
+        src_tapps_brain_async_postgres_kg_py[&quot;async_postgres_kg (1C)&quot;]:::infra
+        src_tapps_brain_async_postgres_private_py[&quot;async_postgres_private (1C)&quot;]:::infra
+        src_tapps_brain_audit_py[&quot;audit (2C)&quot;]:::infra
+        src_tapps_brain_auto_consolidation_py[&quot;auto_consolidation (11F, 3C)&quot;]:::infra
+        src_tapps_brain_backends_py[&quot;backends (12F, 3C)&quot;]:::infra
+        subgraph src_tapps_brain_benchmarks[&quot;benchmarks/&quot;]
+            src_tapps_brain_benchmarks_locomo_py[&quot;locomo (3F, 1C)&quot;]:::infra
+            src_tapps_brain_benchmarks_longmemeval_py[&quot;longmemeval (4F, 1C)&quot;]:::infra
+        end
+        src_tapps_brain_bloom_py[&quot;bloom (2F, 1C)&quot;]:::infra
+        src_tapps_brain_bm25_py[&quot;bm25 (3F, 1C)&quot;]:::infra
+        subgraph src_tapps_brain_cli[&quot;cli/&quot;]
+            src_tapps_brain_cli_diagnostics_py[&quot;diagnostics (11F)&quot;]:::presentation
+            src_tapps_brain_cli_feedback_py[&quot;feedback (8F)&quot;]:::presentation
+            src_tapps_brain_cli_hive_py[&quot;hive (10F)&quot;]:::presentation
+            src_tapps_brain_cli_maintenance_py[&quot;maintenance (18F)&quot;]:::presentation
+            src_tapps_brain_cli_memory_py[&quot;memory (9F)&quot;]:::presentation
+            src_tapps_brain_cli_openclaw_py[&quot;openclaw (2F)&quot;]:::presentation
+            src_tapps_brain_cli_serve_py[&quot;serve (9F)&quot;]:::presentation
+            src_tapps_brain_cli_session_py[&quot;session (3F)&quot;]:::presentation
+            src_tapps_brain_cli_store_py[&quot;store (5F)&quot;]:::presentation
+            src_tapps_brain_cli_top_level_py[&quot;top_level (15F)&quot;]:::presentation
+            src_tapps_brain_cli_visual_py[&quot;visual (2F)&quot;]:::presentation
+        end
+        src_tapps_brain_client_py[&quot;client (19F, 4C)&quot;]:::presentation
+        src_tapps_brain_consolidation_py[&quot;consolidation (11F)&quot;]:::infra
+        src_tapps_brain_contradictions_py[&quot;contradictions (6F, 4C)&quot;]:::infra
+        src_tapps_brain_decay_py[&quot;decay (12F, 1C)&quot;]:::infra
+        src_tapps_brain_diagnostics_py[&quot;diagnostics (16F, 9C)&quot;]:::infra
+        src_tapps_brain_doc_validation_py[&quot;doc_validation (3F, 12C)&quot;]:::infra
+        src_tapps_brain_embeddings_py[&quot;embeddings (6F, 1C)&quot;]:::infra
+        src_tapps_brain_errors_py[&quot;errors (5F, 10C)&quot;]:::infra
+        src_tapps_brain_evaluation_py[&quot;evaluation (15F, 19C)&quot;]:::infra
+        src_tapps_brain_exceptions_py[&quot;exceptions (2F, 6C)&quot;]:::infra
+        src_tapps_brain_experience_py[&quot;experience (8C)&quot;]:::infra
+        src_tapps_brain_extraction_py[&quot;extraction (3F)&quot;]:::infra
+        src_tapps_brain_feedback_py[&quot;feedback (1F, 4C)&quot;]:::data
+        src_tapps_brain_flywheel_py[&quot;flywheel (17F, 16C)&quot;]:::infra
+        src_tapps_brain_fusion_py[&quot;fusion (3F)&quot;]:::infra
+        src_tapps_brain_gc_py[&quot;gc (3F, 4C)&quot;]:::infra
+        src_tapps_brain_health_check_py[&quot;health_check (4F, 4C)&quot;]:::infra
+        subgraph src_tapps_brain_http[&quot;http/&quot;]
+            src_tapps_brain_http_auth_py[&quot;auth (7F)&quot;]:::infra
+            src_tapps_brain_http_metrics_collector_py[&quot;metrics_collector (3F)&quot;]:::infra
+            src_tapps_brain_http_middleware_py[&quot;middleware (5F, 4C)&quot;]:::infra
+            src_tapps_brain_http_probe_cache_py[&quot;probe_cache (2F)&quot;]:::infra
+            src_tapps_brain_http_profile_resolver_py[&quot;profile_resolver (1F)&quot;]:::infra
+            src_tapps_brain_http_rest_profile_gate_py[&quot;rest_profile_gate (3F)&quot;]:::infra
+            src_tapps_brain_http_settings_py[&quot;settings (3F, 1C)&quot;]:::infra
+        end
+        src_tapps_brain_http_adapter_py[&quot;http_adapter (19F, 5C)&quot;]:::infra
+        src_tapps_brain_idempotency_py[&quot;idempotency (2F, 1C)&quot;]:::infra
+        src_tapps_brain_injection_py[&quot;injection (11F, 1C)&quot;]:::infra
+        src_tapps_brain_integrity_py[&quot;integrity (7F, 2C)&quot;]:::infra
+        src_tapps_brain_io_py[&quot;io (5F)&quot;]:::infra
+        src_tapps_brain_kg_query_analysis_py[&quot;kg_query_analysis (2F, 2C)&quot;]:::infra
+        src_tapps_brain_lexical_py[&quot;lexical (5F, 1C)&quot;]:::infra
+        src_tapps_brain_markdown_import_py[&quot;markdown_import (7F)&quot;]:::infra
+        src_tapps_brain_markdown_sync_py[&quot;markdown_sync (13F)&quot;]:::infra
+        subgraph src_tapps_brain_mcp_server[&quot;mcp_server/&quot;]
+            src_tapps_brain_mcp_server_context_py[&quot;context (11F, 3C)&quot;]:::presentation
+            src_tapps_brain_mcp_server_operator_py[&quot;operator&quot;]:::presentation
+            src_tapps_brain_mcp_server_profile_registry_py[&quot;profile_registry (2C)&quot;]:::presentation
+            src_tapps_brain_mcp_server_profile_resolver_py[&quot;profile_resolver (1C)&quot;]:::presentation
+            src_tapps_brain_mcp_server_server_py[&quot;server (12F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_standard_py[&quot;standard&quot;]:::presentation
+            src_tapps_brain_mcp_server_tool_filter_py[&quot;tool_filter (10F, 1C)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_agents_py[&quot;tools_agents (1F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_brain_py[&quot;tools_brain (1F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_feedback_py[&quot;tools_feedback (1F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_hive_py[&quot;tools_hive (1F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_kg_py[&quot;tools_kg (5F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_maintenance_py[&quot;tools_maintenance (1F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_memory_py[&quot;tools_memory (2F)&quot;]:::presentation
+            src_tapps_brain_mcp_server_tools_resources_py[&quot;tools_resources (1F)&quot;]:::presentation
+        end
+        src_tapps_brain_memory_group_py[&quot;memory_group (1F, 1C)&quot;]:::data
+        src_tapps_brain_memory_relay_py[&quot;memory_relay (7F, 1C)&quot;]:::data
+        src_tapps_brain_metrics_py[&quot;metrics (1F, 6C)&quot;]:::infra
+        subgraph src_tapps_brain_migrations[&quot;migrations/&quot;]
+            subgraph src_tapps_brain_migrations_federation[&quot;federation/&quot;]
+            end
+            subgraph src_tapps_brain_migrations_hive[&quot;hive/&quot;]
+            end
+            subgraph src_tapps_brain_migrations_private[&quot;private/&quot;]
+            end
+            subgraph src_tapps_brain_migrations_roles[&quot;roles/&quot;]
+            end
+        end
+        src_tapps_brain_models_py[&quot;models (3F, 14C)&quot;]:::data
+        src_tapps_brain_onboarding_py[&quot;onboarding (1F)&quot;]:::infra
+        src_tapps_brain_openapi_contract_py[&quot;openapi_contract (10F)&quot;]:::presentation
+        src_tapps_brain_otel_exporter_py[&quot;otel_exporter (9F, 5C)&quot;]:::infra
+        src_tapps_brain_otel_tracer_py[&quot;otel_tracer (20F)&quot;]:::infra
+        src_tapps_brain_postgres_connection_py[&quot;postgres_connection (1C)&quot;]:::infra
+        src_tapps_brain_postgres_federation_py[&quot;postgres_federation (1C)&quot;]:::infra
+        src_tapps_brain_postgres_hive_py[&quot;postgres_hive (2C)&quot;]:::infra
+        src_tapps_brain_postgres_kg_py[&quot;postgres_kg (2F, 2C)&quot;]:::infra
+        src_tapps_brain_postgres_migrations_py[&quot;postgres_migrations (22F, 2C)&quot;]:::infra
+        src_tapps_brain_postgres_private_py[&quot;postgres_private (3F, 2C)&quot;]:::infra
+        src_tapps_brain_profile_py[&quot;profile (8F, 16C)&quot;]:::infra
+        subgraph src_tapps_brain_profiles[&quot;profiles/&quot;]
+        end
+        src_tapps_brain_project_registry_py[&quot;project_registry (1F, 3C)&quot;]:::infra
+        src_tapps_brain_project_resolver_py[&quot;project_resolver (3F, 1C)&quot;]:::infra
+        src_tapps_brain_promotion_py[&quot;promotion (1C)&quot;]:::infra
+        src_tapps_brain_rate_limiter_py[&quot;rate_limiter (1F, 4C)&quot;]:::infra
+        src_tapps_brain_recall_py[&quot;recall (1F, 2C)&quot;]:::infra
+        src_tapps_brain_recall_diagnostics_py[&quot;recall_diagnostics&quot;]:::infra
+        src_tapps_brain_recall_quality_buffer_py[&quot;recall_quality_buffer (4F, 1C)&quot;]:::infra
+        src_tapps_brain_reinforcement_py[&quot;reinforcement (1F)&quot;]:::infra
+        src_tapps_brain_relations_py[&quot;relations (6F, 1C)&quot;]:::infra
+        src_tapps_brain_reranker_py[&quot;reranker (4F, 3C)&quot;]:::infra
+        src_tapps_brain_retrieval_py[&quot;retrieval (3F, 4C)&quot;]:::infra
+        src_tapps_brain_safety_py[&quot;safety (7F, 1C)&quot;]:::infra
+        src_tapps_brain_seeding_py[&quot;seeding (8F)&quot;]:::infra
+        subgraph src_tapps_brain_services[&quot;services/&quot;]
+            src_tapps_brain_services_agents_service_py[&quot;agents_service (4F)&quot;]:::business
+            src_tapps_brain_services_diagnostics_service_py[&quot;diagnostics_service (3F)&quot;]:::business
+            src_tapps_brain_services_feedback_service_py[&quot;feedback_service (5F)&quot;]:::business
+            src_tapps_brain_services_flywheel_service_py[&quot;flywheel_service (5F)&quot;]:::business
+            src_tapps_brain_services_hive_service_py[&quot;hive_service (6F)&quot;]:::business
+            src_tapps_brain_services_kg_service_py[&quot;kg_service (11F)&quot;]:::business
+            src_tapps_brain_services_maintenance_service_py[&quot;maintenance_service (4F)&quot;]:::business
+            src_tapps_brain_services_memory_service_py[&quot;memory_service (54F)&quot;]:::business
+            src_tapps_brain_services_profile_service_py[&quot;profile_service (3F)&quot;]:::business
+            src_tapps_brain_services_relay_service_py[&quot;relay_service (1F)&quot;]:::business
+        end
+        src_tapps_brain_session_index_py[&quot;session_index (3F, 1C)&quot;]:::infra
+        src_tapps_brain_session_summary_py[&quot;session_summary (3F)&quot;]:::infra
+        src_tapps_brain_similarity_py[&quot;similarity (12F, 1C)&quot;]:::infra
+        src_tapps_brain_store_py[&quot;store (8F, 3C)&quot;]:::data
+        src_tapps_brain_tier_normalize_py[&quot;tier_normalize (1F)&quot;]:::infra
+        src_tapps_brain_visual_snapshot_py[&quot;visual_snapshot (18F, 12C)&quot;]:::infra
+        src_tapps_brain_write_policy_py[&quot;write_policy (1F, 4C)&quot;]:::infra
+    end
+    classDef presentation fill:#F5A9D0,stroke:#333,color:#000
+    classDef business fill:#14B8A6,stroke:#333,color:#fff
+    classDef data fill:#9333EA,stroke:#333,color:#fff
+    classDef infra fill:#6B7280,stroke:#333,color:#fff
 
-<footer class="footer">
-  <p><a href="#" class="back-to-top">Back to top</a></p>
-  <p>Generated by <strong>DocsMCP</strong> &mdash; Architecture Report</p>
-  <p style="margin-top:6px">
-    4 packages &middot; 16 modules &middot;
-    54 public classes &middot; 2026-04-16 01:19 UTC
-  </p>
-</footer>
+</pre>
+</div>
+</div>
+<div class="diagram-section" id="diagram-2">
+<h2>C4 System Context</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+C4Context
+    title System Context diagram for tapps-brain
+
+    System(tapps_brain, &quot;tapps-brain&quot;, &quot;Persistent cross-session memory system for AI coding assistants&quot;)
+
+    Person(User, &quot;User&quot;, &quot;Primary system user&quot;)
+
+    Rel(User, tapps_brain, &quot;Uses&quot;)
+
+    UpdateElementStyle(tapps_brain, $bgColor=&quot;#14B8A6&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(User, $bgColor=&quot;#F5A9D0&quot;, $fontColor=&quot;#000&quot;, $borderColor=&quot;#333&quot;)
+
+
+</pre>
+</div>
+</div>
+<div class="diagram-section" id="diagram-3">
+<h2>C4 Container</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+C4Container
+    title Container diagram for tapps-brain
+
+    System_Boundary(tapps_brain, &quot;tapps-brain&quot;) {
+        Container(tapps_brain, &quot;tapps_brain&quot;, &quot;Python&quot;, &quot;Python package: tapps_brain&quot;)
+        Container(DockerCompose, &quot;DockerCompose&quot;, &quot;Docker Compose&quot;, &quot;Service orchestration&quot;)
+    }
+
+    Rel(tapps_brain, DockerCompose, &quot;Uses&quot;)
+
+    UpdateElementStyle(tapps_brain, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(DockerCompose, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+
+
+</pre>
+</div>
+</div>
+<div class="diagram-section" id="diagram-4">
+<h2>C4 Component</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+C4Component
+    title Component diagram for tapps-brain
+
+    Container_Boundary(tapps_brain, &quot;tapps-brain&quot;) {
+        Component(agent_brain, &quot;agent_brain&quot;, &quot;Python&quot;, &quot;2 functions, 5 classes&quot;)
+        Component(agent_scope, &quot;agent_scope&quot;, &quot;Python&quot;, &quot;3 functions, 0 classes&quot;)
+        Component(aio, &quot;aio&quot;, &quot;Python&quot;, &quot;0 functions, 2 classes&quot;)
+        Component(async_postgres_kg, &quot;async_postgres_kg&quot;, &quot;Python&quot;, &quot;0 functions, 1 classes&quot;)
+        Component(async_postgres_private, &quot;async_postgres_private&quot;, &quot;Python&quot;, &quot;0 functions, 1 classes&quot;)
+        Component(audit, &quot;audit&quot;, &quot;Python&quot;, &quot;0 functions, 2 classes&quot;)
+        Component(auto_consolidation, &quot;auto_consolidation&quot;, &quot;Python&quot;, &quot;11 functions, 3 classes&quot;)
+        Component(backends, &quot;backends&quot;, &quot;Python&quot;, &quot;12 functions, 3 classes&quot;)
+        Component(benchmarks, &quot;benchmarks&quot;, &quot;Python&quot;, &quot;0 functions, 0 classes&quot;)
+        Component(bloom, &quot;bloom&quot;, &quot;Python&quot;, &quot;2 functions, 1 classes&quot;)
+        Component(bm25, &quot;bm25&quot;, &quot;Python&quot;, &quot;3 functions, 1 classes&quot;)
+        Component(cli, &quot;cli&quot;, &quot;Python&quot;, &quot;1 functions, 0 classes&quot;)
+        Component(client, &quot;client&quot;, &quot;Python&quot;, &quot;19 functions, 4 classes&quot;)
+        Component(consolidation, &quot;consolidation&quot;, &quot;Python&quot;, &quot;11 functions, 0 classes&quot;)
+        Component(contradictions, &quot;contradictions&quot;, &quot;Python&quot;, &quot;6 functions, 4 classes&quot;)
+        Component(decay, &quot;decay&quot;, &quot;Python&quot;, &quot;12 functions, 1 classes&quot;)
+        Component(diagnostics, &quot;diagnostics&quot;, &quot;Python&quot;, &quot;16 functions, 9 classes&quot;)
+        Component(doc_validation, &quot;doc_validation&quot;, &quot;Python&quot;, &quot;3 functions, 12 classes&quot;)
+        Component(embeddings, &quot;embeddings&quot;, &quot;Python&quot;, &quot;6 functions, 1 classes&quot;)
+        Component(errors, &quot;errors&quot;, &quot;Python&quot;, &quot;5 functions, 10 classes&quot;)
+        Component(evaluation, &quot;evaluation&quot;, &quot;Python&quot;, &quot;15 functions, 19 classes&quot;)
+        Component(exceptions, &quot;exceptions&quot;, &quot;Python&quot;, &quot;2 functions, 6 classes&quot;)
+        Component(experience, &quot;experience&quot;, &quot;Python&quot;, &quot;0 functions, 8 classes&quot;)
+        Component(extraction, &quot;extraction&quot;, &quot;Python&quot;, &quot;3 functions, 0 classes&quot;)
+        Component(feedback, &quot;feedback&quot;, &quot;Python&quot;, &quot;1 functions, 4 classes&quot;)
+        Component(flywheel, &quot;flywheel&quot;, &quot;Python&quot;, &quot;17 functions, 16 classes&quot;)
+        Component(fusion, &quot;fusion&quot;, &quot;Python&quot;, &quot;3 functions, 0 classes&quot;)
+        Component(gc, &quot;gc&quot;, &quot;Python&quot;, &quot;3 functions, 4 classes&quot;)
+        Component(health_check, &quot;health_check&quot;, &quot;Python&quot;, &quot;4 functions, 4 classes&quot;)
+        Component(http, &quot;http&quot;, &quot;Python&quot;, &quot;0 functions, 0 classes&quot;)
+        Component(http_adapter, &quot;http_adapter&quot;, &quot;Python&quot;, &quot;19 functions, 5 classes&quot;)
+        Component(idempotency, &quot;idempotency&quot;, &quot;Python&quot;, &quot;2 functions, 1 classes&quot;)
+        Component(injection, &quot;injection&quot;, &quot;Python&quot;, &quot;11 functions, 1 classes&quot;)
+        Component(integrity, &quot;integrity&quot;, &quot;Python&quot;, &quot;7 functions, 2 classes&quot;)
+        Component(io, &quot;io&quot;, &quot;Python&quot;, &quot;5 functions, 0 classes&quot;)
+        Component(kg_query_analysis, &quot;kg_query_analysis&quot;, &quot;Python&quot;, &quot;2 functions, 2 classes&quot;)
+        Component(lexical, &quot;lexical&quot;, &quot;Python&quot;, &quot;5 functions, 1 classes&quot;)
+        Component(markdown_import, &quot;markdown_import&quot;, &quot;Python&quot;, &quot;7 functions, 0 classes&quot;)
+        Component(markdown_sync, &quot;markdown_sync&quot;, &quot;Python&quot;, &quot;13 functions, 0 classes&quot;)
+        Component(mcp_server, &quot;mcp_server&quot;, &quot;Python&quot;, &quot;0 functions, 0 classes&quot;)
+        Component(memory_group, &quot;memory_group&quot;, &quot;Python&quot;, &quot;1 functions, 1 classes&quot;)
+        Component(memory_relay, &quot;memory_relay&quot;, &quot;Python&quot;, &quot;7 functions, 1 classes&quot;)
+        Component(metrics, &quot;metrics&quot;, &quot;Python&quot;, &quot;1 functions, 6 classes&quot;)
+        Component(migrations, &quot;migrations&quot;, &quot;Python&quot;, &quot;0 functions, 0 classes&quot;)
+        Component(models, &quot;models&quot;, &quot;Python&quot;, &quot;3 functions, 14 classes&quot;)
+        Component(onboarding, &quot;onboarding&quot;, &quot;Python&quot;, &quot;1 functions, 0 classes&quot;)
+        Component(openapi_contract, &quot;openapi_contract&quot;, &quot;Python&quot;, &quot;10 functions, 0 classes&quot;)
+        Component(otel_exporter, &quot;otel_exporter&quot;, &quot;Python&quot;, &quot;9 functions, 5 classes&quot;)
+        Component(otel_tracer, &quot;otel_tracer&quot;, &quot;Python&quot;, &quot;20 functions, 0 classes&quot;)
+        Component(postgres_connection, &quot;postgres_connection&quot;, &quot;Python&quot;, &quot;0 functions, 1 classes&quot;)
+    }
+
+    UpdateElementStyle(agent_brain, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(agent_scope, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(aio, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(async_postgres_kg, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(async_postgres_private, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(audit, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(auto_consolidation, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(backends, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(benchmarks, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(bloom, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(bm25, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(cli, $bgColor=&quot;#F5A9D0&quot;, $fontColor=&quot;#000&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(client, $bgColor=&quot;#F5A9D0&quot;, $fontColor=&quot;#000&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(consolidation, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(contradictions, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(decay, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(diagnostics, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(doc_validation, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(embeddings, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(errors, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(evaluation, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(exceptions, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(experience, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(extraction, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(feedback, $bgColor=&quot;#9333EA&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(flywheel, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(fusion, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(gc, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(health_check, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(http, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(http_adapter, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(idempotency, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(injection, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(integrity, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(io, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(kg_query_analysis, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(lexical, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(markdown_import, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(markdown_sync, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(mcp_server, $bgColor=&quot;#F5A9D0&quot;, $fontColor=&quot;#000&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(memory_group, $bgColor=&quot;#9333EA&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(memory_relay, $bgColor=&quot;#9333EA&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(metrics, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(migrations, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(models, $bgColor=&quot;#9333EA&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(onboarding, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(openapi_contract, $bgColor=&quot;#F5A9D0&quot;, $fontColor=&quot;#000&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(otel_exporter, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(otel_tracer, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+    UpdateElementStyle(postgres_connection, $bgColor=&quot;#6B7280&quot;, $fontColor=&quot;#fff&quot;, $borderColor=&quot;#333&quot;)
+
+
+</pre>
+</div>
+</div>
+<div class="diagram-section" id="diagram-5">
+<h2>ER Diagram</h2>
+<div class="diagram-wrapper">
+<pre class="mermaid">
+erDiagram
+    ConflictPlan {
+        string now
+        string invalidations
+        string conflict_keys
+        string audit
+        float similarity_threshold
+    }
+    ScopeAndGroup {
+        string agent_scope
+        string mg_explicit
+    }
+    SafetyResult {
+        string value
+        string ruleset_version
+    }
+    AuditEntry {
+        string timestamp
+        string event_type
+        string key
+        string details
+    }
+    ConsolidationUndoResult {
+        boolean ok
+        string reason
+        string consolidated_key
+        string source_keys
+        string trigger
+        float threshold
+    }
+    BenchmarkItem {
+        string item_id
+        string category
+        string question
+        string reference_answer
+        string history
+    }
+    BenchmarkResult {
+        string item_id
+        string category
+        string question
+        string reference_answer
+        string candidate_answer
+        string label
+        string retrieved_context
+    }
+    BenchmarkReport {
+        string benchmark
+        int num_items
+        int num_correct
+        float accuracy
+        string by_category
+        float wall_time_seconds
+        string results
+        string metadata
+    }
+    LoCoMoItem {
+        string conversation_id
+        int qa_index
+        int category
+        string question
+        string reference_answer
+        string history
+    }
+    LongMemEvalItem {
+        string question_id
+        string question_type
+        string question
+        string reference_answer
+        string history
+    }
+    BM25Scorer {
+        float k1
+        float b
+        float delta
+        boolean apply_stem
+        boolean ascii_fold
+        boolean camel_case_tokenization
+        int _doc_count
+        float _avgdl
+        int _doc_lens
+        string _doc_terms
+        string _tf_maps
+        string _df
+        string _idf
+    }
+    BenchmarkReport ||--o{ BenchmarkResult : &quot;has&quot;
+
+</pre>
+</div>
+</div>
+<script type="module">// Initialize Mermaid
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true },
+});
+
+// Toggle diagram visibility
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.dataset.target;
+        const section = document.getElementById(targetId);
+        if (section) {
+            const isHidden = section.style.display === 'none';
+            section.style.display = isHidden ? 'block' : 'none';
+            btn.classList.toggle('active', isHidden);
+        }
+    });
+});
+
+// Zoom controls
+let scale = 1;
+document.getElementById('zoom-in')?.addEventListener('click', () => {
+    scale = Math.min(scale * 1.2, 5);
+    document.querySelectorAll('.diagram-wrapper .mermaid svg').forEach(svg => {
+        svg.style.transform = `scale(${scale})`;
+        svg.style.transformOrigin = 'center top';
+    });
+});
+document.getElementById('zoom-out')?.addEventListener('click', () => {
+    scale = Math.max(scale / 1.2, 0.2);
+    document.querySelectorAll('.diagram-wrapper .mermaid svg').forEach(svg => {
+        svg.style.transform = `scale(${scale})`;
+        svg.style.transformOrigin = 'center top';
+    });
+});
+document.getElementById('zoom-reset')?.addEventListener('click', () => {
+    scale = 1;
+    document.querySelectorAll('.diagram-wrapper .mermaid svg').forEach(svg => {
+        svg.style.transform = 'scale(1)';
+    });
+});
+</script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.14.5
+- Version: 3.20.1
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -18,15 +18,6 @@
 
 - `tapps-brain` -> `tapps_brain.cli:app`
 - `tapps-brain-http` -> `tapps_brain.http_adapter:main`
-- `.venv-tag-smoke/lib/python3.12/site-packages/markdown_it/main.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/typer/main.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/annotated_doc/main.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/typer/cli.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/cli.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/huggingface_hub/inference/_mcp/cli.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/pygments/__main__.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/typer/__main__.py`
-- `.venv-tag-smoke/lib/python3.12/site-packages/tqdm/__main__.py`
 
 ## Key Files
 
@@ -41,6 +32,7 @@
 - `Makefile`
 - `docker-compose.yml`
 - `.env.example`
+- `.docsmcp.yaml`
 
 ## Documentation Map
 
@@ -53,6 +45,7 @@
 - `SECURITY.md`
 - `TECH_STACK.md`
 - `fix_plan.md`
+- `llms-full.txt`
 - `llms.txt`
 - `ralph-feedback-report.md`
 - `docs/DOCUMENTATION_INDEX.md`
@@ -70,23 +63,23 @@
 - `docs/engineering/call-flows.md`
 - `docs/engineering/code-inventory-and-doc-gaps.md`
 - `docs/engineering/data-stores-and-schema.md`
+- `docs/engineering/experience-events.md`
 - `docs/engineering/features-and-technologies.md`
 - `docs/engineering/optional-features-matrix.md`
-- `docs/engineering/system-architecture.md`
-- `docs/engineering/threat-model.md`
-- ... and 217 more
+- ... and 231 more
 
 ## API Summary
 
 - Packages: 11
-- Modules: 107
-- Public API symbols: 634
+- Modules: 116
+- Public API symbols: 697
 
 ## Project Structure
 
 ```
 .coverage
 .cursorignore
+.docsmcp.yaml
 .env
 .env.example
 .envrc
@@ -94,7 +87,6 @@
 .gitignore
 .mcp.json
 .ralphrc
-.ralphrc.bak.1777419561
 AGENTS.md
 CHANGELOG.md
 CLAUDE.md
@@ -106,12 +98,12 @@ README.md
 SECURITY.md
 TECH_STACK.md
 config/
-dist-fresh/
 docker/
 docker-compose.yml
 docs/
 examples/
 fix_plan.md
+llms-full.txt
 llms.txt
 openclaw-plugin/
 openclaw-skill/

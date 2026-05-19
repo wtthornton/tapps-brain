@@ -1,5 +1,7 @@
 # System Architecture (Implementation-Aligned)
 
+> **Visual reference:** [`diagrams.md`](diagrams.md) renders C4 context/container/component, ER, class hierarchy, and full sequence flows for `brain_recall` / `brain_remember` / `brain_record_event` / Hive propagation in Mermaid. Open [`docs/architecture.html`](../architecture.html) for the interactive viewer.
+
 ## Design for scale: 200+ concurrent agents
 
 tapps-brain is designed for **many concurrent agents** without shared-DB bottlenecks:

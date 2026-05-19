@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>tapps-brain Architecture - Architecture Report</title>
+<title>tapps-brain — System Architecture - Architecture Report</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -513,6 +513,10 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .anim-particle {
+    visibility: hidden !important;
+    animation-play-state: paused !important;
+  }
 }
 
 /* High contrast */
@@ -556,6 +560,146 @@ body {
   .stat-number { color: var(--accent-primary); }
 }
 
+/* Tech stack pills */
+.tech-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-family: var(--font-sans);
+}
+
+/* Polyglot layer — application & agent cards */
+.polyglot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.polyglot-card {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--motion-fast) var(--ease-enter),
+              box-shadow var(--motion-fast) var(--ease-enter);
+  animation: fadeIn 0.4s var(--ease-enter) both;
+}
+.polyglot-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+}
+.polyglot-header {
+  padding: 14px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.polyglot-body { padding: 16px 18px; }
+.polyglot-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+}
+.polyglot-stats {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  font-family: var(--font-mono);
+}
+.polyglot-desc {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin-bottom: 12px;
+}
+.agent-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+.agent-chip {
+  background: var(--bg-primary);
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+/* Integration points catalog */
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.integration-card {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+  animation: fadeIn 0.4s var(--ease-enter) both;
+}
+.integration-icon { font-size: 1.25rem; margin-bottom: 6px; }
+.integration-name {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.integration-dir {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+/* Deployment & operations */
+.deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.deploy-card {
+  background: linear-gradient(135deg, var(--card-bg), var(--card-bg-alt));
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+  animation: fadeInScale 0.4s var(--ease-enter) both;
+}
+.deploy-icon { font-size: 1.75rem; margin-bottom: 8px; }
+.deploy-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.deploy-file {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
 </style>
 </head>
 <body>
@@ -563,8 +707,8 @@ body {
 
 <section class="hero">
   <div class="hero-content">
-    <h1 class="hero-title">tapps-brain Architecture</h1>
-    <p class="hero-subtitle">Persistent cross-session memory for AI coding assistants</p>
+    <h1 class="hero-title">tapps-brain — System Architecture</h1>
+    <p class="hero-subtitle">Persistent cross-session memory + Knowledge Graph for AI coding agents</p>
     <p class="hero-meta">Architecture Report</p>
   </div>
 </section>
@@ -583,8 +727,11 @@ body {
       <li><a href="#executive-summary">Executive Summary</a></li>
       <li><a href="#architecture-diagram">High-Level Architecture</a></li>
       <li><a href="#data-flow">Data Flow Pipeline</a></li>
+      <li><a href="#polyglot-layer">Application &amp; Agent Layer</a></li>
       <li><a href="#component-details">Component Deep-Dive</a></li>
       <li><a href="#dependency-flow">Dependency Flow</a></li>
+      <li><a href="#integration-catalog">Integration Points</a></li>
+      <li><a href="#deployment">Deployment &amp; Operations</a></li>
       <li><a href="#api-surface">Public API Surface</a></li>
       <li><a href="#tech-stack">Technology Stack</a></li>
       <li><a href="#health-insights">Architecture Health</a></li>
@@ -597,33 +744,13 @@ body {
 
 <div class="purpose-block">
   <h3>Purpose &amp; Intent</h3>
-  <p class="purpose-text">Persistent cross-session memory for AI coding assistants</p>
+  <p class="purpose-text">AI agents forget everything between sessions. **tapps-brain** gives them persistent, ranked memory that decays naturally, consolidates automatically, and works across agents and projects — not limited</p>
 </div>
-
 <div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-number">6</div>
-    <div class="stat-label">Packages</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">45</div>
-    <div class="stat-label">Modules</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">56</div>
-    <div class="stat-label">Public Classes</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">634</div>
-    <div class="stat-label">Public APIs (fns + methods)</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number">169</div>
-    <div class="stat-label">External Imports</div>
-  </div>
+<div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Python Packages</div></div><div class="stat-card"><div class="stat-number">48</div><div class="stat-label">Modules</div></div><div class="stat-card"><div class="stat-number">1</div><div class="stat-label">Applications</div></div><div class="stat-card"><div class="stat-number">58</div><div class="stat-label">Public Classes</div></div><div class="stat-card"><div class="stat-number">193</div><div class="stat-label">External Imports</div></div>
 </div>
 <div class="meta-details">
-<span class="meta-badge">v3.14.5</span>
+<span class="meta-badge">v3.20.1</span>
 <span class="meta-badge">Python &gt;=3.12</span>
 <span class="meta-badge">MIT</span>
 </div>
@@ -633,7 +760,7 @@ body {
 <p>The diagram below illustrates the major packages and components that comprise the system. Each box represents a distinct package or subsystem with its own responsibilities and boundaries.</p>
 <figure role="figure" aria-labelledby="arch-figcaption">
 <div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 430" class="arch-svg" role="img" aria-labelledby="arch-svg-title">
-  <title id="arch-svg-title">High-level architecture: tapps-brain Architecture</title>
+  <title id="arch-svg-title">High-level architecture: tapps-brain — System Architecture</title>
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
       <feDropShadow dx="2" dy="4" stdDeviation="6" flood-opacity="0.15"/>
@@ -671,16 +798,16 @@ body {
     </linearGradient>
   </defs>
   <rect width="1120" height="430" rx="16" fill="#0a0a0f" />
-  <text x="560.0" y="45" text-anchor="middle" fill="#fafafa" font-size="22" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">tapps-brain Architecture — Architecture Overview</text>
+  <text x="560.0" y="45" text-anchor="middle" fill="#fafafa" font-size="22" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">tapps-brain — System Architecture — Architecture Overview</text>
   <rect x="60" y="130" width="220" height="100" rx="12" fill="url(#grad0)" filter="url(#shadow)" />
   <text x="170.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">cli</text>
   <text x="170.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">11 modules</text>
   <rect x="320" y="130" width="220" height="100" rx="12" fill="url(#grad1)" filter="url(#shadow)" />
   <text x="430.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">http</text>
-  <text x="430.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">6 modules</text>
+  <text x="430.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">7 modules</text>
   <rect x="580" y="130" width="220" height="100" rx="12" fill="url(#grad2)" filter="url(#shadow)" />
   <text x="690.0" y="170" text-anchor="middle" fill="#fafafa" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">mcp_server</text>
-  <text x="690.0" y="195" text-anchor="middle" fill="#fafafa" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">14 modules</text>
+  <text x="690.0" y="195" text-anchor="middle" fill="#fafafa" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">15 modules</text>
   <rect x="840" y="130" width="220" height="100" rx="12" fill="url(#grad3)" filter="url(#shadow)" />
   <text x="950.0" y="170" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">migrations</text>
   <text x="950.0" y="195" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">4 modules</text>
@@ -689,7 +816,7 @@ body {
   <text x="170.0" y="335" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">1 modules</text>
   <rect x="320" y="270" width="220" height="100" rx="12" fill="url(#grad5)" filter="url(#shadow)" />
   <text x="430.0" y="310" text-anchor="middle" fill="#0a0a0f" font-size="16" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
-  <text x="430.0" y="335" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">9 modules</text>
+  <text x="430.0" y="335" text-anchor="middle" fill="#0a0a0f" font-size="11" opacity="0.8" font-family="Outfit, Inter, system-ui, sans-serif">10 modules</text>
 </svg></div>
 <figcaption id="arch-figcaption">High-level architecture overview</figcaption>
 </figure>
@@ -721,6 +848,22 @@ body {
 <figcaption id="data-flow-figcaption">Data flow pipeline</figcaption>
 </figure>
 </section>
+<section class="section" id="polyglot-layer" role="region" aria-labelledby="polyglot-heading">
+<h2 class="section-title" id="polyglot-heading">Application &amp; Agent Layer</h2>
+<p>Beyond the Python core, this system includes application frontends, AI agent roles, workflow orchestration, and data schemas. These components form the complete operational surface of the system.</p>
+<div class="polyglot-grid">
+<div class="polyglot-card" style="animation-delay:0.00s">
+  <div class="polyglot-header" style="background: linear-gradient(135deg, #3178c6, #60a5fa);">
+    <span class="polyglot-name">tapps-brain-memory</span>
+    <span class="polyglot-stats">4 source files</span>
+  </div>
+  <div class="polyglot-body">
+    <p class="polyglot-desc">OpenClaw ContextEngine plugin for tapps-brain persistent memory</p>
+    <span class="tech-pill" style="background:#3178c6;color:#fafafa">TypeScript</span>
+  </div>
+</div>
+</div>
+</section>
 <section class="section" id="component-details">
 <h2 class="section-title">Component Deep-Dive</h2>
 <p>Each component in the architecture serves a specific purpose, contributing to the overall system through well-defined responsibilities. Understanding these individual building blocks is essential for navigating the codebase, extending functionality, and maintaining the project over time.</p>
@@ -731,12 +874,12 @@ body {
     <h3 class="component-name">cli</h3>
     <div class="component-stats">
       <span>11 modules</span>
-      <span>92 functions</span>
+      <span>93 functions</span>
       <span>0 classes</span>
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The cli package cli tool for tapps-brain memory management and operations. It is composed of 11 modules that work together to deliver its capabilities. With 92 functions, it provides a functional interface designed for straightforward integration. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">CLI tool for tapps-brain memory management and operations. Composed of 11 modules. Provides 93 functions as its public interface.</p>
     <div class="submodule-list">
       <h4>Key Modules</h4>
       <ul>
@@ -761,13 +904,13 @@ body {
     135deg, #d4a847, #e8c060);">
     <h3 class="component-name">http</h3>
     <div class="component-stats">
-      <span>6 modules</span>
-      <span>21 functions</span>
-      <span>4 classes</span>
+      <span>7 modules</span>
+      <span>24 functions</span>
+      <span>5 classes</span>
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The http package tapps-brain http adapter sub-package (tap-604). It is composed of 6 modules that work together to deliver its capabilities. The package exposes 21 functions and 4 classes, offering both procedural and object-oriented interfaces to its consumers. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">The http package tapps-brain http adapter sub-package (tap-604). Composed of 7 modules. Exposes 24 functions and 5 classes, offering both procedural and object-oriented interfaces.</p>
     <div class="submodule-list">
       <h4>Key Modules</h4>
       <ul>
@@ -776,6 +919,7 @@ body {
         <li><code>middleware</code></li>
         <li><code>probe_cache</code></li>
         <li><code>profile_resolver</code></li>
+        <li><code>rest_profile_gate</code></li>
         <li><code>settings</code></li>
       </ul>
     </div>
@@ -787,13 +931,13 @@ body {
     135deg, #0d9488, #14b8a6);">
     <h3 class="component-name">mcp_server</h3>
     <div class="component-stats">
-      <span>14 modules</span>
-      <span>30 functions</span>
-      <span>6 classes</span>
+      <span>15 modules</span>
+      <span>46 functions</span>
+      <span>7 classes</span>
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The mcp_server package mcp server exposing tapps-brain via model context protocol. It is composed of 14 modules that work together to deliver its capabilities. The package exposes 30 functions and 6 classes, offering both procedural and object-oriented interfaces to its consumers. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">The mcp_server package mcp server exposing tapps-brain via model context protocol. Composed of 15 modules. Exposes 46 functions and 7 classes, offering both procedural and object-oriented interfaces.</p>
     <div class="submodule-list">
       <h4>Key Modules</h4>
       <ul>
@@ -808,8 +952,8 @@ body {
         <li><code>tools_brain</code></li>
         <li><code>tools_feedback</code></li>
         <li><code>tools_hive</code></li>
-        <li><code>tools_maintenance</code></li>
-        <li><em>... and 2 more</em></li>
+        <li><code>tools_kg</code></li>
+        <li><em>... and 3 more</em></li>
       </ul>
     </div>
   </div>
@@ -826,7 +970,7 @@ body {
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The migrations package provides a cohesive set of functionality that serves as a building block within the larger system. It is composed of 4 modules that work together to deliver its capabilities. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">The migrations package provides core functionality within this system. Composed of 4 modules.</p>
     <div class="submodule-list">
       <h4>Key Modules</h4>
       <ul>
@@ -850,7 +994,7 @@ body {
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The profiles package provides a cohesive set of functionality that serves as a building block within the larger system. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">The profiles package provides core functionality within this system.</p>
   </div>
 </div>
 
@@ -859,13 +1003,13 @@ body {
     135deg, #f59e0b, #fbbf24);">
     <h3 class="component-name">services</h3>
     <div class="component-stats">
-      <span>9 modules</span>
-      <span>74 functions</span>
+      <span>10 modules</span>
+      <span>96 functions</span>
       <span>0 classes</span>
     </div>
   </div>
   <div class="component-body">
-    <p class="component-description">The services package pure, transport-agnostic service functions for tapps-brain (epic-070 story-070.1). It is composed of 9 modules that work together to deliver its capabilities. With 74 functions, it provides a functional interface designed for straightforward integration. This component adds value by encapsulating domain-specific logic behind clean interfaces, reducing coupling between other parts of the system and enabling independent evolution of its internals.</p>
+    <p class="component-description">The services package pure, transport-agnostic service functions for tapps-brain (epic-070 story-070.1). Composed of 10 modules. Provides 96 functions as its public interface.</p>
     <div class="submodule-list">
       <h4>Key Modules</h4>
       <ul>
@@ -874,6 +1018,7 @@ body {
         <li><code>feedback_service</code></li>
         <li><code>flywheel_service</code></li>
         <li><code>hive_service</code></li>
+        <li><code>kg_service</code></li>
         <li><code>maintenance_service</code></li>
         <li><code>memory_service</code></li>
         <li><code>profile_service</code></li>
@@ -922,9 +1067,9 @@ body {
   </defs>
   <rect width="800" height="700" rx="16" fill="#0a0a0f"/>
   <text x="400" y="35" text-anchor="middle" fill="#fafafa" font-size="18" font-weight="700" font-family="Outfit, Inter, system-ui, sans-serif">Dependency Flow</text>
-  <path d="M 400 100 Q 465 312 617 475" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
-  <path d="M 617 225 Q 530 350 617 475" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
-  <path d="M 617 475 Q 400 350 183 225" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
+  <path id="dep-edge-0" d="M 400 100 Q 465 312 617 475" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
+  <path id="dep-edge-1" d="M 617 225 Q 530 350 617 475" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
+  <path id="dep-edge-2" d="M 617 475 Q 400 350 183 225" fill="none" stroke="rgba(63,63,90,0.5)" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead)" opacity="0.7"/>
   <circle cx="400" cy="100" r="50" fill="url(#dgrad0)" filter="url(#dshadow)"/>
   <text x="400" y="105" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">cli</text>
   <circle cx="617" cy="225" r="50" fill="url(#dgrad1)" filter="url(#dshadow)"/>
@@ -937,13 +1082,55 @@ body {
   <text x="183" y="480" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">profiles</text>
   <circle cx="183" cy="225" r="50" fill="url(#dgrad5)" filter="url(#dshadow)"/>
   <text x="183" y="230" text-anchor="middle" fill="#0a0a0f" font-size="12" font-weight="600" font-family="Outfit, Inter, system-ui, sans-serif">services</text>
+<circle class="anim-particle" r="3" fill="#fafafa"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#dep-edge-0"/></animateMotion></circle>
+<circle class="anim-particle" r="3" fill="#fafafa"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#dep-edge-1"/></animateMotion></circle>
+<circle class="anim-particle" r="3" fill="#fafafa"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#dep-edge-2"/></animateMotion></circle>
 </svg></div>
 <figcaption id="dep-flow-figcaption">Package import relationships</figcaption>
 </figure>
 </section>
+<section class="section" id="integration-catalog" role="region" aria-labelledby="integration-heading">
+<h2 class="section-title" id="integration-heading">Integration Points</h2>
+<p><strong>Why this matters:</strong> External integrations create runtime dependencies on third-party services. Understanding the integration surface informs reliability planning, cost modeling, and vendor risk assessment.</p>
+<div class="integration-grid">
+<div class="integration-card" style="animation-delay:0.00s;border-left-color:var(--accent-primary)">
+  <div class="integration-icon">🗄️</div>
+  <div class="integration-name">PostgreSQL (psycopg)</div>
+  <div class="integration-dir" style="color:var(--accent-primary)">Outbound →</div>
+</div>
+<div class="integration-card" style="animation-delay:0.05s;border-left-color:#a78bfa">
+  <div class="integration-icon">🌐</div>
+  <div class="integration-name">FastAPI Server</div>
+  <div class="integration-dir" style="color:#a78bfa">← Inbound</div>
+</div>
+<div class="integration-card" style="animation-delay:0.10s;border-left-color:var(--accent-primary)">
+  <div class="integration-icon">🤖</div>
+  <div class="integration-name">Anthropic Claude API</div>
+  <div class="integration-dir" style="color:var(--accent-primary)">Outbound →</div>
+</div>
+</div>
+</section>
+<section class="section" id="deployment" role="region" aria-labelledby="deploy-heading">
+<h2 class="section-title" id="deploy-heading">Deployment &amp; Operations</h2>
+<p>Deployment artifacts define how this system is packaged, distributed, and operated. These files represent the operational surface and are critical for infrastructure planning and runbook authoring.</p>
+<div class="deploy-grid">
+<div class="deploy-card" style="animation-delay:0.00s">
+  <div class="deploy-icon">🐳</div>
+  <div class="deploy-name">Docker Compose</div>
+  <div class="deploy-file">docker-compose.yml</div>
+  <div style="margin-top:8px"><span class="meta-badge" style="font-size:0.6875rem">Container</span></div>
+</div>
+<div class="deploy-card" style="animation-delay:0.05s">
+  <div class="deploy-icon">⚙️</div>
+  <div class="deploy-name">GitHub Actions (5 workflows)</div>
+  <div class="deploy-file">.github/workflows/</div>
+  <div style="margin-top:8px"><span class="meta-badge" style="font-size:0.6875rem">CI / CD</span></div>
+</div>
+</div>
+</section>
 <section class="section" id="api-surface">
 <h2 class="section-title">Public API Surface</h2>
-<p>The public API surface defines the contract between this project and its consumers. Classes listed below represent publicly accessible interfaces that external code may depend upon. This is a curated selection of the 56 public classes discovered.</p>
+<p>The public API surface defines the contract between this project and its consumers. Classes listed below represent publicly accessible interfaces that external code may depend upon. This is a curated selection of the 58 public classes discovered.</p>
 <div class="api-module">
   <h4 class="api-module-path">src/tapps_brain/agent_brain.py</h4>
 
@@ -991,7 +1178,18 @@ body {
       <code class="api-class-name">AsyncMemoryStore</code>
     </div>
     <p class="api-doc">Async facade over :class:`MemoryStore`.</p>
-    <div class="api-methods">Methods: <code>open</code>, <code>sync_store</code>, <code>project_root</code>, <code>profile</code>, <code>save</code>, <code>get</code>, <code>delete</code>, <code>search</code> <em>+2 more</em></div>
+    <div class="api-methods">Methods: <code>write_queue_depth</code>, <code>read_queue_depth</code>, <code>open</code>, <code>sync_store</code>, <code>project_root</code>, <code>profile</code>, <code>save</code>, <code>get</code> <em>+2 more</em></div>
+  </div>
+</div>
+<div class="api-module">
+  <h4 class="api-module-path">src/tapps_brain/async_postgres_kg.py</h4>
+
+  <div class="api-class">
+    <div class="api-class-header">
+      <code class="api-class-name">AsyncPostgresKnowledgeGraphStore</code>
+    </div>
+    <p class="api-doc">Async PostgreSQL-backed Knowledge Graph store.</p>
+    <div class="api-methods">Methods: <code>upsert_entity</code>, <code>upsert_edge</code>, <code>attach_evidence</code>, <code>resolve_entity</code>, <code>batch_resolve_entities</code>, <code>get_neighbors</code>, <code>get_neighbors_multi</code>, <code>reinforce_edge</code> <em>+2 more</em></div>
   </div>
 </div>
 <div class="api-module">
@@ -1112,6 +1310,13 @@ body {
 
   <div class="api-class">
     <div class="api-class-header">
+      <code class="api-class-name">RetryConfig</code>
+    </div>
+    <p class="api-doc">Retry policy for transient brain failures (STORY-071.2).</p>
+  </div>
+
+  <div class="api-class">
+    <div class="api-class-header">
       <code class="api-class-name">TappsBrainClient</code>
     </div>
     <p class="api-doc">Synchronous tapps-brain client.</p>
@@ -1123,7 +1328,7 @@ body {
       <code class="api-class-name">AsyncTappsBrainClient</code>
     </div>
     <p class="api-doc">Asynchronous tapps-brain client.</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code>, <code>memory_get</code> <em>+2 more</em></div>
+    <div class="api-methods">Methods: <code>aclose</code>, <code>close</code>, <code>remember</code>, <code>recall</code>, <code>forget</code>, <code>learn_success</code>, <code>learn_failure</code>, <code>memory_save</code> <em>+2 more</em></div>
   </div>
 </div>
 <div class="api-module">
@@ -1191,24 +1396,9 @@ body {
     </div>
     <p class="api-doc">Host configuration for diagnostics (profile YAML).</p>
   </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">CircuitState</code> <span class="api-bases">extends StrEnum</span>
-    </div>
-    <p class="api-doc">Circuit breaker states (STORY-030.4).</p>
-  </div>
-
-  <div class="api-class">
-    <div class="api-class-header">
-      <code class="api-class-name">DiagnosticsHistoryStore</code>
-    </div>
-    <p class="api-doc">Append-only diagnostics history scoped to ``(project_id, agent_id)``.</p>
-    <div class="api-methods">Methods: <code>close</code>, <code>record</code>, <code>history</code>, <code>prune_older_than</code>, <code>rolling_average</code></div>
-  </div>
   <p class="api-doc"><em>+2 more classes</em></p>
 </div>
-<p style="color:var(--text-muted);font-size:0.75rem;">Showing 30 of 56 public classes. 26 additional classes omitted for brevity.</p>
+<p style="color:var(--text-muted);font-size:0.75rem;">Showing 30 of 58 public classes. 28 additional classes omitted for brevity.</p>
 </section>
 <section class="section" id="tech-stack" role="region" aria-labelledby="tech-stack-heading">
 <h2 class="section-title" id="tech-stack-heading">Technology Stack</h2>
@@ -1254,7 +1444,7 @@ body {
 </div>
 
 <div class="stat-card">
-  <div class="stat-number">7.5</div>
+  <div class="stat-number">8.0</div>
   <div class="stat-label">Avg Modules/Package</div>
 </div>
 
@@ -1264,17 +1454,17 @@ body {
 </div>
 
 <div class="stat-card">
-  <div class="stat-number">124.4%</div>
+  <div class="stat-number">120.8%</div>
   <div class="stat-label">Class Coverage</div>
 </div>
 </div>
 <div class="purpose-block">
 <h3>Highest Functionality Concentration</h3><p class="purpose-text">Packages with the most functions represent the core business logic. These are the most critical to test thoroughly and document carefully:</p>
 <div class="dep-tags" style="margin-top:12px">
-<span class="dep-tag">cli (92 fn)</span>
-<span class="dep-tag">services (74 fn)</span>
-<span class="dep-tag">mcp_server (30 fn)</span>
-<span class="dep-tag">http (21 fn)</span>
+<span class="dep-tag">services (96 fn)</span>
+<span class="dep-tag">cli (93 fn)</span>
+<span class="dep-tag">mcp_server (46 fn)</span>
+<span class="dep-tag">http (24 fn)</span>
 </div></div>
 <div class="purpose-block">
 <h3>Recommendations</h3>
@@ -1286,8 +1476,8 @@ body {
   <p><a href="#" class="back-to-top">Back to top</a></p>
   <p>Generated by <strong>DocsMCP</strong> &mdash; Architecture Report</p>
   <p style="margin-top:6px">
-    6 packages &middot; 45 modules &middot;
-    56 public classes &middot; 2026-04-29 19:51 UTC
+    6 packages &middot; 48 modules &middot;
+    58 public classes &middot; 2026-05-19 14:51 UTC
   </p>
 </footer>
 </body>
