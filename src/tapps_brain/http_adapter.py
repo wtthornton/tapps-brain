@@ -51,6 +51,7 @@ import platform
 import sys
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -340,6 +341,29 @@ def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dic
             row for row in rows if isinstance(row, dict) and row.get("project_id") == project_id
         ]
     return filtered
+
+
+def _validate_uuid_field(value: Any, field_name: str) -> str:
+    """TAP-2140: validate a request field is a syntactically valid UUID.
+
+    Routes that bind values to Postgres ``UUID`` columns must validate
+    at the request-model layer; otherwise psycopg raises
+    ``InvalidTextRepresentation`` deep in the cursor, which surfaces as
+    HTTP 500 with a raw traceback and leaks implementation detail.
+    Raises ``HTTPException(422)`` with a FastAPI-style field-level
+    error on failure; returns the canonical string form on success.
+    """
+    try:
+        return str(uuid.UUID(str(value)))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "validation_error",
+                "field": field_name,
+                "detail": f"{field_name} must be a valid UUID",
+            },
+        ) from None
 
 
 # TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
@@ -3180,6 +3204,16 @@ def create_app(
                 detail={"error": "bad_request", "detail": "entity_ids must be a non-empty list."},
             )
 
+        # TAP-2140: validate UUID-bound entity_ids before they reach psycopg.
+        validated_entity_ids = [
+            _validate_uuid_field(e, f"entity_ids[{i}]") for i, e in enumerate(entity_ids) if e
+        ]
+        if not validated_entity_ids:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entity_ids must be a non-empty list."},
+            )
+
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
 
@@ -3188,7 +3222,7 @@ def create_app(
             cm,
             project_id,
             _kg_brain_id(),
-            entity_ids=[str(e) for e in entity_ids if e],
+            entity_ids=validated_entity_ids,
             hops=max(1, min(int(body.get("hops", 1)), 2)),
             limit=max(1, min(int(body.get("limit", 20)), 200)),
             predicate_filter=str(body.get("predicate_filter") or "") or None,
@@ -3254,6 +3288,10 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "subject_id and object_id are required."},
             )
+
+        # TAP-2140: validate UUID-bound fields before they reach psycopg.
+        subject_id = _validate_uuid_field(subject_id, "subject_id")
+        object_id = _validate_uuid_field(object_id, "object_id")
 
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
@@ -3336,6 +3374,9 @@ def create_app(
                     "detail": "edge_id and feedback_type are required.",
                 },
             )
+
+        # TAP-2140: validate UUID-bound fields before they reach psycopg.
+        edge_id = _validate_uuid_field(edge_id, "edge_id")
 
         # TAP-1930: utility_score is optional; when supplied, kg_service
         # validates the [-1, 1] range and surfaces 400 on overflow.

@@ -161,6 +161,9 @@ def _mock_error(status: int, body: dict[str, Any]) -> MagicMock:
     resp.is_success = False
     resp.status_code = status
     resp.json.return_value = body
+    # Real empty mapping so the retry layer's Retry-After probe doesn't pick up
+    # an auto-MagicMock from .headers.get() (STORY-071.2).
+    resp.headers = {}
     return resp
 
 
@@ -436,6 +439,8 @@ def _async_mock_error(status: int, body: dict[str, Any]) -> AsyncMock:
     resp.is_success = False
     resp.status_code = status
     resp.json = MagicMock(return_value=body)
+    # See _mock_error: prevent AsyncMock auto-coroutine on .headers.get().
+    resp.headers = {}
     return resp
 
 
@@ -1002,3 +1007,218 @@ def test_sync_per_call_authorization_overrides_default(
     client._http_client.post("/y")
     assert captured.get("authorization") == "Bearer default-tok"
     client._http_client.close()
+
+
+# ---------------------------------------------------------------------------
+# STORY-071.4 — configurable per-leg timeouts (connect/read)
+# ---------------------------------------------------------------------------
+#
+# The legacy single ``timeout`` knob is now a back-compat fallback; the
+# preferred API exposes ``connect_timeout`` and ``read_timeout`` and propagates
+# both to the underlying httpx client via ``httpx.Timeout(...)``.
+
+
+def test_sync_per_leg_timeouts_propagate_to_httpx_client() -> None:
+    """connect_timeout / read_timeout must appear on the httpx.Client's .timeout."""
+    import httpx
+
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        connect_timeout=3.5,
+        read_timeout=45.0,
+    )
+    try:
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 3.5
+        assert client._http_client.timeout.read == 45.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_defaults_when_nothing_passed() -> None:
+    """No timeout args → connect=5 s, read=30 s (the new per-leg defaults)."""
+    import httpx
+
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 5.0
+        assert client._http_client.timeout.read == 30.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_legacy_timeout_propagates_to_both_legs() -> None:
+    """Single ``timeout=`` (deprecated) still applies to both legs for back-compat."""
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", timeout=12.0)
+    try:
+        assert client._http_client.timeout.connect == 12.0
+        assert client._http_client.timeout.read == 12.0
+        # Legacy scalar attribute mirrors the resolved read leg.
+        assert client._timeout == 12.0
+    finally:
+        client._http_client.close()
+
+
+def test_sync_per_leg_wins_over_legacy_timeout() -> None:
+    """When connect_timeout / read_timeout are set, they override ``timeout``."""
+    client = TappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        timeout=12.0,
+        connect_timeout=2.0,
+    )
+    try:
+        # Explicit connect wins; read leg falls back to legacy timeout.
+        assert client._http_client.timeout.connect == 2.0
+        assert client._http_client.timeout.read == 12.0
+    finally:
+        client._http_client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_per_leg_timeouts_propagate_to_httpx_client() -> None:
+    """Async: connect_timeout / read_timeout reach the httpx.AsyncClient."""
+    import httpx
+
+    client = AsyncTappsBrainClient(
+        "http://brain:8080",
+        project_id="p1",
+        agent_id="a1",
+        connect_timeout=4.0,
+        read_timeout=50.0,
+    )
+    try:
+        await client._ensure_client()
+        assert isinstance(client._http_client.timeout, httpx.Timeout)
+        assert client._http_client.timeout.connect == 4.0
+        assert client._http_client.timeout.read == 50.0
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_defaults_when_nothing_passed() -> None:
+    """Async: no timeout args → connect=5 s, read=30 s."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        await client._ensure_client()
+        assert client._http_client.timeout.connect == 5.0
+        assert client._http_client.timeout.read == 30.0
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_legacy_timeout_propagates_to_both_legs() -> None:
+    """Async: single ``timeout=`` still applies to both legs."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", timeout=7.5)
+    try:
+        await client._ensure_client()
+        assert client._http_client.timeout.connect == 7.5
+        assert client._http_client.timeout.read == 7.5
+        assert client._timeout == 7.5
+    finally:
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# STORY-071.3 — AsyncClient lifecycle + connection pooling
+# ---------------------------------------------------------------------------
+#
+# Per-call ``httpx.AsyncClient`` construction defeats connection pooling and
+# leaks sockets in long-running agents. These tests lock in the contract that
+# a single ``httpx.AsyncClient`` is reused across calls and that explicit
+# cleanup is available via ``aclose()`` for callers who can't use
+# ``async with``.
+
+
+@pytest.mark.asyncio
+async def test_async_reuses_same_httpx_client_across_calls() -> None:
+    """The same ``httpx.AsyncClient`` instance must be used across calls."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        await client._ensure_client()
+        first = client._http_client
+        # Subsequent ensure_client calls must not rebuild the pool.
+        await client._ensure_client()
+        await client._ensure_client()
+        assert client._http_client is first, (
+            "AsyncClient was rebuilt — pooling regression (STORY-071.3)"
+        )
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_pool_survives_full_tool_call_sequence() -> None:
+    """End-to-end: two ``recall`` calls must hit the same pooled httpx client."""
+    client = _make_uninitialised_async_client()
+    init_resp = _async_mock_init_response("sid")
+    tool_resp_1 = _async_mock_success([])
+    tool_resp_2 = _async_mock_success([])
+    client._http_client.post.side_effect = [init_resp, tool_resp_1, tool_resp_2]
+    pooled = client._http_client
+
+    await client.recall("first")
+    await client.recall("second")
+
+    # The mock is the pooled client; identity persisting across two real tool
+    # invocations is the property we need from STORY-071.3.
+    assert client._http_client is pooled
+
+
+@pytest.mark.asyncio
+async def test_async_aclose_closes_underlying_client() -> None:
+    """``aclose()`` must release the pooled ``httpx.AsyncClient``."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    await client._ensure_client()
+    inner = client._http_client
+    await client.aclose()
+    assert client._closed is True
+    assert inner.is_closed is True
+
+
+@pytest.mark.asyncio
+async def test_async_aclose_is_idempotent() -> None:
+    """``aclose()`` must be safe to call repeatedly."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    await client.aclose()
+    await client.aclose()  # second call must not raise
+
+
+@pytest.mark.asyncio
+async def test_async_aexit_invokes_aclose() -> None:
+    """``async with`` exit must release the pool via ``aclose()``."""
+    async with AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1") as client:
+        await client._ensure_client()
+        inner = client._http_client
+    assert client._closed is True
+    assert inner.is_closed is True
+
+
+@pytest.mark.asyncio
+async def test_async_close_alias_still_works() -> None:
+    """Back-compat: ``close()`` continues to delegate to ``aclose()``."""
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    await client._ensure_client()
+    inner = client._http_client
+    await client.close()
+    assert client._closed is True
+    assert inner.is_closed is True
+
+
+def test_sync_reuses_same_httpx_client_across_calls() -> None:
+    """Sync parity: ``TappsBrainClient`` must keep its ``httpx.Client`` pinned."""
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1")
+    try:
+        first = client._http_client
+        # No public re-init path; just confirm the pinned client stays pinned
+        # after a no-op (anything that would touch _http_client).
+        _ = client._http_client.headers
+        assert client._http_client is first
+    finally:
+        client.close()

@@ -47,6 +47,14 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+from tapps_brain.exceptions import (
+    TappsBrainAuthError,
+    TappsBrainError,
+    TappsBrainNotFoundError,
+    TappsBrainTransientError,
+    TappsBrainValidationError,
+)
+
 # ---------------------------------------------------------------------------
 # Core enumerations
 # ---------------------------------------------------------------------------
@@ -192,21 +200,30 @@ def mcp_error_data(
 # ---------------------------------------------------------------------------
 
 
-class TaxonomyError(Exception):
+class TaxonomyError(TappsBrainError):
     """Base class for all taxonomy-bound exceptions.
 
     Each subclass carries a class-level ``error_code`` that determines
     the HTTP status and JSON-RPC code used by the API handler layer.
     Callers may catch :class:`TaxonomyError` generically to handle any
     taxonomy error, or a specific subclass for finer control.
+
+    Inherits from :class:`~tapps_brain.exceptions.TappsBrainError` so the
+    SDK-wide semantic hierarchy (STORY-071.1) catches every wire-format
+    error.  Concrete subclasses also mix in the semantic supertype that
+    matches their HTTP status (e.g. ``BrainDegradedError`` is a
+    :class:`~tapps_brain.exceptions.TappsBrainTransientError`).
     """
 
     error_code: ErrorCode  # set on each subclass
 
     def __init__(self, message: str, **details: Any) -> None:  # noqa: ANN401
-        super().__init__(message)
+        super().__init__(message, status_code=None, body=None)
         self.message = message
         self.details: dict[str, Any] = details
+        # status_code is recoverable from the class-level error_code; expose
+        # it on the instance so callers don't need to import http_status().
+        self.status_code = http_status(self.error_code)
 
     def http_body(self, *, retry_after: int | None = None) -> dict[str, Any]:
         """Return the standard HTTP response body for this error."""
@@ -237,19 +254,19 @@ class TaxonomyError(Exception):
         return retry_policy(self.error_code)
 
 
-class BrainDegradedError(TaxonomyError):
+class BrainDegradedError(TaxonomyError, TappsBrainTransientError):
     """Postgres or connection pool unavailable; retry with back-off (503)."""
 
     error_code = ErrorCode.BRAIN_DEGRADED
 
 
-class BrainRateLimitedError(TaxonomyError):
+class BrainRateLimitedError(TaxonomyError, TappsBrainTransientError):
     """Caller exceeded a rate limit; honour ``Retry-After`` header (429)."""
 
     error_code = ErrorCode.BRAIN_RATE_LIMITED
 
 
-class ProjectNotFoundError(TaxonomyError):
+class ProjectNotFoundError(TaxonomyError, TappsBrainAuthError):
     """project_id is not registered; fix before retrying (403).
 
     Note
@@ -269,25 +286,25 @@ class ProjectNotFoundError(TaxonomyError):
         self.project_id = project_id
 
 
-class InvalidRequestError(TaxonomyError):
+class InvalidRequestError(TaxonomyError, TappsBrainValidationError):
     """Caller supplied a malformed or logically invalid request (400)."""
 
     error_code = ErrorCode.INVALID_REQUEST
 
 
-class IdempotencyConflictError(TaxonomyError):
+class IdempotencyConflictError(TaxonomyError, TappsBrainValidationError):
     """A different response already exists for the idempotency key (409)."""
 
     error_code = ErrorCode.IDEMPOTENCY_CONFLICT
 
 
-class NotFoundError(TaxonomyError):
+class NotFoundError(TaxonomyError, TappsBrainNotFoundError):
     """The requested resource does not exist (404)."""
 
     error_code = ErrorCode.NOT_FOUND
 
 
-class InternalError(TaxonomyError):
+class InternalError(TaxonomyError, TappsBrainTransientError):
     """Unexpected server-side failure; retry once (500)."""
 
     error_code = ErrorCode.INTERNAL_ERROR
