@@ -4,6 +4,8 @@ title: "Async-Native Postgres Core — psycopg3 AsyncConnection upgrade"
 status: planned
 priority: medium
 created: 2026-04-15
+updated: 2026-05-18
+linear_epic: TAP-2134
 tags: [async, postgres, psycopg3, performance, concurrency, v3]
 depends_on: [EPIC-059, EPIC-066]
 blocks: []

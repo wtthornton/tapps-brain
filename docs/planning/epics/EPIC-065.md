@@ -5,6 +5,7 @@
 **Priority:** P1 - High
 **Estimated LOE:** ~3-4 weeks (1 developer)
 **Dependencies:** EPIC-060 (HttpAdapter foundation — done), EPIC-048 (visual_snapshot v2 schema — done), EPIC-030 (diagnostics composite score — done)
+**Linear epic:** TAP-2131
 
 <!-- docsmcp:end:metadata -->
 

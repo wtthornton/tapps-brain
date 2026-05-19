@@ -4,7 +4,8 @@ title: "OTel GenAI semantic conventions — standardized telemetry export"
 status: in_progress
 priority: low
 created: 2026-03-23
-updated: 2026-04-15
+updated: 2026-05-18
+linear_epic: TAP-2135
 tags: [opentelemetry, telemetry, genai, observability, integration]
 see_also: [EPIC-061]
 ---

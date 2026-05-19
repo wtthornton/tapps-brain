@@ -4,6 +4,8 @@ title: "TappsBrainClient & AsyncTappsBrainClient — SDK Hardening and Documenta
 status: planned
 priority: high
 created: 2026-04-15
+updated: 2026-05-18
+linear_epic: TAP-2133
 tags: [sdk, client, http, async, documentation, v3]
 depends_on: [EPIC-070]
 blocks: []
