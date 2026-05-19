@@ -21,7 +21,7 @@ pytest.importorskip("fastapi")
 import httpx
 
 import tapps_brain.http_adapter as _http_mod
-from tapps_brain.http_adapter import _Settings, _service_version, create_app
+from tapps_brain.http_adapter import _service_version, _Settings, create_app
 
 _AUTH_TOKEN = "test-bearer-token"
 _HEADERS = {
