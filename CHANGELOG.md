@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/v1/kg/*` UUID validation — return 422 instead of 500 on malformed UUIDs** ([TAP-2140](https://linear.app/tappscodingagents/issue/TAP-2140)). Non-UUID strings POSTed to `/v1/kg/feedback`, `/v1/kg/neighbors`, and `/v1/kg/explain` previously reached psycopg's cursor and surfaced as HTTP 500 with a raw `psycopg.errors.InvalidTextRepresentation` traceback (5 occurrences observed in brain v3.20.1 between 21:05 and 21:16 UTC on 2026-05-18). The three handlers now validate every UUID-bound field (`edge_id`; `entity_ids[i]`; `subject_id`/`object_id`) via `uuid.UUID(...)` at the request-model layer and emit HTTP 422 with `{error, field, detail}` instead — no `psycopg` substring in the response body or response-path log line. Gives the [TAP-2133](https://linear.app/tappscodingagents/issue/TAP-2133) SDK's `TappsBrainValidationError` a stable shape to map against.
+
 ## [3.20.1] — 2026-05-18
 
 Hotfix release. The 3.20.0 container (and any 3.19.0 container with a fresh restart) fails ASGI lifespan startup with `REST route drift detected — update REST_ROUTE_TO_TOOL or mcp_profiles.yaml so the following routes map to a known tool: '/v1/forget' → 'brain_forget', ...`. Same code path also caused `/v1/tools/list?X-Brain-Profile=full` to return only the 8 eager tools instead of the full 63-tool profile surface.
