@@ -33,6 +33,12 @@ If the server already enforces a decision (authorization, routing, tier policy, 
 - If the response isn't structured enough to react to (refused / upgraded / why), ask for **response enrichment** on the action endpoint, not for a new read endpoint exposing the rules.
 - Exceptions where client-side rule reads ARE fine: rendering UI ("is this button enabled?") where the server still re-checks on submit, and fast-path local shortcuts where a stale cache is acceptable because the server re-checks.
 
+## Respect what's already shipped — reconcile drafts against `git log`
+
+Before filing a new Linear epic or story from an `EPIC-*.md` design document, run the **Pre-filing reconciliation** check in [linear-standards.md](./linear-standards.md). The codebase is the authoritative source of what has shipped; the design doc is a *prior intention* that may be partially or fully obsolete. Same family of rule as the other entries in this file: when something upstream (here, `main`) already enforces a decision (here, "this AC is done"), don't shadow it with a parallel ticket.
+
+The check costs < 2 minutes per ticket and is upstream of `docs_generate_epic` / `docs_generate_story`. See linear-standards.md for the 3-step procedure and a worked example using TAP-2135.
+
 ## Verify subagent claims about external APIs before citing them
 
 When a research / Explore subagent reports that a field is exposed in an external API response (especially for a sibling repo), do not cite it as fact in a plan without verifying the **serialization site** — not just the model definition.
@@ -43,10 +49,11 @@ When a research / Explore subagent reports that a field is exposed in an externa
 
 ## How to apply
 
-These three rules cluster around one principle: when something upstream is already enforcing a decision, exposing data, or producing output, **respect that as the source of truth**. Use it; don't shadow it.
+These rules cluster around one principle: when something upstream is already enforcing a decision, exposing data, or producing output, **respect that as the source of truth**. Use it; don't shadow it.
 
 Before writing client-side logic that talks to an external system, ask:
 
 1. Does the server already enforce this decision? If yes, just call and react to the response — don't pre-check.
 2. Is the auth path I'm proposing already solved by an existing plugin / OAuth session? If yes, use it; don't add a parallel credential.
 3. Does this claim about an external API come from a subagent report, or did I read the producer's code myself? If the former, verify before citing.
+4. Before filing a Linear ticket from a design doc, has the work already shipped on `main`? Run the linear-standards.md pre-filing reconciliation check.
