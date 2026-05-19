@@ -971,6 +971,13 @@ def memory_list_groups(store: Any, project_id: str, agent_id: str) -> list[str]:
 def memory_recall(
     store: Any, project_id: str, agent_id: str, *, message: str, group: str | None = None
 ) -> dict[str, Any]:
+    """Run the recall orchestrator with optional ``memory_group`` filter.
+
+    Returns the full :class:`~tapps_brain.models.RecallResult` payload
+    (``memory_section``, ``memories``, ``token_count``, ``recall_time_ms``,
+    ``truncated``) plus optional ``recall_diagnostics`` and ``quality_warning``
+    fields when the diagnostics circuit breaker is non-CLOSED.
+    """
     result = store.recall(message, memory_group=group)
     payload: dict[str, Any] = {
         "memory_section": result.memory_section,
@@ -995,6 +1002,12 @@ def memory_reinforce(
     key: str,
     confidence_boost: float = 0.0,
 ) -> dict[str, Any]:
+    """Reset the decay clock on an entry and optionally bump confidence.
+
+    ``confidence_boost`` is clamped to ``[0.0, _MAX_CONFIDENCE_BOOST]`` and
+    further constrained by source-based confidence ceilings. Returns
+    ``{"error": "not_found"}`` when the key is unknown.
+    """
     if not (0.0 <= confidence_boost <= _MAX_CONFIDENCE_BOOST):
         return {
             "error": "invalid_confidence_boost",
