@@ -274,9 +274,7 @@ async def test_async_context_manager_closes_connection_pool() -> None:
     * the underlying :class:`httpx.AsyncClient` reports ``is_closed``
     * calls after exit raise (``RuntimeError`` from httpx-on-closed-client)
     """
-    handler = ScriptedHandler(
-        tool_responses=[_tool_success_response([{"key": "k", "value": "v"}])]
-    )
+    handler = ScriptedHandler(tool_responses=[_tool_success_response([{"key": "k", "value": "v"}])])
 
     async with AsyncTappsBrainClient(
         "http://brain:8080",

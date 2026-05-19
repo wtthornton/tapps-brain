@@ -19,10 +19,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tapps_brain.client import (
+    _NO_RETRY,
     RetryConfig,
     TappsBrainClient,
     _backoff_delay,
-    _NO_RETRY,
     _resolve_retry_config,
     _retry_after_seconds,
 )
@@ -95,9 +95,7 @@ def test_client_default_retry_is_off() -> None:
 
 def test_client_explicit_retry_config_propagates() -> None:
     cfg = RetryConfig(max_attempts=5, base_delay=2.0, jitter=False)
-    client = TappsBrainClient(
-        "http://brain:8080", project_id="p1", agent_id="a1", retry_config=cfg
-    )
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", retry_config=cfg)
     try:
         assert client._retry_config is cfg
         assert client._max_retries == 4  # legacy mirror tracks max_attempts - 1
@@ -197,7 +195,9 @@ def _mock_success(body: Any) -> MagicMock:
     return resp
 
 
-def _mock_error(status: int, body: dict[str, Any], headers: dict[str, str] | None = None) -> MagicMock:
+def _mock_error(
+    status: int, body: dict[str, Any], headers: dict[str, str] | None = None
+) -> MagicMock:
     resp = MagicMock()
     resp.is_success = False
     resp.status_code = status
@@ -288,7 +288,9 @@ def test_retry_after_http_header_overrides_computed_backoff() -> None:
     cfg = RetryConfig(max_attempts=2, base_delay=0.1, jitter=False)
     client = _make_client(retry_config=cfg)
     client._http_client.post.side_effect = [
-        _mock_error(429, {"error": "brain_rate_limited", "message": "slow"}, headers={"retry-after": "7"}),
+        _mock_error(
+            429, {"error": "brain_rate_limited", "message": "slow"}, headers={"retry-after": "7"}
+        ),
         _mock_success({"key": "ok"}),
     ]
 

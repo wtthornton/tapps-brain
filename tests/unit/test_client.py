@@ -1052,9 +1052,7 @@ def test_sync_defaults_when_nothing_passed() -> None:
 
 def test_sync_legacy_timeout_propagates_to_both_legs() -> None:
     """Single ``timeout=`` (deprecated) still applies to both legs for back-compat."""
-    client = TappsBrainClient(
-        "http://brain:8080", project_id="p1", agent_id="a1", timeout=12.0
-    )
+    client = TappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", timeout=12.0)
     try:
         assert client._http_client.timeout.connect == 12.0
         assert client._http_client.timeout.read == 12.0
@@ -1117,9 +1115,7 @@ async def test_async_defaults_when_nothing_passed() -> None:
 @pytest.mark.asyncio
 async def test_async_legacy_timeout_propagates_to_both_legs() -> None:
     """Async: single ``timeout=`` still applies to both legs."""
-    client = AsyncTappsBrainClient(
-        "http://brain:8080", project_id="p1", agent_id="a1", timeout=7.5
-    )
+    client = AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1", timeout=7.5)
     try:
         await client._ensure_client()
         assert client._http_client.timeout.connect == 7.5
@@ -1197,9 +1193,7 @@ async def test_async_aclose_is_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_async_aexit_invokes_aclose() -> None:
     """``async with`` exit must release the pool via ``aclose()``."""
-    async with AsyncTappsBrainClient(
-        "http://brain:8080", project_id="p1", agent_id="a1"
-    ) as client:
+    async with AsyncTappsBrainClient("http://brain:8080", project_id="p1", agent_id="a1") as client:
         await client._ensure_client()
         inner = client._http_client
     assert client._closed is True
