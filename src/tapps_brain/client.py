@@ -547,20 +547,20 @@ def _post_tool(
         except ValueError:
             body = {}
 
-        exc = _parse_error_response(resp.status_code, body)
-        if exc is None:
+        parsed_exc = _parse_error_response(resp.status_code, body)
+        if parsed_exc is None:
             # Server returned an unrecognised error code (or no body).
             # Classify by HTTP status into the TappsBrain* semantic taxonomy
             # so callers never see a raw httpx.HTTPStatusError. (STORY-071.1)
-            exc = raise_for_response(resp.status_code, body)
+            parsed_exc = raise_for_response(resp.status_code, body)
 
         is_last_attempt = attempt == config.max_attempts - 1
-        if isinstance(exc, TappsBrainTransientError) and not is_last_attempt:
+        if isinstance(parsed_exc, TappsBrainTransientError) and not is_last_attempt:
             hint = _retry_after_seconds(resp) or float(body.get("retry_after") or 0.0)
             time.sleep(_backoff_delay(config, attempt, hint))
-            last_exc = exc
+            last_exc = parsed_exc
             continue
-        raise exc
+        raise parsed_exc
 
     if last_exc is not None:
         raise last_exc
@@ -607,17 +607,17 @@ async def _async_post_tool(
         except ValueError:
             body = {}
 
-        exc = _parse_error_response(resp.status_code, body)
-        if exc is None:
-            exc = raise_for_response(resp.status_code, body)
+        parsed_exc = _parse_error_response(resp.status_code, body)
+        if parsed_exc is None:
+            parsed_exc = raise_for_response(resp.status_code, body)
 
         is_last_attempt = attempt == config.max_attempts - 1
-        if isinstance(exc, TappsBrainTransientError) and not is_last_attempt:
+        if isinstance(parsed_exc, TappsBrainTransientError) and not is_last_attempt:
             hint = _retry_after_seconds(resp) or float(body.get("retry_after") or 0.0)
             await asyncio.sleep(_backoff_delay(config, attempt, hint))
-            last_exc = exc
+            last_exc = parsed_exc
             continue
-        raise exc
+        raise parsed_exc
 
     if last_exc is not None:
         raise last_exc
