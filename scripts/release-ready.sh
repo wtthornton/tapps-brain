@@ -27,6 +27,11 @@ SKIP_LINT="${SKIP_LINT:-0}"
 # adapter, or per-tenant auth.  Off by default to avoid blocking release gates in
 # environments without a running sidecar.
 TAPPS_BRAIN_CROSS_TENANT_SMOKE="${TAPPS_BRAIN_CROSS_TENANT_SMOKE:-0}"
+# Docs gate (smoke): verifies the critical user-facing docs survived the release
+# build.  Off by default — set TAPPS_BRAIN_DOCS_GATE=1 to require it.  This is a
+# *smoke* check, not a full drift audit; the full audit runs through the docsmcp
+# MCP tools (docs_check_drift / docs_release_gate) from an agent or in CI.
+TAPPS_BRAIN_DOCS_GATE="${TAPPS_BRAIN_DOCS_GATE:-0}"
 
 fail() {
   echo "release-ready: FAILED — $*" >&2
@@ -130,6 +135,39 @@ if [[ "$TAPPS_BRAIN_CROSS_TENANT_SMOKE" == "1" ]]; then
 else
   echo "==> [9/9] Cross-tenant HTTP denial smoke (skipped: TAPPS_BRAIN_CROSS_TENANT_SMOKE != 1)"
   echo "    Set TAPPS_BRAIN_CROSS_TENANT_SMOKE=1 to run before production deployments."
+fi
+
+# Docs smoke gate: confirm the critical user-facing docs are present and the
+# project still scans cleanly under the docsmcp scanner.  Cheap (< 2 s) and
+# catches obvious regressions like accidental delete of the index or
+# architecture artifacts.  The full drift / link / freshness audit runs from
+# an agent via docs_check_drift + docs_release_gate.
+if [[ "$TAPPS_BRAIN_DOCS_GATE" == "1" ]]; then
+  echo "==> [10/10] Docs smoke gate (TAPPS_BRAIN_DOCS_GATE=1)"
+  for doc in \
+      README.md \
+      CHANGELOG.md \
+      docs/DOCUMENTATION_INDEX.md \
+      docs/api-reference.md \
+      docs/architecture.html \
+      docs/engineering/system-architecture.md \
+      docs/engineering/diagrams.md \
+      docs/engineering/architecture-report.html \
+      docs/engineering/call-flows.md \
+      docs/engineering/data-stores-and-schema.md \
+      llms.txt; do
+    [[ -s "$doc" ]] || fail "docs gate — missing or empty: $doc"
+  done
+  if command -v docsmcp >/dev/null 2>&1; then
+    docsmcp scan 2>&1 | tail -5 \
+      || fail "docs gate — 'docsmcp scan' failed; check .docsmcp.yaml"
+  else
+    echo "    NOTE: docsmcp CLI not on PATH; skipping scan. Install with:"
+    echo "          uv tool install --reinstall <path>/packages/docs-mcp"
+  fi
+else
+  echo "==> [10/10] Docs smoke gate (skipped: TAPPS_BRAIN_DOCS_GATE != 1)"
+  echo "    Set TAPPS_BRAIN_DOCS_GATE=1 to require critical docs to be present."
 fi
 
 echo "release-ready: OK (all stages passed)"

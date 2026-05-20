@@ -1,29 +1,31 @@
 # tapps-brain — Documentation Index
 
-**249 documents** across **7 categories**
+**251 documents** across **7 categories**
 
 ## Overview
 
 | Category | Count |
 |---|---|
-| API Reference | 4 |
-| Architecture | 18 |
+| API Reference | 5 |
+| Architecture | 19 |
 | Getting Started | 11 |
-| Guides | 51 |
-| Operations | 8 |
-| Other | 6 |
-| Planning | 151 |
+| Guides | 52 |
+| Operations | 7 |
+| Other | 5 |
+| Planning | 152 |
 
 ## API Reference
 
-- [`src.tapps_brain`](api-reference.md) — tapps-brain: Persistent cross-session memory system for AI coding assistants. *(updated 2026-05-11)*
+- [tapps-brain — Documentation Index](DOCUMENTATION_INDEX.md) — **249 documents** across **7 categories** *(updated 2026-05-19)*
+- [`src.tapps_brain`](api-reference.md) — tapps-brain: Persistent cross-session memory system for AI coding assistants. *(updated 2026-05-19)*
 - [Code Inventory and Documentation Gaps](engineering/code-inventory-and-doc-gaps.md) — All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers. *(updated 2026-05-11)*
 - [Data Stores and Schema Reference](engineering/data-stores-and-schema.md) — All durable stores use **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). No SQLite fall... *(updated 2026-05-11)*
 - [Kubernetes Liveness and Readiness Probes](operations/k8s-probes.md) — tapps-brain's HTTP adapter exposes two dedicated probe endpoints that map *(updated 2026-05-11)*
 ## Architecture
 
+- [tapps-brain — Architecture Diagrams](engineering/diagrams.md) — Code-aligned visual reference. Every diagram below is generated from the current `src/tapps_brain/` tree or hand-auth... *(updated 2026-05-19)*
 - [Industry features and technologies (implementation map)](engineering/features-and-technologies.md) — **Audience:** Architecture and product review — what capability areas we cover, which libraries/patterns we use, and ... *(updated 2026-05-11)*
-- [System Architecture (Implementation-Aligned)](engineering/system-architecture.md) — tapps-brain is designed for **many concurrent agents** without shared-DB bottlenecks: *(updated 2026-05-11)*
+- [System Architecture (Implementation-Aligned)](engineering/system-architecture.md) — tapps-brain is designed for **many concurrent agents** without shared-DB bottlenecks: *(updated 2026-05-19)*
 - [Configurable Memory Profiles — Design Document](planning/DESIGN-CONFIGURABLE-MEMORY-PROFILES.md) *(updated 2026-05-11)*
 - [ADR-001: Retrieval stack — embedded SQLite-first (defer learned sparse, ColBERT, managed vector DB)](planning/adr/ADR-001-retrieval-stack.md) — **Status:** Accepted *(updated 2026-05-11)*
 - [ADR-002: Freshness — lazy decay + operator GC (defer wall-clock TTL jobs)](planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md) — **Status:** Accepted *(updated 2026-05-11)*
@@ -47,7 +49,7 @@
 - [tapps-brain benchmarks](benchmarks/README.md) — End-to-end QA benchmarks for tapps-brain. These are **answer-based** *(updated 2026-05-11)*
 - [tapps-brain case studies](case-studies/README.md) — Production adopter case studies — how real teams run tapps-brain in their *(updated 2026-05-11)*
 - [NLT Labs — Brand Style Sheet & Logo Pack Audit](design/nlt-brand/README.md) — | Item | Location | *(updated 2026-05-11)*
-- [Engineering Documentation Baseline](engineering/README.md) — This folder is the code-aligned engineering reference for tapps-brain runtime behavior. *(updated 2026-05-11)*
+- [Engineering Documentation Baseline](engineering/README.md) — This folder is the code-aligned engineering reference for tapps-brain runtime behavior. *(updated 2026-05-19)*
 - [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-05-11)*
 - [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-05-11)*
 - [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-05-17)*
@@ -55,6 +57,7 @@
 - [Ralph setup guide](guides/ralph-setup.md) — This guide covers the end-to-end setup for running Ralph against the *(updated 2026-05-16)*
 ## Guides
 
+- [Getting Started with tapps-brain](ONBOARDING.md) — - Python >=3.12 *(updated 2026-05-19)*
 - [Agent integration guide](guides/agent-integration.md) — This page is the **operator contract** for AI agents using tapps-brain: the *(updated 2026-05-11)*
 - [Agent.md Wiring Guide](guides/agent-md-wiring.md) — This guide explains how to grant tapps-brain MCP access in an `AGENT.md` file *(updated 2026-05-11)*
 - [Agent Playbook — Getting Full Value from tapps-brain](guides/agent-playbook.md) — **Audience:** AI coding agents (Claude Code, Cursor, Aider, Codex, custom in-process agents) using tapps-brain via MC... *(updated 2026-05-12)*
@@ -108,7 +111,6 @@
 - [Write-Path Trade-off Guide](guides/write-path-tradeoff.md) — tapps-brain supports two write-path modes: **deterministic** (default) and *(updated 2026-05-11)*
 ## Operations
 
-- [tapps-brain — Documentation Index](DOCUMENTATION_INDEX.md) — **242 documents** across **7 categories** *(updated 2026-05-17)*
 - [Partition Retention — `experience_events`](engineering/partition-retention.md) — **Audience:** tapps-brain operators running the deployed `tapps-brain-http` container in production. *(updated 2026-05-17)*
 - [DB Roles Runbook — tapps-brain](operations/db-roles-runbook.md) — **Covers EPIC-063 STORY-063.1 + STORY-063.2: least-privilege Postgres roles.** *(updated 2026-05-11)*
 - [Operator Runbook — tapps-brain Observability](operations/observability-runbook.md) — See [`k8s-probes.md`](k8s-probes.md) for full probe spec. *(updated 2026-05-11)*
@@ -123,7 +125,6 @@
 - [tapps-brain v3 Threat Model](engineering/threat-model.md) — **Scope:** tapps-brain v3.0 — Postgres-only persistence plane with private agent memory, *(updated 2026-05-11)*
 - [Hot-Path Scoring Baseline — 2026-05-15](perf/2026-05-15-baseline.md) — Generated for TAP-1844: Score & fix hot files. *(updated 2026-05-16)*
 - [Performance Benchmarks](perf/benchmarks.md) — Benchmark suite for tapps-brain HTTP adapter hot paths (TAP-1855). *(updated 2026-05-16)*
-- [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-05-11)*
 ## Planning
 
 - [LoCoMo benchmark](benchmarks/locomo.md) — - **Paper:** [Maharana et al. 2024, arXiv:2402.17753](https://arxiv.org/abs/2402.17753) *(updated 2026-05-11)*
@@ -139,6 +140,7 @@
 - [Issue triage — saved searches and board setup](planning/ISSUE_TRIAGE_VIEWS.md) — Last updated: 2026-03-27 *(updated 2026-05-11)*
 - [Planning Conventions](planning/PLANNING.md) — This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding ... *(updated 2026-05-11)*
 - [Project status snapshot](planning/STATUS.md) — **Last updated:** 2026-04-20 (America/Los_Angeles) — **v3.10.0** — Security batch (TAP-626–655): per-tenant auth bypa... *(updated 2026-05-11)*
+- [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](planning/archive/ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-05-11)*
 - [SQLite to Postgres - Meeting Notes](planning/archive/sqlite-to-postgres-meeting-notes.md) — Status: active discussion *(updated 2026-05-11)*
 - [Implementation plan: dynamic tapps-brain visual identity](planning/brain-visual-implementation-plan.md) — Track progress here for a **modern, per-instance-unique** visual representation of tapps-brain (dashboard, marketing,... *(updated 2026-05-11)*
 - [Phase 2 — Follow-up issues (ready to file)](planning/engineering-doc-phase2-follow-up-issues.md) — **Purpose:** Concrete, prioritized cleanup items derived from `docs/engineering/code-inventory-and-doc-gaps.md` and f... *(updated 2026-05-11)*

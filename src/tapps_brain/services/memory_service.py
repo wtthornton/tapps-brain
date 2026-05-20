@@ -1289,6 +1289,12 @@ def memory_ingest(
     source: str = "agent",
     agent_scope: str = "private",
 ) -> dict[str, Any]:
+    """Extract durable facts from a free-form context blob and persist them.
+
+    Runs rule-based extraction (no LLM) via :mod:`tapps_brain.extraction`
+    to find decision-like statements, then saves each as a new entry. Returns
+    the list of created keys plus a count.
+    """
     from tapps_brain.agent_scope import normalize_agent_scope
 
     try:
@@ -1315,6 +1321,13 @@ def memory_supersede(
     tier: str | None = None,
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Replace an existing entry, recording the old one as superseded.
+
+    Preserves the version chain so :func:`memory_history` can reconstruct the
+    full timeline. Returns ``{"error": "not_found"}`` for an unknown
+    ``old_key`` or ``{"error": "already_superseded"}`` when the chain head
+    has moved on.
+    """
     kwargs: dict[str, Any] = {}
     if key is not None:
         kwargs["key"] = key
@@ -1340,6 +1353,12 @@ def memory_supersede(
 def memory_history(
     store: Any, project_id: str, agent_id: str, *, key: str
 ) -> list[dict[str, Any]] | dict[str, Any]:
+    """Return the supersede chain for a key in chronological order.
+
+    Each row contains the trimmed value plus ``valid_at`` / ``invalid_at`` /
+    ``superseded_by`` so callers can reconstruct the timeline. Returns
+    ``{"error": "not_found"}`` for an unknown or empty-chain key.
+    """
     try:
         chain = store.history(key)
     except KeyError:
@@ -1373,6 +1392,12 @@ def memory_index_session(
     session_id: str,
     chunks: list[str],
 ) -> dict[str, Any]:
+    """Persist session chunks to the searchable session index.
+
+    Chunks are stored in the Postgres ``session_chunks`` table with a tsvector
+    index, scoped to ``(project_id, agent_id)``. Use
+    :func:`memory_search_sessions` to query them later.
+    """
     stored = store.index_session(session_id, chunks)
     return {
         "status": "indexed",
@@ -1384,6 +1409,12 @@ def memory_index_session(
 def memory_search_sessions(
     store: Any, project_id: str, agent_id: str, *, query: str, limit: int = 10
 ) -> dict[str, Any]:
+    """Full-text search the session chunk index for relevant past sessions.
+
+    Returns up to ``limit`` matching chunks with their session ids and scores.
+    Trade-off: broader coverage than memory recall but noisier — relies on
+    high-quality session flush prompts.
+    """
     results = store.search_sessions(query, limit=limit)
     return {
         "results": results,
@@ -1400,6 +1431,12 @@ def memory_capture(
     source: str = "agent",
     agent_scope: str = "private",
 ) -> dict[str, Any]:
+    """Capture durable facts from an agent's response and persist them.
+
+    Used by post-turn hooks: the :class:`RecallOrchestrator` extracts decision-
+    like statements from ``response`` and saves each as a new entry. Returns
+    the list of created keys.
+    """
     from tapps_brain.agent_scope import normalize_agent_scope
     from tapps_brain.recall import RecallOrchestrator
 
@@ -1432,6 +1469,12 @@ def memory_export(
     scope: str | None = None,
     min_confidence: float | None = None,
 ) -> dict[str, Any]:
+    """Export memory entries as a JSON-serialisable bundle.
+
+    Applies optional tier / scope / minimum-confidence filters. The output is
+    accepted by :func:`memory_import`. For Managed Agents-shaped exports use
+    :func:`brain_export` instead.
+    """
     entries = store.list_all(tier=tier, scope=scope)
     if min_confidence is not None:
         entries = [e for e in entries if e.confidence >= min_confidence]
@@ -1450,6 +1493,12 @@ def memory_import(
     memories_json: str,
     overwrite: bool = False,
 ) -> dict[str, Any]:
+    """Import a JSON bundle produced by :func:`memory_export`.
+
+    ``overwrite=False`` skips entries whose key already exists. Returns counts
+    of ``imported`` / ``skipped`` / ``errors`` plus a status string. Each
+    failure is logged but never aborts the batch.
+    """
     try:
         data = json.loads(memories_json)
     except json.JSONDecodeError as exc:
@@ -1509,6 +1558,11 @@ def memory_import(
 
 
 def memory_gc_config(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return the current :class:`~tapps_brain.gc.GCConfig` as a dict.
+
+    Reflects the active profile's settings plus any runtime overrides applied
+    via :func:`memory_gc_config_set`.
+    """
     return store.get_gc_config().to_dict()  # type: ignore[no-any-return]
 
 
@@ -1521,6 +1575,11 @@ def memory_gc_config_set(
     session_expiry_days: int | None = None,
     contradicted_threshold: float | None = None,
 ) -> dict[str, Any]:
+    """Partially update the GC config. ``None`` values keep the current value.
+
+    Returns the resulting full :class:`GCConfig` dict. Changes apply
+    immediately to the running store but are not persisted to the YAML profile.
+    """
     from tapps_brain.gc import GCConfig
 
     current = store.get_gc_config()
@@ -1544,6 +1603,11 @@ def memory_gc_config_set(
 
 
 def memory_consolidation_config(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return the current :class:`ConsolidationConfig` as a dict.
+
+    Controls whether and when similar entries are deterministically merged
+    (no LLM) on save. See [EPIC-058](../planning/epics/EPIC-058.md).
+    """
     return store.get_consolidation_config().to_dict()  # type: ignore[no-any-return]
 
 
@@ -1556,6 +1620,12 @@ def memory_consolidation_config_set(
     threshold: float | None = None,
     min_entries: int | None = None,
 ) -> dict[str, Any]:
+    """Partially update the consolidation config. ``None`` values are kept.
+
+    Returns the resulting full config dict. Use the
+    ``maintenance consolidation-threshold-sweep`` CLI to pick a threshold
+    before changing it in production.
+    """
     from tapps_brain.store import ConsolidationConfig
 
     current = store.get_consolidation_config()
@@ -1574,6 +1644,12 @@ def memory_consolidation_config_set(
 
 
 def memory_relations(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
+    """Return the outgoing subject-predicate-object relations for ``key``.
+
+    Relations are extracted deterministically (no LLM) by
+    :mod:`tapps_brain.relations`. See :func:`memory_query_relations` for
+    SPO-pattern queries and :func:`memory_find_related` for graph traversal.
+    """
     relations = store.get_relations(key)
     return {"key": key, "relations": relations, "count": len(relations)}
 
@@ -1581,6 +1657,12 @@ def memory_relations(store: Any, project_id: str, agent_id: str, *, key: str) ->
 def memory_relations_get_batch(
     store: Any, project_id: str, agent_id: str, *, keys_json: str
 ) -> dict[str, Any]:
+    """Fetch relations for many keys in a single round-trip.
+
+    ``keys_json`` is a JSON array of string keys. Returns a ``results`` dict
+    keyed by entry key plus a ``total_count`` sum. Missing keys map to an
+    empty list rather than raising.
+    """
     try:
         keys = json.loads(keys_json)
     except (json.JSONDecodeError, ValueError) as exc:
@@ -1595,6 +1677,12 @@ def memory_relations_get_batch(
 def memory_find_related(
     store: Any, project_id: str, agent_id: str, *, key: str, max_hops: int = 2
 ) -> dict[str, Any]:
+    """Walk the relation graph from ``key`` up to ``max_hops`` levels deep.
+
+    Returns each related entry's key with the hop count at which it was first
+    reached. ``max_hops`` must be ``>= 1``. The richer first-class KG path is
+    via :func:`brain_get_neighbors`.
+    """
     if max_hops < 1:
         return {"error": "invalid_max_hops", "message": "max_hops must be >= 1"}
     try:
@@ -1618,6 +1706,12 @@ def memory_query_relations(
     predicate: str = "",
     object_entity: str = "",
 ) -> dict[str, Any]:
+    """SPO-pattern query over extracted relations.
+
+    Empty values match any. ``query_relations(predicate="depends_on")``
+    returns every ``X depends_on Y`` triple in the store, regardless of
+    subject/object.
+    """
     matches = store.query_relations(
         subject=subject or None,
         predicate=predicate or None,
@@ -1642,6 +1736,12 @@ def memory_audit(
     until: str = "",
     limit: int = 50,
 ) -> dict[str, Any]:
+    """Query the Postgres ``audit_log`` table with optional filters.
+
+    All filters are AND-combined; empty values match any. ``since`` / ``until``
+    accept ISO-8601 timestamps. Limited to ``limit`` rows (default 50). See
+    :class:`tapps_brain.audit.AuditReader`.
+    """
     if limit < 1:
         return {"error": "invalid_limit", "message": "limit must be >= 1"}
     entries = store.audit(
@@ -1658,6 +1758,11 @@ def memory_audit(
 
 
 def memory_list_tags(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
+    """Return all tags in use with their usage counts, sorted by frequency.
+
+    Ties are broken alphabetically. Use :func:`memory_entries_by_tag` to look
+    up entries carrying a specific tag.
+    """
     counts = store.list_tags()
     tags_list = sorted(
         [{"tag": t, "count": c} for t, c in counts.items()],
@@ -1675,6 +1780,11 @@ def memory_update_tags(
     add: list[str] | None = None,
     remove: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Add and/or remove tags on a memory entry.
+
+    Both lists are optional. Tags that are already present (for ``add``) or
+    already absent (for ``remove``) are no-ops. Returns the updated tag list.
+    """
     result = store.update_tags(key, add=add, remove=remove)
     if isinstance(result, dict):
         return result
@@ -1688,6 +1798,10 @@ def memory_update_tags(
 def memory_entries_by_tag(
     store: Any, project_id: str, agent_id: str, *, tag: str, tier: str = ""
 ) -> dict[str, Any]:
+    """Return all entries carrying ``tag``, optionally filtered by tier.
+
+    Values are returned in full (not truncated). Empty ``tier`` matches any.
+    """
     entries = store.entries_by_tag(tag, tier=tier or None)
     return {
         "tag": tag,
@@ -1730,6 +1844,13 @@ async def async_memory_save(
     source_agent: str = "",
     group: str | None = None,
 ) -> dict[str, Any]:
+    """Async-native counterpart of :func:`memory_save`.
+
+    Validates synchronously (pure CPU) then routes the write through
+    :class:`~tapps_brain.aio.AsyncMemoryStore`, which when an async backend is
+    wired sends the Postgres I/O to ``AsyncPostgresPrivateBackend`` instead
+    of the default thread pool.
+    """
     from tapps_brain.agent_scope import (
         agent_scope_valid_values_for_errors,
         normalize_agent_scope,
@@ -1805,6 +1926,11 @@ async def async_memory_save(
 async def async_brain_forget(
     async_store: Any, project_id: str, agent_id: str, *, key: str
 ) -> dict[str, Any]:
+    """Async-native counterpart of :func:`brain_forget`.
+
+    Same return shape; the Postgres delete goes through the async backend
+    when one is wired.
+    """
     entry = await async_store.get(key)
     if entry is None:
         return {"forgotten": False, "reason": "not_found"}
@@ -1820,6 +1946,11 @@ async def async_brain_learn_success(
     task_description: str,
     task_id: str = "",
 ) -> dict[str, Any]:
+    """Async-native counterpart of :func:`brain_learn_success`.
+
+    Same key derivation and tagging; the Postgres write goes through the
+    async backend when one is wired.
+    """
     from tapps_brain.agent_brain import _content_key
 
     key = _content_key(f"success-{task_description}")
@@ -1839,6 +1970,11 @@ async def async_brain_learn_failure(
     task_id: str = "",
     error: str = "",
 ) -> dict[str, Any]:
+    """Async-native counterpart of :func:`brain_learn_failure`.
+
+    Same key derivation, tagging, and ``error``-append behaviour; the
+    Postgres write goes through the async backend when one is wired.
+    """
     from tapps_brain.agent_brain import _content_key
 
     key = _content_key(f"failure-{description}")
