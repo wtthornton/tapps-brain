@@ -248,7 +248,10 @@ LIMIT 100
 #:         predicate_filter (str|None x2), limit (int).
 GET_MULTI_NEIGHBORS_1HOP_SQL = """
 SELECT
-    e.id                            AS edge_id,
+    -- ::text for parity with the 2-hop query and neighbor_id below — both
+    -- paths return a string edge_id so MCP JSON serialization and callers see
+    -- one consistent type (TAP-2674).
+    e.id::text                      AS edge_id,
     e.predicate,
     e.confidence                    AS edge_confidence,
     e.stability,
@@ -279,7 +282,7 @@ WHERE e.brain_id = %s
   AND e.subject_entity_id = ANY(%s::uuid[])
   AND (e.status = 'active' OR %s)
   AND (NOT e.contradicted OR %s)
-  AND (%s IS NULL OR e.predicate = %s)
+  AND (%s::text IS NULL OR e.predicate = %s::text)
 ORDER BY e.confidence DESC
 LIMIT %s
 """
@@ -313,7 +316,7 @@ WITH RECURSIVE neighbourhood(
       AND e.subject_entity_id = ANY(%s::uuid[])
       AND (e.status = 'active' OR %s)
       AND (NOT e.contradicted OR %s)
-      AND (%s IS NULL OR e.predicate = %s)
+      AND (%s::text IS NULL OR e.predicate = %s::text)
 
     UNION ALL
 
@@ -332,11 +335,15 @@ WITH RECURSIVE neighbourhood(
     WHERE e2.brain_id = %s
       AND (e2.status = 'active' OR %s)
       AND (NOT e2.contradicted OR %s)
-      AND (%s IS NULL OR e2.predicate = %s)
+      AND (%s::text IS NULL OR e2.predicate = %s::text)
       AND n.hop < %s
 )
-SELECT DISTINCT ON (edge_id)
-    edge_id::text,
+-- ``edge_id`` is qualified as ``n2.edge_id`` here: it exists in both
+-- ``neighbourhood n2`` and the ``ev`` evidence subquery, so an unqualified
+-- reference is AmbiguousColumn (TAP-2674 — surfaced once the $5 cast let the
+-- 2-hop query reach execution).
+SELECT DISTINCT ON (n2.edge_id)
+    n2.edge_id::text,
     predicate, edge_confidence, stability, difficulty,
     last_reinforced, edge_updated_at, edge_status, contradicted,
     reinforce_count, useful_access_count, access_count, source,
@@ -349,7 +356,7 @@ LEFT JOIN (
     FROM   kg_evidence
     GROUP  BY edge_id
 ) ev ON ev.edge_id = n2.edge_id
-ORDER BY edge_id, hop, edge_confidence DESC
+ORDER BY n2.edge_id, hop, edge_confidence DESC
 LIMIT %s
 """
 
