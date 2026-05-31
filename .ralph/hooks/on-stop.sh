@@ -118,6 +118,25 @@ fi
 #      line 607. Anchoring every field grep to ^[[:space:]] makes prose
 #      mid-line uncatchable.
 if [[ -n "$_status_block" ]]; then
+  # PARSER-HARDENING-2 (TAP-2494): single-line RALPH_STATUS blocks.
+  # When Claude emits the entire block on one line (no embedded newlines,
+  # no ---END_RALPH_STATUS--- terminator — observed on AgentForge 2026-05-23
+  # campaign, $22 idle-runaway), the line-anchored field greps below silently
+  # return empty for every field. Block-normalize injects a newline before any
+  # known mid-line field token so the existing greps work unchanged.
+  #
+  # CRITICAL: gate this on "block contains no embedded newlines" so we DON'T
+  # split multi-line blocks where the RECOMMENDATION line legitimately mentions
+  # a field token in prose (NLTlabsPE 2026-04-30 incident — see test_on_stop_hook
+  # PARSER-HARDENING regression case). The line-anchor protection that catches
+  # mid-line prose only works when fields are already on their own lines.
+  if [[ "$_status_block" != *$'\n'* ]]; then
+    _status_block=$(echo "$_status_block" | awk '
+      BEGIN { pat = "[[:space:]]+(STATUS|TASKS_COMPLETED_THIS_LOOP|FILES_MODIFIED|WORK_TYPE|EXIT_SIGNAL|RECOMMENDATION|TESTS_STATUS|LINEAR_ISSUE|LINEAR_URL|LINEAR_EPIC|LINEAR_EPIC_DONE|LINEAR_EPIC_TOTAL|LINEAR_OPEN_COUNT|LINEAR_DONE_COUNT|NEXT_INTENDED_ISSUE):" }
+      { gsub(pat, "\n&"); print }
+    ')
+  fi
+
   _status_block=$(echo "$_status_block" | awk '
     {
       pos = index($0, ":")
@@ -152,6 +171,38 @@ if [[ -n "$_status_block" ]]; then
   linear_open_count=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_OPEN_COUNT:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_OPEN_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
   linear_done_count=$(echo "$_status_block" | grep -E "^[[:space:]]*LINEAR_DONE_COUNT:" | tail -1 | sed -E 's/^[[:space:]]*LINEAR_DONE_COUNT:[[:space:]]*//' | tr -d '[:space:]' || echo "")
   tests_status=$(echo "$_status_block" | grep -E "^[[:space:]]*TESTS_STATUS:" | tail -1 | sed -E 's/^[[:space:]]*TESTS_STATUS:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+  # T4 / 2.15.9: optional NEXT_INTENDED_ISSUE field for brief-lookahead.
+  # Claude emits this when it knows which ticket it will pick on the next
+  # loop. Used by ralph_spawn_coordinator to consume a pre-warmed
+  # brief-next.json instead of cold-spawning. Optional — graceful absence.
+  next_intended_issue=$(echo "$_status_block" | grep -E "^[[:space:]]*NEXT_INTENDED_ISSUE:" | tail -1 | sed -E 's/^[[:space:]]*NEXT_INTENDED_ISSUE:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+
+  # PARSER-HARDENING-2 FALLBACK (TAP-2494): defense-in-depth value-restricted
+  # parsers. Fire ONLY when the primary line-anchored grep above returned
+  # empty/false AND the block is non-empty (e.g., block-normalize couldn't
+  # find a match the anchored grep would catch — single-line block with no
+  # surrounding whitespace before the field token). Value enum restriction
+  # protects against prose collisions ("did NOT emit EXIT_SIGNAL: false" in a
+  # RECOMMENDATION line cannot trigger because the enum locks the surface).
+  if [[ -z "$exit_signal" || "$exit_signal" == "false" ]]; then
+    _fb_es=$(echo "$_status_block" | grep -oE '\bEXIT_SIGNAL:[[:space:]]*(true|false)\b' | tail -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+    if [[ -n "$_fb_es" && "$_fb_es" != "$exit_signal" ]]; then
+      exit_signal="$_fb_es"
+      echo "INFO: on-stop fallback parser hit EXIT_SIGNAL=$_fb_es (single-line block detected)" >&2
+    fi
+  fi
+  if [[ "$status" == "UNKNOWN" || -z "$status" ]]; then
+    _fb_st=$(echo "$_status_block" | grep -oE '\bSTATUS:[[:space:]]*(COMPLETE|BLOCKED|IN_PROGRESS|UNKNOWN)\b' | tail -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+    [[ -n "$_fb_st" ]] && status="$_fb_st"
+  fi
+  if [[ "$tasks_done" == "0" || -z "$tasks_done" ]]; then
+    _fb_td=$(echo "$_status_block" | grep -oE '\bTASKS_COMPLETED_THIS_LOOP:[[:space:]]*[0-9]+\b' | tail -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+    [[ -n "$_fb_td" && "$_fb_td" =~ ^[0-9]+$ ]] && tasks_done="$_fb_td"
+  fi
+  if [[ "$files_modified_reported" == "0" || -z "$files_modified_reported" ]]; then
+    _fb_fm=$(echo "$_status_block" | grep -oE '\bFILES_MODIFIED:[[:space:]]*[0-9]+\b' | tail -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '[:space:]' || echo "")
+    [[ -n "$_fb_fm" && "$_fb_fm" =~ ^[0-9]+$ ]] && files_modified_reported="$_fb_fm"
+  fi
 else
   # No structured status block found — extract from full text
   exit_signal="false"
@@ -168,6 +219,7 @@ else
   linear_open_count=""
   linear_done_count=""
   tests_status=""
+  next_intended_issue=""
 fi
 
 # LINEAR-DASH: sanitize Linear fields; empty strings become JSON null
@@ -181,6 +233,19 @@ fi
 
 # Normalize TESTS_STATUS to upper-case for comparison
 tests_status="${tests_status^^}"
+
+# T4 / 2.15.9: persist NEXT_INTENDED_ISSUE for the harness lookahead.
+# Accept TAP-NNNN-style identifiers only; "none" / empty / non-matching → remove.
+[[ "$next_intended_issue" =~ ^[Nn]one$ ]] && next_intended_issue=""
+if [[ "$next_intended_issue" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then
+    _nii_file="$RALPH_DIR/.next_intended_issue"
+    _nii_tmp="${_nii_file}.tmp.$$.${RANDOM}"
+    printf '%s\n' "$next_intended_issue" > "$_nii_tmp" 2>/dev/null \
+        && mv -f "$_nii_tmp" "$_nii_file" 2>/dev/null \
+        || rm -f "$_nii_tmp" 2>/dev/null
+else
+    rm -f "$RALPH_DIR/.next_intended_issue" 2>/dev/null
+fi
 
 # Defaults for empty values
 exit_signal="${exit_signal:-false}"
@@ -304,6 +369,20 @@ fi
 # Validate loop_count is numeric before arithmetic
 [[ "$loop_count" =~ ^[0-9]+$ ]] || loop_count=0
 loop_count=$((loop_count + 1))
+
+# TAP-2346 (F7): when ralph_loop.sh::main exports LOOP_COUNT for the
+# current iteration, prefer it over the inherited+1 value. Without this,
+# the harness's per-invocation counter (reset to 0 on each `ralph` start)
+# and the hook's cumulative-across-sessions counter diverge — operators
+# observed "Response Analysis - Loop #19" while the harness was on
+# iteration #10. LOOP_COUNT is only set inside the RALPH_LOOP_ACTIVE-
+# guarded path (ralph_loop.sh:4975), so behavior for interactive Claude
+# Code sessions is unchanged (the RALPH_LOOP_ACTIVE guard above already
+# returned 0 for those).
+if [[ -n "${LOOP_COUNT:-}" && "${LOOP_COUNT}" =~ ^[0-9]+$ ]]; then
+  loop_count="$LOOP_COUNT"
+fi
+
 [[ "$prev_session_cost" =~ ^[0-9]+(\.[0-9]+)?$ ]] || prev_session_cost=0
 [[ "$prev_session_input" =~ ^[0-9]+$ ]] || prev_session_input=0
 [[ "$prev_session_output" =~ ^[0-9]+$ ]] || prev_session_output=0
@@ -475,9 +554,17 @@ fi
 # extracts file_path / notebook_path, normalizes to repo-relative, dedupes (jq's
 # `unique` sorts as a side effect), caps at 100, atomic-writes. On no transcript
 # or no edit-class tools, writes an empty file rather than leaving a stale list.
+#
+# TAP-2501: skip this entire block for synthetic idle ticks (WORK_TYPE=IDLE_TICK).
+# Idle ticks have no transcript / no real tool calls, so re-running the walk
+# would rewrite the file to empty — busting the prompt-cache prefix for the
+# next real loop. Skipping keeps the previous loop's authoritative file list
+# intact across idle ticks.
 _lcf_dest="$RALPH_DIR/.last_completed_files"
 _lcf_tmp="${_lcf_dest}.tmp.$$"
-if [[ -n "$_transcript" && -f "$_transcript" ]]; then
+if [[ "$work_type" == "IDLE_TICK" ]]; then
+  : # skip — TAP-2501 cache hygiene
+elif [[ -n "$_transcript" && -f "$_transcript" ]]; then
   jq -rs '
     [ .[] | select(.type == "assistant") | .message.content[]?
       | select(.type == "tool_use"
@@ -495,7 +582,17 @@ if [[ -n "$_transcript" && -f "$_transcript" ]]; then
     _proj_dir="${CLAUDE_PROJECT_DIR%/}"
     _proj_dir_escaped="${_proj_dir//\\/\\\\}"
     _proj_dir_escaped="${_proj_dir_escaped//|/\\|}"
-    sed -i "s|^${_proj_dir_escaped}/||" "$_lcf_tmp" 2>/dev/null || true
+    # `sed -i` syntax differs between GNU (Linux) and BSD (macOS): BSD requires
+    # an explicit backup-extension argument (empty string for in-place). Use a
+    # tmp + mv instead to stay portable across both — silent failure here on
+    # macOS would have left CLAUDE_PROJECT_DIR-prefixed absolute paths in the
+    # file, breaking lib/linear_optimizer.sh Jaccard scoring (which compares
+    # against repo-relative paths).
+    if sed "s|^${_proj_dir_escaped}/||" "$_lcf_tmp" > "${_lcf_tmp}.new" 2>/dev/null; then
+      mv -f "${_lcf_tmp}.new" "$_lcf_tmp" 2>/dev/null || rm -f "${_lcf_tmp}.new" 2>/dev/null
+    else
+      rm -f "${_lcf_tmp}.new" 2>/dev/null
+    fi
     # Re-sort+dedupe in case normalization produced collisions.
     sort -u -o "$_lcf_tmp" "$_lcf_tmp" 2>/dev/null || true
   fi
@@ -661,6 +758,14 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
       > "$RALPH_DIR/.circuit_breaker_state"
   fi
   local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
+
+  # TAP-2497: clear mcp_blocked_count if this loop is NOT an mcp_unreachable
+  # response. Without this, transient outages would keep counting toward the
+  # quorum across recovered loops.
+  if ! [[ "$status" == "BLOCKED" && "$recommendation" == *mcp_unreachable* ]]; then
+    rm -f "$RALPH_DIR/.mcp_blocked_count" 2>/dev/null
+  fi
+
   if [[ "$files_modified" -gt 0 || "$tasks_done" -gt 0 ]]; then
     # Progress detected — reset no-progress counter, permission denials, and close
     jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
@@ -702,6 +807,49 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
       "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
       && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+  elif [[ "$status" == "BLOCKED" && "$recommendation" == *mcp_unreachable* ]]; then
+    # TAP-2497: MCP transport is degraded — Claude correctly emitted BLOCKED
+    # rather than improvising EXIT_SIGNAL from a stale cache. Do NOT count
+    # this loop as no-progress (the agent is blocked on infrastructure, not
+    # stagnant). Bump a separate .mcp_blocked_count counter; ralph_loop.sh
+    # uses it to apply exponential backoff and halt after N consecutive
+    # outages with exit_reason=mcp_unreachable_quorum. Counter resets on
+    # the next non-mcp_unreachable response.
+    _mcp_blocked_file="$RALPH_DIR/.mcp_blocked_count"
+    _mcp_blocked_count=0
+    [[ -f "$_mcp_blocked_file" ]] && read -r _mcp_blocked_count < "$_mcp_blocked_file" 2>/dev/null
+    [[ "$_mcp_blocked_count" =~ ^[0-9]+$ ]] || _mcp_blocked_count=0
+    _mcp_blocked_count=$((_mcp_blocked_count + 1))
+    printf '%s\n' "$_mcp_blocked_count" > "$_mcp_blocked_file"
+    jq '.consecutive_permission_denials = 0' \
+      "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
+      && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+    # Quorum halt: 3 consecutive mcp_unreachable → write halt sentinel
+    _mcp_threshold=${RALPH_MCP_BLOCKED_QUORUM:-3}
+    if [[ "$_mcp_blocked_count" -ge "$_mcp_threshold" ]]; then
+      echo "mcp_unreachable_quorum" > "$RALPH_DIR/.harness_halt_reason"
+      echo "Harness halt: mcp_unreachable_quorum (${_mcp_blocked_count} consecutive mcp_unreachable)" >&2
+    fi
+  elif [[ "$work_type" == "PLANNING" && -n "$_status_block" ]]; then
+    # TAP-1686: Plan Mode loops produce a plan, not files. When the
+    # coordinator marks a task HIGH-risk, build_loop_context sets
+    # RALPH_PERMISSION_MODE=plan and Claude responds with a numbered plan
+    # plus WORK_TYPE: PLANNING. By definition files_modified=0 here —
+    # without this branch the loop would fall through to the no-progress
+    # arm and start counting toward CB OPEN even though the work
+    # (producing the plan) is exactly what we asked for. Reset the
+    # counter the same way EXIT-CLEAN does so a Plan Mode loop never
+    # contributes to stagnation. Requires a valid RALPH_STATUS block —
+    # bare planning text without the block still increments no-progress.
+    jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
+      "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
+      && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
+    # TAP-1686: log marker uses the explicit path rather than $_ralph_log
+    # (which is bound further down in this script under `set -u`).
+    _tap1686_log="$RALPH_DIR/logs/ralph.log"
+    if [[ -f "$_tap1686_log" ]]; then
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] on-stop: TAP-1686 Plan Mode loop — productive without files_modified" >> "$_tap1686_log"
+    fi
   else
     # No progress — single jq call to read threshold, increment, and conditionally open
     # LOGFIX-8: Also increment total_opens when transitioning to OPEN
@@ -722,6 +870,38 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     fi
   fi
   rm -f "$local_tmp" 2>/dev/null  # WSL-1: catch cross-fs orphans
+fi
+
+# =============================================================================
+# TAP-2443: Clear stale locality hint when the agent finished the hinted issue.
+#
+# linear_optimizer_run writes .ralph/.linear_next_issue at session start; the
+# agent is told (ralph_loop.sh:2220) to `rm -f` it after honoring the hint.
+# When the agent forgets, the stale hint biases the next loop's selection
+# back onto an already-Done ticket — observed in AgentForge 2026-05-22:
+# Loop #2's coordinator brief keyed off Loop #1's just-completed TAP-2435.
+#
+# Rule: if the cached hint matches the just-worked issue AND the loop made
+# real progress on it (status=COMPLETE OR tasks_done>=1), drop the file.
+# IN_PROGRESS+match preserved (agent is still on it). Mismatch preserved
+# (next loop may still want the hint). USYNC-2 advance path at line ~954
+# continues to clear independently for the question-loop case.
+# =============================================================================
+_locality_hint_file="$RALPH_DIR/.linear_next_issue"
+if [[ -f "$_locality_hint_file" && -n "$linear_issue" ]]; then
+  # Extract first non-comment line, strip to alphanumeric+dash (matches the
+  # sanitization in ralph_loop.sh:2218).
+  _cached_hint=$(grep -v '^#' "$_locality_hint_file" 2>/dev/null \
+    | head -1 | tr -cd 'A-Z0-9a-z-')
+  if [[ -n "$_cached_hint" && "$_cached_hint" == "$linear_issue" ]]; then
+    if [[ "$status" == "COMPLETE" || "$tasks_done" -ge 1 ]]; then
+      rm -f "$_locality_hint_file" 2>/dev/null || true
+      if [[ -f "$RALPH_DIR/logs/ralph.log" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] on-stop: TAP-2443 cleared stale locality hint ${_cached_hint} (status=$status, tasks_done=$tasks_done)" \
+          >> "$RALPH_DIR/logs/ralph.log"
+      fi
+    fi
+  fi
 fi
 
 # Log for monitoring
@@ -781,26 +961,177 @@ fi
 # =============================================================================
 _nsb_threshold="${RALPH_HALT_NO_STATUS_BLOCK_THRESHOLD:-3}"
 _nsb_count_file="$RALPH_DIR/.no_status_block_count"
-if [[ -z "$_status_block" ]]; then
-  _nsb_prev=0
-  if [[ -f "$_nsb_count_file" ]]; then
-    read -r _nsb_prev < "$_nsb_count_file" 2>/dev/null || _nsb_prev=0
-    [[ "$_nsb_prev" =~ ^[0-9]+$ ]] || _nsb_prev=0
+
+# TAP-2441: forensics. AgentForge 2026-05-22 loop #5 reported
+# files_modified=29 in its agent-visible RALPH_STATUS but the hook recorded
+# response_bytes=385 and halted on no_status_block_3x — a 29-file response
+# cannot be 385 bytes, so the capture pipeline lost the body. These fields
+# (response_bytes, .files_modified_this_loop presence + actual count, first
+# 100 chars of response) make the next occurrence diagnosable from the log
+# alone instead of requiring a transcript replay.
+_resp_bytes=${#response_text}
+_fmtl_file="$RALPH_DIR/.files_modified_this_loop"
+_fmtl_present="false"
+_fmtl_count=0
+if [[ -f "$_fmtl_file" ]]; then
+  _fmtl_present="true"
+  _fmtl_count=$(sort -u "$_fmtl_file" 2>/dev/null | wc -l | tr -cd '0-9' || echo "0")
+  [[ -n "$_fmtl_count" ]] || _fmtl_count=0
+fi
+_resp_sample=${response_text:0:100}
+# Collapse newlines to spaces so the diagnostic stays on one log line.
+_resp_sample=${_resp_sample//$'\n'/ }
+
+_nsb_log_diag() {
+  local _branch="$1"
+  if [[ -f "$_ralph_log" ]]; then
+    echo "[$_ts] [INFO] on-stop: TAP-2441 nsb-${_branch} response_bytes=${_resp_bytes} files_modified_this_loop_present=${_fmtl_present} actual_files=${_fmtl_count} reported_files=${files_modified} reported_tasks=${tasks_done} sample=\"${_resp_sample}\"" \
+      >> "$_ralph_log"
   fi
-  _nsb_new=$((_nsb_prev + 1))
-  printf '%s\n' "$_nsb_new" > "$_nsb_count_file" 2>/dev/null || true
-  if [[ "$_nsb_new" -ge "$_nsb_threshold" && ! -f "$RALPH_DIR/.harness_halt_reason" ]]; then
-    _resp_len=${#response_text}
-    printf 'no_status_block_%sx loop=%s response_bytes=%s\n' \
-      "$_nsb_new" "$loop_count" "$_resp_len" > "$RALPH_DIR/.harness_halt_reason" 2>/dev/null || true
+}
+
+if [[ -z "$_status_block" ]]; then
+  # TAP-1899: productivity guard. A truncated-but-productive response (e.g.
+  # the 30-min adaptive-timeout case observed in AgentForge 2026-05-21) has
+  # no RALPH_STATUS footer because the stream was killed before Claude
+  # emitted it — but `.files_modified_this_loop` (maintained by the
+  # PreToolUse hook) records the real work. Treat that as progress and
+  # reset the counter, same way TAP-1683 (USYNC-2) resets its own counter
+  # on tasks_done/files_modified at line 859 below. Without this guard,
+  # productive timeouts trip no_status_block_3x after 3 long-running loops
+  # and halt the campaign mid-flight.
+  if [[ "$files_modified" -ge 1 || "$tasks_done" -ge 1 ]]; then
+    rm -f "$_nsb_count_file" 2>/dev/null || true
+    _nsb_log_diag "productivity-reset"
     if [[ -f "$_ralph_log" ]]; then
-      echo "[$_ts] [FATAL] on-stop: $_nsb_new consecutive responses with no RALPH_STATUS block — halting (loop=$loop_count, response_bytes=$_resp_len)" >> "$_ralph_log"
+      echo "[$_ts] [INFO] on-stop: no RALPH_STATUS block but loop was productive (files=$files_modified tasks=$tasks_done) — counter reset (TAP-1899)" >> "$_ralph_log"
     fi
-    echo "FATAL: $_nsb_new consecutive responses with no RALPH_STATUS block — halting" >&2
+  else
+    _nsb_prev=0
+    if [[ -f "$_nsb_count_file" ]]; then
+      read -r _nsb_prev < "$_nsb_count_file" 2>/dev/null || _nsb_prev=0
+      [[ "$_nsb_prev" =~ ^[0-9]+$ ]] || _nsb_prev=0
+    fi
+    _nsb_new=$((_nsb_prev + 1))
+    printf '%s\n' "$_nsb_new" > "$_nsb_count_file" 2>/dev/null || true
+    _nsb_log_diag "increment-to-${_nsb_new}"
+    if [[ "$_nsb_new" -ge "$_nsb_threshold" && ! -f "$RALPH_DIR/.harness_halt_reason" ]]; then
+      _resp_len=${#response_text}
+      printf 'no_status_block_%sx loop=%s response_bytes=%s\n' \
+        "$_nsb_new" "$loop_count" "$_resp_len" > "$RALPH_DIR/.harness_halt_reason" 2>/dev/null || true
+      if [[ -f "$_ralph_log" ]]; then
+        echo "[$_ts] [FATAL] on-stop: $_nsb_new consecutive responses with no RALPH_STATUS block — halting (loop=$loop_count, response_bytes=$_resp_len)" >> "$_ralph_log"
+      fi
+      echo "FATAL: $_nsb_new consecutive responses with no RALPH_STATUS block — halting" >&2
+    fi
   fi
 else
   # Successful parse — reset counter
-  rm -f "$_nsb_count_file" 2>/dev/null || true
+  if [[ -f "$_nsb_count_file" ]]; then
+    rm -f "$_nsb_count_file" 2>/dev/null || true
+    _nsb_log_diag "successful-parse-reset"
+  fi
+fi
+
+# =============================================================================
+# TAP-1683 (USYNC-2): Consecutive-question policy.
+#
+# USYNC-1 detection above (`asking_questions=true`) used to be log-only.
+# That left the harness in a hot loop: Claude asks → no status block →
+# circuit breaker eventually opens → cooldown → restart on the same task →
+# Claude asks again. AgentForge field telemetry shows this cycle repeating
+# hundreds of times across 2026-04 → 2026-05.
+#
+# Policy (resets cleanly on real progress):
+#   counter = 0          — normal
+#   counter == threshold — `build_loop_context` injects a hardened "decide
+#                          and act" directive on the next loop (read via the
+#                          counter file; the existing single-shot USYNC-2
+#                          nudge fires on its own at counter ≥ 1)
+#   counter >  threshold — advance past the current task and reset:
+#                          - linear mode: write .ralph/.linear_advance_action
+#                            so the next loop's context tells Claude to label
+#                            the issue `blocked:waiting-for-answer` via MCP
+#                            and pick a different ticket; clear the locality
+#                            hint so re-selection happens immediately.
+#                          - file mode: append `<!-- BLOCKED: questions -->`
+#                            directly to the first unchecked task line in
+#                            fix_plan.md (the harness owns fix_plan.md, no
+#                            agent round-trip needed).
+# =============================================================================
+_ql_threshold="${RALPH_QUESTION_LOOP_THRESHOLD:-2}"
+_ql_count_file="$RALPH_DIR/.consecutive_questions"
+
+# Increment counter on a question-loop pattern (asked questions + no status
+# block). Reset on real progress (tasks completed OR files modified). The
+# reset path runs regardless of question detection so a productive loop
+# always clears the counter, even if Claude rambled.
+if [[ "$tasks_done" -ge 1 || "$files_modified" -ge 1 ]]; then
+  rm -f "$_ql_count_file" 2>/dev/null || true
+elif [[ "$asking_questions" == "true" && -z "$_status_block" ]]; then
+  _ql_prev=0
+  if [[ -f "$_ql_count_file" ]]; then
+    read -r _ql_prev < "$_ql_count_file" 2>/dev/null || _ql_prev=0
+    [[ "$_ql_prev" =~ ^[0-9]+$ ]] || _ql_prev=0
+  fi
+  _ql_new=$((_ql_prev + 1))
+  printf '%s\n' "$_ql_new" > "$_ql_count_file" 2>/dev/null || true
+  if [[ -f "$_ralph_log" ]]; then
+    echo "[$_ts] [INFO] on-stop: consecutive_questions=$_ql_new (threshold=$_ql_threshold, USYNC-2)" >> "$_ralph_log"
+  fi
+
+  # Advance past the current task when the counter exceeds the threshold.
+  # The intermediate `==threshold` value is handled by build_loop_context
+  # (escalation injection) so this branch only triggers the heavier action.
+  if [[ "$_ql_new" -gt "$_ql_threshold" ]]; then
+    _ql_task_source="${RALPH_TASK_SOURCE:-file}"
+    if [[ "$_ql_task_source" == "linear" ]]; then
+      # Determine the issue to label-block. A bare question-loop drops
+      # LINEAR_ISSUE for the current write (Claude shipped no status block),
+      # so the hook prefers status.json's sticky .last_linear_issue
+      # pointer that TAP-1201 already maintains. Falls back to .linear_issue
+      # if it happens to be present (response had a block but still asked).
+      _ql_issue=$(jq -r '.last_linear_issue // .linear_issue // ""' \
+                  "$RALPH_DIR/status.json" 2>/dev/null || echo "")
+      _ql_issue=$(printf '%s' "$_ql_issue" | tr -cd 'A-Za-z0-9-')
+      if [[ -n "$_ql_issue" && "$_ql_issue" != "null" && "$_ql_issue" != "NONE" ]]; then
+        # Atomic write per TAP-535. Two-line marker: issue ID then reason.
+        _ql_tmp="$RALPH_DIR/.linear_advance_action.tmp.$$.${RANDOM}"
+        printf '%s\nblocked:waiting-for-answer\n' "$_ql_issue" \
+          > "$_ql_tmp" 2>/dev/null \
+          && mv -f "$_ql_tmp" "$RALPH_DIR/.linear_advance_action" \
+          && rm -f "$_ql_tmp" 2>/dev/null
+        # Clear the locality hint so the next loop's selection is fresh.
+        rm -f "$RALPH_DIR/.linear_next_issue" 2>/dev/null || true
+        if [[ -f "$_ralph_log" ]]; then
+          echo "[$_ts] [WARN] on-stop: USYNC-2 advance — $_ql_issue blocked after $_ql_new question loops, queued for blocked:waiting-for-answer label" >> "$_ralph_log"
+        fi
+      fi
+    else
+      # File mode: stamp BLOCKED marker directly onto the first unchecked
+      # task line. Idempotent — skip if the marker is already present.
+      _ql_plan="$RALPH_DIR/fix_plan.md"
+      if [[ -f "$_ql_plan" ]] && ! grep -qF '<!-- BLOCKED: questions -->' "$_ql_plan" 2>/dev/null; then
+        _ql_plan_tmp="$_ql_plan.tmp.$$.${RANDOM}"
+        awk '
+          BEGIN { marked = 0 }
+          !marked && /^[[:space:]]*- \[ \]/ {
+            print $0 " <!-- BLOCKED: questions -->"
+            marked = 1
+            next
+          }
+          { print }
+        ' "$_ql_plan" > "$_ql_plan_tmp" 2>/dev/null \
+          && mv -f "$_ql_plan_tmp" "$_ql_plan" \
+          && rm -f "$_ql_plan_tmp" 2>/dev/null
+        if [[ -f "$_ralph_log" ]]; then
+          echo "[$_ts] [WARN] on-stop: USYNC-2 advance — first unchecked fix_plan.md task marked <!-- BLOCKED: questions --> after $_ql_new question loops" >> "$_ralph_log"
+        fi
+      fi
+    fi
+    # Reset counter — the advance action means we're moving on, not retrying.
+    rm -f "$_ql_count_file" 2>/dev/null || true
+  fi
 fi
 
 # =============================================================================

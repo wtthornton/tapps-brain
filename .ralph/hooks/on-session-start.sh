@@ -15,24 +15,6 @@ if [[ ! -d "$RALPH_DIR" ]]; then
   exit 0
 fi
 
-# --- Pre-warm tapps-brain-http (TAP-1837) ---
-# Best-effort: wait for /healthz before MCP probes so lazy-init runs outside
-# the 120 s MCP probe timeout window. Non-fatal on any failure.
-_prewarm_url="http://127.0.0.1:8080/healthz"
-_prewarm_log="$RALPH_DIR/live.log"
-_prewarm_start_ms=$(date +%s%3N 2>/dev/null || echo "0")
-if curl -sf --max-time 60 "$_prewarm_url" &>/dev/null; then
-  _prewarm_end_ms=$(date +%s%3N 2>/dev/null || echo "0")
-  _prewarm_elapsed=$(( _prewarm_end_ms - _prewarm_start_ms ))
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Pre-warmed tapps-brain-http in ${_prewarm_elapsed} ms" \
-    >> "$_prewarm_log" 2>/dev/null || true
-else
-  _prewarm_end_ms=$(date +%s%3N 2>/dev/null || echo "0")
-  _prewarm_elapsed=$(( _prewarm_end_ms - _prewarm_start_ms ))
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] tapps-brain-http pre-warm: /healthz not reachable after ${_prewarm_elapsed} ms (continuing)" \
-    >> "$_prewarm_log" 2>/dev/null || true
-fi
-
 # --- Source Ralph libraries ---
 # Libraries live in the Ralph installation, not the project
 RALPH_LIB=""
@@ -57,7 +39,10 @@ done_tasks=0
 FIX_PLAN="$RALPH_DIR/fix_plan.md"
 if [[ -f "$FIX_PLAN" ]]; then
   total_tasks=$(grep -c '^\- \[' "$FIX_PLAN" 2>/dev/null | tr -cd '0-9') || total_tasks=0
-  done_tasks=$(grep -c '^\- \[x\]' "$FIX_PLAN" 2>/dev/null | tr -cd '0-9') || done_tasks=0
+  # Match both `[x]` and `[X]`. The codebase otherwise treats both as completed
+  # (see lib/complexity.sh and lib/context_management.sh `[xX]`); a lowercase-
+  # only grep here silently undercounts done tasks and inflates "remaining".
+  done_tasks=$(grep -cE '^- \[[xX]\]' "$FIX_PLAN" 2>/dev/null | tr -cd '0-9') || done_tasks=0
   total_tasks=${total_tasks:-0}
   done_tasks=${done_tasks:-0}
 fi
@@ -141,7 +126,11 @@ else
   # PLANOPT: Progress re-grounding (Reflexion pattern)
   last_completed=""
   if [[ -f "$FIX_PLAN" ]]; then
-    last_completed=$(grep -E '^\- \[x\]' "$FIX_PLAN" | tail -1 | sed 's/^- \[x\] //' | head -c 80)
+    # `|| true` so an empty grep result under `set -euo pipefail` does not
+    # abort the hook (fresh project with no completed tasks → grep exits 1
+    # → pipefail propagates → set -e kills the script without ever emitting
+    # the SystemPrompt context block).
+    last_completed=$(grep -E '^\- \[x\]' "$FIX_PLAN" 2>/dev/null | tail -1 | sed 's/^- \[x\] //' | head -c 80 || true)
   fi
 
   cat >&2 <<EOF
