@@ -432,6 +432,28 @@ class MemoryStore:
             self._embedding_provider = get_embedding_provider()
         else:
             self._embedding_provider = embedding_provider
+        # TAP-2672: fail loud when an embedding provider is expected but absent.
+        # Without this, semantic recall silently degrades to BM25-only while
+        # health still reports db_ok=true — exactly the drift the audit found.
+        if (
+            os.environ.get("TAPPS_BRAIN_EMBEDDING_REQUIRED", "0") == "1"
+            and self._embedding_provider is None
+        ):
+            msg = (
+                "TAPPS_BRAIN_EMBEDDING_REQUIRED=1 but no embedding provider could be "
+                "loaded (sentence-transformers missing or model load failed). Semantic "
+                "recall would silently degrade to BM25-only. Install tapps-brain[all], "
+                "set HF_TOKEN / warm the model cache, or set "
+                "TAPPS_BRAIN_EMBEDDING_REQUIRED=0 to allow lexical-only mode."
+            )
+            raise RuntimeError(msg)
+        if self._embedding_provider is not None:
+            from tapps_brain.embeddings import embedding_startup_status
+
+            logger.info(
+                "embedding_provider_loaded",
+                **embedding_startup_status(self._embedding_provider),
+            )
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
@@ -1682,6 +1704,7 @@ class MemoryStore:
                     auto_propagate_tiers=auto_propagate,
                     private_tiers=private,
                     memory_group=entry.memory_group,
+                    embedding=entry.embedding,
                 )
         except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
@@ -2863,6 +2886,7 @@ class MemoryStore:
             # TAP-549: session-state cardinality for /metrics alerting.
             active_session_count=self.active_session_count(),
             bloom_saturation=self._bloom.approximate_false_positive_rate(),
+            embeddings_enabled=self._embedding_provider is not None,
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401

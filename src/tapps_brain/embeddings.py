@@ -227,6 +227,25 @@ class SentenceTransformerProvider:
         return [cast("list[float]", e.tolist()) for e in embeddings]
 
 
+def embedding_startup_status(
+    provider: SentenceTransformerProvider | None,
+) -> dict[str, Any]:
+    """Summarize embedding-provider state for startup logs / health probes.
+
+    Returns ``enabled`` (provider loaded), ``model_id``, and ``dimension`` so a
+    missing provider is visible at default log levels — the 2026-05-28 audit
+    found semantic recall silently degraded to BM25 with no such signal
+    (TAP-2672).
+    """
+    if provider is None:
+        return {"enabled": False, "model_id": None, "dimension": None}
+    return {
+        "enabled": True,
+        "model_id": getattr(provider, "model_id", None),
+        "dimension": getattr(provider, "dimension", None),
+    }
+
+
 def get_embedding_provider(
     model: str = _DEFAULT_MODEL,
     *,
