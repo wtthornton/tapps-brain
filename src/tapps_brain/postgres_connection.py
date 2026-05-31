@@ -37,7 +37,12 @@ class PostgresConnectionManager:
         a ``ValueError`` is raised at construction time if the scheme is wrong.
     min_size:
         Minimum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MIN``
-        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MIN``) env var, then ``2``.
+        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MIN``) env var, then ``1``.
+        TAP-2677 lowered this from 2: the brain opens a pool per backend
+        (private / hive / federation / KG / auth / …), so a min of 2 each held
+        dozens of idle connections (64 idle of Postgres's 100 ``max_connections``
+        in the audit) when only ~1 query was active.  Scale up via the env var
+        for multi-replica deployments.
     max_size:
         Maximum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MAX``
         (or legacy ``TAPPS_BRAIN_HIVE_POOL_MAX``) env var, then ``10``.
@@ -90,7 +95,7 @@ class PostgresConnectionManager:
             if min_size is not None
             else int(
                 os.environ.get("TAPPS_BRAIN_PG_POOL_MIN")
-                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2")
+                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "1")
             )
         )
         self._max_size = (

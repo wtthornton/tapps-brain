@@ -30,7 +30,9 @@ class TestPostgresConnectionManager:
 
         cm = PostgresConnectionManager("postgres://localhost/test")
         assert cm.dsn == "postgres://localhost/test"
-        assert cm._min_size == 2
+        # TAP-2677: default min lowered 2 -> 1 (one pool per backend was holding
+        # dozens of idle connections; scale up via TAPPS_BRAIN_PG_POOL_MIN).
+        assert cm._min_size == 1
         assert cm._max_size == 10
         assert cm._connect_timeout == 5.0
         assert cm._pool is None
@@ -48,6 +50,18 @@ class TestPostgresConnectionManager:
         assert cm._min_size == 4
         assert cm._max_size == 20
         assert cm._connect_timeout == 10.0
+
+    def test_pool_cap_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # TAP-2677: the single-replica deployment caps the pool via env so idle
+        # connections stay well under Postgres max_connections.
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MIN", "1")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX", "8")
+
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager("postgres://localhost/test")
+        assert cm._min_size == 1
+        assert cm._max_size == 8
 
     def test_init_reads_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -163,7 +177,7 @@ class TestPostgresConnectionManager:
 
         cm = PostgresConnectionManager("postgres://localhost/test")
         stats = cm.get_pool_stats()
-        assert stats["pool_min"] == 2
+        assert stats["pool_min"] == 1  # TAP-2677: default min lowered 2 -> 1
         assert stats["pool_max"] == 10
         assert stats["pool_size"] == 0
         assert stats["pool_available"] == 0
