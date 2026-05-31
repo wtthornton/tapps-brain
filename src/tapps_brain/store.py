@@ -9,6 +9,7 @@ Auto-consolidation triggers on save when enabled (EPIC-058).
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import threading
 import time
@@ -85,6 +86,25 @@ from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
+
+
+def _ensure_str_value(value: object) -> str:
+    """Normalise a memory ``value`` to ``str`` (TAP-2675).
+
+    Callers at the HTTP/MCP boundary occasionally pass a non-str ``value`` (e.g.
+    ``/v1/remember`` with a JSON object body).  The ``value`` text column and the
+    content-safety scan both require a ``str``; without this a dict raised
+    ``AttributeError: 'dict' object has no attribute 'strip'`` deep in
+    ``check_content_safety`` — a 500.  We normalise rather than reject: JSON-encode
+    dict/list so structured payloads survive as their JSON text, ``str()`` anything
+    else, and leave a real ``str`` untouched.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
 
 # Maximum number of memories per project.  TAP-513 — operators can override
 # this via the TAPPS_BRAIN_MAX_ENTRIES env var without code changes;
@@ -963,6 +983,11 @@ class MemoryStore:
         """
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
+
+        # TAP-2675: normalise non-str values (e.g. a JSON object posted to
+        # /v1/remember) before the safety scan + text-column persistence, which
+        # both assume a str.  See _ensure_str_value.
+        value = _ensure_str_value(value)
 
         # Phase 1 — scope + memory_group validation (pure).
         scope_result = validate_scope_and_group(
