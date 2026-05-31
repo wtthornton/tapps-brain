@@ -11,10 +11,12 @@ RUN whl=$(ls /tmp/tapps_brain-*.whl) && \
     pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]" && \
     rm /tmp/tapps_brain-*.whl
 
-# Bake the roles migration into the image so the entrypoint can `psql -f` it
+# Bake the roles migrations into the image so the entrypoint can `psql -f` them
 # without relying on a bind mount at runtime.
 COPY src/tapps_brain/migrations/roles/001_db_roles.sql \
      /opt/tapps-brain/migrations/roles/001_db_roles.sql
+COPY src/tapps_brain/migrations/roles/002_migrator_deprivilege.sql \
+     /opt/tapps-brain/migrations/roles/002_migrator_deprivilege.sql
 
 COPY docker/migrate-entrypoint.sh /usr/local/bin/migrate-entrypoint.sh
 RUN chmod +x /usr/local/bin/migrate-entrypoint.sh

@@ -44,20 +44,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # One-shot bootstrap sidecar — connects as the DB owner (tapps) and does:
-  #   1. applies Hive schema migrations
-  #   2. applies private + federation schema migrations (via the brain's
-  #      auto-migrate path, triggered once)
-  #   3. creates the DML-only tapps_runtime role
-  #   4. sets TAPPS_BRAIN_RUNTIME_PASSWORD on that role
-  # After exit the brain container connects as tapps_runtime (non-privileged),
-  # so TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE is no longer needed on the brain.
+  # One-shot bootstrap sidecar. Schema-migration DDL runs as the de-privileged
+  # tapps_migrator role (TAPPS_BRAIN_DATABASE_URL); a short privileged bootstrap
+  # (TAPPS_BRAIN_MIGRATE_BOOTSTRAP_DSN, the superuser) only de-privileges the
+  # migrator, reassigns ownership of the tenanted tables to it, applies the
+  # runtime/readonly grants, and sets role passwords. After exit the brain
+  # connects as tapps_runtime (non-privileged) and the migrate path no longer
+  # sets TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE — no "tenant isolation NOT enforced"
+  # audit line on deploy (TAP-2686).
   #
-  # NOTE: the ${TAPPS_BRAIN_RUNTIME_PASSWORD:?...} guard below is enforced at
-  # `docker compose up` time.  If you add or rename a required env var here,
-  # update scripts/hive_smoke.sh's docker/.env heredoc to mint and write it
-  # too — otherwise the Hive Stack Smoke Test workflow goes red on every PR
-  # (TAP-1100).
+  # NOTE: the ${...:?...} guards below are enforced at `docker compose up` time.
+  # If you add or rename a required env var here, update scripts/hive_smoke.sh's
+  # docker/.env heredoc to mint and write it too — otherwise the Hive Stack
+  # Smoke Test workflow goes red on every PR (TAP-1100).
   tapps-brain-migrate:
     image: docker-tapps-brain-migrate:${BRAIN_VERSION:-latest}
     container_name: tapps-brain-migrate
@@ -65,7 +64,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.migrate
     environment:
-      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+      # De-privileged migrator DSN — used for all schema-migration DDL.
+      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps_migrator:${TAPPS_BRAIN_MIGRATOR_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+      # Superuser DSN — used only for the one-time privileged bootstrap.
+      TAPPS_BRAIN_MIGRATE_BOOTSTRAP_DSN: "postgres://tapps:${TAPPS_BRAIN_DB_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+      TAPPS_BRAIN_MIGRATOR_PASSWORD: ${TAPPS_BRAIN_MIGRATOR_PASSWORD:?set TAPPS_BRAIN_MIGRATOR_PASSWORD in docker/.env}
       TAPPS_BRAIN_RUNTIME_PASSWORD: ${TAPPS_BRAIN_RUNTIME_PASSWORD:?set TAPPS_BRAIN_RUNTIME_PASSWORD in docker/.env}
     depends_on:
       tapps-brain-db:
