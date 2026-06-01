@@ -99,13 +99,15 @@ docker exec tapps-brain-db psql -U tapps -d tapps_brain \
 ```
 Then redeploy the **previous** image tag (which still sets the override flag).
 
-## Known follow-up
+## Ownership scope
 
-`roles/002` reassigns only the two **tenanted** tables (the guard-relevant
-ones). Other tables (hive, federation, KG, schema_version) remain owned by
-`tapps` on an already-provisioned DB; the migrator has DML grants on them but
-not ownership. A **future migration that ALTERs a pre-cutover, non-reassigned
-table** will need owner-level DDL — either widen `roles/002` to a broader
-`REASSIGN OWNED BY tapps TO tapps_migrator` at that time, or run that one
-migration via the bootstrap superuser. File a follow-up if/when such a
-migration lands.
+`roles/002` reassigns **every** application table + sequence in `public` to
+`tapps_migrator` (a table's indexes/TOAST follow the table owner), not just the
+two tenanted tables. This is required for the migrate path itself: a migration
+applied as the de-privileged migrator may `ALTER`/`DROP` any object — e.g.
+TAP-2676's IVFFlat→HNSW swap does `DROP INDEX idx_hive_embedding_ivfflat`, which
+fails with `must be owner of index` unless the migrator owns `hive_memories`.
+Validated against a restored copy of the production DB (12k+ rows): the
+reassignment is metadata-only (sub-second) and the subsequent hive + federation
+HNSW migrations apply cleanly as the migrator. Extensions, types, and functions
+keep their original owner.

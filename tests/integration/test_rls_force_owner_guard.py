@@ -189,6 +189,9 @@ def test_roles_002_migrator_is_deprivileged_owner(_deprivileged_migrator: Any) -
         assert row is not None
         assert row[0] is False, "tapps_migrator must be NOSUPERUSER"
         assert row[1] is False, "tapps_migrator must be NOBYPASSRLS"
+        # roles/002 reassigns ALL public tables to the migrator (it must own the
+        # objects later migrations ALTER/DROP), so assert the two guard-relevant
+        # tenanted tables are among them rather than that they are the only ones.
         cur.execute(
             "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
             " WHERE n.nspname = 'public' AND relname IN ('private_memories', 'project_profiles')"
@@ -196,7 +199,20 @@ def test_roles_002_migrator_is_deprivileged_owner(_deprivileged_migrator: Any) -
             (_REAL_MIGRATOR_ROLE,),
         )
         owned = sorted(r[0] for r in cur.fetchall())
+        # And the reassignment is broad — every public table moved to the
+        # migrator, not just the two tenanted ones (so later migrations that
+        # ALTER/DROP non-tenanted objects, e.g. the hive/federation HNSW swap,
+        # succeed as the de-privileged migrator).
+        cur.execute(
+            "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')"
+            "   AND pg_get_userbyid(c.relowner) = %s",
+            (_REAL_MIGRATOR_ROLE,),
+        )
+        row = cur.fetchone()
+        migrator_table_count = int(row[0]) if row else 0
     assert owned == ["private_memories", "project_profiles"], owned
+    assert migrator_table_count > 2, f"expected all tables reassigned, got {migrator_table_count}"
 
 
 def test_deprivileged_migrate_path_passes_guard(_deprivileged_migrator: Any) -> None:

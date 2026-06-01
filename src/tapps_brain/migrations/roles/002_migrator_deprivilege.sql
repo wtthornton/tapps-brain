@@ -35,46 +35,51 @@ $$;
 GRANT CREATE, USAGE ON SCHEMA public TO tapps_migrator;
 
 -- The migrator must read + write existing tables to apply and TRACK migrations
--- (e.g. SELECT/INSERT on private_schema_version, which it does not own on an
--- already-provisioned DB). These grants do NOT affect the privileged-role guard
--- (which only inspects OWNERSHIP of the tenanted tables, not grants), and are
--- no-ops on a fresh DB where no tables exist yet (the migrator creates and owns
--- them). Future migrations that ALTER a pre-cutover table the migrator does not
--- own still need owner-level DDL — see the cutover runbook.
+-- (e.g. SELECT/INSERT on private_schema_version). Harmless belt-and-suspenders
+-- alongside the ownership reassignment below; no-op on a fresh DB.
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tapps_migrator;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO tapps_migrator;
 
 -- ---------------------------------------------------------------------------
--- 2. Reassign ownership of the tenanted tables (and any sequences they own)
---    from the superuser owner to tapps_migrator. IF EXISTS guards make this a
---    no-op on a fresh DB (tables not yet created) and on re-run (already owned
---    by tapps_migrator).
+-- 2. Reassign ownership of EVERY application table + sequence in public to
+--    tapps_migrator. The migrator must own the objects it migrates — a later
+--    migration may ALTER or DROP any of them (e.g. the IVFFlat->HNSW index swap
+--    on hive_memories / federated_memories in TAP-2676 does DROP INDEX, which
+--    requires owning the table the index belongs to). Reassigning only the two
+--    tenanted tables is enough for the privileged-role guard but NOT for the
+--    migrate path, so we reassign all of them.
+--
+--    A table's indexes and TOAST follow the table owner automatically, so this
+--    covers indexes too. Idempotent: ALTER ... OWNER TO the current owner is a
+--    no-op, and on a fresh DB there are no tables yet (the migrator creates and
+--    therefore owns them). Restricted to ordinary + partitioned tables and
+--    sequences in public — extensions, types, and functions are left alone.
 -- ---------------------------------------------------------------------------
 
 DO $$
 DECLARE
-  tbl  text;
-  seq  text;
+  obj text;
 BEGIN
-  FOREACH tbl IN ARRAY ARRAY['private_memories', 'project_profiles'] LOOP
-    IF EXISTS (
-      SELECT 1 FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relname = tbl AND c.relkind = 'r'
-    ) THEN
-      EXECUTE format('ALTER TABLE public.%I OWNER TO tapps_migrator', tbl);
+  FOR obj IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND pg_get_userbyid(c.relowner) <> 'tapps_migrator'
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO tapps_migrator', obj);
+  END LOOP;
 
-      -- Reassign any sequences owned by (depending on) this table.
-      FOR seq IN
-        SELECT s.relname
-        FROM pg_class s
-        JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a'
-        JOIN pg_class t ON t.oid = d.refobjid
-        WHERE s.relkind = 'S' AND t.relname = tbl
-      LOOP
-        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO tapps_migrator', seq);
-      END LOOP;
-    END IF;
+  FOR obj IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'S'
+      AND pg_get_userbyid(c.relowner) <> 'tapps_migrator'
+  LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO tapps_migrator', obj);
   END LOOP;
 END;
 $$;

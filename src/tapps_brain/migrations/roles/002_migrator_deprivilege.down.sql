@@ -1,29 +1,32 @@
--- Undo TAP-2686: reassign the tenanted tables back to the superuser owner
--- (tapps). For manual rollback only; the roles/ migrations are applied by
--- migrate-entrypoint.sh via psql -f, not the version-table loader.
+-- Undo TAP-2686: reassign every application table + sequence in public back to
+-- the superuser owner (tapps). For manual rollback only; the roles/ migrations
+-- are applied by migrate-entrypoint.sh via psql -f, not the version-table
+-- loader. Mirrors the forward migration's all-tables reassignment.
 
 DO $$
 DECLARE
-  tbl text;
-  seq text;
+  obj text;
 BEGIN
-  FOREACH tbl IN ARRAY ARRAY['private_memories', 'project_profiles'] LOOP
-    IF EXISTS (
-      SELECT 1 FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relname = tbl AND c.relkind = 'r'
-    ) THEN
-      EXECUTE format('ALTER TABLE public.%I OWNER TO tapps', tbl);
-      FOR seq IN
-        SELECT s.relname
-        FROM pg_class s
-        JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a'
-        JOIN pg_class t ON t.oid = d.refobjid
-        WHERE s.relkind = 'S' AND t.relname = tbl
-      LOOP
-        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO tapps', seq);
-      END LOOP;
-    END IF;
+  FOR obj IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND pg_get_userbyid(c.relowner) = 'tapps_migrator'
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO tapps', obj);
+  END LOOP;
+
+  FOR obj IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'S'
+      AND pg_get_userbyid(c.relowner) = 'tapps_migrator'
+  LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO tapps', obj);
   END LOOP;
 END;
 $$;
