@@ -4,6 +4,10 @@ This guide covers the end-to-end setup for running Ralph against the
 tapps-brain project, including the Claude Agent Linear credential that
 powers Ralph's exit-gate issue-count probe.
 
+> Once setup is done, use the reusable
+> [Ralph campaign prompt](ralph-campaign-prompt.md) to start, monitor, and
+> self-correct a Ralph run from a fresh Claude Code session.
+
 ## Prerequisites
 
 - `ralph` binary on `PATH` (installed globally or under `~/.local/bin`).
