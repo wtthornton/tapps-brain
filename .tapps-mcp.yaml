@@ -1,0 +1,18 @@
+# tapps-mcp project configuration.
+#
+# dead_code_whitelist_patterns: file-name patterns (fnmatch on basename) whose
+# vulture / tapps_dead_code findings are suppressed. tapps_dead_code invokes
+# vulture with a hardcoded `--ignore-names=cls`, which overrides any pyproject
+# `[tool.vulture]` ignore_names, so name-level suppression is not available
+# through this gate — file-level whitelisting is the supported lever.
+#
+# `_protocols.py` is added (TAP-2765): it contains only Protocol interface stubs
+# with `...` bodies, so every vulture finding there (e.g. the keyword-only params
+# `must_exist` / `max_file_size` on PathValidatorLike.validate_path) is a
+# structural false positive — those names are part of the interface contract and
+# must not be deleted. The first two patterns are the tapps-mcp defaults, kept so
+# this override does not narrow them.
+dead_code_whitelist_patterns:
+  - "test_*"
+  - "conftest.py"
+  - "_protocols.py"
