@@ -93,7 +93,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
         or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH") == "1"
     )
-    if host == "0.0.0.0" and not _auth_configured:
+    if host == "0.0.0.0" and not _auth_configured:  # nosec B104 - intentional opt-in bind
         structlog.get_logger(__name__).warning(
             "http_adapter.bind_all_interfaces_unauthenticated",
             host=host,
@@ -104,7 +104,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
                 "or restrict to 127.0.0.1."
             ),
         )
-    if mcp_port > 0 and mcp_host == "0.0.0.0" and not _auth_configured:
+    if mcp_port > 0 and mcp_host == "0.0.0.0" and not _auth_configured:  # nosec B104 - opt-in bind
         structlog.get_logger(__name__).warning(
             "http_adapter.mcp_bind_all_interfaces_unauthenticated",
             mcp_host=mcp_host,

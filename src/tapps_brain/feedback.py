@@ -318,9 +318,12 @@ class FeedbackStore:
             conditions.append("timestamp <= %s")
             params.append(until)
 
+        # `where` is assembled only from the static condition fragments above
+        # (e.g. "event_type = %s"); every user value is bound via a %s placeholder
+        # in `params`, so no caller data is interpolated into the SQL text.
         where = " AND ".join(conditions)
         sql = (
-            "SELECT id, event_type, entry_key, session_id, utility_score, "
+            "SELECT id, event_type, entry_key, session_id, utility_score, "  # nosec B608
             "       details, timestamp "
             f"FROM feedback_events WHERE {where} "
             "ORDER BY timestamp ASC LIMIT %s"

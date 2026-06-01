@@ -204,8 +204,10 @@ class LLMWritePolicy:
         header = (
             "You are a memory-management assistant. Decide the best action for a new memory entry."
         )
+        # This builds an LLM prompt string, not a SQL query; bandit's B608 fires
+        # only on the ADD/UPDATE/DELETE keywords in the action menu below.
         return (
-            f"{header}\n\n"
+            f"{header}\n\n"  # nosec B608
             f"New entry:\n  key={key!r}\n  value={value!r}\n\n"
             f"Existing similar entries:\n{cand_lines}\n\n"
             "Choose one action:\n"
