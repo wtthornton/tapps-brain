@@ -43,7 +43,7 @@ import uuid as _uuid_mod
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from tapps_brain import _postgres_kg_sql as _kg_sql
 
@@ -60,6 +60,28 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 class EntitySpec(BaseModel):
     """Spec for one KG entity to upsert atomically with the event."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_key_shorthand(cls, data: Any) -> Any:  # noqa: ANN401 — pydantic raw input
+        """TAP-2675: accept the ``{'key': '<string>'}`` production payload shape.
+
+        Real callers (AgentForge / bambustudio) post entities as ``{'key': ...}``
+        without ``entity_type`` / ``canonical_name``, which raised a 2-error
+        ValidationError and 500'd ``brain_record_events_batch`` (42 events, 14
+        distinct calls, all rejected).  We coerce rather than reject so existing
+        callers keep working without a client change: use ``key`` as
+        ``canonical_name`` when it is absent, and default ``entity_type`` to
+        ``"concept"``.
+        """
+        if isinstance(data, dict):
+            patched = dict(data)
+            if not patched.get("canonical_name") and patched.get("key"):
+                patched["canonical_name"] = str(patched["key"])
+            if not patched.get("entity_type"):
+                patched["entity_type"] = "concept"
+            return patched
+        return data
 
     entity_type: str = Field(description="Ontology type, e.g. 'module', 'service', 'concept'.")
     canonical_name: str = Field(description="Human-readable canonical name.")
