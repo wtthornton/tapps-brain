@@ -145,6 +145,14 @@ services:
       # idle backends exceed 50% of Postgres max_connections.
       TAPPS_BRAIN_PG_POOL_MIN: "${TAPPS_BRAIN_PG_POOL_MIN:-1}"
       TAPPS_BRAIN_PG_POOL_MAX: "${TAPPS_BRAIN_PG_POOL_MAX:-8}"
+    volumes:
+      # Persist the HuggingFace model cache across container recreations (TAP-2672).
+      # The embedding model (~130MB) is downloaded on first start; without this
+      # volume every redeploy re-downloads it, and with EMBEDDING_REQUIRED=1 a
+      # cold-download failure (HF outage / rate limit, no HF_TOKEN) becomes a hard
+      # startup failure. A persistent, pre-warmable cache makes the deploy robust;
+      # pair with EMBEDDING_MODEL_OFFLINE=1 once warmed to skip Hub contact entirely.
+      - tapps-brain-hfcache:/root/.cache/huggingface
     ports:
       - "${TAPPS_HTTP_PORT:-8080}:8080"
       # Operator MCP bound to loopback by default (TAP-551).
@@ -185,3 +193,6 @@ services:
 
 volumes:
   tapps-brain-pgdata:
+  # HuggingFace embedding-model cache (TAP-2672) — see the tapps-brain-http
+  # volume mount. Pre-warm before a REQUIRED=1 deploy to avoid a cold download.
+  tapps-brain-hfcache:
