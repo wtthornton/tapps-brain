@@ -1,6 +1,7 @@
 """Unit tests for tapps_brain.experience — model layer.
 
 TAP-1501 STORY-076.4.
+TAP-2705: embedding path tests added.
 
 These tests cover model construction and validation without a database
 connection.  Integration tests (requiring TAPPS_TEST_POSTGRES_DSN) live in
@@ -8,6 +9,8 @@ tests/integration/test_experience_event_recorder.py.
 """
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -17,6 +20,7 @@ from tapps_brain.experience import (
     EntitySpec,
     EvidenceSpec,
     ExperienceEvent,
+    ExperienceEventRecorder,
     ExperienceResult,
     MemorySpec,
 )
@@ -247,3 +251,136 @@ class TestAsyncRecorderConstructor:
         result = asyncio.run(_run())
         assert result.event_id == "from-fake"
         assert _FakeRecorder.called
+
+
+# ---------------------------------------------------------------------------
+# TAP-2705: ExperienceEventRecorder embedding path
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_cm(memory_key: str = "test-key") -> MagicMock:
+    """Return a PostgresConnectionManager mock that records cursor.execute calls."""
+    cur = MagicMock()
+    cur.fetchone.return_value = (memory_key,)
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    cm = MagicMock()
+    cm.project_context.return_value.__enter__ = MagicMock(return_value=conn)
+    cm.project_context.return_value.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
+def _make_fake_provider(
+    embedding: list[float] | None = None,
+    model_id: str = "all-MiniLM-L6-v2",
+) -> MagicMock:
+    """Return a minimal embedding-provider mock."""
+    provider = MagicMock()
+    provider.embed.return_value = embedding if embedding is not None else [0.1] * 384
+    provider.model_id = model_id
+    return provider
+
+
+class TestExperienceEventRecorderEmbedding:
+    """TAP-2705: experience-event INSERT must persist the embedding column."""
+
+    def test_record_passes_embedding_to_insert(self) -> None:
+        """record() includes a pgvector string and model_id in the INSERT params."""
+        emb_vec = [float(i) / 384 for i in range(384)]
+        provider = _make_fake_provider(embedding=emb_vec, model_id="test-model")
+        cm = _make_fake_cm()
+        recorder = ExperienceEventRecorder(
+            cm,  # type: ignore[arg-type]
+            project_id="proj",
+            brain_id="brain",
+            agent_id="agent",
+            embedding_provider=provider,
+        )
+
+        event = ExperienceEvent(
+            event_type="workflow_completed",
+            memory=MemorySpec(key="success-abc", value="task succeeded"),
+        )
+        result = recorder.record(event)
+
+        # memory_key comes from the mock fetchone return value ("test-key").
+        assert result.memory_key == "test-key"
+        provider.embed.assert_called_once_with("task succeeded")
+
+        # Locate the _INSERT_MEMORY_SQL execute call — it is the second
+        # cur.execute call (first is _INSERT_EVENT_SQL).
+        conn = cm.project_context.return_value.__enter__.return_value
+        cur = conn.cursor.return_value.__enter__.return_value
+        assert cur.execute.call_count >= 2
+        mem_call_args = cur.execute.call_args_list[1]
+        params = mem_call_args[0][1]  # positional: (sql, params)
+        # params[-1] is the pgvector string; params[-2] is the model_id.
+        assert params[-2] == "test-model"
+        assert params[-1] is not None and params[-1].startswith("[")
+
+    def test_record_no_provider_sends_null_embedding(self) -> None:
+        """record() sends None for embedding when provider is absent (fail-soft)."""
+        cm = _make_fake_cm()
+        recorder = ExperienceEventRecorder(
+            cm,  # type: ignore[arg-type]
+            project_id="proj",
+            brain_id="brain",
+            embedding_provider=None,
+        )
+
+        event = ExperienceEvent(
+            event_type="approach_failed",
+            memory=MemorySpec(key="failure-xyz", value="thing failed"),
+        )
+        recorder.record(event)
+
+        conn = cm.project_context.return_value.__enter__.return_value
+        cur = conn.cursor.return_value.__enter__.return_value
+        params = cur.execute.call_args_list[1][0][1]
+        assert params[-2] is None  # embedding_model_id
+        assert params[-1] is None  # embedding
+
+    def test_record_many_embeds_per_event(self) -> None:
+        """record_many() computes one embedding per event memory, outside the transaction."""
+        emb_vec = [0.5] * 384
+        provider = _make_fake_provider(embedding=emb_vec, model_id="m")
+        cm = _make_fake_cm()
+        recorder = ExperienceEventRecorder(
+            cm,  # type: ignore[arg-type]
+            project_id="proj",
+            brain_id="brain",
+            embedding_provider=provider,
+        )
+
+        events = [
+            ExperienceEvent(
+                event_type="workflow_completed",
+                memory=MemorySpec(key=f"k-{i}", value=f"value {i}"),
+            )
+            for i in range(3)
+        ]
+        recorder.record_many(events)
+
+        # embed() must be called once per event (3 events × 1 memory each).
+        assert provider.embed.call_count == 3
+        assert provider.embed.call_args_list == [
+            call("value 0"),
+            call("value 1"),
+            call("value 2"),
+        ]
+
+    def test_compute_embedding_fail_soft(self) -> None:
+        """_compute_embedding returns (None, None) when embed() raises."""
+        provider = MagicMock()
+        provider.embed.side_effect = RuntimeError("model not loaded")
+        cm = _make_fake_cm()
+        recorder = ExperienceEventRecorder(
+            cm,  # type: ignore[arg-type]
+            project_id="proj",
+            brain_id="brain",
+            embedding_provider=provider,
+        )
+        pgv, mid = recorder._compute_embedding("anything")
+        assert pgv is None
+        assert mid is None

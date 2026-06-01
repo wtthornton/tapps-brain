@@ -46,9 +46,16 @@ import structlog
 from pydantic import BaseModel, Field, model_validator
 
 from tapps_brain import _postgres_kg_sql as _kg_sql
+from tapps_brain._postgres_private_sql import embedding_to_pgvector
 
 if TYPE_CHECKING:
+    from tapps_brain.embeddings import SentenceTransformerProvider
     from tapps_brain.postgres_connection import PostgresConnectionManager
+
+# Sentinel used to distinguish "not passed" from "explicitly None" so we can
+# auto-load the embedding provider from env when the caller omits the arg,
+# matching the pattern in MemoryStore.__init__.
+_UNSET_EMBEDDING: object = object()
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -258,25 +265,38 @@ WHERE id = %s::uuid
 # Minimal private_memories upsert — uses DB defaults for fields not in this
 # INSERT (decay scores, FSRS fields, provenance, etc.).  Full-featured writes
 # should go through MemoryStore.save().
+#
+# TAP-2705: embedding_model_id + embedding are now included so that
+# experience-event memories participate in pgvector recall.  When no
+# embedding provider is configured both columns receive NULL (fail-soft,
+# matching MemoryStore.save).  ON CONFLICT preserves an existing embedding
+# when the re-record lacks a provider (COALESCE), but refreshes it when one
+# is available — so re-records never silently drop the vector.
 _INSERT_MEMORY_SQL = """
 INSERT INTO private_memories (
     project_id, agent_id, key, value,
     tier, confidence,
     source, source_agent,
     scope, agent_scope, tags,
-    created_at, updated_at, last_accessed
+    created_at, updated_at, last_accessed,
+    embedding_model_id,
+    embedding
 ) VALUES (
     %s, %s, %s, %s,
     %s, %s,
     'agent', %s,
     'project', %s, %s::jsonb,
-    now(), now(), now()
+    now(), now(), now(),
+    %s,
+    %s::vector
 )
 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
-    value      = EXCLUDED.value,
-    tier       = EXCLUDED.tier,
-    confidence = EXCLUDED.confidence,
-    updated_at = now()
+    value              = EXCLUDED.value,
+    tier               = EXCLUDED.tier,
+    confidence         = EXCLUDED.confidence,
+    updated_at         = now(),
+    embedding_model_id = COALESCE(EXCLUDED.embedding_model_id, private_memories.embedding_model_id),
+    embedding          = COALESCE(EXCLUDED.embedding, private_memories.embedding)
 RETURNING key
 """
 
@@ -316,11 +336,40 @@ class ExperienceEventRecorder:
         project_id: str,
         brain_id: str,
         agent_id: str = "unknown",
+        embedding_provider: SentenceTransformerProvider | None = _UNSET_EMBEDDING,  # type: ignore[assignment]
     ) -> None:
         self._cm = cm
         self._project_id = project_id
         self._brain_id = brain_id
         self._agent_id = agent_id
+        if embedding_provider is _UNSET_EMBEDDING:
+            from tapps_brain.embeddings import get_embedding_provider
+
+            self._embedding_provider: SentenceTransformerProvider | None = get_embedding_provider()
+        else:
+            self._embedding_provider = embedding_provider
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _compute_embedding(self, text: str) -> tuple[str | None, str | None]:
+        """Return ``(pgvector_str, model_id)`` for *text*, or ``(None, None)`` on
+        failure or when no embedding provider is configured (fail-soft, matching
+        :meth:`tapps_brain.store.MemoryStore._embed_entry`).
+        """
+        if self._embedding_provider is None:
+            return None, None
+        try:
+            emb = self._embedding_provider.embed(text)
+            mid_raw = getattr(self._embedding_provider, "model_id", None)
+            mid: str | None = (
+                mid_raw.strip() if isinstance(mid_raw, str) and mid_raw.strip() else None
+            )
+            return embedding_to_pgvector(emb), mid
+        except Exception:
+            logger.warning("experience_embedding_compute_failed", exc_info=True)
+            return None, None
 
     # ------------------------------------------------------------------
     # Public API
@@ -354,6 +403,13 @@ class ExperienceEventRecorder:
         memory_key: str | None = None
 
         log = logger.bind(event_type=event.event_type, event_id=event_id)
+
+        # TAP-2705: compute embedding outside the DB transaction to avoid
+        # holding the connection open during CPU-bound inference.
+        emb_pgv: str | None = None
+        emb_model_id: str | None = None
+        if event.memory is not None:
+            emb_pgv, emb_model_id = self._compute_embedding(event.memory.value)
 
         with self._cm.project_context(self._project_id) as conn, conn.cursor() as cur:
             # Step 1 — insert the event row (cross-ref columns updated later).
@@ -389,6 +445,8 @@ class ExperienceEventRecorder:
                         self._agent_id,
                         mem.agent_scope,
                         json.dumps(mem.tags),
+                        emb_model_id,
+                        emb_pgv,
                     ),
                 )
                 row = cur.fetchone()
@@ -534,10 +592,18 @@ class ExperienceEventRecorder:
         if not events:
             return []
 
+        # TAP-2705: precompute embeddings for all events before opening the
+        # transaction so we don't hold the DB connection open during CPU-bound
+        # inference.  Index aligns with the events list.
+        event_embeddings: list[tuple[str | None, str | None]] = [
+            self._compute_embedding(e.memory.value) if e.memory is not None else (None, None)
+            for e in events
+        ]
+
         results: list[ExperienceResult] = []
 
         with self._cm.project_context(self._project_id) as conn, conn.cursor() as cur:
-            for event in events:
+            for event, (emb_pgv, emb_model_id) in zip(events, event_embeddings, strict=True):
                 event_id = str(_uuid_mod.uuid4())
                 entity_ids: list[str] = []
                 edge_ids: list[str] = []
@@ -577,6 +643,8 @@ class ExperienceEventRecorder:
                             self._agent_id,
                             mem.agent_scope,
                             json.dumps(mem.tags),
+                            emb_model_id,
+                            emb_pgv,
                         ),
                     )
                     row = cur.fetchone()
