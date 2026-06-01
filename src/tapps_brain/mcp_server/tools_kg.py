@@ -626,3 +626,59 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             },
             default=str,
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_resolve_entity(
+        entity_type: str,
+        canonical_name: str,
+        agent_id: str = "",
+    ) -> str:
+        """Resolve an entity name to its UUID, creating the entity if absent.
+
+        Turns a human-readable ``(entity_type, canonical_name)`` pair into the
+        UUID required by ``brain_record_event`` edges.  Internally tries an exact
+        canonical-name match and then an alias match before falling back to an
+        idempotent ``INSERT … ON CONFLICT`` create.  Two calls with the same
+        inputs always return the same UUID.
+
+        Parameters
+        ----------
+        entity_type:
+            Entity type label, e.g. ``"module"``, ``"agent"``, ``"tool"``.
+        canonical_name:
+            Human-readable name to resolve or create.
+        agent_id:
+            Override the server-level default for this call (STORY-070.7).
+
+        Returns
+        -------
+        JSON object: ``{ "entity_id": str, "entity_type": str,
+        "canonical_name": str, "created": bool, "confidence": float,
+        "reason": str }``
+        """
+        try:
+            eff_aid = _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
+        project_id = _pid()
+        _ = eff_aid  # reserved for future per-agent entity scoping
+
+        if not entity_type or not entity_type.strip():
+            return json.dumps({"error": "bad_request", "detail": "entity_type is required."})
+        if not canonical_name or not canonical_name.strip():
+            return json.dumps({"error": "bad_request", "detail": "canonical_name is required."})
+
+        cm = kg_service._get_or_create_cm()
+        if cm is None:
+            return json.dumps(
+                {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
+            )
+
+        result = kg_service.resolve_entity(
+            cm,
+            project_id,
+            kg_service._DEFAULT_BRAIN_ID,
+            entity_type=entity_type,
+            canonical_name=canonical_name,
+        )
+        return json.dumps(result, default=str)
