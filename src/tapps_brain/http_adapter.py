@@ -3415,6 +3415,90 @@ def create_app(
 
         return JSONResponse(status_code=200, content=result)
 
+    @app.post("/v1/kg/resolve_entity", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_resolve_entity(request: Request) -> JSONResponse:
+        """Resolve or create a KG entity by (entity_type, canonical_name).
+
+        REST counterpart of the ``brain_resolve_entity`` MCP tool.  Turns a
+        human-readable ``(entity_type, canonical_name)`` pair into the UUID
+        required by ``/v1/experience`` edge specs.  Two calls with the same
+        inputs always return the same UUID — safe to call concurrently.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional): agent identifier (informational).
+
+        Request body (JSON):
+          ``{ "entity_type": str, "canonical_name": str }``
+
+        Response: ``{ "entity_id": str, "entity_type": str,
+        "canonical_name": str, "created": bool, "confidence": float,
+        "reason": str }``
+
+        Introduced in TAP-2725.
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        entity_type = str(body.get("entity_type") or "").strip()
+        canonical_name = str(body.get("canonical_name") or "").strip()
+        if not entity_type:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entity_type is required."},
+            )
+        if not canonical_name:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "canonical_name is required."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.resolve_entity,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            entity_type=entity_type,
+            canonical_name=canonical_name,
+        )
+        return JSONResponse(status_code=200, content=result)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:
