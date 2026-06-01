@@ -178,6 +178,17 @@ class StoreHealthReport(BaseModel):
             "load; approaches 1.0 when the filter is saturated."
         ),
     )
+    # TAP-2672: whether an embedding provider is loaded.  When False, semantic
+    # recall silently falls back to BM25-only — operators alert on this so the
+    # "configured-but-no-provider" drift the 2026-05-28 audit found can't recur.
+    embeddings_enabled: bool = Field(
+        default=False,
+        description=(
+            "True when an embedding provider is loaded and new writes populate "
+            "the pgvector embedding column.  False means semantic recall is "
+            "degraded to lexical BM25-only (TAP-2672)."
+        ),
+    )
     # Hive Postgres health (EPIC-058 STORY-058.3)
     hive_connected: bool = False
     hive_schema_version: int = 0

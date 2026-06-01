@@ -206,6 +206,7 @@ class PropagationEngine:
         bypass_profile_hive_rules: bool = False,
         dry_run: bool = False,
         memory_group: str | None = None,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         """Propagate a memory entry to the Hive if appropriate.
 
@@ -324,6 +325,7 @@ class PropagationEngine:
             source=source,
             tags=tags,
             memory_group=memory_group,
+            embedding=embedding,
         )
 
         logger.info(

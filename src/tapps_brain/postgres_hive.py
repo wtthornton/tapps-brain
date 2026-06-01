@@ -59,11 +59,16 @@ class PostgresHiveBackend:
         superseded_by: str | None = None,
         conflict_policy: str = "supersede",
         memory_group: str | None = None,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any] | None:
         """Save a memory entry to PostgreSQL.
 
         Uses INSERT ... ON CONFLICT for upsert semantics.
         Conflict policies are evaluated in Python to match SQLite backend behavior.
+
+        ``embedding`` is the dense vector (already computed by the caller's
+        embedding provider) persisted to the ``embedding`` column so Hive
+        semantic recall has signal — ``None`` leaves the column NULL.
         """
         now = datetime.now(tz=UTC).isoformat()
         tags_json = json.dumps(tags or [])
@@ -103,6 +108,7 @@ class PostgresHiveBackend:
                         tags_json=tags_json,
                         now=now,
                         memory_group=memory_group,
+                        embedding=embedding,
                     )
 
             # Normal write or overwrite.
@@ -124,6 +130,7 @@ class PostgresHiveBackend:
                 superseded_by=superseded_by,
                 conflict_policy=policy,
                 memory_group=memory_group,
+                embedding=embedding,
             )
 
     def _resolve_conflict(
@@ -164,6 +171,7 @@ class PostgresHiveBackend:
         tags_json: str,
         now: str,
         memory_group: str | None,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         """Mark old version invalid and write new versioned key."""
         new_key = f"{key}-v{now.replace(':', '').replace('-', '').replace('+', '')[:22]}"
@@ -189,6 +197,7 @@ class PostgresHiveBackend:
             superseded_by=None,
             conflict_policy="supersede",
             memory_group=memory_group,
+            embedding=embedding,
         )
 
     def _write_entry(
@@ -210,17 +219,21 @@ class PostgresHiveBackend:
         superseded_by: str | None,
         conflict_policy: str,
         memory_group: str | None,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         """Perform the actual INSERT ... ON CONFLICT DO UPDATE."""
+        # psycopg has no vector adapter here; pass the textual [v1,v2,...] form
+        # and cast with %s::vector (same shape as the semantic-search query).
+        emb_literal = "[" + ",".join(str(float(v)) for v in embedding) + "]" if embedding else None
         cur.execute(
             """
             INSERT INTO hive_memories
                 (namespace, key, value, source_agent, tier, confidence, source,
                  tags, valid_at, invalid_at, superseded_by, memory_group,
-                 conflict_policy, created_at, updated_at)
+                 conflict_policy, created_at, updated_at, embedding)
             VALUES (%s, %s, %s, %s, %s, %s, %s,
                     %s::jsonb, %s, %s, %s, %s,
-                    %s, %s, %s)
+                    %s, %s, %s, %s::vector)
             ON CONFLICT (namespace, key) DO UPDATE SET
                 value = EXCLUDED.value,
                 source_agent = EXCLUDED.source_agent,
@@ -233,7 +246,8 @@ class PostgresHiveBackend:
                 superseded_by = EXCLUDED.superseded_by,
                 memory_group = EXCLUDED.memory_group,
                 conflict_policy = EXCLUDED.conflict_policy,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                embedding = EXCLUDED.embedding
             """,
             (
                 namespace,
@@ -251,6 +265,7 @@ class PostgresHiveBackend:
                 conflict_policy,
                 created_at,
                 now,
+                emb_literal,
             ),
         )
 
