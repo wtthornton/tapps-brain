@@ -125,6 +125,26 @@ services:
       # provider stalls until the limit window resets.  Required for any
       # production deployment with cache-rebuild risk.
       HF_TOKEN: "${HF_TOKEN:-}"
+      # TAP-2672 — embedding provider config.  sentence-transformers is a core
+      # dep and the brain auto-loads BAAI/bge-small-en-v1.5 (384-dim) at startup,
+      # populating the pgvector `embedding` column on every write.  REQUIRED=1
+      # makes the brain refuse to start if the provider can't load, so the
+      # "semantic recall silently degraded to BM25" drift the 2026-05-28 audit
+      # found can never recur.  Set to 0 only to intentionally run lexical-only.
+      # MODEL_OFFLINE=1 forces HF_HUB_OFFLINE so the model loads from the local
+      # cache with no Hub contact (pair with a warmed model cache volume).
+      TAPPS_BRAIN_EMBEDDING_REQUIRED: "${TAPPS_BRAIN_EMBEDDING_REQUIRED:-1}"
+      TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE: "${TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE:-0}"
+      # TAP-2677 — connection-pool sizing.  The brain opens one pool per backend
+      # (private / hive / federation / KG / auth / …), so without a cap the
+      # single-replica deployment held 64 idle of Postgres's 100 max_connections
+      # while only ~1 query was active (cache hit ratio 99.5% — latency is not
+      # the constraint).  Cap min/max here; raise them for multi-replica or
+      # high-fan-in (200-agent) deployments.  Monitor idle consumption via the
+      # pool_saturation field in the brain health/metrics payload and alert when
+      # idle backends exceed 50% of Postgres max_connections.
+      TAPPS_BRAIN_PG_POOL_MIN: "${TAPPS_BRAIN_PG_POOL_MIN:-1}"
+      TAPPS_BRAIN_PG_POOL_MAX: "${TAPPS_BRAIN_PG_POOL_MAX:-8}"
     ports:
       - "${TAPPS_HTTP_PORT:-8080}:8080"
       # Operator MCP bound to loopback by default (TAP-551).

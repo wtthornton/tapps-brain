@@ -9,6 +9,7 @@ Auto-consolidation triggers on save when enabled (EPIC-058).
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import threading
 import time
@@ -85,6 +86,25 @@ from tapps_brain.relations import RelationEntry, extract_relations
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
+
+
+def _ensure_str_value(value: object) -> str:
+    """Normalise a memory ``value`` to ``str`` (TAP-2675).
+
+    Callers at the HTTP/MCP boundary occasionally pass a non-str ``value`` (e.g.
+    ``/v1/remember`` with a JSON object body).  The ``value`` text column and the
+    content-safety scan both require a ``str``; without this a dict raised
+    ``AttributeError: 'dict' object has no attribute 'strip'`` deep in
+    ``check_content_safety`` — a 500.  We normalise rather than reject: JSON-encode
+    dict/list so structured payloads survive as their JSON text, ``str()`` anything
+    else, and leave a real ``str`` untouched.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
 
 # Maximum number of memories per project.  TAP-513 — operators can override
 # this via the TAPPS_BRAIN_MAX_ENTRIES env var without code changes;
@@ -432,6 +452,28 @@ class MemoryStore:
             self._embedding_provider = get_embedding_provider()
         else:
             self._embedding_provider = embedding_provider
+        # TAP-2672: fail loud when an embedding provider is expected but absent.
+        # Without this, semantic recall silently degrades to BM25-only while
+        # health still reports db_ok=true — exactly the drift the audit found.
+        if (
+            os.environ.get("TAPPS_BRAIN_EMBEDDING_REQUIRED", "0") == "1"
+            and self._embedding_provider is None
+        ):
+            msg = (
+                "TAPPS_BRAIN_EMBEDDING_REQUIRED=1 but no embedding provider could be "
+                "loaded (sentence-transformers missing or model load failed). Semantic "
+                "recall would silently degrade to BM25-only. Install tapps-brain[all], "
+                "set HF_TOKEN / warm the model cache, or set "
+                "TAPPS_BRAIN_EMBEDDING_REQUIRED=0 to allow lexical-only mode."
+            )
+            raise RuntimeError(msg)
+        if self._embedding_provider is not None:
+            from tapps_brain.embeddings import embedding_startup_status
+
+            logger.info(
+                "embedding_provider_loaded",
+                **embedding_startup_status(self._embedding_provider),
+            )
         self._write_rules = write_rules
         self._lookup_engine = lookup_engine
         self._consolidation_in_progress = False
@@ -963,6 +1005,11 @@ class MemoryStore:
         """
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
+
+        # TAP-2675: normalise non-str values (e.g. a JSON object posted to
+        # /v1/remember) before the safety scan + text-column persistence, which
+        # both assume a str.  See _ensure_str_value.
+        value = _ensure_str_value(value)
 
         # Phase 1 — scope + memory_group validation (pure).
         scope_result = validate_scope_and_group(
@@ -1682,6 +1729,7 @@ class MemoryStore:
                     auto_propagate_tiers=auto_propagate,
                     private_tiers=private,
                     memory_group=entry.memory_group,
+                    embedding=entry.embedding,
                 )
         except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
@@ -2863,6 +2911,7 @@ class MemoryStore:
             # TAP-549: session-state cardinality for /metrics alerting.
             active_session_count=self.active_session_count(),
             bloom_saturation=self._bloom.approximate_false_positive_rate(),
+            embeddings_enabled=self._embedding_provider is not None,
         )
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401

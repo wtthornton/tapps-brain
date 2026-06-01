@@ -31,6 +31,14 @@ The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tap
 
 There is no "Hive service" to start separately; the brain serves private memory + Hive + Federation from the same DSN over the same `/mcp/` + `/v1/*` API.
 
+### Live dashboard (`tapps-visual`)
+
+The `tapps-visual` service (nginx on `:8088`, `${TAPPS_VISUAL_PORT}`) is the serving layer for the **live always-on dashboard** (TAP-2131): it serves the `brain-visual/` frontend and proxies `/snapshot` to the brain so panels auto-refresh against the running container — it is *not* a static snapshot viewer and was *not* replaced by a separate container. It is part of the unified stack and should be **Up**; `make hive-deploy` starts it. If `docker ps -a` shows it merely `Created`, start it with `docker start tapps-visual` (or re-run the compose up). Smoke test: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/` → `200`.
+
+### One-off: deduplicate `private_schema_version` v15 (TAP-2679)
+
+Two `015_*` migrations (TAP-732, TAP-733) recorded two rows at version 15. It is cosmetic — both are applied and the loader keys "applied" on the version-number set — but `GROUP BY version` double-counts. Run `scripts/fix_schema_version_15_dedup.sql` once per database (idempotent) to consolidate them into a single v15 row.
+
 ## Upgrading to a New Release (BRAIN_VERSION bump — TAP-2136)
 
 Every service image in `docker/docker-compose.hive.yaml` resolves to `docker-<svc>:${BRAIN_VERSION:-latest}`. To roll the stack forward to a new release:

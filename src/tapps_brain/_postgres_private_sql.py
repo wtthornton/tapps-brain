@@ -86,7 +86,8 @@ INSERT INTO private_memories (
     status,
     stale_reason,
     stale_date,
-    memory_class
+    memory_class,
+    embedding
 ) VALUES (
     %s, %s, %s, %s,
     %s, %s, %s, %s,
@@ -104,7 +105,8 @@ INSERT INTO private_memories (
     %s,
     %s::jsonb,
     %s, %s, %s,
-    %s
+    %s,
+    %s::vector
 )
 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     value                    = EXCLUDED.value,
@@ -148,8 +150,21 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     status                   = EXCLUDED.status,
     stale_reason             = EXCLUDED.stale_reason,
     stale_date               = EXCLUDED.stale_date,
-    memory_class             = EXCLUDED.memory_class
+    memory_class             = EXCLUDED.memory_class,
+    embedding                = EXCLUDED.embedding
 """
+
+
+def embedding_to_pgvector(embedding: list[float] | None) -> str | None:
+    """Format a dense vector as a pgvector text literal, or ``None`` for NULL.
+
+    psycopg has no vector adapter registered, so we pass the textual
+    ``[v1,v2,...]`` form and cast it with ``%s::vector`` in the SQL — the
+    same shape ``knn_search`` already uses for the query vector.
+    """
+    if not embedding:
+        return None
+    return "[" + ",".join(str(float(v)) for v in embedding) + "]"
 
 
 def build_save_params(
@@ -215,6 +230,7 @@ def build_save_params(
         entry.stale_reason,
         entry.stale_date,
         getattr(entry, "memory_class", None),
+        embedding_to_pgvector(entry.embedding),
     )
 
 

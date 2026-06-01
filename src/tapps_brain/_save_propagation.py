@@ -61,6 +61,7 @@ def propagate_group_save(
                 source=src,
                 source_agent=entry.source_agent,
                 tags=entry.tags,
+                embedding=entry.embedding,
             )
         except Exception:
             logger.warning(
@@ -108,6 +109,7 @@ def publish_to_experts(
             source=_source_str(entry),
             source_agent=entry.source_agent,
             tags=all_tags,
+            embedding=entry.embedding,
         )
     except Exception:
         logger.warning(
