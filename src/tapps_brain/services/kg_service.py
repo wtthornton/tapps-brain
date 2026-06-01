@@ -442,6 +442,70 @@ def record_events_batch_per_event_tx(
 
 
 # ---------------------------------------------------------------------------
+# resolve_entity (TAP-2725)
+# ---------------------------------------------------------------------------
+
+
+def resolve_entity(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    *,
+    entity_type: str,
+    canonical_name: str,
+) -> dict[str, Any]:
+    """Resolve or create a KG entity by ``(entity_type, canonical_name)``; return its UUID.
+
+    First attempts an exact-canonical-name / alias lookup via
+    :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.resolve_entity`.
+    When no match is found, creates the entity via
+    :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.upsert_entity` (idempotent
+    ``INSERT … ON CONFLICT`` — safe to call concurrently).
+
+    Parameters
+    ----------
+    cm:
+        Open :class:`~tapps_brain.postgres_connection.PostgresConnectionManager`.
+    project_id, brain_id:
+        Tenant / identity scope.
+    entity_type:
+        Entity type label (e.g. ``"module"``, ``"agent"``, ``"tool"``).
+    canonical_name:
+        Human-readable name used as the lookup key (case-sensitive;
+        stored as-is and lower-cased internally for alias matching).
+
+    Returns
+    -------
+    ``{"entity_id": str, "entity_type": str, "canonical_name": str,
+    "created": bool, "confidence": float, "reason": str}``
+    """
+    kg = _kg_store(cm, project_id, brain_id)
+    try:
+        entity_id, confidence, reason = kg.resolve_entity(entity_type, canonical_name)
+        if entity_id is not None:
+            return {
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "canonical_name": canonical_name,
+                "created": False,
+                "confidence": confidence,
+                "reason": reason,
+            }
+        # Not found — create via upsert_entity (idempotent INSERT ON CONFLICT).
+        new_id = kg.upsert_entity(entity_type=entity_type, canonical_name=canonical_name)
+        return {
+            "entity_id": new_id,
+            "entity_type": entity_type,
+            "canonical_name": canonical_name,
+            "created": True,
+            "confidence": 0.6,
+            "reason": "created",
+        }
+    finally:
+        kg.close()
+
+
+# ---------------------------------------------------------------------------
 # get_neighbors
 # ---------------------------------------------------------------------------
 
