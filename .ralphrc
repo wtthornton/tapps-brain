@@ -341,3 +341,30 @@ RALPH_PUSH_EVERY_LOOP=true
 # After each successful loop iteration that produced commits, run `git push`
 # =============================================================================
 # CONTEXT MANAGEMENT (Phase 14)
+# =============================================================================
+# MCP DISCONNECT RESILIENCE (2026-06-01)
+# =============================================================================
+# Intermittently a fresh `claude` invocation comes up with all of its MCP
+# servers disconnected at loop start. The agent can't session_start, read
+# Linear, or run the quality gate, so it reports STATUS: BLOCKED with 0 files /
+# 0 tasks. This is transient client flakiness — a cold-start re-invocation
+# almost always reconnects — so Ralph does NOT count such a loop as no-progress
+# (it would otherwise trip the circuit breaker). Instead it resets the session
+# and retries with a fresh Claude invocation.
+#
+# Max consecutive MCP-disconnect loops tolerated before the harness gives up and
+# halts (exit_reason=mcp_unreachable_quorum). The loops leading up to the cap are
+# retried with a fresh session and never penalized. Legacy alias:
+# RALPH_MCP_BLOCKED_QUORUM (RALPH_MCP_RETRY_MAX takes precedence when both set).
+# RALPH_MCP_RETRY_MAX=3
+
+# Optional pre-loop MCP health gate. When true, re-probe the required MCP
+# servers (via a fresh `claude mcp list`) before each loop and wait out a
+# transient disconnect (escalating 2s/5s/10s backoff, up to RALPH_MCP_RETRY_MAX
+# probes) before spending a Claude invocation. Off by default because the live
+# probe adds latency to every loop; the post-loop retry above already recovers
+# disconnects without it.
+# RALPH_MCP_HEALTH_GATE=false
+# =============================================================================
+# Intermittently a fresh `claude` invocation comes up with all of its MCP
+# =============================================================================

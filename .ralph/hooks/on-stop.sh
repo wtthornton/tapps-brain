@@ -657,6 +657,30 @@ session_cache_create=$((prev_session_cache_create + loop_cache_create))
 [[ "$asking_questions" == "true" ]] || asking_questions="false"
 [[ "$has_permission_denials" == "true" ]] || has_permission_denials="false"
 
+# MCP-DISCONNECT (2026-06-01): Detect the "all MCP servers disconnected at loop
+# start" condition — transient MCP-client startup flakiness, NOT stagnation. A
+# fresh `claude` invocation almost always reconnects, so the harness retries the
+# loop instead of penalizing it (see ralph_loop.sh MCP-DISCONNECT-RETRY).
+#
+# The canonical signal is RECOMMENDATION: mcp_unreachable (the agent contract
+# asks for it), but the agent does not always emit it cleanly — sometimes the
+# disconnect shows up only in free-text ("All MCP servers disconnected at loop
+# start ... harness should restart Claude Code session"). Match both, but only
+# when the loop produced nothing (files=0, tasks=0) and did not cleanly exit, so
+# a productive loop that merely mentions MCP can never trip it. This guard also
+# keeps a genuinely-blocked backlog ("every issue has blocked:waiting-for-creds")
+# on the regular no-progress path — that text carries no mcp/disconnect token.
+# TODO: have the agent emit a structured marker (e.g. MCP_STATUS: disconnected)
+# so the free-text fallback match can be retired.
+mcp_disconnect="false"
+if [[ "$files_modified" -eq 0 && "$tasks_done" -eq 0 && "$exit_signal" != "true" ]]; then
+  if [[ "$recommendation" == *mcp_unreachable* ]] \
+     || printf '%s\n%s\n' "$recommendation" "$response_text" \
+        | grep -iqE 'mcp[[:alnum:][:space:]_-]*(disconnect|unreachable|not connected|failed to connect)|all mcp servers'; then
+    mcp_disconnect="true"
+  fi
+fi
+
 # Write status.json (atomic write via temp file).
 # MERGE-1: Two writers (ralph_loop.sh update_status and this hook) emit different fields.
 # Preserve the loop-writer fields (calls_made_this_hour, max_calls_per_hour, last_action,
@@ -703,9 +727,11 @@ jq -n \
   --argjson smc "$session_mcp_calls_json" \
   --arg fcm "$fresh_calls_made" \
   --arg rid "$_current_run_id" \
+  --argjson md "$mcp_disconnect" \
   '{
     timestamp: $ts, loop_count: $lc, status: $st, exit_signal: $es,
     tasks_completed: $td, files_modified: $fm, work_type: $wt, recommendation: $rec,
+    mcp_disconnect: $md,
     asking_questions: $aq, question_count: $qc,
     has_permission_denials: $hpd, permission_denial_count: $pdc,
     linear_issue: (if $li == "" then null else $li end),
@@ -759,10 +785,10 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
   fi
   local_tmp=$(mktemp "$RALPH_DIR/.circuit_breaker_state.XXXXXX")
 
-  # TAP-2497: clear mcp_blocked_count if this loop is NOT an mcp_unreachable
-  # response. Without this, transient outages would keep counting toward the
-  # quorum across recovered loops.
-  if ! [[ "$status" == "BLOCKED" && "$recommendation" == *mcp_unreachable* ]]; then
+  # TAP-2497 / MCP-DISCONNECT: clear mcp_blocked_count if this loop is NOT an
+  # MCP-disconnect response. Without this, transient outages would keep counting
+  # toward the give-up threshold across recovered loops.
+  if [[ "$mcp_disconnect" != "true" ]]; then
     rm -f "$RALPH_DIR/.mcp_blocked_count" 2>/dev/null
   fi
 
@@ -807,14 +833,16 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     jq '.consecutive_no_progress = 0 | .consecutive_permission_denials = 0 | .state = "CLOSED"' \
       "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
       && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
-  elif [[ "$status" == "BLOCKED" && "$recommendation" == *mcp_unreachable* ]]; then
-    # TAP-2497: MCP transport is degraded — Claude correctly emitted BLOCKED
-    # rather than improvising EXIT_SIGNAL from a stale cache. Do NOT count
-    # this loop as no-progress (the agent is blocked on infrastructure, not
-    # stagnant). Bump a separate .mcp_blocked_count counter; ralph_loop.sh
-    # uses it to apply exponential backoff and halt after N consecutive
-    # outages with exit_reason=mcp_unreachable_quorum. Counter resets on
-    # the next non-mcp_unreachable response.
+  elif [[ "$mcp_disconnect" == "true" ]]; then
+    # TAP-2497 / MCP-DISCONNECT: MCP transport disconnected at loop start —
+    # transient client flakiness, not stagnation. Do NOT count this loop as
+    # no-progress (the agent is blocked on infrastructure, not stalled). Bump a
+    # separate .mcp_blocked_count counter; ralph_loop.sh reads status.json
+    # .mcp_disconnect and retries the loop with a fresh Claude session (the
+    # disconnect almost always clears on a cold start). After RALPH_MCP_RETRY_MAX
+    # consecutive disconnect loops the harness gives up and halts with
+    # exit_reason=mcp_unreachable_quorum. Counter resets on the next loop that
+    # is not an MCP disconnect.
     _mcp_blocked_file="$RALPH_DIR/.mcp_blocked_count"
     _mcp_blocked_count=0
     [[ -f "$_mcp_blocked_file" ]] && read -r _mcp_blocked_count < "$_mcp_blocked_file" 2>/dev/null
@@ -824,11 +852,12 @@ if [[ -f "$RALPH_DIR/.circuit_breaker_state" ]]; then
     jq '.consecutive_permission_denials = 0' \
       "$RALPH_DIR/.circuit_breaker_state" > "$local_tmp" 2>/dev/null \
       && mv "$local_tmp" "$RALPH_DIR/.circuit_breaker_state"
-    # Quorum halt: 3 consecutive mcp_unreachable → write halt sentinel
-    _mcp_threshold=${RALPH_MCP_BLOCKED_QUORUM:-3}
+    # Give-up halt: RALPH_MCP_RETRY_MAX consecutive disconnects → halt sentinel.
+    # RALPH_MCP_BLOCKED_QUORUM is the legacy alias for the same threshold.
+    _mcp_threshold=${RALPH_MCP_RETRY_MAX:-${RALPH_MCP_BLOCKED_QUORUM:-3}}
     if [[ "$_mcp_blocked_count" -ge "$_mcp_threshold" ]]; then
       echo "mcp_unreachable_quorum" > "$RALPH_DIR/.harness_halt_reason"
-      echo "Harness halt: mcp_unreachable_quorum (${_mcp_blocked_count} consecutive mcp_unreachable)" >&2
+      echo "Harness halt: mcp_unreachable_quorum (${_mcp_blocked_count} consecutive MCP disconnects)" >&2
     fi
   elif [[ "$work_type" == "PLANNING" && -n "$_status_block" ]]; then
     # TAP-1686: Plan Mode loops produce a plan, not files. When the
